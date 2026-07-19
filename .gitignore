@@ -1,0 +1,15 @@
+node_modules/
+dist/
+coverage/
+artifacts/
+.debug-profiles/
+*.log
+.DS_Store
+
+# Playwright
+.playwright-mcp/
+.playwright/
+test-results/
+playwright-report/
+blob-report/
+.cache/ms-playwright/

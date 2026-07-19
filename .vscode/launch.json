@@ -1,0 +1,51 @@
+{
+  "version": "0.2.0",
+  "inputs": [
+    {
+      "id": "adoQueryUrl",
+      "type": "promptString",
+      "description": "Azure DevOps Query URL to open",
+      "default": "https://dev.azure.com/"
+    },
+    {
+      "id": "chromeForTestingPath",
+      "type": "promptString",
+      "description": "Absolute path to Chrome for Testing chrome.exe"
+    }
+  ],
+  "configurations": [
+    {
+      "name": "Debug Extension (Edge)",
+      "type": "msedge",
+      "request": "launch",
+      "url": "${input:adoQueryUrl}",
+      "preLaunchTask": "Build: Extension",
+      "userDataDir": "${workspaceFolder}/.debug-profiles/edge",
+      "runtimeArgs": ["--load-extension=${workspaceFolder}/dist"]
+    },
+    {
+      "name": "Debug Extension (Chrome for Testing)",
+      "type": "chrome",
+      "request": "launch",
+      "runtimeExecutable": "${input:chromeForTestingPath}",
+      "url": "${input:adoQueryUrl}",
+      "preLaunchTask": "Build: Extension",
+      "userDataDir": "${workspaceFolder}/.debug-profiles/chrome",
+      "runtimeArgs": ["--load-extension=${workspaceFolder}/dist"]
+    },
+    {
+      "name": "Attach to Extension (Edge)",
+      "type": "msedge",
+      "request": "attach",
+      "port": 9222,
+      "webRoot": "${workspaceFolder}/dist"
+    },
+    {
+      "name": "Attach to Extension (Chrome for Testing)",
+      "type": "chrome",
+      "request": "attach",
+      "port": 9223,
+      "webRoot": "${workspaceFolder}/dist"
+    }
+  ]
+}

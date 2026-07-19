@@ -1,0 +1,3 @@
+npm_path="$(cygpath -u "$APPDATA")/npm"
+export PATH="/c/Program Files/nodejs:$npm_path:$PATH"
+pnpm lint-staged

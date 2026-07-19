@@ -1,0 +1,80 @@
+{
+  "name": "awesome-ado",
+  "version": "0.1.0",
+  "description": "Browser extension that enhances Azure DevOps Query pages.",
+  "private": true,
+  "type": "module",
+  "versionBuildOffset": 0,
+  "engines": {
+    "node": ">=24"
+  },
+  "packageManager": "pnpm@10.34.5",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "build:watch": "node scripts/build.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "duplication": "jscpd src scripts",
+    "test": "vitest run",
+    "test:scripts": "node scripts/run-scripts-tests.mjs",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "package": "node scripts/package.mjs",
+    "validate:workflows": "node scripts/validate-workflows.mjs",
+    "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm duplication && pnpm test:scripts && pnpm test:coverage && pnpm validate:workflows",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/adm-zip": "^0.5.8",
+    "@types/archiver": "^8.0.0",
+    "@types/chrome": "^0.2.2",
+    "@types/node": "^24.13.3",
+    "@vitest/coverage-v8": "^4.1.10",
+    "adm-zip": "^0.6.0",
+    "ajv": "^8.20.0",
+    "archiver": "^8.0.0",
+    "chrome-webstore-upload-cli": "^4.0.1",
+    "esbuild": "^0.28.1",
+    "eslint": "^10.7.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-import-x": "^4.17.1",
+    "globals": "^17.7.0",
+    "husky": "^9.1.7",
+    "jscpd": "^5.0.12",
+    "jsdom": "^29.1.1",
+    "lint-staged": "^17.0.8",
+    "prettier": "^3.9.5",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.63.0",
+    "vitest": "^4.1.10",
+    "yaml": "^2.9.0"
+  },
+  "lint-staged": {
+    "*.{ts,js,mjs}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md,yml,yaml,html}": "prettier --write"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  },
+  "main": "eslint.config.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/RazMake/AwesomeAdo.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/RazMake/AwesomeAdo/issues"
+  },
+  "homepage": "https://github.com/RazMake/AwesomeAdo#readme"
+}

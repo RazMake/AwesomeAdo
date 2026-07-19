@@ -1,0 +1,6 @@
+{
+  "threshold": 0,
+  "reporters": ["console"],
+  "gitignore": true,
+  "ignore": ["**/*.test.ts", "**/*.test.mjs", "scripts/schemas/**", "**/*.md"]
+}

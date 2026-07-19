@@ -1,0 +1,6 @@
+# Preserve line endings as-is for all files
+* -text
+
+# Shell scripts must always be LF (CRLF breaks Git Bash execution)
+*.sh text eol=lf
+.husky/* text eol=lf

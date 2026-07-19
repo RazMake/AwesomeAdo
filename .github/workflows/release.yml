@@ -1,0 +1,1214 @@
+name: Release
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Recover an exact successful CI attempt or replay stores from an existing official release
+        required: true
+        default: replay_official
+        type: choice
+        options:
+          - recover_ci
+          - replay_official
+      ci_run_id:
+        description: Successful CI workflow run id; required only for recover_ci
+        required: false
+        default: ""
+        type: string
+      ci_run_attempt:
+        description: Successful CI workflow run attempt; required only for recover_ci
+        required: false
+        default: ""
+        type: string
+      official_tag:
+        description: Existing immutable official tag; required only for replay_official
+        required: false
+        default: ""
+        type: string
+      publish_chrome:
+        description: Publish the validated Chrome archive
+        required: true
+        default: false
+        type: boolean
+      confirm_chrome_no_draft:
+        description: Confirm the Chrome dashboard has no existing or uncertain draft for this version
+        required: true
+        default: false
+        type: boolean
+      publish_edge:
+        description: Publish the validated Edge archive
+        required: true
+        default: false
+        type: boolean
+      confirm_edge_no_operation:
+        description: Confirm Partner Center has no in-progress or uncertain Edge operation or draft
+        required: true
+        default: false
+        type: boolean
+
+jobs:
+  validate_release:
+    if: >-
+      ${{
+        vars.RELEASE_BASELINE_VERSION == 'immutable-owner-empty-namespace-reviewed-main-app-tags-v1' &&
+        (
+          (github.event_name == 'workflow_dispatch' &&
+           github.ref == 'refs/heads/main' &&
+           (inputs.mode == 'recover_ci' || inputs.mode == 'replay_official')) ||
+          (github.event_name == 'workflow_run' &&
+           github.event.workflow_run.conclusion == 'success' &&
+           github.event.workflow_run.event == 'push' &&
+           github.event.workflow_run.head_branch == 'main' &&
+           github.event.workflow_run.head_repository.full_name == github.repository)
+        )
+      }}
+    runs-on: ubuntu-24.04
+    concurrency:
+      group: awesomeado-release-publication
+      queue: max
+    permissions:
+      actions: read
+      attestations: read
+      contents: read
+    outputs:
+      release_mode: ${{ steps.release_context.outputs.release_mode }}
+      expected_sha: ${{ steps.release_context.outputs.expected_sha }}
+      tooling_sha: ${{ steps.release_context.outputs.tooling_sha }}
+      base: ${{ steps.validate_artifacts.outputs.base }}
+      full: ${{ steps.validate_artifacts.outputs.full }}
+      publish_chrome: ${{ steps.publication_request.outputs.publish_chrome }}
+      publish_edge: ${{ steps.publication_request.outputs.publish_edge }}
+      bridge_artifact: ${{ steps.bridge_identity.outputs.name }}
+    steps:
+      - name: Require established release baseline
+        id: release_baseline
+        shell: bash
+        env:
+          BASELINE_VERSION: ${{ vars.RELEASE_BASELINE_VERSION }}
+          BASELINE_SHA: ${{ vars.RELEASE_BASELINE_SHA }}
+        run: |
+          set -euo pipefail
+          if [[ "$BASELINE_VERSION" != "immutable-owner-empty-namespace-reviewed-main-app-tags-v1" ]]; then
+            echo "release baseline is disabled" >&2
+            exit 1
+          fi
+          if [[ ! "$BASELINE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "RELEASE_BASELINE_SHA must be lowercase 40-hex" >&2
+            exit 1
+          fi
+          echo "sha=$BASELINE_SHA" >>"$GITHUB_OUTPUT"
+
+      - name: Resolve trusted release context
+        id: release_context
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_MODE: ${{ inputs.mode }}
+          INPUT_CI_RUN_ID: ${{ inputs.ci_run_id }}
+          INPUT_CI_RUN_ATTEMPT: ${{ inputs.ci_run_attempt }}
+          AUTOMATIC_SHA: ${{ github.event.workflow_run.head_sha }}
+          AUTOMATIC_RUN_ID: ${{ github.event.workflow_run.id }}
+          AUTOMATIC_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          OFFICIAL_TAG: ${{ inputs.official_tag }}
+          INPUT_PUBLISH_CHROME: ${{ inputs.publish_chrome }}
+          INPUT_CONFIRM_CHROME: ${{ inputs.confirm_chrome_no_draft }}
+          INPUT_PUBLISH_EDGE: ${{ inputs.publish_edge }}
+          INPUT_CONFIRM_EDGE: ${{ inputs.confirm_edge_no_operation }}
+          TOOLING_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          release_mode=""
+          ci_run_id=""
+          ci_run_attempt=""
+          build_number=""
+          bridge_artifact=""
+          official_tag=""
+          official_tag_sha=""
+          expected_full=""
+          requested_chrome=false
+          confirm_chrome=false
+          requested_edge=false
+          confirm_edge=false
+
+          if [[ "$EVENT_NAME" == "workflow_run" ]]; then
+            release_mode=automatic
+            ci_run_id="$AUTOMATIC_RUN_ID"
+            ci_run_attempt="$AUTOMATIC_RUN_ATTEMPT"
+          elif [[ "$EVENT_NAME" == "workflow_dispatch" && "$DISPATCH_MODE" == "recover_ci" ]]; then
+            release_mode=recover_ci
+            ci_run_id="$INPUT_CI_RUN_ID"
+            ci_run_attempt="$INPUT_CI_RUN_ATTEMPT"
+            if [[ -n "$OFFICIAL_TAG" || "$INPUT_PUBLISH_CHROME" != "false" ||
+                  "$INPUT_CONFIRM_CHROME" != "false" || "$INPUT_PUBLISH_EDGE" != "false" ||
+                  "$INPUT_CONFIRM_EDGE" != "false" ]]; then
+              echo "recover_ci rejects official/store replay inputs" >&2
+              exit 1
+            fi
+          elif [[ "$EVENT_NAME" == "workflow_dispatch" && "$DISPATCH_MODE" == "replay_official" ]]; then
+            release_mode=replay_official
+            if [[ -n "$INPUT_CI_RUN_ID" || -n "$INPUT_CI_RUN_ATTEMPT" ]]; then
+              echo "replay_official rejects CI recovery inputs" >&2
+              exit 1
+            fi
+            official_tag="$OFFICIAL_TAG"
+            requested_chrome="$INPUT_PUBLISH_CHROME"
+            confirm_chrome="$INPUT_CONFIRM_CHROME"
+            requested_edge="$INPUT_PUBLISH_EDGE"
+            confirm_edge="$INPUT_CONFIRM_EDGE"
+          else
+            echo "unsupported release event or mode" >&2
+            exit 1
+          fi
+
+          if [[ "$release_mode" != "replay_official" ]]; then
+            if [[ ! "$ci_run_id" =~ ^[1-9][0-9]*$ ||
+                  ! "$ci_run_attempt" =~ ^[1-9][0-9]*$ ]]; then
+              echo "CI run id and attempt must be canonical positive decimals" >&2
+              exit 1
+            fi
+            run_json="$(gh api \
+              -H 'X-GitHub-Api-Version: 2026-03-10' \
+              "repos/$GITHUB_REPOSITORY/actions/runs/$ci_run_id/attempts/$ci_run_attempt")"
+            jq -e \
+              --arg repository "$GITHUB_REPOSITORY" \
+              --arg run_id "$ci_run_id" \
+              --argjson run_attempt "$ci_run_attempt" '
+              (.id | tostring) == $run_id and
+              .run_attempt == $run_attempt and
+              .name == "CI" and
+              .path == ".github/workflows/ci.yml" and
+              .event == "push" and
+              .status == "completed" and
+              .conclusion == "success" and
+              .head_branch == "main" and
+              .head_repository.full_name == $repository and
+              .repository.full_name == $repository and
+              (.head_sha | type == "string" and test("^[0-9a-f]{40}$")) and
+              (.run_number | type == "number" and . >= 1 and floor == .)
+            ' <<<"$run_json" >/dev/null
+            expected_sha="$(jq -r '.head_sha' <<<"$run_json")"
+            build_number="$(jq -r '.run_number' <<<"$run_json")"
+            if [[ "$release_mode" == "automatic" && "$expected_sha" != "$AUTOMATIC_SHA" ]]; then
+              echo "workflow_run payload disagrees with the authoritative CI attempt" >&2
+              exit 1
+            fi
+            tooling_sha="$expected_sha"
+            bridge_artifact="attested-extension-$ci_run_id-$ci_run_attempt"
+            artifact_pages="$(gh api --paginate --slurp \
+              -H 'X-GitHub-Api-Version: 2026-03-10' \
+              "repos/$GITHUB_REPOSITORY/actions/runs/$ci_run_id/artifacts?per_page=100")"
+            jq -e \
+              --arg name "$bridge_artifact" \
+              --arg run_id "$ci_run_id" \
+              --arg sha "$expected_sha" '
+              [.[].artifacts[] | select(.name == $name)] as $matches |
+              ($matches | length) == 1 and
+              $matches[0].expired == false and
+              ($matches[0].workflow_run.id | tostring) == $run_id and
+              $matches[0].workflow_run.head_sha == $sha
+            ' <<<"$artifact_pages" >/dev/null
+          else
+            if [[ ! "$OFFICIAL_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+              echo "official_tag must match vMajor.Minor without leading zeroes" >&2
+              exit 1
+            fi
+            base="${OFFICIAL_TAG#v}"
+            ref_json="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$OFFICIAL_TAG")"
+            jq -e --arg ref "refs/tags/$OFFICIAL_TAG" '
+              .ref == $ref and
+              .object.type == "tag" and
+              (.object.sha | type == "string" and test("^[0-9a-f]{40}$"))
+            ' <<<"$ref_json" >/dev/null
+            tag_object_sha="$(jq -r '.object.sha' <<<"$ref_json")"
+            tag_json="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$tag_object_sha")"
+            jq -e --arg tag "$OFFICIAL_TAG" '
+              .tag == $tag and
+              .object.type == "commit" and
+              (.object.sha | type == "string" and test("^[0-9a-f]{40}$")) and
+              (.message | type == "string")
+            ' <<<"$tag_json" >/dev/null
+            expected_sha="$(jq -r '.object.sha' <<<"$tag_json")"
+            claim_json="$(jq -ce '
+              .message |
+              fromjson |
+              select((keys | sort) == ["base", "format", "full", "source_sha"]) |
+              select(.format == 1)
+            ' <<<"$tag_json")"
+            expected_full="$(jq -r '.full' <<<"$claim_json")"
+            jq -e --arg base "$base" --arg full "$expected_full" --arg sha "$expected_sha" '
+              .base == $base and
+              .full == $full and
+              .source_sha == $sha and
+              ($full | test("^" + ($base | gsub("[.]"; "[.]")) + "[.](0|[1-9][0-9]*)$"))
+            ' <<<"$claim_json" >/dev/null
+            canonical_claim="$(jq -cn \
+              --arg base "$base" --arg full "$expected_full" --arg sha "$expected_sha" \
+              '{base:$base,format:1,full:$full,source_sha:$sha}')"
+            if ! jq -e --arg canonical "$canonical_claim" \
+              '.message == $canonical' <<<"$tag_json" >/dev/null; then
+              echo "official tag claim is not canonical" >&2
+              exit 1
+            fi
+            release_json="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$OFFICIAL_TAG")"
+            expected_body="$(jq -cn \
+              --arg base "$base" --arg full "$expected_full" --arg sha "$expected_sha" \
+              '{base:$base,format:1,full:$full,kind:"official",source_sha:$sha}')"
+            chrome_name="awesomeado-chrome-$expected_full.zip"
+            edge_name="awesomeado-edge-$expected_full.zip"
+            jq -e \
+              --arg tag "$OFFICIAL_TAG" \
+              --arg name "AwesomeADO $OFFICIAL_TAG" \
+              --arg body "$expected_body" \
+              --arg chrome "$chrome_name" \
+              --arg edge "$edge_name" '
+              .tag_name == $tag and
+              .name == $name and
+              .body == $body and
+              .draft == false and
+              .prerelease == false and
+              .immutable == true and
+              ([.assets[] |
+                select(.name == "release-metadata.json" or
+                       ((.name // "") | test("^awesomeado-(chrome|edge)-.*[.]zip$"))) |
+                select(.state == "uploaded" and (.id | type == "number")) |
+                .name] | sort) == ([$chrome, $edge, "release-metadata.json"] | sort)
+            ' <<<"$release_json" >/dev/null
+            tooling_sha="$TOOLING_SHA"
+            official_tag_sha="$expected_sha"
+          fi
+          if [[ ! "$expected_sha" =~ ^[0-9a-f]{40}$ ||
+                ! "$tooling_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "release context did not resolve lowercase 40-hex SHAs" >&2
+            exit 1
+          fi
+          {
+            echo "expected_sha=$expected_sha"
+            echo "tooling_sha=$tooling_sha"
+            echo "release_mode=$release_mode"
+            echo "ci_run_id=$ci_run_id"
+            echo "ci_run_attempt=$ci_run_attempt"
+            echo "build_number=$build_number"
+            echo "bridge_artifact=$bridge_artifact"
+            echo "official_tag=$official_tag"
+            echo "official_tag_sha=$official_tag_sha"
+            echo "expected_full=$expected_full"
+            echo "requested_chrome=$requested_chrome"
+            echo "confirm_chrome=$confirm_chrome"
+            echo "requested_edge=$requested_edge"
+            echo "confirm_edge=$confirm_edge"
+          } >>"$GITHUB_OUTPUT"
+
+      - name: Prepare untrusted artifact custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf -- "$RUNNER_TEMP/artifacts"
+          mkdir -p -- "$RUNNER_TEMP/artifacts"
+
+      - name: Download attested CI bridge
+        if: steps.release_context.outputs.release_mode != 'replay_official'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: ${{ steps.release_context.outputs.bridge_artifact }}
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.release_context.outputs.ci_run_id }}
+          path: ${{ runner.temp }}/artifacts
+
+      - name: Download existing official release assets
+        if: steps.release_context.outputs.release_mode == 'replay_official'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OFFICIAL_TAG: ${{ steps.release_context.outputs.official_tag }}
+        run: |
+          set -euo pipefail
+          gh release download "$OFFICIAL_TAG" --repo "$GITHUB_REPOSITORY" \
+            --dir "$RUNNER_TEMP/artifacts" \
+            --pattern release-metadata.json \
+            --pattern 'awesomeado-chrome-*.zip' \
+            --pattern 'awesomeado-edge-*.zip'
+
+      - name: Verify CI attestations before checkout
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_SHA: ${{ steps.release_context.outputs.expected_sha }}
+        run: |
+          set -euo pipefail
+          artifact_root="$(realpath "$RUNNER_TEMP/artifacts")"
+          artifacts=()
+          while IFS= read -r -d '' artifact; do
+            if [[ ! -f "$artifact" || -L "$artifact" ]]; then
+              echo "artifact custody contains a non-regular entry" >&2
+              exit 1
+            fi
+            absolute="$(realpath "$artifact")"
+            if [[ "$(dirname "$absolute")" != "$artifact_root" ]]; then
+              echo "artifact escaped runner-temp custody" >&2
+              exit 1
+            fi
+            artifacts+=("$absolute")
+          done < <(find "$artifact_root" -mindepth 1 -maxdepth 1 -print0 | sort -z)
+          if [[ "${#artifacts[@]}" -ne 3 ]]; then
+            echo "expected exactly three attested release artifacts" >&2
+            exit 1
+          fi
+          signer_workflow="${GITHUB_SERVER_URL#https://}/$GITHUB_REPOSITORY/.github/workflows/ci.yml"
+          for artifact in "${artifacts[@]}"; do
+            gh attestation verify "$artifact" \
+              --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "$signer_workflow" \
+              --source-digest "$EXPECTED_SHA" \
+              --source-ref refs/heads/main \
+              --deny-self-hosted-runners
+          done
+
+      - name: Check out trusted release tooling
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ steps.release_context.outputs.tooling_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Prove release source and tooling descend from baseline
+        shell: bash
+        env:
+          BASELINE_SHA: ${{ steps.release_baseline.outputs.sha }}
+          EXPECTED_SHA: ${{ steps.release_context.outputs.expected_sha }}
+          TOOLING_SHA: ${{ steps.release_context.outputs.tooling_sha }}
+        run: |
+          set -euo pipefail
+          marker_query='(keys | sort) == ["format", "state", "version"] and .format == 1 and .state == "established" and .version == "immutable-owner-empty-namespace-reviewed-main-app-tags-v1"'
+          marker_sha256=a472bfa356c5b4e52ca42fae5c91b69b53627c48c734ee51ba771acf4783a0d0
+          if [[ ! -f .github/release-baseline.json || -L .github/release-baseline.json ]]; then
+            echo "tracked release baseline marker is missing or unsafe" >&2
+            exit 1
+          fi
+          workspace_hash="$(sha256sum .github/release-baseline.json)"
+          if [[ "${workspace_hash%% *}" != "$marker_sha256" ]]; then
+            echo "checked-out release baseline marker bytes are not canonical" >&2
+            exit 1
+          fi
+          jq -e "$marker_query" .github/release-baseline.json >/dev/null
+          for sha in "$BASELINE_SHA" "$EXPECTED_SHA" "$TOOLING_SHA"; do
+            git cat-file -e "$sha^{commit}"
+            marker_entry="$(git ls-tree "$sha" -- .github/release-baseline.json)"
+            if [[ ! "$marker_entry" =~ ^100644[[:space:]]blob[[:space:]][0-9a-f]{40}[[:space:]]+\.github/release-baseline\.json$ ]]; then
+              echo "release baseline marker is not a regular 100644 blob at $sha" >&2
+              exit 1
+            fi
+            marker_hash="$(git show "$sha:.github/release-baseline.json" | sha256sum)"
+            if [[ "${marker_hash%% *}" != "$marker_sha256" ]]; then
+              echo "release baseline marker bytes are not canonical at $sha" >&2
+              exit 1
+            fi
+            git show "$sha:.github/release-baseline.json" | jq -e "$marker_query" >/dev/null
+          done
+          git merge-base --is-ancestor "$BASELINE_SHA" "$EXPECTED_SHA"
+          git merge-base --is-ancestor "$BASELINE_SHA" "$TOOLING_SHA"
+
+      - name: Verify owner-controlled version tag policy
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          pages="$(gh api --paginate --slurp \
+            "repos/$GITHUB_REPOSITORY/rulesets?includes_parents=true&targets=tag&per_page=100")"
+          rulesets="$(jq -c 'if length == 0 then [] else add end' <<<"$pages")"
+          for ruleset_name in release-app-version-tag-creation immutable-version-tags; do
+            count="$(jq --arg name "$ruleset_name" \
+              '[.[] | select(.name == $name)] | length' <<<"$rulesets")"
+            if [[ "$count" != "1" ]]; then
+              echo "expected exactly one $ruleset_name organization ruleset" >&2
+              exit 1
+            fi
+          done
+          creation_id="$(jq -r '.[] | select(.name == "release-app-version-tag-creation") | .id' \
+            <<<"$rulesets")"
+          immutable_id="$(jq -r '.[] | select(.name == "immutable-version-tags") | .id' \
+            <<<"$rulesets")"
+          if [[ ! "$creation_id" =~ ^[0-9]+$ || ! "$immutable_id" =~ ^[0-9]+$ ]]; then
+            echo "version-tag ruleset id is malformed" >&2
+            exit 1
+          fi
+          creation="$(gh api \
+            "repos/$GITHUB_REPOSITORY/rulesets/$creation_id?includes_parents=true")"
+          immutable="$(gh api \
+            "repos/$GITHUB_REPOSITORY/rulesets/$immutable_id?includes_parents=true")"
+          jq -e --arg repo_name "${GITHUB_REPOSITORY#*/}" '
+            .name == "release-app-version-tag-creation" and
+            .source_type == "Organization" and
+            .target == "tag" and
+            .enforcement == "active" and
+            .current_user_can_bypass == "never" and
+            .conditions.repository_name.include == [$repo_name] and
+            .conditions.repository_name.exclude == [] and
+            .conditions.repository_name.protected == true and
+            .conditions.ref_name.include == ["refs/tags/v*"] and
+            .conditions.ref_name.exclude == [] and
+            [.rules[].type] == ["creation"]
+          ' <<<"$creation" >/dev/null
+          jq -e --arg repo_name "${GITHUB_REPOSITORY#*/}" '
+            .name == "immutable-version-tags" and
+            .source_type == "Organization" and
+            .target == "tag" and
+            .enforcement == "active" and
+            .current_user_can_bypass == "never" and
+            .conditions.repository_name.include == [$repo_name] and
+            .conditions.repository_name.exclude == [] and
+            .conditions.repository_name.protected == true and
+            .conditions.ref_name.include == ["refs/tags/v*"] and
+            .conditions.ref_name.exclude == [] and
+            ([.rules[].type] | sort) == ["deletion", "update"] and
+            ([.rules[] | select(.type == "update")] | length) == 1 and
+            ([.rules[] | select(.type == "update")][0].parameters.update_allows_fetch_and_merge == false)
+          ' <<<"$immutable" >/dev/null
+
+      - name: Install exact pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+
+      - name: Install Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install trusted dependencies without lifecycle scripts
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Compute CI version
+        if: steps.release_context.outputs.release_mode != 'replay_official'
+        id: compute_version
+        env:
+          BUILD_NUMBER: ${{ steps.release_context.outputs.build_number }}
+          RELEASE_SHA: ${{ steps.release_context.outputs.expected_sha }}
+        run: node scripts/compute-version.mjs
+
+      - name: Validate exact release artifacts
+        id: validate_artifacts
+        shell: bash
+        env:
+          RELEASE_MODE: ${{ steps.release_context.outputs.release_mode }}
+          EXPECTED_SHA: ${{ steps.release_context.outputs.expected_sha }}
+          EXPECTED_FULL: ${{ steps.compute_version.outputs.full }}
+          MANUAL_EXPECTED_FULL: ${{ steps.release_context.outputs.expected_full }}
+          OFFICIAL_TAG: ${{ steps.release_context.outputs.official_tag }}
+          OFFICIAL_TAG_SHA: ${{ steps.release_context.outputs.official_tag_sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$RELEASE_MODE" != "replay_official" ]]; then
+            node scripts/validate-release.mjs \
+              --artifacts "$RUNNER_TEMP/artifacts" \
+              --expected-sha "$EXPECTED_SHA" \
+              --expected-full "$EXPECTED_FULL"
+          else
+            node scripts/validate-release.mjs \
+              --artifacts "$RUNNER_TEMP/artifacts" \
+              --expected-sha "$EXPECTED_SHA" \
+              --expected-full "$MANUAL_EXPECTED_FULL" \
+              --official-tag "$OFFICIAL_TAG" \
+              --official-tag-sha "$OFFICIAL_TAG_SHA"
+          fi
+
+      - name: Consume CI version outputs
+        if: steps.release_context.outputs.release_mode != 'replay_official'
+        shell: bash
+        env:
+          BASE: ${{ steps.compute_version.outputs.base }}
+          BUILD: ${{ steps.compute_version.outputs.build }}
+          FULL: ${{ steps.compute_version.outputs.full }}
+          IS_NEW_OFFICIAL: ${{ steps.compute_version.outputs.is_new_official }}
+          SHOULD_RELEASE_OFFICIAL: ${{ steps.compute_version.outputs.should_release_official }}
+          VALIDATED_BASE: ${{ steps.validate_artifacts.outputs.base }}
+          VALIDATED_FULL: ${{ steps.validate_artifacts.outputs.full }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$BUILD" || "$BASE" != "$VALIDATED_BASE" || "$FULL" != "$VALIDATED_FULL" ]]; then
+            echo "compute-version outputs disagree with validated metadata" >&2
+            exit 1
+          fi
+          if [[ ! "$IS_NEW_OFFICIAL" =~ ^(true|false)$ || ! "$SHOULD_RELEASE_OFFICIAL" =~ ^(true|false)$ ]]; then
+            echo "compute-version boolean output is malformed" >&2
+            exit 1
+          fi
+
+      - name: Create current-repository release App token
+        if: steps.release_context.outputs.release_mode != 'replay_official'
+        id: release_app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+
+      - name: Publish immutable per-build prerelease
+        if: steps.release_context.outputs.release_mode != 'replay_official'
+        id: publish_build_release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.release_app.outputs.token }}
+          IMMUTABLE_RELEASES_READ_TOKEN: ${{ secrets.IMMUTABLE_RELEASES_READ_TOKEN }}
+          APP_SLUG: ${{ steps.release_app.outputs.app-slug }}
+          EXPECTED_SHA: ${{ steps.release_context.outputs.expected_sha }}
+          BASE: ${{ steps.compute_version.outputs.base }}
+          FULL: ${{ steps.compute_version.outputs.full }}
+          CHROME_ARCHIVE: ${{ steps.validate_artifacts.outputs.chrome_archive }}
+          EDGE_ARCHIVE: ${{ steps.validate_artifacts.outputs.edge_archive }}
+          METADATA_PATH: ${{ runner.temp }}/artifacts/release-metadata.json
+        run: |
+          set -euo pipefail
+          node scripts/publish-github-release.mjs publish \
+            --kind build \
+            --repository "$GITHUB_REPOSITORY" \
+            --app-slug "$APP_SLUG" \
+            --expected-sha "$EXPECTED_SHA" \
+            --base "$BASE" \
+            --full "$FULL" \
+            --chrome "$CHROME_ARCHIVE" \
+            --edge "$EDGE_ARCHIVE" \
+            --metadata "$METADATA_PATH"
+
+      - name: Publish immutable official release
+        if: >-
+          steps.release_context.outputs.release_mode != 'replay_official' &&
+          steps.compute_version.outputs.should_release_official == 'true'
+        id: publish_official_release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.release_app.outputs.token }}
+          IMMUTABLE_RELEASES_READ_TOKEN: ${{ secrets.IMMUTABLE_RELEASES_READ_TOKEN }}
+          APP_SLUG: ${{ steps.release_app.outputs.app-slug }}
+          EXPECTED_SHA: ${{ steps.release_context.outputs.expected_sha }}
+          BASE: ${{ steps.compute_version.outputs.base }}
+          FULL: ${{ steps.compute_version.outputs.full }}
+          CHROME_ARCHIVE: ${{ steps.validate_artifacts.outputs.chrome_archive }}
+          EDGE_ARCHIVE: ${{ steps.validate_artifacts.outputs.edge_archive }}
+          METADATA_PATH: ${{ runner.temp }}/artifacts/release-metadata.json
+          STORE_ASSETS: ${{ github.workspace }}/store-assets
+        run: |
+          set -euo pipefail
+          node scripts/publish-github-release.mjs publish \
+            --kind official \
+            --repository "$GITHUB_REPOSITORY" \
+            --app-slug "$APP_SLUG" \
+            --expected-sha "$EXPECTED_SHA" \
+            --base "$BASE" \
+            --full "$FULL" \
+            --chrome "$CHROME_ARCHIVE" \
+            --edge "$EDGE_ARCHIVE" \
+            --metadata "$METADATA_PATH" \
+            --store-assets "$STORE_ASSETS"
+
+      - name: Resolve store publication request
+        id: publication_request
+        shell: bash
+        env:
+          RELEASE_MODE: ${{ steps.release_context.outputs.release_mode }}
+          SHOULD_RELEASE_OFFICIAL: ${{ steps.compute_version.outputs.should_release_official }}
+          AUTOMATIC_CLAIMED: ${{ steps.publish_official_release.outputs.claimed }}
+          AUTOMATIC_STALE: ${{ steps.publish_official_release.outputs.stale }}
+          AUTOMATIC_PUBLISHED_NOW: ${{ steps.publish_official_release.outputs.published_now }}
+          AUTOMATIC_RECOVERED_IMMUTABLE: ${{ steps.publish_official_release.outputs.recovered_immutable }}
+          MANUAL_CHROME: ${{ steps.release_context.outputs.requested_chrome }}
+          MANUAL_CHROME_NO_DRAFT: ${{ steps.release_context.outputs.confirm_chrome }}
+          MANUAL_EDGE: ${{ steps.release_context.outputs.requested_edge }}
+          MANUAL_EDGE_NO_OPERATION: ${{ steps.release_context.outputs.confirm_edge }}
+        run: |
+          set -euo pipefail
+          if [[ "$RELEASE_MODE" == "replay_official" ]]; then
+            if [[ "$MANUAL_CHROME" == "true" && "$MANUAL_CHROME_NO_DRAFT" != "true" ]]; then
+              echo "Chrome publication requires confirmation that no existing or uncertain draft exists" >&2
+              exit 1
+            fi
+            if [[ "$MANUAL_EDGE" == "true" && "$MANUAL_EDGE_NO_OPERATION" != "true" ]]; then
+              echo "Edge publication requires confirmation that no in-progress or uncertain operation or draft exists" >&2
+              exit 1
+            fi
+            publish_chrome="$MANUAL_CHROME"
+            publish_edge="$MANUAL_EDGE"
+          else
+            should_release="${SHOULD_RELEASE_OFFICIAL:-false}"
+            claimed="${AUTOMATIC_CLAIMED:-false}"
+            stale="${AUTOMATIC_STALE:-false}"
+            published_now="${AUTOMATIC_PUBLISHED_NOW:-false}"
+            recovered="${AUTOMATIC_RECOVERED_IMMUTABLE:-false}"
+            for value in "$should_release" "$claimed" "$stale" "$published_now" "$recovered"; do
+              if [[ ! "$value" =~ ^(true|false)$ ]]; then
+                echo "official publisher output is malformed" >&2
+                exit 1
+              fi
+            done
+            publish_chrome=false
+            publish_edge=false
+            if [[ "$should_release" == "true" &&
+                  "$claimed" == "true" &&
+                  "$stale" == "false" &&
+                  "$published_now" == "true" ]]; then
+              publish_chrome=true
+              publish_edge=true
+            elif [[ "$should_release" == "true" && "$stale" == "true" ]]; then
+              echo "Official release is stale; no store publication requested." >>"$GITHUB_STEP_SUMMARY"
+            elif [[ "$should_release" == "true" && "$claimed" == "false" ]]; then
+              echo "Another build owns the official claim; no store publication requested." \
+                >>"$GITHUB_STEP_SUMMARY"
+            elif [[ "$recovered" == "true" ]]; then
+              echo "Recovered an existing immutable release; manual store recovery is required." \
+                >>"$GITHUB_STEP_SUMMARY"
+            fi
+          fi
+          if [[ ! "$publish_chrome" =~ ^(true|false)$ || ! "$publish_edge" =~ ^(true|false)$ ]]; then
+            echo "publication request is malformed" >&2
+            exit 1
+          fi
+          {
+            echo "publish_chrome=$publish_chrome"
+            echo "publish_edge=$publish_edge"
+          } >>"$GITHUB_OUTPUT"
+
+      - name: Define validated bridge identity
+        id: bridge_identity
+        shell: bash
+        run: echo "name=validated-release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >>"$GITHUB_OUTPUT"
+
+      - name: Upload validated release bridge
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ${{ steps.bridge_identity.outputs.name }}
+          path: |
+            ${{ steps.validate_artifacts.outputs.chrome_archive }}
+            ${{ steps.validate_artifacts.outputs.edge_archive }}
+            ${{ runner.temp }}/artifacts/release-metadata.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Require manual store replay after immutable recovery
+        if: >-
+          steps.release_context.outputs.release_mode != 'replay_official' &&
+          steps.publish_official_release.outputs.recovered_immutable == 'true'
+        shell: bash
+        env:
+          BASE: ${{ steps.compute_version.outputs.base }}
+        run: |
+          {
+            echo "## Manual store recovery required"
+            echo
+            echo "v$BASE was already published immutably by an earlier attempt."
+            echo "Inspect both store dashboards, then dispatch Release for only stores that still need publication."
+          } >>"$GITHUB_STEP_SUMMARY"
+          exit 1
+
+  publish_stores:
+    needs: validate_release
+    if: >-
+      needs.validate_release.result == 'success' &&
+      (needs.validate_release.outputs.publish_chrome == 'true' ||
+       needs.validate_release.outputs.publish_edge == 'true')
+    runs-on: ubuntu-24.04
+    concurrency:
+      group: awesomeado-release-publication
+      queue: max
+    environment: browser-extension-stores
+    permissions:
+      actions: read
+      attestations: read
+      contents: read
+    env:
+      CHROME_EXTENSION_ID_PRESENT: ${{ secrets.CHROME_EXTENSION_ID != '' }}
+      CHROME_PUBLISHER_ID_PRESENT: ${{ secrets.CHROME_PUBLISHER_ID != '' }}
+      CHROME_CLIENT_ID_PRESENT: ${{ secrets.CHROME_CLIENT_ID != '' }}
+      CHROME_CLIENT_SECRET_PRESENT: ${{ secrets.CHROME_CLIENT_SECRET != '' }}
+      CHROME_REFRESH_TOKEN_PRESENT: ${{ secrets.CHROME_REFRESH_TOKEN != '' }}
+      EDGE_PRODUCT_ID_PRESENT: ${{ secrets.EDGE_PRODUCT_ID != '' }}
+      EDGE_CLIENT_ID_PRESENT: ${{ secrets.EDGE_CLIENT_ID != '' }}
+      EDGE_API_KEY_PRESENT: ${{ secrets.EDGE_API_KEY != '' }}
+    steps:
+      - name: Classify requested credential sets
+        id: credential_state
+        shell: bash
+        env:
+          REQUEST_CHROME: ${{ needs.validate_release.outputs.publish_chrome }}
+          REQUEST_EDGE: ${{ needs.validate_release.outputs.publish_edge }}
+        run: |
+          set -euo pipefail
+          presence=(
+            "$CHROME_EXTENSION_ID_PRESENT"
+            "$CHROME_PUBLISHER_ID_PRESENT"
+            "$CHROME_CLIENT_ID_PRESENT"
+            "$CHROME_CLIENT_SECRET_PRESENT"
+            "$CHROME_REFRESH_TOKEN_PRESENT"
+            "$EDGE_PRODUCT_ID_PRESENT"
+            "$EDGE_CLIENT_ID_PRESENT"
+            "$EDGE_API_KEY_PRESENT"
+          )
+          for value in "${presence[@]}" "$REQUEST_CHROME" "$REQUEST_EDGE"; do
+            if [[ ! "$value" =~ ^(true|false)$ ]]; then
+              echo "credential presence or request state is malformed" >&2
+              exit 1
+            fi
+          done
+
+          chrome_complete=false
+          if [[ "$CHROME_EXTENSION_ID_PRESENT" == "true" &&
+                "$CHROME_PUBLISHER_ID_PRESENT" == "true" &&
+                "$CHROME_CLIENT_ID_PRESENT" == "true" &&
+                "$CHROME_CLIENT_SECRET_PRESENT" == "true" &&
+                "$CHROME_REFRESH_TOKEN_PRESENT" == "true" ]]; then
+            chrome_complete=true
+          fi
+          edge_complete=false
+          if [[ "$EDGE_PRODUCT_ID_PRESENT" == "true" &&
+                "$EDGE_CLIENT_ID_PRESENT" == "true" &&
+                "$EDGE_API_KEY_PRESENT" == "true" ]]; then
+            edge_complete=true
+          fi
+          any_present=false
+          for value in "${presence[@]}"; do
+            if [[ "$value" == "true" ]]; then
+              any_present=true
+            fi
+          done
+          if [[ "$any_present" == "false" ]]; then
+            echo "no store credentials configured" | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+
+          chrome_ready=false
+          edge_ready=false
+          if [[ "$REQUEST_CHROME" == "true" && "$chrome_complete" == "true" ]]; then
+            chrome_ready=true
+          fi
+          if [[ "$REQUEST_EDGE" == "true" && "$edge_complete" == "true" ]]; then
+            edge_ready=true
+          fi
+          {
+            echo "any_present=$any_present"
+            echo "chrome_complete=$chrome_complete"
+            echo "edge_complete=$edge_complete"
+            echo "chrome_ready=$chrome_ready"
+            echo "edge_ready=$edge_ready"
+          } >>"$GITHUB_OUTPUT"
+
+      - name: Verify version tag and protected environment policy
+        if: steps.credential_state.outputs.any_present == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          repository="$(gh api "repos/$GITHUB_REPOSITORY")"
+          jq -e '.visibility == "public" and .private == false' <<<"$repository" >/dev/null || {
+            echo "repository must remain public for required environment reviewers" >&2
+            exit 1
+          }
+          pages="$(gh api --paginate --slurp \
+            "repos/$GITHUB_REPOSITORY/rulesets?includes_parents=true&targets=tag&per_page=100")"
+          rulesets="$(jq -c 'if length == 0 then [] else add end' <<<"$pages")"
+          creation_count="$(jq '[.[] | select(.name == "release-app-version-tag-creation")] | length' \
+            <<<"$rulesets")"
+          immutable_count="$(jq '[.[] | select(.name == "immutable-version-tags")] | length' \
+            <<<"$rulesets")"
+          if [[ "$creation_count" != "1" || "$immutable_count" != "1" ]]; then
+            echo "expected exactly one creation and one immutable version-tag ruleset" >&2
+            exit 1
+          fi
+          creation_id="$(jq -r '.[] | select(.name == "release-app-version-tag-creation") | .id' \
+            <<<"$rulesets")"
+          immutable_id="$(jq -r '.[] | select(.name == "immutable-version-tags") | .id' \
+            <<<"$rulesets")"
+          if [[ ! "$creation_id" =~ ^[0-9]+$ || ! "$immutable_id" =~ ^[0-9]+$ ]]; then
+            echo "version-tag ruleset id is malformed" >&2
+            exit 1
+          fi
+          creation="$(gh api "repos/$GITHUB_REPOSITORY/rulesets/$creation_id?includes_parents=true")"
+          immutable="$(gh api "repos/$GITHUB_REPOSITORY/rulesets/$immutable_id?includes_parents=true")"
+          jq -e --arg repo_name "${GITHUB_REPOSITORY#*/}" '
+            .name == "release-app-version-tag-creation" and
+            .source_type == "Organization" and
+            .target == "tag" and
+            .enforcement == "active" and
+            .current_user_can_bypass == "never" and
+            .conditions.repository_name.include == [$repo_name] and
+            .conditions.repository_name.exclude == [] and
+            .conditions.repository_name.protected == true and
+            .conditions.ref_name.include == ["refs/tags/v*"] and
+            .conditions.ref_name.exclude == [] and
+            [.rules[].type] == ["creation"]
+          ' <<<"$creation" >/dev/null
+          jq -e --arg repo_name "${GITHUB_REPOSITORY#*/}" '
+            .name == "immutable-version-tags" and
+            .source_type == "Organization" and
+            .target == "tag" and
+            .enforcement == "active" and
+            .current_user_can_bypass == "never" and
+            .conditions.repository_name.include == [$repo_name] and
+            .conditions.repository_name.exclude == [] and
+            .conditions.repository_name.protected == true and
+            .conditions.ref_name.include == ["refs/tags/v*"] and
+            .conditions.ref_name.exclude == [] and
+            ([.rules[].type] | sort) == ["deletion", "update"] and
+            ([.rules[] | select(.type == "update")] | length) == 1 and
+            ([.rules[] | select(.type == "update")][0].parameters.update_allows_fetch_and_merge == false)
+          ' <<<"$immutable" >/dev/null
+
+          environment="$(gh api \
+            "repos/$GITHUB_REPOSITORY/environments/browser-extension-stores")"
+          jq -e '
+            .can_admins_bypass == false and
+            .deployment_branch_policy.protected_branches == false and
+            .deployment_branch_policy.custom_branch_policies == true and
+            ([.protection_rules[] | select(.type == "required_reviewers")] | length) == 1 and
+            ([.protection_rules[] | select(.type == "required_reviewers")][0].prevent_self_review == true) and
+            (([.protection_rules[] | select(.type == "required_reviewers")][0].reviewers | length) >= 1)
+          ' <<<"$environment" >/dev/null
+          policies="$(gh api \
+            "repos/$GITHUB_REPOSITORY/environments/browser-extension-stores/deployment-branch-policies?per_page=100")"
+          jq -e '
+            .total_count == 1 and
+            (.branch_policies | length) == 1 and
+            .branch_policies[0].name == "main" and
+            .branch_policies[0].type == "branch"
+          ' <<<"$policies" >/dev/null
+
+      - name: Reverify immutable release refs after approval
+        if: >-
+          steps.credential_state.outputs.any_present == 'true' &&
+          github.run_attempt == 1
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE: ${{ needs.validate_release.outputs.base }}
+          FULL: ${{ needs.validate_release.outputs.full }}
+          EXPECTED_SHA: ${{ needs.validate_release.outputs.expected_sha }}
+        run: |
+          set -euo pipefail
+          build_tag="v$FULL"
+          build_ref="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$build_tag")"
+          jq -e --arg ref "refs/tags/$build_tag" --arg sha "$EXPECTED_SHA" '
+            .ref == $ref and .object.type == "commit" and .object.sha == $sha
+          ' <<<"$build_ref" >/dev/null
+
+          official_tag="v$BASE"
+          official_ref="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$official_tag")"
+          jq -e --arg ref "refs/tags/$official_tag" '
+            .ref == $ref and
+            .object.type == "tag" and
+            (.object.sha | type == "string" and test("^[0-9a-f]{40}$"))
+          ' <<<"$official_ref" >/dev/null
+          tag_object_sha="$(jq -r '.object.sha' <<<"$official_ref")"
+          tag_object="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$tag_object_sha")"
+          expected_message="$(jq -cn \
+            --arg base "$BASE" --arg full "$FULL" --arg sha "$EXPECTED_SHA" \
+            '{base:$base,format:1,full:$full,source_sha:$sha}')"
+          jq -e \
+            --arg tag "$official_tag" \
+            --arg message "$expected_message" \
+            --arg sha "$EXPECTED_SHA" '
+            .tag == $tag and
+            .message == $message and
+            .object.type == "commit" and
+            .object.sha == $sha
+          ' <<<"$tag_object" >/dev/null
+
+          build_release="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$build_tag")"
+          official_release="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$official_tag")"
+          build_body="$(jq -cn \
+            --arg base "$BASE" --arg full "$FULL" --arg sha "$EXPECTED_SHA" \
+            '{base:$base,format:1,full:$full,kind:"build",source_sha:$sha}')"
+          official_body="$(jq -cn \
+            --arg base "$BASE" --arg full "$FULL" --arg sha "$EXPECTED_SHA" \
+            '{base:$base,format:1,full:$full,kind:"official",source_sha:$sha}')"
+          jq -e \
+            --arg tag "$build_tag" \
+            --arg name "AwesomeADO $build_tag" \
+            --arg body "$build_body" '
+            .tag_name == $tag and
+            .name == $name and
+            .body == $body and
+            .draft == false and
+            .prerelease == true and
+            .immutable == true
+          ' <<<"$build_release" >/dev/null
+          jq -e \
+            --arg tag "$official_tag" \
+            --arg name "AwesomeADO $official_tag" \
+            --arg body "$official_body" '
+            .tag_name == $tag and
+            .name == $name and
+            .body == $body and
+            .draft == false and
+            .prerelease == false and
+            .immutable == true
+          ' <<<"$official_release" >/dev/null
+
+      - name: Prepare validated bridge custody
+        if: >-
+          github.run_attempt == 1 &&
+          (steps.credential_state.outputs.chrome_ready == 'true' ||
+           steps.credential_state.outputs.edge_ready == 'true')
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf -- "$RUNNER_TEMP/artifacts"
+          mkdir -p -- "$RUNNER_TEMP/artifacts"
+
+      - name: Download exact validated release bridge
+        if: >-
+          github.run_attempt == 1 &&
+          (steps.credential_state.outputs.chrome_ready == 'true' ||
+           steps.credential_state.outputs.edge_ready == 'true')
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: ${{ needs.validate_release.outputs.bridge_artifact }}
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.run_id }}
+          path: ${{ runner.temp }}/artifacts
+
+      - name: Reverify bridge attestations
+        if: >-
+          github.run_attempt == 1 &&
+          (steps.credential_state.outputs.chrome_ready == 'true' ||
+           steps.credential_state.outputs.edge_ready == 'true')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_SHA: ${{ needs.validate_release.outputs.expected_sha }}
+        run: |
+          set -euo pipefail
+          artifact_root="$(realpath "$RUNNER_TEMP/artifacts")"
+          artifacts=()
+          while IFS= read -r -d '' artifact; do
+            if [[ ! -f "$artifact" || -L "$artifact" ]]; then
+              echo "validated bridge contains a non-regular entry" >&2
+              exit 1
+            fi
+            absolute="$(realpath "$artifact")"
+            if [[ "$(dirname "$absolute")" != "$artifact_root" ]]; then
+              echo "validated bridge escaped runner-temp custody" >&2
+              exit 1
+            fi
+            artifacts+=("$absolute")
+          done < <(find "$artifact_root" -mindepth 1 -maxdepth 1 -print0 | sort -z)
+          if [[ "${#artifacts[@]}" -ne 3 ]]; then
+            echo "expected exactly three validated bridge artifacts" >&2
+            exit 1
+          fi
+          signer_workflow="${GITHUB_SERVER_URL#https://}/$GITHUB_REPOSITORY/.github/workflows/ci.yml"
+          for artifact in "${artifacts[@]}"; do
+            gh attestation verify "$artifact" \
+              --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "$signer_workflow" \
+              --source-digest "$EXPECTED_SHA" \
+              --source-ref refs/heads/main \
+              --deny-self-hosted-runners
+          done
+
+      - name: Check out exported trusted tooling
+        if: >-
+          github.run_attempt == 1 &&
+          (steps.credential_state.outputs.chrome_ready == 'true' ||
+           steps.credential_state.outputs.edge_ready == 'true')
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.validate_release.outputs.tooling_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install exact pnpm for publication
+        if: >-
+          github.run_attempt == 1 &&
+          (steps.credential_state.outputs.chrome_ready == 'true' ||
+           steps.credential_state.outputs.edge_ready == 'true')
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+
+      - name: Install Node.js for publication
+        if: >-
+          github.run_attempt == 1 &&
+          (steps.credential_state.outputs.chrome_ready == 'true' ||
+           steps.credential_state.outputs.edge_ready == 'true')
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install publication dependencies without lifecycle scripts
+        if: >-
+          github.run_attempt == 1 &&
+          (steps.credential_state.outputs.chrome_ready == 'true' ||
+           steps.credential_state.outputs.edge_ready == 'true')
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Revalidate exact bridge bytes
+        if: >-
+          github.run_attempt == 1 &&
+          (steps.credential_state.outputs.chrome_ready == 'true' ||
+           steps.credential_state.outputs.edge_ready == 'true')
+        id: revalidate
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ needs.validate_release.outputs.expected_sha }}
+          EXPECTED_FULL: ${{ needs.validate_release.outputs.full }}
+          OFFICIAL_TAG: v${{ needs.validate_release.outputs.base }}
+        run: |
+          set -euo pipefail
+          node scripts/validate-release.mjs \
+            --artifacts "$RUNNER_TEMP/artifacts" \
+            --expected-sha "$EXPECTED_SHA" \
+            --expected-full "$EXPECTED_FULL" \
+            --official-tag "$OFFICIAL_TAG" \
+            --official-tag-sha "$EXPECTED_SHA"
+
+      - name: Assert current official before Chrome
+        id: chrome_current
+        if: >-
+          always() &&
+          steps.credential_state.outputs.chrome_ready == 'true' &&
+          github.run_attempt == 1 &&
+          steps.revalidate.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE: ${{ needs.validate_release.outputs.base }}
+        run: |
+          set -euo pipefail
+          node scripts/publish-github-release.mjs assert-current \
+            --repository "$GITHUB_REPOSITORY" \
+            --base "$BASE"
+
+      - name: Upload and submit Chrome package
+        id: publish_chrome
+        if: >-
+          always() &&
+          steps.credential_state.outputs.chrome_ready == 'true' &&
+          github.run_attempt == 1 &&
+          steps.revalidate.outcome == 'success' &&
+          steps.chrome_current.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        env:
+          CHROME_ARCHIVE: ${{ steps.revalidate.outputs.chrome_archive }}
+          EXTENSION_ID: ${{ secrets.CHROME_EXTENSION_ID }}
+          PUBLISHER_ID: ${{ secrets.CHROME_PUBLISHER_ID }}
+          CLIENT_ID: ${{ secrets.CHROME_CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.CHROME_CLIENT_SECRET }}
+          REFRESH_TOKEN: ${{ secrets.CHROME_REFRESH_TOKEN }}
+        run: |
+          set -euo pipefail
+          pnpm exec chrome-webstore-upload --source "$CHROME_ARCHIVE" \
+            --extension-id "$EXTENSION_ID" --publisher-id "$PUBLISHER_ID"
+
+      - name: Assert current official before Edge
+        id: edge_current
+        if: >-
+          always() &&
+          steps.credential_state.outputs.edge_ready == 'true' &&
+          github.run_attempt == 1 &&
+          steps.revalidate.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE: ${{ needs.validate_release.outputs.base }}
+        run: |
+          set -euo pipefail
+          node scripts/publish-github-release.mjs assert-current \
+            --repository "$GITHUB_REPOSITORY" \
+            --base "$BASE"
+
+      - name: Publish Edge package
+        id: publish_edge
+        if: >-
+          always() &&
+          steps.credential_state.outputs.edge_ready == 'true' &&
+          github.run_attempt == 1 &&
+          steps.revalidate.outcome == 'success' &&
+          steps.edge_current.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        env:
+          EDGE_ARCHIVE: ${{ steps.revalidate.outputs.edge_archive }}
+          EDGE_PRODUCT_ID: ${{ secrets.EDGE_PRODUCT_ID }}
+          EDGE_CLIENT_ID: ${{ secrets.EDGE_CLIENT_ID }}
+          EDGE_API_KEY: ${{ secrets.EDGE_API_KEY }}
+        run: |
+          set -euo pipefail
+          node scripts/publish-edge.mjs "$EDGE_ARCHIVE"
+
+      - name: Report store publication results
+        if: always()
+        shell: bash
+        env:
+          REQUEST_CHROME: ${{ needs.validate_release.outputs.publish_chrome }}
+          REQUEST_EDGE: ${{ needs.validate_release.outputs.publish_edge }}
+          CHROME_COMPLETE: ${{ steps.credential_state.outputs.chrome_complete }}
+          EDGE_COMPLETE: ${{ steps.credential_state.outputs.edge_complete }}
+          CHROME_OUTCOME: ${{ steps.publish_chrome.outcome }}
+          EDGE_OUTCOME: ${{ steps.publish_edge.outcome }}
+          CHROME_CURRENT_OUTCOME: ${{ steps.chrome_current.outcome }}
+          EDGE_CURRENT_OUTCOME: ${{ steps.edge_current.outcome }}
+          REVALIDATE_OUTCOME: ${{ steps.revalidate.outcome }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          failed=false
+
+          if [[ "$REQUEST_CHROME" != "true" ]]; then
+            chrome_status="not requested"
+          elif [[ "$RUN_ATTEMPT" != "1" ]]; then
+            chrome_status="failed: automated replay prohibited; inspect the prior attempt and Chrome dashboard"
+            failed=true
+          elif [[ "$CHROME_COMPLETE" != "true" ]]; then
+            chrome_status="skipped: incomplete credentials"
+          elif [[ "$REVALIDATE_OUTCOME" != "success" ]]; then
+            chrome_status="failed: release bytes were not revalidated"
+            failed=true
+          elif [[ "$CHROME_CURRENT_OUTCOME" != "success" ]]; then
+            chrome_status="failed: official version is stale or current-version check failed"
+            failed=true
+          elif [[ "$CHROME_OUTCOME" == "success" ]]; then
+            chrome_status="published"
+          else
+            chrome_status="failed: inspect the Chrome dashboard before any recovery"
+            failed=true
+          fi
+
+          if [[ "$REQUEST_EDGE" != "true" ]]; then
+            edge_status="not requested"
+          elif [[ "$RUN_ATTEMPT" != "1" ]]; then
+            edge_status="failed: automated replay prohibited; inspect the prior attempt and Partner Center"
+            failed=true
+          elif [[ "$EDGE_COMPLETE" != "true" ]]; then
+            edge_status="skipped: incomplete credentials"
+          elif [[ "$REVALIDATE_OUTCOME" != "success" ]]; then
+            edge_status="failed: release bytes were not revalidated"
+            failed=true
+          elif [[ "$EDGE_CURRENT_OUTCOME" != "success" ]]; then
+            edge_status="failed: official version is stale or current-version check failed"
+            failed=true
+          elif [[ "$EDGE_OUTCOME" == "success" ]]; then
+            edge_status="published"
+          else
+            edge_status="failed"
+            failed=true
+          fi
+
+          {
+            echo "## Store publication"
+            echo
+            echo "| Store | Result |"
+            echo "| --- | --- |"
+            echo "| Chrome | $chrome_status |"
+            echo "| Edge | $edge_status |"
+          } >>"$GITHUB_STEP_SUMMARY"
+
+          if [[ "$failed" == "true" ]]; then
+            exit 1
+          fi

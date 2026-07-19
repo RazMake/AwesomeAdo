@@ -1,0 +1,73 @@
+name: CI
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    outputs:
+      artifact_name: ${{ steps.artifact_identity.outputs.name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Verify (definition of done)
+        run: pnpm verify
+      - name: Package verified store zips
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: pnpm package
+      - name: Define producer artifact identity
+        id: artifact_identity
+        shell: bash
+        run: echo "name=extension-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ${{ steps.artifact_identity.outputs.name }}
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 30
+  attest:
+    if: github.event_name == 'push'
+    needs: verify
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - name: Prepare attestation custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf -- "$RUNNER_TEMP/artifacts"
+          mkdir -p -- "$RUNNER_TEMP/artifacts"
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: ${{ needs.verify.outputs.artifact_name }}
+          path: ${{ runner.temp }}/artifacts
+      - name: Attest push artifacts
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4
+        with:
+          subject-path: |
+            ${{ runner.temp }}/artifacts/awesomeado-chrome-*.zip
+            ${{ runner.temp }}/artifacts/awesomeado-edge-*.zip
+            ${{ runner.temp }}/artifacts/release-metadata.json
+      - name: Upload attested attempt bridge
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: attested-extension-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/artifacts/awesomeado-chrome-*.zip
+            ${{ runner.temp }}/artifacts/awesomeado-edge-*.zip
+            ${{ runner.temp }}/artifacts/release-metadata.json
+          if-no-files-found: error
+          retention-days: 30

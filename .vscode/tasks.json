@@ -1,0 +1,106 @@
+{
+  "version": "2.0.0",
+  "options": {
+    "env": {
+      "Path": "C:\\Program Files\\Git\\cmd;C:\\Program Files\\nodejs;${env:APPDATA}\\npm;${env:Path}"
+    }
+  },
+  "tasks": [
+    {
+      "label": "Install",
+      "type": "shell",
+      "command": "pnpm install",
+      "problemMatcher": []
+    },
+    {
+      "label": "Build: Extension",
+      "type": "shell",
+      "command": "pnpm build",
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "Build: Watch",
+      "type": "shell",
+      "command": "pnpm build:watch",
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "esbuild",
+        "pattern": {
+          "regexp": "^(.*)$",
+          "message": 1
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "esbuild: starting watch",
+          "endsPattern": "esbuild: watching for changes"
+        }
+      }
+    },
+    {
+      "label": "Test",
+      "type": "shell",
+      "command": "pnpm test",
+      "group": { "kind": "test", "isDefault": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "Test: Coverage",
+      "type": "shell",
+      "command": "pnpm test:coverage",
+      "problemMatcher": []
+    },
+    {
+      "label": "Lint",
+      "type": "shell",
+      "command": "pnpm lint",
+      "problemMatcher": []
+    },
+    {
+      "label": "Format",
+      "type": "shell",
+      "command": "pnpm format",
+      "problemMatcher": []
+    },
+    {
+      "label": "Verify (Definition of Done)",
+      "type": "shell",
+      "command": "pnpm verify",
+      "problemMatcher": []
+    },
+    {
+      "label": "Package: Store zips",
+      "type": "shell",
+      "command": "pnpm package",
+      "options": {
+        "env": {
+          "GITHUB_SHA": "0000000000000000000000000000000000000000"
+        }
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Run: Extension (Edge, no debugger)",
+      "detail": "Launch Edge with the built extension but WITHOUT the VS Code debugger launching it, so service-worker-opened tabs (e.g. the options page) are never held in the 'waiting for debugger' pause. Exposes port 9222 so the 'Attach to Extension (Edge)' launch config can attach for breakpoints.",
+      "type": "shell",
+      "command": "Start-Process msedge -ArgumentList '--remote-debugging-port=9222','--user-data-dir=${workspaceFolder}\\.debug-profiles\\edge-nodebug','--load-extension=${workspaceFolder}\\dist','https://dev.azure.com/'",
+      "dependsOn": "Build: Extension",
+      "problemMatcher": []
+    },
+    {
+      "label": "Run: Extension (Chrome for Testing, no debugger)",
+      "detail": "Launch Chrome for Testing with the built extension but WITHOUT the VS Code debugger launching it. Exposes port 9223 so the 'Attach to Extension (Chrome for Testing)' launch config can attach for breakpoints.",
+      "type": "shell",
+      "command": "Start-Process -FilePath '${input:chromeForTestingPath}' -ArgumentList '--remote-debugging-port=9223','--user-data-dir=${workspaceFolder}\\.debug-profiles\\chrome-nodebug','--load-extension=${workspaceFolder}\\dist','https://dev.azure.com/'",
+      "dependsOn": "Build: Extension",
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "chromeForTestingPath",
+      "type": "promptString",
+      "description": "Absolute path to Chrome for Testing chrome.exe"
+    }
+  ]
+}

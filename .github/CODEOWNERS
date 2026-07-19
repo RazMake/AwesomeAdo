@@ -1,0 +1,13 @@
+/.github/CODEOWNERS @RazMake/awesomeado-release-owners
+/.github/release-baseline.json @RazMake/awesomeado-release-owners
+/.github/workflows/ @RazMake/awesomeado-release-owners
+/scripts/ @RazMake/awesomeado-release-owners
+/src/manifest.json @RazMake/awesomeado-release-owners
+/src/manifest.*.json @RazMake/awesomeado-release-owners
+/package.json @RazMake/awesomeado-release-owners
+/pnpm-lock.yaml @RazMake/awesomeado-release-owners
+/pnpm-workspace.yaml @RazMake/awesomeado-release-owners
+/tsconfig*.json @RazMake/awesomeado-release-owners
+/eslint.config.* @RazMake/awesomeado-release-owners
+/.prettier* @RazMake/awesomeado-release-owners
+/vitest.config.* @RazMake/awesomeado-release-owners

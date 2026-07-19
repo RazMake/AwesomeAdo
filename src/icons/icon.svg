@@ -1,0 +1,27 @@
+<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <circle cx="64" cy="64" r="60" fill="#0078D4" />
+
+  <!-- Work Item Card -->
+  <rect x="28" y="28" width="62" height="72" rx="8" fill="white" />
+
+  <!-- Title -->
+  <rect x="38" y="40" width="42" height="8" rx="4" fill="#0078D4" />
+
+  <!-- Work Item Lines -->
+  <rect x="38" y="58" width="36" height="6" rx="3" fill="#A0A0A0" />
+  <rect x="38" y="70" width="28" height="6" rx="3" fill="#A0A0A0" />
+
+  <!-- Checkmark -->
+  <path
+    d="M42 86 L50 94 L66 78"
+    stroke="#107C10"
+    stroke-width="6"
+    fill="none"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+
+  <!-- Awesome Sparkle -->
+  <path d="M96 24 L100 36 L112 40 L100 44 L96 56 L92 44 L80 40 L92 36 Z" fill="#FFD700" />
+</svg>

@@ -1,0 +1,440 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AwesomeADO options</title>
+    <style>
+      /* Theme palettes. The controller sets <html data-theme="light|dark|blue">; the page defaults
+         to dark so it never flashes an unstyled state before settings load. */
+      :root,
+      [data-theme="dark"] {
+        color-scheme: dark;
+        --bg: #1b1b1c;
+        --surface: #252526;
+        --surface-hover: #2d2d2f;
+        --text: #e6e6e6;
+        --text-muted: #9d9d9d;
+        --border: #3a3a3c;
+        --accent: #3794ff;
+        --accent-contrast: #ffffff;
+      }
+      [data-theme="light"] {
+        color-scheme: light;
+        --bg: #f3f3f3;
+        --surface: #ffffff;
+        --surface-hover: #f0f6ff;
+        --text: #1f1f1f;
+        --text-muted: #616161;
+        --border: #e0e0e0;
+        --accent: #0067b8;
+        --accent-contrast: #ffffff;
+      }
+      [data-theme="blue"] {
+        color-scheme: light;
+        --bg: #eef4fb;
+        --surface: #ffffff;
+        --surface-hover: #dcecfb;
+        --text: #10233b;
+        --text-muted: #4a5b70;
+        --border: #cfe0f4;
+        --accent: #005a9e;
+        --accent-contrast: #ffffff;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family:
+          "Segoe UI",
+          system-ui,
+          -apple-system,
+          sans-serif;
+        font-size: 14px;
+        background: var(--bg);
+        color: var(--text);
+      }
+      .app {
+        max-width: 720px;
+        margin: 0 auto;
+        padding: 24px 20px 40px;
+      }
+      .app__header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 20px;
+      }
+      .app__logo {
+        width: 64px;
+        height: 64px;
+        display: block;
+      }
+      .app__title {
+        margin: 0;
+        font-size: 20px;
+        font-weight: 600;
+      }
+
+      .tabs {
+        display: flex;
+        gap: 4px;
+        border-bottom: 1px solid var(--border);
+        margin-bottom: 20px;
+      }
+      .tab {
+        appearance: none;
+        border: none;
+        background: none;
+        color: var(--text-muted);
+        padding: 10px 16px;
+        font: inherit;
+        cursor: pointer;
+        border-bottom: 2px solid transparent;
+        margin-bottom: -1px;
+      }
+      .tab:hover {
+        color: var(--text);
+      }
+      .tab[aria-selected="true"] {
+        color: var(--accent);
+        border-bottom-color: var(--accent);
+        font-weight: 600;
+      }
+      .tab:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+        border-radius: 4px;
+      }
+
+      .tabpanel[hidden] {
+        display: none;
+      }
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 18px 20px;
+        margin-bottom: 16px;
+      }
+      .card__title {
+        margin: 0 0 4px;
+        font-size: 15px;
+        font-weight: 600;
+      }
+      .card__hint {
+        margin: 0 0 14px;
+        color: var(--text-muted);
+        font-size: 13px;
+      }
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        max-width: 320px;
+      }
+      .field label {
+        font-size: 13px;
+        color: var(--text-muted);
+      }
+      .field .field__label {
+        font-size: 13px;
+        color: var(--text-muted);
+      }
+      select {
+        appearance: none;
+        font: inherit;
+        color: var(--text);
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 8px 10px;
+      }
+      select:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+      select:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 1px;
+      }
+
+      .config {
+        display: grid;
+        grid-template-columns: minmax(0, max-content) 1fr;
+        gap: 10px 20px;
+        margin: 0;
+      }
+      .config dt {
+        color: var(--text-muted);
+      }
+      .config dd {
+        margin: 0;
+        font-weight: 600;
+      }
+      .config dd[data-empty="true"] {
+        font-weight: 400;
+        color: var(--text-muted);
+      }
+      .empty {
+        color: var(--text-muted);
+      }
+      .status {
+        min-height: 18px;
+        margin-top: 4px;
+        font-size: 13px;
+        color: #e06c75;
+      }
+
+      .binding {
+        border-color: var(--accent);
+      }
+      .binding__query {
+        font-family: "Cascadia Code", "Consolas", monospace;
+        font-size: 12px;
+        color: var(--text);
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 4px 8px;
+        display: inline-block;
+        min-height: 20px;
+      }
+      .binding__readonly {
+        color: var(--text);
+        font-weight: 600;
+        padding: 4px 0;
+      }
+      .binding__fields {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+      .binding__properties {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        margin: 0;
+      }
+      .binding__properties:empty {
+        margin: 0;
+      }
+      .binding__properties input {
+        font: inherit;
+        color: var(--text);
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 8px 10px;
+        max-width: 320px;
+      }
+      .binding__actions {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-top: 4px;
+      }
+      .button {
+        appearance: none;
+        font: inherit;
+        font-weight: 600;
+        color: var(--accent-contrast);
+        background: var(--accent);
+        border: none;
+        border-radius: 6px;
+        padding: 8px 16px;
+        cursor: pointer;
+      }
+      .button--danger {
+        background: transparent;
+        color: #e06c75;
+        border: 1px solid #e06c75;
+      }
+      .button:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+      .button:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+      .binding__status {
+        display: block;
+        min-height: 18px;
+        margin-top: 12px;
+        font-size: 13px;
+        color: var(--text-muted);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <header class="app__header">
+        <img class="app__logo" src="../icons/icon.svg" alt="" width="64" height="64" />
+        <h1 class="app__title">AwesomeADO</h1>
+      </header>
+
+      <nav class="tabs" role="tablist" aria-label="Settings sections">
+        <button
+          type="button"
+          class="tab"
+          role="tab"
+          id="tab-appearance"
+          data-tab="appearance"
+          aria-controls="panel-appearance"
+          aria-selected="true"
+        >
+          Appearance
+        </button>
+        <button
+          type="button"
+          class="tab"
+          role="tab"
+          id="tab-bindings"
+          data-tab="bindings"
+          aria-controls="panel-bindings"
+          aria-selected="false"
+        >
+          Query Bindings
+        </button>
+        <button
+          type="button"
+          class="tab"
+          role="tab"
+          id="tab-diagnostics"
+          data-tab="diagnostics"
+          aria-controls="panel-diagnostics"
+          aria-selected="false"
+        >
+          Diagnostics
+        </button>
+      </nav>
+
+      <section
+        class="tabpanel"
+        role="tabpanel"
+        id="panel-appearance"
+        aria-labelledby="tab-appearance"
+      >
+        <div class="card">
+          <h2 class="card__title">Theme</h2>
+          <p class="card__hint">
+            Choose a theme, or pick <strong>Auto</strong> to follow the theme Azure DevOps is
+            currently using.
+          </p>
+          <div class="field">
+            <label for="theme-select">Theme</label>
+            <select id="theme-select" disabled>
+              <option value="auto">Auto (follow Azure DevOps)</option>
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+              <option value="blue">Blue</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2 class="card__title">ADO Configuration</h2>
+          <p class="card__hint">
+            Detected from the Azure DevOps query tab you currently have open.
+          </p>
+          <dl class="config">
+            <dt>Organization</dt>
+            <dd id="ado-organization" data-empty="true">No active query tab</dd>
+            <dt>Project</dt>
+            <dd id="ado-project" data-empty="true">No active query tab</dd>
+          </dl>
+        </div>
+
+        <div class="card">
+          <h2 class="card__title">Default view</h2>
+          <p class="card__hint">What AwesomeADO shows when you open an Azure DevOps query page.</p>
+          <div class="field">
+            <label for="default-view-select">Default view</label>
+            <select id="default-view-select" disabled>
+              <option value="original">Original Ado View</option>
+              <option value="enhanced">Enhanced View</option>
+            </select>
+          </div>
+        </div>
+      </section>
+
+      <section
+        class="tabpanel"
+        role="tabpanel"
+        id="panel-bindings"
+        aria-labelledby="tab-bindings"
+        hidden
+      >
+        <div class="card binding">
+          <h2 class="card__title">Query bindings</h2>
+          <p class="card__hint">
+            Bind an Azure DevOps query to an enhanced view. Open this from a query's AwesomeADO
+            button to bind that query, or pick one of your open queries below.
+          </p>
+
+          <div class="binding__fields">
+            <div class="field" id="binding-query-picker-field">
+              <label for="binding-query-select">Query name</label>
+              <select id="binding-query-select"></select>
+            </div>
+
+            <div class="field" id="binding-query-name-field" hidden>
+              <span class="field__label">Query name</span>
+              <output class="binding__readonly" id="binding-query-name"></output>
+            </div>
+
+            <p class="empty" id="binding-empty" hidden>
+              No Azure DevOps query is open in another tab. Open a query and reload this page, or
+              use the AwesomeADO button on a query page to bind it.
+            </p>
+
+            <div id="binding-form" hidden>
+              <div class="binding__fields">
+                <div class="field">
+                  <span class="field__label">Query ID</span>
+                  <output class="binding__query" id="binding-query-id"></output>
+                </div>
+
+                <div class="field">
+                  <label for="binding-view-select">Enhanced view type</label>
+                  <select id="binding-view-select"></select>
+                </div>
+
+                <div class="binding__properties" id="binding-properties"></div>
+
+                <div class="binding__actions">
+                  <button type="button" class="button" id="binding-save">Save</button>
+                  <button type="button" class="button button--danger" id="binding-delete">
+                    Delete
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <span class="binding__status" id="binding-status" role="status" aria-live="polite"></span>
+        </div>
+      </section>
+
+      <section
+        class="tabpanel"
+        role="tabpanel"
+        id="panel-diagnostics"
+        aria-labelledby="tab-diagnostics"
+        hidden
+      >
+        <div class="card">
+          <h2 class="card__title">Diagnostics</h2>
+          <p class="empty">Diagnostics settings are coming soon.</p>
+        </div>
+      </section>
+
+      <p id="status" class="status" role="alert" aria-live="polite"></p>
+    </div>
+    <script src="options.js"></script>
+  </body>
+</html>

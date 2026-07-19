@@ -1,0 +1,6 @@
+dist
+coverage
+artifacts
+.debug-profiles
+pnpm-lock.yaml
+scripts/schemas/github-workflow.json
