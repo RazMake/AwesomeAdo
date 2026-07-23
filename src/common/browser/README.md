@@ -188,10 +188,11 @@ Construct `ChromeAdoMetadataReader` only in the composition root (`src/options/i
 code depends on `IAdoMetadataReader`. Injecting into the ADO tab requires the `scripting` permission
 and the `host_permissions` declared in `manifest.json`.
 
-### `fetchAdoRawInPage(teamsUrl, areaPathsUrl)` — `fetchAdoRawInPage.ts`
+### `fetchAdoRawInPage(teamsUrl, areaPathsUrl, workItemTypesUrl)` — `fetchAdoRawInPage.ts`
 
 The self-contained function `ChromeAdoMetadataReader` injects into the ADO tab's MAIN world. It runs
 in the page's first-party origin, so its `fetch` is same-origin and sends the user's session cookies.
 It is serialized with `Function.prototype.toString`, so it must reference only its parameters and
-page globals — never an import or module-scoped value. It returns the raw `{ teams, areaTree }` JSON
-(each `null` on failure) for the reader to parse with `parseTeams` / `flattenAreaPaths`.
+page globals — never an import or module-scoped value. It returns the raw
+`{ teams, areaTree, workItemTypes }` JSON (each `null` on failure) for the reader to parse with
+`parseTeams` / `flattenAreaPaths` / `parseWorkItemTypes`.

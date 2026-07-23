@@ -1,7 +1,7 @@
 import type { QueryBindings } from "../common/bindings/QueryBinding";
 import { resolveActiveView } from "../common/bindings/QueryBinding";
 import { isAdoQueryUrl, parseAdoQueryId } from "../common/navigation/AdoQueryRoute";
-import type { ExtensionSettings } from "../common/settings/ExtensionSettings";
+import { isAdoConfigured, type ExtensionSettings } from "../common/settings/ExtensionSettings";
 
 import { PageBlanker } from "./PageBlanker";
 
@@ -40,6 +40,11 @@ export class QueryPageController {
   private shouldEnhance(): boolean {
     // Only take over ("enhanced") on an actual Query route; every other ADO page stays untouched.
     if (this.settings === undefined || !isAdoQueryUrl(this.url)) {
+      return false;
+    }
+    // Until the ADO settings are complete the enhanced view has nothing valid to render, so bound
+    // queries fall back to ADO's own page regardless of their per-query or default-view preference.
+    if (!isAdoConfigured(this.settings)) {
       return false;
     }
     const queryId = parseAdoQueryId(this.url);

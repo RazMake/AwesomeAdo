@@ -83,6 +83,15 @@ function makeElements(): AzureDevOpsElements {
   const areaPathsList = document.createElement("div");
   const areaPathsEmpty = document.createElement("p");
   const areaPathAddButton = document.createElement("button");
+  const witTable = document.createElement("table");
+  const witHead = document.createElement("thead");
+  const witColumnsRow = document.createElement("tr");
+  witHead.append(witColumnsRow);
+  const witBody = document.createElement("tbody");
+  witTable.append(witHead, witBody);
+  const workItemTypesEmpty = document.createElement("p");
+  const workItemTypeAddButton = document.createElement("button");
+  const boardColumnAddButton = document.createElement("button");
   document.body.append(
     organization,
     project,
@@ -91,6 +100,10 @@ function makeElements(): AzureDevOpsElements {
     areaPathsList,
     areaPathsEmpty,
     areaPathAddButton,
+    witTable,
+    workItemTypesEmpty,
+    workItemTypeAddButton,
+    boardColumnAddButton,
   );
   return {
     organization,
@@ -100,6 +113,13 @@ function makeElements(): AzureDevOpsElements {
     areaPathsList,
     areaPathsEmpty,
     areaPathAddButton,
+    workItemTypes: {
+      columnsRow: witColumnsRow,
+      body: witBody,
+      empty: workItemTypesEmpty,
+      addTypeButton: workItemTypeAddButton,
+      addColumnButton: boardColumnAddButton,
+    },
   };
 }
 
@@ -111,6 +131,7 @@ const CONTEXT: AdoMetadataContext = {
     { id: "2", name: "Beta" },
   ],
   areaPaths: ["Web", "Web\\Api"],
+  workItemTypes: [],
 };
 
 function pathRows(elements: AzureDevOpsElements): HTMLElement[] {

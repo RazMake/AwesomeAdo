@@ -3,6 +3,7 @@ import {
   buildAdoMetadataUrls,
   flattenAreaPaths,
   parseTeams,
+  parseWorkItemTypes,
   type AdoMetadataUrls,
 } from "../ado/fetchAdoMetadata";
 
@@ -37,6 +38,7 @@ export class ChromeAdoMetadataReader implements IAdoMetadataReader {
     return {
       teams: parseTeams(raw?.teams),
       areaPaths: flattenAreaPaths(raw?.areaTree),
+      workItemTypes: parseWorkItemTypes(raw?.workItemTypes),
     };
   }
 
@@ -49,7 +51,7 @@ export class ChromeAdoMetadataReader implements IAdoMetadataReader {
         target: { tabId },
         world: "MAIN",
         func: fetchAdoRawInPage,
-        args: [urls.teamsUrl, urls.areaPathsUrl],
+        args: [urls.teamsUrl, urls.areaPathsUrl, urls.workItemTypesUrl],
       });
       return results[0]?.result as AdoRawMetadata | undefined;
     } catch {

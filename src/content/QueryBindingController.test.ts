@@ -77,13 +77,17 @@ describe("QueryBindingController", () => {
     actions = makeActions();
   });
 
-  function makeController(url: string): QueryBindingController {
-    return new QueryBindingController(
+  function makeController(url: string, configured = true): QueryBindingController {
+    const controller = new QueryBindingController(
       button as unknown as BindingButton,
       menu as unknown as BindingMenu,
       actions as unknown as QueryMenuActions,
       url,
     );
+    // Bound-query menus offer the view swap only once the ADO settings are complete; default the
+    // fixture to configured so the swap-focused tests exercise the full menu.
+    controller.applyConfigured(configured);
+    return controller;
   }
 
   it("does nothing before the first binding snapshot arrives", () => {
@@ -262,6 +266,73 @@ describe("QueryBindingController", () => {
       expect(actions.setActiveView).toHaveBeenNthCalledWith(2, GUID, "standard");
       expect(actions.openOptions).toHaveBeenCalledTimes(1);
       expect(actions.disableEnhancedView).toHaveBeenCalledWith(GUID);
+    });
+  });
+
+  describe("bound menu while the ADO settings are incomplete", () => {
+    it("hides the view swap and offers only Options and Disable Enhanced View", () => {
+      const controller = makeController(queryUrl(GUID), false);
+      controller.applyBindings(bound(GUID, "sprint", "enhanced"));
+
+      clickButton(button);
+      const entries = lastEntries(menu);
+
+      expect(entries.map((entry) => entry.kind)).toEqual(["item", "item"]);
+      expect(items(entries).map((item) => item.label)).toEqual([
+        "Options",
+        "Disable Enhanced View",
+      ]);
+    });
+
+    it("routes its entries to openOptions and disableEnhancedView", () => {
+      const controller = makeController(queryUrl(GUID), false);
+      controller.applyBindings(bound(GUID, "sprint", "enhanced"));
+      clickButton(button);
+      const [options, disable] = items(lastEntries(menu));
+
+      options?.onSelect();
+      disable?.onSelect();
+
+      expect(actions.openOptions).toHaveBeenCalledTimes(1);
+      expect(actions.disableEnhancedView).toHaveBeenCalledWith(GUID);
+    });
+
+    it("restores the full swap menu once the settings become complete", () => {
+      const controller = makeController(queryUrl(GUID), false);
+      controller.applyBindings(bound(GUID, "sprint", "enhanced"));
+
+      controller.applyConfigured(true);
+      clickButton(button);
+
+      expect(items(lastEntries(menu)).map((item) => item.label)).toEqual([
+        "Sprint View",
+        "Standard View",
+        "Options",
+        "Disable Enhanced View",
+      ]);
+    });
+
+    it("closes an open menu when the configured state changes", () => {
+      const controller = makeController(queryUrl(GUID), false);
+      controller.applyBindings(bound(GUID, "sprint", "enhanced"));
+      clickButton(button);
+      menu.close.mockClear();
+
+      controller.applyConfigured(true);
+
+      expect(menu.close).toHaveBeenCalled();
+    });
+
+    it("ignores a redundant configured update", () => {
+      const controller = makeController(queryUrl(GUID), false);
+      controller.applyBindings(bound(GUID, "sprint", "enhanced"));
+      clickButton(button);
+      menu.close.mockClear();
+
+      // Already unconfigured, so re-asserting it must not disturb an open menu.
+      controller.applyConfigured(false);
+
+      expect(menu.close).not.toHaveBeenCalled();
     });
   });
 

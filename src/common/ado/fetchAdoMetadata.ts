@@ -1,6 +1,6 @@
 import { parseAdoContext } from "../navigation/AdoContext";
 
-import type { AdoTeam } from "./AdoMetadata";
+import type { AdoTeam, AdoWorkItemType } from "./AdoMetadata";
 
 const API_VERSION = "7.1";
 // Area classification trees are shallow in practice; 10 levels covers every realistic hierarchy
@@ -15,6 +15,7 @@ const TEAMS_PAGE_SIZE = 1000;
 export interface AdoMetadataUrls {
   teamsUrl: string;
   areaPathsUrl: string;
+  workItemTypesUrl: string;
 }
 
 /**
@@ -50,6 +51,9 @@ export function buildAdoMetadataUrls(href: string): AdoMetadataUrls | null {
   return {
     teamsUrl: `${base}/_apis/projects/${project}/teams?$top=${TEAMS_PAGE_SIZE}&api-version=${API_VERSION}`,
     areaPathsUrl: `${base}/${project}/_apis/wit/classificationnodes/areas?$depth=${AREA_TREE_DEPTH}&api-version=${API_VERSION}`,
+    // The work-item-types list endpoint returns each type's states inline, so one request covers both
+    // the type list and every type's states.
+    workItemTypesUrl: `${base}/${project}/_apis/wit/workitemtypes?api-version=${API_VERSION}`,
   };
 }
 
@@ -104,4 +108,61 @@ function isTeam(value: unknown): value is AdoTeam {
   }
   const { id, name } = value as { id?: unknown; name?: unknown };
   return typeof id === "string" && id.length > 0 && typeof name === "string" && name.length > 0;
+}
+
+/**
+ * Parse the raw work-item-types REST body into the picker's list, sorted by name for a predictable
+ * order.
+ *
+ * Best-effort like `parseTeams`: a missing/malformed body yields `[]`. Disabled types are dropped so
+ * the picker only offers types the team can actually use, and each type keeps only its named states.
+ */
+export function parseWorkItemTypes(body: unknown): AdoWorkItemType[] {
+  const value = (body as { value?: unknown } | null)?.value;
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const types = value.filter(isEnabledWorkItemType).map((type) => ({
+    name: type.name,
+    color: typeof type.color === "string" ? type.color : "",
+    icon: typeof type.icon?.url === "string" ? type.icon.url : "",
+    states: parseWorkItemStateNames(type.states),
+  }));
+  types.sort((left, right) => left.name.localeCompare(right.name));
+  return types;
+}
+
+/** The subset of the raw work-item-type body this module reads, before it is narrowed/normalized. */
+interface RawWorkItemType {
+  name: string;
+  color?: unknown;
+  icon?: { url?: unknown };
+  states?: unknown;
+  isDisabled?: unknown;
+}
+
+function isEnabledWorkItemType(value: unknown): value is RawWorkItemType {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const { name, isDisabled } = value as { name?: unknown; isDisabled?: unknown };
+  // A disabled type is hidden in ADO's own UI, so it must not be offered here either.
+  return typeof name === "string" && name.length > 0 && isDisabled !== true;
+}
+
+function parseWorkItemStateNames(states: unknown): string[] {
+  if (!Array.isArray(states)) {
+    return [];
+  }
+  const names: string[] = [];
+  const seen = new Set<string>();
+  for (const state of states) {
+    const name = (state as { name?: unknown } | null)?.name;
+    if (typeof name !== "string" || name.length === 0 || seen.has(name)) {
+      continue;
+    }
+    seen.add(name);
+    names.push(name);
+  }
+  return names;
 }

@@ -68,9 +68,8 @@
         color: var(--text);
       }
       .app {
-        max-width: 720px;
         margin: 0 auto;
-        padding: 24px 20px 40px;
+        padding: 24px 5vw 40px;
       }
       .app__header {
         display: flex;
@@ -159,7 +158,8 @@
       select,
       .field input[type="text"],
       .field input[type="number"],
-      .area-path-row input {
+      .area-path-row input,
+      .wit-table input[type="text"] {
         appearance: none;
         font: inherit;
         color: var(--text);
@@ -170,7 +170,8 @@
       }
       select:focus-visible,
       .field input:focus-visible,
-      .area-path-row input:focus-visible {
+      .area-path-row input:focus-visible,
+      .wit-table input:focus-visible {
         outline: 2px solid var(--accent);
         outline-offset: 1px;
       }
@@ -275,6 +276,188 @@
         border: 1px solid var(--border);
       }
 
+      /* Work item types: a mapping table whose header cells are the team's board columns and whose
+         rows are work item types. Each body cell holds the type's ADO states as removable chips,
+         the first of which is the column's primary value. */
+      .work-item-types {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      .work-item-types__empty {
+        margin: 0;
+        color: var(--text-muted);
+        font-size: 13px;
+      }
+      .wit-table-wrap {
+        overflow-x: auto;
+      }
+      .wit-table {
+        border-collapse: separate;
+        border-spacing: 0;
+        width: 100%;
+      }
+      .wit-table th,
+      .wit-table td {
+        border: 1px solid var(--border);
+        padding: 8px;
+        vertical-align: top;
+        text-align: left;
+      }
+      .wit-corner {
+        background: var(--surface);
+        font-size: 13px;
+        color: var(--text-muted);
+        white-space: nowrap;
+      }
+      .wit-col {
+        background: var(--surface);
+        min-width: 160px;
+      }
+      /* The first column is where any unplaced ADO state falls back, so it is flagged for the user. */
+      .wit-col--fallback {
+        border-top: 2px solid var(--accent);
+      }
+      .wit-col__name {
+        width: 100%;
+        font-weight: 600;
+      }
+      .wit-col__delete {
+        appearance: none;
+        margin-top: 6px;
+        border: none;
+        background: transparent;
+        color: var(--text-muted);
+        cursor: pointer;
+        font-size: 14px;
+        padding: 2px 6px;
+        border-radius: 4px;
+      }
+      .wit-col__delete:hover {
+        color: #e06c75;
+      }
+      .wit-col__delete:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 1px;
+      }
+      .wit-row__type {
+        background: var(--bg);
+        min-width: 176px;
+      }
+      .wit-row__type-inner {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .wit-row__type-inner .combobox {
+        flex: 1 1 auto;
+        min-width: 96px;
+      }
+      /* A committed type is read-only: the picker is hidden and this colored label takes its place. */
+      .wit-type__label {
+        flex: 1 1 auto;
+        min-width: 0;
+        font-weight: 600;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .wit-type__icon {
+        flex: 0 0 auto;
+      }
+      /* Match the column header's X control so removing a row and a column look the same. */
+      .wit-row__delete {
+        appearance: none;
+        flex: 0 0 auto;
+        border: none;
+        background: transparent;
+        color: var(--text-muted);
+        cursor: pointer;
+        font-size: 16px;
+        line-height: 1;
+        padding: 2px 6px;
+        border-radius: 4px;
+      }
+      .wit-row__delete:hover {
+        color: #e06c75;
+      }
+      .wit-row__delete:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 1px;
+      }
+      .wit-cell__states {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px;
+      }
+      .wit-cell__states .combobox {
+        flex: 1 1 120px;
+        min-width: 90px;
+      }
+      .wit-state {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 2px 4px 2px 10px;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        background: var(--bg);
+        font-size: 12px;
+        cursor: grab;
+      }
+      /* Feedback while a chip is being dragged to a new position within its column. */
+      .wit-state--dragging {
+        opacity: 0.5;
+        cursor: grabbing;
+      }
+      /* The primary chip is the value AwesomeADO writes back to ADO for this application state. */
+      .wit-state--primary {
+        border-color: var(--accent);
+        background: var(--surface-hover);
+        color: var(--accent);
+        font-weight: 600;
+      }
+      .wit-state__remove {
+        appearance: none;
+        border: none;
+        background: transparent;
+        color: var(--text-muted);
+        cursor: pointer;
+        font-size: 15px;
+        line-height: 1;
+        padding: 0 4px;
+        border-radius: 999px;
+      }
+      .wit-state--primary .wit-state__remove {
+        color: var(--accent);
+      }
+      .wit-state__remove:hover {
+        color: var(--accent);
+      }
+      .wit-state__remove:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 1px;
+      }
+      .wit-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+      /* The type picker's dropdown options carry ADO's own icon and colored name. */
+      .combobox__option.wit-option {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .wit-option__icon {
+        flex: 0 0 auto;
+      }
+      .wit-option__name {
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
       .config {
         display: grid;
         grid-template-columns: minmax(0, max-content) 1fr;
@@ -300,6 +483,21 @@
         margin-top: 4px;
         font-size: 13px;
         color: #e06c75;
+      }
+
+      /* Page-level notice shown when a query is bound but the ADO settings are still incomplete, so
+         the enhanced view stays off. Sits above the tabs so it is visible on any panel. */
+      .banner {
+        margin-bottom: 16px;
+        padding: 12px 16px;
+        border-radius: 8px;
+        font-size: 13px;
+        line-height: 1.5;
+      }
+      .banner--error {
+        border: 1px solid #e06c75;
+        background: rgb(224 108 117 / 12%);
+        color: var(--text);
       }
 
       .binding {
@@ -389,6 +587,13 @@
         <img class="app__logo" src="../icons/icon.svg" alt="" width="64" height="64" />
         <h1 class="app__title">AwesomeADO</h1>
       </header>
+
+      <div class="banner banner--error" id="config-banner" role="alert" hidden>
+        <strong>Enhanced view is paused.</strong> One or more queries are bound, but AwesomeADO's
+        Azure DevOps settings are incomplete, so those queries stay on ADO's own view. On the
+        <strong>Azure DevOps</strong> tab, set your current team, add at least one area path and one
+        board column, and add at least one work item type with a mapped state.
+      </div>
 
       <nav class="tabs" role="tablist" aria-label="Settings sections">
         <button
@@ -542,6 +747,48 @@
               </p>
               <button type="button" class="button button--subtle" id="ado-area-path-add" disabled>
                 Add area path
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2 class="card__title">Work item types</h2>
+          <p class="card__hint">
+            Tell AwesomeADO which work item types your team uses and how their states map to actual
+            ADO item states (for each work item type). Add the board columns you use, then add each
+            of the ADO states in the correct column. All ADO states must be added; any state that is
+            not mapped falls back to the first column in the table (considered not picked up).
+          </p>
+
+          <div class="work-item-types">
+            <div class="wit-table-wrap">
+              <table class="wit-table">
+                <thead>
+                  <tr id="ado-wit-columns"></tr>
+                </thead>
+                <tbody id="ado-wit-rows"></tbody>
+              </table>
+            </div>
+            <p class="work-item-types__empty" id="ado-work-item-types-empty" hidden>
+              No work item types added yet.
+            </p>
+            <div class="wit-actions">
+              <button
+                type="button"
+                class="button button--subtle"
+                id="ado-work-item-type-add"
+                disabled
+              >
+                Add work item type
+              </button>
+              <button
+                type="button"
+                class="button button--subtle"
+                id="ado-board-column-add"
+                disabled
+              >
+                Add column
               </button>
             </div>
           </div>

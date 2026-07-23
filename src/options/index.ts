@@ -5,6 +5,7 @@ import { ChromeAdoTabReader } from "../common/browser/ChromeAdoTabReader";
 import { createSettingsStore } from "../common/settings/createSettingsStore";
 
 import { AzureDevOpsController, type AzureDevOpsElements } from "./AzureDevOpsController";
+import { ConfigurationBannerController } from "./ConfigurationBannerController";
 import { OptionsController, type OptionsElements } from "./OptionsController";
 import { QueryBindingsController, type QueryBindingsElements } from "./QueryBindingsController";
 import { StatusReporter } from "./StatusReporter";
@@ -37,6 +38,10 @@ tabs.init();
 // One settings store shared by the controllers that read/write synced settings.
 const settingsStore = createSettingsStore();
 
+// One binding store shared by the query-binding form and the configuration banner, so both react to
+// the same synced list without competing subscriptions.
+const bindingStore = createQueryBindingStore();
+
 // One tab reader shared by the controllers that read from the active ADO tab: the Appearance panel
 // resolves "auto" from its theme, and the Query Bindings picker asks it which query that tab is on.
 const adoTabReader = new ChromeAdoTabReader();
@@ -63,6 +68,11 @@ const adoFutureSprints = document.querySelector<HTMLInputElement>("#ado-future-s
 const adoAreaPaths = document.querySelector<HTMLElement>("#ado-area-paths");
 const adoAreaPathsEmpty = document.querySelector<HTMLElement>("#ado-area-paths-empty");
 const adoAreaPathAdd = document.querySelector<HTMLButtonElement>("#ado-area-path-add");
+const adoWitColumns = document.querySelector<HTMLElement>("#ado-wit-columns");
+const adoWitRows = document.querySelector<HTMLElement>("#ado-wit-rows");
+const adoWorkItemTypesEmpty = document.querySelector<HTMLElement>("#ado-work-item-types-empty");
+const adoWorkItemTypeAdd = document.querySelector<HTMLButtonElement>("#ado-work-item-type-add");
+const adoBoardColumnAdd = document.querySelector<HTMLButtonElement>("#ado-board-column-add");
 
 if (
   adoOrganization &&
@@ -71,7 +81,12 @@ if (
   adoFutureSprints &&
   adoAreaPaths &&
   adoAreaPathsEmpty &&
-  adoAreaPathAdd
+  adoAreaPathAdd &&
+  adoWitColumns &&
+  adoWitRows &&
+  adoWorkItemTypesEmpty &&
+  adoWorkItemTypeAdd &&
+  adoBoardColumnAdd
 ) {
   const adoElements: AzureDevOpsElements = {
     organization: adoOrganization,
@@ -81,6 +96,13 @@ if (
     areaPathsList: adoAreaPaths,
     areaPathsEmpty: adoAreaPathsEmpty,
     areaPathAddButton: adoAreaPathAdd,
+    workItemTypes: {
+      columnsRow: adoWitColumns,
+      body: adoWitRows,
+      empty: adoWorkItemTypesEmpty,
+      addTypeButton: adoWorkItemTypeAdd,
+      addColumnButton: adoBoardColumnAdd,
+    },
   };
   const adoController = new AzureDevOpsController(
     settingsStore,
@@ -159,7 +181,7 @@ if (
     tabs.activate("tab-bindings");
   }
   const bindings = new QueryBindingsController(
-    createQueryBindingStore(),
+    bindingStore,
     bindingElements,
     undefined,
     report,
@@ -171,4 +193,18 @@ if (
   });
 } else {
   report(new Error("The options page is missing the query-binding form and cannot bind queries."));
+}
+
+const configBanner = document.querySelector<HTMLElement>("#config-banner");
+if (configBanner) {
+  const bannerController = new ConfigurationBannerController(
+    settingsStore,
+    bindingStore,
+    configBanner,
+    report,
+  );
+  void bannerController.init().catch((error: unknown) => {
+    bannerController.dispose();
+    report(error);
+  });
 }

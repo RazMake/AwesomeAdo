@@ -70,6 +70,8 @@ const DEFAULT_VIEW_KEY = "settings.defaultView";
 const CURRENT_TEAM_KEY = "settings.currentTeam";
 const FUTURE_SPRINTS_KEY = "settings.futureSprintsCount";
 const AREA_PATHS_KEY = "settings.areaPaths";
+const BOARD_COLUMNS_KEY = "settings.boardColumns";
+const WORK_ITEM_TYPES_KEY = "settings.workItemTypes";
 
 describe("BrowserSyncSettingsStore", () => {
   describe("read", () => {
@@ -108,6 +110,37 @@ describe("BrowserSyncSettingsStore", () => {
       expect(settings.currentTeam).toEqual({ id: "team-1", name: "Platform" });
       expect(settings.futureSprintsCount).toBe(5);
       expect(settings.areaPaths).toEqual([{ path: "Web\\Api", label: "Api" }]);
+    });
+
+    it("reads and normalizes the board-columns key", async () => {
+      const fake = new FakeBrowserSyncStorage();
+      await fake.set(BOARD_COLUMNS_KEY, [" Queue ", "queue", "Done"]);
+      const store = new BrowserSyncSettingsStore(fake);
+      const settings = await store.read();
+      // Normalization trims and dedupes the stored list case-insensitively.
+      expect(settings.boardColumns).toEqual(["Queue", "Done"]);
+    });
+
+    it("reads and normalizes the work-item-types key", async () => {
+      const fake = new FakeBrowserSyncStorage();
+      await fake.set(WORK_ITEM_TYPES_KEY, [
+        {
+          name: "Bug",
+          color: "CC293D",
+          icon: "https://ado/icon_insect",
+          columns: [{ column: "Active", states: ["New", "Active"] }],
+        },
+      ]);
+      const store = new BrowserSyncSettingsStore(fake);
+      const settings = await store.read();
+      expect(settings.workItemTypes).toEqual([
+        {
+          name: "Bug",
+          color: "CC293D",
+          icon: "https://ado/icon_insect",
+          columns: [{ column: "Active", states: ["New", "Active"] }],
+        },
+      ]);
     });
 
     it("does not write any key during a read", async () => {
@@ -172,6 +205,30 @@ describe("BrowserSyncSettingsStore", () => {
       });
       expect(await fake.get(FUTURE_SPRINTS_KEY)).toBe(6);
       expect(await fake.get(AREA_PATHS_KEY)).toEqual([{ path: "Web\\Api", label: "Api" }]);
+    });
+
+    it("persists the board-columns key when supplied", async () => {
+      const fake = new FakeBrowserSyncStorage();
+      const store = new BrowserSyncSettingsStore(fake);
+      await store.write({ boardColumns: ["Queue", "Active", "Done"] });
+      expect(fake.getStoredKeys()).toEqual([BOARD_COLUMNS_KEY]);
+      expect(await fake.get(BOARD_COLUMNS_KEY)).toEqual(["Queue", "Active", "Done"]);
+    });
+
+    it("persists the work-item-types key when supplied", async () => {
+      const fake = new FakeBrowserSyncStorage();
+      const store = new BrowserSyncSettingsStore(fake);
+      const workItemTypes = [
+        {
+          name: "Bug",
+          color: "CC293D",
+          icon: "https://ado/icon_insect",
+          columns: [{ column: "Active" as const, states: ["Active"] }],
+        },
+      ];
+      await store.write({ workItemTypes });
+      expect(fake.getStoredKeys()).toEqual([WORK_ITEM_TYPES_KEY]);
+      expect(await fake.get(WORK_ITEM_TYPES_KEY)).toEqual(workItemTypes);
     });
   });
 

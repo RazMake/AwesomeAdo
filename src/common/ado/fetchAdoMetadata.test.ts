@@ -5,6 +5,7 @@ import {
   buildAdoMetadataUrls,
   flattenAreaPaths,
   parseTeams,
+  parseWorkItemTypes,
 } from "./fetchAdoMetadata";
 
 describe("adoCollectionBaseUrl", () => {
@@ -37,6 +38,7 @@ describe("buildAdoMetadataUrls", () => {
       teamsUrl: "https://dev.azure.com/contoso/_apis/projects/web/teams?$top=1000&api-version=7.1",
       areaPathsUrl:
         "https://dev.azure.com/contoso/web/_apis/wit/classificationnodes/areas?$depth=10&api-version=7.1",
+      workItemTypesUrl: "https://dev.azure.com/contoso/web/_apis/wit/workitemtypes?api-version=7.1",
     });
   });
 
@@ -47,6 +49,8 @@ describe("buildAdoMetadataUrls", () => {
           "https://contoso.visualstudio.com/_apis/projects/web/teams?$top=1000&api-version=7.1",
         areaPathsUrl:
           "https://contoso.visualstudio.com/web/_apis/wit/classificationnodes/areas?$depth=10&api-version=7.1",
+        workItemTypesUrl:
+          "https://contoso.visualstudio.com/web/_apis/wit/workitemtypes?api-version=7.1",
       },
     );
   });
@@ -58,6 +62,9 @@ describe("buildAdoMetadataUrls", () => {
     );
     expect(urls?.areaPathsUrl).toBe(
       "https://dev.azure.com/contoso/O365%20Core/_apis/wit/classificationnodes/areas?$depth=10&api-version=7.1",
+    );
+    expect(urls?.workItemTypesUrl).toBe(
+      "https://dev.azure.com/contoso/O365%20Core/_apis/wit/workitemtypes?api-version=7.1",
     );
   });
 
@@ -120,5 +127,72 @@ describe("flattenAreaPaths", () => {
   it("skips a child that is not a named node", () => {
     const tree = { name: "Web", children: [null, { name: "" }, { name: "Ok" }] };
     expect(flattenAreaPaths(tree)).toEqual(["Web", "Web\\Ok"]);
+  });
+});
+
+describe("parseWorkItemTypes", () => {
+  it("maps enabled types (name, color, icon url, state names) sorted by name", () => {
+    expect(
+      parseWorkItemTypes({
+        value: [
+          {
+            name: "User Story",
+            color: "009CCC",
+            icon: { id: "icon_book", url: "https://ado/icon_book" },
+            states: [
+              { name: "New", color: "b2b2b2", category: "Proposed" },
+              { name: "Active", color: "007acc", category: "InProgress" },
+            ],
+          },
+          {
+            name: "Bug",
+            color: "CC293D",
+            icon: { id: "icon_insect", url: "https://ado/icon_insect" },
+            states: [{ name: "New" }],
+          },
+        ],
+      }),
+    ).toEqual([
+      {
+        name: "Bug",
+        color: "CC293D",
+        icon: "https://ado/icon_insect",
+        states: ["New"],
+      },
+      {
+        name: "User Story",
+        color: "009CCC",
+        icon: "https://ado/icon_book",
+        states: ["New", "Active"],
+      },
+    ]);
+  });
+
+  it("skips disabled types and drops malformed state entries", () => {
+    expect(
+      parseWorkItemTypes({
+        value: [
+          { name: "Hidden", isDisabled: true, states: [{ name: "New" }] },
+          {
+            name: "Task",
+            states: [{ name: "To Do" }, { name: "" }, { color: "x" }, null],
+          },
+        ],
+      }),
+    ).toEqual([{ name: "Task", color: "", icon: "", states: ["To Do"] }]);
+  });
+
+  it("drops nameless types and defaults missing icon/color/states", () => {
+    expect(
+      parseWorkItemTypes({
+        value: [{ states: [{ name: "New" }] }, { name: "Epic" }],
+      }),
+    ).toEqual([{ name: "Epic", color: "", icon: "", states: [] }]);
+  });
+
+  it("returns an empty list for a null or non-object body", () => {
+    expect(parseWorkItemTypes(null)).toEqual([]);
+    expect(parseWorkItemTypes("nope")).toEqual([]);
+    expect(parseWorkItemTypes({})).toEqual([]);
   });
 });

@@ -22,6 +22,8 @@ const TEAMS_URL =
   "https://dev.azure.com/O365Exchange/_apis/projects/O365%20Core/teams?$top=1000&api-version=7.1";
 const AREAS_URL =
   "https://dev.azure.com/O365Exchange/O365%20Core/_apis/wit/classificationnodes/areas?$depth=10&api-version=7.1";
+const WORK_ITEM_TYPES_URL =
+  "https://dev.azure.com/O365Exchange/O365%20Core/_apis/wit/workitemtypes?api-version=7.1";
 
 describe("ChromeAdoMetadataReader", () => {
   let chromeMock: MockChrome;
@@ -55,6 +57,16 @@ describe("ChromeAdoMetadataReader", () => {
             ],
           },
           areaTree: { name: "Web", children: [{ name: "Api" }] },
+          workItemTypes: {
+            value: [
+              {
+                name: "Bug",
+                color: "CC293D",
+                icon: { url: "https://ado/icon_insect" },
+                states: [{ name: "New" }, { name: "Active" }],
+              },
+            ],
+          },
         },
       },
     ]);
@@ -67,12 +79,20 @@ describe("ChromeAdoMetadataReader", () => {
         { id: "2", name: "Beta" },
       ],
       areaPaths: ["Web", "Web\\Api"],
+      workItemTypes: [
+        {
+          name: "Bug",
+          color: "CC293D",
+          icon: "https://ado/icon_insect",
+          states: ["New", "Active"],
+        },
+      ],
     });
     expect(chromeMock.executeScript).toHaveBeenCalledWith({
       target: { tabId: ADO_TAB.id },
       world: "MAIN",
       func: expect.any(Function),
-      args: [TEAMS_URL, AREAS_URL],
+      args: [TEAMS_URL, AREAS_URL, WORK_ITEM_TYPES_URL],
     });
   });
 
@@ -85,6 +105,7 @@ describe("ChromeAdoMetadataReader", () => {
       project: "O365 Core",
       teams: [],
       areaPaths: [],
+      workItemTypes: [],
     });
   });
 
@@ -97,6 +118,7 @@ describe("ChromeAdoMetadataReader", () => {
       project: "O365 Core",
       teams: [],
       areaPaths: [],
+      workItemTypes: [],
     });
   });
 
@@ -110,6 +132,7 @@ describe("ChromeAdoMetadataReader", () => {
       project: null,
       teams: [],
       areaPaths: [],
+      workItemTypes: [],
     });
     expect(chromeMock.executeScript).not.toHaveBeenCalled();
   });

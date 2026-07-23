@@ -11,8 +11,25 @@ function makeBlankerSpy(): PageBlanker {
   } as unknown as PageBlanker;
 }
 
+// The enhanced view only runs once the ADO settings are complete, so the default fixture is fully
+// configured; individual tests override a single field to exercise the incomplete-config guard.
+const CONFIGURED_ADO: Partial<ExtensionSettings> = {
+  currentTeam: { id: "t1", name: "Platform" },
+  areaPaths: [{ path: "A\\B", label: "B" }],
+  boardColumns: ["Active"],
+  workItemTypes: [
+    { name: "Bug", color: "", icon: "", columns: [{ column: "Active", states: ["New"] }] },
+  ],
+};
+
 function settings(overrides: Partial<ExtensionSettings> = {}): ExtensionSettings {
-  return { ...DEFAULT_SETTINGS, theme: "auto", defaultView: "enhanced", ...overrides };
+  return {
+    ...DEFAULT_SETTINGS,
+    theme: "auto",
+    defaultView: "enhanced",
+    ...CONFIGURED_ADO,
+    ...overrides,
+  };
 }
 
 const GUID = "12345678-1234-1234-1234-123456789abc";
@@ -110,6 +127,16 @@ describe("QueryPageController", () => {
     vi.mocked(blanker.apply).mockClear();
 
     controller.applyBindings({ [GUID]: { view: "sprint", properties: {}, active: "standard" } });
+    expect(blanker.apply).toHaveBeenLastCalledWith(false);
+  });
+
+  it("does not enhance a bound query while the ADO settings are incomplete", () => {
+    const controller = new QueryPageController(blanker, queryUrl(GUID));
+    controller.applyBindings({ [GUID]: { view: "sprint", properties: {}, active: "enhanced" } });
+
+    // Clearing the work item types makes the config incomplete, so even an explicit enhanced binding
+    // stays on ADO's own page.
+    controller.applySettings(settings({ defaultView: "enhanced", workItemTypes: [] }));
     expect(blanker.apply).toHaveBeenLastCalledWith(false);
   });
 

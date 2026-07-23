@@ -11,6 +11,7 @@ import {
 import type { ISettingsStore } from "../common/settings/ISettingsStore";
 
 import { AutocompleteInput } from "./AutocompleteInput";
+import { WorkItemTypesController, type WorkItemTypesElements } from "./WorkItemTypesController";
 
 /** The Azure DevOps tab's elements. Passed in so the controller stays DOM-agnostic and testable. */
 export interface AzureDevOpsElements {
@@ -28,6 +29,8 @@ export interface AzureDevOpsElements {
   areaPathsEmpty: HTMLElement;
   /** Button that appends a new, empty area-path row. */
   areaPathAddButton: HTMLButtonElement;
+  /** The nested work-item-types section, driven by a delegated sub-controller. */
+  workItemTypes: WorkItemTypesElements;
 }
 
 type ReportError = (error: unknown) => void;
@@ -61,6 +64,9 @@ export class AzureDevOpsController {
   // removed row's combobox drops out with the input (no manual bookkeeping) and metadata updates
   // reach every still-present row.
   private readonly pathComboboxes = new WeakMap<HTMLInputElement, AutocompleteInput>();
+  // The work-item-types section is a cohesive sub-feature, so it lives in its own controller that
+  // shares this controller's single metadata read and settings load (fed in via render/setAvailableTypes).
+  private readonly workItemTypes: WorkItemTypesController;
 
   constructor(
     private readonly store: ISettingsStore,
@@ -72,6 +78,11 @@ export class AzureDevOpsController {
     elements.futureSprintsInput.disabled = true;
     elements.areaPathAddButton.disabled = true;
     this.teamCombobox = new AutocompleteInput(elements.teamInput);
+    this.workItemTypes = new WorkItemTypesController(
+      store,
+      elements.workItemTypes,
+      this.reportError,
+    );
   }
 
   async init(): Promise<void> {
@@ -83,6 +94,7 @@ export class AzureDevOpsController {
     this.disposed = true;
     this.teamCombobox.dispose();
     this.disposePathComboboxes();
+    this.workItemTypes.dispose();
     this.elements.teamInput.removeEventListener("change", this.handleTeamChange);
     this.elements.futureSprintsInput.removeEventListener("change", this.handleSprintsChange);
     this.elements.areaPathAddButton.removeEventListener("click", this.handleAddAreaPath);
@@ -99,6 +111,7 @@ export class AzureDevOpsController {
     this.elements.areaPathsList.addEventListener("input", this.handleAreaInput);
     this.elements.areaPathsList.addEventListener("change", this.handleAreaChange);
     this.elements.areaPathsList.addEventListener("click", this.handleAreaClick);
+    this.workItemTypes.init();
   }
 
   private async loadSettings(): Promise<void> {
@@ -114,6 +127,7 @@ export class AzureDevOpsController {
     this.renderTeam(settings.currentTeam);
     this.renderFutureSprints(settings.futureSprintsCount);
     this.renderAreaPaths(settings.areaPaths);
+    this.workItemTypes.render(settings.workItemTypes, settings.boardColumns);
     this.enableControls();
   }
 
@@ -141,6 +155,7 @@ export class AzureDevOpsController {
     this.teams = metadata?.teams ?? [];
     this.teamCombobox.setOptions(this.teams.map((team) => team.name));
     this.applyAreaPathSuggestions(metadata?.areaPaths ?? []);
+    this.workItemTypes.setAvailableTypes(metadata?.workItemTypes ?? []);
   }
 
   private applyAreaPathSuggestions(suggestions: readonly string[]): void {
@@ -156,6 +171,7 @@ export class AzureDevOpsController {
     this.elements.teamInput.disabled = false;
     this.elements.futureSprintsInput.disabled = false;
     this.elements.areaPathAddButton.disabled = false;
+    this.workItemTypes.enable();
   }
 
   // ── Current team ──────────────────────────────────────────────────────────

@@ -9,6 +9,8 @@ const DEFAULT_VIEW_KEY = "settings.defaultView";
 const CURRENT_TEAM_KEY = "settings.currentTeam";
 const FUTURE_SPRINTS_KEY = "settings.futureSprintsCount";
 const AREA_PATHS_KEY = "settings.areaPaths";
+const BOARD_COLUMNS_KEY = "settings.boardColumns";
+const WORK_ITEM_TYPES_KEY = "settings.workItemTypes";
 
 const SETTING_KEYS = [
   THEME_KEY,
@@ -16,6 +18,8 @@ const SETTING_KEYS = [
   CURRENT_TEAM_KEY,
   FUTURE_SPRINTS_KEY,
   AREA_PATHS_KEY,
+  BOARD_COLUMNS_KEY,
+  WORK_ITEM_TYPES_KEY,
 ] as const;
 
 /** Project a raw key→value record from storage into the shape `normalizeSettings` expects. */
@@ -26,6 +30,8 @@ function projectSettings(raw: Record<string, unknown>): ExtensionSettings {
     currentTeam: raw[CURRENT_TEAM_KEY],
     futureSprintsCount: raw[FUTURE_SPRINTS_KEY],
     areaPaths: raw[AREA_PATHS_KEY],
+    boardColumns: raw[BOARD_COLUMNS_KEY],
+    workItemTypes: raw[WORK_ITEM_TYPES_KEY],
   });
 }
 
@@ -64,6 +70,12 @@ export class BrowserSyncSettingsStore implements ISettingsStore {
     }
     if (update.areaPaths !== undefined) {
       writes.push(this.storage.set(AREA_PATHS_KEY, update.areaPaths));
+    }
+    if (update.boardColumns !== undefined) {
+      writes.push(this.storage.set(BOARD_COLUMNS_KEY, update.boardColumns));
+    }
+    if (update.workItemTypes !== undefined) {
+      writes.push(this.storage.set(WORK_ITEM_TYPES_KEY, update.workItemTypes));
     }
     await Promise.all(writes);
   }

@@ -44,6 +44,9 @@ export class QueryBindingController {
   // check marks resolve the same way the page blanker does. Derived from DEFAULT_SETTINGS rather
   // than hardcoded so the default view lives in exactly one place.
   private defaultEnhanced = DEFAULT_SETTINGS.defaultView === "enhanced";
+  // Whether the ADO settings are complete enough to render an enhanced view. Assume not until the
+  // first settings snapshot proves otherwise, so the menu never offers a swap the page can't honor.
+  private configured = false;
 
   constructor(
     private readonly button: BindingButton,
@@ -75,6 +78,18 @@ export class QueryBindingController {
    */
   applyDefaultView(defaultView: DefaultView): void {
     this.defaultEnhanced = defaultView === "enhanced";
+    this.menu.close();
+  }
+
+  /**
+   * Track whether the ADO settings are complete. While incomplete, a bound query cannot swap to its
+   * enhanced view, so the menu drops the swap options; closing any open menu rebuilds it correctly.
+   */
+  applyConfigured(configured: boolean): void {
+    if (configured === this.configured) {
+      return;
+    }
+    this.configured = configured;
     this.menu.close();
   }
 
@@ -122,6 +137,20 @@ export class QueryBindingController {
         },
       ];
     }
+    // Options and Disable stay available whether or not the ADO settings are complete.
+    const baseActions: MenuEntry[] = [
+      { kind: "item", label: "Options", onSelect: () => this.actions.openOptions() },
+      {
+        kind: "item",
+        label: "Disable Enhanced View",
+        onSelect: () => this.actions.disableEnhancedView(queryId),
+      },
+    ];
+    // While the ADO settings are incomplete the enhanced view can't render, so hide the swap
+    // toggles that would otherwise be no-ops and offer only the config-independent actions.
+    if (!this.configured) {
+      return baseActions;
+    }
     // Preserve a binding whose view id this build does not recognize by showing the raw id.
     const viewLabel = getViewType(binding.view)?.label ?? binding.view;
     const active = resolveActiveView(binding.active, this.defaultEnhanced);
@@ -139,12 +168,7 @@ export class QueryBindingController {
         onSelect: () => this.actions.setActiveView(queryId, "standard"),
       },
       { kind: "separator" },
-      { kind: "item", label: "Options", onSelect: () => this.actions.openOptions() },
-      {
-        kind: "item",
-        label: "Disable Enhanced View",
-        onSelect: () => this.actions.disableEnhancedView(queryId),
-      },
+      ...baseActions,
     ];
   }
 }

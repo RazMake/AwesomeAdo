@@ -8,6 +8,7 @@ import type { ActiveView } from "../common/bindings/QueryBinding";
 import { createQueryBindingStore } from "../common/bindings/createQueryBindingStore";
 import { type AdoThemeResponse, isAdoThemeRequest } from "../common/navigation/AdoContext";
 import { isAdoNavigationMessage } from "../common/navigation/AdoQueryRoute";
+import { isAdoConfigured } from "../common/settings/ExtensionSettings";
 import { createSettingsStore } from "../common/settings/createSettingsStore";
 
 import { detectAdoQueryName } from "./AdoQueryNameProbe";
@@ -77,6 +78,9 @@ const observation = store.observe((settings) => {
   controller.applySettings(settings);
   // The menu's check marks resolve a bound query's default presentation from this same setting.
   bindingController.applyDefaultView(settings.defaultView);
+  // Incomplete ADO settings force bound queries back to ADO's view, so the menu hides the swap
+  // options; the same snapshot the blanker uses drives that decision.
+  bindingController.applyConfigured(isAdoConfigured(settings));
 });
 void observation.ready.catch((error: unknown) => {
   observation.unsubscribe();

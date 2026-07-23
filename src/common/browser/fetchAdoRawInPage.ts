@@ -1,11 +1,12 @@
-/** The raw JSON bodies from the two ADO REST calls, before parsing into the picker's shapes. */
+/** The raw JSON bodies from the ADO REST calls, before parsing into the picker's shapes. */
 export interface AdoRawMetadata {
   teams: unknown;
   areaTree: unknown;
+  workItemTypes: unknown;
 }
 
 /**
- * Fetch the raw ADO teams and area-tree JSON from inside the ADO page itself.
+ * Fetch the raw ADO teams, area-tree, and work-item-types JSON from inside the ADO page itself.
  *
  * WHY this exists / why it must stay self-contained: In Manifest V3 the extension's content script
  * runs in an isolated world whose origin is `chrome-extension://…`, so its cross-origin fetch to ADO
@@ -17,7 +18,11 @@ export interface AdoRawMetadata {
  * helper — only its parameters and page globals (`fetch`, `Promise`). Promise chaining (not
  * async/await) avoids any transpiler helper being hoisted out of the function body.
  */
-export function fetchAdoRawInPage(teamsUrl: string, areaPathsUrl: string): Promise<AdoRawMetadata> {
+export function fetchAdoRawInPage(
+  teamsUrl: string,
+  areaPathsUrl: string,
+  workItemTypesUrl: string,
+): Promise<AdoRawMetadata> {
   const get = (url: string): Promise<unknown> =>
     fetch(url, { credentials: "include", headers: { Accept: "application/json" } })
       .then((response) => (response.ok ? response.json() : null))
@@ -48,8 +53,11 @@ export function fetchAdoRawInPage(teamsUrl: string, areaPathsUrl: string): Promi
     return readPage(0, MAX_TEAM_PAGES);
   };
 
-  return Promise.all([getAllTeams(teamsUrl), get(areaPathsUrl)]).then((bodies) => ({
-    teams: bodies[0],
-    areaTree: bodies[1],
-  }));
+  return Promise.all([getAllTeams(teamsUrl), get(areaPathsUrl), get(workItemTypesUrl)]).then(
+    (bodies) => ({
+      teams: bodies[0],
+      areaTree: bodies[1],
+      workItemTypes: bodies[2],
+    }),
+  );
 }
