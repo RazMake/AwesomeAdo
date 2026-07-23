@@ -1,10 +1,12 @@
 import type { IBrowserSyncStorage } from "./IBrowserSyncStorage";
+import { onStorageAreaChange } from "./onStorageAreaChange";
 
 /**
  * IBrowserSyncStorage backed by chrome.storage.sync.
  *
- * This is the ONLY place allowed to reference the chrome.* storage API, so the rest of the code
- * stays testable and browser-agnostic. Chrome and Edge share this namespace.
+ * This is the only place that reads/writes chrome.storage.sync, so the rest of the code stays
+ * testable and browser-agnostic. Chrome and Edge share this synced namespace. Change subscriptions
+ * are delegated to `onStorageAreaChange`, which the local adapter shares.
  */
 export class ChromeSyncStorage implements IBrowserSyncStorage {
   async get(key: string): Promise<unknown> {
@@ -17,17 +19,6 @@ export class ChromeSyncStorage implements IBrowserSyncStorage {
   }
 
   subscribe(key: string, listener: (value: unknown) => void): () => void {
-    // Storage change events fire for every key; filter to the one we care about so callers
-    // aren't woken up by unrelated writes.
-    const handler = (
-      changes: Record<string, chrome.storage.StorageChange>,
-      areaName: string,
-    ): void => {
-      if (areaName === "sync" && key in changes) {
-        listener(changes[key]?.newValue);
-      }
-    };
-    chrome.storage.onChanged.addListener(handler);
-    return () => chrome.storage.onChanged.removeListener(handler);
+    return onStorageAreaChange("sync", key, listener);
   }
 }

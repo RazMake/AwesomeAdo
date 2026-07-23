@@ -4,25 +4,29 @@ This folder contains the browser storage abstraction layer for the AwesomeADO ex
 
 ## Purpose
 
-`ChromeSyncStorage` is the **only** place in the codebase that touches `chrome.storage.sync`, and
-the chrome.tabs/chrome.scripting readers (`ChromeAdoTabReader`, `ChromeAdoMetadataReader`, and their
+`ChromeSyncStorage` is the **only** place in the codebase that touches `chrome.storage.sync`,
+`ChromeLocalStorage` is the **only** place that touches `chrome.storage.local`, and the
+chrome.tabs/chrome.scripting readers (`ChromeAdoTabReader`, `ChromeAdoMetadataReader`, and their
 shared `pickAdoQueryTab` helper) are the only places that touch `chrome.tabs`/`chrome.scripting`.
 Isolating the browser APIs here
 means all other code (settings, content, options) can be unit-tested with injected fakes and remains
 browser-agnostic.
 
-This layer also owns two small utilities shared by the higher layers: `observeSyncKeys`, the
-race-safe protocol both stores use to observe synced storage, and `requestFromTab`, the best-effort
-round-trip `ChromeAdoTabReader` uses to ask a tab's content script a question.
+This layer also owns small utilities shared by the higher layers: `observeSyncKeys`, the
+race-safe protocol both stores use to observe synced storage; `onStorageAreaChange`, the single
+change-event filter both storage adapters reuse; and `requestFromTab`, the best-effort round-trip
+`ChromeAdoTabReader` uses to ask a tab's content script a question.
 
 ## Public API
 
 ### `IBrowserSyncStorage` (interface)
 
-A minimal, promise-based key/value store abstraction:
+A minimal, promise-based key/value store abstraction. It is a named alias of the shared
+`IBrowserKeyValueStorage` contract (defined in `IBrowserKeyValueStorage.ts`), so the synced and
+device-local areas share one shape declared in a single place:
 
 ```typescript
-interface IBrowserSyncStorage {
+interface IBrowserKeyValueStorage {
   get(key: string): Promise<unknown>;
   set(key: string, value: unknown): Promise<void>;
   subscribe(key: string, listener: (value: unknown) => void): () => void;
@@ -58,6 +62,47 @@ unsubscribe();
   (`src/common/settings/createSettingsStore.ts`).
 - For tests, implement `IBrowserSyncStorage` with an in-memory fake (see
   `BrowserSyncSettingsStore.test.ts`).
+
+## Device-local storage
+
+### `IBrowserLocalStorage` (interface)
+
+The same shape as `IBrowserSyncStorage` — both are named aliases of the shared
+`IBrowserKeyValueStorage` contract — but a **separate** name (Interface Segregation) so consumers
+state which area they need. Backed by `chrome.storage.local`, whose data stays on the device and is
+never synced across the user's browsers.
+
+```typescript
+type IBrowserLocalStorage = IBrowserKeyValueStorage;
+```
+
+### `ChromeLocalStorage` (class)
+
+The production implementation backed by `chrome.storage.local`. Used only by the diagnostics log
+(see `src/common/logging`) so recorded lines never leave the device.
+
+```typescript
+import { ChromeLocalStorage } from "./ChromeLocalStorage";
+
+const storage = new ChromeLocalStorage();
+await storage.set("diagnostics.log", []);
+```
+
+Construct `ChromeLocalStorage` only in a composition root (`src/common/logging/createLogger.ts`).
+Feature code depends on `IBrowserLocalStorage`.
+
+### `onStorageAreaChange(area, key, listener)` — `onStorageAreaChange.ts`
+
+The shared change-event filter. `chrome.storage.onChanged` fires for every key in every area, so
+both `ChromeSyncStorage.subscribe` and `ChromeLocalStorage.subscribe` delegate here to forward only
+the `newValue` of one key within one area. Returns an unsubscribe function.
+
+```typescript
+const unsubscribe = onStorageAreaChange("local", "diagnostics.log", (value) => {
+  console.warn("log changed", value);
+});
+unsubscribe();
+```
 
 ## Observing synced keys
 

@@ -6,6 +6,7 @@ import {
 } from "../common/bindings/BindingRequest";
 import type { ActiveView } from "../common/bindings/QueryBinding";
 import { createQueryBindingStore } from "../common/bindings/createQueryBindingStore";
+import { createLogger } from "../common/logging/createLogger";
 import { type AdoThemeResponse, isAdoThemeRequest } from "../common/navigation/AdoContext";
 import { isAdoNavigationMessage } from "../common/navigation/AdoQueryRoute";
 import { isAdoConfigured } from "../common/settings/ExtensionSettings";
@@ -33,13 +34,15 @@ const controller = new QueryPageController(new PageBlanker(document), location.h
 
 const bindingStore = createQueryBindingStore();
 
+const logger = createLogger();
+
 // A content script cannot open extension pages itself, so both the general options page and the
 // per-query binding form are requested from the background service worker. Rejections are surfaced
 // (rather than silently swallowed) so a broken round-trip is diagnosable instead of "nothing
 // happens" — e.g. after the extension is reloaded but this page's script was not.
 const openExtensionPage = (message: OpenOptionsMessage | OpenBindingSettingsMessage): void => {
   void chrome.runtime.sendMessage(message).catch((error: unknown) => {
-    console.error("AwesomeADO could not open its extension page", error);
+    logger.error("Could not open its extension page", error);
   });
 };
 
@@ -84,7 +87,7 @@ const observation = store.observe((settings) => {
 });
 void observation.ready.catch((error: unknown) => {
   observation.unsubscribe();
-  console.error("AwesomeADO could not read synced settings", error);
+  logger.error("Could not read synced settings", error);
 });
 
 const bindingObservation = bindingStore.observe((bindings) => {
@@ -94,7 +97,7 @@ const bindingObservation = bindingStore.observe((bindings) => {
 });
 void bindingObservation.ready.catch((error: unknown) => {
   bindingObservation.unsubscribe();
-  console.error("AwesomeADO could not read synced query bindings", error);
+  logger.error("Could not read synced query bindings", error);
 });
 
 chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {

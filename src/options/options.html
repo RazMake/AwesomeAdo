@@ -579,6 +579,76 @@
         font-size: 13px;
         color: var(--text-muted);
       }
+
+      /* Diagnostics log view. A device-local, timestamp-ordered list of recorded lines; error lines
+         are tinted so they stand out from routine info lines and can be filtered to on their own. */
+      .log-toolbar {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 12px;
+      }
+      .log-toolbar__filter {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 13px;
+        color: var(--text-muted);
+        cursor: pointer;
+      }
+      .log-toolbar__spacer {
+        flex: 1 1 auto;
+      }
+      .log {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        max-height: 420px;
+        overflow-y: auto;
+        font-family: "Cascadia Code", "Consolas", monospace;
+        font-size: 12px;
+        line-height: 1.5;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 8px 10px;
+        background: var(--bg);
+      }
+      /* Hide the bordered box entirely when there are no rows so the empty notice stands alone. */
+      .log:empty {
+        display: none;
+      }
+      .log-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        padding: 2px 0;
+      }
+      .log-row__time {
+        color: var(--text-muted);
+        white-space: nowrap;
+      }
+      .log-row__level {
+        font-weight: 600;
+        white-space: nowrap;
+      }
+      .log-row__message {
+        color: var(--text);
+        overflow-wrap: anywhere;
+      }
+      .log-row--error .log-row__level,
+      .log-row--error .log-row__message {
+        color: #e06c75;
+      }
+      .log-row__detail {
+        flex-basis: 100%;
+        margin: 2px 0 6px;
+        padding: 6px 8px;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        color: var(--text-muted);
+        background: var(--surface);
+        border-radius: 4px;
+      }
     </style>
   </head>
   <body>
@@ -881,8 +951,26 @@
         hidden
       >
         <div class="card">
-          <h2 class="card__title">Diagnostics</h2>
-          <p class="empty">Diagnostics settings are coming soon.</p>
+          <h2 class="card__title">Log</h2>
+          <p class="card__hint">
+            Recent activity and errors recorded on this device only. Nothing here is synced or sent
+            anywhere.
+          </p>
+
+          <div class="log-toolbar">
+            <label class="log-toolbar__filter">
+              <input type="checkbox" id="log-errors-only" />
+              Errors only
+            </label>
+            <span class="log-toolbar__spacer"></span>
+            <button type="button" class="button button--subtle" id="log-export" disabled>
+              Export…
+            </button>
+            <button type="button" class="button button--danger" id="log-clear">Clear</button>
+          </div>
+
+          <div class="log" id="log-list" role="log" aria-live="polite"></div>
+          <p class="empty" id="log-empty">No log entries recorded yet.</p>
         </div>
       </section>
 

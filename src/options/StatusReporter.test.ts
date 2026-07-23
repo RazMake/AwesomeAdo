@@ -1,20 +1,18 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import type { ILogger } from "../common/logging/ILogger";
 
 import { StatusReporter } from "./StatusReporter";
 
 describe("StatusReporter", () => {
   let element: HTMLElement;
+  let logger: ILogger;
   let reporter: StatusReporter;
-  let consoleError: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     element = document.createElement("p");
-    reporter = new StatusReporter(element);
-    consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
-  });
-
-  afterEach(() => {
-    consoleError.mockRestore();
+    logger = { info: vi.fn(), error: vi.fn() };
+    reporter = new StatusReporter(element, logger);
   });
 
   it("shows an Error's message to the user and logs the full error", () => {
@@ -23,7 +21,7 @@ describe("StatusReporter", () => {
     reporter.report(error);
 
     expect(element.textContent).toContain("boom");
-    expect(consoleError).toHaveBeenCalledWith(expect.any(String), error);
+    expect(logger.error).toHaveBeenCalledWith(expect.any(String), error);
   });
 
   it("shows a non-empty string error verbatim", () => {

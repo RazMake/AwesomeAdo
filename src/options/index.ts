@@ -2,25 +2,36 @@ import { readQueryIdFromSearch, readQueryNameFromSearch } from "../common/bindin
 import { createQueryBindingStore } from "../common/bindings/createQueryBindingStore";
 import { ChromeAdoMetadataReader } from "../common/browser/ChromeAdoMetadataReader";
 import { ChromeAdoTabReader } from "../common/browser/ChromeAdoTabReader";
+import { createLogging } from "../common/logging/createLogger";
 import { createSettingsStore } from "../common/settings/createSettingsStore";
 
 import { AzureDevOpsController, type AzureDevOpsElements } from "./AzureDevOpsController";
 import { ConfigurationBannerController } from "./ConfigurationBannerController";
+import { DiagnosticsController, type DiagnosticsElements } from "./DiagnosticsController";
 import { OptionsController, type OptionsElements } from "./OptionsController";
 import { QueryBindingsController, type QueryBindingsElements } from "./QueryBindingsController";
 import { StatusReporter } from "./StatusReporter";
 import { TabsController } from "./TabsController";
 
-const statusElement = document.querySelector<HTMLElement>("#status");
-const statusReporter = statusElement ? new StatusReporter(statusElement) : null;
+// One logger + backing store shared by the whole options page: controllers record errors through it
+// (via `report`/StatusReporter) and the Diagnostics tab reads the same store to display them.
+const { logger, logStore } = createLogging();
 
-// Route every error through one sink so failures are shown to the user, falling back to the console
-// only when the status element itself is missing.
+// A low-frequency, user-initiated marker so the diagnostics log has an informational baseline the
+// "errors only" filter can hide — background/content stay silent on success to avoid flooding the
+// bounded ring buffer with routine lifecycle noise (service workers restart often).
+logger.info("Options page opened");
+
+const statusElement = document.querySelector<HTMLElement>("#status");
+const statusReporter = statusElement ? new StatusReporter(statusElement, logger) : null;
+
+// Route every error through one sink so failures are shown to the user, still recording to the log
+// (and console) even when the status element itself is missing.
 const report = (error: unknown): void => {
   if (statusReporter) {
     statusReporter.report(error);
   } else {
-    console.error("AwesomeADO options error (no status element)", error);
+    logger.error("Options page error (no status element)", error);
   }
 };
 
@@ -207,4 +218,27 @@ if (configBanner) {
     bannerController.dispose();
     report(error);
   });
+}
+
+const logList = document.querySelector<HTMLElement>("#log-list");
+const logEmpty = document.querySelector<HTMLElement>("#log-empty");
+const logErrorsOnly = document.querySelector<HTMLInputElement>("#log-errors-only");
+const logExport = document.querySelector<HTMLButtonElement>("#log-export");
+const logClear = document.querySelector<HTMLButtonElement>("#log-clear");
+
+if (logList && logEmpty && logErrorsOnly && logExport && logClear) {
+  const diagnosticsElements: DiagnosticsElements = {
+    list: logList,
+    empty: logEmpty,
+    errorsOnlyToggle: logErrorsOnly,
+    exportButton: logExport,
+    clearButton: logClear,
+  };
+  const diagnostics = new DiagnosticsController(logStore, diagnosticsElements);
+  void diagnostics.init().catch((error: unknown) => {
+    diagnostics.dispose();
+    report(error);
+  });
+} else {
+  report(new Error("The options page is missing the diagnostics log view and cannot show it."));
 }

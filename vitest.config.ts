@@ -20,6 +20,7 @@ export default defineConfig({
         "src/**/index.ts",
         "src/common/settings/createSettingsStore.ts",
         "src/common/bindings/createQueryBindingStore.ts",
+        "src/common/logging/createLogger.ts",
         "**/*.d.ts",
       ],
       thresholds: {

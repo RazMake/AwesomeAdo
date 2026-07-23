@@ -4,7 +4,10 @@ import {
   isOpenOptionsMessage,
   optionsPath,
 } from "../common/bindings/BindingRequest";
+import { createLogger } from "../common/logging/createLogger";
 import { notifyNavigation } from "../common/navigation/NavigationNotifier";
+
+const logger = createLogger();
 
 const handleNavigation = (details: chrome.webNavigation.WebNavigationTransitionCallbackDetails) => {
   void notifyNavigation(details, (tabId, message, options) =>
@@ -20,7 +23,7 @@ chrome.webNavigation.onReferenceFragmentUpdated.addListener(handleNavigation);
 // logged rather than swallowed so a broken open is diagnosable instead of appearing to do nothing.
 const openOptionsTab = (path: string): void => {
   void chrome.tabs.create({ url: chrome.runtime.getURL(path) }).catch((error: unknown) => {
-    console.error("AwesomeADO could not open the options page", error);
+    logger.error("Could not open the options page", error);
   });
 };
 
