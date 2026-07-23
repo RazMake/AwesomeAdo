@@ -1,9 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  ADO_QUERY_NAME_REQUEST,
   ADO_THEME_REQUEST,
-  isAdoQueryNameRequest,
   isAdoThemeRequest,
   parseAdoContext,
   type AdoContext,
@@ -66,19 +64,6 @@ describe("isAdoThemeRequest", () => {
     "rejects a malformed message %#",
     (value) => {
       expect(isAdoThemeRequest(value)).toBe(false);
-    },
-  );
-});
-
-describe("isAdoQueryNameRequest", () => {
-  it("accepts a well-formed query-name request", () => {
-    expect(isAdoQueryNameRequest({ type: ADO_QUERY_NAME_REQUEST })).toBe(true);
-  });
-
-  it.each([null, undefined, 42, "query-name", {}, { type: ADO_THEME_REQUEST }])(
-    "rejects a malformed message %#",
-    (value) => {
-      expect(isAdoQueryNameRequest(value)).toBe(false);
     },
   );
 });

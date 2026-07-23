@@ -4,7 +4,7 @@
   "name": "AwesomeADO",
   "version": "0.1.0",
   "description": "Enhances Azure DevOps Query pages.",
-  "permissions": ["storage", "webNavigation"],
+  "permissions": ["storage", "webNavigation", "scripting"],
   "host_permissions": ["https://dev.azure.com/*", "https://*.visualstudio.com/*"],
   "icons": {
     "16": "icons/icon-16.png",

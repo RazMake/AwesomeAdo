@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { ExtensionSettings } from "../common/settings/ExtensionSettings";
+import { DEFAULT_SETTINGS, type ExtensionSettings } from "../common/settings/ExtensionSettings";
 
 import type { PageBlanker } from "./PageBlanker";
 import { QueryPageController } from "./QueryPageController";
@@ -12,7 +12,7 @@ function makeBlankerSpy(): PageBlanker {
 }
 
 function settings(overrides: Partial<ExtensionSettings> = {}): ExtensionSettings {
-  return { theme: "auto", defaultView: "enhanced", ...overrides };
+  return { ...DEFAULT_SETTINGS, theme: "auto", defaultView: "enhanced", ...overrides };
 }
 
 const GUID = "12345678-1234-1234-1234-123456789abc";

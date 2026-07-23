@@ -83,35 +83,3 @@ export function isAdoThemeRequest(value: unknown): value is AdoThemeRequest {
     (value as Partial<AdoThemeRequest>).type === ADO_THEME_REQUEST
   );
 }
-
-/**
- * Message an extension page sends to an ADO tab's content script to learn the display name of the
- * saved query it is showing. Used by the options binding form's "scan all tabs" mode, where the id
- * comes from each tab's URL but the human-readable name only exists in the rendered page.
- */
-export const ADO_QUERY_NAME_REQUEST = "awesomeado:query-name-request";
-
-export interface AdoQueryNameRequest {
-  type: typeof ADO_QUERY_NAME_REQUEST;
-}
-
-export interface AdoQueryNameResponse {
-  /** The query's display name, or null when the content script could not read it. */
-  name: string | null;
-}
-
-export function isAdoQueryNameRequest(value: unknown): value is AdoQueryNameRequest {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    (value as Partial<AdoQueryNameRequest>).type === ADO_QUERY_NAME_REQUEST
-  );
-}
-
-/** One open ADO tab that shows a single saved query: its id plus its best-effort display name. */
-export interface AdoQueryTab {
-  /** The saved query's GUID, parsed from the tab URL. */
-  queryId: string;
-  /** The query's display name, or null when it could not be read from the page. */
-  queryName: string | null;
-}

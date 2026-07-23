@@ -3,8 +3,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { IQueryBindingStore } from "../common/bindings/IQueryBindingStore";
 import type { QueryBinding, QueryBindings } from "../common/bindings/QueryBinding";
 import type { ViewType } from "../common/bindings/ViewType";
-import type { IAdoQueryTabsReader } from "../common/browser/IAdoQueryTabsReader";
-import type { AdoQueryTab } from "../common/navigation/AdoContext";
 
 import { QueryBindingsController, type QueryBindingsElements } from "./QueryBindingsController";
 
@@ -46,14 +44,6 @@ function makeStore(initial: QueryBindings = {}): FakeStore {
   };
 }
 
-interface FakeTabsReader {
-  readQueryTabs: ReturnType<typeof vi.fn>;
-}
-
-function makeTabsReader(tabs: AdoQueryTab[] = []): FakeTabsReader {
-  return { readQueryTabs: vi.fn(async () => tabs) };
-}
-
 function makeElements(): QueryBindingsElements {
   const create = <T extends HTMLElement>(tag: string): T =>
     document.createElement(tag) as unknown as T;
@@ -66,14 +56,26 @@ function makeElements(): QueryBindingsElements {
   const emptyState = create<HTMLElement>("p");
   const form = create<HTMLElement>("div");
   const queryId = create<HTMLElement>("output");
+  const primaryViewSlot = create<HTMLElement>("div");
+  const deleteActions = create<HTMLElement>("div");
+  const deleteButton = create<HTMLButtonElement>("button");
+  deleteActions.append(deleteButton);
+  form.append(queryId, primaryViewSlot, deleteActions);
+
+  // The movable view-configuration group starts inside the (hidden) second card, matching the page.
   const viewSelect = create<HTMLSelectElement>("select");
   const properties = create<HTMLElement>("div");
   const saveButton = create<HTMLButtonElement>("button");
-  const deleteButton = create<HTMLButtonElement>("button");
+  const viewGroup = create<HTMLElement>("div");
+  viewGroup.append(viewSelect, properties, saveButton);
+  const viewConfigSlot = create<HTMLElement>("div");
+  viewConfigSlot.append(viewGroup);
+  const viewConfigCard = create<HTMLElement>("div");
+  viewConfigCard.append(viewConfigSlot);
+
   const status = create<HTMLElement>("span");
-  form.append(queryId, viewSelect, properties, saveButton, deleteButton);
   const root = create<HTMLElement>("div");
-  root.append(pickerField, nameField, emptyState, form, status);
+  root.append(pickerField, nameField, emptyState, form, viewConfigCard, status);
   document.body.append(root);
   return {
     pickerField,
@@ -87,6 +89,11 @@ function makeElements(): QueryBindingsElements {
     properties,
     saveButton,
     deleteButton,
+    viewConfigCard,
+    viewConfigSlot,
+    primaryViewSlot,
+    viewGroup,
+    deleteActions,
     status,
   };
 }
@@ -100,23 +107,25 @@ async function settle(): Promise<void> {
 
 describe("QueryBindingsController", () => {
   let elements: QueryBindingsElements;
-  let tabsReader: FakeTabsReader;
   let reportError: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     document.body.innerHTML = "";
     elements = makeElements();
-    tabsReader = makeTabsReader();
     reportError = vi.fn();
   });
 
-  const controllerFor = (store: FakeStore, views: readonly ViewType[] = VIEWS) =>
+  const controllerFor = (
+    store: FakeStore,
+    views: readonly ViewType[] = VIEWS,
+    resolveCurrentQueryId?: () => Promise<string | null>,
+  ) =>
     new QueryBindingsController(
       store as unknown as IQueryBindingStore,
-      tabsReader as unknown as IAdoQueryTabsReader,
       elements,
       views,
       reportError as unknown as (error: unknown) => void,
+      resolveCurrentQueryId,
     );
 
   const propInput = (key: string): HTMLInputElement | null =>
@@ -239,6 +248,22 @@ describe("QueryBindingsController", () => {
       expect(elements.status.textContent).toBe("Deleted.");
     });
 
+    it("reveals the bound-query dropdown after the first save", async () => {
+      const store = makeStore();
+      await controllerFor(store).init(GUID_A, "Sprint 42");
+      expect(elements.pickerField.hidden).toBe(true);
+
+      elements.saveButton.click();
+      await settle();
+
+      expect(elements.pickerField.hidden).toBe(false);
+      expect([...elements.querySelect.options].map((o) => [o.value, o.textContent])).toEqual([
+        [GUID_A, "Sprint 42"],
+      ]);
+      expect(elements.querySelect.value).toBe(GUID_A);
+      expect(elements.deleteButton.disabled).toBe(false);
+    });
+
     it("reports a save failure and re-enables Save", async () => {
       const store = makeStore();
       store.bind.mockRejectedValueOnce(new Error("nope"));
@@ -273,16 +298,17 @@ describe("QueryBindingsController", () => {
     });
   });
 
-  describe("scan mode (opened from the options menu)", () => {
-    it("lists open query tabs, selecting the first", async () => {
-      tabsReader = makeTabsReader([
-        { queryId: GUID_A, queryName: "Alpha" },
-        { queryId: GUID_B, queryName: "Beta" },
-      ]);
-      await controllerFor(makeStore()).init(null, null);
+  describe("options mode (opened from the options menu)", () => {
+    it("lists only bound queries, selecting the first", async () => {
+      const store = makeStore({
+        [GUID_A]: { view: "sprint", properties: {}, name: "Alpha" },
+        [GUID_B]: { view: "tracking", properties: { team: "Red" }, name: "Beta" },
+      });
+      await controllerFor(store).init(null, null);
 
       expect(elements.pickerField.hidden).toBe(false);
-      expect(elements.nameField.hidden).toBe(true);
+      expect(elements.nameField.hidden).toBe(false);
+      expect(elements.queryName.textContent).toBe("Alpha");
       expect([...elements.querySelect.options].map((o) => [o.value, o.textContent])).toEqual([
         [GUID_A, "Alpha"],
         [GUID_B, "Beta"],
@@ -290,38 +316,68 @@ describe("QueryBindingsController", () => {
       expect(elements.querySelect.value).toBe(GUID_A);
       expect(elements.form.hidden).toBe(false);
       expect(elements.queryId.textContent).toBe(GUID_A);
+      expect(elements.deleteButton.disabled).toBe(false);
     });
 
-    it("includes already-bound queries whose tab is closed", async () => {
-      tabsReader = makeTabsReader([{ queryId: GUID_A, queryName: "Alpha" }]);
+    it("preselects the query the current ADO tab is on when it is bound", async () => {
       const store = makeStore({
-        [GUID_B]: { view: "sprint", properties: {}, name: "Beta (saved)" },
+        [GUID_A]: { view: "sprint", properties: {}, name: "Alpha" },
+        [GUID_B]: { view: "tracking", properties: { team: "Red" }, name: "Beta" },
       });
+      await controllerFor(store, VIEWS, async () => GUID_B).init(null, null);
+
+      expect(elements.querySelect.value).toBe(GUID_B);
+      expect(elements.queryId.textContent).toBe(GUID_B);
+      expect(elements.queryName.textContent).toBe("Beta");
+      expect(propInput("team")?.value).toBe("Red");
+    });
+
+    it("falls back to the first binding when the current tab's query is not bound", async () => {
+      const store = makeStore({
+        [GUID_A]: { view: "sprint", properties: {}, name: "Alpha" },
+        [GUID_B]: { view: "tracking", properties: { team: "Red" }, name: "Beta" },
+      });
+      await controllerFor(store, VIEWS, async () => "00000000-0000-0000-0000-000000000000").init(
+        null,
+        null,
+      );
+
+      expect(elements.querySelect.value).toBe(GUID_A);
+    });
+
+    it("reports a resolver failure and still edits the first binding", async () => {
+      const store = makeStore({ [GUID_A]: { view: "sprint", properties: {}, name: "Alpha" } });
+      await controllerFor(store, VIEWS, async () => {
+        throw new Error("no tabs");
+      }).init(null, null);
+
+      expect(reportError).toHaveBeenCalled();
+      expect(elements.querySelect.value).toBe(GUID_A);
+      expect(elements.queryId.textContent).toBe(GUID_A);
+    });
+
+    it("labels a bound query with its id when it has no saved name", async () => {
+      const store = makeStore({ [GUID_A]: { view: "sprint", properties: {} } });
       await controllerFor(store).init(null, null);
 
-      expect([...elements.querySelect.options].map((o) => o.value)).toEqual([GUID_A, GUID_B]);
-      const betaLabel = [...elements.querySelect.options].find(
-        (o) => o.value === GUID_B,
-      )?.textContent;
-      expect(betaLabel).toBe("Beta (saved)");
+      const label = [...elements.querySelect.options].find((o) => o.value === GUID_A)?.textContent;
+      expect(label).toBe(GUID_A);
     });
 
-    it("shows the empty state and hides the form when nothing is available", async () => {
+    it("shows the empty state and hides the form when nothing is bound", async () => {
       await controllerFor(makeStore()).init(null, null);
 
+      expect(elements.pickerField.hidden).toBe(true);
       expect(elements.emptyState.hidden).toBe(false);
       expect(elements.form.hidden).toBe(true);
     });
 
     it("loads the selected query's binding when the dropdown changes", async () => {
-      tabsReader = makeTabsReader([
-        { queryId: GUID_A, queryName: "Alpha" },
-        { queryId: GUID_B, queryName: "Beta" },
-      ]);
-      const store = makeStore({ [GUID_B]: { view: "tracking", properties: { team: "Red" } } });
+      const store = makeStore({
+        [GUID_A]: { view: "sprint", properties: {}, name: "Alpha" },
+        [GUID_B]: { view: "tracking", properties: { team: "Red" }, name: "Beta" },
+      });
       await controllerFor(store).init(null, null);
-
-      expect(elements.deleteButton.disabled).toBe(true);
 
       elements.querySelect.value = GUID_B;
       elements.querySelect.dispatchEvent(new Event("change"));
@@ -332,9 +388,8 @@ describe("QueryBindingsController", () => {
       expect(elements.deleteButton.disabled).toBe(false);
     });
 
-    it("saves with the selected query's scanned name", async () => {
-      tabsReader = makeTabsReader([{ queryId: GUID_A, queryName: "Alpha" }]);
-      const store = makeStore();
+    it("re-saves the selected binding keeping its saved name", async () => {
+      const store = makeStore({ [GUID_A]: { view: "sprint", properties: {}, name: "Alpha" } });
       await controllerFor(store).init(null, null);
 
       elements.saveButton.click();
@@ -347,16 +402,72 @@ describe("QueryBindingsController", () => {
       });
     });
 
-    it("falls back to bound queries when scanning tabs fails", async () => {
-      tabsReader.readQueryTabs.mockRejectedValueOnce(new Error("boom"));
-      const store = makeStore({
-        [GUID_B]: { view: "sprint", properties: {}, name: "Beta" },
-      });
+    it("deletes the selected binding", async () => {
+      const store = makeStore({ [GUID_A]: { view: "sprint", properties: {}, name: "Alpha" } });
       await controllerFor(store).init(null, null);
 
-      expect(reportError).toHaveBeenCalled();
-      expect([...elements.querySelect.options].map((o) => o.value)).toEqual([GUID_B]);
-      expect(elements.form.hidden).toBe(false);
+      elements.deleteButton.click();
+      await settle();
+
+      expect(store.unbind).toHaveBeenCalledWith(GUID_A);
+      expect(elements.status.textContent).toBe("Deleted.");
+    });
+  });
+
+  describe("two-section layout", () => {
+    it("keeps the view config in the Query bindings card while binding a new query", async () => {
+      await controllerFor(makeStore()).init(GUID_A, "Sprint 42");
+
+      expect(elements.viewGroup.parentElement).toBe(elements.primaryViewSlot);
+      expect(elements.viewConfigCard.hidden).toBe(true);
+      expect(elements.deleteActions.hidden).toBe(true);
+    });
+
+    it("moves the view config to its own card when the query is already bound", async () => {
+      const store = makeStore({ [GUID_A]: { view: "sprint", properties: {}, name: "Alpha" } });
+      await controllerFor(store).init(GUID_A, "Alpha");
+
+      expect(elements.viewGroup.parentElement).toBe(elements.viewConfigSlot);
+      expect(elements.viewConfigCard.hidden).toBe(false);
+      expect(elements.deleteActions.hidden).toBe(false);
+    });
+
+    it("splits into the two-section layout after the first save", async () => {
+      const store = makeStore();
+      await controllerFor(store).init(GUID_A, "Sprint 42");
+
+      elements.saveButton.click();
+      await settle();
+
+      expect(elements.viewGroup.parentElement).toBe(elements.viewConfigSlot);
+      expect(elements.viewConfigCard.hidden).toBe(false);
+      expect(elements.deleteActions.hidden).toBe(false);
+    });
+
+    it("returns to the single-section layout after deleting the last binding", async () => {
+      const store = makeStore({ [GUID_A]: { view: "sprint", properties: {}, name: "Alpha" } });
+      await controllerFor(store).init(GUID_A, "Alpha");
+
+      elements.deleteButton.click();
+      await settle();
+
+      expect(elements.viewGroup.parentElement).toBe(elements.primaryViewSlot);
+      expect(elements.viewConfigCard.hidden).toBe(true);
+      expect(elements.deleteActions.hidden).toBe(true);
+    });
+
+    it("hides the view config card when nothing is bound", async () => {
+      await controllerFor(makeStore()).init(null, null);
+      expect(elements.viewConfigCard.hidden).toBe(true);
+    });
+
+    it("shows the two-section layout in options mode", async () => {
+      const store = makeStore({ [GUID_A]: { view: "sprint", properties: {}, name: "Alpha" } });
+      await controllerFor(store).init(null, null);
+
+      expect(elements.viewGroup.parentElement).toBe(elements.viewConfigSlot);
+      expect(elements.viewConfigCard.hidden).toBe(false);
+      expect(elements.deleteActions.hidden).toBe(false);
     });
   });
 

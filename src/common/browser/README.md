@@ -5,13 +5,15 @@ This folder contains the browser storage abstraction layer for the AwesomeADO ex
 ## Purpose
 
 `ChromeSyncStorage` is the **only** place in the codebase that touches `chrome.storage.sync`, and
-`ChromeAdoTabReader` and `ChromeAdoQueryTabsReader` are the only places that touch `chrome.tabs`.
-Isolating the browser APIs here means all other code (settings, content, options) can be
-unit-tested with injected fakes and remains browser-agnostic.
+the chrome.tabs/chrome.scripting readers (`ChromeAdoTabReader`, `ChromeAdoMetadataReader`, and their
+shared `pickAdoQueryTab` helper) are the only places that touch `chrome.tabs`/`chrome.scripting`.
+Isolating the browser APIs here
+means all other code (settings, content, options) can be unit-tested with injected fakes and remains
+browser-agnostic.
 
 This layer also owns two small utilities shared by the higher layers: `observeSyncKeys`, the
 race-safe protocol both stores use to observe synced storage, and `requestFromTab`, the best-effort
-round-trip both tab readers use to ask a tab's content script a question.
+round-trip `ChromeAdoTabReader` uses to ask a tab's content script a question.
 
 ## Public API
 
@@ -88,8 +90,8 @@ helper so the race-sensitive protocol lives in exactly one place.
 ### `requestFromTab(tabId, message, interpret, fallback)` — `requestFromTab.ts`
 
 Sends one message to a tab's already-injected content script and interprets the reply, returning
-`fallback` when the tab has no receiver (`chrome.tabs.sendMessage` rejects). Both tab readers use it
-so the "no receiver → nothing to report" contract is defined once.
+`fallback` when the tab has no receiver (`chrome.tabs.sendMessage` rejects). `ChromeAdoTabReader`
+uses it so the "no receiver → nothing to report" contract is defined once.
 
 ```typescript
 const theme = await requestFromTab<AdoThemeResponse, AdoTheme | null>(
@@ -134,45 +136,62 @@ Construct `ChromeAdoTabReader` only in the composition root (`src/options/index.
 depends on `IAdoTabReader`. Reading tab URLs and messaging ADO tabs requires the
 `host_permissions` declared in `manifest.json`.
 
-## Enumerating all open ADO query tabs
+## Which origins the reader scans
 
-### `IAdoQueryTabsReader` (interface)
+`ChromeAdoTabReader` passes `ADO_HOST_MATCH_PATTERNS` (from `../navigation/AdoHost`) to
+`chrome.tabs.query`, so it scans exactly the origins the content script is injected on. That
+constant is the single source of truth for the ADO match globs and is kept in sync with the manifest
+by a test in `AdoHost.test.ts`.
 
-Lets the options binding form discover every Azure DevOps query the user currently has open, so it
-can offer them for binding without touching `chrome.tabs` directly:
+### `pickCurrentAdoQueryTab()` — `pickAdoQueryTab.ts`
+
+The shared way to locate the ADO Query tab the user came from. It queries
+`ADO_HOST_MATCH_PATTERNS`, keeps only Query URLs, and prefers the active tab, then the most recently
+accessed one (opening the options page makes options the active tab, so the ADO tab is no longer
+active). Both `ChromeAdoTabReader` and `ChromeAdoMetadataReader` reuse it so the selection rule lives
+in one place.
+
+## Reading ADO project metadata
+
+### `IAdoMetadataReader` (interface)
+
+Lets the options page list the detected organization/project along with its teams and area paths,
+without touching `chrome.tabs` directly:
 
 ```typescript
-interface IAdoQueryTabsReader {
-  readQueryTabs(): Promise<AdoQueryTab[]>;
+interface IAdoMetadataReader {
+  read(): Promise<AdoMetadataContext | null>;
 }
 ```
 
-`readQueryTabs()` resolves with one `AdoQueryTab` (`{ queryId, queryName }`, defined in
-`../navigation/AdoContext`) per distinct saved query open in a tab; `queryName` is `null` when it
-could not be read from the page.
+`read()` resolves with `{ organization, project, teams, areaPaths }` (`AdoMetadataContext`, defined
+in `./IAdoMetadataReader`), or `null` when no ADO Query tab is open.
 
-### `ChromeAdoQueryTabsReader` (class)
+### `ChromeAdoMetadataReader` (class)
 
-The production implementation. It queries all ADO tabs via `chrome.tabs.query`, parses each tab
-URL's query id with `parseAdoQueryId`, de-duplicates queries open in several tabs (keeping the
-first), and asks each tab's content script for the query's display name (`ADO_QUERY_NAME_REQUEST`)
-via `chrome.tabs.sendMessage`. Name detection is best-effort: any messaging failure yields a `null`
-name.
+The production implementation. It picks the current ADO Query tab with `pickCurrentAdoQueryTab`,
+parses the organization/project with `parseAdoContext`, then injects `fetchAdoRawInPage` into that
+tab's **page (MAIN) world** via `chrome.scripting.executeScript` to fetch the teams and area tree.
+The options page runs on the `chrome-extension://` origin, whose cross-origin fetch is CORS-blocked
+and whose same-origin fetch loses ADO's SameSite session cookies; the MAIN-world fetch is the only
+context that is both same-origin with the APIs and carries the signed-in session. Metadata is
+best-effort: a non-project tab or any injection failure resolves the team/area lists to empty.
 
 ```typescript
-import { ChromeAdoQueryTabsReader } from "./ChromeAdoQueryTabsReader";
+import { ChromeAdoMetadataReader } from "./ChromeAdoMetadataReader";
 
-const reader = new ChromeAdoQueryTabsReader();
-const tabs = await reader.readQueryTabs(); // [{ queryId, queryName }, ...]
+const reader = new ChromeAdoMetadataReader();
+const metadata = await reader.read(); // { organization, project, teams, areaPaths } | null
 ```
 
-Construct `ChromeAdoQueryTabsReader` only in the composition root (`src/options/index.ts`). Feature
-code depends on `IAdoQueryTabsReader`. Reading tab URLs and messaging ADO tabs requires the
-`host_permissions` declared in `manifest.json`.
+Construct `ChromeAdoMetadataReader` only in the composition root (`src/options/index.ts`). Feature
+code depends on `IAdoMetadataReader`. Injecting into the ADO tab requires the `scripting` permission
+and the `host_permissions` declared in `manifest.json`.
 
-## Which origins the readers scan
+### `fetchAdoRawInPage(teamsUrl, areaPathsUrl)` — `fetchAdoRawInPage.ts`
 
-Both readers pass `ADO_HOST_MATCH_PATTERNS` (from `../navigation/AdoHost`) to `chrome.tabs.query`,
-so they scan exactly the origins the content script is injected on. That constant is the single
-source of truth for the ADO match globs and is kept in sync with the manifest by a test in
-`AdoHost.test.ts`.
+The self-contained function `ChromeAdoMetadataReader` injects into the ADO tab's MAIN world. It runs
+in the page's first-party origin, so its `fetch` is same-origin and sends the user's session cookies.
+It is serialized with `Function.prototype.toString`, so it must reference only its parameters and
+page globals — never an import or module-scoped value. It returns the raw `{ teams, areaTree }` JSON
+(each `null` on failure) for the reader to parse with `parseTeams` / `flattenAreaPaths`.

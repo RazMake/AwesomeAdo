@@ -17,13 +17,20 @@ The shape of user settings:
 interface ExtensionSettings {
   theme: Theme; // "auto" | "light" | "dark" | "blue"  (default: "auto")
   defaultView: DefaultView; // "original" | "enhanced"        (default: "enhanced")
+  currentTeam: TeamRef | null; // selected ADO team, or null       (default: null)
+  futureSprintsCount: number; // sprints offered past the current one, 1..12 (default: 6)
+  areaPaths: AreaPath[]; // pinned area paths, each { path, label }  (default: [])
 }
 ```
 
-`ExtensionSettings.ts` also exports the `Theme` and `DefaultView` unions, the `THEMES` /
-`DEFAULT_VIEWS` value lists (used to populate the options selects), and `DEFAULT_SETTINGS`.
+`ExtensionSettings.ts` also exports the `Theme` and `DefaultView` unions, the `TeamRef` /
+`AreaPath` shapes, the `THEMES` / `DEFAULT_VIEWS` value lists (used to populate the options
+selects), the `MIN_FUTURE_SPRINTS` / `MAX_FUTURE_SPRINTS` bounds, and `DEFAULT_SETTINGS`.
 `normalizeSettings(raw)` validates each field independently and falls back to the default when a
-value is missing or unrecognized.
+value is missing or unrecognized. The focused helpers `normalizeFutureSprintsCount(raw)` (clamps to
+`1..12`), `normalizeAreaPaths(raw)` (drops pathless/duplicate entries), and
+`defaultAreaPathLabel(path)` (the path's last `\`-separated segment) are exported for the options
+UI so a stored value and a freshly typed one derive the same default.
 
 ### `ISettingsStore` (interface) — `ISettingsStore.ts`
 
@@ -72,11 +79,19 @@ unsubscribe();
 - **`defaultView`** decides what the content script shows on an ADO Query page. `enhanced`
   (default) lets the extension take over the page below the breadcrumb bar; `original` leaves ADO
   untouched.
+- **`currentTeam`** is the ADO team (`{ id, name }`) whose sprints drive the sprint picker and the
+  "current sprint" default, or `null` when the user has not chosen one. The name is stored alongside
+  the id so the options page can label the saved team even when no ADO tab is open.
+- **`futureSprintsCount`** is how many sprints past the current one the picker offers, clamped to
+  `1..12` (default `3`).
+- **`areaPaths`** is the list of area paths the user pinned, each with a short `label` (defaults to
+  the path's last segment).
 
-Both values sync across all of the user's devices via `chrome.storage.sync`.
+All values sync across all of the user's devices via `chrome.storage.sync`.
 
 ## Why per-setting keys?
 
-Each setting maps to its own storage key (e.g., `settings.theme`, `settings.defaultView`). This
-means adding a new setting in a future version does not risk a read-modify-write race overwriting
-the new key with `undefined` on older installs still using a full-settings-object key.
+Each setting maps to its own storage key (e.g., `settings.theme`, `settings.defaultView`,
+`settings.currentTeam`, `settings.futureSprintsCount`, `settings.areaPaths`). This means adding a new
+setting in a future version does not risk a read-modify-write race overwriting the new key with
+`undefined` on older installs still using a full-settings-object key.

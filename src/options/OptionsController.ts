@@ -11,8 +11,6 @@ export interface OptionsElements {
   root: HTMLElement;
   themeSelect: HTMLSelectElement;
   defaultViewSelect: HTMLSelectElement;
-  organization: HTMLElement;
-  project: HTMLElement;
 }
 
 type ReportError = (error: unknown) => void;
@@ -21,8 +19,8 @@ const defaultReportError: ReportError = (error) =>
   console.error("AwesomeADO could not save synced settings", error);
 
 /**
- * Binds the options UI (theme + default-view selects and the read-only ADO configuration) to the
- * settings store and the active ADO tab, in both directions.
+ * Binds the Appearance panel (theme + default-view selects) to the settings store, in both
+ * directions, and resolves the "auto" theme from the active ADO tab's rendered theme.
  */
 export class OptionsController {
   private disposed = false;
@@ -68,7 +66,7 @@ export class OptionsController {
     this.defaultViewBinding.enable();
     // Apply theme immediately when the user picks one, without waiting for the storage round-trip.
     this.elements.themeSelect.addEventListener("change", this.applyThemeFromSelect);
-    await this.loadAdoConfiguration();
+    await this.loadAdoTheme();
   }
 
   dispose(): void {
@@ -97,28 +95,20 @@ export class OptionsController {
     this.elements.root.dataset.theme = resolveTheme(theme, this.adoTheme);
   }
 
-  private async loadAdoConfiguration(): Promise<void> {
+  private async loadAdoTheme(): Promise<void> {
     let context: Awaited<ReturnType<IAdoTabReader["read"]>> = null;
     try {
       context = await this.adoTabReader.read();
     } catch (error: unknown) {
-      // The ADO panel is best-effort; a failure to read tabs must not break the settings UI.
+      // The ADO theme is best-effort; a failure to read tabs must not break the settings UI.
       this.reportError(error);
     }
     if (this.disposed) {
       return;
     }
-    this.setConfigField(this.elements.organization, context?.organization ?? null);
-    this.setConfigField(this.elements.project, context?.project ?? null);
     this.adoTheme = context?.theme ?? null;
     // Re-resolve "auto" now that ADO's theme is known.
     this.applyTheme(this.elements.themeSelect.value as Theme);
-  }
-
-  private setConfigField(element: HTMLElement, value: string | null): void {
-    const hasValue = value !== null && value.length > 0;
-    element.textContent = hasValue ? value : "No active query tab";
-    element.dataset.empty = String(!hasValue);
   }
 }
 

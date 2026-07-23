@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { IBrowserSyncStorage } from "../browser/IBrowserSyncStorage";
 
 import { BrowserSyncSettingsStore } from "./BrowserSyncSettingsStore";
-import type { ExtensionSettings } from "./ExtensionSettings";
+import { DEFAULT_SETTINGS, type ExtensionSettings } from "./ExtensionSettings";
 
 // Hand-written fake so no real chrome.* is touched in tests.
 class FakeBrowserSyncStorage implements IBrowserSyncStorage {
@@ -67,6 +67,9 @@ class FakeBrowserSyncStorage implements IBrowserSyncStorage {
 
 const THEME_KEY = "settings.theme";
 const DEFAULT_VIEW_KEY = "settings.defaultView";
+const CURRENT_TEAM_KEY = "settings.currentTeam";
+const FUTURE_SPRINTS_KEY = "settings.futureSprintsCount";
+const AREA_PATHS_KEY = "settings.areaPaths";
 
 describe("BrowserSyncSettingsStore", () => {
   describe("read", () => {
@@ -74,7 +77,7 @@ describe("BrowserSyncSettingsStore", () => {
       const fake = new FakeBrowserSyncStorage();
       const store = new BrowserSyncSettingsStore(fake);
       const settings = await store.read();
-      expect(settings).toEqual({ theme: "auto", defaultView: "enhanced" });
+      expect(settings).toEqual(DEFAULT_SETTINGS);
     });
 
     it("normalizes invalid values to the defaults", async () => {
@@ -83,7 +86,7 @@ describe("BrowserSyncSettingsStore", () => {
       await fake.set(DEFAULT_VIEW_KEY, 42);
       const store = new BrowserSyncSettingsStore(fake);
       const settings = await store.read();
-      expect(settings).toEqual({ theme: "auto", defaultView: "enhanced" });
+      expect(settings).toEqual(DEFAULT_SETTINGS);
     });
 
     it("preserves valid stored values", async () => {
@@ -92,7 +95,19 @@ describe("BrowserSyncSettingsStore", () => {
       await fake.set(DEFAULT_VIEW_KEY, "original");
       const store = new BrowserSyncSettingsStore(fake);
       const settings = await store.read();
-      expect(settings).toEqual({ theme: "dark", defaultView: "original" });
+      expect(settings).toEqual({ ...DEFAULT_SETTINGS, theme: "dark", defaultView: "original" });
+    });
+
+    it("reads the team, future-sprints, and area-path keys", async () => {
+      const fake = new FakeBrowserSyncStorage();
+      await fake.set(CURRENT_TEAM_KEY, { id: "team-1", name: "Platform" });
+      await fake.set(FUTURE_SPRINTS_KEY, 5);
+      await fake.set(AREA_PATHS_KEY, [{ path: "Web\\Api", label: "Api" }]);
+      const store = new BrowserSyncSettingsStore(fake);
+      const settings = await store.read();
+      expect(settings.currentTeam).toEqual({ id: "team-1", name: "Platform" });
+      expect(settings.futureSprintsCount).toBe(5);
+      expect(settings.areaPaths).toEqual([{ path: "Web\\Api", label: "Api" }]);
     });
 
     it("does not write any key during a read", async () => {
@@ -139,6 +154,25 @@ describe("BrowserSyncSettingsStore", () => {
       expect(await fake.get(THEME_KEY)).toBe("dark");
       expect(await fake.get(DEFAULT_VIEW_KEY)).toBe("enhanced");
     });
+
+    it("persists a null currentTeam so a cleared selection is stored, not skipped", async () => {
+      const fake = new FakeBrowserSyncStorage();
+      const store = new BrowserSyncSettingsStore(fake);
+      await store.write({ currentTeam: null });
+      expect(fake.getStoredKeys()).toEqual([CURRENT_TEAM_KEY]);
+      expect(await fake.get(CURRENT_TEAM_KEY)).toBeNull();
+    });
+
+    it("persists the future-sprints and area-path keys", async () => {
+      const fake = new FakeBrowserSyncStorage();
+      const store = new BrowserSyncSettingsStore(fake);
+      await store.write({
+        futureSprintsCount: 6,
+        areaPaths: [{ path: "Web\\Api", label: "Api" }],
+      });
+      expect(await fake.get(FUTURE_SPRINTS_KEY)).toBe(6);
+      expect(await fake.get(AREA_PATHS_KEY)).toEqual([{ path: "Web\\Api", label: "Api" }]);
+    });
   });
 
   describe("observe", () => {
@@ -166,7 +200,7 @@ describe("BrowserSyncSettingsStore", () => {
       const snapshots: ExtensionSettings[] = [];
       const { ready } = store.observe((s) => snapshots.push(s));
       await ready;
-      expect(snapshots).toEqual([{ theme: "blue", defaultView: "original" }]);
+      expect(snapshots).toEqual([{ ...DEFAULT_SETTINGS, theme: "blue", defaultView: "original" }]);
     });
 
     it("delivers subsequent values when any key changes", async () => {

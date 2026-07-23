@@ -73,9 +73,3 @@ theme.
   **`isAdoThemeRequest(value)`** — the request/response message the options page sends to an ADO
   content script (via `chrome.tabs.sendMessage`) to read the rendered theme. The content script
   answers with `detectAdoTheme(document)`.
-- **`ADO_QUERY_NAME_REQUEST`**, **`AdoQueryNameRequest`**, **`AdoQueryNameResponse`**,
-  **`isAdoQueryNameRequest(value)`** — the request/response message the options page sends to an ADO
-  content script (via `chrome.tabs.sendMessage`) to read the display name of the saved query the tab
-  is showing. The content script answers with `detectAdoQueryName(document)`.
-- **`AdoQueryTab`** — `{ queryId, queryName }`, one open ADO tab showing a single saved query, used
-  by the options binding form's "scan all tabs" mode (`queryName` is `null` when unknown).

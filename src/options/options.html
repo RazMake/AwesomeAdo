@@ -18,6 +18,8 @@
         --border: #3a3a3c;
         --accent: #3794ff;
         --accent-contrast: #ffffff;
+        /* Yellow shifts per theme so the empty-state notice stays legible on each background. */
+        --warning: #e5c07b;
       }
       [data-theme="light"] {
         color-scheme: light;
@@ -29,6 +31,7 @@
         --border: #e0e0e0;
         --accent: #0067b8;
         --accent-contrast: #ffffff;
+        --warning: #8a6d00;
       }
       [data-theme="blue"] {
         color-scheme: light;
@@ -40,10 +43,17 @@
         --border: #cfe0f4;
         --accent: #005a9e;
         --accent-contrast: #ffffff;
+        --warning: #8a6d00;
       }
 
       * {
         box-sizing: border-box;
+      }
+      /* An author `display` (e.g. `.field { display: flex }`) beats the UA's `[hidden]` rule, so the
+         `hidden` attribute alone won't hide flex/grid elements. This reset makes `hidden` authoritative
+         everywhere the controllers toggle it. */
+      [hidden] {
+        display: none !important;
       }
       body {
         margin: 0;
@@ -144,7 +154,12 @@
         font-size: 13px;
         color: var(--text-muted);
       }
-      select {
+      /* One shared appearance for every form control so the base look lives in a single place;
+         each control type below only adds what makes it different (e.g. the area-path grid cell). */
+      select,
+      .field input[type="text"],
+      .field input[type="number"],
+      .area-path-row input {
         appearance: none;
         font: inherit;
         color: var(--text);
@@ -153,13 +168,111 @@
         border-radius: 6px;
         padding: 8px 10px;
       }
-      select:disabled {
+      select:focus-visible,
+      .field input:focus-visible,
+      .area-path-row input:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 1px;
+      }
+      select:disabled,
+      .field input:disabled {
         opacity: 0.55;
         cursor: not-allowed;
       }
-      select:focus-visible {
-        outline: 2px solid var(--accent);
-        outline-offset: 1px;
+
+      /* Custom searchable dropdown (see AutocompleteInput.ts). The list is absolutely positioned so
+         it floats over following content instead of pushing the layout, and the wrapper is the
+         positioning context. `min-width: 0` lets the wrapper shrink inside the area-path grid. */
+      .combobox {
+        position: relative;
+        min-width: 0;
+      }
+      .combobox input {
+        width: 100%;
+      }
+      .combobox__list {
+        position: absolute;
+        top: calc(100% + 2px);
+        left: 0;
+        right: 0;
+        z-index: 10;
+        margin: 0;
+        padding: 4px;
+        list-style: none;
+        max-height: 220px;
+        overflow-y: auto;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        box-shadow: 0 6px 18px rgb(0 0 0 / 28%);
+      }
+      .combobox__option {
+        padding: 6px 8px;
+        border-radius: 4px;
+        cursor: pointer;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      /* Both pointer hover and keyboard navigation land on the same highlight. */
+      .combobox__option:hover,
+      .combobox__option--active {
+        background: var(--surface-hover);
+        color: var(--accent);
+      }
+
+      /* Wraps one input with its longer explanatory hint. The input stays narrow (via `.field`)
+         while the hint is free to wrap at a comfortable reading width. */
+      .stack {
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+      }
+      .setting {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .field__hint {
+        margin: 0;
+        color: var(--text-muted);
+        font-size: 12px;
+        max-width: 520px;
+      }
+
+      .area-paths {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .area-paths__list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .area-path-row {
+        display: grid;
+        grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto;
+        gap: 8px;
+        align-items: center;
+      }
+      .area-path-row input {
+        min-width: 0;
+      }
+      .area-path-row__delete {
+        padding: 6px 12px;
+        white-space: nowrap;
+      }
+      .area-paths__empty {
+        margin: 0;
+        color: var(--text-muted);
+        font-size: 13px;
+      }
+      .button--subtle {
+        align-self: flex-start;
+        background: transparent;
+        color: var(--accent);
+        border: 1px solid var(--border);
       }
 
       .config {
@@ -180,7 +293,7 @@
         color: var(--text-muted);
       }
       .empty {
-        color: var(--text-muted);
+        color: var(--warning);
       }
       .status {
         min-height: 18px;
@@ -293,6 +406,17 @@
           type="button"
           class="tab"
           role="tab"
+          id="tab-ado"
+          data-tab="ado"
+          aria-controls="panel-ado"
+          aria-selected="false"
+        >
+          Azure DevOps
+        </button>
+        <button
+          type="button"
+          class="tab"
+          role="tab"
           id="tab-bindings"
           data-tab="bindings"
           aria-controls="panel-bindings"
@@ -337,27 +461,89 @@
         </div>
 
         <div class="card">
-          <h2 class="card__title">ADO Configuration</h2>
-          <p class="card__hint">
-            Detected from the Azure DevOps query tab you currently have open.
-          </p>
-          <dl class="config">
-            <dt>Organization</dt>
-            <dd id="ado-organization" data-empty="true">No active query tab</dd>
-            <dt>Project</dt>
-            <dd id="ado-project" data-empty="true">No active query tab</dd>
-          </dl>
-        </div>
-
-        <div class="card">
           <h2 class="card__title">Default view</h2>
-          <p class="card__hint">What AwesomeADO shows when you open an Azure DevOps query page.</p>
+          <p class="card__hint">
+            What AwesomeADO shows when you open an Azure DevOps query page when the query was
+            already bound to the extension and the enhanced view was configured.
+          </p>
           <div class="field">
             <label for="default-view-select">Default view</label>
             <select id="default-view-select" disabled>
               <option value="original">Original Ado View</option>
               <option value="enhanced">Enhanced View</option>
             </select>
+          </div>
+        </div>
+      </section>
+
+      <section class="tabpanel" role="tabpanel" id="panel-ado" aria-labelledby="tab-ado" hidden>
+        <div class="card">
+          <h2 class="card__title">ADO Configuration</h2>
+          <p class="card__hint">
+            Detected from the Azure DevOps query tab you currently have open.
+          </p>
+
+          <div class="stack">
+            <dl class="config">
+              <dt>Organization</dt>
+              <dd id="ado-organization" data-empty="true">No active query tab</dd>
+              <dt>Project</dt>
+              <dd id="ado-project" data-empty="true">No active query tab</dd>
+            </dl>
+
+            <div class="setting">
+              <div class="field">
+                <label for="ado-team-input">Current team</label>
+                <input
+                  id="ado-team-input"
+                  type="text"
+                  autocomplete="off"
+                  placeholder="Search teams…"
+                  disabled
+                />
+              </div>
+              <p class="field__hint">
+                The ADO team whose sprints (<i>iterations</i>) drive the sprint picker and the
+                <i>current sprint</i> default. Required: the current/upcoming iteration list and the
+                work-item reorder API are both team-scoped in Azure DevOps.
+              </p>
+            </div>
+
+            <div class="setting">
+              <div class="field">
+                <label for="ado-future-sprints">Future sprints count</label>
+                <input
+                  id="ado-future-sprints"
+                  type="number"
+                  min="1"
+                  max="12"
+                  step="1"
+                  inputmode="numeric"
+                  disabled
+                />
+              </div>
+              <p class="field__hint">
+                How many sprints into the future are offered in the sprint picker (in addition to
+                the current sprint). Between 1 and 12.
+              </p>
+            </div>
+
+            <div class="area-paths">
+              <div class="setting">
+                <span class="field__label">Area paths</span>
+                <p class="field__hint">
+                  Pin the area paths you care about. Each row's label defaults to the path's last
+                  segment; edit it to give the path a friendlier name.
+                </p>
+              </div>
+              <div class="area-paths__list" id="ado-area-paths"></div>
+              <p class="area-paths__empty" id="ado-area-paths-empty" hidden>
+                No area paths added yet.
+              </p>
+              <button type="button" class="button button--subtle" id="ado-area-path-add" disabled>
+                Add area path
+              </button>
+            </div>
           </div>
         </div>
       </section>
@@ -372,24 +558,19 @@
         <div class="card binding">
           <h2 class="card__title">Query bindings</h2>
           <p class="card__hint">
-            Bind an Azure DevOps query to an enhanced view. Open this from a query's AwesomeADO
-            button to bind that query, or pick one of your open queries below.
+            Select a query binding (<i>the pair of query ID and the enhanced view type</i>) to edit
+            its properties.
           </p>
 
           <div class="binding__fields">
             <div class="field" id="binding-query-picker-field">
-              <label for="binding-query-select">Query name</label>
+              <label for="binding-query-select">Bound query</label>
               <select id="binding-query-select"></select>
             </div>
 
-            <div class="field" id="binding-query-name-field" hidden>
-              <span class="field__label">Query name</span>
-              <output class="binding__readonly" id="binding-query-name"></output>
-            </div>
-
             <p class="empty" id="binding-empty" hidden>
-              No Azure DevOps query is open in another tab. Open a query and reload this page, or
-              use the AwesomeADO button on a query page to bind it.
+              No queries are bound yet. Open an Azure DevOps query and use its
+              <i>"Enhance with Awesome ADO"</i> button to bind it to an enhanced view.
             </p>
 
             <div id="binding-form" hidden>
@@ -399,15 +580,16 @@
                   <output class="binding__query" id="binding-query-id"></output>
                 </div>
 
-                <div class="field">
-                  <label for="binding-view-select">Enhanced view type</label>
-                  <select id="binding-view-select"></select>
+                <div class="field" id="binding-query-name-field" hidden>
+                  <span class="field__label">Query name</span>
+                  <output class="binding__readonly" id="binding-query-name"></output>
                 </div>
 
-                <div class="binding__properties" id="binding-properties"></div>
+                <!-- While binding a new query the controller relocates the view-configuration group
+                     here so it is all set in one place; once bound it moves to the section below. -->
+                <div id="binding-primary-view-slot"></div>
 
-                <div class="binding__actions">
-                  <button type="button" class="button" id="binding-save">Save</button>
+                <div class="binding__actions" id="binding-delete-actions">
                   <button type="button" class="button button--danger" id="binding-delete">
                     Delete
                   </button>
@@ -417,6 +599,30 @@
           </div>
 
           <span class="binding__status" id="binding-status" role="status" aria-live="polite"></span>
+        </div>
+
+        <!-- Shown only once a query is bound: it configures the enhanced view for the selected
+             binding and holds Save. New bindings configure the view in the card above instead. -->
+        <div class="card binding" id="binding-view-config-card" hidden>
+          <h2 class="card__title">Query View Configuration</h2>
+          <p class="card__hint">Choose and configure the enhanced view for the selected query.</p>
+
+          <div id="binding-view-config-slot">
+            <!-- The movable view-configuration group. The controller relocates it between the Query
+                 bindings card (while binding) and this card (while editing a saved binding). -->
+            <div class="binding__fields" id="binding-view-config">
+              <div class="field">
+                <label for="binding-view-select">Enhanced view type</label>
+                <select id="binding-view-select"></select>
+              </div>
+
+              <div class="binding__properties" id="binding-properties"></div>
+
+              <div class="binding__actions">
+                <button type="button" class="button" id="binding-save">Save</button>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import type { IAdoTabReader } from "../common/browser/IAdoTabReader";
 import type { AdoTabContext } from "../common/navigation/AdoContext";
-import type { ExtensionSettings } from "../common/settings/ExtensionSettings";
+import { DEFAULT_SETTINGS, type ExtensionSettings } from "../common/settings/ExtensionSettings";
 import type { ISettingsStore } from "../common/settings/ISettingsStore";
 
 import { OptionsController, type OptionsElements } from "./OptionsController";
@@ -57,7 +57,7 @@ class FakeSettingsStore implements ISettingsStore {
   }
 
   read(): Promise<ExtensionSettings> {
-    return Promise.resolve({ theme: "auto", defaultView: "enhanced" });
+    return Promise.resolve({ ...DEFAULT_SETTINGS, theme: "auto", defaultView: "enhanced" });
   }
 
   write(settings: Partial<ExtensionSettings>): Promise<void> {
@@ -84,9 +84,10 @@ class FakeSettingsStore implements ISettingsStore {
     this.writeDeferred = null;
   }
 
-  emit(settings: ExtensionSettings): void {
+  emit(settings: Partial<ExtensionSettings>): void {
+    const full: ExtensionSettings = { ...DEFAULT_SETTINGS, ...settings };
     for (const cb of this.callbacks) {
-      cb(settings);
+      cb(full);
     }
   }
 }
@@ -132,17 +133,15 @@ function makeElements(): OptionsElements {
   const root = document.createElement("div");
   const themeSelect = makeSelect(["auto", "light", "dark", "blue"]);
   const defaultViewSelect = makeSelect(["original", "enhanced"]);
-  const organization = document.createElement("dd");
-  const project = document.createElement("dd");
-  document.body.append(root, themeSelect, defaultViewSelect, organization, project);
-  return { root, themeSelect, defaultViewSelect, organization, project };
+  document.body.append(root, themeSelect, defaultViewSelect);
+  return { root, themeSelect, defaultViewSelect };
 }
 
 async function initReady(
   store: FakeSettingsStore,
   reader: FakeAdoTabReader,
   elements: OptionsElements,
-  initial: ExtensionSettings = { theme: "auto", defaultView: "enhanced" },
+  initial: Partial<ExtensionSettings> = { theme: "auto", defaultView: "enhanced" },
   context: AdoTabContext | null = null,
 ): Promise<OptionsController> {
   const controller = new OptionsController(store, reader, elements);
@@ -356,7 +355,7 @@ describe("OptionsController — change handling and write queue", () => {
   });
 });
 
-describe("OptionsController — ADO configuration", () => {
+describe("OptionsController — ADO theme resolution", () => {
   let store: FakeSettingsStore;
   let reader: FakeAdoTabReader;
   let elements: OptionsElements;
@@ -369,37 +368,6 @@ describe("OptionsController — ADO configuration", () => {
 
   afterEach(() => {
     document.body.innerHTML = "";
-  });
-
-  it("fills organization and project from the active ADO tab", async () => {
-    const controller = await initReady(store, reader, elements, undefined, {
-      organization: "contoso",
-      project: "web",
-      theme: null,
-    });
-    expect(elements.organization.textContent).toBe("contoso");
-    expect(elements.organization.dataset.empty).toBe("false");
-    expect(elements.project.textContent).toBe("web");
-    expect(elements.project.dataset.empty).toBe("false");
-    controller.dispose();
-  });
-
-  it("marks project empty when the ADO tab has no project", async () => {
-    const controller = await initReady(store, reader, elements, undefined, {
-      organization: "contoso",
-      project: null,
-      theme: null,
-    });
-    expect(elements.organization.dataset.empty).toBe("false");
-    expect(elements.project.dataset.empty).toBe("true");
-    controller.dispose();
-  });
-
-  it("marks both fields empty when there is no active ADO tab", async () => {
-    const controller = await initReady(store, reader, elements, undefined, null);
-    expect(elements.organization.dataset.empty).toBe("true");
-    expect(elements.project.dataset.empty).toBe("true");
-    controller.dispose();
   });
 
   it("resolves the auto theme from the ADO tab's rendered theme", async () => {
@@ -424,7 +392,6 @@ describe("OptionsController — ADO configuration", () => {
     await init;
     expect(errors.length).toBe(1);
     expect(elements.themeSelect.disabled).toBe(false);
-    expect(elements.organization.dataset.empty).toBe("true");
     controller.dispose();
   });
 });

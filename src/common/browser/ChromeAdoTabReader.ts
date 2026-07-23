@@ -1,14 +1,13 @@
 import {
   ADO_THEME_REQUEST,
-  parseAdoContext,
   type AdoTabContext,
   type AdoTheme,
   type AdoThemeResponse,
 } from "../navigation/AdoContext";
-import { ADO_HOST_MATCH_PATTERNS } from "../navigation/AdoHost";
-import { isAdoQueryUrl } from "../navigation/AdoQueryRoute";
+import { parseAdoQueryId } from "../navigation/AdoQueryRoute";
 
 import type { IAdoTabReader } from "./IAdoTabReader";
+import { pickCurrentAdoQueryTab, readCurrentAdoQueryContext } from "./pickAdoQueryTab";
 import { requestFromTab } from "./requestFromTab";
 
 /**
@@ -20,39 +19,21 @@ import { requestFromTab } from "./requestFromTab";
  */
 export class ChromeAdoTabReader implements IAdoTabReader {
   async read(): Promise<AdoTabContext | null> {
-    // Scan every open ADO tab, NOT just active ones: the options page uses open_in_tab, so opening
-    // it makes the options tab active and pushes the ADO Query tab the user came from into the
-    // background of the same window — an { active: true } scan would miss that tab entirely.
-    // Reading tab URLs here is allowed by the manifest host permissions for these origins.
-    const tabs = await chrome.tabs.query({ url: [...ADO_HOST_MATCH_PATTERNS] });
-    const queryTab = this.pickQueryTab(tabs);
-    if (!queryTab?.url || queryTab.id === undefined) {
+    const resolved = await readCurrentAdoQueryContext();
+    if (resolved === null) {
       return null;
     }
-    const context = parseAdoContext(queryTab.url);
-    if (context === null) {
-      return null;
-    }
-    return { ...context, theme: await this.readTheme(queryTab.id) };
+    return { ...resolved.context, theme: await this.readTheme(resolved.tabId) };
   }
 
   /**
-   * Choose the ADO Query tab that best represents where the user is working. Prefer one still
-   * active in its window; otherwise fall back to the most recently accessed Query tab so the panel
-   * reflects the tab the user most likely came from when several ADO tabs are open.
+   * The GUID of the single saved query the user's current ADO tab is on, or null when that tab is a
+   * query folder/list (no GUID) or no ADO Query tab is open. Deliberately lighter than `read()`: the
+   * binding form only needs to preselect the query, so this skips the content-script theme round-trip.
    */
-  private pickQueryTab(tabs: chrome.tabs.Tab[]): chrome.tabs.Tab | undefined {
-    const queryTabs = tabs.filter((tab) => typeof tab.url === "string" && isAdoQueryUrl(tab.url));
-    const activeQueryTab = queryTabs.find((tab) => tab.active);
-    if (activeQueryTab) {
-      return activeQueryTab;
-    }
-    return queryTabs.reduce<chrome.tabs.Tab | undefined>((mostRecent, tab) => {
-      if (mostRecent === undefined) {
-        return tab;
-      }
-      return (tab.lastAccessed ?? 0) > (mostRecent.lastAccessed ?? 0) ? tab : mostRecent;
-    }, undefined);
+  async readCurrentQueryId(): Promise<string | null> {
+    const queryTab = await pickCurrentAdoQueryTab();
+    return queryTab?.url ? parseAdoQueryId(queryTab.url) : null;
   }
 
   private async readTheme(tabId: number): Promise<AdoTheme | null> {

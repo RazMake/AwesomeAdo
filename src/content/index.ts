@@ -6,12 +6,7 @@ import {
 } from "../common/bindings/BindingRequest";
 import type { ActiveView } from "../common/bindings/QueryBinding";
 import { createQueryBindingStore } from "../common/bindings/createQueryBindingStore";
-import {
-  type AdoQueryNameResponse,
-  type AdoThemeResponse,
-  isAdoQueryNameRequest,
-  isAdoThemeRequest,
-} from "../common/navigation/AdoContext";
+import { type AdoThemeResponse, isAdoThemeRequest } from "../common/navigation/AdoContext";
 import { isAdoNavigationMessage } from "../common/navigation/AdoQueryRoute";
 import { createSettingsStore } from "../common/settings/createSettingsStore";
 
@@ -30,7 +25,8 @@ import { QueryPageController } from "./QueryPageController";
 // MutationObserver, and no blanking happen off a Query route. Every heavier action is gated behind a
 // parsed query id: PageBlanker paints only when QueryPageController.shouldEnhance() is true, and the
 // top-bar button's MutationObserver is created only when QueryBindingController sees a query id (see
-// BindingButton.show). The theme/query-name probes run only when the options page asks for them.
+// BindingButton.show). The theme probe runs only when the options page asks for it; the query-name
+// probe runs only when the user starts a bind from the top-bar button.
 const store = createSettingsStore();
 const controller = new QueryPageController(new PageBlanker(document), location.href);
 
@@ -108,10 +104,5 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) =
     const response: AdoThemeResponse = { theme: detectAdoTheme(document) };
     sendResponse(response);
     return;
-  }
-  // The options binding form's "scan all tabs" mode asks this tab for its query's display name.
-  if (isAdoQueryNameRequest(message)) {
-    const response: AdoQueryNameResponse = { name: detectAdoQueryName(document) };
-    sendResponse(response);
   }
 });

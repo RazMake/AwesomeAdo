@@ -101,4 +101,30 @@ describe("ChromeAdoTabReader", () => {
 
     expect(await reader.read()).toMatchObject({ organization: "Newer", project: "Proj" });
   });
+
+  describe("readCurrentQueryId", () => {
+    const QUERY_GUID = "12345678-1234-1234-1234-123456789abc";
+    const SINGLE_QUERY_TAB = {
+      id: 8,
+      url: `https://dev.azure.com/O365Exchange/O365%20Core/_queries/query/${QUERY_GUID}`,
+    };
+
+    it("returns the GUID of the ADO tab's single saved query without probing its theme", async () => {
+      tabs.query.mockResolvedValue([{ id: 1, url: "https://example.com" }, SINGLE_QUERY_TAB]);
+
+      expect(await reader.readCurrentQueryId()).toBe(QUERY_GUID);
+      // Preselecting the query never needs the rendered theme, so no message round-trip is made.
+      expect(tabs.sendMessage).not.toHaveBeenCalled();
+    });
+
+    it("returns null when the ADO tab is a query folder/list without a GUID", async () => {
+      tabs.query.mockResolvedValue([ADO_TAB]);
+      expect(await reader.readCurrentQueryId()).toBeNull();
+    });
+
+    it("returns null when no ADO Query tab is open", async () => {
+      tabs.query.mockResolvedValue([{ id: 1, url: "https://example.com" }, { id: 2 }]);
+      expect(await reader.readCurrentQueryId()).toBeNull();
+    });
+  });
 });

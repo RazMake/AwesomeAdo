@@ -21,9 +21,8 @@ scripts/               build + release automation (never bundled into the extens
 The **only** place allowed to touch `chrome.*`:
 
 - `ChromeSyncStorage` — the only user of `chrome.storage.sync` (`IBrowserSyncStorage`).
-- `ChromeAdoTabReader` / `ChromeAdoQueryTabsReader` — the only users of `chrome.tabs`
-  (`IAdoTabReader` / `IAdoQueryTabsReader`), used by the options page to read the active ADO tab's
-  org/project/theme and to enumerate open query tabs.
+- `ChromeAdoTabReader` — the only user of `chrome.tabs` (`IAdoTabReader`), used by the options page
+  to read the active ADO tab's org/project/theme.
 - `observeSyncKeys` — the shared, race-safe "subscribe before reading, revision-guard the initial
   read" protocol both stores use to observe synced storage. Returns `StorageObservation`.
 - `requestFromTab` — the shared best-effort tab round-trip (missing receiver → a fallback value)
