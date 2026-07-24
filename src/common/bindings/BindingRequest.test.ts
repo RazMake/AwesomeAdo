@@ -4,6 +4,7 @@ import {
   bindingSettingsPath,
   isOpenBindingSettingsMessage,
   isOpenOptionsMessage,
+  isRevealBindingSettingsMessage,
   isRevealOptionsSectionMessage,
   OPEN_BINDING_SETTINGS_MESSAGE,
   OPEN_OPTIONS_MESSAGE,
@@ -11,6 +12,7 @@ import {
   readOptionsSectionFromSearch,
   readQueryIdFromSearch,
   readQueryNameFromSearch,
+  REVEAL_BINDING_SETTINGS_MESSAGE,
   REVEAL_OPTIONS_SECTION_MESSAGE,
   sectionTabId,
 } from "./BindingRequest";
@@ -103,6 +105,38 @@ describe("isRevealOptionsSectionMessage", () => {
     expect(isRevealOptionsSectionMessage(null)).toBe(false);
     expect(
       isRevealOptionsSectionMessage({ type: OPEN_OPTIONS_MESSAGE, section: "diagnostics" }),
+    ).toBe(false);
+  });
+});
+
+describe("isRevealBindingSettingsMessage", () => {
+  it("accepts a valid message", () => {
+    expect(
+      isRevealBindingSettingsMessage({ type: REVEAL_BINDING_SETTINGS_MESSAGE, queryId: "abc" }),
+    ).toBe(true);
+  });
+
+  it("accepts an optional string queryName", () => {
+    expect(
+      isRevealBindingSettingsMessage({
+        type: REVEAL_BINDING_SETTINGS_MESSAGE,
+        queryId: "abc",
+        queryName: "My Query",
+      }),
+    ).toBe(true);
+  });
+
+  it("rejects a missing or non-string queryId", () => {
+    expect(isRevealBindingSettingsMessage({ type: REVEAL_BINDING_SETTINGS_MESSAGE })).toBe(false);
+    expect(
+      isRevealBindingSettingsMessage({ type: REVEAL_BINDING_SETTINGS_MESSAGE, queryId: 5 }),
+    ).toBe(false);
+  });
+
+  it("rejects a non-object or wrong type discriminator", () => {
+    expect(isRevealBindingSettingsMessage(null)).toBe(false);
+    expect(
+      isRevealBindingSettingsMessage({ type: OPEN_BINDING_SETTINGS_MESSAGE, queryId: "abc" }),
     ).toBe(false);
   });
 });

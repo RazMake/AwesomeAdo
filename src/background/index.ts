@@ -3,8 +3,10 @@ import {
   isOpenBindingSettingsMessage,
   isOpenOptionsMessage,
   optionsPath,
+  REVEAL_BINDING_SETTINGS_MESSAGE,
   REVEAL_OPTIONS_SECTION_MESSAGE,
-  type OptionsSection,
+  type RevealBindingSettingsMessage,
+  type RevealOptionsSectionMessage,
 } from "../common/bindings/BindingRequest";
 import { createLoggerFactory } from "../common/logging/createLogger";
 import { notifyNavigation } from "../common/navigation/NavigationNotifier";
@@ -25,20 +27,24 @@ chrome.webNavigation.onReferenceFragmentUpdated.addListener(handleNavigation);
 // is forgotten and the next click simply opens a fresh tab, which is harmless.
 let lastOpenedOptionsTabId: number | undefined;
 
+// The message an already-open options tab needs to reveal what a fresh tab would read from its URL:
+// a section deep-link ("View Log") or the binding form for a specific query. Sent only on tab reuse.
+type RevealMessage = RevealOptionsSectionMessage | RevealBindingSettingsMessage;
+
 // Content scripts can't open an extension page, so the top-bar menu asks the service worker to open
 // the options page. When an options tab this worker opened is still around we focus it and — for a
-// section deep-link like "View Log" — tell it to switch tabs in place, because an already-loaded
-// page won't re-read the section from a URL. Failures are logged rather than swallowed so a broken
-// open is diagnosable instead of appearing to do nothing.
-const openOptionsTab = (path: string, section?: OptionsSection): void => {
-  void reuseOrOpenOptionsTab(path, section).catch((error: unknown) => {
+// deep-link like "View Log" or a query's "Enable Enhanced View" — tell it to switch/populate in
+// place, because an already-loaded page won't re-read the target from a URL. Failures are logged
+// rather than swallowed so a broken open is diagnosable instead of appearing to do nothing.
+const openOptionsTab = (path: string, reveal?: RevealMessage): void => {
+  void reuseOrOpenOptionsTab(path, reveal).catch((error: unknown) => {
     logger.error("Could not open the options page", error);
   });
 };
 
-const reuseOrOpenOptionsTab = async (path: string, section?: OptionsSection): Promise<void> => {
+const reuseOrOpenOptionsTab = async (path: string, reveal?: RevealMessage): Promise<void> => {
   if (lastOpenedOptionsTabId !== undefined) {
-    const focused = await focusExistingOptionsTab(lastOpenedOptionsTabId, section);
+    const focused = await focusExistingOptionsTab(lastOpenedOptionsTabId, reveal);
     if (focused) {
       logger.info(`Revealed options page in existing tab: ${path}`);
       return;
@@ -51,19 +57,16 @@ const reuseOrOpenOptionsTab = async (path: string, section?: OptionsSection): Pr
   lastOpenedOptionsTabId = tab.id;
 };
 
-// Returns true when the remembered tab still exists and was focused (and, for a section link,
-// nudged to that tab); false when the tab is gone so the caller opens a new one.
-const focusExistingOptionsTab = async (
-  tabId: number,
-  section?: OptionsSection,
-): Promise<boolean> => {
+// Returns true when the remembered tab still exists and was focused (and, for a reveal, nudged to
+// the requested section or query); false when the tab is gone so the caller opens a new one.
+const focusExistingOptionsTab = async (tabId: number, reveal?: RevealMessage): Promise<boolean> => {
   try {
     const tab = await chrome.tabs.update(tabId, { active: true });
     if (tab?.windowId !== undefined) {
       await chrome.windows.update(tab.windowId, { focused: true });
     }
-    if (section !== undefined) {
-      await chrome.tabs.sendMessage(tabId, { type: REVEAL_OPTIONS_SECTION_MESSAGE, section });
+    if (reveal !== undefined) {
+      await chrome.tabs.sendMessage(tabId, reveal);
     }
     return true;
   } catch {
@@ -73,11 +76,19 @@ const focusExistingOptionsTab = async (
 
 chrome.runtime.onMessage.addListener((message: unknown) => {
   if (isOpenBindingSettingsMessage(message)) {
-    openOptionsTab(bindingSettingsPath(message.queryId, message.queryName));
+    openOptionsTab(bindingSettingsPath(message.queryId, message.queryName), {
+      type: REVEAL_BINDING_SETTINGS_MESSAGE,
+      queryId: message.queryId,
+      queryName: message.queryName,
+    });
     return;
   }
   if (isOpenOptionsMessage(message)) {
     // Forward the requested section (e.g. "diagnostics" for "View Log") so the page deep-links there.
-    openOptionsTab(optionsPath(message.section), message.section);
+    const reveal: RevealMessage | undefined =
+      message.section !== undefined
+        ? { type: REVEAL_OPTIONS_SECTION_MESSAGE, section: message.section }
+        : undefined;
+    openOptionsTab(optionsPath(message.section), reveal);
   }
 });

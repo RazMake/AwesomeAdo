@@ -97,6 +97,18 @@ export class QueryBindingsController {
     }
   }
 
+  /**
+   * Re-enter fixed-query mode after `init`, used when the options tab was already open and the user
+   * clicked a query's "Enable Enhanced View" again. A fresh tab reads the query from its URL on load,
+   * but an already-open tab has finished loading, so the current bindings are re-read (in case one
+   * was added since) and the form is re-populated for `queryId` in place.
+   */
+  async revealFixedQuery(queryId: string, queryName: string | null): Promise<void> {
+    this.bindings = await this.readBindings();
+    this.syncQueryNames();
+    this.initFixedQuery(queryId, queryName);
+  }
+
   dispose(): void {
     this.elements.viewSelect.removeEventListener("change", this.handleViewChange);
     this.elements.querySelect.removeEventListener("change", this.handleQueryChange);

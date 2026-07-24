@@ -97,6 +97,10 @@ so the top-bar menu sends a typed message to the background service worker, whic
   The message optionally carries the query's `queryName` scraped from the page it was triggered on.
 - `OPEN_OPTIONS_MESSAGE`, `OpenOptionsMessage`, `isOpenOptionsMessage(value)` — the typed message
   (and its guard) that opens the general options page with no query pre-selected.
+- `REVEAL_BINDING_SETTINGS_MESSAGE`, `RevealBindingSettingsMessage`,
+  `isRevealBindingSettingsMessage(value)` — sent by the service worker to an options page that is
+  already open, telling it to jump to the Bindings tab and populate the form for one query in place
+  (a reused tab won't re-read the query from a URL). Carries the same `queryId`/`queryName` payload.
 - `bindingSettingsPath(queryId, queryName?)` — extension-relative options URL carrying the query id
   (and its name when known); pass it to `chrome.runtime.getURL`.
 - `optionsPath()` — extension-relative options URL with no query pre-selected.

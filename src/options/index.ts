@@ -1,4 +1,5 @@
 import {
+  isRevealBindingSettingsMessage,
   isRevealOptionsSectionMessage,
   readOptionsSectionFromSearch,
   readQueryIdFromSearch,
@@ -236,6 +237,16 @@ if (
   void bindings.init(queryId, queryName).catch((error: unknown) => {
     bindings.dispose();
     report(error);
+  });
+
+  // When this tab is already open and the user clicks a query's "Enable Enhanced View" again, the
+  // service worker focuses it and sends this message instead of spawning a duplicate — so jump to
+  // the Bindings tab and re-populate the form in place rather than relying on a fresh page load.
+  chrome.runtime.onMessage.addListener((message: unknown) => {
+    if (isRevealBindingSettingsMessage(message)) {
+      tabs.activate("tab-bindings");
+      void bindings.revealFixedQuery(message.queryId, message.queryName ?? null).catch(report);
+    }
   });
 } else {
   report(new Error("The options page is missing the query-binding form and cannot bind queries."));

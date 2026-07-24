@@ -471,6 +471,52 @@ describe("QueryBindingsController", () => {
     });
   });
 
+  describe("revealFixedQuery (options tab already open)", () => {
+    it("re-populates the form for a different query without re-init", async () => {
+      const store = makeStore();
+      const controller = controllerFor(store);
+      await controller.init(GUID_A, "Sprint 42");
+
+      await controller.revealFixedQuery(GUID_B, "Release Plan");
+
+      expect(elements.queryId.textContent).toBe(GUID_B);
+      expect(elements.queryName.textContent).toBe("Release Plan");
+      expect(elements.pickerField.hidden).toBe(true);
+      expect(elements.form.hidden).toBe(false);
+      expect(elements.deleteButton.disabled).toBe(true);
+    });
+
+    it("loads a binding saved after the tab opened by re-reading the store", async () => {
+      const store = makeStore();
+      const controller = controllerFor(store);
+      await controller.init(null, null);
+      // The query gets bound elsewhere after this tab finished loading; the next read reflects it.
+      store.read.mockResolvedValueOnce({
+        [GUID_A]: { view: "tracking", properties: { team: "Blue" }, name: "Alpha" },
+      });
+
+      await controller.revealFixedQuery(GUID_A, "Alpha");
+
+      expect(elements.queryId.textContent).toBe(GUID_A);
+      expect(elements.viewSelect.value).toBe("tracking");
+      expect(propInput("team")?.value).toBe("Blue");
+      expect(elements.deleteButton.disabled).toBe(false);
+    });
+
+    it("reports a read failure and treats the query as unbound", async () => {
+      const store = makeStore();
+      const controller = controllerFor(store);
+      await controller.init(GUID_A, "Sprint 42");
+      store.read.mockRejectedValueOnce(new Error("nope"));
+
+      await controller.revealFixedQuery(GUID_B, "Release Plan");
+
+      expect(reportError).toHaveBeenCalled();
+      expect(elements.queryId.textContent).toBe(GUID_B);
+      expect(elements.deleteButton.disabled).toBe(true);
+    });
+  });
+
   it("handles an empty view catalog without crashing", async () => {
     const store = makeStore();
     await controllerFor(store, []).init(GUID_A, "Alpha");

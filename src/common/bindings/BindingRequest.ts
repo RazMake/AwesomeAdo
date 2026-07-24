@@ -20,16 +20,21 @@ export interface OpenBindingSettingsMessage {
   queryName?: string;
 }
 
+// The open- and reveal-binding messages carry the same {queryId, queryName?} payload; validating
+// that shared shape in one place keeps their two guards from drifting apart or duplicating checks.
+function hasBindingQueryFields(candidate: { queryId?: unknown; queryName?: unknown }): boolean {
+  return (
+    typeof candidate.queryId === "string" &&
+    (candidate.queryName === undefined || typeof candidate.queryName === "string")
+  );
+}
+
 export function isOpenBindingSettingsMessage(value: unknown): value is OpenBindingSettingsMessage {
   if (typeof value !== "object" || value === null) {
     return false;
   }
   const candidate = value as Partial<OpenBindingSettingsMessage>;
-  return (
-    candidate.type === OPEN_BINDING_SETTINGS_MESSAGE &&
-    typeof candidate.queryId === "string" &&
-    (candidate.queryName === undefined || typeof candidate.queryName === "string")
-  );
+  return candidate.type === OPEN_BINDING_SETTINGS_MESSAGE && hasBindingQueryFields(candidate);
 }
 
 /**
@@ -92,6 +97,32 @@ export function isRevealOptionsSectionMessage(
   }
   const candidate = value as Partial<RevealOptionsSectionMessage>;
   return candidate.type === REVEAL_OPTIONS_SECTION_MESSAGE && isOptionsSection(candidate.section);
+}
+
+/**
+ * Sent from the service worker to an options page that is already open, telling it to reveal the
+ * binding form for one query without a reload. A fresh options tab reads the query from its URL on
+ * load, but an already-open tab has finished loading and would otherwise just refocus on whatever
+ * the user last had selected — so reusing that tab (instead of spawning a duplicate) needs this
+ * in-page nudge to jump to the Bindings tab and populate the form for the clicked query.
+ */
+export const REVEAL_BINDING_SETTINGS_MESSAGE = "awesomeado:reveal-binding-settings";
+
+export interface RevealBindingSettingsMessage {
+  type: typeof REVEAL_BINDING_SETTINGS_MESSAGE;
+  queryId: string;
+  /** The query's display name when known, so the reused form shows a name without re-scraping ADO. */
+  queryName?: string;
+}
+
+export function isRevealBindingSettingsMessage(
+  value: unknown,
+): value is RevealBindingSettingsMessage {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const candidate = value as Partial<RevealBindingSettingsMessage>;
+  return candidate.type === REVEAL_BINDING_SETTINGS_MESSAGE && hasBindingQueryFields(candidate);
 }
 
 const QUERY_ID_PARAM = "queryId";
