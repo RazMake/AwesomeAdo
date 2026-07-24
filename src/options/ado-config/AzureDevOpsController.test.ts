@@ -83,6 +83,8 @@ function makeElements(): AzureDevOpsElements {
   teamField.append(teamInput);
   const futureSprintsInput = document.createElement("input");
   futureSprintsInput.type = "number";
+  const pastSprintsInput = document.createElement("input");
+  pastSprintsInput.type = "number";
   const areaPathsList = document.createElement("div");
   const areaPathsEmpty = document.createElement("p");
   const areaPathAddButton = document.createElement("button");
@@ -95,11 +97,14 @@ function makeElements(): AzureDevOpsElements {
   const workItemTypesEmpty = document.createElement("p");
   const workItemTypeAddButton = document.createElement("button");
   const boardColumnAddButton = document.createElement("button");
+  const witEtaBody = document.createElement("div");
+  const witEtaEmpty = document.createElement("p");
   document.body.append(
     organization,
     project,
     teamField,
     futureSprintsInput,
+    pastSprintsInput,
     areaPathsList,
     areaPathsEmpty,
     areaPathAddButton,
@@ -107,12 +112,15 @@ function makeElements(): AzureDevOpsElements {
     workItemTypesEmpty,
     workItemTypeAddButton,
     boardColumnAddButton,
+    witEtaBody,
+    witEtaEmpty,
   );
   return {
     organization,
     project,
     teamInput,
     futureSprintsInput,
+    pastSprintsInput,
     areaPathsList,
     areaPathsEmpty,
     areaPathAddButton,
@@ -122,6 +130,8 @@ function makeElements(): AzureDevOpsElements {
       empty: workItemTypesEmpty,
       addTypeButton: workItemTypeAddButton,
       addColumnButton: boardColumnAddButton,
+      etaBody: witEtaBody,
+      etaEmpty: witEtaEmpty,
     },
   };
 }
@@ -253,12 +263,14 @@ describe("AzureDevOpsController — initialization", () => {
     store = new FakeSettingsStore({
       currentTeam: { id: "2", name: "Beta" },
       futureSprintsCount: 5,
+      pastSprintsCount: 3,
       areaPaths: [{ path: "Web\\Api", label: "Api" }],
     });
     const controller = new AzureDevOpsController(store, reader, elements);
     await controller.init();
     expect(elements.teamInput.value).toBe("Beta");
     expect(elements.futureSprintsInput.value).toBe("5");
+    expect(elements.pastSprintsInput.value).toBe("3");
     expect(pathRows(elements)).toHaveLength(1);
     expect(input(rowAt(elements, 0), "path").value).toBe("Web\\Api");
     expect(input(rowAt(elements, 0), "label").value).toBe("Api");
@@ -381,6 +393,44 @@ describe("AzureDevOpsController — future sprints", () => {
     fire(elements.futureSprintsInput, "change");
     await flush();
     expect(elements.futureSprintsInput.value).toBe(String(DEFAULT_SETTINGS.futureSprintsCount));
+  });
+});
+
+describe("AzureDevOpsController — past sprints", () => {
+  let store: FakeSettingsStore;
+  let elements: AzureDevOpsElements;
+  let controller: AzureDevOpsController;
+
+  beforeEach(async () => {
+    store = new FakeSettingsStore();
+    elements = makeElements();
+    controller = new AzureDevOpsController(store, new FakeMetadataReader(CONTEXT), elements);
+    await controller.init();
+  });
+
+  afterEach(() => controller.dispose());
+
+  it("persists an in-range value", async () => {
+    elements.pastSprintsInput.value = "4";
+    fire(elements.pastSprintsInput, "change");
+    await flush();
+    expect(store.writeCalls).toContainEqual({ pastSprintsCount: 4 });
+  });
+
+  it("clamps an over-range value and reflects the clamp in the field", async () => {
+    elements.pastSprintsInput.value = "99";
+    fire(elements.pastSprintsInput, "change");
+    await flush();
+    expect(elements.pastSprintsInput.value).toBe("6");
+    expect(store.writeCalls).toContainEqual({ pastSprintsCount: 6 });
+  });
+
+  it("restores the previous count when the write is rejected", async () => {
+    store.setWriteError(new Error("nope"));
+    elements.pastSprintsInput.value = "5";
+    fire(elements.pastSprintsInput, "change");
+    await flush();
+    expect(elements.pastSprintsInput.value).toBe(String(DEFAULT_SETTINGS.pastSprintsCount));
   });
 });
 

@@ -1,6 +1,6 @@
 import { parseAdoContext } from "../navigation/AdoContext";
 
-import type { AdoTeam, AdoWorkItemType } from "./AdoMetadata";
+import type { AdoTeam, AdoWorkItemField, AdoWorkItemType } from "./AdoMetadata";
 
 const API_VERSION = "7.1";
 // Area classification trees are shallow in practice; 10 levels covers every realistic hierarchy
@@ -11,11 +11,13 @@ const AREA_TREE_DEPTH = 10;
 // round-trips as possible, then let it page $skip to the end (see fetchAdoRawInPage).
 const TEAMS_PAGE_SIZE = 1000;
 
-/** The two ADO REST endpoints the options page reads for a project: its teams and its area tree. */
+/** The ADO REST endpoints the options page reads for a project: teams, area tree, types, fields. */
 export interface AdoMetadataUrls {
   teamsUrl: string;
   areaPathsUrl: string;
   workItemTypesUrl: string;
+  /** The project's field list, read only to learn which fields are date-typed (see `fetchAdoRawInPage`). */
+  fieldsUrl: string;
 }
 
 /**
@@ -54,6 +56,9 @@ export function buildAdoMetadataUrls(href: string): AdoMetadataUrls | null {
     // The work-item-types list endpoint returns each type's states inline, so one request covers both
     // the type list and every type's states.
     workItemTypesUrl: `${base}/${project}/_apis/wit/workitemtypes?api-version=${API_VERSION}`,
+    // The type-list body names each type's fields but never their data type, so the project field
+    // list is read alongside it purely to learn which of those fields are date-typed.
+    fieldsUrl: `${base}/${project}/_apis/wit/fields?api-version=${API_VERSION}`,
   };
 }
 
@@ -116,8 +121,15 @@ function isTeam(value: unknown): value is AdoTeam {
  *
  * Best-effort like `parseTeams`: a missing/malformed body yields `[]`. Disabled types are dropped so
  * the picker only offers types the team can actually use, and each type keeps only its named states.
+ *
+ * `dateFieldReferenceNames` (from `parseDateFieldReferenceNames`) selects which of a type's inline
+ * fields are date-typed; without it every type's `dateFields` is empty, so the type list still parses
+ * before the separate field-list request resolves.
  */
-export function parseWorkItemTypes(body: unknown): AdoWorkItemType[] {
+export function parseWorkItemTypes(
+  body: unknown,
+  dateFieldReferenceNames: ReadonlySet<string> = new Set(),
+): AdoWorkItemType[] {
   const value = (body as { value?: unknown } | null)?.value;
   if (!Array.isArray(value)) {
     return [];
@@ -127,9 +139,59 @@ export function parseWorkItemTypes(body: unknown): AdoWorkItemType[] {
     color: typeof type.color === "string" ? type.color : "",
     icon: typeof type.icon?.url === "string" ? type.icon.url : "",
     states: parseWorkItemStateNames(type.states),
+    dateFields: parseTypeDateFields(type.fields, dateFieldReferenceNames),
   }));
   types.sort((left, right) => left.name.localeCompare(right.name));
   return types;
+}
+
+/**
+ * Well-known Azure DevOps date fields that record a lifecycle/audit moment (set automatically by the
+ * platform) rather than a user-chosen target. Offering these as an "ETA" would be misleading, so they
+ * are excluded from the suggestions even though they are date-typed. Reference names are stable
+ * identifiers, so matching on them is language-independent.
+ */
+const NON_TARGET_DATE_FIELD_REFERENCE_NAMES: ReadonlySet<string> = new Set([
+  "System.CreatedDate", // Created Date
+  "System.ChangedDate", // Changed Date (a.k.a. Modified Date)
+  "System.AuthorizedDate", // Authorized Date (last revision timestamp)
+  "System.RevisedDate", // Revised Date (revision bookkeeping)
+  "Microsoft.VSTS.Common.StateChangeDate", // State Change Date
+  "Microsoft.VSTS.Common.ActivatedDate", // Activated Date
+  "Microsoft.VSTS.Common.ResolvedDate", // Resolved Date
+  "Microsoft.VSTS.Common.ClosedDate", // Closed Date
+]);
+
+/**
+ * Collect the reference names of every date-typed field that is eligible to be an ETA from the
+ * project's field-list REST body.
+ *
+ * The type-list body names a type's fields but omits their data type, so this set is what tells the
+ * two apart. Well-known system/lifecycle date fields (see `NON_TARGET_DATE_FIELD_REFERENCE_NAMES`)
+ * are dropped here because they track when something happened, not a planned target. Best-effort: a
+ * missing/malformed body yields an empty set, so no field is offered as an ETA until the field list
+ * is available.
+ */
+export function parseDateFieldReferenceNames(body: unknown): Set<string> {
+  const value = (body as { value?: unknown } | null)?.value;
+  const referenceNames = new Set<string>();
+  if (!Array.isArray(value)) {
+    return referenceNames;
+  }
+  for (const field of value) {
+    const { referenceName, type } = (field ?? {}) as { referenceName?: unknown; type?: unknown };
+    // ADO reports date fields with the `dateTime` field type; only those can carry an ETA, and only
+    // then if they are not one of the platform-managed lifecycle dates.
+    if (
+      type === "dateTime" &&
+      typeof referenceName === "string" &&
+      referenceName.length > 0 &&
+      !NON_TARGET_DATE_FIELD_REFERENCE_NAMES.has(referenceName)
+    ) {
+      referenceNames.add(referenceName);
+    }
+  }
+  return referenceNames;
 }
 
 /** The subset of the raw work-item-type body this module reads, before it is narrowed/normalized. */
@@ -138,6 +200,7 @@ interface RawWorkItemType {
   color?: unknown;
   icon?: { url?: unknown };
   states?: unknown;
+  fields?: unknown;
   isDisabled?: unknown;
 }
 
@@ -165,4 +228,39 @@ function parseWorkItemStateNames(states: unknown): string[] {
     names.push(name);
   }
   return names;
+}
+
+/**
+ * Pick a type's date-typed fields from its inline field list, keeping only fields whose reference
+ * name is in `dateFieldReferenceNames`, deduped by reference name and sorted by display name.
+ *
+ * The type-list body carries a `name` per field (already localized by ADO), so that is used for the
+ * label while the reference name — the stable identifier — is what gets persisted.
+ */
+function parseTypeDateFields(
+  fields: unknown,
+  dateFieldReferenceNames: ReadonlySet<string>,
+): AdoWorkItemField[] {
+  if (!Array.isArray(fields)) {
+    return [];
+  }
+  const dateFields: AdoWorkItemField[] = [];
+  const seen = new Set<string>();
+  for (const field of fields) {
+    const { referenceName, name } = (field ?? {}) as { referenceName?: unknown; name?: unknown };
+    if (
+      typeof referenceName !== "string" ||
+      !dateFieldReferenceNames.has(referenceName) ||
+      seen.has(referenceName)
+    ) {
+      continue;
+    }
+    seen.add(referenceName);
+    dateFields.push({
+      referenceName,
+      name: typeof name === "string" && name.length > 0 ? name : referenceName,
+    });
+  }
+  dateFields.sort((left, right) => left.name.localeCompare(right.name));
+  return dateFields;
 }

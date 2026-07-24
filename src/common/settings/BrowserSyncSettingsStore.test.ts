@@ -69,6 +69,7 @@ const THEME_KEY = "settings.theme";
 const DEFAULT_VIEW_KEY = "settings.defaultView";
 const CURRENT_TEAM_KEY = "settings.currentTeam";
 const FUTURE_SPRINTS_KEY = "settings.futureSprintsCount";
+const PAST_SPRINTS_KEY = "settings.pastSprintsCount";
 const AREA_PATHS_KEY = "settings.areaPaths";
 const BOARD_COLUMNS_KEY = "settings.boardColumns";
 const WORK_ITEM_TYPES_KEY = "settings.workItemTypes";
@@ -104,11 +105,13 @@ describe("BrowserSyncSettingsStore", () => {
       const fake = new FakeBrowserSyncStorage();
       await fake.set(CURRENT_TEAM_KEY, { id: "team-1", name: "Platform" });
       await fake.set(FUTURE_SPRINTS_KEY, 5);
+      await fake.set(PAST_SPRINTS_KEY, 3);
       await fake.set(AREA_PATHS_KEY, [{ path: "Web\\Api", label: "Api" }]);
       const store = new BrowserSyncSettingsStore(fake);
       const settings = await store.read();
       expect(settings.currentTeam).toEqual({ id: "team-1", name: "Platform" });
       expect(settings.futureSprintsCount).toBe(5);
+      expect(settings.pastSprintsCount).toBe(3);
       expect(settings.areaPaths).toEqual([{ path: "Web\\Api", label: "Api" }]);
     });
 
@@ -205,6 +208,14 @@ describe("BrowserSyncSettingsStore", () => {
       });
       expect(await fake.get(FUTURE_SPRINTS_KEY)).toBe(6);
       expect(await fake.get(AREA_PATHS_KEY)).toEqual([{ path: "Web\\Api", label: "Api" }]);
+    });
+
+    it("persists the past-sprints key when supplied", async () => {
+      const fake = new FakeBrowserSyncStorage();
+      const store = new BrowserSyncSettingsStore(fake);
+      await store.write({ pastSprintsCount: 3 });
+      expect(fake.getStoredKeys()).toEqual([PAST_SPRINTS_KEY]);
+      expect(await fake.get(PAST_SPRINTS_KEY)).toBe(3);
     });
 
     it("persists the board-columns key when supplied", async () => {

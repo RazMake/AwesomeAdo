@@ -6,7 +6,7 @@ description: Steps for proposing a changelog bullet and checking release inputs 
 # Changelog & Versioning Skill
 
 Read [AGENTS.md](../../../AGENTS.md) before proceeding. Mandatory rules are in
-**Versioning & changelog rules** (§3.8).
+**Versioning & changelog rules** (§12).
 
 ## Proposing a changelog bullet
 
@@ -56,6 +56,6 @@ Before creating a release:
 
 ## References
 
-- Versioning rules: AGENTS.md §3.8
+- Versioning rules: AGENTS.md §12
 - compute-version logic: `scripts/compute-version.mjs`
 - ChangeLog location: `ChangeLog.md`

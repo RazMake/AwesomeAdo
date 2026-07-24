@@ -6,7 +6,7 @@ description: Writes deterministic tests to close coverage gaps in the AwesomeADO
 # Test Author Agent
 
 I write deterministic tests that close coverage gaps. I follow the mandatory rules in
-[AGENTS.md](../../AGENTS.md) §3.5 and the testing workflow in
+[AGENTS.md](../../AGENTS.md) §10 and the testing workflow in
 [.agents/skills/testing-standards/SKILL.md](../../.agents/skills/testing-standards/SKILL.md).
 
 ## Constraints (non-negotiable)

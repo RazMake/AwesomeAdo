@@ -19,18 +19,34 @@ The catalog of views a query can be bound to:
 interface ViewTypeProperty {
   key: string;
   label: string;
-  required: boolean;
+  required: boolean; // Save is gated until every required property has a value
+  kind?: "text" | "number"; // how the binding form renders/validates it (default: text)
+  defaultValue?: string; // seeded into a fresh input and substituted at save when empty
+  min?: number; // inclusive bounds a `number` value is forced into (either end optional)
+  max?: number;
+  hint?: string; // one-line "why" shown under the input
 }
 interface ViewType {
   id: string; // stable, persisted on the binding
   label: string; // shown in the picker
-  properties: readonly ViewTypeProperty[]; // required/optional inputs (currently none)
+  properties: readonly ViewTypeProperty[]; // required/optional inputs
 }
 ```
 
 `VIEW_TYPES` is the ordered source of truth (`Sprint View`, `Project Tracking`). **Add a new view
-by appending an entry** — nothing else in the binding flow changes. `getViewType(id)` returns a
-view by its stored id, or `undefined` when the id is unknown.
+by appending an entry** — nothing else in the binding flow changes. `Project Tracking` declares the
+per-query fields `orderingPolicy` (a `select` of how items are ordered — `importance`/`title`/`eta`,
+default `importance`; the sort itself lives in `src/common/ordering`), `weeks` (1–52, default 2),
+`days` (0–3650, default 4), and `hours` (default 24); their stated defaults apply whenever a binding
+leaves one unset.
+
+`getViewType(id)` returns a view by its stored id, or `undefined` when the id is unknown.
+`viewTypePropertyKind(property)` reports its kind (treating an unset kind as `text`), and
+`resolveViewTypePropertyValue(property, stored)` returns the value a binding should hold for a
+property: it falls back to the declared default when nothing is stored, coerces a `number` to a
+whole number clamped into `[min, max]`, and for a `select` keeps the stored value only while it is
+still one of the offered options. The binding form routes both input-seeding and save through
+`resolveViewTypePropertyValue`, so what it shows and what it stores never drift.
 
 ### `QueryBinding` / `QueryBindings` — `QueryBinding.ts`
 

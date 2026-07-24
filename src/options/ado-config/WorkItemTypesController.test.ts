@@ -44,8 +44,23 @@ class FakeSettingsStore implements ISettingsStore {
 }
 
 const TYPES: AdoWorkItemType[] = [
-  { name: "Bug", color: "CC293D", icon: "https://ado/bug", states: ["New", "Active", "Resolved"] },
-  { name: "Task", color: "F2CB1D", icon: "", states: ["To Do", "Doing", "Done"] },
+  {
+    name: "Bug",
+    color: "CC293D",
+    icon: "https://ado/bug",
+    states: ["New", "Active", "Resolved"],
+    dateFields: [
+      { referenceName: "Microsoft.VSTS.Common.ResolvedDate", name: "Resolved Date" },
+      { referenceName: "Microsoft.VSTS.Scheduling.TargetDate", name: "Target Date" },
+    ],
+  },
+  {
+    name: "Task",
+    color: "F2CB1D",
+    icon: "",
+    states: ["To Do", "Doing", "Done"],
+    dateFields: [{ referenceName: "Microsoft.VSTS.Scheduling.FinishDate", name: "Finish Date" }],
+  },
 ];
 
 function makeElements(): WorkItemTypesElements {
@@ -58,8 +73,10 @@ function makeElements(): WorkItemTypesElements {
   const empty = document.createElement("p");
   const addTypeButton = document.createElement("button");
   const addColumnButton = document.createElement("button");
-  document.body.append(table, empty, addTypeButton, addColumnButton);
-  return { columnsRow, body, empty, addTypeButton, addColumnButton };
+  const etaBody = document.createElement("div");
+  const etaEmpty = document.createElement("p");
+  document.body.append(table, empty, addTypeButton, addColumnButton, etaBody, etaEmpty);
+  return { columnsRow, body, empty, addTypeButton, addColumnButton, etaBody, etaEmpty };
 }
 
 function rows(elements: WorkItemTypesElements): HTMLElement[] {
@@ -796,5 +813,113 @@ describe("WorkItemTypesController — disposal", () => {
 
     expect(rows(elements)).toHaveLength(0);
     expect(columnHeaders(elements)).toHaveLength(1);
+  });
+});
+
+describe("WorkItemTypesController — ETA field", () => {
+  /** The ETA rows currently shown in the read-only ETA section. */
+  const etaRows = (elements: WorkItemTypesElements): HTMLElement[] => [
+    ...elements.etaBody.querySelectorAll<HTMLElement>(".wit-eta-row"),
+  ];
+
+  const etaRowFor = (elements: WorkItemTypesElements, typeName: string): HTMLElement => {
+    const select = elements.etaBody.querySelector<HTMLSelectElement>(
+      `[data-role="eta"][data-type-name="${typeName}"]`,
+    );
+    if (select === null) {
+      throw new Error(`no ETA row for ${typeName}`);
+    }
+    return select.closest<HTMLElement>(".wit-eta-row")!;
+  };
+
+  const etaSelect = (row: HTMLElement): HTMLSelectElement =>
+    row.querySelector<HTMLSelectElement>('[data-role="eta"]')!;
+
+  const optionValues = (select: HTMLSelectElement): string[] =>
+    [...select.options].map((option) => option.value);
+
+  const bugWithEta: WorkItemType = {
+    name: "Bug",
+    color: "CC293D",
+    icon: "https://ado/bug",
+    columns: [],
+    etaField: "Microsoft.VSTS.Scheduling.TargetDate",
+  };
+
+  it("lists one ETA row per committed type, offering that type's date fields", () => {
+    const { elements } = setup({
+      boardColumns: ["Active"],
+      entries: [{ name: "Bug", color: "CC293D", icon: "https://ado/bug", columns: [] }],
+    });
+
+    expect(etaRows(elements)).toHaveLength(1);
+    const select = etaSelect(etaRowFor(elements, "Bug"));
+    // A leading blank ("None") plus the type's two date fields, in the metadata's sorted order.
+    expect(optionValues(select)).toEqual([
+      "",
+      "Microsoft.VSTS.Common.ResolvedDate",
+      "Microsoft.VSTS.Scheduling.TargetDate",
+    ]);
+    expect(elements.etaEmpty.hidden).toBe(true);
+  });
+
+  it("shows the empty notice and no rows until a type is committed", () => {
+    const { elements } = setup({ boardColumns: ["Active"] });
+    expect(etaRows(elements)).toHaveLength(0);
+    expect(elements.etaEmpty.hidden).toBe(false);
+
+    addTypeRow(elements, "Bug");
+    expect(etaRows(elements)).toHaveLength(1);
+    expect(elements.etaEmpty.hidden).toBe(true);
+  });
+
+  it("preselects the stored ETA date field", () => {
+    const { elements } = setup({ boardColumns: ["Active"], entries: [bugWithEta] });
+    expect(etaSelect(etaRowFor(elements, "Bug")).value).toBe(
+      "Microsoft.VSTS.Scheduling.TargetDate",
+    );
+  });
+
+  it("persists the chosen ETA date field for its type", () => {
+    const { store, elements } = setup({ boardColumns: ["Active"] });
+    addTypeRow(elements, "Bug");
+
+    commit(etaSelect(etaRowFor(elements, "Bug")), "Microsoft.VSTS.Scheduling.TargetDate");
+
+    expect(store.writeCalls.at(-1)).toEqual({ workItemTypes: [bugWithEta] });
+  });
+
+  it("drops the ETA field from the persisted type when set back to none", () => {
+    const { store, elements } = setup({ boardColumns: ["Active"], entries: [bugWithEta] });
+
+    commit(etaSelect(etaRowFor(elements, "Bug")), "");
+
+    expect(store.writeCalls.at(-1)).toEqual({
+      workItemTypes: [{ name: "Bug", color: "CC293D", icon: "https://ado/bug", columns: [] }],
+    });
+  });
+
+  it("removes the type's ETA row when the type is emptied", () => {
+    const { elements } = setup({ boardColumns: ["Active"], entries: [bugWithEta] });
+    expect(etaRows(elements)).toHaveLength(1);
+
+    commit(typeInput(rowAt(elements, 0)), "");
+
+    expect(etaRows(elements)).toHaveLength(0);
+    expect(elements.etaEmpty.hidden).toBe(false);
+  });
+
+  it("keeps a stored ETA field selectable even when metadata lists no date fields yet", () => {
+    const store = new FakeSettingsStore();
+    const elements = makeElements();
+    const controller = new WorkItemTypesController(store, elements, () => {});
+    controller.init();
+    // Render before metadata arrives: the type's date fields are unknown, but the stored ETA must
+    // still be shown so it is neither hidden nor silently dropped on the next save.
+    controller.render([bugWithEta], ["Active"]);
+
+    const select = etaSelect(etaRowFor(elements, "Bug"));
+    expect(select.value).toBe("Microsoft.VSTS.Scheduling.TargetDate");
+    expect(optionValues(select)).toEqual(["", "Microsoft.VSTS.Scheduling.TargetDate"]);
   });
 });

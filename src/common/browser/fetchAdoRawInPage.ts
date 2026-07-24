@@ -3,10 +3,12 @@ export interface AdoRawMetadata {
   teams: unknown;
   areaTree: unknown;
   workItemTypes: unknown;
+  /** The project field list, read only to learn which of a type's fields are date-typed. */
+  fields: unknown;
 }
 
 /**
- * Fetch the raw ADO teams, area-tree, and work-item-types JSON from inside the ADO page itself.
+ * Fetch the raw ADO teams, area-tree, work-item-types, and field-list JSON from inside the ADO page.
  *
  * WHY this exists / why it must stay self-contained: In Manifest V3 the extension's content script
  * runs in an isolated world whose origin is `chrome-extension://…`, so its cross-origin fetch to ADO
@@ -22,6 +24,7 @@ export function fetchAdoRawInPage(
   teamsUrl: string,
   areaPathsUrl: string,
   workItemTypesUrl: string,
+  fieldsUrl: string,
 ): Promise<AdoRawMetadata> {
   const get = (url: string): Promise<unknown> =>
     fetch(url, { credentials: "include", headers: { Accept: "application/json" } })
@@ -53,11 +56,15 @@ export function fetchAdoRawInPage(
     return readPage(0, MAX_TEAM_PAGES);
   };
 
-  return Promise.all([getAllTeams(teamsUrl), get(areaPathsUrl), get(workItemTypesUrl)]).then(
-    (bodies) => ({
-      teams: bodies[0],
-      areaTree: bodies[1],
-      workItemTypes: bodies[2],
-    }),
-  );
+  return Promise.all([
+    getAllTeams(teamsUrl),
+    get(areaPathsUrl),
+    get(workItemTypesUrl),
+    get(fieldsUrl),
+  ]).then((bodies) => ({
+    teams: bodies[0],
+    areaTree: bodies[1],
+    workItemTypes: bodies[2],
+    fields: bodies[3],
+  }));
 }

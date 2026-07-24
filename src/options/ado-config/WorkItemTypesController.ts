@@ -20,6 +20,10 @@ export interface WorkItemTypesElements {
   addTypeButton: HTMLButtonElement;
   /** Button that appends a new board column; disabled once the column cap is reached. */
   addColumnButton: HTMLButtonElement;
+  /** Container the controller fills with one ETA-field row per committed type (read-only list). */
+  etaBody: HTMLElement;
+  /** Notice shown in the ETA section only while no type is committed. */
+  etaEmpty: HTMLElement;
 }
 
 type ReportError = (error: unknown) => void;
@@ -30,6 +34,13 @@ interface ColumnModel {
   name: string;
 }
 
+/** A committed work item type surfaced in the read-only ETA list: its rendered name/color/icon. */
+interface CommittedType {
+  name: string;
+  color: string;
+  icon: string;
+}
+
 const ROLE_ATTRIBUTE = "data-role";
 const TYPE_ROLE = "type";
 const TYPE_DELETE_ROLE = "type-delete";
@@ -37,6 +48,7 @@ const COLUMN_NAME_ROLE = "column-name";
 const COLUMN_DELETE_ROLE = "column-delete";
 const STATE_ROLE = "state";
 const STATE_REMOVE_ROLE = "state-remove";
+const ETA_ROLE = "eta";
 
 const ROW_SELECTOR = ".wit-row";
 const CELL_SELECTOR = ".wit-cell";
@@ -44,8 +56,11 @@ const STATE_SELECTOR = ".wit-state";
 const TYPE_INPUT_SELECTOR = `[${ROLE_ATTRIBUTE}="${TYPE_ROLE}"]`;
 const STATE_INPUT_SELECTOR = `[${ROLE_ATTRIBUTE}="${STATE_ROLE}"]`;
 const COLUMN_ID_ATTRIBUTE = "data-column-id";
+const TYPE_NAME_ATTRIBUTE = "data-type-name";
 
 const NEW_COLUMN_BASE_NAME = "New state";
+// The blank ETA choice: the type has no ETA field until the user picks a date field for it.
+const ETA_NONE_LABEL = "— None —";
 
 /**
  * Drives the "Work item types" mapping table on the Azure DevOps tab.
@@ -60,12 +75,21 @@ const NEW_COLUMN_BASE_NAME = "New state";
  * the single metadata read and settings load and feeds them in (`render`, `setAvailableTypes`), so
  * the two share one credentialed fetch. Both the store and the available-types metadata are provided
  * by the caller (Dependency Inversion), so this controller is fully testable without a browser.
+ *
+ * It also owns a second, read-only section that maps each committed type to its ETA date field. That
+ * section lives here (not in a separate controller) because the ETA is stored on the same
+ * `workItemTypes` setting this controller already writes — a single writer keeps the two in sync and
+ * avoids two controllers clobbering each other's slice of the same setting.
  */
 export class WorkItemTypesController {
   private availableTypes: readonly AdoWorkItemType[] = [];
   private columns: ColumnModel[] = [];
   private nextColumnId = 0;
   private enabled = false;
+  // The chosen ETA date field per committed type, keyed by lowercased type name. Kept here (not in
+  // the DOM) so the read-only ETA section can re-render from the current types without losing a
+  // pick, and so a stored ETA for a custom/not-yet-loaded field survives until metadata arrives.
+  private readonly etaByType = new Map<string, string>();
   // Each row's type input and each cell's state input own a searchable dropdown; keyed by the input
   // so a removed row/cell drops its combobox out with the input (no manual bookkeeping).
   private readonly typeComboboxes = new WeakMap<HTMLInputElement, AutocompleteInput>();
@@ -95,6 +119,8 @@ export class WorkItemTypesController {
     this.elements.body.addEventListener("dragend", this.handleDragEnd);
     this.elements.columnsRow.addEventListener("change", this.handleColumnChange);
     this.elements.columnsRow.addEventListener("click", this.handleColumnClick);
+    // The ETA section's date-field pickers are delegated the same way its list is rebuilt in place.
+    this.elements.etaBody.addEventListener("change", this.handleEtaChange);
   }
 
   dispose(): void {
@@ -109,6 +135,7 @@ export class WorkItemTypesController {
     this.elements.body.removeEventListener("dragend", this.handleDragEnd);
     this.elements.columnsRow.removeEventListener("change", this.handleColumnChange);
     this.elements.columnsRow.removeEventListener("click", this.handleColumnClick);
+    this.elements.etaBody.removeEventListener("change", this.handleEtaChange);
   }
 
   /** Seed the table header and rows from stored settings. Rows render even without live metadata. */
@@ -117,14 +144,20 @@ export class WorkItemTypesController {
     this.columns = boardColumns.map((name) => ({ id: `c${this.nextColumnId++}`, name }));
     this.renderHeader();
     this.elements.body.replaceChildren();
+    // The store is the source of truth for the ETA picks, so reset the map before re-seeding it.
+    this.etaByType.clear();
     for (const entry of entries) {
       const row = this.createTypeRow();
       this.elements.body.append(row);
       this.applyType(row, entry.name, entry.color, entry.icon);
+      if (entry.etaField) {
+        this.etaByType.set(entry.name.toLowerCase(), entry.etaField);
+      }
       this.fillCellsFromEntry(row, entry.columns);
       this.refreshRow(row);
     }
     this.updateEmpty();
+    this.renderEtaSection();
   }
 
   /** Provide the org/project's work item types; refreshes every row's picker and state pools. */
@@ -139,6 +172,8 @@ export class WorkItemTypesController {
       this.refreshRow(row);
     }
     this.refreshTypeOptions();
+    // Live metadata carries each type's date fields, so the ETA pickers can only fill in now.
+    this.renderEtaSection();
   }
 
   enable(): void {
@@ -274,6 +309,7 @@ export class WorkItemTypesController {
       this.clearRowType(row);
       this.refreshRow(row);
       this.refreshTypeOptions();
+      this.renderEtaSection();
       this.persistTypes();
       return;
     }
@@ -287,6 +323,7 @@ export class WorkItemTypesController {
     this.applyType(row, match.name, match.color, match.icon);
     this.refreshRow(row);
     this.refreshTypeOptions();
+    this.renderEtaSection();
     this.persistTypes();
   }
 
@@ -320,6 +357,8 @@ export class WorkItemTypesController {
     this.updateEmpty();
     // The removed row's type is free again, so offer it back to the remaining pickers.
     this.refreshTypeOptions();
+    // The removed type drops out of the read-only ETA list too.
+    this.renderEtaSection();
     this.persistTypes();
   }
 
@@ -760,19 +799,20 @@ export class WorkItemTypesController {
 
   private collect(): WorkItemType[] {
     const result: WorkItemType[] = [];
-    const seen = new Set<string>();
-    for (const row of this.rows()) {
-      const name = row.dataset.typeName;
-      if (name === undefined || seen.has(name.toLowerCase())) {
-        continue;
-      }
-      seen.add(name.toLowerCase());
-      result.push({
+    for (const row of this.committedRows()) {
+      const name = row.dataset.typeName ?? "";
+      const type: WorkItemType = {
         name,
         color: row.dataset.typeColor ?? "",
         icon: row.dataset.typeIcon ?? "",
         columns: this.collectCells(row),
-      });
+      };
+      // The ETA field is optional and per-type, so persist it only when the user picked one.
+      const etaField = this.etaByType.get(name.toLowerCase());
+      if (etaField) {
+        type.etaField = etaField;
+      }
+      result.push(type);
     }
     return result;
   }
@@ -845,6 +885,120 @@ export class WorkItemTypesController {
 
   private typeLabel(row: HTMLElement): HTMLElement {
     return this.querySelector<HTMLElement>(row, ".wit-type__label");
+  }
+
+  // ── ETA date-field section ──────────────────────────────────────────────────
+
+  /**
+   * Rebuild the read-only ETA list: one row per committed type (in table order), each offering that
+   * type's date fields. The list is driven by the table, so a type only appears here once committed
+   * above, and picking a field just records it — there is nothing to add or remove in this section.
+   */
+  private renderEtaSection(): void {
+    const doc = this.elements.etaBody.ownerDocument;
+    this.elements.etaBody.replaceChildren();
+    const committed = this.committedTypes();
+    for (const type of committed) {
+      this.elements.etaBody.append(this.createEtaRow(doc, type));
+    }
+    this.elements.etaEmpty.hidden = committed.length > 0;
+  }
+
+  private createEtaRow(doc: Document, type: CommittedType): HTMLElement {
+    const row = this.createElement(doc, "div", "wit-eta-row");
+    const label = this.createElement(doc, "span", "wit-eta-row__type");
+    if (type.icon) {
+      const icon = doc.createElement("img");
+      icon.className = "wit-eta-row__icon";
+      icon.width = 18;
+      icon.height = 18;
+      icon.alt = "";
+      icon.src = type.icon;
+      // An ADO icon URL may not load from the extension origin; degrade to the colored name alone.
+      icon.addEventListener("error", () => icon.remove());
+      label.append(icon);
+    }
+    const name = this.createElement(doc, "span", "wit-eta-row__name");
+    name.textContent = type.name;
+    name.style.color = type.color ? `#${type.color}` : "";
+    label.append(name);
+    row.append(label, this.createEtaSelect(doc, type));
+    return row;
+  }
+
+  private createEtaSelect(doc: Document, type: CommittedType): HTMLSelectElement {
+    const select = doc.createElement("select");
+    select.className = "wit-eta-row__field";
+    select.setAttribute(ROLE_ATTRIBUTE, ETA_ROLE);
+    select.setAttribute(TYPE_NAME_ATTRIBUTE, type.name);
+    select.setAttribute("aria-label", `ETA date field for ${type.name}`);
+    const stored = this.etaByType.get(type.name.toLowerCase()) ?? "";
+    const dateFields = this.findType(type.name)?.dateFields ?? [];
+    // No date fields means metadata has not loaded yet; the picker is inert until it does, but any
+    // already-stored value is still shown below so it is neither hidden nor silently dropped.
+    select.disabled = dateFields.length === 0 && stored === "";
+    select.append(this.createEtaOption(doc, "", ETA_NONE_LABEL));
+    for (const field of dateFields) {
+      select.append(this.createEtaOption(doc, field.referenceName, field.name));
+    }
+    // Surface a stored value the current metadata does not list (custom field, or not yet loaded) so
+    // the user still sees what is saved instead of the select silently resetting to "None".
+    if (stored !== "" && !dateFields.some((field) => field.referenceName === stored)) {
+      select.append(this.createEtaOption(doc, stored, stored));
+    }
+    select.value = stored;
+    return select;
+  }
+
+  private createEtaOption(doc: Document, value: string, label: string): HTMLOptionElement {
+    const option = doc.createElement("option");
+    option.value = value;
+    option.textContent = label;
+    return option;
+  }
+
+  private readonly handleEtaChange = (event: Event): void => {
+    const select = event.target as HTMLElement;
+    if (select.getAttribute(ROLE_ATTRIBUTE) !== ETA_ROLE) {
+      return;
+    }
+    const name = select.getAttribute(TYPE_NAME_ATTRIBUTE);
+    if (name === null) {
+      return;
+    }
+    const value = (select as HTMLSelectElement).value;
+    const key = name.toLowerCase();
+    // A blank pick means "no ETA", so drop the entry rather than persist an empty reference name.
+    if (value === "") {
+      this.etaByType.delete(key);
+    } else {
+      this.etaByType.set(key, value);
+    }
+    this.persistTypes();
+  };
+
+  /** The committed types in table order, deduped by name (the ETA section mirrors the table). */
+  private committedTypes(): CommittedType[] {
+    return this.committedRows().map((row) => ({
+      name: row.dataset.typeName ?? "",
+      color: row.dataset.typeColor ?? "",
+      icon: row.dataset.typeIcon ?? "",
+    }));
+  }
+
+  /** Rows whose type is committed, in table order and deduped by name (first row per name wins). */
+  private committedRows(): HTMLElement[] {
+    const rows: HTMLElement[] = [];
+    const seen = new Set<string>();
+    for (const row of this.rows()) {
+      const name = row.dataset.typeName;
+      if (name === undefined || seen.has(name.toLowerCase())) {
+        continue;
+      }
+      seen.add(name.toLowerCase());
+      rows.push(row);
+    }
+    return rows;
   }
 
   private typeComboboxRoot(row: HTMLElement): HTMLElement {

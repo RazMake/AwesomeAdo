@@ -6,8 +6,9 @@ path, and work-item-type-to-board-state configuration.
 ## Purpose
 
 Lets the user configure the Azure DevOps context the enhanced view needs. It detects the active
-org/project, drives a searchable team picker, the future-sprint count, the pinned area-path list, and
-the per-work-item-type board-state mapping table, persisting everything to the synced settings store.
+org/project, drives a searchable team picker, the future- and past-sprint counts, the pinned
+area-path list, and the per-work-item-type board-state mapping table, persisting everything to the
+synced settings store.
 
 This component does not log; it surfaces failures through the options page's shared error sink.
 
@@ -22,8 +23,12 @@ This component does not log; it surfaces failures through the options page's sha
 ### `WorkItemTypesController.ts`
 
 - **`WorkItemTypesController`** — nested controller (owned by `AzureDevOpsController`) for the
-  work-item-type-to-board-column mapping table.
-- **`WorkItemTypesElements`** — the mapping-table elements it drives.
+  work-item-type-to-board-column mapping table. It also owns a second, **read-only ETA section** that
+  lists each committed type with a dropdown of that type's date fields (from ADO metadata) chosen as
+  its ETA. The ETA lives on the same `workItemTypes` setting this controller already writes, so a
+  single writer keeps the table and the ETA section in sync. The ETA list is driven by the table:
+  types appear once committed above and cannot be added or removed from the ETA section itself.
+- **`WorkItemTypesElements`** — the mapping-table and ETA-section elements it drives.
 
 ### `AutocompleteInput.ts`
 

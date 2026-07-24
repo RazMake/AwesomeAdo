@@ -46,6 +46,6 @@ copying rule bodies.
 
 ## References
 
-- SOLID principles: see AGENTS.md §3.1
-- DRY & common: see AGENTS.md §3.2
+- SOLID principles: see AGENTS.md §5
+- DRY & common: see AGENTS.md §6
 - Composition root pattern: `src/**/index.ts`, `src/common/settings/createSettingsStore.ts`

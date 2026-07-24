@@ -5,12 +5,15 @@ import {
   DEFAULT_SETTINGS,
   MAX_BOARD_COLUMNS,
   MAX_FUTURE_SPRINTS,
+  MAX_PAST_SPRINTS,
   MIN_FUTURE_SPRINTS,
+  MIN_PAST_SPRINTS,
   defaultAreaPathLabel,
   isAdoConfigured,
   normalizeAreaPaths,
   normalizeBoardColumns,
   normalizeFutureSprintsCount,
+  normalizePastSprintsCount,
   normalizeSettings,
   normalizeWorkItemTypes,
   type ExtensionSettings,
@@ -74,6 +77,14 @@ describe("normalizeSettings", () => {
     );
     expect(normalizeSettings({ futureSprintsCount: "x" }).futureSprintsCount).toBe(
       DEFAULT_SETTINGS.futureSprintsCount,
+    );
+  });
+
+  it("clamps and defaults pastSprintsCount through normalizeSettings", () => {
+    expect(normalizeSettings({ pastSprintsCount: 3 }).pastSprintsCount).toBe(3);
+    expect(normalizeSettings({ pastSprintsCount: 99 }).pastSprintsCount).toBe(MAX_PAST_SPRINTS);
+    expect(normalizeSettings({ pastSprintsCount: "x" }).pastSprintsCount).toBe(
+      DEFAULT_SETTINGS.pastSprintsCount,
     );
   });
 
@@ -186,6 +197,23 @@ describe("normalizeFutureSprintsCount", () => {
   });
 });
 
+describe("normalizePastSprintsCount", () => {
+  it("defaults non-numbers and non-finite values", () => {
+    expect(normalizePastSprintsCount(undefined)).toBe(DEFAULT_SETTINGS.pastSprintsCount);
+    expect(normalizePastSprintsCount("3")).toBe(DEFAULT_SETTINGS.pastSprintsCount);
+    expect(normalizePastSprintsCount(Number.NaN)).toBe(DEFAULT_SETTINGS.pastSprintsCount);
+    expect(normalizePastSprintsCount(Number.POSITIVE_INFINITY)).toBe(
+      DEFAULT_SETTINGS.pastSprintsCount,
+    );
+  });
+
+  it("clamps to the inclusive bounds and truncates fractions", () => {
+    expect(normalizePastSprintsCount(-5)).toBe(MIN_PAST_SPRINTS);
+    expect(normalizePastSprintsCount(100)).toBe(MAX_PAST_SPRINTS);
+    expect(normalizePastSprintsCount(3.9)).toBe(3);
+  });
+});
+
 describe("defaultAreaPathLabel", () => {
   it("returns the last non-empty backslash-separated segment", () => {
     expect(defaultAreaPathLabel("Project\\Area\\Team")).toBe("Team");
@@ -241,6 +269,33 @@ describe("normalizeWorkItemTypes", () => {
     expect(
       normalizeWorkItemTypes([{ name: "  Bug ", color: " CC293D ", icon: " url ", columns: [] }]),
     ).toEqual([{ name: "Bug", color: "CC293D", icon: "url", columns: [] }]);
+  });
+
+  it("keeps a trimmed etaField when set and omits it when blank or missing", () => {
+    expect(
+      normalizeWorkItemTypes([
+        {
+          name: "Epic",
+          columns: [],
+          etaField: "  Microsoft.VSTS.Scheduling.TargetDate  ",
+        },
+      ]),
+    ).toEqual([
+      {
+        name: "Epic",
+        color: "",
+        icon: "",
+        columns: [],
+        etaField: "Microsoft.VSTS.Scheduling.TargetDate",
+      },
+    ]);
+    // A blank, whitespace-only, or non-string etaField is dropped so it never bloats storage.
+    expect(normalizeWorkItemTypes([{ name: "Bug", columns: [], etaField: "   " }])).toEqual([
+      { name: "Bug", color: "", icon: "", columns: [] },
+    ]);
+    expect(normalizeWorkItemTypes([{ name: "Task", columns: [], etaField: 42 }])).toEqual([
+      { name: "Task", color: "", icon: "", columns: [] },
+    ]);
   });
 
   it("drops nameless types and dedupes by case-insensitive name", () => {

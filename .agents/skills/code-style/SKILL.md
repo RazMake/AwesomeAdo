@@ -6,7 +6,7 @@ description: Formatter/linter workflow and naming/documentation conventions for 
 # Code Style Skill
 
 Read [AGENTS.md](../../../AGENTS.md) before proceeding. Mandatory rules are in
-**Naming & readability** (§3.3), **Documentation** (§3.4), and **Definition of done** (§3.6).
+**Naming & readability** (§7), **Documentation** (§8), and **Definition of done** (§4).
 
 ## Formatter/linter workflow
 
@@ -39,7 +39,7 @@ pnpm verify
   Do not add `I` to any other name.
 - Avoid abbreviations. No Hungarian notation. No type-encoding in names.
 
-Full rules: AGENTS.md §3.3.
+Full rules: AGENTS.md §7.
 
 ## Documentation rules (summary)
 
@@ -47,10 +47,10 @@ Full rules: AGENTS.md §3.3.
 - Good: `// A document-level rule also covers content ADO renders after initial load.`
 - Bad: `// increment i`
 
-Full rules: AGENTS.md §3.4.
+Full rules: AGENTS.md §8.
 
 ## References
 
-- Naming: AGENTS.md §3.3
-- Documentation: AGENTS.md §3.4
-- Definition of done: AGENTS.md §3.6
+- Naming: AGENTS.md §7
+- Documentation: AGENTS.md §8
+- Definition of done: AGENTS.md §4

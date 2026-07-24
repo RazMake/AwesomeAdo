@@ -112,6 +112,7 @@ const adoOrganization = document.querySelector<HTMLElement>("#ado-organization")
 const adoProject = document.querySelector<HTMLElement>("#ado-project");
 const adoTeamInput = document.querySelector<HTMLInputElement>("#ado-team-input");
 const adoFutureSprints = document.querySelector<HTMLInputElement>("#ado-future-sprints");
+const adoPastSprints = document.querySelector<HTMLInputElement>("#ado-past-sprints");
 const adoAreaPaths = document.querySelector<HTMLElement>("#ado-area-paths");
 const adoAreaPathsEmpty = document.querySelector<HTMLElement>("#ado-area-paths-empty");
 const adoAreaPathAdd = document.querySelector<HTMLButtonElement>("#ado-area-path-add");
@@ -120,12 +121,15 @@ const adoWitRows = document.querySelector<HTMLElement>("#ado-wit-rows");
 const adoWorkItemTypesEmpty = document.querySelector<HTMLElement>("#ado-work-item-types-empty");
 const adoWorkItemTypeAdd = document.querySelector<HTMLButtonElement>("#ado-work-item-type-add");
 const adoBoardColumnAdd = document.querySelector<HTMLButtonElement>("#ado-board-column-add");
+const adoWitEta = document.querySelector<HTMLElement>("#ado-wit-eta");
+const adoWitEtaEmpty = document.querySelector<HTMLElement>("#ado-wit-eta-empty");
 
 if (
   adoOrganization &&
   adoProject &&
   adoTeamInput &&
   adoFutureSprints &&
+  adoPastSprints &&
   adoAreaPaths &&
   adoAreaPathsEmpty &&
   adoAreaPathAdd &&
@@ -133,13 +137,16 @@ if (
   adoWitRows &&
   adoWorkItemTypesEmpty &&
   adoWorkItemTypeAdd &&
-  adoBoardColumnAdd
+  adoBoardColumnAdd &&
+  adoWitEta &&
+  adoWitEtaEmpty
 ) {
   const adoElements: AzureDevOpsElements = {
     organization: adoOrganization,
     project: adoProject,
     teamInput: adoTeamInput,
     futureSprintsInput: adoFutureSprints,
+    pastSprintsInput: adoPastSprints,
     areaPathsList: adoAreaPaths,
     areaPathsEmpty: adoAreaPathsEmpty,
     areaPathAddButton: adoAreaPathAdd,
@@ -149,6 +156,8 @@ if (
       empty: adoWorkItemTypesEmpty,
       addTypeButton: adoWorkItemTypeAdd,
       addColumnButton: adoBoardColumnAdd,
+      etaBody: adoWitEta,
+      etaEmpty: adoWitEtaEmpty,
     },
   };
   const adoController = new AzureDevOpsController(
@@ -165,60 +174,48 @@ if (
   report(new Error("The options page is missing the Azure DevOps controls and cannot load them."));
 }
 
-const bindingPickerField = document.querySelector<HTMLElement>("#binding-query-picker-field");
-const bindingQuerySelect = document.querySelector<HTMLSelectElement>("#binding-query-select");
-const bindingNameField = document.querySelector<HTMLElement>("#binding-query-name-field");
-const bindingQueryName = document.querySelector<HTMLElement>("#binding-query-name");
 const bindingEmptyState = document.querySelector<HTMLElement>("#binding-empty");
-const bindingForm = document.querySelector<HTMLElement>("#binding-form");
-const bindingQueryId = document.querySelector<HTMLElement>("#binding-query-id");
+const bindingAddCard = document.querySelector<HTMLElement>("#binding-add-card");
+const bindingAddQuery = document.querySelector<HTMLElement>("#binding-add-query");
+const bindingAddViewSelect = document.querySelector<HTMLSelectElement>("#binding-add-view");
+const bindingAddSave = document.querySelector<HTMLButtonElement>("#binding-add-save");
+const bindingEditCard = document.querySelector<HTMLElement>("#binding-edit-card");
+const bindingQuerySelect = document.querySelector<HTMLSelectElement>("#binding-query-select");
+const bindingDelete = document.querySelector<HTMLButtonElement>("#binding-delete");
+const bindingViewConfigCard = document.querySelector<HTMLElement>("#binding-view-config-card");
 const bindingViewSelect = document.querySelector<HTMLSelectElement>("#binding-view-select");
 const bindingProperties = document.querySelector<HTMLElement>("#binding-properties");
 const bindingSave = document.querySelector<HTMLButtonElement>("#binding-save");
-const bindingDelete = document.querySelector<HTMLButtonElement>("#binding-delete");
-const bindingViewConfigCard = document.querySelector<HTMLElement>("#binding-view-config-card");
-const bindingViewConfigSlot = document.querySelector<HTMLElement>("#binding-view-config-slot");
-const bindingPrimaryViewSlot = document.querySelector<HTMLElement>("#binding-primary-view-slot");
-const bindingViewGroup = document.querySelector<HTMLElement>("#binding-view-config");
-const bindingDeleteActions = document.querySelector<HTMLElement>("#binding-delete-actions");
 const bindingStatus = document.querySelector<HTMLElement>("#binding-status");
 
 if (
-  bindingPickerField &&
-  bindingQuerySelect &&
-  bindingNameField &&
-  bindingQueryName &&
   bindingEmptyState &&
-  bindingForm &&
-  bindingQueryId &&
+  bindingAddCard &&
+  bindingAddQuery &&
+  bindingAddViewSelect &&
+  bindingAddSave &&
+  bindingEditCard &&
+  bindingQuerySelect &&
+  bindingDelete &&
+  bindingViewConfigCard &&
   bindingViewSelect &&
   bindingProperties &&
   bindingSave &&
-  bindingDelete &&
-  bindingViewConfigCard &&
-  bindingViewConfigSlot &&
-  bindingPrimaryViewSlot &&
-  bindingViewGroup &&
-  bindingDeleteActions &&
   bindingStatus
 ) {
   const bindingElements: QueryBindingsElements = {
-    pickerField: bindingPickerField,
-    querySelect: bindingQuerySelect,
-    nameField: bindingNameField,
-    queryName: bindingQueryName,
     emptyState: bindingEmptyState,
-    form: bindingForm,
-    queryId: bindingQueryId,
+    addCard: bindingAddCard,
+    addQuery: bindingAddQuery,
+    addViewSelect: bindingAddViewSelect,
+    addSaveButton: bindingAddSave,
+    editCard: bindingEditCard,
+    querySelect: bindingQuerySelect,
+    deleteButton: bindingDelete,
+    viewConfigCard: bindingViewConfigCard,
     viewSelect: bindingViewSelect,
     properties: bindingProperties,
     saveButton: bindingSave,
-    deleteButton: bindingDelete,
-    viewConfigCard: bindingViewConfigCard,
-    viewConfigSlot: bindingViewConfigSlot,
-    primaryViewSlot: bindingPrimaryViewSlot,
-    viewGroup: bindingViewGroup,
-    deleteActions: bindingDeleteActions,
     status: bindingStatus,
   };
   const queryId = readQueryIdFromSearch(location.search);

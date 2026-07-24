@@ -24,6 +24,8 @@ const AREAS_URL =
   "https://dev.azure.com/O365Exchange/O365%20Core/_apis/wit/classificationnodes/areas?$depth=10&api-version=7.1";
 const WORK_ITEM_TYPES_URL =
   "https://dev.azure.com/O365Exchange/O365%20Core/_apis/wit/workitemtypes?api-version=7.1";
+const FIELDS_URL =
+  "https://dev.azure.com/O365Exchange/O365%20Core/_apis/wit/fields?api-version=7.1";
 
 describe("ChromeAdoMetadataReader", () => {
   let chromeMock: MockChrome;
@@ -64,7 +66,19 @@ describe("ChromeAdoMetadataReader", () => {
                 color: "CC293D",
                 icon: { url: "https://ado/icon_insect" },
                 states: [{ name: "New" }, { name: "Active" }],
+                fields: [
+                  { referenceName: "System.Title", name: "Title" },
+                  { referenceName: "Microsoft.VSTS.Scheduling.TargetDate", name: "Target Date" },
+                  { referenceName: "Microsoft.VSTS.Common.ResolvedDate", name: "Resolved Date" },
+                ],
               },
+            ],
+          },
+          fields: {
+            value: [
+              { referenceName: "System.Title", type: "string" },
+              { referenceName: "Microsoft.VSTS.Scheduling.TargetDate", type: "dateTime" },
+              { referenceName: "Microsoft.VSTS.Common.ResolvedDate", type: "dateTime" },
             ],
           },
         },
@@ -85,6 +99,9 @@ describe("ChromeAdoMetadataReader", () => {
           color: "CC293D",
           icon: "https://ado/icon_insect",
           states: ["New", "Active"],
+          dateFields: [
+            { referenceName: "Microsoft.VSTS.Scheduling.TargetDate", name: "Target Date" },
+          ],
         },
       ],
     });
@@ -92,7 +109,7 @@ describe("ChromeAdoMetadataReader", () => {
       target: { tabId: ADO_TAB.id },
       world: "MAIN",
       func: expect.any(Function),
-      args: [TEAMS_URL, AREAS_URL, WORK_ITEM_TYPES_URL],
+      args: [TEAMS_URL, AREAS_URL, WORK_ITEM_TYPES_URL, FIELDS_URL],
     });
   });
 

@@ -31,11 +31,14 @@ describe("fetchAdoRawInPage", () => {
       if (url === "wit-url") {
         return Promise.resolve(jsonResponse({ value: [{ name: "Bug" }] }));
       }
+      if (url === "fields-url") {
+        return Promise.resolve(jsonResponse({ value: [{ referenceName: "System.CreatedDate" }] }));
+      }
       return Promise.resolve(jsonResponse({ name: "Web" }));
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    expect(await fetchAdoRawInPage("teams-url", "areas-url", "wit-url")).toEqual({
+    expect(await fetchAdoRawInPage("teams-url", "areas-url", "wit-url", "fields-url")).toEqual({
       teams: {
         value: [
           { id: "1", name: "Alpha" },
@@ -45,6 +48,7 @@ describe("fetchAdoRawInPage", () => {
       },
       areaTree: { name: "Web" },
       workItemTypes: { value: [{ name: "Bug" }] },
+      fields: { value: [{ referenceName: "System.CreatedDate" }] },
     });
     // Credentials must be included so ADO's SameSite session cookies ride along on the page-world call.
     expect(fetchMock).toHaveBeenCalledWith("teams-url&$skip=0", {
@@ -59,6 +63,10 @@ describe("fetchAdoRawInPage", () => {
       credentials: "include",
       headers: { Accept: "application/json" },
     });
+    expect(fetchMock).toHaveBeenCalledWith("fields-url", {
+      credentials: "include",
+      headers: { Accept: "application/json" },
+    });
   });
 
   it("yields null for a teams body a request could not read", async () => {
@@ -66,10 +74,11 @@ describe("fetchAdoRawInPage", () => {
       "fetch",
       vi.fn(() => Promise.resolve(jsonResponse(null, false))),
     );
-    expect(await fetchAdoRawInPage("teams-url", "areas-url", "wit-url")).toEqual({
+    expect(await fetchAdoRawInPage("teams-url", "areas-url", "wit-url", "fields-url")).toEqual({
       teams: null,
       areaTree: null,
       workItemTypes: null,
+      fields: null,
     });
   });
 
@@ -78,10 +87,11 @@ describe("fetchAdoRawInPage", () => {
       "fetch",
       vi.fn(() => Promise.reject(new Error("offline"))),
     );
-    expect(await fetchAdoRawInPage("teams-url", "areas-url", "wit-url")).toEqual({
+    expect(await fetchAdoRawInPage("teams-url", "areas-url", "wit-url", "fields-url")).toEqual({
       teams: null,
       areaTree: null,
       workItemTypes: null,
+      fields: null,
     });
   });
 });

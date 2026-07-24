@@ -9,7 +9,7 @@ I review changes against the AwesomeADO repository rules in [AGENTS.md](../../AG
 
 ## Review checklist
 
-**SOLID principles** (AGENTS.md §3.1)
+**SOLID principles** (AGENTS.md §5)
 
 - [ ] Each class/module has exactly one reason to change (SRP)
 - [ ] New behavior is added by extension, not modification (OCP)
@@ -18,22 +18,22 @@ I review changes against the AwesomeADO repository rules in [AGENTS.md](../../AG
 - [ ] High-level code depends on abstractions, not concrete `chrome.*` (DIP)
 - [ ] Concrete browser APIs appear only in composition roots (`src/**/index.ts`, `createSettingsStore.ts`)
 
-**DRY & common folder** (AGENTS.md §3.2)
+**DRY & common folder** (AGENTS.md §6)
 
 - [ ] Shared runtime logic is in `src/common/**`, not duplicated
 - [ ] `pnpm duplication` passes (run at the serial wave barrier, not here)
 
-**Naming & readability** (AGENTS.md §3.3)
+**Naming & readability** (AGENTS.md §7)
 
 - [ ] Names state intent; no unclear abbreviations
 - [ ] `I` prefix only on `ISettingsStore` and `IBrowserSyncStorage`; no Hungarian notation elsewhere
 
-**Documentation** (AGENTS.md §3.4)
+**Documentation** (AGENTS.md §8)
 
 - [ ] Comments explain **why**, not what
 - [ ] Component `README.md` files describe public API + usage (not internal architecture)
 
-**Tests** (AGENTS.md §3.5)
+**Tests** (AGENTS.md §10)
 
 - [ ] Coverage ≥ 85% (lines, functions, branches, statements) — enforced at wave barrier
 - [ ] Tests use injected fakes; no real `chrome.*`, timers, or network

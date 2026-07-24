@@ -13,9 +13,20 @@ export interface AdoTeam {
 }
 
 /**
+ * One ADO field offered as a choice: its stable `referenceName` (persisted) and the friendly `name`
+ * shown to the user. Used for the per-type ETA date-field picker, so only the reference name — never
+ * a display string that ADO may localize — is what gets stored.
+ */
+export interface AdoWorkItemField {
+  referenceName: string;
+  name: string;
+}
+
+/**
  * A work item type ADO defines for the project, with everything the options UI needs to offer it:
- * its display `name`, the `color` and `icon` URL used to render it the way ADO does, and the ordered
- * list of `states` the user routes onto the board columns.
+ * its display `name`, the `color` and `icon` URL used to render it the way ADO does, the ordered
+ * list of `states` the user routes onto the board columns, and the `dateFields` (date-typed fields
+ * that exist on this type) offered as its ETA field.
  */
 export interface AdoWorkItemType {
   name: string;
@@ -25,6 +36,8 @@ export interface AdoWorkItemType {
   icon: string;
   /** The type's state names, in the order ADO returns them. */
   states: string[];
+  /** The date-typed fields available on this type, offered as the type's ETA field. */
+  dateFields: AdoWorkItemField[];
 }
 
 /** Everything the Azure DevOps options tab lists for the detected organization/project. */

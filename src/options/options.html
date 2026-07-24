@@ -145,6 +145,15 @@
         gap: 6px;
         max-width: 320px;
       }
+      /* Read-only lines (e.g. the ADO query being enhanced) should use the whole card width so the
+         value never wraps mid-line inside the 320px form column. */
+      .field--full {
+        max-width: none;
+      }
+      /* The enhanced-view picker is a touch wider than a standard field so the view names fit. */
+      .field--view-select {
+        max-width: 384px;
+      }
       .field label {
         font-size: 13px;
         color: var(--text-muted);
@@ -370,6 +379,43 @@
       .wit-type__icon {
         flex: 0 0 auto;
       }
+      /* ETA fields: a read-only list mirroring the committed types, each with a date-field picker. */
+      .work-item-eta {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .work-item-eta__empty {
+        margin: 0;
+        color: var(--text-muted);
+        font-size: 13px;
+      }
+      .wit-eta-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .wit-eta-row__type {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex: 0 0 200px;
+        min-width: 0;
+        font-weight: 600;
+      }
+      .wit-eta-row__name {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .wit-eta-row__icon {
+        flex: 0 0 auto;
+      }
+      .wit-eta-row__field {
+        flex: 1 1 auto;
+        min-width: 0;
+        max-width: 384px;
+      }
       /* Match the column header's X control so removing a row and a column look the same. */
       .wit-row__delete {
         appearance: none;
@@ -507,17 +553,6 @@
 
       .binding {
         border-color: var(--accent);
-      }
-      .binding__query {
-        font-family: "Cascadia Code", "Consolas", monospace;
-        font-size: 12px;
-        color: var(--text);
-        background: var(--bg);
-        border: 1px solid var(--border);
-        border-radius: 4px;
-        padding: 4px 8px;
-        display: inline-block;
-        min-height: 20px;
       }
       .binding__readonly {
         color: var(--text);
@@ -926,6 +961,25 @@
               </p>
             </div>
 
+            <div class="setting">
+              <div class="field">
+                <label for="ado-past-sprints">Past sprints count</label>
+                <input
+                  id="ado-past-sprints"
+                  type="number"
+                  min="0"
+                  max="6"
+                  step="1"
+                  inputmode="numeric"
+                  disabled
+                />
+              </div>
+              <p class="field__hint">
+                How many past sprints are offered in the sprint picker (in addition to the current
+                sprint). Between 0 and 6; 0 shows only the current and future sprints.
+              </p>
+            </div>
+
             <div class="area-paths">
               <div class="setting">
                 <span class="field__label">Area paths</span>
@@ -986,6 +1040,21 @@
             </div>
           </div>
         </div>
+
+        <div class="card">
+          <h2 class="card__title">Item ETA fields</h2>
+          <p class="card__hint">
+            Choose which date field each work item type uses as its ETA. The list follows the work
+            item types configured above; the choices are the date fields that exist on each type.
+          </p>
+
+          <div class="work-item-eta">
+            <div class="work-item-eta__list" id="ado-wit-eta"></div>
+            <p class="work-item-eta__empty" id="ado-wit-eta-empty" hidden>
+              Add a work item type above to choose its ETA field.
+            </p>
+          </div>
+        </div>
       </section>
 
       <section
@@ -995,75 +1064,84 @@
         aria-labelledby="tab-bindings"
         hidden
       >
-        <div class="card binding">
-          <h2 class="card__title">Query bindings</h2>
+        <p class="card empty" id="binding-empty" hidden>
+          No queries are bound yet. Open an Azure DevOps query and use its
+          <i>"Enhance with Awesome ADO"</i> button to bind it to an enhanced view.
+        </p>
+
+        <!-- Add mode: shown only while binding a query that has no binding yet. The user picks a
+             view and saves; the view's default settings are stored so the choice survives leaving
+             the page, then the tab switches to the edit layout below. -->
+        <div class="card binding" id="binding-add-card" hidden>
+          <h2 class="card__title">Add ADO query enhancement</h2>
           <p class="card__hint">
-            Select a query binding (<i>the pair of query ID and the enhanced view type</i>) to edit
-            its properties.
+            Choose an enhanced view for this query, then save to configure it.
           </p>
 
           <div class="binding__fields">
-            <div class="field" id="binding-query-picker-field">
-              <label for="binding-query-select">Bound query</label>
+            <div class="field field--full">
+              <span class="field__label">ADO Query to enhance:</span>
+              <output class="binding__readonly" id="binding-add-query"></output>
+            </div>
+
+            <div class="field field--view-select">
+              <label for="binding-add-view"
+                >Select the enhanced view to apply for this query:</label
+              >
+              <select id="binding-add-view"></select>
+            </div>
+
+            <div class="binding__actions">
+              <button type="button" class="button" id="binding-add-save">Save</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Edit mode (first section): pick which bound query to work with, or delete it. Shown
+             alongside the Query View Configuration card whenever at least one query is bound. -->
+        <div class="card binding" id="binding-edit-card" hidden>
+          <h2 class="card__title">Edit ADO query enhancement</h2>
+          <p class="card__hint">
+            Select a bound query to reconfigure its enhanced view, or delete its binding.
+          </p>
+
+          <div class="binding__fields">
+            <div class="field">
+              <label for="binding-query-select">Enhanced query</label>
               <select id="binding-query-select"></select>
             </div>
 
-            <p class="empty" id="binding-empty" hidden>
-              No queries are bound yet. Open an Azure DevOps query and use its
-              <i>"Enhance with Awesome ADO"</i> button to bind it to an enhanced view.
-            </p>
-
-            <div id="binding-form" hidden>
-              <div class="binding__fields">
-                <div class="field">
-                  <span class="field__label">Query ID</span>
-                  <output class="binding__query" id="binding-query-id"></output>
-                </div>
-
-                <div class="field" id="binding-query-name-field" hidden>
-                  <span class="field__label">Query name</span>
-                  <output class="binding__readonly" id="binding-query-name"></output>
-                </div>
-
-                <!-- While binding a new query the controller relocates the view-configuration group
-                     here so it is all set in one place; once bound it moves to the section below. -->
-                <div id="binding-primary-view-slot"></div>
-
-                <div class="binding__actions" id="binding-delete-actions">
-                  <button type="button" class="button button--danger" id="binding-delete">
-                    Delete
-                  </button>
-                </div>
-              </div>
+            <div class="binding__actions">
+              <button type="button" class="button button--danger" id="binding-delete">
+                Delete
+              </button>
             </div>
           </div>
-
-          <span class="binding__status" id="binding-status" role="status" aria-live="polite"></span>
         </div>
 
-        <!-- Shown only once a query is bound: it configures the enhanced view for the selected
-             binding and holds Save. New bindings configure the view in the card above instead. -->
+        <!-- Edit mode (second section): the view type for the selected query and its per-query
+             settings, plus Save. -->
         <div class="card binding" id="binding-view-config-card" hidden>
-          <h2 class="card__title">Query View Configuration</h2>
+          <h2 class="card__title">Query Enhancement Configuration</h2>
           <p class="card__hint">Choose and configure the enhanced view for the selected query.</p>
 
-          <div id="binding-view-config-slot">
-            <!-- The movable view-configuration group. The controller relocates it between the Query
-                 bindings card (while binding) and this card (while editing a saved binding). -->
-            <div class="binding__fields" id="binding-view-config">
-              <div class="field">
-                <label for="binding-view-select">Enhanced view type</label>
-                <select id="binding-view-select"></select>
-              </div>
+          <div class="binding__fields">
+            <div class="field field--view-select">
+              <label for="binding-view-select"
+                >Enhanced view type to be used for the above ADO query</label
+              >
+              <select id="binding-view-select"></select>
+            </div>
 
-              <div class="binding__properties" id="binding-properties"></div>
+            <div class="binding__properties" id="binding-properties"></div>
 
-              <div class="binding__actions">
-                <button type="button" class="button" id="binding-save">Save</button>
-              </div>
+            <div class="binding__actions">
+              <button type="button" class="button" id="binding-save">Save</button>
             </div>
           </div>
         </div>
+
+        <span class="binding__status" id="binding-status" role="status" aria-live="polite"></span>
       </section>
 
       <section

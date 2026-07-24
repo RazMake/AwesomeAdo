@@ -9,6 +9,7 @@ const THEME_KEY = "settings.theme";
 const DEFAULT_VIEW_KEY = "settings.defaultView";
 const CURRENT_TEAM_KEY = "settings.currentTeam";
 const FUTURE_SPRINTS_KEY = "settings.futureSprintsCount";
+const PAST_SPRINTS_KEY = "settings.pastSprintsCount";
 const AREA_PATHS_KEY = "settings.areaPaths";
 const BOARD_COLUMNS_KEY = "settings.boardColumns";
 const WORK_ITEM_TYPES_KEY = "settings.workItemTypes";
@@ -18,6 +19,7 @@ const SETTING_KEYS = [
   DEFAULT_VIEW_KEY,
   CURRENT_TEAM_KEY,
   FUTURE_SPRINTS_KEY,
+  PAST_SPRINTS_KEY,
   AREA_PATHS_KEY,
   BOARD_COLUMNS_KEY,
   WORK_ITEM_TYPES_KEY,
@@ -30,6 +32,7 @@ function projectSettings(raw: Record<string, unknown>): ExtensionSettings {
     defaultView: raw[DEFAULT_VIEW_KEY],
     currentTeam: raw[CURRENT_TEAM_KEY],
     futureSprintsCount: raw[FUTURE_SPRINTS_KEY],
+    pastSprintsCount: raw[PAST_SPRINTS_KEY],
     areaPaths: raw[AREA_PATHS_KEY],
     boardColumns: raw[BOARD_COLUMNS_KEY],
     workItemTypes: raw[WORK_ITEM_TYPES_KEY],
@@ -84,6 +87,12 @@ export class BrowserSyncSettingsStore implements ISettingsStore {
       changes.push({
         name: "futureSprintsCount",
         write: this.storage.set(FUTURE_SPRINTS_KEY, update.futureSprintsCount),
+      });
+    }
+    if (update.pastSprintsCount !== undefined) {
+      changes.push({
+        name: "pastSprintsCount",
+        write: this.storage.set(PAST_SPRINTS_KEY, update.pastSprintsCount),
       });
     }
     if (update.areaPaths !== undefined) {

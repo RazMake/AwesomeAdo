@@ -180,7 +180,57 @@ Do not instantiate chrome-backed objects anywhere else.
 
 ---
 
-## 9. Testing Rules
+## 9. Logging & Observability Rules
+
+The extension ships a device-local diagnostics log (`src/common/logging`) so that **any** failure or
+important runtime decision is traceable after the fact from the options page Diagnostics view. These
+rules are **non-negotiable**.
+
+### Every exception is logged
+
+- It must be **impossible for the extension to fail without emitting an error log.** Every `catch`
+  block — and every rejected-promise / error-callback boundary — records the failure via
+  `ILogger.error(message, error)`, passing the original thrown value so its stack/detail is captured.
+  `Logger` also mirrors errors to `console.error`, so a caught error is both persisted and visible in
+  devtools.
+- **Never swallow an error silently.** Catching to recover is fine; catching without logging is not.
+- Logging is fire-and-forget by contract (`ILogger` returns `void` and never throws), so adding an
+  error log can never break the path it guards. There is no excuse to skip it.
+
+### Log the "why" behind every important decision
+
+- Whenever code branches on runtime state in a way that changes user-visible behaviour (enhance vs.
+  leave a page, show vs. hide UI, apply vs. skip a binding, take path A vs. B), log the **inputs**
+  (the signals it read) **and the outcome** (which branch, plus a short reason). Execution must be
+  reconstructable from the log alone — you should be able to answer "why did it do that?" without a
+  repro.
+- Respect the bounded ring buffer (`MAX_LOG_ENTRIES`, oldest dropped first): **dedupe** repeated
+  identical conclusions and log a decision only when it **changes** (a flip), carrying the signals
+  and the reason. High-churn, unchanged decisions must not flood out the errors that matter. See
+  `QueryPageController` / `QueryBindingController` for the flip-dedupe pattern.
+- Keep informational logging low-frequency for the same reason.
+
+### Preserve the emitting source — never anonymous, never misattributed
+
+- Every log line carries a `source` (the log "component"). **Never emit a log with no source**, and
+  **never claim a source that did not emit the line.** A misattributed source makes the Diagnostics
+  filter lie and defeats the whole point of the log.
+- Feature code depends on the injected `ILogger` abstraction; a composition root mints it via
+  `ILoggerFactory.forSource(source)`. `source` is a **string literal** (minification-safe — never
+  `this.constructor.name`): the **owning component folder path** for component code
+  (`common/settings`, `content/query-page`, `options/alerts`, …), or the **runtime context**
+  (`background`, `content`, `options`) for composition-root wiring not tied to one folder.
+- Each collaborator gets its **own** source-scoped logger at the composition root — do not hand one
+  component's logger to another and let it log under the wrong name.
+- Construct `Logger` / `LoggerFactory` / `BrowserLocalLogStore` **only** at a composition root
+  (Dependency Inversion). The log is **device-local** (`chrome.storage.local`) and never synced;
+  never log secrets or user identity — record setting/query names by identifier, not their values.
+
+Full usage guidance lives in `src/common/logging/README.md`.
+
+---
+
+## 10. Testing Rules
 
 These are **non-negotiable**.
 
@@ -197,7 +247,7 @@ These are **non-negotiable**.
 
 ---
 
-## 10. Folder & README Conventions
+## 11. Folder & README Conventions
 
 - `./` is the existing workspace root — **never** create a nested project directory.
 - Every component subfolder under `src/**` (each subfolder of `common/`, `content/`, and
@@ -209,7 +259,7 @@ These are **non-negotiable**.
 
 ---
 
-## 11. Versioning & Changelog Rules
+## 12. Versioning & Changelog Rules
 
 - The **developer** owns `Major.Minor` and `versionBuildOffset`.
 - **CI** computes `Build = github.run_number - versionBuildOffset`. Full version: `Major.Minor.Build`.
@@ -227,7 +277,7 @@ These are **non-negotiable**.
 
 ---
 
-## 12. Skills Index
+## 13. Skills Index
 
 Four cross-agent skills live under `.agents/skills/`. Each skill links back to this file and adds
 workflow detail without copying its rule bodies.
@@ -241,7 +291,7 @@ workflow detail without copying its rule bodies.
 
 ---
 
-## 13. `package.json` Command Reference
+## 14. `package.json` Command Reference
 
 | Command                   | What it does                                                                                                          |
 | ------------------------- | --------------------------------------------------------------------------------------------------------------------- |
@@ -263,7 +313,7 @@ workflow detail without copying its rule bodies.
 
 ---
 
-## 14. Worker Completion Contract
+## 15. Worker Completion Contract
 
 Every parallel worker response must use this exact format:
 

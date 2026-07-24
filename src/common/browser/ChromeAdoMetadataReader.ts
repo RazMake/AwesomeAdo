@@ -2,6 +2,7 @@ import { EMPTY_ADO_METADATA, type AdoMetadata } from "../ado/AdoMetadata";
 import {
   buildAdoMetadataUrls,
   flattenAreaPaths,
+  parseDateFieldReferenceNames,
   parseTeams,
   parseWorkItemTypes,
   type AdoMetadataUrls,
@@ -38,7 +39,12 @@ export class ChromeAdoMetadataReader implements IAdoMetadataReader {
     return {
       teams: parseTeams(raw?.teams),
       areaPaths: flattenAreaPaths(raw?.areaTree),
-      workItemTypes: parseWorkItemTypes(raw?.workItemTypes),
+      // The type list names each type's fields but not their data type, so the field list resolves
+      // which are dates; passing the set attaches each type's ETA-eligible date fields.
+      workItemTypes: parseWorkItemTypes(
+        raw?.workItemTypes,
+        parseDateFieldReferenceNames(raw?.fields),
+      ),
     };
   }
 
@@ -51,7 +57,7 @@ export class ChromeAdoMetadataReader implements IAdoMetadataReader {
         target: { tabId },
         world: "MAIN",
         func: fetchAdoRawInPage,
-        args: [urls.teamsUrl, urls.areaPathsUrl, urls.workItemTypesUrl],
+        args: [urls.teamsUrl, urls.areaPathsUrl, urls.workItemTypesUrl, urls.fieldsUrl],
       });
       return results[0]?.result as AdoRawMetadata | undefined;
     } catch {

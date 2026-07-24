@@ -4,6 +4,7 @@ import {
   adoCollectionBaseUrl,
   buildAdoMetadataUrls,
   flattenAreaPaths,
+  parseDateFieldReferenceNames,
   parseTeams,
   parseWorkItemTypes,
 } from "./fetchAdoMetadata";
@@ -39,6 +40,7 @@ describe("buildAdoMetadataUrls", () => {
       areaPathsUrl:
         "https://dev.azure.com/contoso/web/_apis/wit/classificationnodes/areas?$depth=10&api-version=7.1",
       workItemTypesUrl: "https://dev.azure.com/contoso/web/_apis/wit/workitemtypes?api-version=7.1",
+      fieldsUrl: "https://dev.azure.com/contoso/web/_apis/wit/fields?api-version=7.1",
     });
   });
 
@@ -51,6 +53,7 @@ describe("buildAdoMetadataUrls", () => {
           "https://contoso.visualstudio.com/web/_apis/wit/classificationnodes/areas?$depth=10&api-version=7.1",
         workItemTypesUrl:
           "https://contoso.visualstudio.com/web/_apis/wit/workitemtypes?api-version=7.1",
+        fieldsUrl: "https://contoso.visualstudio.com/web/_apis/wit/fields?api-version=7.1",
       },
     );
   });
@@ -65,6 +68,9 @@ describe("buildAdoMetadataUrls", () => {
     );
     expect(urls?.workItemTypesUrl).toBe(
       "https://dev.azure.com/contoso/O365%20Core/_apis/wit/workitemtypes?api-version=7.1",
+    );
+    expect(urls?.fieldsUrl).toBe(
+      "https://dev.azure.com/contoso/O365%20Core/_apis/wit/fields?api-version=7.1",
     );
   });
 
@@ -158,12 +164,14 @@ describe("parseWorkItemTypes", () => {
         color: "CC293D",
         icon: "https://ado/icon_insect",
         states: ["New"],
+        dateFields: [],
       },
       {
         name: "User Story",
         color: "009CCC",
         icon: "https://ado/icon_book",
         states: ["New", "Active"],
+        dateFields: [],
       },
     ]);
   });
@@ -179,7 +187,7 @@ describe("parseWorkItemTypes", () => {
           },
         ],
       }),
-    ).toEqual([{ name: "Task", color: "", icon: "", states: ["To Do"] }]);
+    ).toEqual([{ name: "Task", color: "", icon: "", states: ["To Do"], dateFields: [] }]);
   });
 
   it("drops nameless types and defaults missing icon/color/states", () => {
@@ -187,12 +195,108 @@ describe("parseWorkItemTypes", () => {
       parseWorkItemTypes({
         value: [{ states: [{ name: "New" }] }, { name: "Epic" }],
       }),
-    ).toEqual([{ name: "Epic", color: "", icon: "", states: [] }]);
+    ).toEqual([{ name: "Epic", color: "", icon: "", states: [], dateFields: [] }]);
+  });
+
+  it("attaches only date-typed fields, deduped and sorted by name", () => {
+    const dateFieldRefs = new Set([
+      "Microsoft.VSTS.Scheduling.TargetDate",
+      "Microsoft.VSTS.Scheduling.StartDate",
+      "System.CreatedDate",
+    ]);
+    expect(
+      parseWorkItemTypes(
+        {
+          value: [
+            {
+              name: "Feature",
+              states: [{ name: "New" }],
+              fields: [
+                { referenceName: "System.Title", name: "Title" },
+                { referenceName: "Microsoft.VSTS.Scheduling.TargetDate", name: "Target Date" },
+                { referenceName: "System.CreatedDate", name: "Created Date" },
+                // A repeat of a date field is dropped so an option never appears twice.
+                { referenceName: "System.CreatedDate", name: "Created Date" },
+                // A date-typed field with no display name falls back to its reference name.
+                { referenceName: "Microsoft.VSTS.Scheduling.StartDate" },
+                null,
+              ],
+            },
+          ],
+        },
+        dateFieldRefs,
+      ),
+    ).toEqual([
+      {
+        name: "Feature",
+        color: "",
+        icon: "",
+        states: ["New"],
+        dateFields: [
+          { referenceName: "System.CreatedDate", name: "Created Date" },
+          {
+            referenceName: "Microsoft.VSTS.Scheduling.StartDate",
+            name: "Microsoft.VSTS.Scheduling.StartDate",
+          },
+          { referenceName: "Microsoft.VSTS.Scheduling.TargetDate", name: "Target Date" },
+        ],
+      },
+    ]);
   });
 
   it("returns an empty list for a null or non-object body", () => {
     expect(parseWorkItemTypes(null)).toEqual([]);
     expect(parseWorkItemTypes("nope")).toEqual([]);
     expect(parseWorkItemTypes({})).toEqual([]);
+  });
+});
+
+describe("parseDateFieldReferenceNames", () => {
+  it("keeps only the reference names of dateTime fields", () => {
+    const refs = parseDateFieldReferenceNames({
+      value: [
+        {
+          referenceName: "Microsoft.VSTS.Scheduling.TargetDate",
+          name: "Target Date",
+          type: "dateTime",
+        },
+        { referenceName: "System.Title", name: "Title", type: "string" },
+        {
+          referenceName: "Microsoft.VSTS.Scheduling.FinishDate",
+          name: "Finish Date",
+          type: "dateTime",
+        },
+        { referenceName: "", type: "dateTime" },
+        { type: "dateTime" },
+        null,
+      ],
+    });
+    expect([...refs].sort()).toEqual([
+      "Microsoft.VSTS.Scheduling.FinishDate",
+      "Microsoft.VSTS.Scheduling.TargetDate",
+    ]);
+  });
+
+  it("excludes well-known lifecycle date fields that are not user-chosen targets", () => {
+    const refs = parseDateFieldReferenceNames({
+      value: [
+        { referenceName: "Microsoft.VSTS.Scheduling.DueDate", type: "dateTime" },
+        { referenceName: "System.CreatedDate", type: "dateTime" },
+        { referenceName: "System.ChangedDate", type: "dateTime" },
+        { referenceName: "System.AuthorizedDate", type: "dateTime" },
+        { referenceName: "System.RevisedDate", type: "dateTime" },
+        { referenceName: "Microsoft.VSTS.Common.StateChangeDate", type: "dateTime" },
+        { referenceName: "Microsoft.VSTS.Common.ActivatedDate", type: "dateTime" },
+        { referenceName: "Microsoft.VSTS.Common.ResolvedDate", type: "dateTime" },
+        { referenceName: "Microsoft.VSTS.Common.ClosedDate", type: "dateTime" },
+      ],
+    });
+    expect([...refs]).toEqual(["Microsoft.VSTS.Scheduling.DueDate"]);
+  });
+
+  it("returns an empty set for a null or non-object body", () => {
+    expect(parseDateFieldReferenceNames(null).size).toBe(0);
+    expect(parseDateFieldReferenceNames("nope").size).toBe(0);
+    expect(parseDateFieldReferenceNames({}).size).toBe(0);
   });
 });

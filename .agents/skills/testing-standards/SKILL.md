@@ -6,7 +6,7 @@ description: Procedural Vitest workflow and focused test commands for the Awesom
 # Testing Standards Skill
 
 Read [AGENTS.md](../../../AGENTS.md) before proceeding. Mandatory rules are in
-**Testing rules** (AGENTS.md §3.5). This skill adds actionable workflow steps.
+**Testing rules** (AGENTS.md §10). This skill adds actionable workflow steps.
 
 ## Writing a test
 
@@ -49,9 +49,9 @@ node --test scripts/version.test.mjs
 ## Coverage thresholds
 
 ≥ 85% lines, functions, branches, statements across `src/**` (excluding composition roots and
-declaration files). See AGENTS.md §3.5 and `vitest.config.ts` for the exact exclusion list.
+declaration files). See AGENTS.md §10 and `vitest.config.ts` for the exact exclusion list.
 
 ## References
 
-- Testing rules: AGENTS.md §3.5
-- Definition of done: AGENTS.md §3.6
+- Testing rules: AGENTS.md §10
+- Definition of done: AGENTS.md §4

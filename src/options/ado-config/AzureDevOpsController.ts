@@ -7,6 +7,7 @@ import {
   DEFAULT_SETTINGS,
   defaultAreaPathLabel,
   normalizeFutureSprintsCount,
+  normalizePastSprintsCount,
   type AreaPath,
   type ExtensionSettings,
   type TeamRef,
@@ -26,6 +27,8 @@ export interface AzureDevOpsElements {
   teamInput: HTMLInputElement;
   /** Whole-number input (1..12) for how many future sprints the picker offers. */
   futureSprintsInput: HTMLInputElement;
+  /** Whole-number input (0..6) for how many past sprints the picker offers. */
+  pastSprintsInput: HTMLInputElement;
   /** Container the controller fills with one editable row per pinned area path. */
   areaPathsList: HTMLElement;
   /** Notice shown only while no area-path rows exist. */
@@ -61,6 +64,7 @@ export class AzureDevOpsController {
   private teams: readonly AdoTeam[] = [];
   private confirmedTeam: TeamRef | null = null;
   private confirmedSprints = DEFAULT_SETTINGS.futureSprintsCount;
+  private confirmedPastSprints = DEFAULT_SETTINGS.pastSprintsCount;
   private areaPathSuggestions: readonly string[] = [];
   private readonly teamCombobox: AutocompleteInput;
   // Each area-path row's path field gets its own suggestion dropdown; keyed by the input so a
@@ -79,6 +83,7 @@ export class AzureDevOpsController {
   ) {
     elements.teamInput.disabled = true;
     elements.futureSprintsInput.disabled = true;
+    elements.pastSprintsInput.disabled = true;
     elements.areaPathAddButton.disabled = true;
     this.teamCombobox = new AutocompleteInput(elements.teamInput);
     this.workItemTypes = new WorkItemTypesController(
@@ -100,6 +105,7 @@ export class AzureDevOpsController {
     this.workItemTypes.dispose();
     this.elements.teamInput.removeEventListener("change", this.handleTeamChange);
     this.elements.futureSprintsInput.removeEventListener("change", this.handleSprintsChange);
+    this.elements.pastSprintsInput.removeEventListener("change", this.handlePastSprintsChange);
     this.elements.areaPathAddButton.removeEventListener("click", this.handleAddAreaPath);
     this.elements.areaPathsList.removeEventListener("input", this.handleAreaInput);
     this.elements.areaPathsList.removeEventListener("change", this.handleAreaChange);
@@ -109,6 +115,7 @@ export class AzureDevOpsController {
   private wireEvents(): void {
     this.elements.teamInput.addEventListener("change", this.handleTeamChange);
     this.elements.futureSprintsInput.addEventListener("change", this.handleSprintsChange);
+    this.elements.pastSprintsInput.addEventListener("change", this.handlePastSprintsChange);
     this.elements.areaPathAddButton.addEventListener("click", this.handleAddAreaPath);
     // Delegated on the container so dynamically added rows need no per-row listener bookkeeping.
     this.elements.areaPathsList.addEventListener("input", this.handleAreaInput);
@@ -129,6 +136,7 @@ export class AzureDevOpsController {
     }
     this.renderTeam(settings.currentTeam);
     this.renderFutureSprints(settings.futureSprintsCount);
+    this.renderPastSprints(settings.pastSprintsCount);
     this.renderAreaPaths(settings.areaPaths);
     this.workItemTypes.render(settings.workItemTypes, settings.boardColumns);
     this.enableControls();
@@ -173,6 +181,7 @@ export class AzureDevOpsController {
   private enableControls(): void {
     this.elements.teamInput.disabled = false;
     this.elements.futureSprintsInput.disabled = false;
+    this.elements.pastSprintsInput.disabled = false;
     this.elements.areaPathAddButton.disabled = false;
     this.workItemTypes.enable();
   }
@@ -229,6 +238,30 @@ export class AzureDevOpsController {
     void this.store.write({ futureSprintsCount: count }).catch((error: unknown) => {
       this.confirmedSprints = previous;
       this.elements.futureSprintsInput.value = String(previous);
+      this.reportError(error);
+    });
+  }
+
+  // ── Past sprints ──────────────────────────────────────────────────────────
+
+  private renderPastSprints(count: number): void {
+    this.confirmedPastSprints = count;
+    this.elements.pastSprintsInput.value = String(count);
+  }
+
+  private readonly handlePastSprintsChange = (): void => {
+    const clamped = normalizePastSprintsCount(this.elements.pastSprintsInput.valueAsNumber);
+    // Reflect the clamp/normalization back so the field never shows an out-of-range value.
+    this.elements.pastSprintsInput.value = String(clamped);
+    this.persistPastSprints(clamped);
+  };
+
+  private persistPastSprints(count: number): void {
+    const previous = this.confirmedPastSprints;
+    this.confirmedPastSprints = count;
+    void this.store.write({ pastSprintsCount: count }).catch((error: unknown) => {
+      this.confirmedPastSprints = previous;
+      this.elements.pastSprintsInput.value = String(previous);
       this.reportError(error);
     });
   }

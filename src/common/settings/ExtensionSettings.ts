@@ -27,6 +27,12 @@ export interface ExtensionSettings {
   /** How many sprints past the current one the sprint picker offers. Clamped to `1..12`. */
   futureSprintsCount: number;
 
+  /**
+   * How many sprints before the current one the sprint picker offers. Clamped to `0..6`; `0` means
+   * only the current and future sprints are shown.
+   */
+  pastSprintsCount: number;
+
   /** Area paths the user has pinned, each with a short label. Empty until the user adds one. */
   areaPaths: AreaPath[];
 
@@ -82,6 +88,12 @@ export interface WorkItemType {
   /** The ADO icon URL for the type (already colored via its query string). */
   icon: string;
   columns: WorkItemColumn[];
+  /**
+   * The ADO date field this type surfaces as its "ETA" (e.g. `Microsoft.VSTS.Scheduling.TargetDate`),
+   * or absent when the user has not set one. Configured per type — there is no global default — so a
+   * team that tracks ETA in different fields per type is honored.
+   */
+  etaField?: string;
 }
 
 /** Allowed theme values, in the order they are offered to the user. */
@@ -110,11 +122,17 @@ export const MIN_FUTURE_SPRINTS = 1;
 export const MAX_FUTURE_SPRINTS = 12;
 const DEFAULT_FUTURE_SPRINTS = 6;
 
+/** Inclusive bounds for `pastSprintsCount`; `0` (the default) offers no sprints before the current. */
+export const MIN_PAST_SPRINTS = 0;
+export const MAX_PAST_SPRINTS = 6;
+const DEFAULT_PAST_SPRINTS = 0;
+
 export const DEFAULT_SETTINGS: ExtensionSettings = {
   theme: "auto",
   defaultView: "enhanced",
   currentTeam: null,
   futureSprintsCount: DEFAULT_FUTURE_SPRINTS,
+  pastSprintsCount: DEFAULT_PAST_SPRINTS,
   areaPaths: [],
   boardColumns: [...DEFAULT_BOARD_COLUMNS],
   workItemTypes: [],
@@ -152,13 +170,22 @@ function normalizeTeamRef(raw: unknown): TeamRef | null {
   return { id: candidate.id, name: candidate.name };
 }
 
-/** Clamp an arbitrary stored value to a whole number of sprints within the allowed range. */
-export function normalizeFutureSprintsCount(raw: unknown): number {
+/** Clamp an arbitrary stored value to a whole number within `[min, max]`, or `fallback` if unusable. */
+function clampSprintCount(raw: unknown, min: number, max: number, fallback: number): number {
   if (typeof raw !== "number" || !Number.isFinite(raw)) {
-    return DEFAULT_FUTURE_SPRINTS;
+    return fallback;
   }
-  const whole = Math.trunc(raw);
-  return Math.min(MAX_FUTURE_SPRINTS, Math.max(MIN_FUTURE_SPRINTS, whole));
+  return Math.min(max, Math.max(min, Math.trunc(raw)));
+}
+
+/** Clamp an arbitrary stored value to a whole number of future sprints within the allowed range. */
+export function normalizeFutureSprintsCount(raw: unknown): number {
+  return clampSprintCount(raw, MIN_FUTURE_SPRINTS, MAX_FUTURE_SPRINTS, DEFAULT_FUTURE_SPRINTS);
+}
+
+/** Clamp an arbitrary stored value to a whole number of past sprints within the allowed range. */
+export function normalizePastSprintsCount(raw: unknown): number {
+  return clampSprintCount(raw, MIN_PAST_SPRINTS, MAX_PAST_SPRINTS, DEFAULT_PAST_SPRINTS);
 }
 
 function normalizeAreaPath(raw: unknown): AreaPath | null {
@@ -227,7 +254,13 @@ function normalizeWorkItemType(raw: unknown): WorkItemType | null {
   if (typeof raw !== "object" || raw === null) {
     return null;
   }
-  const candidate = raw as { name?: unknown; color?: unknown; icon?: unknown; columns?: unknown };
+  const candidate = raw as {
+    name?: unknown;
+    color?: unknown;
+    icon?: unknown;
+    columns?: unknown;
+    etaField?: unknown;
+  };
   const name = typeof candidate.name === "string" ? candidate.name.trim() : "";
   if (name.length === 0) {
     return null;
@@ -250,7 +283,14 @@ function normalizeWorkItemType(raw: unknown): WorkItemType | null {
       }
     }
   }
-  return { name, color, icon, columns };
+  const type: WorkItemType = { name, color, icon, columns };
+  // The ETA field is optional and per-type, so store it only when set; a blank never bloats the map
+  // (mirrors how bindings omit an absent name/active).
+  const etaField = typeof candidate.etaField === "string" ? candidate.etaField.trim() : "";
+  if (etaField.length > 0) {
+    type.etaField = etaField;
+  }
+  return type;
 }
 
 /** Drop unusable entries so a corrupt array can never surface a nameless or duplicated type. */
@@ -322,6 +362,7 @@ export function normalizeSettings(raw: unknown): ExtensionSettings {
       : DEFAULT_SETTINGS.defaultView,
     currentTeam: normalizeTeamRef(candidate.currentTeam),
     futureSprintsCount: normalizeFutureSprintsCount(candidate.futureSprintsCount),
+    pastSprintsCount: normalizePastSprintsCount(candidate.pastSprintsCount),
     areaPaths: normalizeAreaPaths(candidate.areaPaths),
     // A never-set key (first run) seeds the default columns; an explicit array is honored as-is so a
     // user who removed every column keeps an empty header (which reads as "not configured" below).
