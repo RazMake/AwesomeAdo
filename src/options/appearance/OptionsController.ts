@@ -1,7 +1,11 @@
-import type { IAdoTabReader } from "../common/browser/IAdoTabReader";
-import type { AdoTheme } from "../common/navigation/AdoContext";
-import type { DefaultView, ExtensionSettings, Theme } from "../common/settings/ExtensionSettings";
-import type { ISettingsStore } from "../common/settings/ISettingsStore";
+import type { IAdoTabReader } from "../../common/browser/IAdoTabReader";
+import type { AdoTheme } from "../../common/navigation/AdoContext";
+import type {
+  DefaultView,
+  ExtensionSettings,
+  Theme,
+} from "../../common/settings/ExtensionSettings";
+import type { ISettingsStore } from "../../common/settings/ISettingsStore";
 
 import { resolveTheme } from "./theme";
 

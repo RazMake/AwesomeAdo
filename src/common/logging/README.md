@@ -5,14 +5,21 @@ worker, content script, and options page).
 
 ## Purpose
 
-Give every component one way to record what happened — errors and the occasional informational
-milestone — so failures are diagnosable after the fact. The log is **local only**: it is written to
-`chrome.storage.local` and never synced to the user's other browsers, and it never leaves the
-device. Errors are additionally mirrored to `console.error` so they stay visible in devtools.
+Give every part of the extension one way to record what happened — errors and the occasional
+informational milestone — so failures are diagnosable after the fact. The log is **local only**: it
+is written to `chrome.storage.local` and never synced to the user's other browsers, and it never
+leaves the device. Errors are additionally mirrored to `console.error` so they stay visible in
+devtools.
 
-Producers depend on the tiny `ILogger` interface; the Diagnostics view depends on `ILogStore`. The
-two are separated (Interface Segregation) so a component that only records can neither read nor clear
-the log.
+Every line is stamped with the **source** that produced it — by convention the component folder that
+owns the emitting code (`content/query-page`, `common/settings`, `options/alerts`, …), or the runtime
+context (`background`, `content`, `options`) for composition-root wiring that is not tied to one
+subfolder. This component-folder breakdown lets the Diagnostics view group and filter lines down to
+the feature area that produced them.
+
+Producers depend on the tiny `ILogger` interface and obtain their source-scoped logger from an
+`ILoggerFactory`; the Diagnostics view depends on `ILogStore`. The interfaces are separated
+(Interface Segregation) so a source that only records can neither read nor clear the log.
 
 ## Public API
 
@@ -32,6 +39,25 @@ interface ILogger {
 - `error(message, error?)` — record an error line and mirror it to `console.error`. The optional
   thrown value is flattened into a stored `detail` string (stack when available).
 
+Each `ILogger` is bound to one source, so callers never pass their own name — the logger stamps it on
+every line and the `console.error` mirror is prefixed `AwesomeADO [source]:`.
+
+### `ILoggerFactory` (interface) — `ILoggerFactory.ts`
+
+How a composition root mints one source-scoped `ILogger` per component (or wiring context) from a
+single shared writer, so all of a context's lines stay in one serialized append chain:
+
+```typescript
+interface ILoggerFactory {
+  forSource(source: string): ILogger;
+}
+```
+
+`source` is a free-form string by design (not a closed union): a component-folder breakdown would
+otherwise need every folder enumerated in one place, and a new component must not have to edit a
+shared registry to log. By convention pass the owning component folder path (a string literal, so
+minification cannot rename it), or the runtime context for composition-root wiring.
+
 ### `LogEntry` / `LogLevel` — `LogEntry.ts`
 
 The serializable shape of one recorded line, plus pure helpers used by the store and the view:
@@ -42,9 +68,15 @@ interface LogEntry {
   timestamp: number; // epoch ms; the view orders by this
   level: LogLevel;
   message: string;
+  source?: string; // the producing component folder/context; the view groups/filters by this
   detail?: string; // serialized error/stack for error entries
 }
 ```
+
+`source` is optional so a line written by a newer extension version — carrying a source this build
+has not heard of — still deserializes, and a legacy line persisted under the old `component` key is
+read back into `source` so its origin is not lost after an upgrade. The Diagnostics view buckets any
+line without a source under `(unlabeled)` so it stays filterable.
 
 - `describeError(error)` — flatten any thrown value into a stable detail string.
 - `formatTimestamp(ms)` — ISO-8601 UTC (stable, locale-independent).
@@ -65,22 +97,28 @@ entries, and re-emits on every change; its `StorageObservation` handle exposes `
 Chrome-backed objects are constructed only here (Dependency Inversion):
 
 ```typescript
-import { createLogger, createLogging } from "./createLogger";
+import { createLoggerFactory, createLogging } from "./createLogger";
 
 // Background & content: they only produce log lines.
-const logger = createLogger();
+const loggers = createLoggerFactory();
+const logger = loggers.forSource("content/query-page");
 
 // Options page: it both produces lines and displays them, so it needs the shared store too.
-const { logger, logStore } = createLogging();
+const { loggers, logStore } = createLogging();
+const logger = loggers.forSource("options");
 ```
 
 `createLogging()` builds one `BrowserLocalLogStore` over a `ChromeLocalStorage`, wraps it in a
-`Logger`, and returns both — the logger writes and the Diagnostics view reads the same store.
+`LoggerFactory`, and returns both — the factory's source loggers write and the Diagnostics view reads
+the same store. Because every context persists to the same device-local key, the options page's
+Diagnostics view shows lines from every source across all contexts alongside its own, and its
+searchable source filter offers a checkbox per source present.
 
 ## Usage guidance
 
-- Feature classes depend on `ILogger` (injected). Never construct `Logger`/`BrowserLocalLogStore`
-  outside a composition root.
+- Feature classes depend on `ILogger` (injected) and are given a logger sourced to their owning
+  component folder at the composition root. Never construct `Logger`/`BrowserLocalLogStore` outside a
+  composition root.
 - Do not log from render code that reacts to `ILogStore.observe` (e.g. the Diagnostics view): a log
   during render would feed the store it is observing and loop.
 - Keep informational logging low-frequency. The log is a bounded ring buffer, so routine, high-churn

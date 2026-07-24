@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { DEFAULT_SETTINGS, type ExtensionSettings } from "../common/settings/ExtensionSettings";
+import type { ILogger } from "../../common/logging/ILogger";
+import { DEFAULT_SETTINGS, type ExtensionSettings } from "../../common/settings/ExtensionSettings";
 
 import type { PageBlanker } from "./PageBlanker";
 import { QueryPageController } from "./QueryPageController";
@@ -9,6 +10,10 @@ function makeBlankerSpy(): PageBlanker {
   return {
     apply: vi.fn(),
   } as unknown as PageBlanker;
+}
+
+function makeLoggerSpy(): ILogger {
+  return { info: vi.fn(), error: vi.fn() };
 }
 
 // The enhanced view only runs once the ADO settings are complete, so the default fixture is fully
@@ -37,39 +42,43 @@ const queryUrl = (id: string): string => `https://dev.azure.com/org/project/_que
 
 describe("QueryPageController", () => {
   let blanker: PageBlanker;
+  let logger: ILogger;
+
+  // A single wiring keeps every test's construction identical, so the injected logger spy and
+  // blanker spy are always the ones the assertions inspect.
+  const makeController = (url: string): QueryPageController =>
+    new QueryPageController(blanker, url, logger);
 
   beforeEach(() => {
     blanker = makeBlankerSpy();
+    logger = makeLoggerSpy();
   });
 
   it("does not call the blanker before settings arrive", () => {
-    new QueryPageController(blanker, "https://dev.azure.com/org/_queries");
+    makeController("https://dev.azure.com/org/_queries");
     expect(blanker.apply).not.toHaveBeenCalled();
   });
 
   it("does not enhance an unbound query route even when defaultView is enhanced", () => {
-    const controller = new QueryPageController(blanker, queryUrl(GUID));
+    const controller = makeController(queryUrl(GUID));
     controller.applySettings(settings({ defaultView: "enhanced" }));
     expect(blanker.apply).toHaveBeenCalledWith(false);
   });
 
   it("does not enhance when defaultView is original even on a query route", () => {
-    const controller = new QueryPageController(blanker, "https://dev.azure.com/org/_queries");
+    const controller = makeController("https://dev.azure.com/org/_queries");
     controller.applySettings(settings({ defaultView: "original" }));
     expect(blanker.apply).toHaveBeenCalledWith(false);
   });
 
   it("does not enhance a non-query ADO route even when defaultView is enhanced", () => {
-    const controller = new QueryPageController(
-      blanker,
-      "https://dev.azure.com/org/project/_boards",
-    );
+    const controller = makeController("https://dev.azure.com/org/project/_boards");
     controller.applySettings(settings({ defaultView: "enhanced" }));
     expect(blanker.apply).toHaveBeenCalledWith(false);
   });
 
   it("removes enhancement on navigation away from _queries", () => {
-    const controller = new QueryPageController(blanker, "https://dev.azure.com/org/_queries");
+    const controller = makeController("https://dev.azure.com/org/_queries");
     controller.applySettings(settings({ defaultView: "enhanced" }));
     vi.mocked(blanker.apply).mockClear();
 
@@ -78,7 +87,7 @@ describe("QueryPageController", () => {
   });
 
   it("reapplies enhancement on navigation back to a bound query", () => {
-    const controller = new QueryPageController(blanker, "https://dev.azure.com/org/_boards");
+    const controller = makeController("https://dev.azure.com/org/_boards");
     controller.applyBindings({ [GUID]: { view: "sprint", properties: {}, active: "enhanced" } });
     controller.applySettings(settings({ defaultView: "enhanced" }));
     vi.mocked(blanker.apply).mockClear();
@@ -88,7 +97,7 @@ describe("QueryPageController", () => {
   });
 
   it("enhances a bound query on a nested route by following the enhanced default", () => {
-    const controller = new QueryPageController(blanker, "https://dev.azure.com/org/_boards");
+    const controller = makeController("https://dev.azure.com/org/_boards");
     controller.applyBindings({ [GUID]: { view: "sprint", properties: {} } });
     controller.applySettings(settings({ defaultView: "enhanced" }));
     vi.mocked(blanker.apply).mockClear();
@@ -98,13 +107,13 @@ describe("QueryPageController", () => {
   });
 
   it("navigate does nothing before settings arrive", () => {
-    const controller = new QueryPageController(blanker, "https://dev.azure.com/org/_boards");
+    const controller = makeController("https://dev.azure.com/org/_boards");
     controller.navigate("https://dev.azure.com/org/_queries");
     expect(blanker.apply).not.toHaveBeenCalled();
   });
 
   it("applies correct value after defaultView changes from enhanced to original", () => {
-    const controller = new QueryPageController(blanker, "https://dev.azure.com/org/_queries");
+    const controller = makeController("https://dev.azure.com/org/_queries");
     controller.applySettings(settings({ defaultView: "enhanced" }));
     vi.mocked(blanker.apply).mockClear();
 
@@ -113,7 +122,7 @@ describe("QueryPageController", () => {
   });
 
   it("keeps a bound query enhanced when its active view is enhanced, overriding the original default", () => {
-    const controller = new QueryPageController(blanker, queryUrl(GUID));
+    const controller = makeController(queryUrl(GUID));
     controller.applySettings(settings({ defaultView: "original" }));
     vi.mocked(blanker.apply).mockClear();
 
@@ -122,7 +131,7 @@ describe("QueryPageController", () => {
   });
 
   it("drops a bound query to standard even when the global default is enhanced", () => {
-    const controller = new QueryPageController(blanker, queryUrl(GUID));
+    const controller = makeController(queryUrl(GUID));
     controller.applySettings(settings({ defaultView: "enhanced" }));
     vi.mocked(blanker.apply).mockClear();
 
@@ -131,7 +140,7 @@ describe("QueryPageController", () => {
   });
 
   it("does not enhance a bound query while the ADO settings are incomplete", () => {
-    const controller = new QueryPageController(blanker, queryUrl(GUID));
+    const controller = makeController(queryUrl(GUID));
     controller.applyBindings({ [GUID]: { view: "sprint", properties: {}, active: "enhanced" } });
 
     // Clearing the work item types makes the config incomplete, so even an explicit enhanced binding
@@ -141,7 +150,7 @@ describe("QueryPageController", () => {
   });
 
   it("does not enhance an unbound query even when the default is enhanced", () => {
-    const controller = new QueryPageController(blanker, queryUrl(GUID));
+    const controller = makeController(queryUrl(GUID));
     controller.applySettings(settings({ defaultView: "enhanced" }));
     vi.mocked(blanker.apply).mockClear();
 
@@ -150,10 +159,7 @@ describe("QueryPageController", () => {
   });
 
   it("never blanks a non-query route regardless of bindings", () => {
-    const controller = new QueryPageController(
-      blanker,
-      "https://dev.azure.com/org/project/_boards",
-    );
+    const controller = makeController("https://dev.azure.com/org/project/_boards");
     controller.applySettings(settings({ defaultView: "enhanced" }));
     vi.mocked(blanker.apply).mockClear();
 
@@ -162,8 +168,29 @@ describe("QueryPageController", () => {
   });
 
   it("applyBindings does nothing before settings arrive", () => {
-    const controller = new QueryPageController(blanker, queryUrl(GUID));
+    const controller = makeController(queryUrl(GUID));
     controller.applyBindings({ [GUID]: { view: "sprint", properties: {}, active: "enhanced" } });
     expect(blanker.apply).not.toHaveBeenCalled();
+  });
+
+  it("logs the enhance decision with its reason and signals only when it flips", () => {
+    const controller = makeController(queryUrl(GUID));
+    controller.applyBindings({ [GUID]: { view: "sprint", properties: {}, active: "enhanced" } });
+    controller.applySettings(settings({ defaultView: "enhanced" }));
+
+    // First decision (enhance) is logged with the reason and the signals that drove it.
+    expect(logger.info).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(logger.info).mock.calls[0]?.[0]).toContain("Query page enhanced");
+    expect(vi.mocked(logger.info).mock.calls[0]?.[0]).toContain("reason=bound-view-active");
+
+    // A refresh that reaches the same conclusion must not re-log, so the bounded ring buffer is not
+    // flooded by the many settings/bindings/navigation events that trigger a refresh.
+    controller.applySettings(settings({ defaultView: "enhanced" }));
+    expect(logger.info).toHaveBeenCalledTimes(1);
+
+    // Flipping the conclusion logs again, this time recording why it is no longer enhanced.
+    controller.applyBindings({ [GUID]: { view: "sprint", properties: {}, active: "standard" } });
+    expect(logger.info).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(logger.info).mock.calls[1]?.[0]).toContain("reason=bound-standard-active");
   });
 });

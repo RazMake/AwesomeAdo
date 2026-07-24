@@ -1,21 +1,38 @@
-import { readQueryIdFromSearch, readQueryNameFromSearch } from "../common/bindings/BindingRequest";
+import {
+  isRevealOptionsSectionMessage,
+  readOptionsSectionFromSearch,
+  readQueryIdFromSearch,
+  readQueryNameFromSearch,
+  sectionTabId,
+} from "../common/bindings/BindingRequest";
 import { createQueryBindingStore } from "../common/bindings/createQueryBindingStore";
 import { ChromeAdoMetadataReader } from "../common/browser/ChromeAdoMetadataReader";
 import { ChromeAdoTabReader } from "../common/browser/ChromeAdoTabReader";
 import { createLogging } from "../common/logging/createLogger";
 import { createSettingsStore } from "../common/settings/createSettingsStore";
 
-import { AzureDevOpsController, type AzureDevOpsElements } from "./AzureDevOpsController";
-import { ConfigurationBannerController } from "./ConfigurationBannerController";
-import { DiagnosticsController, type DiagnosticsElements } from "./DiagnosticsController";
-import { OptionsController, type OptionsElements } from "./OptionsController";
-import { QueryBindingsController, type QueryBindingsElements } from "./QueryBindingsController";
-import { StatusReporter } from "./StatusReporter";
-import { TabsController } from "./TabsController";
+import {
+  AzureDevOpsController,
+  type AzureDevOpsElements,
+} from "./ado-config/AzureDevOpsController";
+import { ConfigurationBannerController } from "./alerts/ConfigurationBannerController";
+import { StatusReporter } from "./alerts/StatusReporter";
+import { OptionsController, type OptionsElements } from "./appearance/OptionsController";
+import {
+  DiagnosticsController,
+  type DiagnosticsElements,
+} from "./diagnostics/DiagnosticsController";
+import {
+  QueryBindingsController,
+  type QueryBindingsElements,
+} from "./query-bindings/QueryBindingsController";
+import { TabsController } from "./shell/TabsController";
 
-// One logger + backing store shared by the whole options page: controllers record errors through it
-// (via `report`/StatusReporter) and the Diagnostics tab reads the same store to display them.
-const { logger, logStore } = createLogging();
+// One logger factory + backing store shared by the whole options page: controllers record through
+// it (via `report`/StatusReporter) each stamped with the component folder that owns the emitting
+// code, and the Diagnostics tab reads the same store to display every source's lines.
+const { loggers, logStore } = createLogging();
+const logger = loggers.forSource("options");
 
 // A low-frequency, user-initiated marker so the diagnostics log has an informational baseline the
 // "errors only" filter can hide — background/content stay silent on success to avoid flooding the
@@ -23,7 +40,9 @@ const { logger, logStore } = createLogging();
 logger.info("Options page opened");
 
 const statusElement = document.querySelector<HTMLElement>("#status");
-const statusReporter = statusElement ? new StatusReporter(statusElement, logger) : null;
+const statusReporter = statusElement
+  ? new StatusReporter(statusElement, loggers.forSource("options/alerts"))
+  : null;
 
 // Route every error through one sink so failures are shown to the user, still recording to the log
 // (and console) even when the status element itself is missing.
@@ -46,12 +65,28 @@ const defaultViewSelect = document.querySelector<HTMLSelectElement>("#default-vi
 const tabs = new TabsController(document);
 tabs.init();
 
+// Deep-link from the top-bar "View Log" menu: open straight on the Diagnostics tab. The query-bind
+// deep-link (queryId in the URL) activates the Bindings tab from inside its own block below.
+const requestedSection = readOptionsSectionFromSearch(location.search);
+if (requestedSection !== null) {
+  tabs.activate(sectionTabId(requestedSection));
+}
+
+// When this tab is already open and the user clicks "View Log" again, the service worker focuses it
+// and sends this message instead of spawning a duplicate — so switch to the requested section in
+// place rather than relying on a fresh page load to read it from the URL.
+chrome.runtime.onMessage.addListener((message: unknown) => {
+  if (isRevealOptionsSectionMessage(message)) {
+    tabs.activate(sectionTabId(message.section));
+  }
+});
+
 // One settings store shared by the controllers that read/write synced settings.
-const settingsStore = createSettingsStore();
+const settingsStore = createSettingsStore(loggers.forSource("common/settings"));
 
 // One binding store shared by the query-binding form and the configuration banner, so both react to
 // the same synced list without competing subscriptions.
-const bindingStore = createQueryBindingStore();
+const bindingStore = createQueryBindingStore(loggers.forSource("common/bindings"));
 
 // One tab reader shared by the controllers that read from the active ADO tab: the Appearance panel
 // resolves "auto" from its theme, and the Query Bindings picker asks it which query that tab is on.
@@ -223,14 +258,16 @@ if (configBanner) {
 const logList = document.querySelector<HTMLElement>("#log-list");
 const logEmpty = document.querySelector<HTMLElement>("#log-empty");
 const logErrorsOnly = document.querySelector<HTMLInputElement>("#log-errors-only");
+const logSources = document.querySelector<HTMLElement>("#log-sources");
 const logExport = document.querySelector<HTMLButtonElement>("#log-export");
 const logClear = document.querySelector<HTMLButtonElement>("#log-clear");
 
-if (logList && logEmpty && logErrorsOnly && logExport && logClear) {
+if (logList && logEmpty && logErrorsOnly && logSources && logExport && logClear) {
   const diagnosticsElements: DiagnosticsElements = {
     list: logList,
     empty: logEmpty,
     errorsOnlyToggle: logErrorsOnly,
+    sourceFilter: logSources,
     exportButton: logExport,
     clearButton: logClear,
   };

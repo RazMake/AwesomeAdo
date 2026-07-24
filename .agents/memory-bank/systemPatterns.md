@@ -10,8 +10,8 @@ src/common/browser/    chrome API isolation + shared browser-layer helpers
 src/common/settings/   the theme / default-view settings model + synced store
 src/common/bindings/   the per-query binding model, view catalog, synced store, open-page contract
 src/common/navigation/ ADO host/route/identity parsing + navigation and probe message contracts
-src/content/           the content script: blanking policy, top-bar button/menu, on-demand probes
-src/options/           the options page controllers
+src/content/           the content script, split into feature subfolders (query-page, query-binding, ado-probe)
+src/options/           the options page, split into feature subfolders (appearance, ado-config, query-bindings, diagnostics, alerts, shell)
 src/background/        the service worker (SPA navigation forwarding + opening extension pages)
 scripts/               build + release automation (never bundled into the extension)
 ```
@@ -55,17 +55,26 @@ extension-relative URLs for opening the options page for one query).
 
 ### `src/content`
 
-- `QueryPageController` + `PageBlanker` — decide whether the current route should be enhanced and
-  reversibly blank the page when it should.
-- `QueryBindingController` + `BindingButton` + `BindingMenu` — own the top-bar button's visibility
-  policy and the menu it opens.
-- `AdoThemeProbe` / `AdoQueryNameProbe` — read the rendered theme / query name from the DOM, only
-  when the options page asks for them.
+Split into component subfolders (each with its own `README.md`):
+
+- `query-page/` — `QueryPageController` + `PageBlanker` decide whether the current route should be
+  enhanced and reversibly blank the page when it should. Logs under `content/query-page`.
+- `query-binding/` — `QueryBindingController` + `BindingButton` + `BindingMenu` own the top-bar
+  button's visibility policy and the menu it opens. Logs under `content/query-binding`.
+- `ado-probe/` — `AdoThemeProbe` / `AdoQueryNameProbe` read the rendered theme / query name from the
+  DOM, only when the options page asks for them.
 
 ### `src/options`
 
-`OptionsController` (with the nested `SettingBinding` optimistic-persist helper), `QueryBindingsController`,
-`TabsController`, `StatusReporter`, and the `theme` resolver.
+Split into component subfolders (each with its own `README.md`):
+
+- `appearance/` — `OptionsController` + the `theme` resolver (the Appearance panel).
+- `ado-config/` — `AzureDevOpsController` + `WorkItemTypesController` + the reusable `AutocompleteInput`.
+- `query-bindings/` — `QueryBindingsController` (bind/edit/delete query mappings).
+- `diagnostics/` — `DiagnosticsController` + the reusable `MultiSelectFilter` (never logs — it renders
+  the store it observes).
+- `alerts/` — `StatusReporter` (logs under `options/alerts`) + `ConfigurationBannerController`.
+- `shell/` — `TabsController` (page tab navigation).
 
 ## Composition Roots (excluded from coverage)
 

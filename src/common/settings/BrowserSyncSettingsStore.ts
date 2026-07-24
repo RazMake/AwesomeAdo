@@ -1,5 +1,6 @@
 import type { IBrowserSyncStorage } from "../browser/IBrowserSyncStorage";
 import { observeSyncKeys, type StorageObservation } from "../browser/observeSyncKeys";
+import type { ILogger } from "../logging/ILogger";
 
 import { normalizeSettings, type ExtensionSettings } from "./ExtensionSettings";
 import type { ISettingsStore } from "./ISettingsStore";
@@ -40,10 +41,16 @@ function projectSettings(raw: Record<string, unknown>): ExtensionSettings {
  *
  * Depends on the IBrowserSyncStorage abstraction (injected) rather than chrome.* so it can be
  * unit-tested with a fake. Per-setting keys prevent an older extension version from deleting
- * settings introduced by a newer version during a read-modify-write cycle.
+ * settings introduced by a newer version during a read-modify-write cycle. The optional logger's
+ * source names this class so each configuration change is traceable in the Diagnostics log; only the
+ * names of the changed settings are recorded, never their values, so the log never leaks the user's
+ * ADO organisation, area paths, or team.
  */
 export class BrowserSyncSettingsStore implements ISettingsStore {
-  constructor(private readonly storage: IBrowserSyncStorage) {}
+  constructor(
+    private readonly storage: IBrowserSyncStorage,
+    private readonly logger?: ILogger,
+  ) {}
 
   async read(): Promise<ExtensionSettings> {
     const values = await Promise.all(SETTING_KEYS.map((key) => this.storage.get(key)));
@@ -55,29 +62,52 @@ export class BrowserSyncSettingsStore implements ISettingsStore {
   }
 
   async write(update: Partial<ExtensionSettings>): Promise<void> {
-    const writes: Promise<void>[] = [];
+    // Pair each changed setting with its write so the log can name exactly what changed (the signal)
+    // without ever recording the value — values can contain the user's org/team/area-path names.
+    const changes: { name: keyof ExtensionSettings; write: Promise<void> }[] = [];
     if (update.theme !== undefined) {
-      writes.push(this.storage.set(THEME_KEY, update.theme));
+      changes.push({ name: "theme", write: this.storage.set(THEME_KEY, update.theme) });
     }
     if (update.defaultView !== undefined) {
-      writes.push(this.storage.set(DEFAULT_VIEW_KEY, update.defaultView));
+      changes.push({
+        name: "defaultView",
+        write: this.storage.set(DEFAULT_VIEW_KEY, update.defaultView),
+      });
     }
     if (update.currentTeam !== undefined) {
-      writes.push(this.storage.set(CURRENT_TEAM_KEY, update.currentTeam));
+      changes.push({
+        name: "currentTeam",
+        write: this.storage.set(CURRENT_TEAM_KEY, update.currentTeam),
+      });
     }
     if (update.futureSprintsCount !== undefined) {
-      writes.push(this.storage.set(FUTURE_SPRINTS_KEY, update.futureSprintsCount));
+      changes.push({
+        name: "futureSprintsCount",
+        write: this.storage.set(FUTURE_SPRINTS_KEY, update.futureSprintsCount),
+      });
     }
     if (update.areaPaths !== undefined) {
-      writes.push(this.storage.set(AREA_PATHS_KEY, update.areaPaths));
+      changes.push({
+        name: "areaPaths",
+        write: this.storage.set(AREA_PATHS_KEY, update.areaPaths),
+      });
     }
     if (update.boardColumns !== undefined) {
-      writes.push(this.storage.set(BOARD_COLUMNS_KEY, update.boardColumns));
+      changes.push({
+        name: "boardColumns",
+        write: this.storage.set(BOARD_COLUMNS_KEY, update.boardColumns),
+      });
     }
     if (update.workItemTypes !== undefined) {
-      writes.push(this.storage.set(WORK_ITEM_TYPES_KEY, update.workItemTypes));
+      changes.push({
+        name: "workItemTypes",
+        write: this.storage.set(WORK_ITEM_TYPES_KEY, update.workItemTypes),
+      });
     }
-    await Promise.all(writes);
+    await Promise.all(changes.map((change) => change.write));
+    if (changes.length > 0) {
+      this.logger?.info(`Settings saved: ${changes.map((change) => change.name).join(", ")}`);
+    }
   }
 
   observe(listener: (settings: ExtensionSettings) => void): StorageObservation {

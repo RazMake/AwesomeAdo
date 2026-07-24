@@ -1,4 +1,4 @@
-import type { AdoTheme } from "../common/navigation/AdoContext";
+import type { AdoTheme } from "../../common/navigation/AdoContext";
 
 /**
  * Detects whether the Azure DevOps page is currently rendering a light or dark theme.

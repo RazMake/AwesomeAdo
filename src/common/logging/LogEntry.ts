@@ -13,6 +13,15 @@ export interface LogEntry {
   timestamp: number;
   level: LogLevel;
   message: string;
+  /**
+   * The source that recorded the line — the class or module that emitted it (e.g.
+   * `QueryPageController`, `BrowserSyncSettingsStore`, `content`). Optional and typed as a plain
+   * string — not a closed union — so entries written by a newer extension version (with sources this
+   * build has not heard of) still deserialize instead of being dropped, and so entries persisted
+   * before per-source tagging existed remain valid. The Diagnostics view groups and filters by this
+   * value.
+   */
+  source?: string;
   /** Serialized error/stack for error entries; absent for plain messages. */
   detail?: string;
 }
@@ -46,11 +55,13 @@ export function formatTimestamp(timestamp: number): string {
   return new Date(timestamp).toISOString();
 }
 
-/** Format one entry as text for export and for the plain-text view. Detail lines are indented so a
- *  multi-line stack stays visually attached to its message. */
+/** Format one entry as text for export and for the plain-text view. The source is bracketed after
+ *  the level when present so a filtered export still records which source produced each line;
+ *  detail lines are indented so a multi-line stack stays visually attached to its message. */
 export function formatLogEntry(entry: LogEntry): string {
   const level = entry.level === "error" ? "ERROR" : "INFO";
-  const base = `[${formatTimestamp(entry.timestamp)}] ${level} ${entry.message}`;
+  const source = entry.source === undefined ? "" : ` [${entry.source}]`;
+  const base = `[${formatTimestamp(entry.timestamp)}] ${level}${source} ${entry.message}`;
   if (entry.detail === undefined) {
     return base;
   }
@@ -95,8 +106,26 @@ function normalizeLogEntry(raw: unknown): LogEntry | null {
     return null;
   }
   const entry: LogEntry = { timestamp, level, message };
+  // A missing or malformed source is tolerated (dropped) rather than rejecting the whole entry, so a
+  // legacy line or a corrupt field never costs us an otherwise-usable diagnostic record.
+  const source = pickSource(candidate);
+  if (source !== undefined) {
+    entry.source = source;
+  }
   if (typeof detail === "string") {
     entry.detail = detail;
   }
   return entry;
+}
+
+function pickSource(candidate: Record<string, unknown>): string | undefined {
+  // Entries written before the tag was renamed carry the old `component` key, so fall back to it so
+  // their origin is not lost after an upgrade.
+  if (typeof candidate.source === "string") {
+    return candidate.source;
+  }
+  if (typeof candidate.component === "string") {
+    return candidate.component;
+  }
+  return undefined;
 }

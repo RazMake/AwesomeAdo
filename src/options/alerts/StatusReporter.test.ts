@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { ILogger } from "../common/logging/ILogger";
+import type { ILogger } from "../../common/logging/ILogger";
 
 import { StatusReporter } from "./StatusReporter";
 

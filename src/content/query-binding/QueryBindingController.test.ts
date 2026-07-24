@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { ActiveView, QueryBindings } from "../common/bindings/QueryBinding";
+import type { ActiveView, QueryBindings } from "../../common/bindings/QueryBinding";
+import type { ILogger } from "../../common/logging/ILogger";
 
 import type { BindingButton } from "./BindingButton";
 import type { BindingMenu, MenuEntry, MenuItem } from "./BindingMenu";
@@ -44,7 +45,12 @@ function makeActions() {
     enableEnhancedView: vi.fn(),
     disableEnhancedView: vi.fn(),
     setActiveView: vi.fn(),
+    viewLog: vi.fn(),
   };
+}
+
+function makeLoggerSpy(): ILogger {
+  return { info: vi.fn(), error: vi.fn() };
 }
 
 function bound(id: string, view = "sprint", active: ActiveView = "enhanced"): QueryBindings {
@@ -70,11 +76,13 @@ describe("QueryBindingController", () => {
   let button: ButtonSpy;
   let menu: MenuSpy;
   let actions: ReturnType<typeof makeActions>;
+  let logger: ILogger;
 
   beforeEach(() => {
     button = makeButtonSpy();
     menu = makeMenuSpy();
     actions = makeActions();
+    logger = makeLoggerSpy();
   });
 
   function makeController(url: string, configured = true): QueryBindingController {
@@ -83,6 +91,7 @@ describe("QueryBindingController", () => {
       menu as unknown as BindingMenu,
       actions as unknown as QueryMenuActions,
       url,
+      logger,
     );
     // Bound-query menus offer the view swap only once the ADO settings are complete; default the
     // fixture to configured so the swap-focused tests exercise the full menu.
@@ -173,14 +182,14 @@ describe("QueryBindingController", () => {
   });
 
   describe("unbound menu", () => {
-    it("offers Options and Enable Enhanced View", () => {
+    it("offers Options and Enable Enhanced View above the View Log footer", () => {
       const controller = makeController(queryUrl(GUID));
       controller.applyBindings({});
 
       clickButton(button);
       const labels = items(lastEntries(menu)).map((item) => item.label);
 
-      expect(labels).toEqual(["Options", "Enable Enhanced View"]);
+      expect(labels).toEqual(["Options", "Enable Enhanced View", "View Log"]);
     });
 
     it("routes Options to openOptions and Enable to enableEnhancedView", () => {
@@ -198,7 +207,7 @@ describe("QueryBindingController", () => {
   });
 
   describe("bound menu", () => {
-    it("shows the bound view and Standard View with a separator, Options and Disable", () => {
+    it("shows the bound view and Standard View with a separator, Options and Disable, then View Log", () => {
       const controller = makeController(queryUrl(GUID));
       controller.applyBindings(bound(GUID, "sprint", "enhanced"));
 
@@ -211,12 +220,15 @@ describe("QueryBindingController", () => {
         "separator",
         "item",
         "item",
+        "separator",
+        "item",
       ]);
       expect(items(entries).map((item) => item.label)).toEqual([
         "Sprint View",
         "Standard View",
         "Options",
         "Disable Enhanced View",
+        "View Log",
       ]);
     });
 
@@ -270,17 +282,18 @@ describe("QueryBindingController", () => {
   });
 
   describe("bound menu while the ADO settings are incomplete", () => {
-    it("hides the view swap and offers only Options and Disable Enhanced View", () => {
+    it("hides the view swap and offers only Options and Disable Enhanced View, then View Log", () => {
       const controller = makeController(queryUrl(GUID), false);
       controller.applyBindings(bound(GUID, "sprint", "enhanced"));
 
       clickButton(button);
       const entries = lastEntries(menu);
 
-      expect(entries.map((entry) => entry.kind)).toEqual(["item", "item"]);
+      expect(entries.map((entry) => entry.kind)).toEqual(["item", "item", "separator", "item"]);
       expect(items(entries).map((item) => item.label)).toEqual([
         "Options",
         "Disable Enhanced View",
+        "View Log",
       ]);
     });
 
@@ -309,6 +322,7 @@ describe("QueryBindingController", () => {
         "Standard View",
         "Options",
         "Disable Enhanced View",
+        "View Log",
       ]);
     });
 
@@ -373,6 +387,63 @@ describe("QueryBindingController", () => {
       controller.applyDefaultView("original");
 
       expect(menu.close).toHaveBeenCalled();
+    });
+  });
+
+  describe("View Log footer", () => {
+    it("routes the footer to the viewLog action on an unbound query", () => {
+      const controller = makeController(queryUrl(GUID));
+      controller.applyBindings({});
+      clickButton(button);
+
+      const viewLog = items(lastEntries(menu)).find((item) => item.label === "View Log");
+      viewLog?.onSelect();
+
+      expect(actions.viewLog).toHaveBeenCalledTimes(1);
+    });
+
+    it("routes the footer to the viewLog action on a bound query", () => {
+      const controller = makeController(queryUrl(GUID));
+      controller.applyBindings(bound(GUID, "sprint", "enhanced"));
+      clickButton(button);
+
+      const viewLog = items(lastEntries(menu)).find((item) => item.label === "View Log");
+      viewLog?.onSelect();
+
+      expect(actions.viewLog).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("logging", () => {
+    it("logs the button showing and the menu opening with the binding state", () => {
+      const controller = makeController(queryUrl(GUID));
+      controller.applyBindings(bound(GUID, "sprint", "enhanced"));
+
+      const showMessage = vi
+        .mocked(logger.info)
+        .mock.calls.map((call) => call[0])
+        .find((message) => message.includes("Top-bar button shown"));
+      expect(showMessage).toContain(GUID);
+
+      clickButton(button);
+      const openMessage = vi
+        .mocked(logger.info)
+        .mock.calls.map((call) => call[0])
+        .find((message) => message.includes("Opened top-bar menu"));
+      expect(openMessage).toContain("bound");
+    });
+
+    it("logs the configured transition only when it flips", () => {
+      const controller = makeController(queryUrl(GUID), false);
+      vi.mocked(logger.info).mockClear();
+
+      controller.applyConfigured(true);
+      expect(logger.info).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(logger.info).mock.calls[0]?.[0]).toContain("ADO configuration complete");
+
+      // A redundant re-assert of the same state must not log again.
+      controller.applyConfigured(true);
+      expect(logger.info).toHaveBeenCalledTimes(1);
     });
   });
 });

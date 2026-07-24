@@ -21,7 +21,7 @@ describe("Logger", () => {
 
   beforeEach(() => {
     writer = new FakeWriter();
-    logger = new Logger(writer, () => 12345);
+    logger = new Logger(writer, "content", () => 12345);
     consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
   });
 
@@ -29,32 +29,40 @@ describe("Logger", () => {
     consoleError.mockRestore();
   });
 
-  it("records an info message with the injected clock and no console noise", () => {
+  it("records an info message with the injected clock, its source, and no console noise", () => {
     logger.info("started");
 
-    expect(writer.entries).toEqual([{ timestamp: 12345, level: "info", message: "started" }]);
+    expect(writer.entries).toEqual([
+      { timestamp: 12345, level: "info", message: "started", source: "content" },
+    ]);
     expect(consoleError).not.toHaveBeenCalled();
   });
 
-  it("records an error with its serialized detail and mirrors it to the console", () => {
+  it("records an error with its serialized detail and mirrors it to the console with the source", () => {
     const error = new Error("boom");
     error.stack = "Error: boom\n    at here";
 
     logger.error("failed", error);
 
     expect(writer.entries).toEqual([
-      { timestamp: 12345, level: "error", message: "failed", detail: "Error: boom\n    at here" },
+      {
+        timestamp: 12345,
+        level: "error",
+        message: "failed",
+        source: "content",
+        detail: "Error: boom\n    at here",
+      },
     ]);
-    expect(consoleError).toHaveBeenCalledWith("AwesomeADO: failed", error);
+    expect(consoleError).toHaveBeenCalledWith("AwesomeADO [content]: failed", error);
   });
 
-  it("records an error without a thrown value and logs the message alone", () => {
+  it("records an error without a thrown value and logs the message alone with its source", () => {
     logger.error("standalone failure");
 
     expect(writer.entries).toEqual([
-      { timestamp: 12345, level: "error", message: "standalone failure" },
+      { timestamp: 12345, level: "error", message: "standalone failure", source: "content" },
     ]);
-    expect(consoleError).toHaveBeenCalledWith("AwesomeADO: standalone failure");
+    expect(consoleError).toHaveBeenCalledWith("AwesomeADO [content]: standalone failure");
   });
 
   it("never throws when the writer rejects (fire-and-forget)", async () => {

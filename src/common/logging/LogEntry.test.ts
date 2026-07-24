@@ -57,6 +57,17 @@ describe("formatLogEntry", () => {
     expect(formatLogEntry(entry)).toBe("[1970-01-01T00:00:00.000Z] INFO started");
   });
 
+  it("brackets the source after the level when present", () => {
+    const entry: LogEntry = {
+      timestamp: 0,
+      level: "info",
+      message: "started",
+      source: "content",
+    };
+
+    expect(formatLogEntry(entry)).toBe("[1970-01-01T00:00:00.000Z] INFO [content] started");
+  });
+
   it("formats an error entry and indents each detail line", () => {
     const entry: LogEntry = {
       timestamp: 0,
@@ -122,5 +133,25 @@ describe("normalizeLogEntries", () => {
     const raw = [{ timestamp: 1, level: "info", message: "ok", detail: 5 }];
 
     expect(normalizeLogEntries(raw)).toEqual([{ timestamp: 1, level: "info", message: "ok" }]);
+  });
+
+  it("keeps a string source and drops a non-string one", () => {
+    const raw = [
+      { timestamp: 1, level: "info", message: "labelled", source: "BrowserSyncSettingsStore" },
+      { timestamp: 2, level: "info", message: "unlabelled", source: 7 },
+    ];
+
+    expect(normalizeLogEntries(raw)).toEqual([
+      { timestamp: 1, level: "info", message: "labelled", source: "BrowserSyncSettingsStore" },
+      { timestamp: 2, level: "info", message: "unlabelled" },
+    ]);
+  });
+
+  it("reads the legacy `component` key as the source when no `source` is present", () => {
+    const raw = [{ timestamp: 1, level: "info", message: "legacy", component: "settings" }];
+
+    expect(normalizeLogEntries(raw)).toEqual([
+      { timestamp: 1, level: "info", message: "legacy", source: "settings" },
+    ]);
   });
 });

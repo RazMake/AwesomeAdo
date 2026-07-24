@@ -1,5 +1,5 @@
-import type { AdoTheme } from "../common/navigation/AdoContext";
-import type { Theme } from "../common/settings/ExtensionSettings";
+import type { AdoTheme } from "../../common/navigation/AdoContext";
+import type { Theme } from "../../common/settings/ExtensionSettings";
 
 /** The concrete themes the options page can actually paint (never "auto"). */
 export type ConcreteTheme = "light" | "dark" | "blue";

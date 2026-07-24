@@ -1,12 +1,12 @@
-import type { IQueryBindingStore } from "../common/bindings/IQueryBindingStore";
-import type { QueryBindings } from "../common/bindings/QueryBinding";
-import type { StorageObservation } from "../common/browser/observeSyncKeys";
+import type { IQueryBindingStore } from "../../common/bindings/IQueryBindingStore";
+import type { QueryBindings } from "../../common/bindings/QueryBinding";
+import type { StorageObservation } from "../../common/browser/observeSyncKeys";
 import {
   DEFAULT_SETTINGS,
   isAdoConfigured,
   type ExtensionSettings,
-} from "../common/settings/ExtensionSettings";
-import type { ISettingsStore } from "../common/settings/ISettingsStore";
+} from "../../common/settings/ExtensionSettings";
+import type { ISettingsStore } from "../../common/settings/ISettingsStore";
 
 type ReportError = (error: unknown) => void;
 

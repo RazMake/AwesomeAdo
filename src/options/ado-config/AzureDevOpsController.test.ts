@@ -1,9 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import type { AdoMetadataContext, IAdoMetadataReader } from "../common/browser/IAdoMetadataReader";
-import type { StorageObservation } from "../common/browser/observeSyncKeys";
-import { DEFAULT_SETTINGS, type ExtensionSettings } from "../common/settings/ExtensionSettings";
-import type { ISettingsStore } from "../common/settings/ISettingsStore";
+import type {
+  AdoMetadataContext,
+  IAdoMetadataReader,
+} from "../../common/browser/IAdoMetadataReader";
+import type { StorageObservation } from "../../common/browser/observeSyncKeys";
+import { DEFAULT_SETTINGS, type ExtensionSettings } from "../../common/settings/ExtensionSettings";
+import type { ISettingsStore } from "../../common/settings/ISettingsStore";
 
 import { AzureDevOpsController, type AzureDevOpsElements } from "./AzureDevOpsController";
 

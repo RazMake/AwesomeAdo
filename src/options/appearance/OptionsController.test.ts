@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import type { IAdoTabReader } from "../common/browser/IAdoTabReader";
-import type { AdoTabContext } from "../common/navigation/AdoContext";
-import { DEFAULT_SETTINGS, type ExtensionSettings } from "../common/settings/ExtensionSettings";
-import type { ISettingsStore } from "../common/settings/ISettingsStore";
+import type { IAdoTabReader } from "../../common/browser/IAdoTabReader";
+import type { AdoTabContext } from "../../common/navigation/AdoContext";
+import { DEFAULT_SETTINGS, type ExtensionSettings } from "../../common/settings/ExtensionSettings";
+import type { ISettingsStore } from "../../common/settings/ISettingsStore";
 
 import { OptionsController, type OptionsElements } from "./OptionsController";
 

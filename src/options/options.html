@@ -191,6 +191,15 @@
       .combobox input {
         width: 100%;
       }
+      /* Shared floating-surface chrome for the two popovers (combobox list + multiselect panel);
+         kept in one rule so the surface look stays identical and jscpd sees no duplicate block. */
+      .combobox__list,
+      .multiselect__panel {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        box-shadow: 0 6px 18px rgb(0 0 0 / 28%);
+      }
       .combobox__list {
         position: absolute;
         top: calc(100% + 2px);
@@ -202,10 +211,6 @@
         list-style: none;
         max-height: 220px;
         overflow-y: auto;
-        background: var(--surface);
-        border: 1px solid var(--border);
-        border-radius: 6px;
-        box-shadow: 0 6px 18px rgb(0 0 0 / 28%);
       }
       .combobox__option {
         padding: 6px 8px;
@@ -599,6 +604,120 @@
       .log-toolbar__spacer {
         flex: 1 1 auto;
       }
+      /* Searchable per-source filter: a compact summary trigger that opens a panel of checkboxes with
+         a type-to-filter box and Select all / Clear all shortcuts. The control hides itself until the
+         log actually has sources to filter (see MultiSelectFilter). */
+      .multiselect {
+        position: relative;
+        display: inline-flex;
+      }
+      .multiselect__trigger {
+        appearance: none;
+        font: inherit;
+        font-size: 13px;
+        color: var(--text);
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 6px 28px 6px 10px;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      /* A caret hints the button opens a menu; it flips when the panel is open. */
+      .multiselect__trigger::after {
+        content: "";
+        position: absolute;
+        top: 50%;
+        right: 11px;
+        width: 6px;
+        height: 6px;
+        border-right: 1.5px solid var(--text-muted);
+        border-bottom: 1.5px solid var(--text-muted);
+        transform: translateY(-70%) rotate(45deg);
+      }
+      .multiselect--open .multiselect__trigger::after {
+        transform: translateY(-30%) rotate(-135deg);
+      }
+      .multiselect__trigger:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+      .multiselect__panel {
+        position: absolute;
+        top: calc(100% + 4px);
+        left: 0;
+        z-index: 20;
+        width: 260px;
+        max-width: 80vw;
+        padding: 8px;
+      }
+      .multiselect__search {
+        width: 100%;
+        font: inherit;
+        font-size: 13px;
+        color: var(--text);
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 6px 8px;
+        margin-bottom: 8px;
+      }
+      .multiselect__search:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 1px;
+      }
+      .multiselect__actions {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 8px;
+      }
+      .multiselect__action {
+        appearance: none;
+        font: inherit;
+        font-size: 12px;
+        color: var(--accent);
+        background: transparent;
+        border: none;
+        padding: 2px 4px;
+        cursor: pointer;
+      }
+      .multiselect__action:hover {
+        text-decoration: underline;
+      }
+      .multiselect__action:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+      .multiselect__list {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        max-height: 220px;
+        overflow-y: auto;
+      }
+      .multiselect__option {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 4px 6px;
+        border-radius: 4px;
+        font-size: 13px;
+        color: var(--text);
+        cursor: pointer;
+      }
+      .multiselect__option:hover {
+        background: var(--surface-hover);
+      }
+      .multiselect__option-label {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .multiselect__empty {
+        margin: 4px 6px;
+        font-size: 13px;
+        color: var(--text-muted);
+      }
       .log {
         display: flex;
         flex-direction: column;
@@ -629,6 +748,10 @@
       }
       .log-row__level {
         font-weight: 600;
+        white-space: nowrap;
+      }
+      .log-row__source {
+        color: var(--text-muted);
         white-space: nowrap;
       }
       .log-row__message {
@@ -962,6 +1085,7 @@
               <input type="checkbox" id="log-errors-only" />
               Errors only
             </label>
+            <div class="multiselect" id="log-sources" hidden></div>
             <span class="log-toolbar__spacer"></span>
             <button type="button" class="button button--subtle" id="log-export" disabled>
               Export…

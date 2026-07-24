@@ -1,5 +1,8 @@
-import type { AdoTeam } from "../common/ado/AdoMetadata";
-import type { AdoMetadataContext, IAdoMetadataReader } from "../common/browser/IAdoMetadataReader";
+import type { AdoTeam } from "../../common/ado/AdoMetadata";
+import type {
+  AdoMetadataContext,
+  IAdoMetadataReader,
+} from "../../common/browser/IAdoMetadataReader";
 import {
   DEFAULT_SETTINGS,
   defaultAreaPathLabel,
@@ -7,8 +10,8 @@ import {
   type AreaPath,
   type ExtensionSettings,
   type TeamRef,
-} from "../common/settings/ExtensionSettings";
-import type { ISettingsStore } from "../common/settings/ISettingsStore";
+} from "../../common/settings/ExtensionSettings";
+import type { ISettingsStore } from "../../common/settings/ISettingsStore";
 
 import { AutocompleteInput } from "./AutocompleteInput";
 import { WorkItemTypesController, type WorkItemTypesElements } from "./WorkItemTypesController";

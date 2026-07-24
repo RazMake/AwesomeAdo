@@ -1,4 +1,4 @@
-import type { ILogger } from "../common/logging/ILogger";
+import type { ILogger } from "../../common/logging/ILogger";
 
 /**
  * Presents failures to the person using the options page.

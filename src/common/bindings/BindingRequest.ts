@@ -38,19 +38,65 @@ export function isOpenBindingSettingsMessage(value: unknown): value is OpenBindi
  */
 export const OPEN_OPTIONS_MESSAGE = "awesomeado:open-options";
 
+/**
+ * The options-page sections the top-bar menu can deep-link into. Kept as a named union (rather than
+ * a bare string) so both ends agree on the exact set of link targets and an unknown value is
+ * rejected instead of silently activating no tab. Only "diagnostics" is deep-linkable today.
+ */
+export type OptionsSection = "diagnostics";
+
+const OPTIONS_SECTIONS: readonly OptionsSection[] = ["diagnostics"];
+
+function isOptionsSection(value: unknown): value is OptionsSection {
+  return typeof value === "string" && (OPTIONS_SECTIONS as readonly string[]).includes(value);
+}
+
 export interface OpenOptionsMessage {
   type: typeof OPEN_OPTIONS_MESSAGE;
+  /**
+   * The section to reveal when the page opens (e.g. the Diagnostics log for "View Log"). Absent when
+   * the general options page should open on its default tab.
+   */
+  section?: OptionsSection;
 }
 
 export function isOpenOptionsMessage(value: unknown): value is OpenOptionsMessage {
   if (typeof value !== "object" || value === null) {
     return false;
   }
-  return (value as Partial<OpenOptionsMessage>).type === OPEN_OPTIONS_MESSAGE;
+  const candidate = value as Partial<OpenOptionsMessage>;
+  return (
+    candidate.type === OPEN_OPTIONS_MESSAGE &&
+    (candidate.section === undefined || isOptionsSection(candidate.section))
+  );
+}
+
+/**
+ * Sent from the service worker to an options page that is already open, telling it to reveal a
+ * section without a reload. A fresh options tab reads the section from its URL on load, but an
+ * already-open tab has finished loading and would otherwise stay on whichever tab the user left it
+ * on — so reusing that tab (instead of spawning a duplicate) needs this in-page nudge to switch.
+ */
+export const REVEAL_OPTIONS_SECTION_MESSAGE = "awesomeado:reveal-options-section";
+
+export interface RevealOptionsSectionMessage {
+  type: typeof REVEAL_OPTIONS_SECTION_MESSAGE;
+  section: OptionsSection;
+}
+
+export function isRevealOptionsSectionMessage(
+  value: unknown,
+): value is RevealOptionsSectionMessage {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const candidate = value as Partial<RevealOptionsSectionMessage>;
+  return candidate.type === REVEAL_OPTIONS_SECTION_MESSAGE && isOptionsSection(candidate.section);
 }
 
 const QUERY_ID_PARAM = "queryId";
 const QUERY_NAME_PARAM = "queryName";
+const SECTION_PARAM = "section";
 const OPTIONS_PAGE = "options/options.html";
 
 /**
@@ -66,9 +112,17 @@ export function bindingSettingsPath(queryId: string, queryName?: string): string
   return `${OPTIONS_PAGE}?${params.toString()}`;
 }
 
-/** The extension-relative options-page URL with no query pre-selected. Pass to `chrome.runtime.getURL`. */
-export function optionsPath(): string {
-  return OPTIONS_PAGE;
+/**
+ * The extension-relative options-page URL. Passing a `section` deep-links into that tab (e.g.
+ * "diagnostics" for "View Log"); with no section the page opens on its default tab. Pass the result
+ * to `chrome.runtime.getURL`.
+ */
+export function optionsPath(section?: OptionsSection): string {
+  if (section === undefined) {
+    return OPTIONS_PAGE;
+  }
+  const params = new URLSearchParams({ [SECTION_PARAM]: section });
+  return `${OPTIONS_PAGE}?${params.toString()}`;
 }
 
 /** Read the query id the top-bar prompt passed in the options-page URL, or null when absent. */
@@ -81,4 +135,19 @@ export function readQueryIdFromSearch(search: string): string | null {
 export function readQueryNameFromSearch(search: string): string | null {
   const value = new URLSearchParams(search).get(QUERY_NAME_PARAM);
   return value !== null && value.length > 0 ? value : null;
+}
+
+/** Read the section to reveal from the options-page URL, or null when absent or unrecognized. */
+export function readOptionsSectionFromSearch(search: string): OptionsSection | null {
+  const value = new URLSearchParams(search).get(SECTION_PARAM);
+  return isOptionsSection(value) ? value : null;
+}
+
+// One place maps a deep-linkable section to the options-page tab element that presents it, so the
+// load-time deep-link and the already-open "reveal" path can never drift onto different tab ids.
+const SECTION_TAB_IDS: Record<OptionsSection, string> = { diagnostics: "tab-diagnostics" };
+
+/** The options-page tab element id that presents `section` (e.g. the Diagnostics log). */
+export function sectionTabId(section: OptionsSection): string {
+  return SECTION_TAB_IDS[section];
 }

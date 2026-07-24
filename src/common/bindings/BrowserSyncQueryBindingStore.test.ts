@@ -177,6 +177,50 @@ describe("BrowserSyncQueryBindingStore", () => {
     });
   });
 
+  describe("logging", () => {
+    const makeLogger = () => ({ info: vi.fn(), error: vi.fn() });
+
+    it("logs a new bind and a rebind distinctly, only after the write resolves", async () => {
+      const fake = new FakeBrowserSyncStorage();
+      const logger = makeLogger();
+      const store = new BrowserSyncQueryBindingStore(fake, logger);
+
+      await store.bind("q", { view: "sprint", properties: {}, active: "enhanced" });
+      await store.bind("q", { view: "projectTracking", properties: {} });
+
+      expect(logger.info).toHaveBeenNthCalledWith(1, "Bound query q: view=sprint, active=enhanced");
+      // The second write to the same id is a rebind, and an absent active is logged as "default".
+      expect(logger.info).toHaveBeenNthCalledWith(
+        2,
+        "Rebound query q: view=projectTracking, active=default",
+      );
+    });
+
+    it("logs an unbind only when a binding existed", async () => {
+      const fake = new FakeBrowserSyncStorage();
+      await fake.set(KEY, { q: { view: "sprint", properties: {} } });
+      const logger = makeLogger();
+      const store = new BrowserSyncQueryBindingStore(fake, logger);
+
+      await store.unbind("absent");
+      expect(logger.info).not.toHaveBeenCalled();
+
+      await store.unbind("q");
+      expect(logger.info).toHaveBeenCalledWith("Unbound query q: was view=sprint");
+    });
+
+    it("logs the active-view switch with the previous view", async () => {
+      const fake = new FakeBrowserSyncStorage();
+      await fake.set(KEY, { q: { view: "sprint", properties: {}, active: "enhanced" } });
+      const logger = makeLogger();
+      const store = new BrowserSyncQueryBindingStore(fake, logger);
+
+      await store.setActiveView("q", "standard");
+
+      expect(logger.info).toHaveBeenCalledWith("Switched query q to standard view (from enhanced)");
+    });
+  });
+
   describe("observe", () => {
     it("emits the initial snapshot after ready resolves", async () => {
       const fake = new FakeBrowserSyncStorage();

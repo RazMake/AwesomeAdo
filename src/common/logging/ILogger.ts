@@ -1,5 +1,5 @@
 /**
- * The logging surface every component depends on (Dependency Inversion).
+ * The logging surface every source depends on (Dependency Inversion).
  *
  * Fire-and-forget by design: methods return void so callers never await logging, and a logging
  * failure can never break the feature that logged. Errors are recorded separately from plain

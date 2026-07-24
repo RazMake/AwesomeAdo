@@ -2,10 +2,11 @@ import {
   type ActiveView,
   type QueryBindings,
   resolveActiveView,
-} from "../common/bindings/QueryBinding";
-import { getViewType } from "../common/bindings/ViewType";
-import { parseAdoQueryId } from "../common/navigation/AdoQueryRoute";
-import { DEFAULT_SETTINGS, type DefaultView } from "../common/settings/ExtensionSettings";
+} from "../../common/bindings/QueryBinding";
+import { getViewType } from "../../common/bindings/ViewType";
+import type { ILogger } from "../../common/logging/ILogger";
+import { parseAdoQueryId } from "../../common/navigation/AdoQueryRoute";
+import { DEFAULT_SETTINGS, type DefaultView } from "../../common/settings/ExtensionSettings";
 
 import type { BindingButton } from "./BindingButton";
 import type { BindingMenu, MenuEntry } from "./BindingMenu";
@@ -23,9 +24,12 @@ export interface QueryMenuActions {
   disableEnhancedView(queryId: string): void;
   /** Switch a bound query between its enhanced view and ADO's standard view. */
   setActiveView(queryId: string, active: ActiveView): void;
+  /** Open the options page with the Diagnostics log in view. */
+  viewLog(): void;
 }
 
 const STANDARD_VIEW_LABEL = "Standard View";
+const VIEW_LOG_LABEL = "View Log";
 
 /**
  * Owns the top-bar button's visibility policy and the menu it opens.
@@ -53,6 +57,7 @@ export class QueryBindingController {
     private readonly menu: BindingMenu,
     private readonly actions: QueryMenuActions,
     url: string,
+    private readonly logger: ILogger,
   ) {
     this.queryId = parseAdoQueryId(url);
   }
@@ -90,6 +95,11 @@ export class QueryBindingController {
       return;
     }
     this.configured = configured;
+    // A real state transition worth recording: it flips whether the menu can offer the enhanced-view
+    // swap at all, so logging it explains a later "the swap options disappeared" observation.
+    this.logger.info(
+      `ADO configuration ${configured ? "complete" : "incomplete"}; enhanced-view swap ${configured ? "available" : "hidden"}`,
+    );
     this.menu.close();
   }
 
@@ -103,6 +113,7 @@ export class QueryBindingController {
       if (this.buttonShown) {
         this.button.hide();
         this.buttonShown = false;
+        this.logger.info("Top-bar button hidden: left a single-query route");
       }
       return;
     }
@@ -110,6 +121,7 @@ export class QueryBindingController {
       // The handler reads live state each time, so one stable wiring covers every query and binding.
       this.button.show((anchor) => this.toggleMenu(anchor));
       this.buttonShown = true;
+      this.logger.info(`Top-bar button shown for query ${this.queryId}`);
     }
   }
 
@@ -118,6 +130,10 @@ export class QueryBindingController {
       this.menu.close();
       return;
     }
+    const bound = this.queryId !== null && this.bindings?.[this.queryId] !== undefined;
+    this.logger.info(
+      `Opened top-bar menu for query ${this.queryId} (${bound ? "bound" : "unbound"})`,
+    );
     this.menu.open(anchor, this.buildEntries());
   }
 
@@ -126,7 +142,19 @@ export class QueryBindingController {
     if (queryId === null || this.bindings === undefined) {
       return [];
     }
-    const binding = this.bindings[queryId];
+    // "View Log" is always available, separated at the bottom, so the diagnostics log is reachable
+    // straight from any query without first hunting through the general Options page.
+    return [
+      ...this.buildQueryEntries(queryId),
+      { kind: "separator" },
+      { kind: "item", label: VIEW_LOG_LABEL, onSelect: () => this.actions.viewLog() },
+    ];
+  }
+
+  /** The query-specific rows above the shared "View Log" footer: enable/swap/disable, keyed off the
+   *  query's current binding and whether the ADO settings are complete. */
+  private buildQueryEntries(queryId: string): MenuEntry[] {
+    const binding = this.bindings?.[queryId];
     if (binding === undefined) {
       return [
         { kind: "item", label: "Options", onSelect: () => this.actions.openOptions() },

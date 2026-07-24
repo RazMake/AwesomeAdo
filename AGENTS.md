@@ -160,8 +160,9 @@ Do not instantiate chrome-backed objects anywhere else.
 - Avoid unclear abbreviations.
 - The `I` prefix on `ISettingsStore` and `IBrowserSyncStorage` is the **sole** project-wide
   type-encoding exception. Do not add Hungarian notation or encode types into any other name.
-- A component means a cohesive feature area (`browser`, `settings`, `content`, `options`) — not
-  each class within that area. Any component with more than one file lives in its own subfolder.
+- A component means a cohesive feature area (`common/settings`, `content/query-page`,
+  `options/diagnostics`) — not each class within that area. Any component with more than one file
+  lives in its own subfolder, including inside `content/` and `options/`.
 
 ---
 
@@ -171,8 +172,9 @@ Do not instantiate chrome-backed objects anywhere else.
 - Do **not** narrate what the code literally does.
   - Bad: `// increment i`
   - Good: `// A document-level rule also covers content ADO renders after initial load.`
-- Public shared components (`src/common/**`) are documented for **usage** in their folder
-  `README.md`: describe the public API and intent, not internal architecture.
+- Component folders under `src/**` (every subfolder of `common/`, `content/`, and `options/`) are
+  documented for **usage** in their folder `README.md`: describe the public API and intent, not
+  internal architecture.
 - Internal architecture and rationale belong in the memory bank (`systemPatterns.md`), not in
   source-file comments.
 
@@ -198,8 +200,9 @@ These are **non-negotiable**.
 ## 10. Folder & README Conventions
 
 - `./` is the existing workspace root — **never** create a nested project directory.
-- Every subfolder under `src/common/**` **must** have a `README.md` describing how to use it
-  (public API + intent). Internal architecture belongs in the memory bank.
+- Every component subfolder under `src/**` (each subfolder of `common/`, `content/`, and
+  `options/`) **must** have a `README.md` describing how to use it (public API + intent). Internal
+  architecture belongs in the memory bank.
 - Entry files named `index.ts` contain **only composition/wiring** and are excluded from coverage.
 - `scripts/**` contains build and release automation only; it is never bundled into the extension.
 - `store-assets/` contains marketplace listing files provided by the developer.

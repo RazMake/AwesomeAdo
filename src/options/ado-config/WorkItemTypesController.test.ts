@@ -1,14 +1,14 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import type { AdoWorkItemType } from "../common/ado/AdoMetadata";
-import type { StorageObservation } from "../common/browser/observeSyncKeys";
+import type { AdoWorkItemType } from "../../common/ado/AdoMetadata";
+import type { StorageObservation } from "../../common/browser/observeSyncKeys";
 import {
   DEFAULT_SETTINGS,
   MAX_BOARD_COLUMNS,
   type ExtensionSettings,
   type WorkItemType,
-} from "../common/settings/ExtensionSettings";
-import type { ISettingsStore } from "../common/settings/ISettingsStore";
+} from "../../common/settings/ExtensionSettings";
+import type { ISettingsStore } from "../../common/settings/ISettingsStore";
 
 import { WorkItemTypesController, type WorkItemTypesElements } from "./WorkItemTypesController";
 

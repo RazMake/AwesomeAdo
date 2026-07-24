@@ -1,10 +1,10 @@
-import type { AdoWorkItemType } from "../common/ado/AdoMetadata";
+import type { AdoWorkItemType } from "../../common/ado/AdoMetadata";
 import {
   MAX_BOARD_COLUMNS,
   type WorkItemColumn,
   type WorkItemType,
-} from "../common/settings/ExtensionSettings";
-import type { ISettingsStore } from "../common/settings/ISettingsStore";
+} from "../../common/settings/ExtensionSettings";
+import type { ISettingsStore } from "../../common/settings/ISettingsStore";
 
 import { AutocompleteInput } from "./AutocompleteInput";
 

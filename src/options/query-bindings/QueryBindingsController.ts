@@ -1,6 +1,6 @@
-import type { IQueryBindingStore } from "../common/bindings/IQueryBindingStore";
-import type { QueryBinding, QueryBindings } from "../common/bindings/QueryBinding";
-import { VIEW_TYPES, type ViewType } from "../common/bindings/ViewType";
+import type { IQueryBindingStore } from "../../common/bindings/IQueryBindingStore";
+import type { QueryBinding, QueryBindings } from "../../common/bindings/QueryBinding";
+import { VIEW_TYPES, type ViewType } from "../../common/bindings/ViewType";
 
 /** The Query Bindings tab's elements. Passed in so the controller stays DOM-agnostic and testable. */
 export interface QueryBindingsElements {

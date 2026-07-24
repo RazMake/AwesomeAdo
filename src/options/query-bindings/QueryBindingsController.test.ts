@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { IQueryBindingStore } from "../common/bindings/IQueryBindingStore";
-import type { QueryBinding, QueryBindings } from "../common/bindings/QueryBinding";
-import type { ViewType } from "../common/bindings/ViewType";
+import type { IQueryBindingStore } from "../../common/bindings/IQueryBindingStore";
+import type { QueryBinding, QueryBindings } from "../../common/bindings/QueryBinding";
+import type { ViewType } from "../../common/bindings/ViewType";
 
 import { QueryBindingsController, type QueryBindingsElements } from "./QueryBindingsController";
 

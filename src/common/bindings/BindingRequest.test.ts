@@ -4,11 +4,15 @@ import {
   bindingSettingsPath,
   isOpenBindingSettingsMessage,
   isOpenOptionsMessage,
+  isRevealOptionsSectionMessage,
   OPEN_BINDING_SETTINGS_MESSAGE,
   OPEN_OPTIONS_MESSAGE,
   optionsPath,
+  readOptionsSectionFromSearch,
   readQueryIdFromSearch,
   readQueryNameFromSearch,
+  REVEAL_OPTIONS_SECTION_MESSAGE,
+  sectionTabId,
 } from "./BindingRequest";
 
 describe("isOpenBindingSettingsMessage", () => {
@@ -60,6 +64,14 @@ describe("isOpenOptionsMessage", () => {
     expect(isOpenOptionsMessage({ type: OPEN_OPTIONS_MESSAGE })).toBe(true);
   });
 
+  it("accepts a valid section", () => {
+    expect(isOpenOptionsMessage({ type: OPEN_OPTIONS_MESSAGE, section: "diagnostics" })).toBe(true);
+  });
+
+  it("rejects an unknown section", () => {
+    expect(isOpenOptionsMessage({ type: OPEN_OPTIONS_MESSAGE, section: "nope" })).toBe(false);
+  });
+
   it("rejects a non-object", () => {
     expect(isOpenOptionsMessage(null)).toBe(false);
     expect(isOpenOptionsMessage("abc")).toBe(false);
@@ -70,9 +82,60 @@ describe("isOpenOptionsMessage", () => {
   });
 });
 
+describe("isRevealOptionsSectionMessage", () => {
+  it("accepts a valid section reveal message", () => {
+    expect(
+      isRevealOptionsSectionMessage({
+        type: REVEAL_OPTIONS_SECTION_MESSAGE,
+        section: "diagnostics",
+      }),
+    ).toBe(true);
+  });
+
+  it("rejects a missing or unknown section", () => {
+    expect(isRevealOptionsSectionMessage({ type: REVEAL_OPTIONS_SECTION_MESSAGE })).toBe(false);
+    expect(
+      isRevealOptionsSectionMessage({ type: REVEAL_OPTIONS_SECTION_MESSAGE, section: "nope" }),
+    ).toBe(false);
+  });
+
+  it("rejects a non-object or wrong type discriminator", () => {
+    expect(isRevealOptionsSectionMessage(null)).toBe(false);
+    expect(
+      isRevealOptionsSectionMessage({ type: OPEN_OPTIONS_MESSAGE, section: "diagnostics" }),
+    ).toBe(false);
+  });
+});
+
+describe("sectionTabId", () => {
+  it("maps diagnostics to its options tab element id", () => {
+    expect(sectionTabId("diagnostics")).toBe("tab-diagnostics");
+  });
+});
+
 describe("optionsPath", () => {
   it("returns the options page with no query pre-selected", () => {
     expect(optionsPath()).toBe("options/options.html");
+  });
+
+  it("appends the section when one is given", () => {
+    expect(optionsPath("diagnostics")).toBe("options/options.html?section=diagnostics");
+  });
+});
+
+describe("optionsPath / readOptionsSectionFromSearch round-trip", () => {
+  it("reads back the encoded section", () => {
+    const path = optionsPath("diagnostics");
+    const search = path.slice(path.indexOf("?"));
+    expect(readOptionsSectionFromSearch(search)).toBe("diagnostics");
+  });
+
+  it("returns null when the section is absent", () => {
+    expect(readOptionsSectionFromSearch("?queryId=abc")).toBeNull();
+  });
+
+  it("returns null for an unrecognized section", () => {
+    expect(readOptionsSectionFromSearch("?section=nope")).toBeNull();
   });
 });
 

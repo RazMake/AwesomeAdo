@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { IBrowserSyncStorage } from "../browser/IBrowserSyncStorage";
 
@@ -229,6 +229,32 @@ describe("BrowserSyncSettingsStore", () => {
       await store.write({ workItemTypes });
       expect(fake.getStoredKeys()).toEqual([WORK_ITEM_TYPES_KEY]);
       expect(await fake.get(WORK_ITEM_TYPES_KEY)).toEqual(workItemTypes);
+    });
+  });
+
+  describe("logging", () => {
+    const makeLogger = () => ({ info: vi.fn(), error: vi.fn() });
+
+    it("names the changed settings without recording their values", async () => {
+      const fake = new FakeBrowserSyncStorage();
+      const logger = makeLogger();
+      const store = new BrowserSyncSettingsStore(fake, logger);
+
+      await store.write({ theme: "dark", currentTeam: { id: "t1", name: "Platform" } });
+
+      // Only the setting names appear — never the team name/id, which could reveal the user's org.
+      expect(logger.info).toHaveBeenCalledWith("Settings saved: theme, currentTeam");
+      expect(vi.mocked(logger.info).mock.calls[0]?.[0]).not.toContain("Platform");
+    });
+
+    it("does not log when nothing changed", async () => {
+      const fake = new FakeBrowserSyncStorage();
+      const logger = makeLogger();
+      const store = new BrowserSyncSettingsStore(fake, logger);
+
+      await store.write({});
+
+      expect(logger.info).not.toHaveBeenCalled();
     });
   });
 
