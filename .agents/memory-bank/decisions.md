@@ -247,3 +247,62 @@
   a single lint-enforced doorway. Pure contracts in `common/view-common` are ordinary Dependency
   Inversion (§5-D), not a §6 exception. This does not open general options→content coupling: the
   linter blocks every path except the one catalog module.
+
+## ADR-028: Credentialed ADO REST runs through a MAIN-world bridge with a closed op-set
+
+- Decision: All credentialed Azure DevOps REST access from an enhanced view goes through a manifest
+  `world:"MAIN"` bridge content script that owns the fetcher, because a content script (isolated
+  world) cannot call `chrome.scripting`. The isolated content script and the bridge exchange messages
+  guarded by a **per-session nonce** plus strict `event.origin` **and** `event.source` checks, and the
+  bridge exposes a **closed operation vocabulary** (read/set item props, read/add/update comment,
+  reorder, …) — never a generic "fetch any URL" proxy. Responses are returned only to us; field values
+  and identity are never logged.
+- Rationale: The only credentialed path available to a content script is a MAIN-world fetch, and MAIN
+  world shares the page's DOM with a potentially hostile ADO or injected script. A generic proxy would
+  let any page on the origin exfiltrate through our authenticated session, so the surface is reduced to
+  a fixed op-set behind an authenticated, origin/source-checked channel. Recorded as principle #2 in
+  systemPatterns "Enhanced View Runtime Principles".
+
+## ADR-029: The ADO server is the only source of truth (no live in-page shared state)
+
+- Decision: An enhanced view and ADO's own grid are treated as **two independent, eventually-consistent
+  caches of the ADO server**, with no live shared in-page state between them. The earlier idea of a
+  shared in-page data layer (originally "principle 3") is dropped as unachievable.
+- Rationale: The two sides run in different JS worlds (isolated vs. MAIN) and never share a heap, so
+  there is no reachable shared source of truth in the page; all coupling must flow through the server.
+  Designing around a shared cache would be unimplementable and would mask staleness. Refresh on mount /
+  manual / after the write queue drains (no background polling) plus per-item `System.Rev` tracking keep
+  each side convergent. Recorded as principles #1 and #3 in systemPatterns.
+
+## ADR-030: Fluid optimistic writes via a per-tab sequential queue
+
+- Decision: View edits are **optimistic**: a change updates the in-memory model immediately and enqueues
+  a write onto a **per-tab, strictly-sequential** queue (two tabs on the same query keep separate
+  queues). The queue coalesces rapid ops on the same target, **reads back** changed properties after
+  each committed write to reconcile server-side rule effects, tracks `System.Rev` for optimistic
+  concurrency, and backs a **single-level, in-memory undo stack per query**. Failures roll back the
+  optimistic UI and surface in a themed top panel: transient errors (network/5xx/timeout) auto-retry
+  with backoff then surface; 409/412 stale-rev roll back with **no auto-rebase**; 403/404 surface
+  immediately. Pending writes block view-switching and raise a themed unload / SPA-nav-away guard.
+- Rationale: ADO writes are latency-bound and rule-driven; blocking the UI per write would feel
+  sluggish, while firing writes concurrently would race on `Rev` and on reorder. A sequential per-tab
+  queue keeps ordering deterministic and undo reasoning single-level, and read-back reconciliation plus
+  no-auto-rebase avoid silently overwriting a concurrent change. Recorded as principles #5–#8 in
+  systemPatterns.
+
+## ADR-031: Tab-local view override with fixed precedence
+
+- Decision: The per-query "which view is showing" choice is a **tab-local override** kept in the ADO
+  page's `sessionStorage`, with fixed precedence **override › per-query configured default (synced) ›
+  global default**. The frequent menu toggle writes **only** the tab-local override (survives F5, never
+  syncs); a separate explicit **"make this my default"** action writes the synced per-query default,
+  effective only on the next navigation to the query. Menu checkmarks reflect the **effective** view.
+  Flipping **to** ADO's standard grid may reload — gated by a per-query in-memory **freshness token**
+  (bumped by committed writes and by reads that observe a new `id:rev` set) so a reload happens only
+  when the data actually advanced; flipping back to the enhanced view refreshes in place.
+- Rationale: Users flip a single query between enhanced and standard frequently and per-tab, but that
+  transient choice must not overwrite their synced default or leak to other tabs and devices; a
+  session-scoped override that outranks the synced default gives a durable-within-tab toggle plus an
+  explicit opt-in to change the real default. Reloading on every flip-to-standard would be jarring, so
+  the freshness token restricts the reload to the case where ADO genuinely needs to re-fetch. Recorded
+  as principle #9 in systemPatterns.

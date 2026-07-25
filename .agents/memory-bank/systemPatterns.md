@@ -7,6 +7,7 @@ depends on abstractions.
 
 ```
 src/common/browser/    chrome API isolation + shared browser-layer helpers
+src/common/ado/        ADO REST field defs + the normalized work-item data model (all views)
 src/common/settings/   the theme / default-view settings model + synced store
 src/common/bindings/   the per-query binding model, view catalog, synced store, open-page contract
 src/common/navigation/ ADO host/route/identity parsing + navigation and probe message contracts
@@ -15,6 +16,17 @@ src/options/           the options page, split into feature subfolders (appearan
 src/background/        the service worker (SPA navigation forwarding + opening extension pages)
 scripts/               build + release automation (never bundled into the extension)
 ```
+
+### `src/common/ado`
+
+The chrome-free ADO REST layer: the URL builders and response parsers, and — going forward — the
+**normalized work-item data model** every enhanced view consumes (a common core of id, rev, type,
+title, state, assignedTo, iteration, rank/importance, eta, parent/child ids, plus whatever extra
+fields a specific view declares it needs), **decoupled from raw ADO JSON** by a parse layer like the
+metadata parsing today. **All ADO field definitions and data shapes live here** — never in
+`src/common/view-common`, which is for common view UX (menus, reusable components, the view
+contracts). The exact field list grows as views are implemented (it depends on each view's functionality); only the common core is shared. Today the
+folder holds the options-page project metadata (`AdoMetadata`, `buildAdoMetadataUrls`, the parsers).
 
 ### `src/common/browser`
 
@@ -46,7 +58,9 @@ implemented by `BrowserSyncQueryBindingStore` (the whole map under one synced ke
 The pure view **contracts** both bundles depend on (Dependency Inversion, no DOM/chrome): `ViewType`
 (shape + value helpers) and `EnhancedView`/`EnhancedViewContext`. The concrete views (catalog,
 registry, renderers) live under `src/content/views` — see the `src/content` section. Keeping only the
-abstractions here is ordinary DIP, not a §6 exception.
+abstractions here is ordinary DIP, not a §6 exception. Its scope is **common view UX** — the shared
+view contracts today, plus reusable cross-view UX building blocks (menus, shared components) as they
+arrive. It must **never** hold ADO data shapes or field definitions; those live in `src/common/ado`.
 
 ### `src/common/settings-transfer`
 
@@ -151,3 +165,113 @@ extension in a real browser.
   The probes run only on request from the options page.
 - The only always-on cost on any ADO page is the two synced-storage observers and the one runtime
   message listener the content script wires. See ADR-020.
+
+## Enhanced View Runtime Principles
+
+These principles govern how **every** enhanced view reads, mutates, and presents ADO data at
+runtime. They are a standing contract applied to each view's implementation — not one-time setup.
+They are being built incrementally: today's views are placeholder shells, so most of what follows is
+the **target** design new view work must conform to.
+
+### 1. Server is the only source of truth
+
+There is no live shared data between an enhanced view and ADO's own grid — they run in different JS
+worlds (isolated vs. MAIN) and never share a heap. Each side is an **eventually-consistent cache** of
+the ADO server; all coupling flows through the server. (Principle 3 of "shared in-page data" was
+evaluated and dropped as unachievable.)
+
+### 2. Credentialed ADO REST runs through a MAIN-world bridge (closed op-set)
+
+A content script cannot call `chrome.scripting`, so all credentialed reads/writes go through a
+manifest `world:"MAIN"` bridge content script that owns the fetcher. Security is non-negotiable: a
+**per-session nonce** shared only between our isolated content script and the bridge, strict
+`event.origin` **and** `event.source` checks, a **closed operation vocabulary** (never a generic
+"fetch any URL" proxy — that would let a malicious page exfiltrate via our session), responses
+returned only to us, and **never log field values or identity**.
+
+### 3. Reads
+
+- Each view **declares its data needs** (fields + relation needs); a shared loader resolves the
+  minimum set of paged/cached batches. Fetch strategy lives in one place, not in each view.
+- **Extra fields are free**: the saved query's column set does not limit what we fetch — union the
+  view's needed fields into the `workitemsbatch` call (page 200s to the end).
+- **Parents** (upward hydration) are bounded and cheap — allowed from flat queries.
+- **Downward hierarchy is supported two ways**: a **tree (work-item-links) query**, and
+  **flat + lazy** descendant loading (depth/item-capped, expanded on demand per node, cached by
+  `id:rev`). Descendants pulled beyond the query are surfaced as such.
+- **Refresh** on mount, on manual request, and after the write queue drains. No background polling.
+
+### 4. Normalized data model in `common/ado`
+
+Views consume one normalized work-item shape **decoupled from raw ADO JSON** by a parse layer (like
+the metadata parsing today). Common core: `id, rev, type, title, state, assignedTo, iteration,
+rank/importance, eta, parent/child ids`; per-view fields grow as views are built. All ADO field
+definitions and data shapes live in `common/ado`; `common/view-common` is UX only.
+
+### 5. Fluid optimistic writes via a per-tab sequential queue
+
+- A change updates the in-memory model **immediately** and enqueues a write; the queue executes
+  **strictly sequentially, globally**.
+- Initial op vocabulary (grows per view): read props, set props (multiple props in one op = one
+  queue entry/one undo unit), read comment, add comment, update comment, reorder (ADO reorder API).
+- **Coalesce** rapid successive ops on the same target.
+- **Read back** the changed properties after each committed write to reconcile the optimistic model
+  against server-side rule effects.
+- Track `System.Rev` per item for optimistic concurrency.
+
+### 6. Undo
+
+In-memory, **one stack per query, single-level**; a reload destroys it. Cancel-or-compensate: if the
+write is still queued, remove it; if it is executing/committed, enqueue a compensating write, then
+update the model. A **reorder inverse snapshots the prior neighbor** at enqueue time. **Redo** exists
+only for specific **view-declared** ops, not every write. There is **no compensation for rule-driven
+field changes** — reconcile via read-back and surface if the inverse cannot apply.
+
+### 7. Errors & conflicts
+
+Optimistic UI **rolls back** on failure. **All** errors surface in a **themed top panel** and are
+logged. Retry policy (no dead-letter; the user retries later):
+
+- **Transient** (network, 5xx, timeout) → auto-retry with backoff, then surface.
+- **Conflict** (409/412 stale rev) → roll back + surface ("item changed — reload to see latest"); **no
+  blind retry, no auto-rebase** (it would silently overwrite a concurrent change).
+- **Permission / not-found** (403/404) → surface immediately, no retry.
+
+### 8. Queue durability & lifecycle
+
+Per-tab, in-memory (two tabs on the same query keep **separate** queues). Leaving with pending writes
+— page unload **and** ADO SPA-navigation away from the query — triggers a **themed guard** warning
+that changes will be lost; they are discarded only on confirmation.
+
+### 9. View switching & the tab-local override
+
+- Switching **to the enhanced view** re-fetches our own DOM (no page reload). Switching **to ADO's
+  standard grid** may reload the page to force ADO to re-fetch.
+- A per-query **freshness token** (bumped by committed writes and by reads that observe a new
+  `id:rev` set) decides the reload: on switch-to-standard, reload **iff** the token advanced since
+  load; otherwise restore ADO's grid in place. The token is in-memory and does not survive a reload.
+- The **switch menu is disabled while writes are pending** (a reload would lose them). A permanent
+  write failure rolls back + dequeues, which re-enables switching.
+- A **tab-local view override** lives in the ADO page's `sessionStorage`. Precedence:
+  **override › per-query configured default (synced) › global default**. The frequent toggle writes
+  **only** the tab-local override (never the synced default); a separate explicit "make this my
+  default" action writes the synced default, which takes effect only on the **next navigation** to
+  the query. **F5 keeps** the override. Menu checkmarks reflect the **effective** view.
+
+### 10. Queue indicator
+
+A pending-count indicator with in-flight and failed/retry states. It need **not** survive the
+enhanced↔standard toggle (that reloads/re-fetches anyway).
+
+### 11. Observability (AGENTS.md §9)
+
+Log, flip-deduped and sourced to the owning folder: query load (counts / success / failure), each
+write enqueue / commit / conflict / permanent-fail / rollback, queue drain start & empty, undo, the
+switch decision (reload-or-not + freshness reason), session expiry, and override reads.
+
+### 12. Testing
+
+Deterministic unit tests with injected fakes (≥ 85%) for: queue ordering / retry / coalesce, undo,
+the freshness token, override precedence, data-requirements → batch planning, and the parse/normalize
+layer. The MAIN-world bridge and real ADO reads/writes are composition-root/browser-validated
+(coverage-excluded).
