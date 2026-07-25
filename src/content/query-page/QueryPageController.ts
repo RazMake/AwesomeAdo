@@ -25,6 +25,9 @@ export class QueryPageController {
 
   applySettings(settings: ExtensionSettings): void {
     this.settings = settings;
+    // The chosen theme drives the whole enhanced view, not just whether it shows, so hand it to the
+    // surface every settings change — a theme flip re-themes the open view without a rebuild.
+    this.surface.applyTheme(settings.theme);
     this.refresh();
   }
 

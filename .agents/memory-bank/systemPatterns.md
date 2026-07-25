@@ -275,3 +275,28 @@ Deterministic unit tests with injected fakes (≥ 85%) for: queue ordering / ret
 the freshness token, override precedence, data-requirements → batch planning, and the parse/normalize
 layer. The MAIN-world bridge and real ADO reads/writes are composition-root/browser-validated
 (coverage-excluded).
+
+### 13. Every control follows the ADO theme (non-negotiable)
+
+**Every** UI control an enhanced view renders — badges, pills, buttons, twisties, dropdowns, popups,
+panels, the status control, the sprint picker, expand/collapse affordances — MUST follow the account's
+active ADO theme (light / dark / blue / high-contrast). No control may hard-code a light-only palette
+(`#fff` backgrounds, `#333`/`#666` text, `#ddd` borders as the _only_ value): those wash out or turn
+invisible on the dark theme. Concretely:
+
+- Style from ADO's theme CSS custom properties with a hard fallback, never a bare literal: surfaces use
+  `var(--callout-background-color, var(--background-color, #fff))` / `var(--background-color, …)`, text
+  uses `var(--text-primary-color, …)` / `var(--text-secondary-color, …)`, and borders/separators use a
+  neutral token such as `var(--palette-neutral-20, …)` /
+  `var(--component-menu-separator-color, rgba(128,128,128,0.35))`. Follow the tokens already proven in
+  `BindingMenu`, `AssignedTo`, and `EnhancedViewSurface`.
+- A control that encodes a **status/state color** (the work-item state control) derives the hue from the
+  ADO state color but renders it **muted/discrete** (low-alpha tint over the themed surface, not a solid
+  fill) so it reads on any theme and never fights the page.
+- Decorative lines/guides (e.g. the child-indent guide) use a **discrete, theme-derived neutral**
+  (low-alpha `currentColor` or a neutral palette token), never a fixed grey.
+
+New reusable, theme-aware controls live under `src/common/view-common/control/<Control>/` — the sole
+DOM-bearing code allowed under `common/` (AGENTS.md §11) — so every view shares one correctly-themed
+implementation instead of re-inlining light-only styles. This is a standing review gate: a control
+that hard-codes non-theme colors is a defect, not a style nit.

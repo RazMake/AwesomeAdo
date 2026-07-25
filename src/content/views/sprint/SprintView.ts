@@ -1,5 +1,5 @@
 import type { EnhancedView } from "../../../common/view-common/EnhancedView";
-import { renderViewScaffold } from "../shared/ViewScaffold";
+import { renderViewScaffold } from "../../../common/view-common/control/ViewScaffold/ViewScaffold";
 
 import { sprintViewType } from "./sprintViewType";
 

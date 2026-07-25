@@ -1,0 +1,187 @@
+import { describe, expect, it } from "vitest";
+
+import {
+  buildFeatureCrewUrls,
+  collectFeatureCrewAssignees,
+  deriveAlias,
+  formatFeatureCrewDescription,
+  mergeFeatureCrew,
+  parseFeatureCrewDescription,
+  type FeatureCrewAssignee,
+  type FeatureCrewMember,
+} from "./FeatureCrew";
+import type { TrackedUser, TrackedWorkItem } from "./TrackedWorkItem";
+
+function user(displayName: string, uniqueName: string | null): TrackedUser {
+  return { displayName, uniqueName, imageUrl: null };
+}
+
+function item(
+  id: number,
+  assignedTo: TrackedUser | null,
+  children: TrackedWorkItem[] = [],
+): TrackedWorkItem {
+  return {
+    id,
+    rev: 1,
+    type: "Task",
+    title: `Item ${id}`,
+    state: "Active",
+    assignedTo,
+    iterationPath: null,
+    sprintName: null,
+    createdDate: "2024-01-01T00:00:00Z",
+    createdBy: null,
+    changedDate: "2024-01-01T00:00:00Z",
+    changedBy: null,
+    description: "",
+    eta: null,
+    children,
+  };
+}
+
+describe("deriveAlias", () => {
+  it("uses the email local-part when the unique name is an email", () => {
+    expect(deriveAlias("alice@contoso.com", "Alice Anderson")).toBe("alice");
+  });
+
+  it("uses the whole unique name when it is not an email", () => {
+    expect(deriveAlias("CONTOSO\\bob", "Bob Brown")).toBe("CONTOSO\\bob");
+  });
+
+  it("falls back to the display name when the unique name is null", () => {
+    expect(deriveAlias(null, "Carol Clark")).toBe("Carol Clark");
+  });
+
+  it("falls back to the display name when the unique name is empty", () => {
+    expect(deriveAlias("", "Dan Davis")).toBe("Dan Davis");
+  });
+
+  it("keeps the unique name when the @ is the first character", () => {
+    // A leading @ means there is no local-part to take, so the raw value is used verbatim.
+    expect(deriveAlias("@weird", "Weird")).toBe("@weird");
+  });
+});
+
+describe("collectFeatureCrewAssignees", () => {
+  it("collects distinct assignees across the tree in first-seen order", () => {
+    const tree = item(1, user("Alice", "alice@contoso.com"), [
+      item(2, user("Bob", "bob@contoso.com")),
+      item(3, null),
+      item(4, user("Alice", "alice@contoso.com"), [item(5, user("Carol", "carol@contoso.com"))]),
+    ]);
+
+    expect(collectFeatureCrewAssignees([tree])).toEqual<FeatureCrewAssignee[]>([
+      { alias: "alice", fullName: "Alice" },
+      { alias: "bob", fullName: "Bob" },
+      { alias: "carol", fullName: "Carol" },
+    ]);
+  });
+
+  it("dedupes case-insensitively by alias", () => {
+    const tree = item(1, user("Alice", "Alice@contoso.com"), [
+      item(2, user("Alice Lower", "alice@contoso.com")),
+    ]);
+
+    expect(collectFeatureCrewAssignees([tree])).toEqual<FeatureCrewAssignee[]>([
+      { alias: "Alice", fullName: "Alice" },
+    ]);
+  });
+
+  it("returns an empty list when nobody is assigned", () => {
+    expect(collectFeatureCrewAssignees([item(1, null)])).toEqual([]);
+  });
+});
+
+describe("parseFeatureCrewDescription / formatFeatureCrewDescription", () => {
+  it("round-trips a roster through format then parse", () => {
+    const members: FeatureCrewMember[] = [
+      { alias: "alice", fullName: "Alice Anderson", tag: "Core" },
+      { alias: "bob", fullName: "Bob Brown", tag: "" },
+    ];
+
+    const markdown = formatFeatureCrewDescription(members);
+    expect(markdown).toBe(
+      ["# Feature Crew", "- alice (Alice Anderson). `Core`", "- bob (Bob Brown). ``"].join("\n"),
+    );
+    expect(parseFeatureCrewDescription(markdown)).toEqual(members);
+  });
+
+  it("ignores the heading, blank lines, and hand-added non-roster lines", () => {
+    const markdown = [
+      "# Feature Crew",
+      "",
+      "Some note a developer typed.",
+      "- alice (Alice Anderson). `Core`",
+    ].join("\n");
+
+    expect(parseFeatureCrewDescription(markdown)).toEqual<FeatureCrewMember[]>([
+      { alias: "alice", fullName: "Alice Anderson", tag: "Core" },
+    ]);
+  });
+
+  it("emits only the heading for an empty roster", () => {
+    expect(formatFeatureCrewDescription([])).toBe("# Feature Crew");
+  });
+});
+
+describe("mergeFeatureCrew", () => {
+  it("appends new assignees with an empty tag and reports changed", () => {
+    const existing: FeatureCrewMember[] = [{ alias: "alice", fullName: "Alice", tag: "Core" }];
+    const assignees: FeatureCrewAssignee[] = [
+      { alias: "alice", fullName: "Alice" },
+      { alias: "bob", fullName: "Bob" },
+    ];
+
+    const result = mergeFeatureCrew(existing, assignees);
+
+    expect(result.changed).toBe(true);
+    expect(result.members).toEqual<FeatureCrewMember[]>([
+      { alias: "alice", fullName: "Alice", tag: "Core" },
+      { alias: "bob", fullName: "Bob", tag: "" },
+    ]);
+  });
+
+  it("preserves existing members' tags and reports no change when everyone is present", () => {
+    const existing: FeatureCrewMember[] = [{ alias: "alice", fullName: "Alice", tag: "Core" }];
+    const assignees: FeatureCrewAssignee[] = [{ alias: "ALICE", fullName: "Alice" }];
+
+    const result = mergeFeatureCrew(existing, assignees);
+
+    expect(result.changed).toBe(false);
+    expect(result.members).toEqual(existing);
+  });
+});
+
+describe("buildFeatureCrewUrls", () => {
+  it("builds the reconcile URLs for a project-scoped ADO href", () => {
+    const urls = buildFeatureCrewUrls(
+      "https://dev.azure.com/contoso/web/_queries/query/abc-123",
+      101,
+      "Epic",
+    );
+
+    expect(urls).toEqual({
+      wiqlUrl: "https://dev.azure.com/contoso/web/_apis/wit/wiql?api-version=7.1",
+      createUrl: "https://dev.azure.com/contoso/web/_apis/wit/workitems/$Epic?api-version=7.1",
+      itemBaseUrl: "https://dev.azure.com/contoso/_apis/wit/workitems",
+      rootRelationUrl: "https://dev.azure.com/contoso/_apis/wit/workItems/101",
+    });
+  });
+
+  it("encodes a type name with reserved characters", () => {
+    const urls = buildFeatureCrewUrls(
+      "https://dev.azure.com/contoso/web/_queries/query/abc-123",
+      101,
+      "User Story",
+    );
+
+    expect(urls?.createUrl).toBe(
+      "https://dev.azure.com/contoso/web/_apis/wit/workitems/$User%20Story?api-version=7.1",
+    );
+  });
+
+  it("returns null when the href is not a project-scoped ADO location", () => {
+    expect(buildFeatureCrewUrls("https://example.com/", 101, "Epic")).toBeNull();
+  });
+});

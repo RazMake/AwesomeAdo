@@ -254,6 +254,9 @@ These are **non-negotiable**.
   `options/`) **must** have a `README.md` describing how to use it (public API + intent). Internal
   architecture belongs in the memory bank.
 - Entry files named `index.ts` contain **only composition/wiring** and are excluded from coverage.
+- `common/view-common` is otherwise **DOM-free pure contracts**. Its **only** exception is
+  `common/view-common/control/**`: the shared, theme-aware view controls (one folder per control)
+  are the sole DOM-bearing code permitted under `common/`. Do not add DOM anywhere else in `common/`.
 - `scripts/**` contains build and release automation only; it is never bundled into the extension.
 - `store-assets/` contains marketplace listing files provided by the developer.
 

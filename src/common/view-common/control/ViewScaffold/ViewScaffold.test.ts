@@ -29,4 +29,11 @@ describe("renderViewScaffold", () => {
       "<img src=x onerror=alert(1)>",
     );
   });
+
+  it("uses themed primary text color for the root element", () => {
+    const root = renderViewScaffold(document, { title: "T", message: "M" });
+
+    // The root uses the ADO theme's primary text color token so views respect light/dark themes.
+    expect(root.style.color).toContain("var(--text-primary-color");
+  });
 });

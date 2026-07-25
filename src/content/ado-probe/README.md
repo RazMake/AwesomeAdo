@@ -17,6 +17,13 @@ detail yet). They never mutate the page and never log.
   when it cannot be found. Used when starting a bind so the options page can show the query name
   without re-scraping ADO from its own tab.
 
+### `AdoQueryFolderProbe.ts`
+
+- **`detectAdoQueryFolderPath(doc)`** — returns the query's parent-folder trail
+  (`{ label, url }[]`, outermost first) scraped from ADO's breadcrumb bar, or `[]` when it cannot be
+  found. Folder/hub crumbs only: the leaf `…/_queries/query/{guid}` link and non-`_queries` crumbs
+  are excluded. Used by the Project Tracking header to render clickable folder breadcrumbs.
+
 ### `AdoThemeProbe.ts`
 
 - **`detectAdoTheme(doc)`** — returns the `AdoTheme` ADO is rendering (`"light"`/`"dark"`), or `null`

@@ -58,7 +58,7 @@ A new view is a folder plus two one-line registrations. See the **`add-enhanced-
 
 1. Add `views/<view>/<view>ViewType.ts` exporting a `ViewType` (its config).
 2. Add `views/<view>/<view>View.ts` exporting an `EnhancedView` that renders
-   [`renderViewScaffold`](./shared/README.md) with the view's title and one line of body copy.
+   [`renderViewScaffold`](../../common/view-common/control/ViewScaffold/README.md) with the view's title and one line of body copy.
 3. Register the config in `viewCatalog.ts` (`VIEW_TYPES`) and the renderer in
    `enhancedViewRegistry.ts` (`ENHANCED_VIEWS`) — same order in both.
 4. Add a `README.md` to the new folder.

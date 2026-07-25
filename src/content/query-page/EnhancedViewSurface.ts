@@ -1,3 +1,9 @@
+import type { Theme } from "../../common/settings/ExtensionSettings";
+import type { EnhancedViewServices } from "../../common/view-common/EnhancedView";
+import {
+  VIEW_THEME_VARIABLES,
+  resolveViewThemePalette,
+} from "../../common/view-common/theme/viewTheme";
 import { getEnhancedView } from "../views/enhancedViewRegistry";
 
 const STYLE_ID = "awesomeado-enhanced-view-style";
@@ -9,15 +15,17 @@ const HOST_ID = "awesomeado-enhanced-view";
 // scrolls its own content rather than the underlying page. `top`/`left` default to the window corner
 // (full-window fallback) and are re-synced to the live content region as it moves — the left rail is
 // collapsible, so its width changes at runtime and the overlay must follow it. `right`/`bottom` reach
-// the window edges. z-index is one below the top-bar button's max so that button (which lives in the
-// bar above) always stays clickable.
+// the window edges. z-index sits ABOVE ADO's ordinary page content (which we cover) but well BELOW
+// ADO's popup/callout/tooltip layer, so the still-visible top-bar's menus and tooltips render OVER
+// the view instead of being trapped underneath it. The extension's own top-bar button/menu use the
+// max z-index, so they also stay above the overlay.
 const HOST_OVERLAY_CSS = [
   "position:fixed",
   "top:0",
   "left:0",
   "right:0",
   "bottom:0",
-  "z-index:2147483646",
+  "z-index:1000",
   "overflow:auto",
   "background:var(--background-color, #fff)",
 ].join(";");
@@ -66,8 +74,21 @@ export class EnhancedViewSurface {
   // changed view id, query, or property value re-renders — refresh() runs on every settings,
   // bindings, and navigation event and must not rebuild the DOM each time.
   private signature: string | undefined;
+  // The user's chosen theme, pinned onto the host so every control it hosts re-themes at once. Held
+  // here (not read per render) so a re-attach after ADO redraws the page restores it, and so a theme
+  // change while a view is showing is applied immediately without a rebuild. "auto" = Follow ADO,
+  // where nothing is pinned and controls inherit ADO's own tokens.
+  private theme: Theme = "auto";
 
-  constructor(private readonly doc: Document) {}
+  /**
+   * Cross-view data/service singletons (tree loader, user directory, type catalog, sprints, clock,
+   * logger) injected once at the composition root, not per-request — views receive the same instance
+   * throughout the session. Undefined for placeholder views (or when not yet wired).
+   */
+  constructor(
+    private readonly doc: Document,
+    private readonly services?: EnhancedViewServices,
+  ) {}
 
   /** Show `request`'s view, or restore ADO's own page when `request` is null or its view is unknown. */
   apply(request: EnhancedViewRequest | null): void {
@@ -86,6 +107,35 @@ export class EnhancedViewSurface {
       this.signature = signature;
     }
     this.keepMounted();
+  }
+
+  /**
+   * Pin (or, for "auto", clear) the extension's chosen theme so every control the host renders
+   * follows it, not just Azure DevOps' own theme. Applied live when a view is already showing so a
+   * theme change in Options re-themes the open view immediately, without rebuilding its DOM.
+   */
+  applyTheme(theme: Theme): void {
+    this.theme = theme;
+    if (this.host) {
+      this.applyThemeToHost();
+    }
+  }
+
+  // Pin the palette onto the host element itself so its tokens win over ADO's inherited ones for the
+  // whole view subtree, while ADO's surviving chrome (breadcrumb bar, left rail) keeps ADO's theme.
+  // "auto" clears the tokens so controls fall back to ADO's own — that is what "Follow ADO" means.
+  private applyThemeToHost(): void {
+    if (!this.host) {
+      return;
+    }
+    const palette = resolveViewThemePalette(this.theme);
+    for (const name of VIEW_THEME_VARIABLES) {
+      if (palette) {
+        this.host.style.setProperty(name, palette[name]);
+      } else {
+        this.host.style.removeProperty(name);
+      }
+    }
   }
 
   private restore(): void {
@@ -180,6 +230,10 @@ export class EnhancedViewSurface {
       host.style.cssText = HOST_OVERLAY_CSS;
       this.host = host;
     }
+    // Re-pin the theme every mount: cssText above is only assigned when the host is first created, so
+    // the custom properties would otherwise be lost, and the host may have been rebuilt/re-attached
+    // since the last theme change.
+    this.applyThemeToHost();
     if (!this.host.isConnected) {
       (this.doc.body ?? this.doc.documentElement).append(this.host);
     }
@@ -194,7 +248,12 @@ export class EnhancedViewSurface {
     // stale DOM. textContent = "" is the cheapest reliable clear.
     this.host.textContent = "";
     this.host.append(
-      view.render({ doc: this.doc, queryId: request.queryId, properties: request.properties }),
+      view.render({
+        doc: this.doc,
+        queryId: request.queryId,
+        properties: request.properties,
+        services: this.services,
+      }),
     );
   }
 

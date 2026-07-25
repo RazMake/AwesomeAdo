@@ -6,11 +6,37 @@ import {
 } from "../common/bindings/BindingRequest";
 import type { ActiveView } from "../common/bindings/QueryBinding";
 import { createQueryBindingStore } from "../common/bindings/createQueryBindingStore";
+import {
+  type LoadQueryTreeMessage,
+  type LoadQueryTreeResponse,
+} from "../common/browser/AdoTreeRequest";
+import {
+  type ReconcileFeatureCrewMessage,
+  type ReconcileFeatureCrewResponse,
+} from "../common/browser/FeatureCrewRequest";
+import {
+  MessagingFeatureCrewWriter,
+  type SendReconcileRequest,
+} from "../common/browser/MessagingFeatureCrewWriter";
+import {
+  MessagingWorkItemStateWriter,
+  type SendUpdateStateRequest,
+} from "../common/browser/MessagingWorkItemStateWriter";
+import {
+  MessagingWorkItemTreeLoader,
+  type SendTreeRequest,
+} from "../common/browser/MessagingWorkItemTreeLoader";
+import {
+  type UpdateWorkItemStateMessage,
+  type UpdateWorkItemStateResponse,
+} from "../common/browser/WorkItemStateRequest";
 import { createLoggerFactory } from "../common/logging/createLogger";
 import { type AdoThemeResponse, isAdoThemeRequest } from "../common/navigation/AdoContext";
 import { isAdoNavigationMessage } from "../common/navigation/AdoQueryRoute";
+import type { ExtensionSettings } from "../common/settings/ExtensionSettings";
 import { isAdoConfigured } from "../common/settings/ExtensionSettings";
 import { createSettingsStore } from "../common/settings/createSettingsStore";
+import type { EnhancedViewServices } from "../common/view-common/EnhancedView";
 
 import { SessionActiveViewOverrides } from "./active-view/SessionActiveViewOverrides";
 import { detectAdoQueryName } from "./ado-probe/AdoQueryNameProbe";
@@ -42,13 +68,87 @@ const loggers = createLoggerFactory();
 const logger = loggers.forSource("content");
 
 const store = createSettingsStore(loggers.forSource("common/settings"));
+
+// Services the enhanced views depend on. The Project Tracking tree is fetched live: a content script
+// cannot reach the credentialed ADO REST API from its isolated world, so the loader messages the
+// background worker (which runs the MAIN-world fetch) and parses the raw bodies it returns — see
+// common/browser/MessagingWorkItemTreeLoader. The type catalog and the tree's ETA fields are read
+// from the latest synced settings (captured below); the user directory is empty and sprints are not
+// yet enumerated (both are follow-ups); the clock is live; the logger is shared.
+let latestSettings: ExtensionSettings | undefined;
+
+// Rebuilt per load from the latest settings so a type's configured ETA date field is both requested
+// from ADO and read back per type (an empty map means no type has an ETA field configured yet).
+const etaFieldByType = (): ReadonlyMap<string, string> => {
+  const map = new Map<string, string>();
+  for (const type of latestSettings?.workItemTypes ?? []) {
+    if (type.etaField) {
+      map.set(type.name, type.etaField);
+    }
+  }
+  return map;
+};
+
+const sendTreeRequest: SendTreeRequest = (message) =>
+  chrome.runtime.sendMessage<LoadQueryTreeMessage, LoadQueryTreeResponse | undefined>(message);
+const treeLoader = new MessagingWorkItemTreeLoader(
+  sendTreeRequest,
+  etaFieldByType,
+  loggers.forSource("content/views"),
+);
+
+// The roster write mirrors the tree read: the isolated content world cannot reach the credentialed
+// ADO REST API, so the writer messages the background worker (which runs the MAIN-world fetch).
+const sendReconcileRequest: SendReconcileRequest = (message) =>
+  chrome.runtime.sendMessage<ReconcileFeatureCrewMessage, ReconcileFeatureCrewResponse | undefined>(
+    message,
+  );
+const featureCrewWriter = new MessagingFeatureCrewWriter(
+  sendReconcileRequest,
+  loggers.forSource("content/views"),
+);
+
+// The state write mirrors the tree read and roster write: the isolated content world cannot reach
+// the credentialed ADO REST API, so the writer messages the background worker (which runs the
+// MAIN-world PATCH with the user's session cookies).
+const sendUpdateStateRequest: SendUpdateStateRequest = (message) =>
+  chrome.runtime.sendMessage<UpdateWorkItemStateMessage, UpdateWorkItemStateResponse | undefined>(
+    message,
+  );
+const workItemStateWriter = new MessagingWorkItemStateWriter(
+  sendUpdateStateRequest,
+  loggers.forSource("content/views"),
+);
+
+const trackingServices: EnhancedViewServices = {
+  loadTree: (queryId) => treeLoader.loadTree(queryId),
+  featureCrew: featureCrewWriter,
+  userDirectory: {
+    search: () => Promise.resolve([]),
+    resolve: () => Promise.resolve(null),
+  },
+  getTypes: () =>
+    (latestSettings?.workItemTypes ?? []).map((t) => ({
+      name: t.name,
+      color: t.color,
+      icon: t.icon,
+      etaField: t.etaField ?? null,
+      columns: t.columns.map((c) => ({ column: c.column, states: [...c.states] })),
+    })),
+  getBoardColumns: () => [...(latestSettings?.boardColumns ?? [])],
+  getSprints: () => [],
+  now: () => new Date(),
+  logger: loggers.forSource("content/views"),
+  writeState: (request) => workItemStateWriter.writeState(request),
+};
+
 // The in-session view choice lives here, in memory only: switching a query between its enhanced view
 // and ADO's standard page is deliberately not persisted, so a reopened browser returns every query
 // to the configured default view (see content/active-view). Shared by the page controller (to decide
 // what to render) and the top-bar menu (to check the active row and to write the user's choice).
 const sessionActiveViews = new SessionActiveViewOverrides();
 const controller = new QueryPageController(
-  new EnhancedViewSurface(document),
+  new EnhancedViewSurface(document, trackingServices),
   location.href,
   sessionActiveViews,
   loggers.forSource("content/query-page"),
@@ -110,6 +210,7 @@ const bindingController = new QueryBindingController(
 );
 
 const observation = store.observe((settings) => {
+  latestSettings = settings;
   controller.applySettings(settings);
   // The menu's check marks resolve a bound query's default presentation from this same setting.
   bindingController.applyDefaultView(settings.defaultView);

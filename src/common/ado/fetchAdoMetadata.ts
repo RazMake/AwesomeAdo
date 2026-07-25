@@ -33,6 +33,23 @@ export function adoCollectionBaseUrl(
 }
 
 /**
+ * Resolve the REST collection base and URL-encoded project for a project-scoped ADO `href`, or null
+ * when the URL is not project-scoped (org-level or folder tabs have no project). Shared by the
+ * metadata and tree URL builders so the parse-and-encode boilerplate lives in exactly one place.
+ */
+export function resolveAdoProjectContext(href: string): { base: string; project: string } | null {
+  const context = parseAdoContext(href);
+  if (context === null || context.project === null) {
+    return null;
+  }
+  // parseAdoContext already validated the URL, so this cannot throw.
+  const url = new URL(href);
+  const base = adoCollectionBaseUrl(url.origin, url.hostname, context.organization);
+  const project = encodeURIComponent(context.project);
+  return { base, project };
+}
+
+/**
  * Build the teams and area-tree REST URLs for the ADO organization/project named by `href`, or null
  * when the URL is not a project-scoped ADO location (org-level or folder tabs have nothing to fetch).
  *
@@ -42,14 +59,11 @@ export function adoCollectionBaseUrl(
  * the user's session from a first-party, same-origin request.
  */
 export function buildAdoMetadataUrls(href: string): AdoMetadataUrls | null {
-  const context = parseAdoContext(href);
-  if (context === null || context.project === null) {
+  const resolved = resolveAdoProjectContext(href);
+  if (resolved === null) {
     return null;
   }
-  // parseAdoContext already validated the URL, so this cannot throw.
-  const url = new URL(href);
-  const base = adoCollectionBaseUrl(url.origin, url.hostname, context.organization);
-  const project = encodeURIComponent(context.project);
+  const { base, project } = resolved;
   return {
     teamsUrl: `${base}/_apis/projects/${project}/teams?$top=${TEAMS_PAGE_SIZE}&api-version=${API_VERSION}`,
     areaPathsUrl: `${base}/${project}/_apis/wit/classificationnodes/areas?$depth=${AREA_TREE_DEPTH}&api-version=${API_VERSION}`,

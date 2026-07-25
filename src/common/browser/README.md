@@ -242,3 +242,151 @@ page globals — never an import or module-scoped value. It returns the raw
 `{ teams, areaTree, workItemTypes, fields }` JSON (each `null` on failure) for the reader to parse
 with `parseTeams` / `flattenAreaPaths` / `parseWorkItemTypes` (the `fields` body resolves which of a
 type's fields are date-typed via `parseDateFieldReferenceNames`).
+
+## Loading a query's work-item tree
+
+The Project Tracking enhanced view needs the live work-item tree behind a query, but it runs in a
+content script whose isolated-world origin cannot reach the credentialed ADO REST API. These three
+pieces bridge that gap: the content side asks the background worker (via a typed message) to run a
+MAIN-world fetch and hand back the raw bodies, which the content side then parses.
+
+### `AdoTreeRequest.ts` — the content→background message contract
+
+- `LOAD_QUERY_TREE_MESSAGE` / `LoadQueryTreeMessage` (`{ type, queryId, fields }`) — the request the
+  content side sends to the worker.
+- `LoadQueryTreeResponse` (`{ raw: AdoRawTree | null }`) — the worker's reply; `raw` is `null` when
+  the tree could not be loaded.
+- `isLoadQueryTreeMessage(value)` — the guard the worker uses to accept only well-formed requests.
+
+Both ends import this one contract so the message shape cannot drift.
+
+### `MessagingWorkItemTreeLoader` (class) — the content-side loader
+
+The `IWorkItemTreeLoader` implementation the enhanced view depends on. It is browser-agnostic: the
+`chrome.runtime.sendMessage` binding is injected as a `SendTreeRequest`, so this class never touches
+`chrome` itself.
+
+```typescript
+const loader = new MessagingWorkItemTreeLoader(
+  (message) => chrome.runtime.sendMessage(message),
+  () => etaFieldByType, // ReadonlyMap<typeName, etaFieldReferenceName>
+  logger,
+);
+const result = await loader.loadTree(queryId); // WorkItemTreeResult
+```
+
+`loadTree` requests `TRACKING_FIELDS` plus each type's configured ETA field, sends the message, and
+parses the reply with `parseTrackedTree`. A missing/`null` reply (or a thrown send) is logged and
+returned as an error result — it never throws. Construct it only in the content composition root
+(`src/content/index.ts`); feature code depends on `IWorkItemTreeLoader`.
+
+### `fetchAdoTreeInPage(wiqlUrl, batchUrl, fields)` — `fetchAdoTreeInPage.ts`
+
+The self-contained function the **background worker** injects into the ADO tab's MAIN world (via
+`chrome.scripting.executeScript`) to serve a `LoadQueryTreeMessage`. Like `fetchAdoRawInPage`, it is
+serialized with `Function.prototype.toString`, so it references only its parameters and page globals.
+It runs the WIQL query (`_apis/wit/wiql/{id}`), collects the work-item ids from the result, pages the
+`_apis/wit/workitemsbatch` endpoint (200 ids per page) to hydrate the requested `fields`, and returns
+the raw `{ wiql, items }` (`AdoRawTree`) for `parseTrackedTree` to normalize. The URLs are built by
+`buildAdoTreeUrls` (in `common/ado/fetchAdoTree`) from the sender's own trusted tab URL, keeping the
+worker a closed "load this query's tree" operation rather than a fetch-any-URL proxy.
+
+## Reconciling the Feature Crew roster
+
+The Project Tracking view keeps a project's **Feature Crew** roster — the list of everyone assigned
+to the project's work — in a dedicated, permanently-`Removed` work item (see
+`common/ado/FeatureCrew`). Writing it needs the credentialed ADO REST API, which the isolated content
+world cannot reach, so the write mirrors the tree read: the content script messages the background
+worker, which runs the reads/writes in the ADO tab's MAIN world.
+
+### `FeatureCrewRequest.ts` — the content→background message contract
+
+- `RECONCILE_FEATURE_CREW_MESSAGE` / `ReconcileFeatureCrewMessage`
+  (`{ type, rootId, typeName, assignees }`) — the request the content view sends to reconcile the
+  roster against the people currently assigned.
+- `ReconcileFeatureCrewResponse` (`{ ok, changed, id?, error? }`) — the worker's reply; `ok` is
+  false with an `error` string when the reconcile could not complete.
+- `isReconcileFeatureCrewMessage(value)` — the guard the worker uses to accept only well-formed
+  requests.
+
+### `MessagingFeatureCrewWriter` (class) — the content-side writer
+
+The `IFeatureCrewWriter` implementation the enhanced view depends on. Browser-agnostic: the
+`chrome.runtime.sendMessage` binding is injected as a `SendReconcileRequest`, so this class never
+touches `chrome` directly.
+
+```typescript
+const writer = new MessagingFeatureCrewWriter(sendReconcileRequest, logger);
+const result = await writer.reconcile({ rootId, typeName, assignees }); // FeatureCrewReconcileResult
+```
+
+`reconcile` builds the message, sends it, and maps the reply to a `FeatureCrewReconcileResult`. A
+thrown send, a missing/`undefined` reply, or an `ok: false` response is logged and reported as
+`{ ok: false, changed: false }` — the write is best-effort and never throws, so a roster failure can
+never block the board. Constructed only in the composition root (`src/content/index.ts`); feature
+code depends on `IFeatureCrewWriter`.
+
+### `findFeatureCrewInPage(...)` — `findFeatureCrewInPage.ts`
+
+The self-contained function the **background worker** injects into the ADO tab's MAIN world to locate
+an existing Feature Crew item without creating a duplicate. It POSTs a WIQL query for items matching
+the fixed title, the (last-configured) type, and the `Removed` state, then reads each candidate's
+relations and returns the first whose `Affects-Reverse` link points at the project root id — telling
+a real Feature Crew item apart from an unrelated same-titled one in another project. Returns
+`{ id, rev, description }` or `null` when none matches. Serialized with `Function.prototype.toString`,
+so it references only its parameters and page globals.
+
+### `applyFeatureCrewInPage(config)` — `applyFeatureCrewInPage.ts`
+
+The self-contained function the **background worker** injects into the ADO tab's MAIN world to write
+the roster. In `create` mode it POSTs a JSON-Patch that sets the title, `Removed` state, description,
+and the `Affects-Reverse` relation to the root; in `update` mode it PATCHes only the description of
+an existing item. Uses the `application/json-patch+json` content type and returns `{ id }` or `null`
+on failure. Serialized with `Function.prototype.toString`.
+
+## Writing a work item's state back to ADO
+
+An enhanced view can persist a work item's state change (moving it between board columns) back to
+Azure DevOps. The write needs the credentialed ADO REST API, which the isolated content world cannot
+reach, so the pattern mirrors the tree read and Feature Crew reconcile: the content script messages
+the background worker, which runs the PATCH in the ADO tab's MAIN world.
+
+### `WorkItemStateRequest.ts` — the content→background message contract
+
+- `UPDATE_WORK_ITEM_STATE_MESSAGE` / `UpdateWorkItemStateMessage` (`{ type, id, rev, state }`) — the
+  request the content view sends to update a work item's state. Includes `rev` as an
+  optimistic-concurrency guard; the PATCH fails when the item was edited concurrently (its rev
+  advanced).
+- `UpdateWorkItemStateResponse` (`{ ok, rev?, error? }`) — the worker's reply; `ok` is false with an
+  `error` string when the update could not complete, and `rev` is the item's new System.Rev on
+  success.
+- `isUpdateWorkItemStateMessage(value)` — the guard the worker uses to accept only well-formed
+  requests.
+
+### `MessagingWorkItemStateWriter` (class) — the content-side writer
+
+The `IWorkItemStateWriter` implementation the enhanced view depends on. Browser-agnostic: the
+`chrome.runtime.sendMessage` binding is injected as a `SendUpdateStateRequest`, so this class never
+touches `chrome` directly.
+
+```typescript
+const writer = new MessagingWorkItemStateWriter(sendUpdateStateRequest, logger);
+const result = await writer.writeState({ id, rev, state }); // WorkItemStateWriteResult
+```
+
+`writeState` builds the message, sends it, and maps the reply to a `WorkItemStateWriteResult`. A
+thrown send, a missing/`undefined` reply, or an `ok: false` response is logged and reported as
+`{ ok: false }` — the write never throws, so a failure can be handled gracefully by the view.
+Constructed only in the composition root (`src/content/index.ts`); feature code depends on
+`IWorkItemStateWriter`.
+
+### `updateWorkItemStateInPage(updateUrl, id, rev, state)` — `updateWorkItemStateInPage.ts`
+
+The self-contained function the **background worker** injects into the ADO tab's MAIN world to PATCH
+a work item's state. Uses JSON Patch (`application/json-patch+json`) with a test-and-set: the rev is
+tested first (`{ op: "test", path: "/rev", value: rev }`), then the state is added
+(`{ op: "add", path: "/fields/System.State", value: state }`). Returns `{ ok: true, rev }` on success
+(extracting the new rev from the response body), or `{ ok: false, error }` on failure. The URL is
+built by `buildWorkItemUpdateUrl` (in `common/ado/fetchAdoTree`) from the sender's own trusted tab
+URL, keeping this a closed "update this item's state" operation rather than a write-any-field proxy.
+Serialized with `Function.prototype.toString`, so it references only its parameters and page globals.

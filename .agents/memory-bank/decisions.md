@@ -306,3 +306,79 @@
   explicit opt-in to change the real default. Reloading on every flip-to-standard would be jarring, so
   the freshness token restricts the reload to the case where ADO genuinely needs to re-fetch. Recorded
   as principle #9 in systemPatterns.
+
+## ADR-032: Data-driven views consume injected `EnhancedViewServices`; the tree loader is a placeholder pending the MAIN-world bridge
+
+- Decision: A data-driven enhanced view depends only on an injected `EnhancedViewServices` abstraction
+  (`loadTree`, `userDirectory`, `getTypes`, `getSprints`, `now`, `logger`) added as an **optional** field
+  on `EnhancedViewContext`; `EnhancedViewSurface` receives the services once at the content composition
+  root and forwards them per render. The normalized tree model (`TrackedWorkItem`/`TrackedUser`/
+  `TypeCatalogEntry`/`SprintRef`) and the loader/directory contracts (`IWorkItemTreeLoader`,
+  `IUserDirectory`) live in `common/ado`; view-facing UX helpers — PST date formatting + ETA countdown
+  (`common/datetime`) and the shared DOM controls `DateLabel`/`EtaBadge`/`AssignedTo`
+  (`content/views/shared`) — are reused by every view. The Project Tracking view renders a single-root
+  tree board against this model and validates its binding (tree query, exactly one root, root is the
+  first configured type). The composition-root `loadTree` is today a **clearly-labeled placeholder**
+  returning a "coming soon" message; the real credentialed fetch is the follow-up under ADR-028.
+- Rationale: Building the full secure MAIN-world tree-query bridge (ADR-028) at the same time as the UI
+  would couple two large, independently riskier efforts. Injecting the data behind an abstraction lets
+  the whole board UI be built and fully unit-tested with deterministic fakes now (coverage ≥ 85%,
+  composition root excluded), keeps Dependency Inversion intact, and leaves a single wiring seam to swap
+  the placeholder loader for the live bridge without touching any view. `services` is optional so the
+  remaining placeholder views and their tests keep compiling unchanged. **Superseded in part by ADR-033**,
+  which replaced the placeholder `loadTree` with the live MAIN-world bridge at that same seam.
+
+## ADR-033: Project Tracking loads live via a content→background→MAIN-world tree-fetch bridge
+
+- Decision: The composition-root `loadTree` placeholder (ADR-032) is replaced by a real bridge, split so
+  each piece stays testable and the ADR-028 security posture holds:
+  - `common/ado/fetchAdoTree.ts` (pure, chrome-free): `buildAdoTreeUrls(href, queryId)` builds the
+    `_apis/wit/wiql/{id}` + `_apis/wit/workitemsbatch` URLs (reusing the shared
+    `resolveAdoProjectContext` helper extracted from `buildAdoMetadataUrls` to satisfy jscpd), and
+    `parseTrackedTree(raw, etaFieldByType)` normalizes the raw WIQL relations + batch items into the
+    `TrackedWorkItem` tree (roots = relations with `source === null`; cycle/depth-guarded).
+  - `common/browser/fetchAdoTreeInPage.ts`: the self-contained MAIN-world fetcher (like
+    `fetchAdoRawInPage`) the background worker injects — runs the WIQL query, collects the work-item
+    ids, pages `workitemsbatch` (200/page), and returns the raw `{ wiql, items }`.
+  - `common/browser/AdoTreeRequest.ts`: the `LOAD_QUERY_TREE_MESSAGE` content→background contract
+    (`{ queryId, fields }` → `{ raw }`) with its guard.
+  - `common/browser/MessagingWorkItemTreeLoader.ts`: the browser-agnostic `IWorkItemTreeLoader` the
+    view depends on; an injected `SendTreeRequest` (bound to `chrome.runtime.sendMessage` at the content
+    root) carries the request, and the reply is parsed with `parseTrackedTree`. Every failure path logs
+    and returns an error result — it never throws.
+  - Composition roots (excluded from coverage): the content root instantiates the loader and rebuilds
+    the per-type ETA-field map from the latest synced settings; the background worker handles the
+    message by building the URLs **from the sender's own trusted tab URL** and running the MAIN-world
+    fetch.
+- Rationale: A content script's isolated world cannot reach the credentialed ADO REST API (CORS-blocked;
+  an extension-page same-origin fetch drops ADO's SameSite session), so the fetch must run in the ADO
+  tab's MAIN world — which only the background worker can inject (ADR-028). Building the request URLs in
+  the worker from the trusted `sender.tab.url` (never from a content-supplied URL) keeps this a closed
+  "load this query's tree" operation, not a fetch-any-URL proxy. Splitting the pure URL/parse layer from
+  the injected fetcher, the message contract, and the agnostic loader keeps each unit-testable with
+  deterministic fakes while the only untested code stays in the excluded composition roots. Fixed two
+  latent bugs in the pre-existing parse layer surfaced by its own tests: `parseTrackedTree` now reports a
+  missing (`null`) WIQL body as a load error (checked before the queryType branch), and `htmlToText`
+  decodes entities before stripping tags so entity-encoded markup does not survive as visible text.
+
+## ADR-034: Every enhanced-view control follows the ADO theme
+
+- Decision: Every UI control an enhanced view renders (badges, pills, buttons, twisties, dropdowns,
+  popups, panels, the work-item status control, the sprint picker, expand/collapse affordances) MUST
+  follow the account's active ADO theme (light / dark / blue / high-contrast). Controls style from ADO's
+  theme CSS custom properties with a hard literal fallback — never a bare literal color as the only
+  value: surfaces use `var(--callout-background-color, var(--background-color, #fff))`, text uses
+  `var(--text-primary-color, …)` / `var(--text-secondary-color, …)`, and borders/separators use a
+  neutral token (`var(--palette-neutral-20, …)` /
+  `var(--component-menu-separator-color, rgba(128,128,128,0.35))`), mirroring `BindingMenu`,
+  `AssignedTo`, and `EnhancedViewSurface`. A control that encodes a status/state color renders it
+  **muted/discrete** (a low-alpha tint over the themed surface, not a solid fill) so it reads on any
+  theme; decorative guides (e.g. the child-indent line) use a discrete theme-derived neutral. Reusable
+  theme-aware controls live under `src/common/view-common/control/<Control>/` (the sole DOM allowed
+  under `common/`, per AGENTS.md §11) so every view shares one correctly-themed implementation.
+- Rationale: Hard-coded light-only palettes (`#fff` fills, `#333`/`#666` text, `#ddd`-only borders) are
+  invisible or jarring on the dark theme — the earlier Project Tracking board shipped several. Sourcing
+  from ADO's own theme tokens with fallbacks makes each control track whatever theme the account paints,
+  with no theme-detection code in the control. Muted status tints keep the state hue legible without a
+  solid block of color fighting the page on any theme. Recorded as principle #13 in systemPatterns and
+  enforced as a standing review gate (a control that hard-codes non-theme colors is a defect).

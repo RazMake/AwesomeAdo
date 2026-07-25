@@ -18,9 +18,26 @@ The extension is feature-complete for its current scope:
   `enhancedViewRegistry.ts`). The pure contracts (`ViewType`, `EnhancedView`) live in
   `src/common/view-common`. Options imports only `content/views/viewCatalog` (config) — a scoped,
   lint-enforced §6 exception (ADR-027) so it still never bundles view DOM. Shared per-view building
-  blocks live in `views/shared` (today `renderViewScaffold`, the placeholder shell). `sprint` and
-  `project-tracking` are the reference views. Adding a view is a folder plus two registrations — see
-  the `add-enhanced-view` skill.
+  blocks live in `views/shared`: `renderViewScaffold` (placeholder shell) plus the reusable controls
+  `DateLabel` (PST date + time-on-hover), `EtaBadge` (ETA date + countdown, colored by urgency), and
+  `AssignedTo` (assignee label + inline directory-search picker). `sprint` is still a placeholder shell;
+  `project-tracking` is now a **data-driven tree board**. Adding a view is a folder plus two
+  registrations — see the `add-enhanced-view` skill.
+- Data-driven views depend on an injected `EnhancedViewServices` (optional field on
+  `EnhancedViewContext`): `loadTree`, `userDirectory`, `getTypes`, `getSprints`, `now`, `logger`
+  (ADR-032). The normalized tree model + loader/directory contracts live in `common/ado`
+  (`TrackedWorkItem`, `TrackedUser`, `TypeCatalogEntry`, `SprintRef`, `IWorkItemTreeLoader`,
+  `IUserDirectory`); PST date/ETA math lives in `common/datetime`. `EnhancedViewSurface` takes the
+  services once at the content composition root and forwards them per render. Project Tracking renders a
+  single-root tree (validates: tree query, exactly one root, root is the first configured type), titles
+  the page with the epic (in its type color), shows the epic's assignee as TechLead, a sprint dropdown +
+  on/off filter toggle (pills when off), per-item expand/collapse, a `?` description panel with
+  Created/Last-Modified metadata, inline assignee change, and a right-aligned ETA. `loadTree` now fetches
+  **live** from Azure DevOps (ADR-033): the content-side `MessagingWorkItemTreeLoader` (`common/browser`)
+  asks the background worker — over the `AdoTreeRequest` message contract — to run a credentialed
+  MAIN-world WIQL + `workitemsbatch` fetch (`fetchAdoTreeInPage`, ADR-028), then parses the raw bodies
+  with `parseTrackedTree`. `getSprints` and `userDirectory` remain minimal (sprint filter off, empty
+  directory) as follow-ups.
 - Configuration import/export: `src/common/settings-transfer` serializes the whole configuration
   (all settings + every binding) to/from an `AwesomeADO.config` file; `src/options/settings-transfer`
   wires it to the Appearance tab's Import/Export controls. Import replaces bindings wholesale via

@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import type { EnhancedViewServices } from "../../common/view-common/EnhancedView";
+
 import { EnhancedViewSurface, type EnhancedViewRequest } from "./EnhancedViewSurface";
 
 const STYLE_ID = "awesomeado-enhanced-view-style";
@@ -198,5 +200,74 @@ describe("EnhancedViewSurface", () => {
 
     expect(document.getElementById("ado-owned-style")).toBe(foreign);
     expect(styleEl()).toBeTruthy();
+  });
+
+  it("forwards injected services to rendered views without breaking apply/restore", () => {
+    // A minimal fake services object — views that don't use services ignore it.
+    const fakeServices: EnhancedViewServices = {
+      loadTree: () => Promise.resolve({ isTreeQuery: true, roots: [], error: null }),
+      featureCrew: { reconcile: () => Promise.resolve({ ok: true, changed: false }) },
+      userDirectory: { search: () => Promise.resolve([]), resolve: () => Promise.resolve(null) },
+      getTypes: () => [],
+      getBoardColumns: () => [],
+      getSprints: () => [],
+      now: () => new Date(),
+      logger: { info: () => {}, error: () => {} },
+      writeState: () => Promise.resolve({ ok: true }),
+    };
+    const surfaceWithServices = new EnhancedViewSurface(document, fakeServices);
+
+    // The surface with services should still apply/restore correctly.
+    surfaceWithServices.apply(sprint);
+    expect(styleEl()).toBeTruthy();
+    expect(hostEl()).toBeTruthy();
+    expect(titleText()).toBe("Sprint View");
+
+    surfaceWithServices.apply(tracking);
+    expect(titleText()).toBe("Project Tracking");
+
+    surfaceWithServices.apply(null);
+    expect(styleEl()).toBeNull();
+    expect(hostEl()).toBeNull();
+  });
+
+  it("pins the chosen theme's tokens on the host so every control follows it", () => {
+    surface.applyTheme("dark");
+    surface.apply(sprint);
+
+    const host = hostEl();
+    expect(host?.style.getPropertyValue("--text-primary-color")).toBe("#e6e6e6");
+    expect(host?.style.getPropertyValue("--background-color")).toBe("#1f1f1f");
+  });
+
+  it("re-themes an already-showing view immediately, without rebuilding its DOM", () => {
+    surface.apply(sprint);
+    const firstNode = hostEl()?.firstElementChild;
+
+    surface.applyTheme("blue");
+
+    const host = hostEl();
+    expect(host?.style.getPropertyValue("--text-primary-color")).toBe("#10233b");
+    // A theme change must not tear down and rebuild the rendered view.
+    expect(host?.firstElementChild).toBe(firstNode);
+  });
+
+  it("clears pinned tokens for 'auto' so controls inherit ADO's own theme", () => {
+    surface.applyTheme("light");
+    surface.apply(sprint);
+    expect(hostEl()?.style.getPropertyValue("--text-primary-color")).toBe("#1f1f1f");
+
+    surface.applyTheme("auto");
+    expect(hostEl()?.style.getPropertyValue("--text-primary-color")).toBe("");
+    expect(hostEl()?.style.getPropertyValue("--background-color")).toBe("");
+  });
+
+  it("restores the pinned theme after ADO's re-render drops and re-attaches the host", async () => {
+    surface.applyTheme("dark");
+    surface.apply(sprint);
+    hostEl()?.remove();
+
+    await flushMutations();
+    expect(hostEl()?.style.getPropertyValue("--text-primary-color")).toBe("#e6e6e6");
   });
 });

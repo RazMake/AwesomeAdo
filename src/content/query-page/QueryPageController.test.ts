@@ -10,6 +10,7 @@ import { QueryPageController } from "./QueryPageController";
 function makeSurfaceSpy(): EnhancedViewSurface {
   return {
     apply: vi.fn(),
+    applyTheme: vi.fn(),
   } as unknown as EnhancedViewSurface;
 }
 
@@ -64,6 +65,14 @@ describe("QueryPageController", () => {
   it("does not call the surface before settings arrive", () => {
     makeController("https://dev.azure.com/org/_queries");
     expect(surface.apply).not.toHaveBeenCalled();
+  });
+
+  it("forwards the chosen theme to the surface on every settings change", () => {
+    const controller = makeController(queryUrl(GUID));
+    controller.applySettings(settings({ theme: "blue" }));
+    expect(surface.applyTheme).toHaveBeenCalledWith("blue");
+    controller.applySettings(settings({ theme: "dark" }));
+    expect(surface.applyTheme).toHaveBeenLastCalledWith("dark");
   });
 
   it("does not enhance an unbound query route even when defaultView is enhanced", () => {
