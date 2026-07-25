@@ -1,8 +1,10 @@
 /**
  * Which presentation a bound query currently shows: its own enhanced view, or ADO's standard page.
  *
- * A query stays bound either way — this is a per-query toggle, separate from which enhanced view it
- * is bound to, so the user can drop back to ADO's own page for one query without losing its binding.
+ * A query stays bound either way — this is a toggle separate from which enhanced view it is bound to,
+ * so the user can drop back to ADO's own page for one query without losing its binding. The choice
+ * is an in-session override that lives only in memory (see `content/active-view`); it is never part
+ * of the persisted binding, so it is not remembered across page loads.
  */
 export type ActiveView = "enhanced" | "standard";
 
@@ -24,21 +26,16 @@ export interface QueryBinding {
    * that query's ADO tab is closed, without re-scraping ADO.
    */
   name?: string;
-  /**
-   * Explicit per-query presentation override set from the top-bar menu. Absent means the query has
-   * no override and follows the global default view — which is why the global default "only applies
-   * to bound queries": an unbound query is never enhanced at all.
-   */
-  active?: ActiveView;
 }
 
 /** Every query binding, keyed by ADO query id. */
 export type QueryBindings = Record<string, QueryBinding>;
 
 /**
- * Resolve which presentation a bound query shows. An explicit per-query override wins; otherwise the
- * query follows the global default view. Kept as a pure helper so the content blanker and the
- * top-bar menu resolve the effective view identically.
+ * Resolve which presentation a bound query shows. An explicit in-session override wins; otherwise the
+ * query follows the global default view. Kept as a pure helper so the page controller and the
+ * top-bar menu resolve the effective view identically. The override is a device-local session value
+ * (see `content/active-view`), never a persisted binding field.
  */
 export function resolveActiveView(
   active: ActiveView | undefined,
@@ -84,11 +81,9 @@ function normalizeBinding(value: unknown): QueryBinding | null {
   if (typeof candidate.name === "string" && candidate.name.length > 0) {
     binding.name = candidate.name;
   }
-  // Only the two known values are preserved; anything else (including a missing field, or a value a
-  // newer build wrote) is dropped so the query cleanly falls back to the global default view.
-  if (candidate.active === "standard" || candidate.active === "enhanced") {
-    binding.active = candidate.active;
-  }
+  // A legacy `active` field written by an older build is intentionally not copied: the view choice
+  // is now an in-session override (see `content/active-view`), so any persisted value is dropped and
+  // the query falls back to the global default view.
   return binding;
 }
 

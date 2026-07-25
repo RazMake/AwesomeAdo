@@ -1,13 +1,12 @@
 /**
- * The catalog of views a query can be bound to.
+ * The contract every enhanced view declares its configuration with.
  *
- * A "view" is a way AwesomeADO can present a query. Each view declares the properties it needs to
- * be usable; a binding to that view is only valid once every required property is supplied. Views
- * carry no rendering yet — this catalog is the single, ordered source of truth that both the
- * top-bar prompt and the options binding form read, so adding a new view is a one-line change here.
+ * A "view" is a way AwesomeADO can present a query. Each view owns its own folder under
+ * `src/content/views/<view>/` and exports a `ViewType` describing the properties it needs to be
+ * usable; a binding to that view is only valid once every required property is supplied. This file
+ * holds only the shape and the value helpers — the ordered catalog of the views themselves lives in
+ * `src/content/views/viewCatalog.ts`, which references each view's own config module.
  */
-
-import { DEFAULT_ORDERING_POLICY, ORDERING_POLICIES } from "../ordering/ItemOrdering";
 
 /** How a view property is entered on the binding form and validated before it is stored. */
 export type ViewTypePropertyKind = "text" | "number" | "select";
@@ -51,65 +50,6 @@ export interface ViewType {
   label: string;
   /** Properties the view needs; empty means the view can be bound as-is. */
   properties: readonly ViewTypeProperty[];
-}
-
-/**
- * Every view offered to the user, in the order they appear in the picker. Add new views by
- * appending an entry; nothing else in the binding flow needs to change.
- */
-export const VIEW_TYPES: readonly ViewType[] = [
-  { id: "sprint", label: "Sprint View", properties: [] },
-  {
-    id: "projectTracking",
-    label: "Project Tracking",
-    properties: [
-      {
-        key: "orderingPolicy",
-        label: "Items ordering policy",
-        required: false,
-        kind: "select",
-        options: ORDERING_POLICIES.map((policy) => ({ value: policy.value, label: policy.label })),
-        // Encapsulated in src/common/ordering so every renderer sorts items the same way; the raw
-        // sort key (e.g. StackRank vs. the ETA field) is resolved by that component, not stored here.
-        defaultValue: DEFAULT_ORDERING_POLICY,
-        hint: "How items are ordered within each group.",
-      },
-      {
-        key: "weeks",
-        label: "Updates window (weeks)",
-        required: false,
-        kind: "number",
-        defaultValue: "2",
-        min: 1,
-        max: 52,
-        hint: "How far back per-item Updates reach, in weeks. Only newer updates are shown; same-day entries are collapsed together.",
-      },
-      {
-        key: "days",
-        label: "Hide resolved after (days)",
-        required: false,
-        kind: "number",
-        defaultValue: "4",
-        min: 0,
-        max: 3650,
-        hint: "Resolved items are hidden once resolved more than this many days ago, unless an unresolved item still sits beneath them. 0 hides them immediately.",
-      },
-      {
-        key: "hours",
-        label: "Recent changes window (hours)",
-        required: false,
-        kind: "number",
-        defaultValue: "24",
-        min: 1,
-        hint: "Rolling window behind the Newly Created, Newly Updated, and New Notes pills. Respected exactly, not rounded to whole days.",
-      },
-    ],
-  },
-];
-
-/** Look up a view by its stored id, or undefined when the id is unknown (e.g. a newer build). */
-export function getViewType(id: string): ViewType | undefined {
-  return VIEW_TYPES.find((view) => view.id === id);
 }
 
 /** The property's kind, treating an unspecified kind as a plain text input. */

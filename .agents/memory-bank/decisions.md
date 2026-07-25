@@ -225,3 +225,25 @@
   read naturally in the source filter. `index.ts` stays at the root so the build entry points
   (`src/content/index.ts`, `src/options/index.ts`) and the coverage `src/**/index.ts` exclusion are
   unaffected by the move.
+
+## ADR-027: Views live under `content/`; options may import only the view config catalog
+
+- Decision: Enhanced views moved from `src/common/views/**` to `src/content/views/**`, keeping each
+  view whole in one folder (`content/views/<view>/` holds both `<view>ViewType.ts` config and
+  `<view>View.ts` renderer). The two abstract contracts (`ViewType`, `EnhancedView`) moved to
+  `src/common/view-common/` so both bundles depend on the abstraction, not each other. This creates
+  one **scoped, enforced exception to AGENTS.md §6**: `src/options/**` is allowed to import exactly
+  one content module — `content/views/viewCatalog` (the view **config** list needed to build the
+  binding form) — and nothing else from `content/`. The exception is welded shut by an
+  `import-x/no-restricted-paths` zone in `eslint.config.js` (target `./src/options`, from
+  `./src/content`, `except` only `./views/viewCatalog.ts`); any other options→content import fails
+  lint/CI. A `*ViewType.ts` config must never import its `*View.ts` renderer, so `viewCatalog` pulls
+  in no renderer DOM and the options bundle stays DOM-free.
+- Rationale: A view _is_ content (the surface painted in place of ADO's page), so `common/` was the
+  wrong home; but the options binding form genuinely needs each view's configurable properties, and
+  keeping each view in a single folder is far more readable than splitting config and renderer across
+  two trees. §6 explicitly permits an override via a recorded ADR, so rather than either relocating
+  config away from its renderer or letting options reach broadly into content, the break is reduced to
+  a single lint-enforced doorway. Pure contracts in `common/view-common` are ordinary Dependency
+  Inversion (§5-D), not a §6 exception. This does not open general options→content coupling: the
+  linter blocks every path except the one catalog module.

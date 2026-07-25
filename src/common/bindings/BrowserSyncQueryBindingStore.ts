@@ -35,9 +35,7 @@ export class BrowserSyncQueryBindingStore implements IQueryBindingStore {
     const current = await this.read();
     const replacing = current[queryId] !== undefined;
     await this.storage.set(BINDINGS_KEY, { ...current, [queryId]: binding });
-    this.logger?.info(
-      `${replacing ? "Rebound" : "Bound"} query ${queryId}: view=${binding.view}, active=${binding.active ?? "default"}`,
-    );
+    this.logger?.info(`${replacing ? "Rebound" : "Bound"} query ${queryId}: view=${binding.view}`);
   }
 
   async unbind(queryId: string): Promise<void> {
@@ -54,19 +52,14 @@ export class BrowserSyncQueryBindingStore implements IQueryBindingStore {
     this.logger?.info(`Unbound query ${queryId}: was view=${current[queryId].view}`);
   }
 
-  async setActiveView(queryId: string, active: QueryBinding["active"]): Promise<void> {
-    // Read-modify-write so the binding's other fields (view, properties, name) survive. Owning this
-    // here keeps every mutation of the bindings map in the store, instead of re-deriving the
-    // read-modify-write in the content script.
-    const current = await this.read();
-    const binding = current[queryId];
-    if (binding === undefined) {
-      return;
-    }
-    await this.storage.set(BINDINGS_KEY, { ...current, [queryId]: { ...binding, active } });
-    this.logger?.info(
-      `Switched query ${queryId} to ${active ?? "default"} view (from ${binding.active ?? "default"})`,
-    );
+  async replaceAll(bindings: QueryBindings): Promise<void> {
+    // Import replaces the whole map in a single write instead of merging: the imported file is the
+    // authoritative set, so bindings it omits must not linger. Normalized first so a hand-edited or
+    // newer-version file cannot persist malformed entries under the shared key.
+    const next = normalizeBindings(bindings);
+    const count = Object.keys(next).length;
+    await this.storage.set(BINDINGS_KEY, next);
+    this.logger?.info(`Replaced all query bindings with ${count} entr${count === 1 ? "y" : "ies"}`);
   }
 
   observe(listener: (bindings: QueryBindings) => void): StorageObservation {

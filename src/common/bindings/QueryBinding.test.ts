@@ -45,20 +45,15 @@ describe("normalizeBindings", () => {
     });
   });
 
-  it("keeps an explicit standard or enhanced active override", () => {
+  it("drops a legacy active field left by an older build", () => {
+    // The view choice is now an in-session override (see content/active-view), never persisted, so a
+    // stored `active` from an older build is ignored and the query falls back to the global default.
     expect(
       normalizeBindings({ a: { view: "sprint", properties: {}, active: "standard" } }),
-    ).toEqual({ a: { view: "sprint", properties: {}, active: "standard" } });
+    ).toEqual({ a: { view: "sprint", properties: {} } });
     expect(
       normalizeBindings({ a: { view: "sprint", properties: {}, active: "enhanced" } }),
-    ).toEqual({ a: { view: "sprint", properties: {}, active: "enhanced" } });
-  });
-
-  it("drops an unrecognized active value so the query follows the global default", () => {
-    const raw = { "query-1": { view: "sprint", properties: {}, active: "sideways" } };
-    expect(normalizeBindings(raw)).toEqual({
-      "query-1": { view: "sprint", properties: {} },
-    });
+    ).toEqual({ a: { view: "sprint", properties: {} } });
   });
 
   it("drops entries without a usable view id", () => {
@@ -88,7 +83,7 @@ describe("normalizeBindings", () => {
 });
 
 describe("resolveActiveView", () => {
-  it("honors an explicit per-query override regardless of the default", () => {
+  it("honors an explicit in-session override regardless of the default", () => {
     expect(resolveActiveView("standard", true)).toBe("standard");
     expect(resolveActiveView("enhanced", false)).toBe("enhanced");
   });

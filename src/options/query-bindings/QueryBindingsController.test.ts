@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { IQueryBindingStore } from "../../common/bindings/IQueryBindingStore";
 import type { QueryBinding, QueryBindings } from "../../common/bindings/QueryBinding";
-import type { ViewType } from "../../common/bindings/ViewType";
+import type { ViewType } from "../../common/view-common/ViewType";
 
 import { QueryBindingsController, type QueryBindingsElements } from "./QueryBindingsController";
 
@@ -297,23 +297,6 @@ describe("QueryBindingsController", () => {
 
       const label = [...elements.querySelect.options].find((o) => o.value === GUID_A)?.textContent;
       expect(label).toBe(`Sprint 42 (${GUID_A})`);
-    });
-
-    it("preserves an existing active override when re-saving", async () => {
-      const store = makeStore({
-        [GUID_A]: { view: "sprint", properties: {}, active: "standard" },
-      });
-      await controllerFor(store).init(GUID_A, "Sprint 42");
-
-      elements.saveButton.click();
-      await settle();
-
-      expect(store.bind).toHaveBeenCalledWith(GUID_A, {
-        view: "sprint",
-        properties: {},
-        name: "Sprint 42",
-        active: "standard",
-      });
     });
 
     it("keeps Save disabled until every required property has a value", async () => {

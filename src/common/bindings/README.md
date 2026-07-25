@@ -6,47 +6,13 @@ This folder contains the query-binding layer for the AwesomeADO extension.
 
 A **binding** records that a specific Azure DevOps query is handled by the extension and which
 **view** handles it. The list of bindings is browser-synced, so it follows the signed-in user
-across machines. This layer owns the view catalog, the binding data model, its synced store, and
-the contract used to open the options page for one query.
+across machines. This layer owns the binding data model, its synced store, and the contract used to
+open the options page for one query. The **view type contract** lives in
+[`src/common/view-common`](../view-common/README.md); the concrete catalog of views lives in
+[`src/content/views`](../../content/views/README.md). A binding's `view` field is a `ViewType.id`
+from that catalog.
 
 ## Public API
-
-### `ViewType` (interface) + `VIEW_TYPES` — `ViewType.ts`
-
-The catalog of views a query can be bound to:
-
-```typescript
-interface ViewTypeProperty {
-  key: string;
-  label: string;
-  required: boolean; // Save is gated until every required property has a value
-  kind?: "text" | "number"; // how the binding form renders/validates it (default: text)
-  defaultValue?: string; // seeded into a fresh input and substituted at save when empty
-  min?: number; // inclusive bounds a `number` value is forced into (either end optional)
-  max?: number;
-  hint?: string; // one-line "why" shown under the input
-}
-interface ViewType {
-  id: string; // stable, persisted on the binding
-  label: string; // shown in the picker
-  properties: readonly ViewTypeProperty[]; // required/optional inputs
-}
-```
-
-`VIEW_TYPES` is the ordered source of truth (`Sprint View`, `Project Tracking`). **Add a new view
-by appending an entry** — nothing else in the binding flow changes. `Project Tracking` declares the
-per-query fields `orderingPolicy` (a `select` of how items are ordered — `importance`/`title`/`eta`,
-default `importance`; the sort itself lives in `src/common/ordering`), `weeks` (1–52, default 2),
-`days` (0–3650, default 4), and `hours` (default 24); their stated defaults apply whenever a binding
-leaves one unset.
-
-`getViewType(id)` returns a view by its stored id, or `undefined` when the id is unknown.
-`viewTypePropertyKind(property)` reports its kind (treating an unset kind as `text`), and
-`resolveViewTypePropertyValue(property, stored)` returns the value a binding should hold for a
-property: it falls back to the declared default when nothing is stored, coerces a `number` to a
-whole number clamped into `[min, max]`, and for a `select` keeps the stored value only while it is
-still one of the offered options. The binding form routes both input-seeding and save through
-`resolveViewTypePropertyValue`, so what it shows and what it stores never drift.
 
 ### `QueryBinding` / `QueryBindings` — `QueryBinding.ts`
 
@@ -55,21 +21,22 @@ interface QueryBinding {
   view: string; // a ViewType id
   properties: Record<string, string>; // per-query values for that view's properties
   name?: string; // the query's display name captured when it was bound (best-effort)
-  active?: "enhanced" | "standard"; // per-query override; absent = follow the global default view
 }
 type QueryBindings = Record<string, QueryBinding>; // keyed by ADO query id
 ```
 
 The property values live on the binding, so the same view bound to two different queries can hold
 different settings. `name` is the query's human-readable name captured at bind time so the options
-UI can label a query even when its tab is closed. `active` is an optional per-query override,
-separate from `view`: a bound query can be flipped to `"standard"` to show ADO's own page for that
-one query, or to `"enhanced"` to force its view, regardless of the global default. When `active` is
-absent the query follows the global default view. `resolveActiveView(active, defaultEnhanced)`
-collapses that rule to the concrete `"enhanced"` | `"standard"` a consumer should render.
-`normalizeBindings(raw)` validates an unknown value from storage into a safe map, dropping malformed
-entries while preserving bindings whose view id this build does not recognize (forward-compatibility)
-and omitting `active`/`name` unless they are valid.
+UI can label a query even when its tab is closed. Whether a bound query shows its enhanced view or
+ADO's standard page on load is governed by the global `defaultView` setting, **not** by the binding;
+a user can flip one query for the current session via the top-bar menu, but that choice is a
+device-local, memory-only override held in [`content/active-view`](../../content/active-view/README.md)
+and is deliberately never persisted here. `resolveActiveView(override, defaultEnhanced)` collapses an
+in-session override (or its absence) plus the global default to the concrete `"enhanced"` |
+`"standard"` a consumer should render. `normalizeBindings(raw)` validates an unknown value from
+storage into a safe map, dropping malformed entries while preserving bindings whose view id this
+build does not recognize (forward-compatibility), keeping `name` only when valid, and dropping a
+legacy `active` field written by an older build.
 
 ### `IQueryBindingStore` (interface) — `IQueryBindingStore.ts`
 
@@ -80,7 +47,7 @@ interface IQueryBindingStore {
   read(): Promise<QueryBindings>;
   bind(queryId: string, binding: QueryBinding): Promise<void>;
   unbind(queryId: string): Promise<void>;
-  setActiveView(queryId: string, active: "enhanced" | "standard"): Promise<void>;
+  replaceAll(bindings: QueryBindings): Promise<void>;
   observe(listener: (bindings: QueryBindings) => void): {
     ready: Promise<void>;
     unsubscribe: () => void;
@@ -92,9 +59,9 @@ interface IQueryBindingStore {
 - `bind(queryId, binding)` — create or replace one query's binding; others are untouched.
 - `unbind(queryId)` — remove one query's binding; others are untouched, and it is a no-op when the
   query is not bound.
-- `setActiveView(queryId, active)` — flip a bound query between its enhanced view and ADO's standard
-  view, preserving the binding's other fields; a no-op when the query is not bound. The store owns
-  this so every mutation of the bindings map lives in one place.
+- `replaceAll(bindings)` — replace the entire map in one write (normalized first). Unlike `bind`
+  and `unbind` it does not merge, so bindings the new set omits are dropped. Used by configuration
+  import to adopt a saved set wholesale.
 - `observe(listener)` — subscribe, then emit the initial snapshot. `ready` resolves after the first
   snapshot and rejects if the initial read fails. Call `unsubscribe()` to stop updates.
 
@@ -126,6 +93,7 @@ so the top-bar menu sends a typed message to the background service worker, whic
 ## Storage layout
 
 All bindings live under one synced key (`bindings.queries`) as a single map, because bindings are a
-growing collection rather than independent scalar settings. `bind()`, `unbind()`, and
-`setActiveView()` read-modify-write that map; last-writer-wins is acceptable since a user changes
-their own queries one at a time.
+growing collection rather than independent scalar settings. `bind()` and `unbind()` read-modify-write
+that map; last-writer-wins is acceptable since a user changes their own queries one at a time.
+`replaceAll()` overwrites the whole key in a single write and is how configuration import replaces the
+set without merging.

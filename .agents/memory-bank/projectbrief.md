@@ -16,9 +16,11 @@ a single codebase.
   command bar on any single-query route. Its popup menu enables the enhanced view for a query
   (binds it), switches a bound query between its enhanced view and ADO's Standard View, opens the
   options page, or disables (unbinds) the query.
-- **Enhanced view.** For a query resolved to its enhanced view, the content script reversibly
-  blanks the page below ADO's breadcrumb bar (`PageBlanker`) as the current enhancement surface.
-  Unbound queries are always left on ADO's own view — only the button is injected.
+- **Enhanced view.** For a query resolved to its enhanced view, the content script mounts the bound
+  view's own surface (`EnhancedViewSurface`) below ADO's breadcrumb bar, replacing ADO's page and
+  reversibly restoring it when the query leaves the enhanced view. Each view type paints its own
+  content, resolved through the enhanced-view registry. Unbound queries are always left on ADO's own
+  view — only the button is injected.
 - **Options page.** A themeable, tabbed page (Appearance, Query Bindings, Diagnostics placeholder):
   a Theme selector (`Auto`/`Light`/`Dark`/`Blue`, where `Auto` follows ADO's own theme detected
   from the live tab), a read-only ADO Configuration panel showing the active query tab's
@@ -26,7 +28,7 @@ a single codebase.
   only to bound queries, and a Query Bindings manager (bind a specific query opened from its button,
   or pick from open/bound queries).
 - **SPA-aware.** The content script is injected host-wide and reacts to ADO's in-page navigation, so
-  entering or leaving a Query route updates the button and blanking without a full reload.
+  entering or leaving a Query route updates the button and enhanced-view surface without a full reload.
 
 ## Scope boundaries
 

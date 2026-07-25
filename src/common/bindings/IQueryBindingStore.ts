@@ -19,10 +19,10 @@ export interface IQueryBindingStore {
   unbind(queryId: string): Promise<void>;
 
   /**
-   * Switch a bound query between its enhanced view and ADO's standard view, preserving the
-   * binding's other fields. A no-op when the query is not bound.
+   * Replace the entire bindings map in one write. Unlike `bind`/`unbind`, this does not merge with
+   * the current value — it is how an imported configuration wholesale adopts a saved set of bindings.
    */
-  setActiveView(queryId: string, active: QueryBinding["active"]): Promise<void>;
+  replaceAll(bindings: QueryBindings): Promise<void>;
 
   /**
    * Subscribe before reading, then emit the initial snapshot unless a newer event wins the race.

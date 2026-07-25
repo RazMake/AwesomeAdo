@@ -3,10 +3,11 @@ import {
   type QueryBindings,
   resolveActiveView,
 } from "../../common/bindings/QueryBinding";
-import { getViewType } from "../../common/bindings/ViewType";
 import type { ILogger } from "../../common/logging/ILogger";
 import { parseAdoQueryId } from "../../common/navigation/AdoQueryRoute";
 import { DEFAULT_SETTINGS, type DefaultView } from "../../common/settings/ExtensionSettings";
+import type { IActiveViewOverrides } from "../active-view/IActiveViewOverrides";
+import { getViewType } from "../views/viewCatalog";
 
 import type { BindingButton } from "./BindingButton";
 import type { BindingMenu, MenuEntry } from "./BindingMenu";
@@ -22,7 +23,7 @@ export interface QueryMenuActions {
   enableEnhancedView(queryId: string): void;
   /** Remove this query's binding. */
   disableEnhancedView(queryId: string): void;
-  /** Switch a bound query between its enhanced view and ADO's standard view. */
+  /** Switch a bound query between its enhanced view and ADO's standard view for this session only. */
   setActiveView(queryId: string, active: ActiveView): void;
   /** Open the options page with the Diagnostics log in view. */
   viewLog(): void;
@@ -57,6 +58,7 @@ export class QueryBindingController {
     private readonly menu: BindingMenu,
     private readonly actions: QueryMenuActions,
     url: string,
+    private readonly overrides: IActiveViewOverrides,
     private readonly logger: ILogger,
   ) {
     this.queryId = parseAdoQueryId(url);
@@ -181,7 +183,9 @@ export class QueryBindingController {
     }
     // Preserve a binding whose view id this build does not recognize by showing the raw id.
     const viewLabel = getViewType(binding.view)?.label ?? binding.view;
-    const active = resolveActiveView(binding.active, this.defaultEnhanced);
+    // The check follows this session's override (if the user has switched) or the global default —
+    // the same rule the page uses — so the menu never claims a view the page is not actually showing.
+    const active = resolveActiveView(this.overrides.get(queryId), this.defaultEnhanced);
     return [
       {
         kind: "item",

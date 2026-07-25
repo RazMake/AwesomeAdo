@@ -279,7 +279,7 @@ These are **non-negotiable**.
 
 ## 13. Skills Index
 
-Four cross-agent skills live under `.agents/skills/`. Each skill links back to this file and adds
+Five cross-agent skills live under `.agents/skills/`. Each skill links back to this file and adds
 workflow detail without copying its rule bodies.
 
 | Skill                  | Path                                             | Purpose                                                     |
@@ -288,6 +288,7 @@ workflow detail without copying its rule bodies.
 | Testing Standards      | `.agents/skills/testing-standards/SKILL.md`      | Coverage thresholds, fake-injection patterns, Vitest config |
 | Code Style             | `.agents/skills/code-style/SKILL.md`             | Naming, readability, documentation, DRY                     |
 | Changelog & Versioning | `.agents/skills/changelog-versioning/SKILL.md`   | Version scheme, ChangeLog format, worker bullet protocol    |
+| Add an Enhanced View   | `.agents/skills/add-enhanced-view/SKILL.md`      | Recipe + boilerplate for adding a new query view            |
 
 ---
 

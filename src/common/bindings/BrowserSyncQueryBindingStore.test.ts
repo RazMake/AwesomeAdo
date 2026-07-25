@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { IBrowserSyncStorage } from "../browser/IBrowserSyncStorage";
 
 import { BrowserSyncQueryBindingStore } from "./BrowserSyncQueryBindingStore";
+import type { QueryBindings } from "./QueryBinding";
 
 // Hand-written fake so no real chrome.* is touched in tests.
 class FakeBrowserSyncStorage implements IBrowserSyncStorage {
@@ -95,22 +96,21 @@ describe("BrowserSyncQueryBindingStore", () => {
       await store.bind("new", {
         view: "projectTracking",
         properties: { area: "Web" },
-        active: "enhanced",
       });
 
       expect(await fake.get(KEY)).toEqual({
         existing: { view: "sprint", properties: {} },
-        new: { view: "projectTracking", properties: { area: "Web" }, active: "enhanced" },
+        new: { view: "projectTracking", properties: { area: "Web" } },
       });
     });
 
     it("replaces a binding for the same query id", async () => {
       const fake = new FakeBrowserSyncStorage();
       const store = new BrowserSyncQueryBindingStore(fake);
-      await store.bind("q", { view: "sprint", properties: {}, active: "enhanced" });
-      await store.bind("q", { view: "projectTracking", properties: {}, active: "standard" });
+      await store.bind("q", { view: "sprint", properties: {} });
+      await store.bind("q", { view: "projectTracking", properties: {} });
       expect(await store.read()).toEqual({
-        q: { view: "projectTracking", properties: {}, active: "standard" },
+        q: { view: "projectTracking", properties: {} },
       });
     });
   });
@@ -143,37 +143,42 @@ describe("BrowserSyncQueryBindingStore", () => {
     });
   });
 
-  describe("setActiveView", () => {
-    it("updates only the active view, preserving the binding's other fields", async () => {
+  describe("replaceAll", () => {
+    it("overwrites the whole map, dropping bindings the new set omits", async () => {
       const fake = new FakeBrowserSyncStorage();
       await fake.set(KEY, {
-        q: { view: "projectTracking", properties: { area: "Web" }, name: "My query" },
-        other: { view: "sprint", properties: {} },
+        old1: { view: "sprint", properties: {} },
+        old2: { view: "projectTracking", properties: {} },
       });
       const store = new BrowserSyncQueryBindingStore(fake);
 
-      await store.setActiveView("q", "standard");
+      await store.replaceAll({ fresh: { view: "sprint", properties: { area: "Web" } } });
 
       expect(await store.read()).toEqual({
-        q: {
-          view: "projectTracking",
-          properties: { area: "Web" },
-          name: "My query",
-          active: "standard",
-        },
-        other: { view: "sprint", properties: {} },
+        fresh: { view: "sprint", properties: { area: "Web" } },
       });
     });
 
-    it("is a no-op when the query is not bound", async () => {
+    it("normalizes the incoming map, dropping malformed entries", async () => {
       const fake = new FakeBrowserSyncStorage();
-      await fake.set(KEY, { keep: { view: "sprint", properties: {} } });
-      const setSpy = vi.spyOn(fake, "set");
       const store = new BrowserSyncQueryBindingStore(fake);
 
-      await store.setActiveView("absent", "enhanced");
+      await store.replaceAll({
+        good: { view: "sprint", properties: {} },
+        bad: { view: 42 },
+      } as unknown as QueryBindings);
 
-      expect(setSpy).not.toHaveBeenCalled();
+      expect(await store.read()).toEqual({ good: { view: "sprint", properties: {} } });
+    });
+
+    it("clears every binding when given an empty map", async () => {
+      const fake = new FakeBrowserSyncStorage();
+      await fake.set(KEY, { q: { view: "sprint", properties: {} } });
+      const store = new BrowserSyncQueryBindingStore(fake);
+
+      await store.replaceAll({});
+
+      expect(await store.read()).toEqual({});
     });
   });
 
@@ -185,15 +190,12 @@ describe("BrowserSyncQueryBindingStore", () => {
       const logger = makeLogger();
       const store = new BrowserSyncQueryBindingStore(fake, logger);
 
-      await store.bind("q", { view: "sprint", properties: {}, active: "enhanced" });
+      await store.bind("q", { view: "sprint", properties: {} });
       await store.bind("q", { view: "projectTracking", properties: {} });
 
-      expect(logger.info).toHaveBeenNthCalledWith(1, "Bound query q: view=sprint, active=enhanced");
-      // The second write to the same id is a rebind, and an absent active is logged as "default".
-      expect(logger.info).toHaveBeenNthCalledWith(
-        2,
-        "Rebound query q: view=projectTracking, active=default",
-      );
+      expect(logger.info).toHaveBeenNthCalledWith(1, "Bound query q: view=sprint");
+      // The second write to the same id is a rebind.
+      expect(logger.info).toHaveBeenNthCalledWith(2, "Rebound query q: view=projectTracking");
     });
 
     it("logs an unbind only when a binding existed", async () => {
@@ -207,17 +209,6 @@ describe("BrowserSyncQueryBindingStore", () => {
 
       await store.unbind("q");
       expect(logger.info).toHaveBeenCalledWith("Unbound query q: was view=sprint");
-    });
-
-    it("logs the active-view switch with the previous view", async () => {
-      const fake = new FakeBrowserSyncStorage();
-      await fake.set(KEY, { q: { view: "sprint", properties: {}, active: "enhanced" } });
-      const logger = makeLogger();
-      const store = new BrowserSyncQueryBindingStore(fake, logger);
-
-      await store.setActiveView("q", "standard");
-
-      expect(logger.info).toHaveBeenCalledWith("Switched query q to standard view (from enhanced)");
     });
   });
 

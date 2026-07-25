@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { ActiveView, QueryBindings } from "../../common/bindings/QueryBinding";
+import type { QueryBindings } from "../../common/bindings/QueryBinding";
 import type { ILogger } from "../../common/logging/ILogger";
+import { SessionActiveViewOverrides } from "../active-view/SessionActiveViewOverrides";
 
 import type { BindingButton } from "./BindingButton";
 import type { BindingMenu, MenuEntry, MenuItem } from "./BindingMenu";
@@ -53,8 +54,8 @@ function makeLoggerSpy(): ILogger {
   return { info: vi.fn(), error: vi.fn() };
 }
 
-function bound(id: string, view = "sprint", active: ActiveView = "enhanced"): QueryBindings {
-  return { [id]: { view, properties: {}, active } };
+function bound(id: string, view = "sprint"): QueryBindings {
+  return { [id]: { view, properties: {} } };
 }
 
 /** Trigger the click handler the button was wired with, giving it a stand-in anchor element. */
@@ -77,12 +78,16 @@ describe("QueryBindingController", () => {
   let menu: MenuSpy;
   let actions: ReturnType<typeof makeActions>;
   let logger: ILogger;
+  // The in-session view override the menu reads to mark the active row. Real implementation so a
+  // test's `set` is resolved exactly as in production.
+  let overrides: SessionActiveViewOverrides;
 
   beforeEach(() => {
     button = makeButtonSpy();
     menu = makeMenuSpy();
     actions = makeActions();
     logger = makeLoggerSpy();
+    overrides = new SessionActiveViewOverrides();
   });
 
   function makeController(url: string, configured = true): QueryBindingController {
@@ -91,6 +96,7 @@ describe("QueryBindingController", () => {
       menu as unknown as BindingMenu,
       actions as unknown as QueryMenuActions,
       url,
+      overrides,
       logger,
     );
     // Bound-query menus offer the view swap only once the ADO settings are complete; default the
@@ -209,7 +215,7 @@ describe("QueryBindingController", () => {
   describe("bound menu", () => {
     it("shows the bound view and Standard View with a separator, Options and Disable, then View Log", () => {
       const controller = makeController(queryUrl(GUID));
-      controller.applyBindings(bound(GUID, "sprint", "enhanced"));
+      controller.applyBindings(bound(GUID, "sprint"));
 
       clickButton(button);
       const entries = lastEntries(menu);
@@ -234,7 +240,8 @@ describe("QueryBindingController", () => {
 
     it("checks the bound view when it is the active view", () => {
       const controller = makeController(queryUrl(GUID));
-      controller.applyBindings(bound(GUID, "sprint", "enhanced"));
+      // No session override plus the enhanced default (from DEFAULT_SETTINGS) means the view is shown.
+      controller.applyBindings(bound(GUID, "sprint"));
 
       clickButton(button);
       const [view, standard] = items(lastEntries(menu));
@@ -243,9 +250,10 @@ describe("QueryBindingController", () => {
       expect(standard?.checked).toBe(false);
     });
 
-    it("checks Standard View when the query is showing the standard page", () => {
+    it("checks Standard View when the query is switched to the standard page this session", () => {
       const controller = makeController(queryUrl(GUID));
-      controller.applyBindings(bound(GUID, "sprint", "standard"));
+      overrides.set(GUID, "standard");
+      controller.applyBindings(bound(GUID, "sprint"));
 
       clickButton(button);
       const [view, standard] = items(lastEntries(menu));
@@ -256,7 +264,7 @@ describe("QueryBindingController", () => {
 
     it("falls back to the raw view id when the view is unknown to this build", () => {
       const controller = makeController(queryUrl(GUID));
-      controller.applyBindings(bound(GUID, "future-view", "enhanced"));
+      controller.applyBindings(bound(GUID, "future-view"));
 
       clickButton(button);
 
@@ -265,7 +273,8 @@ describe("QueryBindingController", () => {
 
     it("routes each bound entry to its action", () => {
       const controller = makeController(queryUrl(GUID));
-      controller.applyBindings(bound(GUID, "sprint", "standard"));
+      overrides.set(GUID, "standard");
+      controller.applyBindings(bound(GUID, "sprint"));
       clickButton(button);
       const [view, standard, options, disable] = items(lastEntries(menu));
 
@@ -284,7 +293,7 @@ describe("QueryBindingController", () => {
   describe("bound menu while the ADO settings are incomplete", () => {
     it("hides the view swap and offers only Options and Disable Enhanced View, then View Log", () => {
       const controller = makeController(queryUrl(GUID), false);
-      controller.applyBindings(bound(GUID, "sprint", "enhanced"));
+      controller.applyBindings(bound(GUID, "sprint"));
 
       clickButton(button);
       const entries = lastEntries(menu);
@@ -299,7 +308,7 @@ describe("QueryBindingController", () => {
 
     it("routes its entries to openOptions and disableEnhancedView", () => {
       const controller = makeController(queryUrl(GUID), false);
-      controller.applyBindings(bound(GUID, "sprint", "enhanced"));
+      controller.applyBindings(bound(GUID, "sprint"));
       clickButton(button);
       const [options, disable] = items(lastEntries(menu));
 
@@ -312,7 +321,7 @@ describe("QueryBindingController", () => {
 
     it("restores the full swap menu once the settings become complete", () => {
       const controller = makeController(queryUrl(GUID), false);
-      controller.applyBindings(bound(GUID, "sprint", "enhanced"));
+      controller.applyBindings(bound(GUID, "sprint"));
 
       controller.applyConfigured(true);
       clickButton(button);
@@ -328,7 +337,7 @@ describe("QueryBindingController", () => {
 
     it("closes an open menu when the configured state changes", () => {
       const controller = makeController(queryUrl(GUID), false);
-      controller.applyBindings(bound(GUID, "sprint", "enhanced"));
+      controller.applyBindings(bound(GUID, "sprint"));
       clickButton(button);
       menu.close.mockClear();
 
@@ -339,7 +348,7 @@ describe("QueryBindingController", () => {
 
     it("ignores a redundant configured update", () => {
       const controller = makeController(queryUrl(GUID), false);
-      controller.applyBindings(bound(GUID, "sprint", "enhanced"));
+      controller.applyBindings(bound(GUID, "sprint"));
       clickButton(button);
       menu.close.mockClear();
 
@@ -351,7 +360,7 @@ describe("QueryBindingController", () => {
   });
 
   describe("bound query with no explicit override", () => {
-    // The binding omits `active`, so the check mark must follow the global default view.
+    // With no in-session override, the check mark must follow the global default view.
     const noOverride: QueryBindings = { [GUID]: { view: "sprint", properties: {} } };
 
     it("checks the enhanced entry when the global default is enhanced", () => {
@@ -404,7 +413,7 @@ describe("QueryBindingController", () => {
 
     it("routes the footer to the viewLog action on a bound query", () => {
       const controller = makeController(queryUrl(GUID));
-      controller.applyBindings(bound(GUID, "sprint", "enhanced"));
+      controller.applyBindings(bound(GUID, "sprint"));
       clickButton(button);
 
       const viewLog = items(lastEntries(menu)).find((item) => item.label === "View Log");
@@ -417,7 +426,7 @@ describe("QueryBindingController", () => {
   describe("logging", () => {
     it("logs the button showing and the menu opening with the binding state", () => {
       const controller = makeController(queryUrl(GUID));
-      controller.applyBindings(bound(GUID, "sprint", "enhanced"));
+      controller.applyBindings(bound(GUID, "sprint"));
 
       const showMessage = vi
         .mocked(logger.info)

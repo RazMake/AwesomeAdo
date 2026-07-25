@@ -27,6 +27,10 @@ import {
   QueryBindingsController,
   type QueryBindingsElements,
 } from "./query-bindings/QueryBindingsController";
+import {
+  SettingsTransferController,
+  type SettingsTransferElements,
+} from "./settings-transfer/SettingsTransferController";
 import { TabsController } from "./shell/TabsController";
 
 // One logger factory + backing store shared by the whole options page: controllers record through
@@ -106,6 +110,31 @@ if (themeSelect && defaultViewSelect) {
   });
 } else {
   report(new Error("The options page is missing required elements and cannot load."));
+}
+
+// Import/Export lives on the Appearance tab and spans both stores, so a single file captures and
+// restores the whole configuration (settings + every enhanced-query binding).
+const settingsExportButton = document.querySelector<HTMLButtonElement>("#settings-export");
+const settingsImportButton = document.querySelector<HTMLButtonElement>("#settings-import");
+const settingsImportFile = document.querySelector<HTMLInputElement>("#settings-import-file");
+const settingsTransferStatus = document.querySelector<HTMLElement>("#settings-transfer-status");
+
+if (settingsExportButton && settingsImportButton && settingsImportFile && settingsTransferStatus) {
+  const transferElements: SettingsTransferElements = {
+    exportButton: settingsExportButton,
+    importButton: settingsImportButton,
+    fileInput: settingsImportFile,
+    status: settingsTransferStatus,
+  };
+  const transfer = new SettingsTransferController(
+    settingsStore,
+    bindingStore,
+    transferElements,
+    report,
+  );
+  transfer.init();
+} else {
+  report(new Error("The options page is missing the import/export controls and cannot load them."));
 }
 
 const adoOrganization = document.querySelector<HTMLElement>("#ado-organization");

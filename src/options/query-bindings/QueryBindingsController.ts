@@ -2,11 +2,11 @@ import type { IQueryBindingStore } from "../../common/bindings/IQueryBindingStor
 import type { QueryBinding, QueryBindings } from "../../common/bindings/QueryBinding";
 import {
   resolveViewTypePropertyValue,
-  VIEW_TYPES,
   viewTypePropertyKind,
   type ViewType,
   type ViewTypeProperty,
-} from "../../common/bindings/ViewType";
+} from "../../common/view-common/ViewType";
+import { VIEW_TYPES } from "../../content/views/viewCatalog";
 
 /** The Query Bindings tab's elements. Passed in so the controller stays DOM-agnostic and testable. */
 export interface QueryBindingsElements {
@@ -477,10 +477,6 @@ export class QueryBindingsController {
     const name = this.queryNames.get(queryId) ?? null;
     if (name !== null) {
       binding.name = name;
-    }
-    // Preserve an explicit per-query view override; a brand-new binding follows the global default.
-    if (this.editing?.active !== undefined) {
-      binding.active = this.editing.active;
     }
     this.elements.saveButton.disabled = true;
     void this.store

@@ -83,7 +83,7 @@ class FakeQueryBindingStore implements IQueryBindingStore {
     return Promise.resolve();
   }
 
-  setActiveView(): Promise<void> {
+  replaceAll(): Promise<void> {
     return Promise.resolve();
   }
 }

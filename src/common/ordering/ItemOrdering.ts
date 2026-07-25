@@ -1,9 +1,10 @@
 /**
  * How a Project Tracking view orders the items within each group, and the logic that applies it.
  *
- * The chosen policy is stored on the query binding (see ViewType's `orderingPolicy` property) and
- * turned into a concrete ordering here, so every place that renders items shares one definition of
- * "most important first" / "a–z" / "by ETA" instead of re-deriving the rules.
+ * The chosen policy is stored on the query binding (see the Project Tracking view's `orderingPolicy`
+ * property in `src/content/views/project-tracking`) and turned into a concrete ordering here, so every
+ * place that renders items shares one definition of "most important first" / "a–z" / "by ETA" instead
+ * of re-deriving the rules.
  */
 
 /** The available ways to order items; each maps to one entry in {@link ORDERING_POLICIES}. */

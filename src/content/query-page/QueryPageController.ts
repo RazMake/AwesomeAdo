@@ -3,21 +3,23 @@ import { resolveActiveView } from "../../common/bindings/QueryBinding";
 import type { ILogger } from "../../common/logging/ILogger";
 import { isAdoQueryUrl, parseAdoQueryId } from "../../common/navigation/AdoQueryRoute";
 import { isAdoConfigured, type ExtensionSettings } from "../../common/settings/ExtensionSettings";
+import type { IActiveViewOverrides } from "../active-view/IActiveViewOverrides";
 
-import { PageBlanker } from "./PageBlanker";
+import type { EnhancedViewRequest, EnhancedViewSurface } from "./EnhancedViewSurface";
 
 /** Combines the current setting and URL so enhancement never leaks outside an ADO Query route. */
 export class QueryPageController {
   private settings: ExtensionSettings | undefined;
   private bindings: QueryBindings | undefined;
-  // The last value handed to the blanker, so the enhance/plain decision is logged only when it
-  // actually flips — refresh() runs on every settings, bindings, and navigation event, and logging
+  // The last conclusion handed to the surface, so the enhance/plain decision is logged only when it
+  // actually changes — refresh() runs on every settings, bindings, and navigation event, and logging
   // each pass would flood the bounded diagnostics ring buffer.
-  private lastEnhance: boolean | undefined;
+  private lastConclusion: string | undefined;
 
   constructor(
-    private readonly blanker: PageBlanker,
+    private readonly surface: EnhancedViewSurface,
     private url: string,
+    private readonly overrides: IActiveViewOverrides,
     private readonly logger: ILogger,
   ) {}
 
@@ -36,48 +38,72 @@ export class QueryPageController {
     this.refresh();
   }
 
+  /**
+   * Re-evaluate after the user switches this session's view for the current query. The override is
+   * read live from the injected store, so this just nudges a fresh decision rather than carrying the
+   * new value — keeping one source of truth for the active view.
+   */
+  applyActiveViewOverride(): void {
+    this.refresh();
+  }
+
   private refresh(): void {
     if (!this.settings) {
       return;
     }
     const decision = this.decide(this.settings);
-    this.blanker.apply(decision.enhance);
-    if (decision.enhance !== this.lastEnhance) {
+    this.surface.apply(decision.request);
+    const conclusion = decision.request ? `enhanced:${decision.request.viewId}` : "left-on-ado";
+    if (conclusion !== this.lastConclusion) {
       // Log the conclusion together with every signal that drove it, so a "why isn't my query
       // enhanced?" report can be answered from the log alone without reproducing the page state.
       this.logger.info(
-        `Query page ${decision.enhance ? "enhanced" : "left on ADO's view"}: reason=${decision.reason}, ` +
-          `queryRoute=${isAdoQueryUrl(this.url)}, configured=${isAdoConfigured(this.settings)}, ` +
-          `queryId=${parseAdoQueryId(this.url) ?? "none"}, defaultView=${this.settings.defaultView}`,
+        `Query page ${
+          decision.request ? `enhanced with view ${decision.request.viewId}` : "left on ADO's view"
+        }: reason=${decision.reason}, queryRoute=${isAdoQueryUrl(this.url)}, ` +
+          `configured=${isAdoConfigured(this.settings)}, queryId=${parseAdoQueryId(this.url) ?? "none"}, ` +
+          `defaultView=${this.settings.defaultView}, ` +
+          `sessionOverride=${this.overrides.get(parseAdoQueryId(this.url) ?? "") ?? "none"}`,
       );
-      this.lastEnhance = decision.enhance;
+      this.lastConclusion = conclusion;
     }
   }
 
-  /** Decide whether to take over this page, returning a short machine-readable reason alongside the
-   *  boolean so the log records not just *what* was decided but *why*. */
-  private decide(settings: ExtensionSettings): { enhance: boolean; reason: string } {
-    // Only take over ("enhanced") on an actual Query route; every other ADO page stays untouched.
+  /** Decide which view (if any) takes over this page, returning a short machine-readable reason
+   *  alongside the request so the log records not just *what* was decided but *why*. */
+  private decide(settings: ExtensionSettings): {
+    request: EnhancedViewRequest | null;
+    reason: string;
+  } {
+    // Only take over on an actual Query route; every other ADO page stays untouched.
     if (!isAdoQueryUrl(this.url)) {
-      return { enhance: false, reason: "not-a-query-route" };
+      return { request: null, reason: "not-a-query-route" };
     }
     // Until the ADO settings are complete the enhanced view has nothing valid to render, so bound
-    // queries fall back to ADO's own page regardless of their per-query or default-view preference.
+    // queries fall back to ADO's own page regardless of the default view or this session's override.
     if (!isAdoConfigured(settings)) {
-      return { enhance: false, reason: "ado-not-configured" };
+      return { request: null, reason: "ado-not-configured" };
     }
     const queryId = parseAdoQueryId(this.url);
     const binding = queryId !== null ? this.bindings?.[queryId] : undefined;
     // An unbound query — and any query route with no single query id — is never enhanced: without a
     // binding there is no view to show, so the page is left as ADO's own. The global default only
-    // decides how a *bound* query with no explicit per-query override is presented.
-    if (binding === undefined) {
-      return { enhance: false, reason: "query-not-bound" };
+    // decides how a *bound* query with no in-session override is presented.
+    if (binding === undefined || queryId === null) {
+      return { request: null, reason: "query-not-bound" };
     }
-    const active = resolveActiveView(binding.active, settings.defaultView === "enhanced");
+    // The presentation is driven by the global default, flipped only by this session's override —
+    // never by a persisted per-query field, so a reopened browser always starts from the default.
+    const active = resolveActiveView(
+      this.overrides.get(queryId),
+      settings.defaultView === "enhanced",
+    );
+    if (active !== "enhanced") {
+      return { request: null, reason: "bound-standard-active" };
+    }
     return {
-      enhance: active === "enhanced",
-      reason: active === "enhanced" ? "bound-view-active" : "bound-standard-active",
+      request: { viewId: binding.view, queryId, properties: binding.properties },
+      reason: "bound-view-active",
     };
   }
 }

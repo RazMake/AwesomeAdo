@@ -907,6 +907,27 @@
             </select>
           </div>
         </div>
+
+        <div class="card">
+          <h2 class="card__title">Import / Export configuration</h2>
+          <p class="card__hint">
+            Export saves <strong>everything</strong> to an <code>AwesomeADO.config</code> file: your
+            theme, default view, current team name, sprint counts, area paths, board columns, work
+            item types, and every enhanced query (which queries are enhanced and each one's view
+            settings). Import replaces your current configuration with the contents of a file you
+            previously exported.
+          </p>
+          <div class="log-toolbar">
+            <button type="button" class="button button--subtle" id="settings-export">
+              Export…
+            </button>
+            <button type="button" class="button button--subtle" id="settings-import">
+              Import…
+            </button>
+            <input type="file" id="settings-import-file" accept=".config,application/json" hidden />
+          </div>
+          <p id="settings-transfer-status" class="card__hint" role="status" aria-live="polite"></p>
+        </div>
       </section>
 
       <section class="tabpanel" role="tabpanel" id="panel-ado" aria-labelledby="tab-ado" hidden>

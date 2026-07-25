@@ -5,14 +5,21 @@ This is a flattened snapshot of what exists now, not a build log.
 ## Implemented
 
 - **Extension runtime** (`src/`): MV3 manifest; background service worker (SPA navigation
-  forwarding + opening extension pages); content script (blanking policy, top-bar button/menu,
-  on-demand theme/query-name probes); options page (Appearance, Query Bindings, Diagnostics with a
-  component-filterable activity log).
+  forwarding + opening extension pages); content script (enhanced-view surface, top-bar button/menu,
+  on-demand theme/query-name probes); options page (Appearance with import/export, Azure DevOps
+  config, Query Bindings, Diagnostics with a component-filterable activity log).
 - **Settings** (`src/common/settings`): `theme` + `defaultView` model, `ISettingsStore` /
   `BrowserSyncSettingsStore`, composition factory.
-- **Bindings** (`src/common/bindings`): per-query binding model, view catalog, `IQueryBindingStore`
-  / `BrowserSyncQueryBindingStore` (with `bind`/`unbind`/`setActiveView`), open-page contract,
-  composition factory.
+- **Bindings** (`src/common/bindings`): per-query binding model, `IQueryBindingStore` /
+  `BrowserSyncQueryBindingStore` (with `bind`/`unbind`/`setActiveView`/`replaceAll`), open-page
+  contract, composition factory.
+- **Views** (`src/content/views`, contracts in `src/common/view-common`): per-view folders each
+  holding a `ViewType` config (in the `VIEW_TYPES` catalog) and an `EnhancedView` renderer (in the
+  `ENHANCED_VIEWS` registry), a shared placeholder shell (`renderViewScaffold`), and `sprint` /
+  `project-tracking` views. Options imports only `content/views/viewCatalog` (scoped §6 exception,
+  ADR-027, lint-enforced).
+- **Settings transfer** (`src/common/settings-transfer` + `src/options/settings-transfer`):
+  `AwesomeADO.config` export/import of the whole configuration, wired to the Appearance tab.
 - **Navigation** (`src/common/navigation`): `AdoHost` single-source host matching, query-route and
   identity parsing, navigation + theme + query-name message contracts, `NavigationNotifier`.
 - **Browser isolation** (`src/common/browser`): `ChromeSyncStorage`, the two ADO tab readers, and

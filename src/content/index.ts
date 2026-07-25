@@ -12,6 +12,7 @@ import { isAdoNavigationMessage } from "../common/navigation/AdoQueryRoute";
 import { isAdoConfigured } from "../common/settings/ExtensionSettings";
 import { createSettingsStore } from "../common/settings/createSettingsStore";
 
+import { SessionActiveViewOverrides } from "./active-view/SessionActiveViewOverrides";
 import { detectAdoQueryName } from "./ado-probe/AdoQueryNameProbe";
 import { detectAdoTheme } from "./ado-probe/AdoThemeProbe";
 import { BindingButton } from "./query-binding/BindingButton";
@@ -20,7 +21,7 @@ import {
   type QueryMenuActions,
   QueryBindingController,
 } from "./query-binding/QueryBindingController";
-import { PageBlanker } from "./query-page/PageBlanker";
+import { EnhancedViewSurface } from "./query-page/EnhancedViewSurface";
 import { QueryPageController } from "./query-page/QueryPageController";
 
 // Performance posture: this script is injected on every hosted ADO page, because host-wide
@@ -41,9 +42,15 @@ const loggers = createLoggerFactory();
 const logger = loggers.forSource("content");
 
 const store = createSettingsStore(loggers.forSource("common/settings"));
+// The in-session view choice lives here, in memory only: switching a query between its enhanced view
+// and ADO's standard page is deliberately not persisted, so a reopened browser returns every query
+// to the configured default view (see content/active-view). Shared by the page controller (to decide
+// what to render) and the top-bar menu (to check the active row and to write the user's choice).
+const sessionActiveViews = new SessionActiveViewOverrides();
 const controller = new QueryPageController(
-  new PageBlanker(document),
+  new EnhancedViewSurface(document),
   location.href,
+  sessionActiveViews,
   loggers.forSource("content/query-page"),
 );
 
@@ -80,10 +87,12 @@ const actions: QueryMenuActions = {
     void bindingStore.unbind(queryId);
   },
   setActiveView(queryId: string, active: ActiveView) {
-    logger.info(`Top-bar menu: switch query ${queryId} to ${active} view`);
-    // The store owns the read-modify-write so a concurrent change to this binding's other fields is
-    // preserved; this wiring just forwards the user's view choice.
-    void bindingStore.setActiveView(queryId, active);
+    logger.info(`Top-bar menu: switch query ${queryId} to ${active} view for this session`);
+    // Not persisted on purpose: the choice lives only in this session's in-memory override, so
+    // reopening the browser returns the query to the configured default view. Nudge the page
+    // controller to re-render immediately; the menu re-reads the override the next time it opens.
+    sessionActiveViews.set(queryId, active);
+    controller.applyActiveViewOverride();
   },
   viewLog() {
     logger.info("Top-bar menu: view log");
@@ -96,6 +105,7 @@ const bindingController = new QueryBindingController(
   new BindingMenu(document),
   actions,
   location.href,
+  sessionActiveViews,
   loggers.forSource("content/query-binding"),
 );
 
