@@ -6,6 +6,23 @@ export interface FeatureCrewApplyConfig {
   state?: string;
   rootRelationUrl?: string;
   affectedByRel?: string;
+  /**
+   * Org-level work-items base (`.../workitems`), required for `create`. ADO process rules reject
+   * creating an item directly in a closed state such as "Removed", so create runs in two steps and
+   * this base lets it build the id-scoped URL for the follow-up state transition once the id exists.
+   */
+  itemBaseUrl?: string;
+}
+
+/**
+ * Outcome of a feature-crew write. On success `id` is the work item's numeric id and `error` is
+ * absent; on any failure `id` is `null` and `error` carries the specific reason (HTTP status plus
+ * ADO's error message, a malformed-body note, or the thrown value) so the caller can log exactly
+ * why the write was rejected instead of a bare "write failed".
+ */
+export interface FeatureCrewApplyResult {
+  id: number | null;
+  error?: string;
 }
 
 /**
@@ -21,49 +38,112 @@ export interface FeatureCrewApplyConfig {
  * helper — only its parameters and page globals (`fetch`, `Promise`, `JSON`). Promise chaining (not
  * async/await) avoids any transpiler helper being hoisted out of the function body.
  *
- * NOTE: Creating a work item directly in the "Removed" state may be rejected by some ADO process
- * transition rules, in which case the POST returns non-ok and this resolves null (the caller degrades
- * and logs).
+ * NOTE: ADO process transition rules reject creating a work item directly in a closed state such as
+ * "Removed". The `create` path therefore runs in two steps against the page's session: first POST the
+ * item in its default new state, then immediately PATCH it to the requested `state`. If either step
+ * is rejected this resolves `{ id: null, error }` carrying the HTTP status and ADO's message (the
+ * caller degrades and logs that detail).
  */
 export function applyFeatureCrewInPage(
   config: FeatureCrewApplyConfig,
-): Promise<{ id: number } | null> {
-  let ops: unknown[];
-  let method: string;
+): Promise<FeatureCrewApplyResult> {
+  // Send one json-patch request and resolve to the parsed body on success, or a `{ error }` shape
+  // carrying ADO's specific reason (status + message) on any non-ok / read failure. Defined inline
+  // (not imported) because this whole function is serialized and injected into the ADO MAIN world.
+  const sendJsonPatch = (
+    url: string,
+    method: string,
+    ops: unknown[],
+  ): Promise<{ body: unknown } | { error: string }> =>
+    fetch(url, {
+      method,
+      credentials: "include",
+      headers: { "Content-Type": "application/json-patch+json", Accept: "application/json" },
+      body: JSON.stringify(ops),
+    }).then((response) => {
+      if (response.ok) {
+        return response.json().then((body) => ({ body }));
+      }
+      // Non-ok: read ADO's error body so the reason (e.g. a process rule blocking the state
+      // transition, a permission error, or an optimistic-concurrency conflict) reaches the log. ADO
+      // returns a JSON envelope whose `message` is the human-readable cause; fall back to the raw
+      // text, then to just the status, so a failure can never be logged without at least the code.
+      return response.text().then(
+        (text) => {
+          let detail = text;
+          try {
+            const parsed = JSON.parse(text) as { message?: unknown };
+            if (typeof parsed.message === "string" && parsed.message.length > 0) {
+              detail = parsed.message;
+            }
+          } catch {
+            // Body was not JSON (e.g. an HTML sign-in page); keep the raw text as the detail.
+          }
+          const suffix = detail.length > 0 ? ": " + detail : "";
+          return { error: "HTTP " + String(response.status) + suffix };
+        },
+        () => ({ error: "HTTP " + String(response.status) }),
+      );
+    });
 
-  if (config.mode === "create") {
-    ops = [
-      { op: "add", path: "/fields/System.Title", value: config.title },
-      { op: "add", path: "/fields/System.State", value: config.state },
+  const readId = (body: unknown): number | null => {
+    const id = (body as { id?: unknown } | null)?.id;
+    return typeof id === "number" ? id : null;
+  };
+
+  if (config.mode === "update") {
+    const ops = [
       { op: "add", path: "/fields/System.Description", value: config.description },
-      {
-        op: "add",
-        path: "/relations/-",
-        value: { rel: config.affectedByRel, url: config.rootRelationUrl },
-      },
+      // Render System.Description as Markdown; without this ADO stores the field as HTML and
+      // collapses the roster's newlines onto one line, so every crew member runs into the title.
+      { op: "add", path: "/multilineFieldsFormat/System.Description", value: "Markdown" },
     ];
-    method = "POST";
-  } else {
-    ops = [{ op: "add", path: "/fields/System.Description", value: config.description }];
-    method = "PATCH";
+    return sendJsonPatch(config.url, "PATCH", ops)
+      .then((result) => {
+        if ("error" in result) {
+          return { id: null, error: result.error };
+        }
+        const id = readId(result.body);
+        // A 2xx with no numeric id means ADO accepted the request but returned a shape we can't act
+        // on; surface that so the caller logs the anomaly instead of a generic failure.
+        return id === null ? { id: null, error: "response had no numeric work item id" } : { id };
+      })
+      .catch((err) => ({ id: null, error: String(err) }));
   }
 
-  return fetch(config.url, {
-    method,
-    credentials: "include",
-    headers: { "Content-Type": "application/json-patch+json", Accept: "application/json" },
-    body: JSON.stringify(ops),
-  })
-    .then((response) => (response.ok ? response.json() : null))
-    .catch(() => null)
-    .then((body) => {
-      if (body === null) {
-        return null;
+  // Create in the default new state (no System.State op), then transition to the requested closed
+  // state, because ADO rejects a direct create into "Removed".
+  const createOps = [
+    { op: "add", path: "/fields/System.Title", value: config.title },
+    { op: "add", path: "/fields/System.Description", value: config.description },
+    // Render System.Description as Markdown; without this ADO stores the field as HTML and collapses
+    // the roster's newlines onto one line, so every crew member runs into the title.
+    { op: "add", path: "/multilineFieldsFormat/System.Description", value: "Markdown" },
+    {
+      op: "add",
+      path: "/relations/-",
+      value: { rel: config.affectedByRel, url: config.rootRelationUrl },
+    },
+  ];
+  return sendJsonPatch(config.url, "POST", createOps)
+    .then((created) => {
+      if ("error" in created) {
+        return { id: null, error: created.error };
       }
-      const id = (body as { id?: unknown }).id;
-      if (typeof id === "number") {
+      const id = readId(created.body);
+      if (id === null) {
+        return { id: null, error: "response had no numeric work item id" };
+      }
+      const transitionUrl = config.itemBaseUrl + "/" + String(id) + "?api-version=7.1";
+      const stateOps = [{ op: "add", path: "/fields/System.State", value: config.state }];
+      return sendJsonPatch(transitionUrl, "PATCH", stateOps).then((transitioned) => {
+        if ("error" in transitioned) {
+          // The item exists but is stuck in its new state; report the transition failure with the id
+          // so the caller can log which item needs cleanup.
+          return { id: null, error: transitioned.error };
+        }
         return { id };
-      }
-      return null;
-    });
+      });
+    })
+    .catch((err) => ({ id: null, error: String(err) }));
 }

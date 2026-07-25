@@ -30,7 +30,10 @@ response-parsing logic, kept pure so they are unit-testable without a browser.
 
 ### `TrackedWorkItem.ts`
 
-- `TrackedUser` — a work item's user field (`displayName`, `uniqueName`, `imageUrl`).
+- `TrackedUser` — a work item's user field (`displayName`, `uniqueName`, `imageUrl`, `tag`). `tag` is
+  the person's Feature Crew tag, resolved from the roster after the tree loads (the ADO tree carries
+  no tag): `undefined` = not yet resolved, `null` = resolved but untagged (shown as the "??" pill), a
+  string = the assigned crew tag.
 - `TrackedWorkItem` — the normalized work-item tree model for Project Tracking views; carries its
   `children`, ISO 8601 date strings (`createdDate`, `changedDate`, `eta`), and typed user references.
 - `TypeCatalogEntry` — `{ name, color, icon, etaField, columns }` for each work item type in the
@@ -38,11 +41,40 @@ response-parsing logic, kept pure so they are unit-testable without a browser.
   team's application state) plus the ADO state names routed onto it, with `states[0]` being the
   primary state written back to ADO when a user moves an item into that column.
 - `TrackedTypeColumn` — `{ column, states }` for one board column and its routed ADO states.
-- `SprintRef` — `{ path, name }` for sprint references.
+
+### `TeamIteration.ts`
+
+- `SprintTimeFrame` — `"past" | "current" | "future"`, ADO's own classification of where an
+  iteration sits relative to today (exactly one iteration is `current`).
+- `TeamIteration` — `{ path, name, timeFrame }` for one of a team's iterations (sprints).
+- `buildAdoIterationsUrl(href, team)` — builds the team-scoped `teamsettings/iterations` REST URL for
+  a project-scoped ADO `href`, or `null` when the URL is not project-scoped or `team` is blank.
+- `parseTeamIterations(body)` — best-effort parse of the raw iterations body into `TeamIteration[]`,
+  preserving ADO's chronological order.
+
+### `sprintWindow.ts`
+
+- `SprintWindowEntry` — `{ path, name, label }` for one decorated sprint option; `label` is the
+  relative caption (e.g. `Current - Sprint 5`), `name` stays the raw sprint name used for filtering.
+- `SprintWindow` — `{ entries, currentName }`; the windowed sprints plus the name to select by default.
+- `SprintWindowBounds` — `{ pastCount, futureCount }`.
+- `buildSprintWindow(iterations, bounds)` — centres a window on the current sprint (falling back to
+  the nearest upcoming, else the last) and labels each entry by its offset from the current one.
+
+### `ITeamIterationsLoader.ts`
+
+- `ITeamIterationsLoader` — loads a team's iterations in chronological order; the real implementation
+  fetches from Azure DevOps, a test fake returns canned data.
 
 ### `IWorkItemTreeLoader.ts`
 
-- `WorkItemTreeResult` — `{ isTreeQuery, roots, error }`; returned by the tree loader.
+- `WorkItemTreeResult` — `{ isTreeQuery, roots, error, folderPath? }`; returned by the tree loader.
+  `folderPath` is the query's ancestor-folder trail (outermost → nearest), trimmed to the two nearest
+  folders, used for the view header breadcrumbs; the real loader always populates it, test fakes may
+  omit it (treated as empty).
+- `QueryFolderCrumb` — `{ label, path }` for one folder in the trail: `label` is the folder's own
+  name (what the breadcrumb shows); `path` is its full path from the root (root container included)
+  so a caller can build the folder's ADO link.
 - `IWorkItemTreeLoader` — loads a query's work items into the `TrackedWorkItem` tree; the real
   implementation fetches from Azure DevOps, a placeholder returns empty + a "coming soon" message.
 
@@ -81,27 +113,57 @@ response-parsing logic, kept pure so they are unit-testable without a browser.
 ### `fetchAdoTree.ts`
 
 - `buildAdoTreeUrls(href, queryId)` — parses the org/project from the tab URL and returns the
-  `{ wiqlUrl, batchUrl }` to fetch for running a saved tree query, or `null` for a non-project URL.
+  `{ wiqlUrl, batchUrl, queryUrl }` to fetch for running a saved tree query, or `null` for a
+  non-project URL. `queryUrl` is the query-metadata endpoint, read for the query's folder `path`.
 - `buildWorkItemUpdateUrl(href, id)` — parses the org from the tab URL and returns the org-scoped
   work-item update URL (`{base}/_apis/wit/workitems/{id}?api-version=7.1`), or `null` for a
   non-ADO/unresolvable URL. Work items are org-scoped, not project-scoped, so the project segment is
   discarded from the URL.
 - `parseTrackedTree(raw, etaFieldByType)` — parses the raw WIQL + batch REST bodies into the
   normalized `TrackedWorkItem` tree; **best-effort** (missing/malformed input yields
-  `{ isTreeQuery:false, roots:[], error }` or an empty tree). Guards cycles and depth. Accepts batch
-  items as either a bare array or `{ value: [...] }`. Hydrates each node's fields from the batch,
-  strips HTML from descriptions, decodes entities, and pulls ETA from the per-type field map.
+  `{ isTreeQuery:false, roots:[], error, folderPath }` or an empty tree). Guards cycles and depth.
+  Accepts batch items as either a bare array or `{ value: [...] }`. Hydrates each node's fields from
+  the batch, strips HTML from descriptions, decodes entities, and pulls ETA from the per-type field
+  map. Also derives `folderPath` from the optional query-metadata body via `parseQueryFolderPath`.
+- `parseQueryFolderPath(rawQuery)` — extracts the query's ancestor-folder trail (outermost → nearest)
+  from the raw query-metadata body as `QueryFolderCrumb[]`: splits its `path` on either separator
+  (`/` or `\`), drops the leaf (the query's own name) and the built-in root container
+  (`Shared Queries`/`My Queries`) from the display, and keeps only the two nearest folders (parent +
+  grandparent). Each crumb still carries its full path (root included) so its link resolves. A query
+  saved directly under a root yields `[]`. **Best-effort** (missing/malformed body yields `[]`).
+- `buildQueryFolderUrl(href, folderPath)` — builds the ADO query-hub folder link
+  (`{base}/{project}/_queries/folder/?path={path}`) that opens a folder's contents, percent-encoding
+  each path segment while keeping the separators literal; `null` when `href` is not a project-scoped
+  ADO URL.
 - `TRACKING_FIELDS` — the readonly array of System.* field reference names fetched for tree queries.
-- `AdoRawTree` — `{ wiql, items }` shape wrapping the raw REST bodies before parsing.
-- `AdoTreeUrls` — `{ wiqlUrl, batchUrl }` shape `buildAdoTreeUrls` returns.
+- `AdoRawTree` — `{ wiql, items, query? }` shape wrapping the raw REST bodies before parsing;
+  `query` is the best-effort query-metadata body (may be absent when that read fails).
+- `AdoTreeUrls` — `{ wiqlUrl, batchUrl, queryUrl }` shape `buildAdoTreeUrls` returns.
+
+### `FeatureCrew.ts`
+
+- `FeatureCrewMember` — one roster line: `{ alias, fullName, tag }`. `FeatureCrewAssignee` —
+  `{ alias, fullName }`, a person distilled to what a roster line needs.
+- `deriveAlias` / `collectFeatureCrewAssignees` / `parseFeatureCrewDescription` /
+  `formatFeatureCrewDescription` / `mergeFeatureCrew` / `buildFeatureCrewUrls` — the pure value logic
+  that parses, formats, merges, and locates the roster item (the credentialed reads/writes run in the
+  ADO page's MAIN world).
+- `applyFeatureCrewTags(roots, members)` — projects each roster member's tag onto the matching
+  `assignedTo` across the tree (matched by alias, case-insensitively); a person absent from the roster
+  or with an empty tag is set to `null` (the neutral "??" bucket).
+- `collectAssignedTags(roots)` — the distinct tags worn by assigned people across the tree, first-seen
+  order, with `null` (the "??" bucket) appended last when any assignee has no tag. Unassigned items
+  contribute nothing.
 
 ### `IFeatureCrewWriter.ts`
 
 - `FeatureCrewReconcileRequest` — `{ rootId, typeName, assignees }`; the request to reconcile a
   Feature Crew work item (create or update the roster so it contains all currently assigned people).
-- `FeatureCrewReconcileResult` — `{ ok, changed, id? }`; the result of reconciling the Feature Crew
-  work item; `ok` indicates success, `changed` is true when at least one person was added to the
-  roster, and `id` is the Feature Crew work item's id when the reconcile succeeded.
+- `FeatureCrewReconcileResult` — `{ ok, changed, id?, members? }`; the result of reconciling the
+  Feature Crew work item; `ok` indicates success, `changed` is true when at least one person was added
+  to the roster, `id` is the Feature Crew work item's id when the reconcile succeeded, and `members`
+  is the reconciled roster (each person with their hand-set tag) so callers can project tags onto the
+  tree.
 - `IFeatureCrewWriter` — reconciles the Feature Crew work item: finds or creates the dedicated roster
   (a single item parked in `Removed` with a fixed title and "Affected By" relation to the project
   root), merges the given assignees into it, and patches when at least one person was added. The real

@@ -10,12 +10,11 @@ describe("renderDateLabel", () => {
     expect(label.className).toBe("awesomeado-date");
   });
 
-  it("sets a tooltip with the full PST datetime", () => {
+  it("sets a tooltip with the PST time only", () => {
     const label = renderDateLabel(document, "2026-07-24T15:30:00Z");
 
-    // The tooltip carries the "@ h:mm AM/PM PST" format.
-    expect(label.title).toContain("07/24/2026");
-    expect(label.title).toContain("PST");
+    // The tooltip carries the "@ h:mm AM/PM PST" time and omits the date.
+    expect(label.title).toBe("@ 8:30 AM PST");
   });
 
   it("renders a dash for empty ISO strings and no tooltip", () => {

@@ -160,7 +160,13 @@ export class DiagnosticsController {
     message.className = "log-row__message";
     message.textContent = entry.message;
 
-    row.append(time, level, source, message);
+    // Keep the metadata (time/level/source) and the message on one line so only the message text
+    // wraps within its remaining width — the segments never break apart onto separate lines.
+    const line = doc.createElement("div");
+    line.className = "log-row__line";
+    line.append(time, level, source, message);
+
+    row.append(line);
     if (entry.detail !== undefined) {
       const detail = doc.createElement("pre");
       detail.className = "log-row__detail";

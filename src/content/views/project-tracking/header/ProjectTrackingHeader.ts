@@ -8,7 +8,8 @@
  *
  * Layout (a single subtle-filled tile so it reads as a card):
  *
- *   Folder \ Folder \ …                                             (clickable breadcrumbs)
+ *   Folder / Folder / …                                             (clickable breadcrumbs)
+ *                                                    Saving N changes… (write-queue status, right)
  *   Title                         + −                               Sprint Picker
  *   TechLead  ETA
  *
@@ -44,6 +45,11 @@ export interface ProjectTrackingHeaderOptions {
   now: Date;
   /** The sprint picker control element, pinned to the right of the controls band. */
   sprintPicker: HTMLElement;
+  /**
+   * The write-queue status indicator, mounted on its own row directly above the sprint picker so it
+   * reports in-flight saves without disturbing the title band. Null/omitted hides the row entirely.
+   */
+  writeQueueStatus?: HTMLElement | null;
 }
 
 /** The mounted header plus the two board-wide controls the view still needs to wire to the tree. */
@@ -68,10 +74,11 @@ function renderBandButton(doc: Document, className: string, glyph: string): HTML
     "cursor:pointer",
     "border:1px solid rgba(128,128,128,0.5)",
     "border-radius:6px",
-    "padding:4px 8px",
+    "padding:8px 8px",
     "background:var(--palette-neutral-4, rgba(128,128,128,0.08))",
     "color:var(--text-primary-color, #323130)",
     "font-size:14px",
+    "font-weight:bold",
     "line-height:1",
   ].join(";");
   return button;
@@ -94,7 +101,7 @@ function renderInfoColumn(doc: Document, options: ProjectTrackingHeaderOptions):
 
   const techLeadRow = doc.createElement("div");
   techLeadRow.className = "awesomeado-tracking__techlead-row";
-  techLeadRow.style.cssText = ["display:flex", "align-items:center", "gap:8px"].join(";");
+  techLeadRow.style.cssText = ["display:flex", "align-items:center", "gap:16px"].join(";");
   if (options.techLead) {
     techLeadRow.append(options.techLead);
   }
@@ -117,15 +124,18 @@ export function renderProjectTrackingHeader(
   header.className = "awesomeado-tracking__header";
   // Read as a raised "card" on any theme. In "Follow ADO" nothing is pinned, so ADO's own
   // --palette-neutral-4 (an OPAQUE near-surface color) would match the page and erase the tile;
-  // painting the raised callout surface (which ADO keeps distinct from the page) plus a themed
-  // border and elevation shadow keeps the card visible even when its fill matches the background.
+  // painting the raised callout surface (which ADO keeps distinct from the page) plus a border and
+  // elevation shadow keeps the card visible even when its fill matches the background. The border is
+  // a fixed grey (not --palette-neutral-20): in "Follow ADO" that token resolves to ADO's own value,
+  // which is too faint on the callout surface and made the card's outline vanish — the same reason
+  // the +/- band buttons already pin a fixed grey. The pinned themes read identically to before.
   header.style.cssText = [
     "display:flex",
     "flex-direction:column",
     "gap:8px",
     "padding:16px",
     "background:var(--callout-background-color, var(--palette-neutral-4, rgba(128,128,128,0.08)))",
-    "border:1px solid var(--palette-neutral-20, rgba(128,128,128,0.2))",
+    "border:1px solid rgba(128,128,128,0.35)",
     "border-radius:6px",
     "box-shadow:0 1px 3px var(--palette-neutral-20, rgba(0,0,0,0.12))",
     "margin-bottom:16px",
@@ -139,11 +149,23 @@ export function renderProjectTrackingHeader(
     header.append(breadcrumbs);
   }
 
+  // A dedicated row directly above the controls band so the "Saving…" indicator appears over the
+  // sprint picker without reflowing the title/tech-lead layout. Right-aligned to line up with the
+  // sprint picker it reports on; the indicator hides itself while idle, so the row reserves no
+  // visible space until a save is actually in flight.
+  if (options.writeQueueStatus) {
+    const writeStatusRow = doc.createElement("div");
+    writeStatusRow.className = "awesomeado-tracking__write-status-row";
+    writeStatusRow.style.cssText = ["display:flex", "justify-content:flex-end"].join(";");
+    writeStatusRow.append(options.writeQueueStatus);
+    header.append(writeStatusRow);
+  }
+
   // The controls band shares one row with the info column and is vertically centred against it, so
   // the +/− buttons line up with the middle of the two-line title/tech-lead block.
   const mainRow = doc.createElement("div");
   mainRow.className = "awesomeado-tracking__header-main";
-  mainRow.style.cssText = ["display:flex", "align-items:center", "gap:16px"].join(";");
+  mainRow.style.cssText = ["display:flex", "align-items:center", "gap:32px"].join(";");
 
   mainRow.append(renderInfoColumn(doc, options));
 

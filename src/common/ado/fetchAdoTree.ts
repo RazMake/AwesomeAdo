@@ -1,4 +1,4 @@
-import type { WorkItemTreeResult } from "./IWorkItemTreeLoader";
+import type { QueryFolderCrumb, WorkItemTreeResult } from "./IWorkItemTreeLoader";
 import type { TrackedUser, TrackedWorkItem } from "./TrackedWorkItem";
 import { resolveAdoProjectContext } from "./fetchAdoMetadata";
 
@@ -27,17 +27,25 @@ export const TRACKING_FIELDS: readonly string[] = [
   "System.Parent",
 ];
 
-/** The raw JSON bodies from the two ADO REST calls, before parsing into the normalized tree. */
+/** The raw JSON bodies from the ADO REST calls, before parsing into the normalized tree. */
 export interface AdoRawTree {
   /** The `_apis/wit/wiql/{id}` response body (carries queryType + workItemRelations/workItems). */
   wiql: unknown;
   /** The accumulated `_apis/wit/workitemsbatch` result items (array of { id, rev, fields }). */
   items: unknown;
+  /**
+   * The `_apis/wit/queries/{id}` response body (a `QueryHierarchyItem`), read only for its `path` so
+   * the view can show where the query lives. `null` when the metadata call failed — the breadcrumb
+   * simply hides rather than blocking the tree.
+   */
+  query?: unknown;
 }
 
 export interface AdoTreeUrls {
   wiqlUrl: string;
   batchUrl: string;
+  /** The query-metadata endpoint, read for the query's folder `path` (see `parseQueryFolderPath`). */
+  queryUrl: string;
 }
 
 /**
@@ -54,7 +62,78 @@ export function buildAdoTreeUrls(href: string, queryId: string): AdoTreeUrls | n
   return {
     wiqlUrl: `${base}/${project}/_apis/wit/wiql/${encodedQueryId}?api-version=${API_VERSION}`,
     batchUrl: `${base}/${project}/_apis/wit/workitemsbatch?api-version=${API_VERSION}`,
+    queryUrl: `${base}/${project}/_apis/wit/queries/${encodedQueryId}?api-version=${API_VERSION}`,
   };
+}
+
+// ADO's two built-in top-level query containers. A query's `path` always starts with one of these,
+// but neither is a folder the user filed the query into, so the breadcrumb starts below them.
+const WELL_KNOWN_QUERY_ROOTS: ReadonlySet<string> = new Set(["shared queries", "my queries"]);
+
+// The header shows only the query's parent and its parent's parent — the two nearest folders — so a
+// deep trail is trimmed to those, matching how a reader thinks about "where does this live".
+const MAX_FOLDER_CRUMBS = 2;
+
+/**
+ * Extract the query's ancestor-folder trail (outermost → nearest) from the raw query-metadata body.
+ *
+ * ADO returns the query's location as a separated `path` whose LAST segment is the query name itself
+ * and whose FIRST segment is the built-in root container ("Shared Queries"/"My Queries"). The
+ * breadcrumb shows only the folders *between* those two — the query's real parent folders — so a
+ * query saved directly under a root yields an empty trail rather than echoing the root or the query
+ * name. Only the two nearest folders survive (parent + grandparent); a deeper chain is trimmed.
+ * Best-effort: a missing/malformed body (the metadata call is allowed to fail) yields `[]`.
+ *
+ * Each surviving crumb carries its FULL path from the root (root container included) so a caller can
+ * build the folder's ADO link: the display drops the root container, but a folder is *addressed* by
+ * its whole ancestry, so the path is kept intact inside the crumb even though it is not shown.
+ *
+ * The separator is normalized across `/` and `\`: the REST samples use forward slashes, but real
+ * responses (and the ADO UI itself) also surface backslash-separated paths, and treating the wrong
+ * one as a single opaque segment would silently collapse the whole trail to empty.
+ */
+export function parseQueryFolderPath(rawQuery: unknown): QueryFolderCrumb[] {
+  const path = (rawQuery as { path?: unknown } | null)?.path;
+  if (typeof path !== "string" || path.length === 0) {
+    return [];
+  }
+  const segments = path.split(/[/\\]/).filter((segment) => segment.length > 0);
+  // Drop the leaf: the last segment is the query's own name, not a folder.
+  segments.pop();
+  // Anchor each folder to its full path from the root so its link resolves; the paths always use "/"
+  // regardless of which separator the source `path` used, because that is the separator ADO's folder
+  // deep link expects.
+  const crumbs: QueryFolderCrumb[] = segments.map((label, index) => ({
+    label,
+    path: segments.slice(0, index + 1).join("/"),
+  }));
+  // Drop the built-in root container from the DISPLAY trail (it is not a folder the user chose) while
+  // keeping it inside each surviving crumb's `path` so the link still resolves.
+  if (crumbs.length > 0 && WELL_KNOWN_QUERY_ROOTS.has((crumbs[0]?.label ?? "").toLowerCase())) {
+    crumbs.shift();
+  }
+  return crumbs.slice(-MAX_FOLDER_CRUMBS);
+}
+
+/**
+ * Build the ADO web URL that opens a query folder's contents, or null when `href` is not a
+ * project-scoped ADO location. ADO's query hub deep-links a folder through a `path` query parameter
+ * (`_queries/folder/?path=…`) whose slashes stay literal, so the caller passes the folder's full
+ * path (root container included) exactly as `parseQueryFolderPath` produced it.
+ */
+export function buildQueryFolderUrl(href: string, folderPath: string): string | null {
+  const resolved = resolveAdoProjectContext(href);
+  if (resolved === null) {
+    return null;
+  }
+  const { base, project } = resolved;
+  // Percent-encode each segment but keep the separators literal: ADO reads the whole `path` value as
+  // a slash-delimited folder hierarchy, so an encoded slash (`%2F`) would collapse it to one name.
+  const encodedPath = folderPath
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+  return `${base}/${project}/_queries/folder/?path=${encodedPath}`;
 }
 
 /**
@@ -88,10 +167,15 @@ export function parseTrackedTree(
   raw: AdoRawTree,
   etaFieldByType: ReadonlyMap<string, string>,
 ): WorkItemTreeResult {
+  // The query's location is fetched alongside the tree in the same page-world pass, so it is
+  // available even when the tree itself is empty or failed; surface it on every result path so the
+  // header can show the breadcrumb regardless of the tree outcome.
+  const folderPath = parseQueryFolderPath(raw.query);
   const loadFailure: WorkItemTreeResult = {
     isTreeQuery: false,
     roots: [],
     error: "Could not load this query from Azure DevOps.",
+    folderPath,
   };
 
   // A missing/malformed WIQL body means the fetch itself failed (the in-page fetcher returns
@@ -108,7 +192,7 @@ export function parseTrackedTree(
   // A well-formed body that is not a tree query is not an error: the view shows its "needs a tree
   // query" message rather than a failure.
   if (typedWiql.queryType !== "tree") {
-    return { isTreeQuery: false, roots: [], error: null };
+    return { isTreeQuery: false, roots: [], error: null, folderPath };
   }
 
   const relations = typedWiql.workItemRelations;
@@ -169,7 +253,7 @@ export function parseTrackedTree(
     }
   }
 
-  return { isTreeQuery: true, roots, error: null };
+  return { isTreeQuery: true, roots, error: null, folderPath };
 }
 
 /**

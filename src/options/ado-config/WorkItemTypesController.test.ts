@@ -4,7 +4,6 @@ import type { AdoWorkItemType } from "../../common/ado/AdoMetadata";
 import type { StorageObservation } from "../../common/browser/observeSyncKeys";
 import {
   DEFAULT_SETTINGS,
-  MAX_BOARD_COLUMNS,
   type ExtensionSettings,
   type WorkItemType,
 } from "../../common/settings/ExtensionSettings";
@@ -72,11 +71,10 @@ function makeElements(): WorkItemTypesElements {
   table.append(thead, body);
   const empty = document.createElement("p");
   const addTypeButton = document.createElement("button");
-  const addColumnButton = document.createElement("button");
   const etaBody = document.createElement("div");
   const etaEmpty = document.createElement("p");
-  document.body.append(table, empty, addTypeButton, addColumnButton, etaBody, etaEmpty);
-  return { columnsRow, body, empty, addTypeButton, addColumnButton, etaBody, etaEmpty };
+  document.body.append(table, empty, addTypeButton, etaBody, etaEmpty);
+  return { columnsRow, body, empty, addTypeButton, etaBody, etaEmpty };
 }
 
 function rows(elements: WorkItemTypesElements): HTMLElement[] {
@@ -251,23 +249,15 @@ afterEach(() => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("WorkItemTypesController — enablement", () => {
-  it("disables both add buttons until enabled", () => {
+  it("disables the add-type button until enabled", () => {
     const elements = makeElements();
     const controller = new WorkItemTypesController(new FakeSettingsStore(), elements, () => {});
     expect(elements.addTypeButton.disabled).toBe(true);
-    expect(elements.addColumnButton.disabled).toBe(true);
 
     controller.render([], ["Active"]);
     controller.enable();
 
     expect(elements.addTypeButton.disabled).toBe(false);
-    expect(elements.addColumnButton.disabled).toBe(false);
-  });
-
-  it("keeps the add-column button disabled once the column cap is reached", () => {
-    const columns = Array.from({ length: MAX_BOARD_COLUMNS }, (_, index) => `Col ${index + 1}`);
-    const { elements } = setup({ boardColumns: columns });
-    expect(elements.addColumnButton.disabled).toBe(true);
   });
 });
 
@@ -438,33 +428,10 @@ describe("WorkItemTypesController — type picker visibility", () => {
 });
 
 describe("WorkItemTypesController — columns", () => {
-  it("adds a board column with a generated name and a cell in every row, and persists it", () => {
-    const { store, elements } = setup({ boardColumns: ["Active"] });
-    const row = addTypeRow(elements, "Bug");
+  it("renders no per-column delete button (columns are a fixed set)", () => {
+    const { elements } = setup({ boardColumns: ["Active", "Resolved"] });
 
-    elements.addColumnButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-
-    expect(columnNames(elements)).toEqual(["Active", "New state"]);
-    expect(cells(row)).toHaveLength(2);
-    expect(store.writeCalls.at(-1)).toEqual({ boardColumns: ["Active", "New state"] });
-  });
-
-  it("generates a unique default name when adding repeated columns", () => {
-    const { elements } = setup({ boardColumns: [] });
-
-    elements.addColumnButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    elements.addColumnButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-
-    expect(columnNames(elements)).toEqual(["New state", "New state 2"]);
-  });
-
-  it("does not add a column beyond the cap", () => {
-    const columns = Array.from({ length: MAX_BOARD_COLUMNS }, (_, index) => `Col ${index + 1}`);
-    const { elements } = setup({ boardColumns: columns });
-
-    elements.addColumnButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-
-    expect(columnHeaders(elements)).toHaveLength(MAX_BOARD_COLUMNS);
+    expect(elements.columnsRow.querySelector('[data-role="column-delete"]')).toBeNull();
   });
 
   it("renames a column and persists both the columns and the type mappings", () => {
@@ -502,24 +469,6 @@ describe("WorkItemTypesController — columns", () => {
     commit(columnNameInput(columnHeaderAt(elements, 1)), "active");
 
     expect(columnNames(elements)).toEqual(["Active", "Resolved"]);
-  });
-
-  it("removes a column, drops its cells, and frees its states back into the pool", () => {
-    const { store, elements } = setup({ boardColumns: ["Active", "Resolved"] });
-    const row = addTypeRow(elements, "Bug");
-    commit(stateInput(cellAt(row, 0)), "New");
-
-    clickRole(columnHeaderAt(elements, 0), "column-delete");
-
-    expect(columnNames(elements)).toEqual(["Resolved"]);
-    expect(cells(row)).toHaveLength(1);
-    expect(store.writeCalls.at(-1)).toEqual({
-      boardColumns: ["Resolved"],
-      workItemTypes: [{ name: "Bug", color: "CC293D", icon: "https://ado/bug", columns: [] }],
-    });
-    // "New" is free again: it can be placed in the remaining column.
-    commit(stateInput(cellAt(row, 0)), "New");
-    expect(chips(cellAt(row, 0))).toEqual(["New"]);
   });
 });
 
@@ -937,15 +886,13 @@ describe("WorkItemTypesController — type picker dropdown", () => {
 });
 
 describe("WorkItemTypesController — disposal", () => {
-  it("stops responding to the add buttons after dispose", () => {
+  it("stops responding to the add-type button after dispose", () => {
     const { elements, controller } = setup({ boardColumns: ["Active"] });
     controller.dispose();
 
     elements.addTypeButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    elements.addColumnButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
     expect(rows(elements)).toHaveLength(0);
-    expect(columnHeaders(elements)).toHaveLength(1);
   });
 });
 

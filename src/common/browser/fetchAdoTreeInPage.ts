@@ -17,6 +17,7 @@ export function fetchAdoTreeInPage(
   wiqlUrl: string,
   batchUrl: string,
   fields: string[],
+  queryUrl: string,
 ): Promise<AdoRawTree> {
   // Bound the ids-to-hydrate and batch-page counts so a misbehaving/huge query can never turn this
   // into an unbounded number of page-world fetches.
@@ -24,7 +25,16 @@ export function fetchAdoTreeInPage(
   const PAGE_SIZE = 200;
   const MAX_BATCH_PAGES = 100;
 
-  return fetch(wiqlUrl, { credentials: "include", headers: { Accept: "application/json" } })
+  // The query's metadata (for its folder `path`) is an independent, best-effort read: it must never
+  // block or fail the tree load, so it runs in parallel and degrades to `null` on any error.
+  const queryMeta = fetch(queryUrl, {
+    credentials: "include",
+    headers: { Accept: "application/json" },
+  })
+    .then((response) => (response.ok ? response.json() : null))
+    .catch(() => null);
+
+  const tree = fetch(wiqlUrl, { credentials: "include", headers: { Accept: "application/json" } })
     .then((response) =>
       response.ok ? response.json() : Promise.reject(new Error("wiql request failed")),
     )
@@ -96,5 +106,13 @@ export function fetchAdoTreeInPage(
 
       return readBatchPage(0, MAX_BATCH_PAGES).then(() => ({ wiql, items }));
     })
-    .catch(() => ({ wiql: null, items: [] }));
+    .catch(() => ({ wiql: null, items: [] as unknown[] }));
+
+  // Fold the best-effort query metadata into the tree result once both settle. Promise.all keeps the
+  // metadata failure isolated (it already resolved to `null`), so the tree still returns normally.
+  return Promise.all([tree, queryMeta]).then(([treeResult, query]) => ({
+    wiql: treeResult.wiql,
+    items: treeResult.items,
+    query,
+  }));
 }

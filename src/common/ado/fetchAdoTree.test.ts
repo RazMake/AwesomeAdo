@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildAdoTreeUrls,
+  buildQueryFolderUrl,
   buildWorkItemUpdateUrl,
+  parseQueryFolderPath,
   parseTrackedTree,
   TRACKING_FIELDS,
   type AdoRawTree,
@@ -35,6 +37,7 @@ describe("buildAdoTreeUrls", () => {
     expect(urls).toEqual({
       wiqlUrl: "https://dev.azure.com/contoso/web/_apis/wit/wiql/abc-123?api-version=7.1",
       batchUrl: "https://dev.azure.com/contoso/web/_apis/wit/workitemsbatch?api-version=7.1",
+      queryUrl: "https://dev.azure.com/contoso/web/_apis/wit/queries/abc-123?api-version=7.1",
     });
   });
 
@@ -43,6 +46,7 @@ describe("buildAdoTreeUrls", () => {
     expect(urls).toEqual({
       wiqlUrl: "https://contoso.visualstudio.com/web/_apis/wit/wiql/xyz?api-version=7.1",
       batchUrl: "https://contoso.visualstudio.com/web/_apis/wit/workitemsbatch?api-version=7.1",
+      queryUrl: "https://contoso.visualstudio.com/web/_apis/wit/queries/xyz?api-version=7.1",
     });
   });
 
@@ -245,7 +249,7 @@ describe("parseTrackedTree", () => {
       items: [],
     };
     const result = parseTrackedTree(raw, new Map());
-    expect(result).toEqual({ isTreeQuery: false, roots: [], error: null });
+    expect(result).toEqual({ isTreeQuery: false, roots: [], error: null, folderPath: [] });
   });
 
   it("returns isTreeQuery:false with error for missing wiql", () => {
@@ -258,6 +262,7 @@ describe("parseTrackedTree", () => {
       isTreeQuery: false,
       roots: [],
       error: "Could not load this query from Azure DevOps.",
+      folderPath: [],
     });
   });
 
@@ -273,6 +278,7 @@ describe("parseTrackedTree", () => {
       isTreeQuery: false,
       roots: [],
       error: "Could not load this query from Azure DevOps.",
+      folderPath: [],
     });
   });
 
@@ -520,5 +526,120 @@ describe("parseTrackedTree", () => {
     };
     const result = parseTrackedTree(raw, new Map());
     expect(result.roots[0]?.children).toHaveLength(0);
+  });
+});
+
+describe("parseQueryFolderPath", () => {
+  it("drops the query leaf and the well-known root, keeping ancestor folders with full paths", () => {
+    expect(
+      parseQueryFolderPath({ path: "Shared Queries/Razvan's Team/Project Views/QueryMesh" }),
+    ).toEqual([
+      { label: "Razvan's Team", path: "Shared Queries/Razvan's Team" },
+      { label: "Project Views", path: "Shared Queries/Razvan's Team/Project Views" },
+    ]);
+  });
+
+  it("handles a backslash-separated path (ADO also surfaces backslash paths)", () => {
+    expect(
+      parseQueryFolderPath({ path: "Shared Queries\\Razvan's Team\\Project Views\\QueryMesh" }),
+    ).toEqual([
+      { label: "Razvan's Team", path: "Shared Queries/Razvan's Team" },
+      { label: "Project Views", path: "Shared Queries/Razvan's Team/Project Views" },
+    ]);
+  });
+
+  it("handles a path that mixes both separators", () => {
+    expect(parseQueryFolderPath({ path: "My Queries\\Folder/Sub\\Report" })).toEqual([
+      { label: "Folder", path: "My Queries/Folder" },
+      { label: "Sub", path: "My Queries/Folder/Sub" },
+    ]);
+  });
+
+  it("drops a My Queries root case-insensitively", () => {
+    expect(parseQueryFolderPath({ path: "My Queries/Folder/Sub/Report" })).toEqual([
+      { label: "Folder", path: "My Queries/Folder" },
+      { label: "Sub", path: "My Queries/Folder/Sub" },
+    ]);
+  });
+
+  it("keeps only the two nearest folders (parent + grandparent) when the trail is deeper", () => {
+    expect(parseQueryFolderPath({ path: "Shared Queries/A/B/C/D/QueryMesh" })).toEqual([
+      { label: "C", path: "Shared Queries/A/B/C" },
+      { label: "D", path: "Shared Queries/A/B/C/D" },
+    ]);
+  });
+
+  it("returns an empty trail when the query lives directly under a root", () => {
+    expect(parseQueryFolderPath({ path: "Shared Queries/All Bugs" })).toEqual([]);
+  });
+
+  it("returns an empty trail for missing, malformed, or non-string paths", () => {
+    expect(parseQueryFolderPath(undefined)).toEqual([]);
+    expect(parseQueryFolderPath(null)).toEqual([]);
+    expect(parseQueryFolderPath({})).toEqual([]);
+    expect(parseQueryFolderPath({ path: 42 })).toEqual([]);
+    expect(parseQueryFolderPath({ path: "" })).toEqual([]);
+  });
+});
+
+describe("buildQueryFolderUrl", () => {
+  it("builds the query-hub folder link via the path query param, encoding segments but keeping separators literal", () => {
+    expect(
+      buildQueryFolderUrl(
+        "https://dev.azure.com/contoso/My%20Project/_queries/query/abc-123",
+        "Shared Queries/Team A",
+      ),
+    ).toBe(
+      "https://dev.azure.com/contoso/My%20Project/_queries/folder/?path=Shared%20Queries/Team%20A",
+    );
+  });
+
+  it("builds the folder link on the legacy visualstudio.com host", () => {
+    expect(
+      buildQueryFolderUrl(
+        "https://o365exchange.visualstudio.com/O365%20Core/_queries/query/abc-123",
+        "Shared Queries/M365 Core/Razvan's Team",
+      ),
+    ).toBe(
+      "https://o365exchange.visualstudio.com/O365%20Core/_queries/folder/?path=Shared%20Queries/M365%20Core/Razvan's%20Team",
+    );
+  });
+
+  it("returns null when the href is not a project-scoped ADO location", () => {
+    expect(buildQueryFolderUrl("https://example.com/", "Shared Queries/Team A")).toBeNull();
+  });
+});
+
+describe("parseTrackedTree folderPath", () => {
+  it("derives folderPath from the query metadata path on a tree result", () => {
+    const raw: AdoRawTree = {
+      wiql: {
+        queryType: "tree",
+        workItemRelations: [{ source: null, target: { id: 1 } }],
+      },
+      items: [
+        { id: 1, rev: 1, fields: { "System.WorkItemType": "Epic", "System.Title": "Epic 1" } },
+      ],
+      query: { path: "Shared Queries/Team A/Reports/Weekly" },
+    };
+    const result = parseTrackedTree(raw, new Map());
+    expect(result.folderPath).toEqual([
+      { label: "Team A", path: "Shared Queries/Team A" },
+      { label: "Reports", path: "Shared Queries/Team A/Reports" },
+    ]);
+  });
+
+  it("defaults folderPath to an empty array when query metadata is absent", () => {
+    const raw: AdoRawTree = {
+      wiql: {
+        queryType: "tree",
+        workItemRelations: [{ source: null, target: { id: 1 } }],
+      },
+      items: [
+        { id: 1, rev: 1, fields: { "System.WorkItemType": "Epic", "System.Title": "Epic 1" } },
+      ],
+    };
+    const result = parseTrackedTree(raw, new Map());
+    expect(result.folderPath).toEqual([]);
   });
 });

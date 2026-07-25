@@ -168,6 +168,7 @@
       .field input[type="text"],
       .field input[type="number"],
       .area-path-row input,
+      .marker-tags-row input,
       .wit-table input[type="text"] {
         appearance: none;
         font: inherit;
@@ -180,6 +181,7 @@
       select:focus-visible,
       .field input:focus-visible,
       .area-path-row input:focus-visible,
+      .marker-tags-row input:focus-visible,
       .wit-table input:focus-visible {
         outline: 2px solid var(--accent);
         outline-offset: 1px;
@@ -282,6 +284,33 @@
         margin: 0;
         color: var(--text-muted);
         font-size: 13px;
+      }
+
+      /* Marker tags: a small fixed grid with a label column and two token inputs (ADO tag + comment
+         tag) per recognized condition. The header row labels the two input columns. */
+      .marker-tags {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        max-width: 560px;
+      }
+      .marker-tags__head,
+      .marker-tags-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr);
+        gap: 8px;
+        align-items: center;
+      }
+      .marker-tags__head {
+        font-size: 12px;
+        color: var(--text-muted);
+      }
+      .marker-tags-row__label {
+        font-size: 13px;
+        color: var(--text);
+      }
+      .marker-tags-row input {
+        min-width: 0;
       }
       .button--subtle {
         align-self: flex-start;
@@ -798,21 +827,32 @@
       }
       .log-row {
         display: flex;
-        flex-wrap: wrap;
+        flex-direction: column;
         gap: 8px;
         padding: 2px 0;
+      }
+      .log-row__line {
+        /* Let the message flow as inline text so wrapped continuation lines return near the left
+           edge instead of aligning under the message column. The hanging indent (padding-left
+           cancelled by a negative text-indent on the first line) gives continuation lines a small
+           inset while the first line still starts at the left margin. */
+        padding-left: 1.25em;
+        text-indent: -1.25em;
       }
       .log-row__time {
         color: var(--text-muted);
         white-space: nowrap;
+        margin-right: 8px;
       }
       .log-row__level {
         font-weight: 600;
         white-space: nowrap;
+        margin-right: 8px;
       }
       .log-row__source {
         color: var(--text-muted);
         white-space: nowrap;
+        margin-right: 8px;
       }
       .log-row__message {
         color: var(--text);
@@ -823,7 +863,6 @@
         color: #e06c75;
       }
       .log-row__detail {
-        flex-basis: 100%;
         margin: 2px 0 6px;
         padding: 6px 8px;
         white-space: pre-wrap;
@@ -844,8 +883,8 @@
       <div class="banner banner--error" id="config-banner" role="alert" hidden>
         <strong>Enhanced view is paused.</strong> One or more queries are bound, but AwesomeADO's
         Azure DevOps settings are incomplete, so those queries stay on ADO's own view. On the
-        <strong>Azure DevOps</strong> tab, set your current team, add at least one area path and one
-        board column, and add at least one work item type with a mapped state.
+        <strong>Azure DevOps</strong> tab, set your current team, add at least one area path, and
+        add at least one work item type with a mapped state.
       </div>
 
       <nav class="tabs" role="tablist" aria-label="Settings sections">
@@ -1049,9 +1088,10 @@
           <h2 class="card__title">Work item types</h2>
           <p class="card__hint">
             Tell AwesomeADO which work item types your team uses and how their states map to actual
-            ADO item states (for each work item type). Add the board columns you use, then add each
-            of the ADO states in the correct column. All ADO states must be added; any state that is
-            not mapped falls back to the first column in the table (considered not picked up).
+            ADO item states (for each work item type). The board columns are fixed — add each of the
+            ADO states in the correct column (you can rename a column's title). All ADO states must
+            be added; any state that is not mapped falls back to the first column in the table
+            (considered not picked up).
           </p>
           <p class="card__hint">
             <strong>Order matters.</strong> Add work item types from parent to child, with the
@@ -1082,14 +1122,6 @@
               >
                 Add work item type
               </button>
-              <button
-                type="button"
-                class="button button--subtle"
-                id="ado-board-column-add"
-                disabled
-              >
-                Add column
-              </button>
             </div>
           </div>
         </div>
@@ -1106,6 +1138,24 @@
             <p class="work-item-eta__empty" id="ado-wit-eta-empty" hidden>
               Add a work item type above to choose its ETA field.
             </p>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2 class="card__title">Marker tags</h2>
+          <p class="card__hint">
+            Tell AwesomeADO which Azure DevOps <strong>tag</strong> your team puts on a work item to
+            signal each condition, and the <strong>comment tag</strong> your team writes in an
+            item's comments for it. Leave a box blank if your team does not use that signal.
+          </p>
+
+          <div class="marker-tags">
+            <div class="marker-tags__head" aria-hidden="true">
+              <span></span>
+              <span>ADO tag</span>
+              <span>Comment tag</span>
+            </div>
+            <div class="marker-tags__list" id="ado-marker-tags"></div>
           </div>
         </div>
       </section>

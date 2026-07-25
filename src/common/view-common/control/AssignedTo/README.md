@@ -25,6 +25,9 @@ Configuration for rendering the control.
 - **`user: TrackedUser | null`** — The currently assigned user; `null` means unassigned.
 - **`userDirectory: IUserDirectory`** — The user directory for searching and resolving users.
 - **`onChange?: (user: DirectoryUser) => void`** — Called when a new user is selected from the picker.
+- **`showTag?: boolean`** — When `true`, render the assignee's Feature Crew tag as a colored
+  [`TagPill`](../TagPill/README.md) after their name (the neutral "??" pill when they have no tag
+  yet). Off by default; the tag is read from `user.tag`. No pill is shown for an unassigned slot.
 
 ### `renderAssignedTo(doc: Document, options: AssignedToOptions): HTMLElement`
 

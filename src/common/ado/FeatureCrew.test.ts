@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildFeatureCrewUrls,
+  collectAssignedTags,
   collectFeatureCrewAssignees,
+  applyFeatureCrewTags,
   deriveAlias,
   formatFeatureCrewDescription,
   mergeFeatureCrew,
@@ -90,6 +92,74 @@ describe("collectFeatureCrewAssignees", () => {
 
   it("returns an empty list when nobody is assigned", () => {
     expect(collectFeatureCrewAssignees([item(1, null)])).toEqual([]);
+  });
+});
+
+describe("applyFeatureCrewTags", () => {
+  it("projects each roster member's tag onto the matching assignee, case-insensitively", () => {
+    const alice = user("Alice", "Alice@contoso.com");
+    const bob = user("Bob", "bob@contoso.com");
+    const tree = item(1, alice, [item(2, bob)]);
+
+    applyFeatureCrewTags(
+      [tree],
+      [
+        { alias: "alice", fullName: "Alice", tag: "Core" },
+        { alias: "bob", fullName: "Bob", tag: "Platform" },
+      ],
+    );
+
+    expect(alice.tag).toBe("Core");
+    expect(bob.tag).toBe("Platform");
+  });
+
+  it("sets null for a person absent from the roster or with an empty tag", () => {
+    const alice = user("Alice", "alice@contoso.com");
+    const bob = user("Bob", "bob@contoso.com");
+    const tree = item(1, alice, [item(2, bob)]);
+
+    applyFeatureCrewTags([tree], [{ alias: "alice", fullName: "Alice", tag: "" }]);
+
+    expect(alice.tag).toBeNull();
+    expect(bob.tag).toBeNull();
+  });
+
+  it("ignores unassigned items", () => {
+    const tree = item(1, null);
+    expect(() => applyFeatureCrewTags([tree], [])).not.toThrow();
+  });
+});
+
+describe("collectAssignedTags", () => {
+  it("collects distinct tags in first-seen order with the untagged bucket last", () => {
+    const alice = user("Alice", "alice@contoso.com");
+    alice.tag = "Core";
+    const bob = user("Bob", "bob@contoso.com");
+    bob.tag = "Platform";
+    const carol = user("Carol", "carol@contoso.com");
+    carol.tag = null;
+    const dave = user("Dave", "dave@contoso.com");
+    dave.tag = "Core";
+
+    const tree = item(1, alice, [item(2, bob), item(3, carol), item(4, dave)]);
+
+    expect(collectAssignedTags([tree])).toEqual(["Core", "Platform", null]);
+  });
+
+  it("omits the untagged bucket when every assignee has a tag", () => {
+    const alice = user("Alice", "alice@contoso.com");
+    alice.tag = "Core";
+    expect(collectAssignedTags([item(1, alice)])).toEqual(["Core"]);
+  });
+
+  it("treats an unresolved tag (undefined) as untagged", () => {
+    // Fresh from the tree loader a user's tag is undefined until the roster resolves.
+    const alice = user("Alice", "alice@contoso.com");
+    expect(collectAssignedTags([item(1, alice)])).toEqual([null]);
+  });
+
+  it("returns an empty list when nobody is assigned", () => {
+    expect(collectAssignedTags([item(1, null)])).toEqual([]);
   });
 });
 

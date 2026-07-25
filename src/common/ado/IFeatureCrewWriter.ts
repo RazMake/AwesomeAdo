@@ -1,4 +1,4 @@
-import type { FeatureCrewAssignee } from "./FeatureCrew";
+import type { FeatureCrewAssignee, FeatureCrewMember } from "./FeatureCrew";
 
 /**
  * The request to reconcile a Feature Crew work item: create or update the roster so it contains all
@@ -27,6 +27,11 @@ export interface FeatureCrewReconcileResult {
   changed: boolean;
   /** The Feature Crew work item's id when the reconcile succeeded; undefined on error. */
   id?: number;
+  /**
+   * The reconciled roster (everyone on the item now, with the tags a developer set by hand), so the
+   * caller can project each person's tag onto the tree. Present only on success; undefined on error.
+   */
+  members?: FeatureCrewMember[];
 }
 
 /**

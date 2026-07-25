@@ -92,6 +92,66 @@ function addAssignee(
   assignees.push({ alias, fullName: user.displayName });
 }
 
+/**
+ * Enrich every assigned person in the tree with their Feature Crew tag, in place. The roster is the
+ * one source of a person's tag, so this projects each member's tag onto the matching `assignedTo`
+ * (matched by alias, case-insensitively). A person present in the tree but not (yet) in the roster —
+ * or in the roster with an empty tag — is set to `null` so the view renders the neutral "??" pill
+ * rather than leaving a stale value.
+ */
+export function applyFeatureCrewTags(roots: TrackedWorkItem[], members: FeatureCrewMember[]): void {
+  const tagByAlias = new Map<string, string>();
+  for (const member of members) {
+    tagByAlias.set(member.alias.toLowerCase(), member.tag);
+  }
+  const visit = (item: TrackedWorkItem): void => {
+    if (item.assignedTo !== null) {
+      const alias = deriveAlias(item.assignedTo.uniqueName, item.assignedTo.displayName);
+      const tag = tagByAlias.get(alias.toLowerCase());
+      item.assignedTo.tag = tag !== undefined && tag.length > 0 ? tag : null;
+    }
+    for (const child of item.children) {
+      visit(child);
+    }
+  };
+  for (const root of roots) {
+    visit(root);
+  }
+}
+
+/**
+ * Collect the distinct tags worn by assigned people across the tree, in first-seen order, so the
+ * filter panel can offer one pill per tag actually in use. `null` (the neutral "??" bucket for
+ * assigned-but-untagged people) is appended last when any assignee lacks a tag, so it always reads as
+ * the trailing catch-all. Unassigned items contribute nothing — a tag filter only ever narrows to
+ * people who wear that tag.
+ */
+export function collectAssignedTags(roots: TrackedWorkItem[]): (string | null)[] {
+  const seen = new Set<string>();
+  const tags: string[] = [];
+  let hasUntagged = false;
+  const visit = (item: TrackedWorkItem): void => {
+    if (item.assignedTo !== null) {
+      const tag = item.assignedTo.tag;
+      if (tag !== undefined && tag !== null && tag.length > 0) {
+        if (!seen.has(tag)) {
+          seen.add(tag);
+          tags.push(tag);
+        }
+      } else {
+        hasUntagged = true;
+      }
+    }
+    for (const child of item.children) {
+      visit(child);
+    }
+  };
+  for (const root of roots) {
+    visit(root);
+  }
+  return hasUntagged ? [...tags, null] : tags;
+}
+
 // One roster line: `- {alias} ({fullName}). `{tag}``. The tag always keeps its backticks even when
 // empty so a later manual edit has an obvious slot to fill, and so the parser round-trips it.
 const MEMBER_LINE = /^-\s+(.+?)\s+\((.*?)\)\.\s*`(.*?)`\s*$/;

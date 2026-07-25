@@ -8,12 +8,16 @@
  * every view.
  */
 
-/** One clickable segment of a breadcrumb trail. */
+/** One segment of a breadcrumb trail. */
 export interface BreadcrumbSegment {
   /** The segment's display label. */
   label: string;
-  /** The absolute URL the segment navigates to when clicked. */
-  url: string;
+  /**
+   * The absolute URL the segment navigates to when clicked. Optional: when omitted the segment
+   * renders as plain, non-clickable text — used for trails whose folders have no reliable link
+   * target (e.g. a query's folder path, where ADO exposes no per-folder navigation URL).
+   */
+  url?: string;
 }
 
 /** Options for rendering a breadcrumb trail. */
@@ -22,7 +26,7 @@ export interface BreadcrumbsOptions {
   segments: BreadcrumbSegment[];
   /** Accessible label for the nav landmark. Defaults to "Breadcrumb". */
   ariaLabel?: string;
-  /** The glyph shown between segments. Defaults to a backslash. */
+  /** The glyph shown between segments. Defaults to a forward slash (matching ADO's path style). */
   separator?: string;
 }
 
@@ -36,7 +40,7 @@ export function renderBreadcrumbs(doc: Document, options: BreadcrumbsOptions): H
     return null;
   }
 
-  const separatorGlyph = options.separator ?? "\\";
+  const separatorGlyph = options.separator ?? "/";
 
   const nav = doc.createElement("nav");
   nav.className = "awesomeado-breadcrumbs";
@@ -62,17 +66,23 @@ export function renderBreadcrumbs(doc: Document, options: BreadcrumbsOptions): H
       nav.append(separator);
     }
 
-    const link = doc.createElement("a");
-    link.className = "awesomeado-breadcrumb";
-    link.textContent = segment.label;
-    link.href = segment.url;
-    // Themed link color so the segment reads as clickable on both light and dark themes.
-    link.style.cssText = [
+    // A segment with a URL is a link; one without renders as plain text (same class, so the trail
+    // reads uniformly) because not every trail has a navigable target for each folder.
+    const isLink = segment.url !== undefined;
+    const segmentEl = doc.createElement(isLink ? "a" : "span");
+    segmentEl.className = "awesomeado-breadcrumb";
+    segmentEl.textContent = segment.label;
+    if (segment.url !== undefined) {
+      (segmentEl as HTMLAnchorElement).href = segment.url;
+    }
+    // Themed foreground so the trail reads on both light and dark themes; only a real link is styled
+    // (and hinted) as clickable.
+    segmentEl.style.cssText = [
       "color:var(--communication-foreground, #0078d4)",
       "text-decoration:none",
-      "cursor:pointer",
+      isLink ? "cursor:pointer" : "cursor:default",
     ].join(";");
-    nav.append(link);
+    nav.append(segmentEl);
   });
 
   return nav;

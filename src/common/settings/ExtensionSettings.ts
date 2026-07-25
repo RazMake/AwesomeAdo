@@ -38,8 +38,9 @@ export interface ExtensionSettings {
 
   /**
    * The board columns (the team's own "application states") that form the header of the work-item
-   * mapping table. User-defined and shared by every work item type; capped at `MAX_BOARD_COLUMNS`.
-   * The first column is the fallback bucket for any ADO state a type does not explicitly map.
+   * mapping table. The set and order are fixed (`BOARD_COLUMN_COUNT` columns) and shared by every
+   * work item type; only each column's *title* is user-editable. The first column is the fallback
+   * bucket for any ADO state a type does not explicitly map.
    */
   boardColumns: string[];
 
@@ -51,6 +52,14 @@ export interface ExtensionSettings {
    * preserved through save, export, and import.
    */
   workItemTypes: WorkItemType[];
+
+  /**
+   * The Azure DevOps *tag* and *comment* token the team uses to signal each recognized condition
+   * (blocked internally, blocked by another team, an interrupt, or waiting). Every team keeps its
+   * own tag/comment vocabulary, so both tokens are configurable per condition; a blank token means
+   * the team does not use that signal for that condition.
+   */
+  markerTags: WorkItemMarkerTags;
 }
 
 export type Theme = "auto" | "light" | "dark" | "blue";
@@ -103,26 +112,72 @@ export interface WorkItemType {
   etaField?: string;
 }
 
+/**
+ * The conditions AwesomeADO recognizes on a work item. Each is marked on the item by a configurable
+ * Azure DevOps *tag* and echoed in the item's *comments* by a configurable token, so a team can keep
+ * using whatever tag/comment vocabulary it already has.
+ */
+export type WorkItemMarker = "blocked" | "blockedByOtherTeam" | "interrupt" | "waiting";
+
+/** The Azure DevOps tag and the comment token configured for one {@link WorkItemMarker}. */
+export interface MarkerTags {
+  /** The ADO work-item *tag* that marks an item in this condition; blank means the team omits it. */
+  tag: string;
+  /** The token written into an item *comment* to signal this condition; blank means the team omits it. */
+  commentTag: string;
+}
+
+/** The tag/comment configuration for every {@link WorkItemMarker}, keyed by marker. */
+export type WorkItemMarkerTags = Record<WorkItemMarker, MarkerTags>;
+
+/**
+ * The markers in presentation order, each with the label the options UI shows. This ordered list is
+ * the single source of truth for iterating markers (both the normalizer and the options UI read it),
+ * so a new marker is added in exactly one place.
+ */
+export const WORK_ITEM_MARKERS: readonly {
+  readonly key: WorkItemMarker;
+  readonly label: string;
+}[] = [
+  { key: "blocked", label: "Blocked (internal)" },
+  { key: "blockedByOtherTeam", label: "Blocked by another team" },
+  { key: "interrupt", label: "Interrupt" },
+  { key: "waiting", label: "Waiting" },
+];
+
+/**
+ * The tag/comment tokens a fresh install starts from — the vocabulary most teams already use — so
+ * the options page opens with sensible values instead of eight empty boxes. Interrupt has no
+ * conventional comment token, so it seeds blank.
+ */
+export const DEFAULT_MARKER_TAGS: WorkItemMarkerTags = {
+  blocked: { tag: "Blocked", commentTag: "[BLOCKED]" },
+  blockedByOtherTeam: { tag: "Blocked by another team", commentTag: "[ACCEPTED]" },
+  interrupt: { tag: "Interrupt", commentTag: "" },
+  waiting: { tag: "Waiting", commentTag: "[WAITING]" },
+};
+
 /** Allowed theme values, in the order they are offered to the user. */
 export const THEMES: readonly Theme[] = ["auto", "light", "dark", "blue"];
 
 /** Allowed default-view values. */
 export const DEFAULT_VIEWS: readonly DefaultView[] = ["original", "enhanced"];
 
-/** The most board columns (application states) the mapping table allows. */
-export const MAX_BOARD_COLUMNS = 6;
-
 /**
- * The board columns a fresh install starts with. The user can rename, remove, or add columns; these
- * are only the seed so the mapping table is usable immediately.
+ * The fixed board columns every board has, in order. Users can rename any column's title but cannot
+ * add or remove columns, so this list is both the seed for a fresh install and the canonical count
+ * and order the normalizer coerces every stored value back to.
  */
 export const DEFAULT_BOARD_COLUMNS: readonly string[] = [
-  "Queue",
-  "Active",
+  "In Queue",
+  "In Progress",
   "Waiting",
   "Done",
   "Removed",
 ];
+
+/** The fixed number of board columns; every normalized `boardColumns` array has exactly this length. */
+export const BOARD_COLUMN_COUNT = DEFAULT_BOARD_COLUMNS.length;
 
 /** Inclusive bounds for `futureSprintsCount`; both the UI and the normalizer clamp to this range. */
 export const MIN_FUTURE_SPRINTS = 1;
@@ -143,6 +198,7 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   areaPaths: [],
   boardColumns: [...DEFAULT_BOARD_COLUMNS],
   workItemTypes: [],
+  markerTags: normalizeMarkerTags(undefined),
 };
 
 function isTheme(value: unknown): value is Theme {
@@ -323,30 +379,62 @@ export function normalizeWorkItemTypes(raw: unknown): WorkItemType[] {
 }
 
 /**
- * Drop unusable board-column names so a corrupt array can never surface a blank or duplicated
- * column, and cap the list at `MAX_BOARD_COLUMNS`. Comparison is case-insensitive so `Active` and
- * `active` never both survive.
+ * Normalize one marker's stored entry: trim both tokens. A present-but-blank entry is honored (the
+ * user deliberately cleared it); a wholly absent entry seeds that marker's default so a first run
+ * starts from the team's most common vocabulary rather than empty boxes.
+ */
+function normalizeMarkerEntry(raw: unknown, fallback: MarkerTags): MarkerTags {
+  if (typeof raw !== "object" || raw === null) {
+    return { ...fallback };
+  }
+  const candidate = raw as Partial<Record<keyof MarkerTags, unknown>>;
+  return {
+    tag: typeof candidate.tag === "string" ? candidate.tag.trim() : "",
+    commentTag: typeof candidate.commentTag === "string" ? candidate.commentTag.trim() : "",
+  };
+}
+
+/**
+ * Reconcile a stored marker-tags value to an entry for every marker. A never-set value seeds the
+ * full defaults; a partial object seeds only its missing markers, so a user who deliberately blanks
+ * a marker keeps it blank instead of having the default reinstated on every read.
+ */
+export function normalizeMarkerTags(raw: unknown): WorkItemMarkerTags {
+  const candidate = (typeof raw === "object" && raw !== null ? raw : {}) as Partial<
+    Record<WorkItemMarker, unknown>
+  >;
+  const result = {} as WorkItemMarkerTags;
+  for (const { key } of WORK_ITEM_MARKERS) {
+    result[key] = normalizeMarkerEntry(candidate[key], DEFAULT_MARKER_TAGS[key]);
+  }
+  return result;
+}
+
+/**
+ * Reconcile a stored board-column list to the fixed set of positions the board supports.
+ *
+ * The board's columns are a product invariant: a fixed count and order, with only each column's
+ * *title* user-editable. Storage can still hold anything (first run, an older build that allowed
+ * add/remove, or a value synced from a different version), so this positionally coerces to exactly
+ * `BOARD_COLUMN_COUNT` entries — keeping the user's renamed title at each position when one is stored
+ * and non-blank, and otherwise falling back to that position's default title. Extra entries are
+ * dropped and missing ones filled, so the count is always fixed while renames survive. A title that
+ * collides case-insensitively with an earlier position falls back to that position's default so
+ * every column stays uniquely identifiable.
  */
 export function normalizeBoardColumns(raw: unknown): string[] {
-  if (!Array.isArray(raw)) {
-    return [];
-  }
-  const seen = new Set<string>();
+  const stored = Array.isArray(raw) ? raw : [];
   const result: string[] = [];
-  for (const entry of raw) {
-    if (typeof entry !== "string") {
-      continue;
+  const seen = new Set<string>();
+  for (let index = 0; index < BOARD_COLUMN_COUNT; index += 1) {
+    const value = stored[index];
+    const trimmed = typeof value === "string" ? value.trim() : "";
+    let name = trimmed.length > 0 ? trimmed : DEFAULT_BOARD_COLUMNS[index]!;
+    if (seen.has(name.toLowerCase())) {
+      name = DEFAULT_BOARD_COLUMNS[index]!;
     }
-    const trimmed = entry.trim();
-    const key = trimmed.toLowerCase();
-    if (trimmed.length === 0 || seen.has(key)) {
-      continue;
-    }
-    seen.add(key);
-    result.push(trimmed);
-    if (result.length === MAX_BOARD_COLUMNS) {
-      break;
-    }
+    result.push(name);
+    seen.add(name.toLowerCase());
   }
   return result;
 }
@@ -359,7 +447,12 @@ export function normalizeBoardColumns(raw: unknown): string[] {
  */
 export function normalizeSettings(raw: unknown): ExtensionSettings {
   if (typeof raw !== "object" || raw === null) {
-    return { ...DEFAULT_SETTINGS, areaPaths: [], boardColumns: [...DEFAULT_BOARD_COLUMNS] };
+    return {
+      ...DEFAULT_SETTINGS,
+      areaPaths: [],
+      boardColumns: [...DEFAULT_BOARD_COLUMNS],
+      markerTags: normalizeMarkerTags(undefined),
+    };
   }
   const candidate = raw as Partial<Record<keyof ExtensionSettings, unknown>>;
   return {
@@ -371,13 +464,11 @@ export function normalizeSettings(raw: unknown): ExtensionSettings {
     futureSprintsCount: normalizeFutureSprintsCount(candidate.futureSprintsCount),
     pastSprintsCount: normalizePastSprintsCount(candidate.pastSprintsCount),
     areaPaths: normalizeAreaPaths(candidate.areaPaths),
-    // A never-set key (first run) seeds the default columns; an explicit array is honored as-is so a
-    // user who removed every column keeps an empty header (which reads as "not configured" below).
-    boardColumns:
-      candidate.boardColumns === undefined
-        ? [...DEFAULT_BOARD_COLUMNS]
-        : normalizeBoardColumns(candidate.boardColumns),
+    // The board columns are a fixed set, so any stored value (including a never-set key) is coerced
+    // back to exactly `BOARD_COLUMN_COUNT` positions, preserving each column's user-edited title.
+    boardColumns: normalizeBoardColumns(candidate.boardColumns),
     workItemTypes: normalizeWorkItemTypes(candidate.workItemTypes),
+    markerTags: normalizeMarkerTags(candidate.markerTags),
   };
 }
 
@@ -385,15 +476,15 @@ export function normalizeSettings(raw: unknown): ExtensionSettings {
  * Whether the Azure DevOps settings are complete enough for the extension to enhance a query.
  *
  * The enhanced view depends on a fully mapped board, so every one of these must hold: a current
- * team, at least one pinned area path, at least one board column, and at least one work item type
- * that maps at least one ADO state. Shared by the content script (which otherwise leaves ADO's own
- * view in place) and the options page (which warns when a binding exists but this returns false).
+ * team, at least one pinned area path, and at least one work item type that maps at least one ADO
+ * state. (The board columns are a fixed, always-present set, so they need no separate check.) Shared
+ * by the content script (which otherwise leaves ADO's own view in place) and the options page (which
+ * warns when a binding exists but this returns false).
  */
 export function isAdoConfigured(settings: ExtensionSettings): boolean {
   return (
     settings.currentTeam !== null &&
     settings.areaPaths.length > 0 &&
-    settings.boardColumns.length > 0 &&
     settings.workItemTypes.length > 0 &&
     settings.workItemTypes.every((type) => type.columns.some((column) => column.states.length > 0))
   );

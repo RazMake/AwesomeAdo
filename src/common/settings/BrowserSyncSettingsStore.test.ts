@@ -117,11 +117,12 @@ describe("BrowserSyncSettingsStore", () => {
 
     it("reads and normalizes the board-columns key", async () => {
       const fake = new FakeBrowserSyncStorage();
-      await fake.set(BOARD_COLUMNS_KEY, [" Queue ", "queue", "Done"]);
+      await fake.set(BOARD_COLUMNS_KEY, [" My Queue ", "Building"]);
       const store = new BrowserSyncSettingsStore(fake);
       const settings = await store.read();
-      // Normalization trims and dedupes the stored list case-insensitively.
-      expect(settings.boardColumns).toEqual(["Queue", "Done"]);
+      // Normalization trims each stored title and coerces the list to the fixed board-column set,
+      // keeping the stored titles by position and filling the rest from the defaults.
+      expect(settings.boardColumns).toEqual(["My Queue", "Building", "Waiting", "Done", "Removed"]);
     });
 
     it("reads and normalizes the work-item-types key", async () => {

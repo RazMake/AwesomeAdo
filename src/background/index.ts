@@ -7,6 +7,7 @@ import {
   mergeFeatureCrew,
   parseFeatureCrewDescription,
 } from "../common/ado/FeatureCrew";
+import { buildAdoIterationsUrl } from "../common/ado/TeamIteration";
 import {
   buildAdoTreeUrls,
   buildWorkItemUpdateUrl,
@@ -22,6 +23,11 @@ import {
   type RevealBindingSettingsMessage,
   type RevealOptionsSectionMessage,
 } from "../common/bindings/BindingRequest";
+import {
+  isLoadTeamIterationsMessage,
+  type LoadTeamIterationsMessage,
+  type LoadTeamIterationsResponse,
+} from "../common/browser/AdoIterationsRequest";
 import {
   isLoadQueryTreeMessage,
   type LoadQueryTreeMessage,
@@ -40,7 +46,9 @@ import {
 import {
   applyFeatureCrewInPage,
   type FeatureCrewApplyConfig,
+  type FeatureCrewApplyResult,
 } from "../common/browser/applyFeatureCrewInPage";
+import { fetchAdoIterationsInPage } from "../common/browser/fetchAdoIterationsInPage";
 import { fetchAdoTreeInPage } from "../common/browser/fetchAdoTreeInPage";
 import { findFeatureCrewInPage } from "../common/browser/findFeatureCrewInPage";
 import { updateWorkItemStateInPage } from "../common/browser/updateWorkItemStateInPage";
@@ -154,7 +162,7 @@ const loadQueryTree = async (
       target: { tabId },
       world: "MAIN",
       func: fetchAdoTreeInPage,
-      args: [urls.wiqlUrl, urls.batchUrl, message.fields],
+      args: [urls.wiqlUrl, urls.batchUrl, message.fields, urls.queryUrl],
     });
     return { raw: (results[0]?.result as AdoRawTree | undefined) ?? null };
   } catch (error) {
@@ -178,6 +186,57 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
     return undefined;
   }
   void loadQueryTree(message, tabId, tabUrl).then(sendResponse);
+  // Keep the message channel open for the async fetch reply above.
+  return true;
+});
+
+// A sprint-filtering view (e.g. Project Tracking) needs the team's iterations to build its picker,
+// but the credentialed team-iterations fetch can only run in the ADO tab's MAIN world (same reason
+// as the tree load). The content side names the team; the URL is built here from the SENDER's own
+// trusted tab URL — never a content-supplied one — so this stays a closed "read this team's
+// iterations" operation.
+const loadTeamIterations = async (
+  message: LoadTeamIterationsMessage,
+  tabId: number,
+  tabUrl: string,
+): Promise<LoadTeamIterationsResponse> => {
+  const iterationsUrl = buildAdoIterationsUrl(tabUrl, message.team);
+  if (iterationsUrl === null) {
+    // A non-project ADO URL (org-level or folder tab) or a blank team has no iterations to fetch.
+    logger.info(
+      `Iterations load skipped for team "${message.team}": tab is not a project-scoped ADO URL or team is blank.`,
+    );
+    return { raw: null };
+  }
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: "MAIN",
+      func: fetchAdoIterationsInPage,
+      args: [iterationsUrl],
+    });
+    return { raw: results[0]?.result ?? null };
+  } catch (error) {
+    // Injection fails on a closed/navigated/restricted tab; report "no data" so the picker degrades.
+    logger.error(`Could not load iterations for team "${message.team}"`, error);
+    return { raw: null };
+  }
+};
+
+chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
+  if (!isLoadTeamIterationsMessage(message)) {
+    // Not ours — leave it for the other listeners to handle.
+    return undefined;
+  }
+  const tabId = sender.tab?.id;
+  const tabUrl = sender.tab?.url;
+  if (tabId === undefined || tabUrl === undefined) {
+    // Only a real ADO tab can be scripted; a message with no sender tab cannot be served.
+    logger.error(`Cannot load iterations for team "${message.team}": message has no sender tab.`);
+    sendResponse({ raw: null } satisfies LoadTeamIterationsResponse);
+    return undefined;
+  }
+  void loadTeamIterations(message, tabId, tabUrl).then(sendResponse);
   // Keep the message channel open for the async fetch reply above.
   return true;
 });
@@ -227,7 +286,7 @@ const reconcileFeatureCrew = async (
     const existing = found === null ? [] : parseFeatureCrewDescription(found.description);
     const merged = mergeFeatureCrew(existing, message.assignees);
     if (found !== null && !merged.changed) {
-      return { ok: true, changed: false, id: found.id };
+      return { ok: true, changed: false, id: found.id, members: merged.members };
     }
     const description = formatFeatureCrewDescription(merged.members);
 
@@ -241,6 +300,7 @@ const reconcileFeatureCrew = async (
             state: FEATURE_CREW_STATE,
             rootRelationUrl: urls.rootRelationUrl,
             affectedByRel: FEATURE_CREW_AFFECTED_BY_REL,
+            itemBaseUrl: urls.itemBaseUrl,
           }
         : {
             mode: "update",
@@ -253,21 +313,29 @@ const reconcileFeatureCrew = async (
       func: applyFeatureCrewInPage,
       args: [applyConfig],
     });
-    const applied = (applyResults[0]?.result as { id: number } | undefined) ?? null;
-    if (applied === null) {
-      // The MAIN-world write returns null on any non-ok response (e.g. a process rule blocking a
-      // direct create in "Removed", or a permission error); report the failure so the view degrades.
-      logger.error(`Feature Crew reconcile could not write the item for root ${message.rootId}.`);
-      return { ok: false, changed: false, error: "write failed" };
+    const applied = (applyResults[0]?.result as FeatureCrewApplyResult | undefined) ?? null;
+    if (applied === null || applied.id === null) {
+      // The MAIN-world write failed (e.g. a process rule blocking the transition into "Removed", or
+      // a permission error); log the specific reason it reported and hand it back so the view degrades
+      // with a real cause rather than a generic "write failed".
+      const detail = applied?.error ?? "no result from the page";
+      logger.error(
+        `Feature Crew reconcile could not write the item for root ${message.rootId}: ${detail}.`,
+      );
+      return { ok: false, changed: false, error: detail };
     }
     logger.info(
       `Feature Crew reconciled for root ${message.rootId}: ${found === null ? "created" : "updated"} item ${applied.id}.`,
     );
-    return { ok: true, changed: true, id: applied.id };
+    return { ok: true, changed: true, id: applied.id, members: merged.members };
   } catch (error) {
     // Injection fails on a closed/navigated/restricted tab; report the failure so the view degrades.
     logger.error(`Could not reconcile Feature Crew for root ${message.rootId}`, error);
-    return { ok: false, changed: false, error: "exception" };
+    return {
+      ok: false,
+      changed: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
   }
 };
 

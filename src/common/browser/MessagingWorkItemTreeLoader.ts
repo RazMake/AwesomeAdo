@@ -43,7 +43,16 @@ export class MessagingWorkItemTreeLoader implements IWorkItemTreeLoader {
       }
 
       const result = parseTrackedTree(response.raw, etaFieldByType);
-      this.logger.info(`Loaded query tree for ${queryId}: ${result.roots.length} root(s).`);
+      // Record whether the query-metadata read produced a folder trail: an empty trail with no raw
+      // query body means the breadcrumb hid because the metadata call came back empty, not because
+      // the query truly sits at a root — the distinction is otherwise invisible in Diagnostics.
+      const queryMeta = (response.raw as { query?: unknown }).query;
+      const hasQueryMeta = queryMeta !== null && queryMeta !== undefined;
+      this.logger.info(
+        `Loaded query tree for ${queryId}: ${result.roots.length} root(s), ` +
+          `folder trail [${(result.folderPath ?? []).map((crumb) => crumb.label).join(" / ") || "none"}]` +
+          `${hasQueryMeta ? "" : " (no query metadata returned)"}.`,
+      );
       return result;
     } catch (error) {
       this.logger.error(`Could not load query tree for ${queryId}`, error);

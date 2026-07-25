@@ -288,4 +288,54 @@ describe("renderStatusBadge", () => {
     expect(row?.querySelector("img")).toBeNull();
     expect(row?.textContent).toBe("<img src=x onerror=alert(1)>");
   });
+
+  it("setStatus relabels the chip and re-tints it to the new ordinal", () => {
+    // Regression: a committed move must update both the label and its color together, so the tint
+    // never lags behind the shown state.
+    const badge = renderStatusBadge(document, {
+      state: "In Progress",
+      ordinal: 1,
+      editable: true,
+      columns: [
+        { column: "In Progress", primaryState: "Active", ordinal: 1 },
+        { column: "Done", primaryState: "Closed", ordinal: 3 },
+      ],
+    });
+
+    const chip = chipOf(badge);
+    expect(containsColor(chip.style.background, "rgba(0,120,212,0.2)")).toBe(true);
+
+    badge.setStatus("Done", 3);
+
+    expect(chip.textContent).toContain("Done");
+    // The caret is preserved after a relabel.
+    expect(chip.textContent).toContain("▾");
+    expect(containsColor(chip.style.background, "rgba(16,124,16,0.2)")).toBe(true);
+  });
+
+  it("setStatus re-tints to neutral for an unmapped ordinal", () => {
+    const badge = renderStatusBadge(document, { state: "Done", ordinal: 3 });
+
+    badge.setStatus("Custom", undefined);
+
+    const chip = chipOf(badge);
+    expect(chip.textContent).toContain("Custom");
+    expect(chip.style.background).toContain("var(--palette-neutral-4");
+  });
+
+  it("sizes every badge to the shared minWidthCh so a column reads as one uniform width", () => {
+    // Two badges with different labels but the same shared width must render identically sized.
+    const wide = renderStatusBadge(document, { state: "In Progress", minWidthCh: 12 });
+    const narrow = renderStatusBadge(document, { state: "Done", minWidthCh: 12 });
+
+    expect(chipOf(wide).style.width).toBe(chipOf(narrow).style.width);
+  });
+
+  it("never renders a badge narrower than its own longest label", () => {
+    // A label longer than the shared width still fits: the badge widens to its own content.
+    const badge = renderStatusBadge(document, { state: "A very long status label", minWidthCh: 2 });
+
+    const width = Number.parseInt(chipOf(badge).style.width, 10);
+    expect(width).toBeGreaterThanOrEqual("A very long status label".length);
+  });
 });

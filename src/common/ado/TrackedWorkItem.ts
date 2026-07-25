@@ -11,6 +11,12 @@ export interface TrackedUser {
   displayName: string;
   uniqueName: string | null;
   imageUrl: string | null;
+  /**
+   * The person's Feature Crew tag, resolved from the project's roster after the tree loads (the ADO
+   * tree itself carries no tag). `undefined` = not yet resolved; `null` = resolved but the person has
+   * no tag yet (shown as the neutral "??" pill); a string = the assigned crew tag.
+   */
+  tag?: string | null;
 }
 
 /** A work item in the tree hierarchy, carrying its children. */
@@ -52,10 +58,4 @@ export interface TypeCatalogEntry {
   etaField: string | null;
   /** The board columns and their routed ADO states; columns[i].states[0] is the primary state for that column. */
   columns: TrackedTypeColumn[];
-}
-
-/** A sprint reference (path + name) for sprint-scoped views. */
-export interface SprintRef {
-  path: string;
-  name: string;
 }

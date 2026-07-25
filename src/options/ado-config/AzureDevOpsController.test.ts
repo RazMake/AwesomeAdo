@@ -96,9 +96,9 @@ function makeElements(): AzureDevOpsElements {
   witTable.append(witHead, witBody);
   const workItemTypesEmpty = document.createElement("p");
   const workItemTypeAddButton = document.createElement("button");
-  const boardColumnAddButton = document.createElement("button");
   const witEtaBody = document.createElement("div");
   const witEtaEmpty = document.createElement("p");
+  const markerTagsList = document.createElement("div");
   document.body.append(
     organization,
     project,
@@ -111,9 +111,9 @@ function makeElements(): AzureDevOpsElements {
     witTable,
     workItemTypesEmpty,
     workItemTypeAddButton,
-    boardColumnAddButton,
     witEtaBody,
     witEtaEmpty,
+    markerTagsList,
   );
   return {
     organization,
@@ -129,9 +129,11 @@ function makeElements(): AzureDevOpsElements {
       body: witBody,
       empty: workItemTypesEmpty,
       addTypeButton: workItemTypeAddButton,
-      addColumnButton: boardColumnAddButton,
       etaBody: witEtaBody,
       etaEmpty: witEtaEmpty,
+    },
+    markerTags: {
+      list: markerTagsList,
     },
   };
 }

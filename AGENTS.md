@@ -76,6 +76,12 @@ release, authenticated browser behavior, and final memory updates belong to seri
 - The memory bank is for **internal architecture and rationale**. Component `README.md` files
   (under `src/common/**`) are for **usage documentation** only — describe the public API and
   intent, not internal implementation.
+- **Record durable repo knowledge only in source control, never in an agent-tool-local memory**
+  (GitHub Copilot / Claude / Codex per-machine memory, or any equivalent). Tool-local memory does
+  not clone or transfer between machines, agents, or teammates, so anything learned there is silently
+  lost. Architecture and rationale go in `systemPatterns.md` / `decisions.md`; tactical bug findings,
+  gotchas, and live-debugging recipes go in `.agents/memory-bank/debuggingNotes.md`. If you are about
+  to write a lasting fact into a tool memory, write it into the memory bank instead.
 
 ---
 

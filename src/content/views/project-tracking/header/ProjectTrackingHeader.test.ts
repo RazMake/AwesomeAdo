@@ -120,4 +120,28 @@ describe("renderProjectTrackingHeader", () => {
     // The ETA badge is still on the tech-lead line even without a Tech Lead control.
     expect(techLeadRow?.querySelector(".awesomeado-eta")).toBeTruthy();
   });
+
+  it("mounts the write-queue status indicator on its own row above the sprint picker", () => {
+    const writeQueueStatus = document.createElement("span");
+    writeQueueStatus.className = "awesomeado-write-queue-status";
+
+    const { element } = renderProjectTrackingHeader(document, baseOptions({ writeQueueStatus }));
+
+    const statusRow = element.querySelector(".awesomeado-tracking__write-status-row");
+    expect(statusRow?.contains(writeQueueStatus)).toBe(true);
+
+    // The status row must precede the controls band (which carries the sprint picker) so the
+    // indicator sits ABOVE the sprint picker rather than beside or below it.
+    const mainRow = element.querySelector(".awesomeado-tracking__header-main");
+    const children = [...element.children];
+    expect(children.indexOf(statusRow as Element)).toBeLessThan(
+      children.indexOf(mainRow as Element),
+    );
+  });
+
+  it("omits the write-status row when no indicator is supplied", () => {
+    const { element } = renderProjectTrackingHeader(document, baseOptions());
+
+    expect(element.querySelector(".awesomeado-tracking__write-status-row")).toBeNull();
+  });
 });

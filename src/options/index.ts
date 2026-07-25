@@ -149,9 +149,9 @@ const adoWitColumns = document.querySelector<HTMLElement>("#ado-wit-columns");
 const adoWitRows = document.querySelector<HTMLElement>("#ado-wit-rows");
 const adoWorkItemTypesEmpty = document.querySelector<HTMLElement>("#ado-work-item-types-empty");
 const adoWorkItemTypeAdd = document.querySelector<HTMLButtonElement>("#ado-work-item-type-add");
-const adoBoardColumnAdd = document.querySelector<HTMLButtonElement>("#ado-board-column-add");
 const adoWitEta = document.querySelector<HTMLElement>("#ado-wit-eta");
 const adoWitEtaEmpty = document.querySelector<HTMLElement>("#ado-wit-eta-empty");
+const adoMarkerTags = document.querySelector<HTMLElement>("#ado-marker-tags");
 
 if (
   adoOrganization &&
@@ -166,9 +166,9 @@ if (
   adoWitRows &&
   adoWorkItemTypesEmpty &&
   adoWorkItemTypeAdd &&
-  adoBoardColumnAdd &&
   adoWitEta &&
-  adoWitEtaEmpty
+  adoWitEtaEmpty &&
+  adoMarkerTags
 ) {
   const adoElements: AzureDevOpsElements = {
     organization: adoOrganization,
@@ -184,9 +184,11 @@ if (
       body: adoWitRows,
       empty: adoWorkItemTypesEmpty,
       addTypeButton: adoWorkItemTypeAdd,
-      addColumnButton: adoBoardColumnAdd,
       etaBody: adoWitEta,
       etaEmpty: adoWitEtaEmpty,
+    },
+    markerTags: {
+      list: adoMarkerTags,
     },
   };
   const adoController = new AzureDevOpsController(

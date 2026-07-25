@@ -269,4 +269,60 @@ describe("renderAssignedTo", () => {
     expect(resultButton?.querySelector("img")).toBeNull();
     expect(resultButton?.textContent).toBe("<img src=x onerror=alert(1)>");
   });
+
+  it("renders the assignee's tag pill when showTag is on", () => {
+    const user: TrackedUser = {
+      displayName: "Alice",
+      uniqueName: "alice@example.com",
+      imageUrl: null,
+      tag: "Core",
+    };
+    const directory = new FakeUserDirectory();
+
+    const control = renderAssignedTo(document, { user, userDirectory: directory, showTag: true });
+
+    expect(control.querySelector(".awesomeado-tag-pill")?.textContent).toBe("Core");
+  });
+
+  it("renders the neutral ?? pill when showTag is on and the assignee has no tag", () => {
+    const user: TrackedUser = {
+      displayName: "Bob",
+      uniqueName: "bob@example.com",
+      imageUrl: null,
+      tag: null,
+    };
+    const directory = new FakeUserDirectory();
+
+    const control = renderAssignedTo(document, { user, userDirectory: directory, showTag: true });
+
+    const pill = control.querySelector(".awesomeado-tag-pill");
+    expect(pill?.textContent).toBe("??");
+    expect(pill?.classList.contains("awesomeado-tag-pill--untagged")).toBe(true);
+  });
+
+  it("renders no tag pill by default", () => {
+    const user: TrackedUser = {
+      displayName: "Carol",
+      uniqueName: "carol@example.com",
+      imageUrl: null,
+      tag: "Core",
+    };
+    const directory = new FakeUserDirectory();
+
+    const control = renderAssignedTo(document, { user, userDirectory: directory });
+
+    expect(control.querySelector(".awesomeado-tag-pill")).toBeNull();
+  });
+
+  it("renders no tag pill for an unassigned slot even with showTag on", () => {
+    const directory = new FakeUserDirectory();
+
+    const control = renderAssignedTo(document, {
+      user: null,
+      userDirectory: directory,
+      showTag: true,
+    });
+
+    expect(control.querySelector(".awesomeado-tag-pill")).toBeNull();
+  });
 });

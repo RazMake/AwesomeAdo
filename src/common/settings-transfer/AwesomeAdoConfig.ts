@@ -14,8 +14,9 @@ export const CONFIG_FORMAT_VERSION = 1;
  * The on-disk shape of an exported `AwesomeADO.config` file.
  *
  * It carries the user's ENTIRE configuration: every extension setting (theme, default view, current
- * team, sprint counts, area paths, board columns, work item types) plus every enhanced-query binding
- * (which queries are enhanced and each query's per-view property values). Import restores all of it.
+ * team, sprint counts, area paths, board columns, work item types, marker tags) plus every
+ * enhanced-query binding (which queries are enhanced and each query's per-view property values).
+ * Import restores all of it.
  */
 export interface AwesomeAdoConfig {
   awesomeAdoConfigVersion: number;

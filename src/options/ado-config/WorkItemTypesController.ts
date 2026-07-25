@@ -1,9 +1,5 @@
 import type { AdoWorkItemType } from "../../common/ado/AdoMetadata";
-import {
-  MAX_BOARD_COLUMNS,
-  type WorkItemColumn,
-  type WorkItemType,
-} from "../../common/settings/ExtensionSettings";
+import { type WorkItemColumn, type WorkItemType } from "../../common/settings/ExtensionSettings";
 import type { ISettingsStore } from "../../common/settings/ISettingsStore";
 
 import { AutocompleteInput } from "./AutocompleteInput";
@@ -18,8 +14,6 @@ export interface WorkItemTypesElements {
   empty: HTMLElement;
   /** Button that appends a new, empty work-item-type row. */
   addTypeButton: HTMLButtonElement;
-  /** Button that appends a new board column; disabled once the column cap is reached. */
-  addColumnButton: HTMLButtonElement;
   /** Container the controller fills with one ETA-field row per committed type (read-only list). */
   etaBody: HTMLElement;
   /** Notice shown in the ETA section only while no type is committed. */
@@ -46,7 +40,6 @@ const TYPE_ROLE = "type";
 const TYPE_DELETE_ROLE = "type-delete";
 const TYPE_DRAG_ROLE = "type-drag";
 const COLUMN_NAME_ROLE = "column-name";
-const COLUMN_DELETE_ROLE = "column-delete";
 const STATE_ROLE = "state";
 const STATE_REMOVE_ROLE = "state-remove";
 const ETA_ROLE = "eta";
@@ -60,15 +53,15 @@ const STATE_INPUT_SELECTOR = `[${ROLE_ATTRIBUTE}="${STATE_ROLE}"]`;
 const COLUMN_ID_ATTRIBUTE = "data-column-id";
 const TYPE_NAME_ATTRIBUTE = "data-type-name";
 
-const NEW_COLUMN_BASE_NAME = "New state";
 // The blank ETA choice: the type has no ETA field until the user picks a date field for it.
 const ETA_NONE_LABEL = "— None —";
 
 /**
  * Drives the "Work item types" mapping table on the Azure DevOps tab.
  *
- * The table's columns are the team's own board columns (their "application states"), shared by every
- * row and user-defined (add / rename / remove, capped at `MAX_BOARD_COLUMNS`). Each row is one work
+ * The table's columns are the team's own board columns (their "application states"), a fixed,
+ * shared set whose titles are user-editable (rename only — columns cannot be added or removed).
+ * Each row is one work
  * item type; each cell holds the ADO states of that type routed to that column, shown as removable
  * chips where the first chip is the column's *primary* state. A state sits in at most one column per
  * row; any state left unplaced falls back to the first column at runtime.
@@ -111,13 +104,11 @@ export class WorkItemTypesController {
     private readonly reportError: ReportError,
   ) {
     elements.addTypeButton.disabled = true;
-    elements.addColumnButton.disabled = true;
   }
 
   /** Wire the delegated events; the parent drives data in through `render`/`setAvailableTypes`. */
   init(): void {
     this.elements.addTypeButton.addEventListener("click", this.handleAddType);
-    this.elements.addColumnButton.addEventListener("click", this.handleAddColumn);
     // Delegated on the containers so dynamically added rows/columns need no per-node bookkeeping.
     this.elements.body.addEventListener("change", this.handleBodyChange);
     this.elements.body.addEventListener("click", this.handleBodyClick);
@@ -126,7 +117,6 @@ export class WorkItemTypesController {
     this.elements.body.addEventListener("drop", this.handleDrop);
     this.elements.body.addEventListener("dragend", this.handleDragEnd);
     this.elements.columnsRow.addEventListener("change", this.handleColumnChange);
-    this.elements.columnsRow.addEventListener("click", this.handleColumnClick);
     // The ETA section's date-field pickers are delegated the same way its list is rebuilt in place.
     this.elements.etaBody.addEventListener("change", this.handleEtaChange);
   }
@@ -134,7 +124,6 @@ export class WorkItemTypesController {
   dispose(): void {
     this.disposeComboboxes();
     this.elements.addTypeButton.removeEventListener("click", this.handleAddType);
-    this.elements.addColumnButton.removeEventListener("click", this.handleAddColumn);
     this.elements.body.removeEventListener("change", this.handleBodyChange);
     this.elements.body.removeEventListener("click", this.handleBodyClick);
     this.elements.body.removeEventListener("dragstart", this.handleDragStart);
@@ -142,7 +131,6 @@ export class WorkItemTypesController {
     this.elements.body.removeEventListener("drop", this.handleDrop);
     this.elements.body.removeEventListener("dragend", this.handleDragEnd);
     this.elements.columnsRow.removeEventListener("change", this.handleColumnChange);
-    this.elements.columnsRow.removeEventListener("click", this.handleColumnClick);
     this.elements.etaBody.removeEventListener("change", this.handleEtaChange);
   }
 
@@ -187,40 +175,14 @@ export class WorkItemTypesController {
   enable(): void {
     this.enabled = true;
     this.elements.addTypeButton.disabled = false;
-    this.refreshAddColumn();
   }
 
   // ── Column-level events ─────────────────────────────────────────────────────
-
-  private readonly handleAddColumn = (): void => {
-    if (this.columns.length >= MAX_BOARD_COLUMNS) {
-      return;
-    }
-    const column: ColumnModel = { id: `c${this.nextColumnId++}`, name: this.defaultColumnName() };
-    this.columns.push(column);
-    this.renderHeader();
-    for (const row of this.rows()) {
-      row.append(this.createCell(column.id));
-      this.refreshRow(row);
-    }
-    this.persistColumns();
-    // Land the user in the new header so they can immediately rename it to the column they use.
-    const input = this.columnInput(column.id);
-    input?.focus();
-    input?.select();
-  };
 
   private readonly handleColumnChange = (event: Event): void => {
     const target = event.target as HTMLElement;
     if (target.getAttribute(ROLE_ATTRIBUTE) === COLUMN_NAME_ROLE) {
       this.renameColumn(target as HTMLInputElement);
-    }
-  };
-
-  private readonly handleColumnClick = (event: Event): void => {
-    const target = event.target as HTMLElement;
-    if (target.getAttribute(ROLE_ATTRIBUTE) === COLUMN_DELETE_ROLE) {
-      this.deleteColumn(target);
     }
   };
 
@@ -240,28 +202,6 @@ export class WorkItemTypesController {
     column.name = typed;
     input.value = typed;
     // The stored type mappings embed the column name, so both keys change together.
-    this.persistAll();
-  }
-
-  private deleteColumn(target: HTMLElement): void {
-    const header = target.closest(`[${COLUMN_ID_ATTRIBUTE}]`);
-    const id = header?.getAttribute(COLUMN_ID_ATTRIBUTE);
-    if (id === null || id === undefined) {
-      return;
-    }
-    this.columns = this.columns.filter((column) => column.id !== id);
-    this.renderHeader();
-    for (const row of this.rows()) {
-      const cell = row.querySelector<HTMLElement>(
-        `${CELL_SELECTOR}[${COLUMN_ID_ATTRIBUTE}="${id}"]`,
-      );
-      if (cell !== null) {
-        // Removing a column frees its states back into the pool for the remaining columns.
-        this.disposeCell(cell);
-        cell.remove();
-      }
-      this.refreshRow(row);
-    }
     this.persistAll();
   }
 
@@ -569,7 +509,6 @@ export class WorkItemTypesController {
     this.columns.forEach((column, index) => {
       this.elements.columnsRow.append(this.createColumnHeader(doc, column, index === 0));
     });
-    this.refreshAddColumn();
   }
 
   private createColumnHeader(doc: Document, column: ColumnModel, isFallback: boolean): HTMLElement {
@@ -588,16 +527,7 @@ export class WorkItemTypesController {
     input.setAttribute("aria-label", "Board column name");
     input.setAttribute(ROLE_ATTRIBUTE, COLUMN_NAME_ROLE);
     input.value = column.name;
-    cell.append(
-      input,
-      this.createButton(
-        doc,
-        COLUMN_DELETE_ROLE,
-        `Remove ${column.name} column`,
-        "×",
-        "wit-col__delete",
-      ),
-    );
+    cell.append(input);
     return cell;
   }
 
@@ -893,17 +823,6 @@ export class WorkItemTypesController {
     return assigned;
   }
 
-  private refreshAddColumn(): void {
-    this.elements.addColumnButton.disabled =
-      !this.enabled || this.columns.length >= MAX_BOARD_COLUMNS;
-  }
-
-  private persistColumns(): void {
-    void this.store
-      .write({ boardColumns: this.collectColumns() })
-      .catch((error: unknown) => this.reportError(error));
-  }
-
   private persistTypes(): void {
     void this.store
       .write({ workItemTypes: this.collect() })
@@ -961,18 +880,6 @@ export class WorkItemTypesController {
   }
 
   // ── Small helpers ───────────────────────────────────────────────────────────
-
-  private defaultColumnName(): string {
-    const used = new Set(this.columns.map((column) => column.name.toLowerCase()));
-    if (!used.has(NEW_COLUMN_BASE_NAME.toLowerCase())) {
-      return NEW_COLUMN_BASE_NAME;
-    }
-    let index = 2;
-    while (used.has(`${NEW_COLUMN_BASE_NAME} ${index}`.toLowerCase())) {
-      index += 1;
-    }
-    return `${NEW_COLUMN_BASE_NAME} ${index}`;
-  }
 
   private findType(name: string | undefined): AdoWorkItemType | null {
     if (name === undefined) {
@@ -1131,12 +1038,6 @@ export class WorkItemTypesController {
       throw new Error("WorkItemTypesController: expected type combobox is missing");
     }
     return combobox.root;
-  }
-
-  private columnInput(id: string): HTMLInputElement | null {
-    return this.elements.columnsRow.querySelector<HTMLInputElement>(
-      `[${COLUMN_ID_ATTRIBUTE}="${id}"] [${ROLE_ATTRIBUTE}="${COLUMN_NAME_ROLE}"]`,
-    );
   }
 
   private querySelector<T extends Element>(scope: Element, selector: string): T {

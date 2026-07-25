@@ -23,15 +23,25 @@ halves of the view — its configuration and its renderer.
     bands:
     1. Breadcrumbs: the query's clickable parent-folder trail (hidden until a folder-path source is
        wired).
-    2. Title + controls: the root item's title (colored by type) with the expand-all/collapse-all
+    2. Write-queue status: a right-aligned row above the sprint picker showing the shared
+       [`WriteQueueStatus`](../../../common/view-common/control/WriteQueueStatus/README.md)
+       indicator, driven live by the board's `StateWriteQueue`. It stays hidden until a Status write
+       is in flight, then shows an animated "Saving N change(s)…" spinner and disappears once the
+       queue drains.
+    3. Title + controls: the root item's title (colored by type) with the expand-all/collapse-all
        (`+`/`−`) buttons beside it and the sprint picker pinned to the right edge of the same band.
-    3. Tech Lead + ETA: "TechLead:" label + root's Assigned To, followed by the root's ETA badge.
-  - **Sprint filter**: uses the reusable `SprintPicker` control. Filter ON by default when sprints
-    exist (rows filtered to selected sprint + ancestor paths, pills hidden); OFF shows all rows with
-    sprint pills. Empty sprints → forced OFF, toggle disabled.
+    4. Tech Lead + ETA: "TechLead:" label + root's Assigned To, followed by the root's ETA badge.
+  - **Sprint filter**: uses the reusable `SprintPicker` control, populated from the shared sprint
+    window (`services.loadSprintWindow()` → the configured team's iterations around the current one,
+    each labelled by its offset such as `Current - Sprint 5` or `2 sprints ago`). Filter ON by
+    default when sprints exist and pre-selected on the current sprint (rows filtered to selected
+    sprint + ancestor paths, pills hidden); OFF shows all rows with sprint pills. Empty sprints →
+    forced OFF, toggle disabled.
   - **Tree rows**: each row shows twisty (when children exist), editable Status badge, title
-    (type-colored), description toggle ("?" button), Assigned To control, sprint pill (when filter
-    OFF), and ETA badge (right-aligned). Clicking the twisty expands/collapses that node's children.
+    (type-colored), description toggle ("?" button), Assigned To control (with the assignee's Feature
+    Crew **tag pill**), sprint pill (when filter
+    OFF — shown only for items on a real, leaf iteration; an item parked on the iteration root shows
+    no pill), and ETA badge (right-aligned). Clicking the twisty expands/collapses that node's children.
     The Status badge uses [`renderStatusBadge`](../../../common/view-common/control/StatusBadge/README.md)
     and displays the **Status** (the board-column label the item's ADO State maps to), never the raw
     ADO State. Choosing a new Status optimistically updates the row and enqueues a serialized write of
@@ -40,10 +50,11 @@ halves of the view — its configuration and its renderer.
     never race on `System.Rev`).
   - **Indentation**: 70% less than before (~7px vs 24px) with a discrete themed vertical guide line
     showing parent-child relationships (low-alpha neutral border).
-  - **Description panel**: toggles below each row; displays "Created: <date> (by <name>), Last
-    Modified: <date> (by <name>)" followed by the item's description text. Uses
-    [`renderDateLabel`](../../../common/view-common/control/DateLabel/README.md) for dates and `textContent` for names (never
-    innerHTML).
+  - **Description panel**: toggles below each row; displays "Created on: <date>, Last Modified on:
+    <date>" followed by the item's description text. Uses
+    [`renderItemLifecycleInfo`](../../../common/view-common/control/ItemLifecycleInfo/README.md),
+    which shows each actor's name in a "By <name>" tooltip and renders dates with
+    [`DateLabel`](../../../common/view-common/control/DateLabel/README.md) (never innerHTML).
   - **Theme compliance**: EVERY control (badges, pills, buttons, twisties, the header panel, the
     guide line) follows the ADO theme via CSS custom properties with literal fallbacks, never
     hard-coded light-only colors as the sole value (ADR-034, principle #13).
@@ -53,7 +64,14 @@ halves of the view — its configuration and its renderer.
     [`common/browser`](../../../common/browser)); it also re-reconciles immediately when someone is
     picked inline via an Assigned To control, so a newly-added person joins the roster without a
     reload. The write is fire-and-forget — a failure is logged but never blocks the board — and is
-    skipped when no work item types are configured.
+    skipped when no work item types are configured. When the reconcile resolves it hands back the
+    roster's tags, which the board projects onto every assignee (`applyFeatureCrewTags`) so each
+    Assigned To pill shows its color.
+  - **Tag filter panel**: once the roster resolves, a [`tag-filter`](./tag-filter/README.md) panel of
+    clickable tag pills appears above the tree. Clicking pills narrows the tree to items assigned to
+    people wearing any of the selected tags (an **OR** across the selection; empty = show everyone),
+    combined with the sprint filter. The neutral **"??"** pill narrows to assigned-but-untagged
+    people. Ancestors of a matching item stay visible so a match is never orphaned from its path.
 
 Because every property is stored on the binding, the same view bound to two queries can use
 different windows. Both halves are registered centrally: the config in `../viewCatalog.ts`, the

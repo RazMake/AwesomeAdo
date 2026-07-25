@@ -44,18 +44,19 @@ export function formatPstTime(iso: string): string {
 }
 
 /**
- * Format an ISO 8601 timestamp as "MM/DD/YYYY @ h:mm AM/PM PST" for tooltip hovers.
+ * Format an ISO 8601 timestamp as "@ h:mm AM/PM PST" for tooltip hovers.
+ *
+ * The date is intentionally omitted because the label already shows it; the tooltip only adds the
+ * exact time the label cannot fit.
  *
  * Examples:
- * - "2026-07-24T15:30:00Z" → "07/24/2026 @ 8:30 AM PST"
+ * - "2026-07-24T15:30:00Z" → "@ 8:30 AM PST"
  * - "" → ""
  * - "invalid" → ""
  */
 export function formatPstTooltip(iso: string): string {
-  if (!iso) return "";
-  const date = formatPstDate(iso);
   const time = formatPstTime(iso);
-  if (!date || !time) return "";
+  if (!time) return "";
 
-  return `${date} @ ${time} PST`;
+  return `@ ${time} PST`;
 }

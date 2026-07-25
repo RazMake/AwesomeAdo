@@ -14,7 +14,8 @@ import type {
   WorkItemStateWriteResult,
 } from "../ado/IWorkItemStateWriter";
 import type { WorkItemTreeResult } from "../ado/IWorkItemTreeLoader";
-import type { SprintRef, TypeCatalogEntry } from "../ado/TrackedWorkItem";
+import type { TypeCatalogEntry } from "../ado/TrackedWorkItem";
+import type { SprintWindow } from "../ado/sprintWindow";
 import type { ILogger } from "../logging/ILogger";
 
 /**
@@ -35,13 +36,20 @@ export interface EnhancedViewServices {
    */
   getTypes(): TypeCatalogEntry[];
   /**
-   * The team's global board columns in order (e.g. Queue → Active → Waiting → Done → Removed). A
-   * status's color is keyed off its position in this list so the same board column reads identically
-   * for every work-item type.
+   * The team's global board columns in order (e.g. In Queue → In Progress → Waiting → Done →
+   * Removed). A status's color is keyed off its position in this list so the same board column reads
+   * identically for every work-item type.
    */
   getBoardColumns(): string[];
-  /** The sprint roster (path + name) for sprint-scoped views. */
-  getSprints(): SprintRef[];
+  /**
+   * Load the current team's sprint window: the iterations around the current one (bounded by the
+   * configured past/future sprint counts), each labelled by its offset ("Current", "Next sprint",
+   * "2 sprints ago", …), plus the name to select by default. This is the single shared entry point
+   * every sprint-filtering view uses to populate its sprint picker; the composition root owns the
+   * fetch + windowing so views only render the result. Resolves to an empty window when no team is
+   * configured or the fetch fails.
+   */
+  loadSprintWindow(): Promise<SprintWindow>;
   /** The reference clock (injected so views can compute "now" deterministically). */
   now(): Date;
   /** The logger for view-level diagnostics. */

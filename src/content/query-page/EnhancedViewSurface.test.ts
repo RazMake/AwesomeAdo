@@ -210,7 +210,7 @@ describe("EnhancedViewSurface", () => {
       userDirectory: { search: () => Promise.resolve([]), resolve: () => Promise.resolve(null) },
       getTypes: () => [],
       getBoardColumns: () => [],
-      getSprints: () => [],
+      loadSprintWindow: () => Promise.resolve({ entries: [], currentName: null }),
       now: () => new Date(),
       logger: { info: () => {}, error: () => {} },
       writeState: () => Promise.resolve({ ok: true }),

@@ -55,6 +55,24 @@ describe("renderSprintPicker", () => {
     expect(handle.selectedSprint()).toBe("Sprint 2");
   });
 
+  it("shows the label as option text while reporting the raw name on selection", () => {
+    const handle = renderSprintPicker(document, {
+      sprints: [
+        { path: "Team\\Sprint 1", name: "Sprint 1", label: "Previous - Sprint 1" },
+        { path: "Team\\Sprint 2", name: "Sprint 2", label: "Current - Sprint 2" },
+      ],
+      selectedName: "Sprint 2",
+    });
+
+    const options = handle.element.querySelectorAll("option");
+    // The decorated label is what the user sees...
+    expect(options[0]?.textContent).toBe("Previous - Sprint 1");
+    expect(options[1]?.textContent).toBe("Current - Sprint 2");
+    // ...but the option value and the reported selection stay the raw sprint name (for filtering).
+    expect(options[1]?.value).toBe("Sprint 2");
+    expect(handle.selectedSprint()).toBe("Sprint 2");
+  });
+
   it("selects the first sprint when selectedName is missing or does not match", () => {
     const handle = renderSprintPicker(document, {
       sprints: [
@@ -97,6 +115,54 @@ describe("renderSprintPicker", () => {
     const handle = renderSprintPicker(document, { sprints: [] });
 
     expect(handle.selectedSprint()).toBeNull();
+  });
+
+  it("disables the select while the filter is inactive", () => {
+    const handle = renderSprintPicker(document, {
+      sprints: [{ path: "Team\\Sprint 1", name: "Sprint 1" }],
+      filterActive: false,
+    });
+
+    const select = handle.element.querySelector<HTMLSelectElement>(
+      ".awesomeado-sprint-picker__select",
+    );
+
+    expect(select?.disabled).toBe(true);
+  });
+
+  it("enables the select when the filter starts active", () => {
+    const handle = renderSprintPicker(document, {
+      sprints: [{ path: "Team\\Sprint 1", name: "Sprint 1" }],
+      filterActive: true,
+    });
+
+    const select = handle.element.querySelector<HTMLSelectElement>(
+      ".awesomeado-sprint-picker__select",
+    );
+
+    expect(select?.disabled).toBe(false);
+  });
+
+  it("toggles the select enabled state as the filter flips", () => {
+    const handle = renderSprintPicker(document, {
+      sprints: [{ path: "Team\\Sprint 1", name: "Sprint 1" }],
+      filterActive: false,
+    });
+
+    const button = handle.element.querySelector<HTMLButtonElement>(
+      ".awesomeado-sprint-picker__button",
+    );
+    const select = handle.element.querySelector<HTMLSelectElement>(
+      ".awesomeado-sprint-picker__select",
+    );
+
+    expect(select?.disabled).toBe(true);
+
+    button?.click();
+    expect(select?.disabled).toBe(false);
+
+    button?.click();
+    expect(select?.disabled).toBe(true);
   });
 
   it("clicking the button flips isFilterActive() and calls onFilterToggle", () => {

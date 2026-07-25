@@ -19,8 +19,8 @@ deterministically in any engine.
   `""` for invalid input.
 - `formatPstTime(iso)` — formats an ISO 8601 timestamp as `h:mm AM/PM` PST; returns `""` for invalid
   input.
-- `formatPstTooltip(iso)` — formats an ISO 8601 timestamp as `MM/DD/YYYY @ h:mm AM/PM PST` for tooltip
-  hovers; returns `""` for invalid input.
+- `formatPstTooltip(iso)` — formats an ISO 8601 timestamp as `@ h:mm AM/PM PST` for tooltip hovers;
+  returns `""` for invalid input.
 
 ### `etaCountdown.ts`
 

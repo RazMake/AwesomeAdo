@@ -2,8 +2,14 @@
 export interface SprintOption {
   /** The iteration path (stable id). */
   path: string;
-  /** The sprint display name. */
+  /** The sprint display name. This is the value the picker reports back (selection + callbacks). */
   name: string;
+  /**
+   * Optional display text shown in the dropdown, e.g. `Current - Sprint 5`. Defaults to `name`. The
+   * label is purely cosmetic: selection and the change/toggle callbacks still carry the raw `name`,
+   * so a caller filtering by sprint name keeps working regardless of what the option shows.
+   */
+  label?: string;
 }
 
 /** Options for rendering a sprint picker. */
@@ -101,7 +107,13 @@ export function renderSprintPicker(
   // The sprint dropdown.
   const select = doc.createElement("select");
   select.className = "awesomeado-sprint-picker__select";
-  select.disabled = isEmpty;
+  // The dropdown is only meaningful while the filter is on: picking a sprint with the filter off
+  // would change nothing, so keep it disabled until the funnel is toggled active (and always when
+  // there are no sprints to choose from).
+  const updateSelectEnabled = () => {
+    select.disabled = isEmpty || !active;
+  };
+  updateSelectEnabled();
   select.style.cssText = [
     "background:var(--background-color, #fff)",
     "color:var(--text-primary-color, #323130)",
@@ -111,11 +123,11 @@ export function renderSprintPicker(
     "font:inherit",
   ].join(";");
 
-  // Populate the select with sprint options (each option's value and label are the sprint name).
+  // Populate the select with sprint options (value = raw name for matching; label = display text).
   for (const sprint of sprints) {
     const option = doc.createElement("option");
     option.value = sprint.name;
-    option.textContent = sprint.name;
+    option.textContent = sprint.label ?? sprint.name;
     select.append(option);
   }
 
@@ -132,6 +144,7 @@ export function renderSprintPicker(
   button.addEventListener("click", () => {
     active = !active;
     updateButtonStyle();
+    updateSelectEnabled();
     const currentSprint = sprints.length > 0 ? select.value : null;
     onFilterToggle?.(active, currentSprint);
   });

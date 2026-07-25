@@ -1,6 +1,6 @@
 # DateLabel
 
-A formatted date label displaying MM/DD/YYYY in PST with a full-timestamp hover tooltip.
+A formatted date label displaying MM/DD/YYYY in PST with a time-only hover tooltip.
 
 ## Usage
 
@@ -13,7 +13,7 @@ parentElement.appendChild(label);
 
 ## Behavior
 
-- **Valid ISO date**: Displays `MM/DD/YYYY` text with a tooltip showing the full `MM/DD/YYYY @ h:mm AM/PM PST` timestamp on hover.
+- **Valid ISO date**: Displays `MM/DD/YYYY` text with a tooltip showing the `@ h:mm AM/PM PST` time on hover.
 - **Empty or invalid ISO**: Displays `—` with no tooltip.
 
 The control applies `cursor:default` for consistent interaction, and inherits `font` and `color` from the parent so it adapts to Azure DevOps's theme (light or dark).

@@ -291,6 +291,36 @@ the raw `{ wiql, items }` (`AdoRawTree`) for `parseTrackedTree` to normalize. Th
 `buildAdoTreeUrls` (in `common/ado/fetchAdoTree`) from the sender's own trusted tab URL, keeping the
 worker a closed "load this query's tree" operation rather than a fetch-any-URL proxy.
 
+## Loading a team's iterations (sprints)
+
+A sprint-filtering view (e.g. Project Tracking) needs the current team's iterations to build its
+sprint picker. The team-iterations REST call is credentialed and team-scoped, so it mirrors the tree
+read: the content script messages the background worker, which runs the fetch in the ADO tab's MAIN
+world and hands back the raw body for parsing.
+
+### `AdoIterationsRequest.ts` — the content→background message contract
+
+- `LOAD_TEAM_ITERATIONS_MESSAGE` / `LoadTeamIterationsMessage` (`{ type, team }`) — the request the
+  content view sends to load a team's iterations.
+- `LoadTeamIterationsResponse` (`{ raw }`) — the raw `teamsettings/iterations` body, or `null` on
+  failure.
+- `isLoadTeamIterationsMessage(value)` — the type guard the worker uses before serving the request.
+
+### `MessagingTeamIterationsLoader` (class) — the content-side loader
+
+The `ITeamIterationsLoader` implementation the sprint picker depends on. It messages the worker with
+the team name, parses the returned body with `parseTeamIterations`, and degrades to an empty list
+(logged) on any failure. The `send` function is injected so the class never touches `chrome.runtime`
+itself; the composition root supplies the real binding.
+
+### `fetchAdoIterationsInPage(iterationsUrl)` — `fetchAdoIterationsInPage.ts`
+
+The self-contained function the background worker injects into the ADO tab's MAIN world to serve a
+`LoadTeamIterationsMessage`. It performs one credentialed GET of the team-iterations endpoint (the
+list is small and unpaged) and returns the raw body, or `null` on any non-ok/thrown response. The URL
+is built by `buildAdoIterationsUrl` (in `common/ado/TeamIteration`) from the sender's own trusted tab
+URL, keeping the worker a closed "read this team's iterations" operation.
+
 ## Reconciling the Feature Crew roster
 
 The Project Tracking view keeps a project's **Feature Crew** roster — the list of everyone assigned
@@ -304,8 +334,9 @@ worker, which runs the reads/writes in the ADO tab's MAIN world.
 - `RECONCILE_FEATURE_CREW_MESSAGE` / `ReconcileFeatureCrewMessage`
   (`{ type, rootId, typeName, assignees }`) — the request the content view sends to reconcile the
   roster against the people currently assigned.
-- `ReconcileFeatureCrewResponse` (`{ ok, changed, id?, error? }`) — the worker's reply; `ok` is
-  false with an `error` string when the reconcile could not complete.
+- `ReconcileFeatureCrewResponse` (`{ ok, changed, id?, error?, members? }`) — the worker's reply;
+  `ok` is false with an `error` string when the reconcile could not complete, and `members` (on
+  success) is the reconciled roster with each person's hand-set tag so the view can paint tags.
 - `isReconcileFeatureCrewMessage(value)` — the guard the worker uses to accept only well-formed
   requests.
 
@@ -339,10 +370,16 @@ so it references only its parameters and page globals.
 ### `applyFeatureCrewInPage(config)` — `applyFeatureCrewInPage.ts`
 
 The self-contained function the **background worker** injects into the ADO tab's MAIN world to write
-the roster. In `create` mode it POSTs a JSON-Patch that sets the title, `Removed` state, description,
-and the `Affects-Reverse` relation to the root; in `update` mode it PATCHes only the description of
-an existing item. Uses the `application/json-patch+json` content type and returns `{ id }` or `null`
-on failure. Serialized with `Function.prototype.toString`.
+the roster. In `create` mode it POSTs a JSON-Patch that sets the title, description, and the
+`Affects-Reverse` relation to the root — creating the item in its default new state — then PATCHes it
+to the `Removed` state, because ADO rejects creating an item directly in a closed state; in `update`
+mode it PATCHes only the description of an existing item. Both paths also set
+`System.Description` to **Markdown** (`/multilineFieldsFormat/System.Description`) so the one-per-line
+roster renders beneath the heading instead of collapsing onto one line as HTML would. Uses the
+`application/json-patch+json` content type and returns a `FeatureCrewApplyResult` (`{ id }` on
+success, or `{ id: null, error }` on failure — the `error` carries the HTTP status plus ADO's error
+message, or the thrown value — so the caller logs the specific reason). Serialized with
+`Function.prototype.toString`.
 
 ## Writing a work item's state back to ADO
 

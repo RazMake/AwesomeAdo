@@ -33,7 +33,8 @@ container.appendChild(handle.element);
 A sprint choice in the dropdown.
 
 - **`path: string`** — The iteration path (stable id).
-- **`name: string`** — The sprint display name.
+- **`name: string`** — The sprint display name. This is the value the picker reports back on selection and in its callbacks.
+- **`label?: string`** — Optional display text shown in the dropdown (e.g. `Current - Sprint 5`); defaults to `name`. Purely cosmetic — selection and callbacks still carry the raw `name`, so filtering by sprint name keeps working.
 
 ### `SprintPickerOptions`
 
@@ -58,8 +59,8 @@ A handle for controlling and querying the sprint picker state.
 Renders a sprint filter control = an **icon filter toggle button** (in front) + a **sprint dropdown**.
 
 - The **filter button** uses an inline SVG funnel icon (NOT text), is theme-styled, and reflects its active state via `aria-pressed` and a subtle themed "on" look (`var(--palette-neutral-8, …)` background when active, `transparent` when inactive).
-- The **dropdown** is a native `<select>` element populated with one `<option>` per sprint, theme-styled.
-- Clicking the button toggles the filter active state and calls `onFilterToggle(active, selectedSprint())`.
+- The **dropdown** is a native `<select>` element populated with one `<option>` per sprint, theme-styled. It is **disabled while the filter is inactive** (picking a sprint has no effect until the funnel is toggled on) and becomes enabled once the filter is active.
+- Clicking the button toggles the filter active state, enables/disables the dropdown to match, and calls `onFilterToggle(active, selectedSprint())`.
 - Changing the select calls `onSprintChange(selectedName)`.
 - When `sprints` is empty, both the button and select are disabled, and `selectedSprint()` returns `null`.
 
@@ -67,5 +68,6 @@ Renders a sprint filter control = an **icon filter toggle button** (in front) + 
 
 - **Icon toggle button:** The filter button shows an SVG funnel icon (inherits `currentColor` so it follows the theme), NOT a text label. It has `aria-label="Filter by sprint"` and a `title` for accessibility.
 - **Active state signaling:** The button uses `aria-pressed` to reflect its active state (`"true"` or `"false"`). When active, the button shows a subtle themed background (`var(--palette-neutral-8, rgba(128,128,128,0.12))`); when inactive, the background is `transparent`.
+- **Filter-gated dropdown:** The dropdown is disabled while the filter is inactive and enabled once the filter is toggled on, so choosing a sprint only becomes possible when it actually filters.
 - **Theme-aware:** Both the button and select use ADO CSS custom properties (`--background-color`, `--text-primary-color`, `--palette-neutral-20`, `--palette-neutral-8`) with fallbacks, so they adapt to light/dark themes.
 - **Empty sprints handling:** When `sprints` is empty, both controls are disabled, and `selectedSprint()` returns `null`.

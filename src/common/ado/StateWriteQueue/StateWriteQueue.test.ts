@@ -111,4 +111,100 @@ describe("StateWriteQueue", () => {
 
     expect(infos.some((line) => line.includes("42") && line.includes("Waiting"))).toBe(true);
   });
+
+  it("starts with a pending count of 0", () => {
+    const { logger } = createRecordingLogger();
+    const writeState = vi.fn(async (): Promise<WorkItemStateWriteResult> => ({ ok: true, rev: 2 }));
+    const queue = new StateWriteQueue(writeState, logger);
+
+    expect(queue.pendingCount).toBe(0);
+  });
+
+  it("notifies a new subscriber immediately with the current count", () => {
+    const { logger } = createRecordingLogger();
+    const writeState = vi.fn(async (): Promise<WorkItemStateWriteResult> => ({ ok: true, rev: 2 }));
+    const queue = new StateWriteQueue(writeState, logger);
+
+    const seen: number[] = [];
+    queue.onPendingChange((count) => seen.push(count));
+
+    expect(seen).toEqual([0]);
+  });
+
+  it("increments the pending count while a write is in flight and returns to 0 once it settles", async () => {
+    const { logger } = createRecordingLogger();
+    // A gate the test releases manually so the write can be observed mid-flight without real timers.
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const writeState = vi.fn(async (): Promise<WorkItemStateWriteResult> => {
+      await gate;
+      return { ok: true, rev: 3 };
+    });
+    const queue = new StateWriteQueue(writeState, logger);
+
+    const seen: number[] = [];
+    queue.onPendingChange((count) => seen.push(count));
+
+    const run = queue.enqueue(req(1, 2, "Active"));
+    // Queued but blocked on the gate: the count reflects the in-flight write.
+    expect(queue.pendingCount).toBe(1);
+
+    release();
+    await run;
+
+    expect(queue.pendingCount).toBe(0);
+    expect(seen).toEqual([0, 1, 0]);
+  });
+
+  it("returns the pending count to 0 even when a write fails", async () => {
+    const { logger } = createRecordingLogger();
+    const writeState = vi
+      .fn<(request: WorkItemStateWriteRequest) => Promise<WorkItemStateWriteResult>>()
+      .mockRejectedValueOnce(new Error("boom"));
+    const queue = new StateWriteQueue(writeState, logger);
+
+    const seen: number[] = [];
+    queue.onPendingChange((count) => seen.push(count));
+
+    await queue.enqueue(req(1, 2, "Active"));
+
+    expect(queue.pendingCount).toBe(0);
+    expect(seen).toEqual([0, 1, 0]);
+  });
+
+  it("stops notifying a listener after it unsubscribes", async () => {
+    const { logger } = createRecordingLogger();
+    const writeState = vi.fn(async (): Promise<WorkItemStateWriteResult> => ({ ok: true, rev: 2 }));
+    const queue = new StateWriteQueue(writeState, logger);
+
+    const seen: number[] = [];
+    const unsubscribe = queue.onPendingChange((count) => seen.push(count));
+    unsubscribe();
+
+    await queue.enqueue(req(1, 1, "Active"));
+
+    // Only the immediate on-subscribe notification; nothing after unsubscribe.
+    expect(seen).toEqual([0]);
+  });
+
+  it("isolates a throwing listener so the queue and other listeners keep working", async () => {
+    const { logger, errors } = createRecordingLogger();
+    const writeState = vi.fn(async (): Promise<WorkItemStateWriteResult> => ({ ok: true, rev: 9 }));
+    const queue = new StateWriteQueue(writeState, logger);
+
+    const seen: number[] = [];
+    queue.onPendingChange(() => {
+      throw new Error("listener boom");
+    });
+    queue.onPendingChange((count) => seen.push(count));
+
+    const result = await queue.enqueue(req(1, 8, "Active"));
+
+    // The write still completes and the healthy listener still observes the full sequence.
+    expect(result).toEqual({ ok: true, rev: 9 });
+    expect(seen).toEqual([0, 1, 0]);
+    expect(errors.some((entry) => entry.message.includes("listener"))).toBe(true);
+  });
 });

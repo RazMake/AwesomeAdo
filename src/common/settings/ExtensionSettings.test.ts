@@ -1,18 +1,21 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  BOARD_COLUMN_COUNT,
   DEFAULT_BOARD_COLUMNS,
+  DEFAULT_MARKER_TAGS,
   DEFAULT_SETTINGS,
-  MAX_BOARD_COLUMNS,
   MAX_FUTURE_SPRINTS,
   MAX_PAST_SPRINTS,
   MIN_FUTURE_SPRINTS,
   MIN_PAST_SPRINTS,
+  WORK_ITEM_MARKERS,
   defaultAreaPathLabel,
   isAdoConfigured,
   normalizeAreaPaths,
   normalizeBoardColumns,
   normalizeFutureSprintsCount,
+  normalizeMarkerTags,
   normalizePastSprintsCount,
   normalizeSettings,
   normalizeWorkItemTypes,
@@ -106,35 +109,117 @@ describe("normalizeSettings", () => {
     expect(normalizeSettings({ workItemTypes: "nope" }).workItemTypes).toEqual([]);
   });
 
-  it("seeds the default board columns for a first run and honors an explicit list", () => {
-    // A never-set key means a fresh install, so the seed columns appear...
+  it("normalizes markerTags through normalizeSettings", () => {
+    expect(normalizeSettings({}).markerTags).toEqual(DEFAULT_MARKER_TAGS);
+    expect(
+      normalizeSettings({ markerTags: { blocked: { tag: " Impediment ", commentTag: "[X]" } } })
+        .markerTags.blocked,
+    ).toEqual({ tag: "Impediment", commentTag: "[X]" });
+  });
+
+  it("coerces the board columns to the fixed set, preserving stored titles by position", () => {
+    // A never-set key means a fresh install, so the default titles appear...
     expect(normalizeSettings({}).boardColumns).toEqual([...DEFAULT_BOARD_COLUMNS]);
-    // ...but an explicit list — even an empty one the user cleared — is honored as-is.
+    // ...an empty or non-array value is likewise coerced back to the fixed default set...
+    expect(normalizeSettings({ boardColumns: [] }).boardColumns).toEqual([
+      ...DEFAULT_BOARD_COLUMNS,
+    ]);
+    expect(normalizeSettings({ boardColumns: "nope" }).boardColumns).toEqual([
+      ...DEFAULT_BOARD_COLUMNS,
+    ]);
+    // ...and a stored list keeps each position's renamed title while filling the rest from defaults.
     expect(normalizeSettings({ boardColumns: ["Queue", "Doing"] }).boardColumns).toEqual([
       "Queue",
       "Doing",
+      "Waiting",
+      "Done",
+      "Removed",
     ]);
-    expect(normalizeSettings({ boardColumns: [] }).boardColumns).toEqual([]);
-    expect(normalizeSettings({ boardColumns: "nope" }).boardColumns).toEqual([]);
   });
 });
 
 describe("normalizeBoardColumns", () => {
-  it("returns an empty array for non-array input", () => {
-    expect(normalizeBoardColumns(undefined)).toEqual([]);
-    expect(normalizeBoardColumns("Active")).toEqual([]);
+  it("returns the fixed default set for non-array or empty input", () => {
+    expect(normalizeBoardColumns(undefined)).toEqual([...DEFAULT_BOARD_COLUMNS]);
+    expect(normalizeBoardColumns("Active")).toEqual([...DEFAULT_BOARD_COLUMNS]);
+    expect(normalizeBoardColumns([])).toEqual([...DEFAULT_BOARD_COLUMNS]);
   });
 
-  it("trims, drops blanks, and dedupes case-insensitively", () => {
-    expect(normalizeBoardColumns([" Active ", "active", "", "  ", 7, "Done"])).toEqual([
-      "Active",
+  it("always yields exactly BOARD_COLUMN_COUNT positions", () => {
+    expect(normalizeBoardColumns(undefined)).toHaveLength(BOARD_COLUMN_COUNT);
+    expect(normalizeBoardColumns(["only one"])).toHaveLength(BOARD_COLUMN_COUNT);
+    expect(normalizeBoardColumns(["a", "b", "c", "d", "e", "extra", "more"])).toHaveLength(
+      BOARD_COLUMN_COUNT,
+    );
+  });
+
+  it("keeps a stored title at its position and trims it", () => {
+    expect(normalizeBoardColumns([" Backlog ", "Doing"])).toEqual([
+      "Backlog",
+      "Doing",
+      "Waiting",
       "Done",
+      "Removed",
     ]);
   });
 
-  it("caps the list at MAX_BOARD_COLUMNS", () => {
-    const many = Array.from({ length: MAX_BOARD_COLUMNS + 3 }, (_, index) => `Col ${index}`);
-    expect(normalizeBoardColumns(many)).toHaveLength(MAX_BOARD_COLUMNS);
+  it("fills a blank or missing position from that position's default title", () => {
+    expect(normalizeBoardColumns(["Backlog", "  ", 7])).toEqual([
+      "Backlog",
+      "In Progress",
+      "Waiting",
+      "Done",
+      "Removed",
+    ]);
+  });
+
+  it("drops a title that collides case-insensitively with an earlier position", () => {
+    // The second column reusing the first's title would make two columns indistinguishable, so it
+    // falls back to its own default instead.
+    expect(normalizeBoardColumns(["Done", "done"])).toEqual([
+      "Done",
+      "In Progress",
+      "Waiting",
+      "Done",
+      "Removed",
+    ]);
+  });
+});
+
+describe("normalizeMarkerTags", () => {
+  it("seeds the full defaults for a never-set or non-object value", () => {
+    expect(normalizeMarkerTags(undefined)).toEqual(DEFAULT_MARKER_TAGS);
+    expect(normalizeMarkerTags("nope")).toEqual(DEFAULT_MARKER_TAGS);
+    expect(normalizeMarkerTags(null)).toEqual(DEFAULT_MARKER_TAGS);
+  });
+
+  it("has an entry for every configured marker", () => {
+    const result = normalizeMarkerTags({});
+    for (const { key } of WORK_ITEM_MARKERS) {
+      expect(result[key]).toBeDefined();
+    }
+  });
+
+  it("seeds only the missing markers from a partial object", () => {
+    const result = normalizeMarkerTags({ blocked: { tag: "Impediment", commentTag: "[I]" } });
+    expect(result.blocked).toEqual({ tag: "Impediment", commentTag: "[I]" });
+    // A marker absent from the stored object still falls back to its default.
+    expect(result.waiting).toEqual(DEFAULT_MARKER_TAGS.waiting);
+  });
+
+  it("trims each token and honors a deliberately blanked present entry", () => {
+    const result = normalizeMarkerTags({
+      interrupt: { tag: "  ", commentTag: "" },
+      waiting: { tag: "  Parked  ", commentTag: "  [W]  " },
+    });
+    // A present-but-blank entry stays blank rather than being reset to the default.
+    expect(result.interrupt).toEqual({ tag: "", commentTag: "" });
+    expect(result.waiting).toEqual({ tag: "Parked", commentTag: "[W]" });
+  });
+
+  it("ignores non-string token fields", () => {
+    const result = normalizeMarkerTags({ blocked: { tag: 7, commentTag: {} } });
+    expect(result.blocked).toEqual({ tag: "", commentTag: "" });
   });
 });
 
@@ -159,10 +244,6 @@ describe("isAdoConfigured", () => {
 
   it("is false without any area path", () => {
     expect(isAdoConfigured({ ...configured, areaPaths: [] })).toBe(false);
-  });
-
-  it("is false without any board column", () => {
-    expect(isAdoConfigured({ ...configured, boardColumns: [] })).toBe(false);
   });
 
   it("is false without any work item type", () => {

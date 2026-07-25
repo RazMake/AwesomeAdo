@@ -1,4 +1,4 @@
-import type { FeatureCrewAssignee } from "../ado/FeatureCrew";
+import type { FeatureCrewAssignee, FeatureCrewMember } from "../ado/FeatureCrew";
 
 /**
  * The content→background message contract for reconciling the Feature Crew work item.
@@ -24,6 +24,8 @@ export interface ReconcileFeatureCrewResponse {
   changed: boolean;
   id?: number;
   error?: string;
+  /** The reconciled roster (each person with their hand-set tag); present only on success. */
+  members?: FeatureCrewMember[];
 }
 
 export function isReconcileFeatureCrewMessage(

@@ -8,7 +8,7 @@ import type {
   EnhancedViewServices,
 } from "../../../common/view-common/EnhancedView";
 
-import { collectSprintsFromTree, projectTrackingView } from "./ProjectTrackingView";
+import { projectTrackingView } from "./ProjectTrackingView";
 
 /**
  * Creates a fake EnhancedViewServices for testing with controlled return values.
@@ -60,11 +60,14 @@ function createFakeServices(overrides?: Partial<EnhancedViewServices>): Enhanced
         ],
       },
     ],
-    getSprints: () => [
-      { path: "Project\\Sprint 1", name: "Sprint 1" },
-      { path: "Project\\Sprint 2", name: "Sprint 2" },
-    ],
     getBoardColumns: () => ["Queue", "Active", "Waiting", "Done", "Removed"],
+    loadSprintWindow: async () => ({
+      entries: [
+        { path: "Project\\Sprint 1", name: "Sprint 1", label: "Current - Sprint 1" },
+        { path: "Project\\Sprint 2", name: "Sprint 2", label: "Next sprint - Sprint 2" },
+      ],
+      currentName: "Sprint 1",
+    }),
     now: () => new Date("2026-07-24T12:00:00Z"),
     logger: {
       info: (message: string) => {
@@ -173,20 +176,6 @@ function createFixtureTree(): TrackedWorkItem {
 }
 
 describe("ProjectTrackingView", () => {
-  it("collects distinct tree sprints in first-seen order", () => {
-    const tree = createFixtureTree();
-    tree.children[1]!.iterationPath = null;
-    tree.children[1]!.sprintName = "Backlog";
-    tree.children[0]!.children[0]!.iterationPath = null;
-    tree.children[0]!.children[0]!.sprintName = "Sprint 2";
-
-    expect(collectSprintsFromTree(tree)).toEqual([
-      { path: "Project\\Sprint 1", name: "Sprint 1" },
-      { path: "Sprint 2", name: "Sprint 2" },
-      { path: "Backlog", name: "Backlog" },
-    ]);
-  });
-
   it("should show unavailable message when services are undefined", async () => {
     const doc = document;
 
@@ -678,10 +667,14 @@ describe("ProjectTrackingView", () => {
     descButton.click();
 
     const meta = root.querySelector(".awesomeado-tracking__meta");
-    expect(meta?.textContent).toContain("Created:");
-    expect(meta?.textContent).toContain("Bob Jones");
-    expect(meta?.textContent).toContain("Last Modified:");
-    expect(meta?.textContent).toContain("Carol White");
+    expect(meta?.textContent).toContain("Created on:");
+    expect(meta?.textContent).toContain("Last Modified on:");
+
+    // The actor names now live in the "By <name>" tooltip of each event label, not the visible text.
+    const eventLabels = meta?.querySelectorAll<HTMLElement>(".awesomeado-lifecycle__event");
+    const tooltips = Array.from(eventLabels ?? []).map((label) => label.title);
+    expect(tooltips).toContain("By Bob Jones");
+    expect(tooltips).toContain("By Carol White");
   });
 
   it("should render two DateLabel spans in meta line", async () => {
@@ -912,6 +905,10 @@ describe("ProjectTrackingView", () => {
     // The badge should have a caret affordance indicating it's interactive.
     const firstBadge = statusBadges[0];
     expect(firstBadge?.textContent).toContain("▾");
+    // The first row (Feature, ADO State "Active") maps to the "Active" board column (ordinal 1),
+    // so its chip carries the blue ordinal tint keyed off that position.
+    const firstChip = root.querySelector<HTMLElement>(".awesomeado-status__badge");
+    expect(firstChip?.style.background.replace(/\s/g, "")).toContain("rgba(0,120,212,0.2)");
   });
 
   it("should call writeState when status badge is changed", async () => {
@@ -954,9 +951,11 @@ describe("ProjectTrackingView", () => {
 
     expect(writeStateCalls.length).toBeGreaterThan(0);
     const firstCall = writeStateCalls[0];
-    expect(firstCall?.id).toBeDefined();
-    expect(firstCall?.rev).toBeDefined();
-    expect(firstCall?.state).toBeDefined();
+    // The first badge is the Feature (id 2, rev 2, ADO State "Active"); its only alternative Status
+    // is "Done", whose primary ADO State is "Closed".
+    expect(firstCall?.id).toBe(2);
+    expect(firstCall?.rev).toBe(2);
+    expect(firstCall?.state).toBe("Closed");
   });
 
   it("displays the mapped Status label, never the raw ADO State", async () => {
@@ -1025,8 +1024,63 @@ describe("ProjectTrackingView", () => {
 
     // The queued write carries the primary ADO State, not the Status label.
     expect(writeStateCalls[0]?.state).toBe("Closed");
-    // After the write commits, the badge shows the new Status label ("Done").
+    // After the write commits, the badge shows the new Status label ("Done")...
     expect(firstBadge.childNodes[0]?.textContent).toBe("Done");
+    // ...and re-tints to that column's ordinal ("Done" is position 3 → green), so color tracks label.
+    expect(firstBadge.style.background.replace(/\s/g, "")).toContain("rgba(16,124,16,0.2)");
+  });
+
+  it("shows the write-queue status indicator while a save is in flight and hides it once it settles", async () => {
+    const doc = document;
+
+    const epic = createFixtureTree();
+    // Gate the write so it stays in flight until the test releases it, letting us observe the
+    // "saving" indicator deterministically without real timers.
+    let releaseWrite: () => void = () => undefined;
+    const writeGate = new Promise<void>((resolve) => {
+      releaseWrite = resolve;
+    });
+    const services = createFakeServices({
+      loadTree: async () => ({
+        isTreeQuery: true,
+        roots: [epic],
+        error: null,
+      }),
+      writeState: async (request) => {
+        await writeGate;
+        return { ok: true, rev: request.rev + 1 };
+      },
+    });
+
+    const context: EnhancedViewContext = { doc, queryId: "q1", properties: {}, services };
+
+    const root = projectTrackingView.render(context);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const indicator = root.querySelector(".awesomeado-write-queue-status") as HTMLElement;
+    // Idle before any edit: the indicator is present but hidden.
+    expect(indicator).toBeTruthy();
+    expect(indicator.style.display).toBe("none");
+
+    // Trigger a state change to enqueue a write.
+    const firstBadge = root.querySelector(".awesomeado-status__badge") as HTMLElement;
+    firstBadge.click();
+    await Promise.resolve();
+    const doneRow = root.querySelector(".awesomeado-status__row") as HTMLButtonElement;
+    doneRow.click();
+    // Let the enqueue notify the indicator (the write itself is still gated open).
+    await Promise.resolve();
+
+    expect(indicator.style.display).not.toBe("none");
+    expect(indicator.textContent).toContain("Saving 1 change");
+
+    // Release the write and let the queue drain; the indicator returns to hidden.
+    releaseWrite();
+    for (let tick = 0; tick < 6; tick += 1) {
+      await Promise.resolve();
+    }
+    expect(indicator.style.display).toBe("none");
   });
 
   it("should toggle filter OFF and show sprint pills", async () => {
@@ -1070,6 +1124,48 @@ describe("ProjectTrackingView", () => {
     expect(rows.length).toBe(3);
   });
 
+  it("should not show a sprint pill for an item on the iteration root", async () => {
+    const doc = document;
+
+    const epic = createFixtureTree();
+    // Park one rendered descendant on the iteration ROOT (a single top-level node, no nested sprint).
+    // Its leaf "sprint" is only the root of the iteration tree, so it must show no pill; the other
+    // rows stay on real, nested sprints and must still be badged.
+    const dataMigration = epic.children[1]!;
+    dataMigration.iterationPath = "Project";
+    dataMigration.sprintName = "Project";
+    const services = createFakeServices({
+      loadTree: async () => ({
+        isTreeQuery: true,
+        roots: [epic],
+        error: null,
+      }),
+    });
+
+    const context: EnhancedViewContext = {
+      doc,
+      queryId: "q1",
+      properties: {},
+      services,
+    };
+
+    const root = projectTrackingView.render(context);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const toggle = root.querySelector(".awesomeado-sprint-picker__button") as HTMLButtonElement;
+    toggle.click();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await Promise.resolve();
+
+    const pills = root.querySelectorAll(".awesomeado-tracking__sprint-pill");
+    // The three rows are two nested-sprint items plus the root-iteration one; only the two nested
+    // items contribute a pill.
+    expect(pills.length).toBe(2);
+    const pillTexts = Array.from(pills, (pill) => pill.textContent);
+    expect(pillTexts).not.toContain("Project");
+  });
+
   it("should force filter OFF and disable toggle when no sprints", async () => {
     const doc = document;
 
@@ -1086,7 +1182,7 @@ describe("ProjectTrackingView", () => {
         roots: [epic],
         error: null,
       }),
-      getSprints: () => [],
+      loadSprintWindow: async () => ({ entries: [], currentName: null }),
     });
 
     const context: EnhancedViewContext = {
@@ -1366,7 +1462,7 @@ describe("ProjectTrackingView", () => {
     expect(hasUnassigned).toBe(true);
   });
 
-  it("should handle missing createdBy with Unknown", async () => {
+  it("should omit the actor tooltip when createdBy is missing", async () => {
     const doc = document;
 
     const epic = createFixtureTree();
@@ -1396,7 +1492,10 @@ describe("ProjectTrackingView", () => {
     descButton.click();
 
     const meta = root.querySelector(".awesomeado-tracking__meta");
-    expect(meta?.textContent).toContain("by Unknown");
+    // Still renders the line, just without a "By <name>" tooltip on the "Created" label.
+    expect(meta?.textContent).toContain("Created on:");
+    const createdLabel = meta?.querySelector<HTMLElement>(".awesomeado-lifecycle__event");
+    expect(createdLabel?.title).toBe("");
   });
 
   it("should reconcile the Feature Crew with everyone assigned on load", async () => {
@@ -1527,5 +1626,187 @@ describe("ProjectTrackingView", () => {
     await Promise.resolve();
 
     expect(requests).toHaveLength(0);
+  });
+
+  it("renders the tag filter panel with a pill per roster tag once the crew resolves", async () => {
+    const doc = document;
+
+    const epic = createFixtureTree();
+    const services = createFakeServices({
+      loadTree: async () => ({ isTreeQuery: true, roots: [epic], error: null }),
+      featureCrew: {
+        reconcile: async () => ({
+          ok: true,
+          changed: false,
+          members: [
+            { alias: "alice.smith", fullName: "Alice Smith", tag: "Core" },
+            { alias: "bob.jones", fullName: "Bob Jones", tag: "Platform" },
+            { alias: "carol.white", fullName: "Carol White", tag: "" },
+          ],
+        }),
+      },
+    });
+
+    const context: EnhancedViewContext = { doc, queryId: "q1", properties: {}, services };
+    const root = projectTrackingView.render(context);
+    await Promise.resolve();
+    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await Promise.resolve();
+
+    const panel = root.querySelector(".awesomeado-tag-filter");
+    expect(panel).toBeTruthy();
+    const pills = [...(panel?.querySelectorAll(".awesomeado-tag-pill") ?? [])].map(
+      (p) => p.textContent,
+    );
+    // Distinct tags first-seen, with the untagged "??" bucket last (carol has no tag).
+    expect(pills).toEqual(["Core", "Platform", "??"]);
+  });
+
+  it("shows each assignee's tag pill in the tree rows after the crew resolves", async () => {
+    const doc = document;
+
+    const epic = createFixtureTree();
+    const services = createFakeServices({
+      loadTree: async () => ({ isTreeQuery: true, roots: [epic], error: null }),
+      featureCrew: {
+        reconcile: async () => ({
+          ok: true,
+          changed: false,
+          members: [{ alias: "bob.jones", fullName: "Bob Jones", tag: "Platform" }],
+        }),
+      },
+    });
+
+    const context: EnhancedViewContext = { doc, queryId: "q1", properties: {}, services };
+    const root = projectTrackingView.render(context);
+    await Promise.resolve();
+    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await Promise.resolve();
+
+    // Bob owns the only Sprint 1 feature (visible under the default Sprint 1 filter); his row shows
+    // his "Platform" tag pill.
+    const treePills = [...root.querySelectorAll(".awesomeado-tracking__tree .awesomeado-tag-pill")];
+    expect(treePills.some((p) => p.textContent === "Platform")).toBe(true);
+  });
+
+  it("filters the tree to people wearing a selected tag when its pill is clicked", async () => {
+    const doc = document;
+
+    const epic = createFixtureTree();
+    const services = createFakeServices({
+      loadTree: async () => ({ isTreeQuery: true, roots: [epic], error: null }),
+      featureCrew: {
+        reconcile: async () => ({
+          ok: true,
+          changed: false,
+          members: [
+            { alias: "alice.smith", fullName: "Alice Smith", tag: "Core" },
+            { alias: "bob.jones", fullName: "Bob Jones", tag: "Platform" },
+            { alias: "carol.white", fullName: "Carol White", tag: "" },
+          ],
+        }),
+      },
+    });
+
+    const context: EnhancedViewContext = { doc, queryId: "q1", properties: {}, services };
+    const root = projectTrackingView.render(context);
+    await Promise.resolve();
+    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await Promise.resolve();
+
+    // Turn the sprint filter OFF so every item is a candidate; then all three descendants show.
+    const toggle = root.querySelector(".awesomeado-sprint-picker__button") as HTMLButtonElement;
+    toggle.click();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await Promise.resolve();
+    expect(root.querySelectorAll(".awesomeado-tracking__row").length).toBe(3);
+
+    // Click the "Platform" filter pill: only Bob's feature (Platform) survives; the untagged story
+    // and the unassigned feature drop out.
+    const platformPill = [
+      ...root.querySelectorAll<HTMLButtonElement>(".awesomeado-tag-filter .awesomeado-tag-pill"),
+    ].find((p) => p.textContent === "Platform");
+    expect(platformPill).toBeTruthy();
+    platformPill?.click();
+    await Promise.resolve();
+
+    const rows = root.querySelectorAll(".awesomeado-tracking__row");
+    expect(rows.length).toBe(1);
+    expect(rows[0]?.textContent).toContain("User Authentication");
+  });
+
+  it("narrows to untagged people when the ?? filter pill is clicked", async () => {
+    const doc = document;
+
+    const epic = createFixtureTree();
+    const services = createFakeServices({
+      loadTree: async () => ({ isTreeQuery: true, roots: [epic], error: null }),
+      featureCrew: {
+        reconcile: async () => ({
+          ok: true,
+          changed: false,
+          members: [
+            { alias: "bob.jones", fullName: "Bob Jones", tag: "Platform" },
+            { alias: "carol.white", fullName: "Carol White", tag: "" },
+          ],
+        }),
+      },
+    });
+
+    const context: EnhancedViewContext = { doc, queryId: "q1", properties: {}, services };
+    const root = projectTrackingView.render(context);
+    await Promise.resolve();
+    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await Promise.resolve();
+
+    const toggle = root.querySelector(".awesomeado-sprint-picker__button") as HTMLButtonElement;
+    toggle.click();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await Promise.resolve();
+
+    // The "??" bucket catches assigned-but-untagged people (Carol on the Login UI story). Her
+    // ancestor feature stays so she is not orphaned; the unassigned Data Migration feature drops out.
+    const untaggedPill = [
+      ...root.querySelectorAll<HTMLButtonElement>(".awesomeado-tag-filter .awesomeado-tag-pill"),
+    ].find((p) => p.textContent === "??");
+    expect(untaggedPill).toBeTruthy();
+    untaggedPill?.click();
+    await Promise.resolve();
+
+    const rowText = [...root.querySelectorAll(".awesomeado-tracking__row")].map(
+      (r) => r.textContent,
+    );
+    expect(rowText.some((t) => t?.includes("Login UI"))).toBe(true);
+    expect(rowText.some((t) => t?.includes("Data Migration"))).toBe(false);
+  });
+
+  it("updates the TechLead pill with the epic assignee's tag once the crew resolves", async () => {
+    const doc = document;
+
+    const epic = createFixtureTree();
+    const services = createFakeServices({
+      loadTree: async () => ({ isTreeQuery: true, roots: [epic], error: null }),
+      featureCrew: {
+        reconcile: async () => ({
+          ok: true,
+          changed: false,
+          members: [{ alias: "alice.smith", fullName: "Alice Smith", tag: "Core" }],
+        }),
+      },
+    });
+
+    const context: EnhancedViewContext = { doc, queryId: "q1", properties: {}, services };
+    const root = projectTrackingView.render(context);
+    await Promise.resolve();
+    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await Promise.resolve();
+
+    const techLeadPill = root.querySelector(".awesomeado-tracking__techlead .awesomeado-tag-pill");
+    expect(techLeadPill?.textContent).toBe("Core");
   });
 });

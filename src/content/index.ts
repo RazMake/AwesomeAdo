@@ -1,3 +1,4 @@
+import { buildSprintWindow } from "../common/ado/sprintWindow";
 import {
   OPEN_BINDING_SETTINGS_MESSAGE,
   OPEN_OPTIONS_MESSAGE,
@@ -6,6 +7,10 @@ import {
 } from "../common/bindings/BindingRequest";
 import type { ActiveView } from "../common/bindings/QueryBinding";
 import { createQueryBindingStore } from "../common/bindings/createQueryBindingStore";
+import {
+  type LoadTeamIterationsMessage,
+  type LoadTeamIterationsResponse,
+} from "../common/browser/AdoIterationsRequest";
 import {
   type LoadQueryTreeMessage,
   type LoadQueryTreeResponse,
@@ -18,6 +23,10 @@ import {
   MessagingFeatureCrewWriter,
   type SendReconcileRequest,
 } from "../common/browser/MessagingFeatureCrewWriter";
+import {
+  MessagingTeamIterationsLoader,
+  type SendIterationsRequest,
+} from "../common/browser/MessagingTeamIterationsLoader";
 import {
   MessagingWorkItemStateWriter,
   type SendUpdateStateRequest,
@@ -34,7 +43,7 @@ import { createLoggerFactory } from "../common/logging/createLogger";
 import { type AdoThemeResponse, isAdoThemeRequest } from "../common/navigation/AdoContext";
 import { isAdoNavigationMessage } from "../common/navigation/AdoQueryRoute";
 import type { ExtensionSettings } from "../common/settings/ExtensionSettings";
-import { isAdoConfigured } from "../common/settings/ExtensionSettings";
+import { DEFAULT_SETTINGS, isAdoConfigured } from "../common/settings/ExtensionSettings";
 import { createSettingsStore } from "../common/settings/createSettingsStore";
 import type { EnhancedViewServices } from "../common/view-common/EnhancedView";
 
@@ -73,8 +82,9 @@ const store = createSettingsStore(loggers.forSource("common/settings"));
 // cannot reach the credentialed ADO REST API from its isolated world, so the loader messages the
 // background worker (which runs the MAIN-world fetch) and parses the raw bodies it returns — see
 // common/browser/MessagingWorkItemTreeLoader. The type catalog and the tree's ETA fields are read
-// from the latest synced settings (captured below); the user directory is empty and sprints are not
-// yet enumerated (both are follow-ups); the clock is live; the logger is shared.
+// from the latest synced settings (captured below); the sprint window is fetched live from the
+// configured team's iterations; the user directory is empty (a follow-up); the clock is live; the
+// logger is shared.
 let latestSettings: ExtensionSettings | undefined;
 
 // Rebuilt per load from the latest settings so a type's configured ETA date field is both requested
@@ -94,6 +104,18 @@ const sendTreeRequest: SendTreeRequest = (message) =>
 const treeLoader = new MessagingWorkItemTreeLoader(
   sendTreeRequest,
   etaFieldByType,
+  loggers.forSource("content/views"),
+);
+
+// The sprint picker's iteration list is fetched the same way the tree is: the isolated content world
+// cannot reach the credentialed ADO REST API, so the loader messages the background worker (which
+// runs the MAIN-world fetch) and parses the raw body it returns.
+const sendIterationsRequest: SendIterationsRequest = (message) =>
+  chrome.runtime.sendMessage<LoadTeamIterationsMessage, LoadTeamIterationsResponse | undefined>(
+    message,
+  );
+const iterationsLoader = new MessagingTeamIterationsLoader(
+  sendIterationsRequest,
   loggers.forSource("content/views"),
 );
 
@@ -136,7 +158,20 @@ const trackingServices: EnhancedViewServices = {
       columns: t.columns.map((c) => ({ column: c.column, states: [...c.states] })),
     })),
   getBoardColumns: () => [...(latestSettings?.boardColumns ?? [])],
-  getSprints: () => [],
+  loadSprintWindow: async () => {
+    // The iteration list is team-scoped in ADO, so a team must be configured before there is
+    // anything to fetch; without one the picker simply shows nothing. The team's stable id is used
+    // for the URL segment because it is GUID-safe, unlike a display name that may contain spaces.
+    const team = latestSettings?.currentTeam ?? null;
+    if (team === null || team.id.trim().length === 0) {
+      return { entries: [], currentName: null };
+    }
+    const iterations = await iterationsLoader.loadIterations(team.id);
+    return buildSprintWindow(iterations, {
+      pastCount: latestSettings?.pastSprintsCount ?? DEFAULT_SETTINGS.pastSprintsCount,
+      futureCount: latestSettings?.futureSprintsCount ?? DEFAULT_SETTINGS.futureSprintsCount,
+    });
+  },
   now: () => new Date(),
   logger: loggers.forSource("content/views"),
   writeState: (request) => workItemStateWriter.writeState(request),

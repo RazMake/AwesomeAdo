@@ -59,7 +59,7 @@ export class MessagingFeatureCrewWriter implements IFeatureCrewWriter {
       this.logger.info(
         `Feature Crew reconciled for root ${request.rootId}: changed=${response.changed}, id=${response.id ?? "none"}.`,
       );
-      return { ok: true, changed: response.changed, id: response.id };
+      return { ok: true, changed: response.changed, id: response.id, members: response.members };
     } catch (error) {
       this.logger.error(`Could not reconcile Feature Crew for root ${request.rootId}`, error);
       return { ok: false, changed: false };

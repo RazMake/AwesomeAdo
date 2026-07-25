@@ -63,14 +63,14 @@ describe("pstDateTime", () => {
   });
 
   describe("formatPstTooltip", () => {
-    it("formats a valid ISO timestamp as date @ time PST", () => {
-      // July 24, 2026, 3:30 PM UTC → 07/24/2026 @ 8:30 AM PST
-      expect(formatPstTooltip("2026-07-24T15:30:00Z")).toBe("07/24/2026 @ 8:30 AM PST");
+    it("formats a valid ISO timestamp as @ time PST", () => {
+      // July 24, 2026, 3:30 PM UTC → @ 8:30 AM PST
+      expect(formatPstTooltip("2026-07-24T15:30:00Z")).toBe("@ 8:30 AM PST");
     });
 
     it("formats an afternoon time correctly", () => {
-      // July 24, 2026, 11:45 PM UTC → 07/24/2026 @ 4:45 PM PST
-      expect(formatPstTooltip("2026-07-24T23:45:00Z")).toBe("07/24/2026 @ 4:45 PM PST");
+      // July 24, 2026, 11:45 PM UTC → @ 4:45 PM PST
+      expect(formatPstTooltip("2026-07-24T23:45:00Z")).toBe("@ 4:45 PM PST");
     });
 
     it("returns empty string for empty input", () => {

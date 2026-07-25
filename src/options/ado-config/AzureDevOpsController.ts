@@ -15,7 +15,9 @@ import {
 import type { ISettingsStore } from "../../common/settings/ISettingsStore";
 
 import { AutocompleteInput } from "./AutocompleteInput";
+import { MarkerTagsController, type MarkerTagsElements } from "./MarkerTagsController";
 import { WorkItemTypesController, type WorkItemTypesElements } from "./WorkItemTypesController";
+import { ROLE_ATTRIBUTE, createRoleInput } from "./roleInput";
 
 /** The Azure DevOps tab's elements. Passed in so the controller stays DOM-agnostic and testable. */
 export interface AzureDevOpsElements {
@@ -37,6 +39,8 @@ export interface AzureDevOpsElements {
   areaPathAddButton: HTMLButtonElement;
   /** The nested work-item-types section, driven by a delegated sub-controller. */
   workItemTypes: WorkItemTypesElements;
+  /** The nested marker-tags section, driven by a delegated sub-controller. */
+  markerTags: MarkerTagsElements;
 }
 
 type ReportError = (error: unknown) => void;
@@ -44,7 +48,6 @@ type ReportError = (error: unknown) => void;
 const defaultReportError: ReportError = (error) =>
   console.error("AwesomeADO could not save Azure DevOps settings", error);
 
-const ROLE_ATTRIBUTE = "data-role";
 const PATH_ROLE = "path";
 const LABEL_ROLE = "label";
 const DELETE_ROLE = "delete";
@@ -74,6 +77,9 @@ export class AzureDevOpsController {
   // The work-item-types section is a cohesive sub-feature, so it lives in its own controller that
   // shares this controller's single metadata read and settings load (fed in via render/setAvailableTypes).
   private readonly workItemTypes: WorkItemTypesController;
+  // The marker-tags section is likewise its own writer of one settings slice, so it lives in its own
+  // controller fed by this controller's single settings load (via render).
+  private readonly markerTags: MarkerTagsController;
 
   constructor(
     private readonly store: ISettingsStore,
@@ -91,6 +97,7 @@ export class AzureDevOpsController {
       elements.workItemTypes,
       this.reportError,
     );
+    this.markerTags = new MarkerTagsController(store, elements.markerTags, this.reportError);
   }
 
   async init(): Promise<void> {
@@ -103,6 +110,7 @@ export class AzureDevOpsController {
     this.teamCombobox.dispose();
     this.disposePathComboboxes();
     this.workItemTypes.dispose();
+    this.markerTags.dispose();
     this.elements.teamInput.removeEventListener("change", this.handleTeamChange);
     this.elements.futureSprintsInput.removeEventListener("change", this.handleSprintsChange);
     this.elements.pastSprintsInput.removeEventListener("change", this.handlePastSprintsChange);
@@ -122,6 +130,7 @@ export class AzureDevOpsController {
     this.elements.areaPathsList.addEventListener("change", this.handleAreaChange);
     this.elements.areaPathsList.addEventListener("click", this.handleAreaClick);
     this.workItemTypes.init();
+    this.markerTags.init();
   }
 
   private async loadSettings(): Promise<void> {
@@ -139,6 +148,7 @@ export class AzureDevOpsController {
     this.renderPastSprints(settings.pastSprintsCount);
     this.renderAreaPaths(settings.areaPaths);
     this.workItemTypes.render(settings.workItemTypes, settings.boardColumns);
+    this.markerTags.render(settings.markerTags);
     this.enableControls();
   }
 
@@ -289,32 +299,16 @@ export class AzureDevOpsController {
     const doc = this.elements.areaPathsList.ownerDocument;
     const row = doc.createElement("div");
     row.className = "area-path-row";
-    const pathInput = this.createAreaInput(doc, PATH_ROLE, "Area path", entry.path);
+    const pathInput = createRoleInput(doc, PATH_ROLE, "Area path", entry.path);
     const combobox = new AutocompleteInput(pathInput);
     combobox.setOptions(this.areaPathSuggestions);
     this.pathComboboxes.set(pathInput, combobox);
     row.append(
       combobox.root,
-      this.createAreaInput(doc, LABEL_ROLE, "Area path label", entry.label),
+      createRoleInput(doc, LABEL_ROLE, "Area path label", entry.label),
       this.createDeleteButton(doc),
     );
     return row;
-  }
-
-  private createAreaInput(
-    doc: Document,
-    role: string,
-    ariaLabel: string,
-    value: string,
-  ): HTMLInputElement {
-    const input = doc.createElement("input");
-    input.type = "text";
-    input.setAttribute("autocomplete", "off");
-    input.setAttribute("aria-label", ariaLabel);
-    input.setAttribute(ROLE_ATTRIBUTE, role);
-    input.placeholder = ariaLabel;
-    input.value = value;
-    return input;
   }
 
   private createDeleteButton(doc: Document): HTMLButtonElement {

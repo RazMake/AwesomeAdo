@@ -21,27 +21,34 @@ interface ExtensionSettings {
   futureSprintsCount: number; // sprints offered past the current one, 1..12 (default: 6)
   pastSprintsCount: number; // sprints offered before the current one, 0..6 (default: 0)
   areaPaths: AreaPath[]; // pinned area paths, each { path, label }  (default: [])
-  boardColumns: string[]; // mapping-table columns, capped at 6 (default: Queue/Active/Waiting/Done/Removed)
+  boardColumns: string[]; // mapping-table columns, fixed set of 5 (default: In Queue/In Progress/Waiting/Done/Removed)
   workItemTypes: WorkItemType[]; // per-type board-column mapping           (default: [])
+  markerTags: WorkItemMarkerTags; // per-condition ADO tag + comment token   (default: DEFAULT_MARKER_TAGS)
 }
 ```
 
 `ExtensionSettings.ts` also exports the `Theme` and `DefaultView` unions, the `TeamRef` /
-`AreaPath` shapes, the `WorkItemType` / `WorkItemColumn` shapes, the `MAX_BOARD_COLUMNS` cap and
-`DEFAULT_BOARD_COLUMNS` seed list, the `THEMES` / `DEFAULT_VIEWS` value lists (used to populate the
+`AreaPath` shapes, the `WorkItemType` / `WorkItemColumn` shapes, the `BOARD_COLUMN_COUNT` count and
+`DEFAULT_BOARD_COLUMNS` fixed list, the `WorkItemMarker` / `MarkerTags` / `WorkItemMarkerTags` shapes,
+the `WORK_ITEM_MARKERS` ordered marker list (key + UI label) and its `DEFAULT_MARKER_TAGS` seed, the
+`THEMES` / `DEFAULT_VIEWS` value lists (used to populate the
 options selects), the `MIN_FUTURE_SPRINTS` / `MAX_FUTURE_SPRINTS` and `MIN_PAST_SPRINTS` /
 `MAX_PAST_SPRINTS` bounds, and `DEFAULT_SETTINGS`.
 `normalizeSettings(raw)` validates each field independently and falls back to the default when a
 value is missing or unrecognized. The focused helpers `normalizeFutureSprintsCount(raw)` (clamps to
 `1..12`), `normalizePastSprintsCount(raw)` (clamps to `0..6`),
 `normalizeAreaPaths(raw)` (drops pathless/duplicate entries), `defaultAreaPathLabel(path)`
-(the path's last `\`-separated segment), `normalizeBoardColumns(raw)` (trims, drops blanks, dedupes
-case-insensitively, and caps at `MAX_BOARD_COLUMNS`), and `normalizeWorkItemTypes(raw)` (drops
+(the path's last `\`-separated segment), `normalizeBoardColumns(raw)` (coerces to the fixed
+`BOARD_COLUMN_COUNT` positions, keeping each stored title by position and filling blanks/collisions
+from `DEFAULT_BOARD_COLUMNS`), and `normalizeWorkItemTypes(raw)` (drops
 nameless/duplicate types and empty-state/duplicate columns, routes each state to a single column, and
 keeps a trimmed per-type `etaField` only when set) are exported for the options UI so a stored value
 and a freshly typed one derive the same default.
+`normalizeMarkerTags(raw)` (seeds the full `DEFAULT_MARKER_TAGS` for a never-set value, seeds only the
+missing markers from a partial object, and trims both tokens while honoring a deliberately blanked
+entry) is likewise exported for the options UI.
 `isAdoConfigured(settings)` reports whether the Azure DevOps settings are complete enough for the
-extension to enhance a query (a current team, at least one area path, at least one board column, and
+extension to enhance a query (a current team, at least one area path, and
 at least one work item type that maps a state); the content script and options page share it.
 
 ### `ISettingsStore` (interface) — `ISettingsStore.ts`
@@ -101,10 +108,11 @@ unsubscribe();
 - **`areaPaths`** is the list of area paths the user pinned, each with a short `label` (defaults to
   the path's last segment).
 - **`boardColumns`** is the ordered set of columns that form the header of the work-item mapping
-  table — the team's own "application states". It is user-defined (rename, remove, add), shared by
-  every work item type, and capped at `MAX_BOARD_COLUMNS` (6). A fresh install seeds
-  `DEFAULT_BOARD_COLUMNS` (`Queue`, `Active`, `Waiting`, `Done`, `Removed`); the first column is the
-  fallback bucket for any ADO state a type does not explicitly map.
+  table — the team's own "application states". It is a **fixed set** of `BOARD_COLUMN_COUNT` columns
+  shared by every work item type; only each column's _title_ is user-editable (rename — columns
+  cannot be added or removed). A fresh install seeds `DEFAULT_BOARD_COLUMNS` (`In Queue`,
+  `In Progress`, `Waiting`, `Done`, `Removed`); the first column is the fallback bucket for any ADO
+  state a type does not explicitly map.
 - **`workItemTypes`** is the list of work item types the team uses. Each entry stores the type's ADO
   `name`, `color`, and `icon` URL (so a row renders even with no ADO tab open) plus its `columns`:
   an ordered list of `{ column, states }` that maps the type's ADO states onto the user's

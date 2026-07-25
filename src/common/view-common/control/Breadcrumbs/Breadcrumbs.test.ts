@@ -39,7 +39,7 @@ describe("renderBreadcrumbs", () => {
 
     const separators = nav?.querySelectorAll(".awesomeado-breadcrumb-sep");
     expect(separators?.length).toBe(1);
-    expect(separators?.[0]?.textContent).toBe("\\");
+    expect(separators?.[0]?.textContent).toBe("/");
     expect(separators?.[0]?.getAttribute("aria-hidden")).toBe("true");
   });
 
@@ -70,5 +70,20 @@ describe("renderBreadcrumbs", () => {
     });
 
     expect(nav?.querySelector(".awesomeado-breadcrumb-sep")?.textContent).toBe("›");
+  });
+
+  it("renders a label-only segment as non-link text, still separated in the trail", () => {
+    const nav = renderBreadcrumbs(document, {
+      segments: [{ label: "Team A" }, { label: "Reports" }],
+    });
+
+    const crumbs = nav?.querySelectorAll(".awesomeado-breadcrumb");
+    expect(crumbs?.length).toBe(2);
+    // No URL → rendered as <span>, never an <a>, so there is no broken/fabricated link target.
+    expect(crumbs?.[0]?.tagName).toBe("SPAN");
+    expect(crumbs?.[1]?.tagName).toBe("SPAN");
+    expect(crumbs?.[0]?.textContent).toBe("Team A");
+    expect(crumbs?.[1]?.textContent).toBe("Reports");
+    expect(nav?.querySelectorAll(".awesomeado-breadcrumb-sep").length).toBe(1);
   });
 });

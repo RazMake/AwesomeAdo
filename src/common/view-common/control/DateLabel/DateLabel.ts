@@ -3,8 +3,8 @@ import { formatPstDate, formatPstTooltip } from "../../../datetime/pstDateTime";
 /**
  * A formatted date label showing MM/DD/YYYY in PST with a hover tooltip.
  *
- * Displays "—" when the ISO string is empty or invalid. The tooltip (title) shows the full
- * "MM/DD/YYYY @ h:mm AM/PM PST" format so users can see the exact time on hover.
+ * Displays "—" when the ISO string is empty or invalid. The tooltip (title) shows the
+ * "@ h:mm AM/PM PST" time so users can see the exact time on hover.
  */
 export function renderDateLabel(doc: Document, iso: string): HTMLElement {
   const span = doc.createElement("span");

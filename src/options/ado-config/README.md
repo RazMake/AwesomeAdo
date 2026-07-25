@@ -1,14 +1,14 @@
 # src/options/ado-config
 
 The options page's **Azure DevOps** tab: organization/project detection and the team, sprint, area
-path, and work-item-type-to-board-state configuration.
+path, work-item-type-to-board-state, and marker-tag configuration.
 
 ## Purpose
 
 Lets the user configure the Azure DevOps context the enhanced view needs. It detects the active
 org/project, drives a searchable team picker, the future- and past-sprint counts, the pinned
-area-path list, and the per-work-item-type board-state mapping table, persisting everything to the
-synced settings store.
+area-path list, the per-work-item-type board-state mapping table, and the per-condition marker tags,
+persisting everything to the synced settings store.
 
 This component does not log; it surfaces failures through the options page's shared error sink.
 
@@ -17,8 +17,17 @@ This component does not log; it surfaces failures through the options page's sha
 ### `AzureDevOpsController.ts`
 
 - **`AzureDevOpsController`** — controls the Azure DevOps tab end to end, coordinating the team
-  combobox, area paths, sprint count, and the nested work-item-types table.
+  combobox, area paths, sprint count, and the nested work-item-types and marker-tags sub-controllers.
 - **`AzureDevOpsElements`** — the DOM elements the controller drives, passed in so it stays testable.
+
+### `MarkerTagsController.ts`
+
+- **`MarkerTagsController`** — nested controller (owned by `AzureDevOpsController`) for the
+  **Marker tags** section. It renders one row per recognized condition (blocked, blocked by another
+  team, interrupt, waiting) from the shared `WORK_ITEM_MARKERS` list, binding each condition's Azure
+  DevOps **tag** and **comment tag** to the `markerTags` setting it owns. A failed write restores the
+  last accepted values so the fields never show a value the store rejected.
+- **`MarkerTagsElements`** — the container element it fills with the marker rows.
 
 ### `WorkItemTypesController.ts`
 
@@ -41,6 +50,12 @@ This component does not log; it surfaces failures through the options page's sha
   no business logic. Used here for the team picker and the work-item-type inputs; co-located with its
   primary consumer.
 - **`RenderOption`** — the hook callers pass to customize how each option row is rendered.
+
+### `roleInput.ts`
+
+- **`createRoleInput`** — builds a `data-role`-tagged text input the same way for the area-path and
+  marker-tag rows, so a single delegated container listener can dispatch on each control's role.
+- **`ROLE_ATTRIBUTE`** — the shared `data-role` attribute name both sections agree on.
 
 ## Usage guidance
 

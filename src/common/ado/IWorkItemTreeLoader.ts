@@ -1,5 +1,17 @@
 import type { TrackedWorkItem } from "./TrackedWorkItem";
 
+/** One folder in a query's ancestor trail: the label to show and the full path to link to. */
+export interface QueryFolderCrumb {
+  /** The folder's own name (its display label), not the full path. */
+  label: string;
+  /**
+   * The folder's full path from the query root, root container included (e.g.
+   * "Shared Queries/Team A/Reports"). ADO addresses a folder by its whole ancestry, so building the
+   * folder link needs the path, not just the label.
+   */
+  path: string;
+}
+
 /**
  * The result of loading a query's work-item tree.
  *
@@ -11,6 +23,13 @@ export interface WorkItemTreeResult {
   isTreeQuery: boolean;
   roots: TrackedWorkItem[];
   error: string | null;
+  /**
+   * The query's ancestor-folder trail (outermost → nearest), for the view's breadcrumb — the two
+   * nearest folders only (parent + grandparent). The real loader always populates it (empty when the
+   * query sits directly under a root or its location could not be read); test fakes may omit it, so
+   * consumers treat `undefined` as an empty trail.
+   */
+  folderPath?: QueryFolderCrumb[];
 }
 
 /**

@@ -25,3 +25,13 @@ This directory is the shared coordination memory for all agents working on the A
 | `activeContext.md`  | Flattened snapshot of the current state and the shared abstractions to build on.                    |
 | `progress.md`       | Flattened snapshot of what is implemented and what remains (developer/org-owned).                   |
 | `decisions.md`      | Architecture Decision Records (ADRs) capturing fixed decisions and their rationale.                 |
+| `debuggingNotes.md` | Running lab notebook: root-cause findings, non-obvious gotchas, and live-debugging recipes.         |
+
+## Where durable knowledge lives
+
+**Record durable repo knowledge here, in source control — never in an agent-tool-local memory
+(Copilot/Claude/Codex per-machine memory).** Tool-local memory does not clone or transfer between
+machines, agents, or teammates, so anything learned there is silently lost. Architecture and rationale
+go in `systemPatterns.md`/`decisions.md`; tactical bug findings, gotchas, and debugging recipes go in
+`debuggingNotes.md`. If you catch yourself about to write a lasting fact into a tool memory, write it
+here instead.
