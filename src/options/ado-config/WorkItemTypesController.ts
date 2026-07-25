@@ -44,6 +44,7 @@ interface CommittedType {
 const ROLE_ATTRIBUTE = "data-role";
 const TYPE_ROLE = "type";
 const TYPE_DELETE_ROLE = "type-delete";
+const TYPE_DRAG_ROLE = "type-drag";
 const COLUMN_NAME_ROLE = "column-name";
 const COLUMN_DELETE_ROLE = "column-delete";
 const STATE_ROLE = "state";
@@ -53,6 +54,7 @@ const ETA_ROLE = "eta";
 const ROW_SELECTOR = ".wit-row";
 const CELL_SELECTOR = ".wit-cell";
 const STATE_SELECTOR = ".wit-state";
+const ROW_DRAG_SELECTOR = `[${ROLE_ATTRIBUTE}="${TYPE_DRAG_ROLE}"]`;
 const TYPE_INPUT_SELECTOR = `[${ROLE_ATTRIBUTE}="${TYPE_ROLE}"]`;
 const STATE_INPUT_SELECTOR = `[${ROLE_ATTRIBUTE}="${STATE_ROLE}"]`;
 const COLUMN_ID_ATTRIBUTE = "data-column-id";
@@ -96,6 +98,12 @@ export class WorkItemTypesController {
   private readonly stateComboboxes = new WeakMap<HTMLInputElement, AutocompleteInput>();
   // The chip currently being dragged to reorder within its column; null when no drag is active.
   private draggingChip: HTMLElement | null = null;
+  // The work-item-type row currently being dragged to reorder the table; null when none is active.
+  // Row order encodes the parent→child hierarchy, so reordering is a real settings change.
+  private draggingRow: HTMLElement | null = null;
+  // The row currently showing the "drop here" insertion line during a row drag; null when none is
+  // marked. Tracked so the indicator can be moved and cleared without re-querying every dragover.
+  private dropIndicatorRow: HTMLElement | null = null;
 
   constructor(
     private readonly store: ISettingsStore,
@@ -375,10 +383,17 @@ export class WorkItemTypesController {
     this.persistTypes();
   }
 
-  // ── State chip reordering (drag & drop) ─────────────────────────────────────
+  // ── Row & state chip reordering (drag & drop) ───────────────────────────────
 
   private readonly handleDragStart = (event: Event): void => {
-    const chip = (event.target as HTMLElement).closest<HTMLElement>(STATE_SELECTOR);
+    const target = event.target as HTMLElement;
+    // A drag started on the row's grip reorders the whole type row; anything else is a chip drag.
+    const handle = target.closest<HTMLElement>(ROW_DRAG_SELECTOR);
+    if (handle !== null) {
+      this.startRowDrag(handle, event as DragEvent);
+      return;
+    }
+    const chip = target.closest<HTMLElement>(STATE_SELECTOR);
     if (chip === null) {
       return;
     }
@@ -392,7 +407,36 @@ export class WorkItemTypesController {
     }
   };
 
+  private startRowDrag(handle: HTMLElement, event: DragEvent): void {
+    const row = handle.closest<HTMLElement>(ROW_SELECTOR);
+    if (row === null) {
+      return;
+    }
+    this.draggingRow = row;
+    row.classList.add("wit-row--dragging");
+    const transfer = event.dataTransfer;
+    if (transfer) {
+      // Some browsers refuse to start a drag unless data is attached; the payload itself is unused.
+      transfer.effectAllowed = "move";
+      transfer.setData("text/plain", row.dataset.typeName ?? "");
+      // Ghost the whole row (not just the grip) so the user sees which type they are moving.
+      if (typeof transfer.setDragImage === "function") {
+        transfer.setDragImage(row, 0, 0);
+      }
+    }
+  }
+
   private readonly handleDragOver = (event: Event): void => {
+    if (this.draggingRow !== null) {
+      // Any type row is a valid drop target; allowing the drop lets the drop event fire, and the
+      // insertion line previews where the row will land.
+      const target = (event.target as HTMLElement).closest<HTMLElement>(ROW_SELECTOR);
+      if (target !== null) {
+        event.preventDefault();
+        this.showDropIndicator(target);
+      }
+      return;
+    }
     if (this.draggingChip === null) {
       return;
     }
@@ -404,6 +448,10 @@ export class WorkItemTypesController {
   };
 
   private readonly handleDrop = (event: Event): void => {
+    if (this.draggingRow !== null) {
+      this.dropRow(event);
+      return;
+    }
     const dragged = this.draggingChip;
     if (dragged === null) {
       return;
@@ -438,14 +486,73 @@ export class WorkItemTypesController {
     this.endDrag();
   };
 
+  private dropRow(event: Event): void {
+    const dragged = this.draggingRow;
+    const target = (event.target as HTMLElement).closest<HTMLElement>(ROW_SELECTOR);
+    if (dragged === null || target === null || target === dragged) {
+      this.endDrag();
+      return;
+    }
+    event.preventDefault();
+    const order = this.rows();
+    // Insert above or below the hovered row depending on drag direction so the row lands where the
+    // pointer released.
+    if (order.indexOf(dragged) < order.indexOf(target)) {
+      target.after(dragged);
+    } else {
+      target.before(dragged);
+    }
+    // The ETA list mirrors the table's order, so re-render it to keep both lists in sync, then
+    // persist the new parent→child order.
+    this.renderEtaSection();
+    this.persistTypes();
+    this.endDrag();
+  }
+
+  /**
+   * Preview where the dragged row will land by drawing an insertion line on the hovered row: below
+   * it when dragging down, above it when dragging up (matching `dropRow`'s before/after choice).
+   * Hovering the dragged row itself is a no-op drop, so it clears the indicator.
+   */
+  private showDropIndicator(target: HTMLElement): void {
+    const dragged = this.draggingRow;
+    if (dragged === null || target === dragged) {
+      this.clearDropIndicator();
+      return;
+    }
+    const order = this.rows();
+    const dropClass =
+      order.indexOf(dragged) < order.indexOf(target)
+        ? "wit-row--drop-after"
+        : "wit-row--drop-before";
+    if (this.dropIndicatorRow === target && target.classList.contains(dropClass)) {
+      return;
+    }
+    this.clearDropIndicator();
+    target.classList.add(dropClass);
+    this.dropIndicatorRow = target;
+  }
+
+  private clearDropIndicator(): void {
+    if (this.dropIndicatorRow !== null) {
+      this.dropIndicatorRow.classList.remove("wit-row--drop-before", "wit-row--drop-after");
+      this.dropIndicatorRow = null;
+    }
+  }
+
   private readonly handleDragEnd = (): void => {
     this.endDrag();
   };
 
   private endDrag(): void {
+    this.clearDropIndicator();
     if (this.draggingChip !== null) {
       this.draggingChip.classList.remove("wit-state--dragging");
       this.draggingChip = null;
+    }
+    if (this.draggingRow !== null) {
+      this.draggingRow.classList.remove("wit-row--dragging");
+      this.draggingRow = null;
     }
   }
 
@@ -538,6 +645,7 @@ export class WorkItemTypesController {
     const label = this.createElement(doc, "span", "wit-type__label");
     label.hidden = true;
     inner.append(
+      this.createDragHandle(doc),
       icon,
       combobox.root,
       label,
@@ -551,6 +659,21 @@ export class WorkItemTypesController {
     );
     cell.append(inner);
     return cell;
+  }
+
+  /**
+   * The grip the user drags to reorder a type row. Row order is meaningful — top-to-bottom is
+   * parent → child — so the tooltip states that, and the whole row is `draggable` via this handle.
+   */
+  private createDragHandle(doc: Document): HTMLElement {
+    const handle = this.createElement(doc, "span", "wit-row__drag");
+    handle.setAttribute(ROLE_ATTRIBUTE, TYPE_DRAG_ROLE);
+    handle.setAttribute("aria-label", "Drag to reorder work item type");
+    handle.title = "Drag to reorder — top-to-bottom is parent to child";
+    handle.draggable = true;
+    // A dotted grip glyph; the accessible name comes from the aria-label above.
+    handle.textContent = "\u283F";
+    return handle;
   }
 
   private createCell(columnId: string): HTMLElement {

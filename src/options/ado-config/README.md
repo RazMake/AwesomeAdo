@@ -28,6 +28,11 @@ This component does not log; it surfaces failures through the options page's sha
   its ETA. The ETA lives on the same `workItemTypes` setting this controller already writes, so a
   single writer keeps the table and the ETA section in sync. The ETA list is driven by the table:
   types appear once committed above and cannot be added or removed from the ETA section itself.
+  - **Row order is meaningful.** Types are added from parent to child, top-most parent first (Epic →
+    Feature → User Story → Task). Each row has a grip handle (drag it) that reorders the row; the
+    table's top-to-bottom order defines the hierarchy. The order flows straight through: the ETA list
+    re-renders to match, `collect()` reads rows in table order, and both save and config import
+    preserve it (the `workItemTypes` array keeps its order end to end).
 - **`WorkItemTypesElements`** — the mapping-table and ETA-section elements it drives.
 
 ### `AutocompleteInput.ts`

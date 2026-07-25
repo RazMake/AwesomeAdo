@@ -45,7 +45,10 @@ export interface ExtensionSettings {
 
   /**
    * The work item types the team uses, each mapping its Azure DevOps states onto the board columns.
-   * Empty until the user adds one.
+   * Empty until the user adds one. **Order is significant:** the array runs from the top-most parent
+   * type to its children (e.g. Epic → Feature → User Story → Task), so it encodes the team's work
+   * item hierarchy. The order is user-controlled (drag-to-reorder in the options table) and is
+   * preserved through save, export, and import.
    */
   workItemTypes: WorkItemType[];
 }
@@ -80,6 +83,10 @@ export interface WorkItemColumn {
  * A work item type the team uses. The ADO `name`, `color`, and `icon` URL are stored alongside the
  * state→column mapping so the saved list still renders the type's icon and colored name even when no
  * ADO tab is open to re-list the org's types.
+ *
+ * Types are stored in a deliberate order — parent before child (Epic → Feature → User Story → Task)
+ * — so the surrounding `workItemTypes` array position carries meaning; never sort or dedupe it in a
+ * way that loses that order.
  */
 export interface WorkItemType {
   name: string;

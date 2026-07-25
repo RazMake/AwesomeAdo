@@ -147,6 +147,31 @@ function dragChip(from: HTMLElement, to: HTMLElement): void {
   from.dispatchEvent(new Event("dragend", { bubbles: true }));
 }
 
+/** The grip handle a row is dragged by to reorder the work-item-type table. */
+function dragHandle(row: HTMLElement): HTMLElement {
+  return row.querySelector<HTMLElement>('[data-role="type-drag"]')!;
+}
+
+/** Simulate dragging one type row onto another, starting the drag from its grip handle. */
+function dragRow(fromRow: HTMLElement, toRow: HTMLElement): void {
+  dragHandle(fromRow).dispatchEvent(new Event("dragstart", { bubbles: true }));
+  toRow.dispatchEvent(new Event("dragover", { bubbles: true }));
+  toRow.dispatchEvent(new Event("drop", { bubbles: true }));
+  dragHandle(fromRow).dispatchEvent(new Event("dragend", { bubbles: true }));
+}
+
+/** The work-item-type names in the table, top-to-bottom (the persisted parent → child order). */
+function rowTypeOrder(elements: WorkItemTypesElements): (string | undefined)[] {
+  return rows(elements).map((row) => row.dataset.typeName);
+}
+
+/** The type names in the read-only ETA list, top-to-bottom — must mirror the table order. */
+function etaTypeOrder(elements: WorkItemTypesElements): (string | null)[] {
+  return [...elements.etaBody.querySelectorAll<HTMLSelectElement>('[data-role="eta"]')].map(
+    (select) => select.getAttribute("data-type-name"),
+  );
+}
+
 function columnHeaders(elements: WorkItemTypesElements): HTMLElement[] {
   return [...elements.columnsRow.querySelectorAll<HTMLElement>(".wit-col")];
 }
@@ -700,6 +725,114 @@ describe("WorkItemTypesController — reordering states", () => {
 
     expect(chips(cellAt(row, 0))).toEqual(["New"]);
     expect(chips(cellAt(row, 1))).toEqual(["Active"]);
+  });
+});
+
+describe("WorkItemTypesController — reordering types (parent → child)", () => {
+  it("moves a row above its target via the grip handle and persists the new order", () => {
+    const { store, elements } = setup({ boardColumns: ["Active"] });
+    const bug = addTypeRow(elements, "Bug");
+    const task = addTypeRow(elements, "Task");
+    expect(rowTypeOrder(elements)).toEqual(["Bug", "Task"]);
+
+    // Drag Task's grip up onto Bug so Task becomes the parent (top-most) type.
+    dragRow(task, bug);
+
+    expect(rowTypeOrder(elements)).toEqual(["Task", "Bug"]);
+    expect(store.writeCalls.at(-1)).toEqual({
+      workItemTypes: [
+        { name: "Task", color: "F2CB1D", icon: "", columns: [] },
+        { name: "Bug", color: "CC293D", icon: "https://ado/bug", columns: [] },
+      ],
+    });
+  });
+
+  it("keeps the ETA list in the same order as the table after a reorder", () => {
+    const { elements } = setup({ boardColumns: ["Active"] });
+    const bug = addTypeRow(elements, "Bug");
+    const task = addTypeRow(elements, "Task");
+    expect(etaTypeOrder(elements)).toEqual(["Bug", "Task"]);
+
+    dragRow(task, bug);
+
+    expect(rowTypeOrder(elements)).toEqual(["Task", "Bug"]);
+    expect(etaTypeOrder(elements)).toEqual(["Task", "Bug"]);
+  });
+
+  it("ignores a row dropped onto itself and does not persist", () => {
+    const { store, elements } = setup({ boardColumns: ["Active"] });
+    const bug = addTypeRow(elements, "Bug");
+    const writesBefore = store.writeCalls.length;
+
+    dragRow(bug, bug);
+
+    expect(rowTypeOrder(elements)).toEqual(["Bug"]);
+    expect(store.writeCalls).toHaveLength(writesBefore);
+  });
+
+  it("preserves the stored order across render and mirrors it in the ETA list (import path)", () => {
+    // Rendered from settings/import in a deliberate parent → child order; both lists must keep it.
+    const { elements } = setup({
+      boardColumns: ["Active"],
+      entries: [
+        { name: "Task", color: "F2CB1D", icon: "", columns: [] },
+        { name: "Bug", color: "CC293D", icon: "https://ado/bug", columns: [] },
+      ],
+    });
+
+    expect(rowTypeOrder(elements)).toEqual(["Task", "Bug"]);
+    expect(etaTypeOrder(elements)).toEqual(["Task", "Bug"]);
+  });
+
+  it("previews the drop above the hovered row when dragging a row up", () => {
+    const { elements } = setup({ boardColumns: ["Active"] });
+    const bug = addTypeRow(elements, "Bug");
+    const task = addTypeRow(elements, "Task");
+
+    dragHandle(task).dispatchEvent(new Event("dragstart", { bubbles: true }));
+    bug.dispatchEvent(new Event("dragover", { bubbles: true }));
+
+    // Dragging Task up onto Bug lands Task above Bug, so the line sits above the hovered row.
+    expect(bug.classList.contains("wit-row--drop-before")).toBe(true);
+    expect(bug.classList.contains("wit-row--drop-after")).toBe(false);
+  });
+
+  it("previews the drop below the hovered row when dragging a row down", () => {
+    const { elements } = setup({ boardColumns: ["Active"] });
+    const bug = addTypeRow(elements, "Bug");
+    const task = addTypeRow(elements, "Task");
+
+    dragHandle(bug).dispatchEvent(new Event("dragstart", { bubbles: true }));
+    task.dispatchEvent(new Event("dragover", { bubbles: true }));
+
+    // Dragging Bug down onto Task lands Bug below Task, so the line sits below the hovered row.
+    expect(task.classList.contains("wit-row--drop-after")).toBe(true);
+    expect(task.classList.contains("wit-row--drop-before")).toBe(false);
+  });
+
+  it("shows no drop line while hovering the row being dragged", () => {
+    const { elements } = setup({ boardColumns: ["Active"] });
+    const bug = addTypeRow(elements, "Bug");
+    addTypeRow(elements, "Task");
+
+    dragHandle(bug).dispatchEvent(new Event("dragstart", { bubbles: true }));
+    bug.dispatchEvent(new Event("dragover", { bubbles: true }));
+
+    expect(bug.classList.contains("wit-row--drop-before")).toBe(false);
+    expect(bug.classList.contains("wit-row--drop-after")).toBe(false);
+  });
+
+  it("clears the drop indicator once the drag ends", () => {
+    const { elements } = setup({ boardColumns: ["Active"] });
+    const bug = addTypeRow(elements, "Bug");
+    const task = addTypeRow(elements, "Task");
+
+    dragRow(task, bug);
+
+    for (const row of [bug, task]) {
+      expect(row.classList.contains("wit-row--drop-before")).toBe(false);
+      expect(row.classList.contains("wit-row--drop-after")).toBe(false);
+    }
   });
 });
 
