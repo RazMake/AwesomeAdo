@@ -136,36 +136,89 @@ function getStepUses(job) {
 }
 
 /**
- * Validate the CI workflow structure.
- * @param {unknown} ciDoc
+ * Require a workflow document to be an object with a jobs object, returning jobs.
+ * @param {unknown} doc
+ * @param {string} docPath
+ * @param {string} label — "CI" or "Release", used verbatim in the error text
+ * @returns {Record<string, unknown>}
+ */
+function requireJobsObject(doc, docPath, label) {
+  if (typeof doc !== "object" || doc === null) {
+    throw new Error(`${docPath}: ${label} workflow must be an object`);
+  }
+  const jobs = /** @type {Record<string, unknown>} */ (doc).jobs;
+  if (typeof jobs !== "object" || jobs === null) {
+    throw new Error(`${docPath}: ${label} workflow must have jobs`);
+  }
+  return /** @type {Record<string, unknown>} */ (jobs);
+}
+
+/**
+ * Require a job to pin the literal scalar runner (never an expression).
+ * @param {unknown} job
+ * @param {string} jobName
+ * @param {string} docPath
+ */
+function assertLiteralRunner(job, jobName, docPath) {
+  const runsOn = /** @type {Record<string, unknown>} */ (job)["runs-on"];
+  if (runsOn !== "ubuntu-24.04") {
+    throw new Error(
+      `${docPath}: job '${jobName}' must use literal scalar runner 'ubuntu-24.04', got: ${JSON.stringify(runsOn)}`,
+    );
+  }
+}
+
+/**
+ * Both CI jobs must exist and pin the literal scalar runner.
+ * @param {Record<string, unknown>} jobsObj
  * @param {string} ciPath
  */
-function validateCiWorkflow(ciDoc, ciPath) {
-  if (typeof ciDoc !== "object" || ciDoc === null) {
-    throw new Error(`${ciPath}: CI workflow must be an object`);
-  }
-  const ci = /** @type {Record<string, unknown>} */ (ciDoc);
-  const jobs = ci.jobs;
-  if (typeof jobs !== "object" || jobs === null) {
-    throw new Error(`${ciPath}: CI workflow must have jobs`);
-  }
-  const jobsObj = /** @type {Record<string, unknown>} */ (jobs);
-
-  // Both jobs must use literal scalar runner ubuntu-24.04
+function assertCiRunners(jobsObj, ciPath) {
   for (const jobName of ["verify", "attest"]) {
     const job = jobsObj[jobName];
     if (typeof job !== "object" || job === null) {
       throw new Error(`${ciPath}: CI must have job '${jobName}'`);
     }
-    const runsOn = /** @type {Record<string, unknown>} */ (job)["runs-on"];
-    if (runsOn !== "ubuntu-24.04") {
-      throw new Error(
-        `${ciPath}: job '${jobName}' must use literal scalar runner 'ubuntu-24.04', got: ${JSON.stringify(runsOn)}`,
-      );
-    }
+    assertLiteralRunner(job, jobName, ciPath);
+  }
+}
+
+/**
+ * The verify job must expose the required steps in order.
+ * @param {Record<string, unknown>} verifyJob
+ * @param {string} ciPath
+ */
+function assertVerifyStepsPresent(verifyJob, ciPath) {
+  const verifyStepIds = getStepIds(verifyJob);
+  const verifyStepUses = getStepUses(verifyJob);
+  const stepRuns = getStepRuns(verifyJob);
+  const hasInstall = stepRuns.some((r) => r.includes("pnpm install"));
+  const hasVerify = stepRuns.some((r) => r.includes("pnpm verify"));
+  const hasPackage = stepRuns.some((r) => r.includes("pnpm package"));
+  const hasUpload = verifyStepUses.some((u) => u.startsWith("actions/upload-artifact@"));
+  if (!hasInstall || !hasVerify || !hasPackage || !hasUpload) {
+    throw new Error(
+      `${ciPath}: verify job must have install, verify, package, and upload steps in that order`,
+    );
   }
 
-  // verify job: must have artifact_name output
+  const verifyIdx = stepRuns.findIndex((r) => r.includes("pnpm verify"));
+  const packageIdx = stepRuns.findIndex((r) => r.includes("pnpm package"));
+  if (verifyIdx === -1 || packageIdx === -1 || verifyIdx >= packageIdx) {
+    throw new Error(`${ciPath}: verify job must run 'pnpm verify' before 'pnpm package'`);
+  }
+
+  if (!verifyStepIds.includes("artifact_identity")) {
+    throw new Error(`${ciPath}: verify job must have a step with id 'artifact_identity'`);
+  }
+}
+
+/**
+ * The verify job must export the artifact_name output and its ordered steps.
+ * @param {Record<string, unknown>} jobsObj
+ * @param {string} ciPath
+ */
+function validateVerifyJob(jobsObj, ciPath) {
   const verifyJob = /** @type {Record<string, unknown>} */ (jobsObj["verify"]);
   const verifyOutputs = /** @type {Record<string, unknown>} */ (verifyJob.outputs ?? {});
   if (
@@ -176,57 +229,15 @@ function validateCiWorkflow(ciDoc, ciPath) {
       `${ciPath}: verify job must export artifact_name output referencing artifact_identity step`,
     );
   }
+  assertVerifyStepsPresent(verifyJob, ciPath);
+}
 
-  // verify steps must be in order: checkout, pnpm setup, node setup, install, verify, package, artifact_identity, upload
-  const verifyStepIds = getStepIds(verifyJob);
-  const verifyStepUses = getStepUses(verifyJob);
-  const hasInstall = getStepRuns(verifyJob).some((r) => r.includes("pnpm install"));
-  const hasVerify = getStepRuns(verifyJob).some((r) => r.includes("pnpm verify"));
-  const hasPackage = getStepRuns(verifyJob).some((r) => r.includes("pnpm package"));
-  const hasUpload = verifyStepUses.some((u) => u.startsWith("actions/upload-artifact@"));
-
-  if (!hasInstall || !hasVerify || !hasPackage || !hasUpload) {
-    throw new Error(
-      `${ciPath}: verify job must have install, verify, package, and upload steps in that order`,
-    );
-  }
-
-  // Verify ordering: pnpm verify must come before pnpm package
-  const stepRuns = getStepRuns(verifyJob);
-  const verifyIdx = stepRuns.findIndex((r) => r.includes("pnpm verify"));
-  const packageIdx = stepRuns.findIndex((r) => r.includes("pnpm package"));
-  if (verifyIdx === -1 || packageIdx === -1 || verifyIdx >= packageIdx) {
-    throw new Error(`${ciPath}: verify job must run 'pnpm verify' before 'pnpm package'`);
-  }
-
-  // artifact_identity step must exist
-  if (!verifyStepIds.includes("artifact_identity")) {
-    throw new Error(`${ciPath}: verify job must have a step with id 'artifact_identity'`);
-  }
-
-  // attest job
-  const attestJob = /** @type {Record<string, unknown>} */ (jobsObj["attest"]);
-  const attestPerms = /** @type {Record<string, unknown>} */ (attestJob.permissions ?? {});
-  const requiredAttestPerms = {
-    contents: "read",
-    "id-token": "write",
-    attestations: "write",
-    "artifact-metadata": "write",
-  };
-  for (const [perm, value] of Object.entries(requiredAttestPerms)) {
-    if (attestPerms[perm] !== value) {
-      throw new Error(`${ciPath}: attest job must have permission '${perm}: ${value}'`);
-    }
-  }
-
-  // attest job must download using needs.verify.outputs.artifact_name
-  const attestStepUses = getStepUses(attestJob);
-  const hasDownload = attestStepUses.some((u) => u.startsWith("actions/download-artifact@"));
-  if (!hasDownload) {
-    throw new Error(`${ciPath}: attest job must download the verified artifact`);
-  }
-
-  // Last step of attest must upload the bridge
+/**
+ * The last attest step must upload a correctly named bridge artifact.
+ * @param {Record<string, unknown>} attestJob
+ * @param {string} ciPath
+ */
+function assertAttestBridgeUpload(attestJob, ciPath) {
   const attestSteps = getJobSteps(attestJob);
   const lastStep = attestSteps[attestSteps.length - 1];
   if (
@@ -239,7 +250,6 @@ function validateCiWorkflow(ciDoc, ciPath) {
     throw new Error(`${ciPath}: last step of attest job must upload the attested bridge artifact`);
   }
 
-  // attest bridge name must follow pattern attested-extension-${run_id}-${run_attempt}
   const lastStepWith = /** @type {Record<string, unknown>} */ (
     /** @type {Record<string, unknown>} */ (lastStep).with ?? {}
   );
@@ -256,23 +266,53 @@ function validateCiWorkflow(ciDoc, ciPath) {
 }
 
 /**
- * Validate the Release workflow structure (basic checks for bootstrap).
- * Full canonical checks are in validate-workflows.release.test.mjs (created at Wave 1 barrier).
- * @param {unknown} releaseDoc
+ * The attest job must hold the required permissions, download the artifact, and
+ * upload the attested bridge.
+ * @param {Record<string, unknown>} jobsObj
+ * @param {string} ciPath
+ */
+function validateAttestJob(jobsObj, ciPath) {
+  const attestJob = /** @type {Record<string, unknown>} */ (jobsObj["attest"]);
+  const attestPerms = /** @type {Record<string, unknown>} */ (attestJob.permissions ?? {});
+  const requiredAttestPerms = {
+    contents: "read",
+    "id-token": "write",
+    attestations: "write",
+    "artifact-metadata": "write",
+  };
+  for (const [perm, value] of Object.entries(requiredAttestPerms)) {
+    if (attestPerms[perm] !== value) {
+      throw new Error(`${ciPath}: attest job must have permission '${perm}: ${value}'`);
+    }
+  }
+
+  const attestStepUses = getStepUses(attestJob);
+  const hasDownload = attestStepUses.some((u) => u.startsWith("actions/download-artifact@"));
+  if (!hasDownload) {
+    throw new Error(`${ciPath}: attest job must download the verified artifact`);
+  }
+
+  assertAttestBridgeUpload(attestJob, ciPath);
+}
+
+/**
+ * Validate the CI workflow structure.
+ * @param {unknown} ciDoc
+ * @param {string} ciPath
+ */
+function validateCiWorkflow(ciDoc, ciPath) {
+  const jobsObj = requireJobsObject(ciDoc, ciPath, "CI");
+  assertCiRunners(jobsObj, ciPath);
+  validateVerifyJob(jobsObj, ciPath);
+  validateAttestJob(jobsObj, ciPath);
+}
+
+/**
+ * Release must declare exactly the validate_release and publish_stores jobs.
+ * @param {Record<string, unknown>} jobsObj
  * @param {string} releasePath
  */
-function validateReleaseWorkflow(releaseDoc, releasePath) {
-  if (typeof releaseDoc !== "object" || releaseDoc === null) {
-    throw new Error(`${releasePath}: Release workflow must be an object`);
-  }
-  const release = /** @type {Record<string, unknown>} */ (releaseDoc);
-  const jobs = release.jobs;
-  if (typeof jobs !== "object" || jobs === null) {
-    throw new Error(`${releasePath}: Release workflow must have jobs`);
-  }
-  const jobsObj = /** @type {Record<string, unknown>} */ (jobs);
-
-  // Must have exactly validate_release and publish_stores jobs
+function assertReleaseJobNames(jobsObj, releasePath) {
   const jobNames = Object.keys(jobsObj).sort();
   if (
     jobNames.length !== 2 ||
@@ -283,13 +323,19 @@ function validateReleaseWorkflow(releaseDoc, releasePath) {
       `${releasePath}: Release must have exactly jobs 'validate_release' and 'publish_stores'`,
     );
   }
+}
 
-  // No workflow-level concurrency
+/**
+ * Reject workflow-level concurrency and require the serialized per-job group plus
+ * a literal runner on both release jobs.
+ * @param {Record<string, unknown>} release
+ * @param {Record<string, unknown>} jobsObj
+ * @param {string} releasePath
+ */
+function assertReleaseConcurrency(release, jobsObj, releasePath) {
   if ("concurrency" in release) {
     throw new Error(`${releasePath}: Release must not have workflow-level concurrency`);
   }
-
-  // Both jobs must have job-level concurrency group: awesomeado-release-publication, queue: max
   for (const jobName of ["validate_release", "publish_stores"]) {
     const job = /** @type {Record<string, unknown>} */ (jobsObj[jobName]);
     const concurrency = /** @type {Record<string, unknown>} */ (job.concurrency ?? {});
@@ -298,69 +344,144 @@ function validateReleaseWorkflow(releaseDoc, releasePath) {
         `${releasePath}: job '${jobName}' must have concurrency group 'awesomeado-release-publication' with queue: max`,
       );
     }
-    // Must use literal scalar runner
-    const runsOn = job["runs-on"];
-    if (runsOn !== "ubuntu-24.04") {
-      throw new Error(
-        `${releasePath}: job '${jobName}' must use literal scalar runner 'ubuntu-24.04', got: ${JSON.stringify(runsOn)}`,
-      );
+    assertLiteralRunner(job, jobName, releasePath);
+  }
+}
+
+/**
+ * A release job must hold exactly the three read-only permissions.
+ * @param {Record<string, unknown>} job
+ * @param {string} releasePath
+ * @param {string} jobName
+ */
+function assertReadOnlyReleasePermissions(job, releasePath, jobName) {
+  const perms = /** @type {Record<string, unknown>} */ (job.permissions ?? {});
+  const permKeys = Object.keys(perms).sort();
+  if (
+    permKeys.join(",") !== "actions,attestations,contents" ||
+    perms.actions !== "read" ||
+    perms.attestations !== "read" ||
+    perms.contents !== "read"
+  ) {
+    throw new Error(
+      `${releasePath}: ${jobName} must have exactly actions: read, attestations: read, contents: read`,
+    );
+  }
+}
+
+/**
+ * Release must never build/package and must expose the release_context step
+ * without checking out a release tag.
+ * @param {Record<string, unknown>} vrJob
+ * @param {Record<string, unknown>} psJob
+ * @param {string} releasePath
+ */
+function assertReleaseStepsPolicy(vrJob, psJob, releasePath) {
+  const allReleaseRuns = getStepRuns(vrJob).concat(getStepRuns(psJob)).join("\n");
+  if (/pnpm build|pnpm package/.test(allReleaseRuns)) {
+    throw new Error(`${releasePath}: Release workflow must not contain build or package commands`);
+  }
+
+  const vrStepIds = getStepIds(vrJob);
+  if (!vrStepIds.includes("release_context")) {
+    throw new Error(`${releasePath}: validate_release must have a step with id 'release_context'`);
+  }
+
+  for (const run of getStepRuns(vrJob)) {
+    if (/git checkout.*v\d+\.\d+/.test(run)) {
+      throw new Error(`${releasePath}: validate_release must not checkout a release tag`);
     }
   }
+}
 
-  // validate_release permissions
+/**
+ * Validate the Release workflow structure (basic checks for bootstrap).
+ * Full canonical checks are in validate-workflows.release.test.mjs (created at Wave 1 barrier).
+ * @param {unknown} releaseDoc
+ * @param {string} releasePath
+ */
+function validateReleaseWorkflow(releaseDoc, releasePath) {
+  const jobsObj = requireJobsObject(releaseDoc, releasePath, "Release");
+  const release = /** @type {Record<string, unknown>} */ (releaseDoc);
+  assertReleaseJobNames(jobsObj, releasePath);
+  assertReleaseConcurrency(release, jobsObj, releasePath);
+
   const vrJob = /** @type {Record<string, unknown>} */ (jobsObj["validate_release"]);
-  const vrPerms = /** @type {Record<string, unknown>} */ (vrJob.permissions ?? {});
-  const vrPermKeys = Object.keys(vrPerms).sort();
-  if (
-    vrPermKeys.join(",") !== "actions,attestations,contents" ||
-    vrPerms.actions !== "read" ||
-    vrPerms.attestations !== "read" ||
-    vrPerms.contents !== "read"
-  ) {
-    throw new Error(
-      `${releasePath}: validate_release must have exactly actions: read, attestations: read, contents: read`,
-    );
-  }
-
-  // publish_stores permissions
+  assertReadOnlyReleasePermissions(vrJob, releasePath, "validate_release");
   const psJob = /** @type {Record<string, unknown>} */ (jobsObj["publish_stores"]);
-  const psPerms = /** @type {Record<string, unknown>} */ (psJob.permissions ?? {});
-  const psPermKeys = Object.keys(psPerms).sort();
-  if (
-    psPermKeys.join(",") !== "actions,attestations,contents" ||
-    psPerms.actions !== "read" ||
-    psPerms.attestations !== "read" ||
-    psPerms.contents !== "read"
-  ) {
-    throw new Error(
-      `${releasePath}: publish_stores must have exactly actions: read, attestations: read, contents: read`,
-    );
-  }
+  assertReadOnlyReleasePermissions(psJob, releasePath, "publish_stores");
 
-  // publish_stores environment
   if (psJob.environment !== "browser-extension-stores") {
     throw new Error(
       `${releasePath}: publish_stores must declare environment: browser-extension-stores`,
     );
   }
 
-  // No build/package command in Release
-  const allReleaseRuns = getStepRuns(vrJob).concat(getStepRuns(psJob)).join("\n");
-  if (/pnpm build|pnpm package/.test(allReleaseRuns)) {
-    throw new Error(`${releasePath}: Release workflow must not contain build or package commands`);
-  }
+  assertReleaseStepsPolicy(vrJob, psJob, releasePath);
+}
 
-  // Check for release_context step
-  const vrStepIds = getStepIds(vrJob);
-  if (!vrStepIds.includes("release_context")) {
-    throw new Error(`${releasePath}: validate_release must have a step with id 'release_context'`);
-  }
+/**
+ * Resolve which workflows are present and whether to bootstrap or proceed.
+ * @param {(path: string) => boolean} exists
+ * @param {string} ciPath
+ * @param {string} releasePath
+ * @param {boolean} allowBootstrap
+ * @returns {"bootstrap" | "proceed"}
+ */
+function resolveWorkflowPresence(exists, ciPath, releasePath, allowBootstrap) {
+  const ciExists = exists(ciPath);
+  const releaseExists = exists(releasePath);
 
-  // Validate_release must not have release-tag checkout
-  for (const run of getStepRuns(vrJob)) {
-    if (/git checkout.*v\d+\.\d+/.test(run)) {
-      throw new Error(`${releasePath}: validate_release must not checkout a release tag`);
+  if (!ciExists && !releaseExists) {
+    if (allowBootstrap === true) {
+      return "bootstrap";
     }
+    throw new Error(
+      "Neither CI nor Release workflow exists. Set ALLOW_WORKFLOW_BOOTSTRAP=1 during initial setup.",
+    );
+  }
+
+  if (ciExists !== releaseExists) {
+    throw new Error(
+      `Exactly one workflow exists: ${ciExists ? ciPath : releasePath}. Both must exist or neither.`,
+    );
+  }
+  return "proceed";
+}
+
+/**
+ * Parse a workflow file, wrapping YAML errors with the file path.
+ * @param {(path: string) => string} readText
+ * @param {string} filePath
+ * @returns {unknown}
+ */
+function parseWorkflowYaml(readText, filePath) {
+  try {
+    return yaml.parse(readText(filePath));
+  } catch (error) {
+    throw new Error(
+      `${filePath}: YAML parse failed: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
+    );
+  }
+}
+
+/**
+ * Run schema validation for one workflow document, throwing on failure.
+ * @param {(doc: unknown) => { valid: boolean, errors: import("ajv").ErrorObject[] }} validateSchema
+ * @param {unknown} doc
+ * @param {string} filePath
+ */
+function assertSchemaValid(validateSchema, doc, filePath) {
+  const result = validateSchema(doc);
+  if (!result.valid) {
+    const normalizedErrors = result.errors
+      .map(
+        (e) =>
+          `${filePath} ${e.instancePath || "/"} ${e.keyword} ${e.message ?? "validation failed"}`,
+      )
+      .sort();
+    throw new Error(`Workflow schema validation failed:\n${normalizedErrors.join("\n")}`);
   }
 }
 
@@ -383,67 +504,20 @@ export function validateWorkflowFiles(options = {}) {
 
   const ciPath = ".github/workflows/ci.yml";
   const releasePath = ".github/workflows/release.yml";
-  const ciExists = exists(ciPath);
-  const releaseExists = exists(releasePath);
 
-  if (!ciExists && !releaseExists) {
-    if (allowBootstrap === true) {
-      return { bootstrapped: true };
-    }
-    throw new Error(
-      "Neither CI nor Release workflow exists. Set ALLOW_WORKFLOW_BOOTSTRAP=1 during initial setup.",
-    );
+  if (resolveWorkflowPresence(exists, ciPath, releasePath, allowBootstrap) === "bootstrap") {
+    return { bootstrapped: true };
   }
 
-  if (ciExists !== releaseExists) {
-    throw new Error(
-      `Exactly one workflow exists: ${ciExists ? ciPath : releasePath}. Both must exist or neither.`,
-    );
-  }
+  const ciDoc = parseWorkflowYaml(readText, ciPath);
+  const releaseDoc = parseWorkflowYaml(readText, releasePath);
 
-  // Both exist — parse and validate
-  let ciDoc;
-  try {
-    ciDoc = yaml.parse(readText(ciPath));
-  } catch (error) {
-    throw new Error(
-      `${ciPath}: YAML parse failed: ${error instanceof Error ? error.message : String(error)}`,
-      { cause: error },
-    );
-  }
+  assertSchemaValid(validateSchema, ciDoc, ciPath);
+  assertSchemaValid(validateSchema, releaseDoc, releasePath);
 
-  let releaseDoc;
-  try {
-    releaseDoc = yaml.parse(readText(releasePath));
-  } catch (error) {
-    throw new Error(
-      `${releasePath}: YAML parse failed: ${error instanceof Error ? error.message : String(error)}`,
-      { cause: error },
-    );
-  }
-
-  // Schema validation for both
-  for (const [doc, filePath] of [
-    [ciDoc, ciPath],
-    [releaseDoc, releasePath],
-  ]) {
-    const result = validateSchema(doc);
-    if (!result.valid) {
-      const normalizedErrors = result.errors
-        .map(
-          (e) =>
-            `${filePath} ${e.instancePath || "/"} ${e.keyword} ${e.message ?? "validation failed"}`,
-        )
-        .sort();
-      throw new Error(`Workflow schema validation failed:\n${normalizedErrors.join("\n")}`);
-    }
-  }
-
-  // Action commit checks
   requireApprovedActions(ciDoc, ciPath);
   requireApprovedActions(releaseDoc, releasePath);
 
-  // Structural policy checks
   validateCiWorkflow(ciDoc, ciPath);
   validateReleaseWorkflow(releaseDoc, releasePath);
 

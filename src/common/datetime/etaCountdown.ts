@@ -54,27 +54,7 @@ export function describeEtaCountdown(targetIso: string, now: Date): EtaCountdown
     return { text: "", severity: "distant", color: SEVERITY_COLORS.distant };
   }
 
-  // ADO ETA fields are calendar dates (no time-of-day), but they're serialized as ISO timestamps.
-  // For "date-only" ISOs like "2026-07-24T00:00:00Z" (midnight UTC), extract the UTC date and treat
-  // it as a PST calendar date. For full timestamps, extract the PST date from the moment. This
-  // ensures both "2026-07-24T00:00:00Z" (midnight UTC = July 23 PST) and "2026-07-25T06:59:00Z"
-  // (11:59 PM PST July 24) are both treated as "July 24" when that's the intended calendar date.
-  const utcHour = target.getUTCHours();
-  const utcMinute = target.getUTCMinutes();
-  const utcSecond = target.getUTCSeconds();
-
-  let targetMidnight: number;
-  if (utcHour === 0 && utcMinute === 0 && utcSecond === 0) {
-    // Midnight UTC → treat the UTC date as a PST calendar date.
-    const year = target.getUTCFullYear();
-    const month = target.getUTCMonth() + 1;
-    const day = target.getUTCDate();
-    targetMidnight = computePstMidnight(year, month, day);
-  } else {
-    // Other times → extract the PST date from the full timestamp.
-    targetMidnight = getPstMidnight(target);
-  }
-
+  const targetMidnight = resolveTargetMidnight(target);
   const nowMidnight = getPstMidnight(now);
 
   // Whole-day delta (floor to ignore partial days).
@@ -94,6 +74,27 @@ export function describeEtaCountdown(targetIso: string, now: Date): EtaCountdown
   const text = formatFutureDelta(delta);
   const severity = delta <= 6 ? "soon" : delta <= 27 ? "upcoming" : "distant";
   return { text, severity, color: SEVERITY_COLORS[severity] };
+}
+
+/**
+ * Resolve the target's PST midnight timestamp, normalizing how ADO serializes a calendar date.
+ *
+ * ADO ETA fields are calendar dates (no time-of-day) but are serialized as ISO timestamps. A
+ * "date-only" ISO like "2026-07-24T00:00:00Z" (midnight UTC) must be read as its UTC calendar date
+ * treated as PST; a full timestamp like "2026-07-25T06:59:00Z" (11:59 PM PST July 24) must be read
+ * as its PST date. Both then resolve to "July 24" when that is the intended calendar date.
+ */
+function resolveTargetMidnight(target: Date): number {
+  const isMidnightUtc =
+    target.getUTCHours() === 0 && target.getUTCMinutes() === 0 && target.getUTCSeconds() === 0;
+  if (isMidnightUtc) {
+    return computePstMidnight(
+      target.getUTCFullYear(),
+      target.getUTCMonth() + 1,
+      target.getUTCDate(),
+    );
+  }
+  return getPstMidnight(target);
 }
 
 /**

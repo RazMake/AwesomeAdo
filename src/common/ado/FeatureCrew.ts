@@ -209,6 +209,38 @@ export function mergeFeatureCrew(
   return { members, changed };
 }
 
+/** A request to set one roster member's Feature Crew tag, matched to a person by alias. */
+export interface FeatureCrewTagAssignment {
+  /** The roster member's alias (matched case-insensitively). */
+  alias: string;
+  /** The tag to record; an empty string clears the member's tag back to untagged. */
+  tag: string;
+}
+
+/**
+ * Apply hand-picked tag choices onto an existing roster: for each assignment, set the matching
+ * member's tag (matched by alias, case-insensitively). Only members already on the roster are
+ * touched — an assignment for an unknown alias is ignored, so a tag can never conjure a floating
+ * roster line for someone assigned to nothing. `changed` is true only when at least one tag actually
+ * differs from what was stored, so the caller can skip a pointless write when nothing moved.
+ */
+export function applyTagAssignments(
+  members: FeatureCrewMember[],
+  assignments: FeatureCrewTagAssignment[],
+): { members: FeatureCrewMember[]; changed: boolean } {
+  const tagByAlias = new Map(assignments.map((a) => [a.alias.toLowerCase(), a.tag]));
+  let changed = false;
+  const next = members.map((member) => {
+    const newTag = tagByAlias.get(member.alias.toLowerCase());
+    if (newTag !== undefined && newTag !== member.tag) {
+      changed = true;
+      return { ...member, tag: newTag };
+    }
+    return member;
+  });
+  return { members: next, changed };
+}
+
 const API_VERSION = "7.1";
 
 /** The REST URLs the Feature Crew reconcile needs, resolved from the ADO tab's project context. */

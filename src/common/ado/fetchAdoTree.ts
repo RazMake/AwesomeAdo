@@ -200,8 +200,27 @@ export function parseTrackedTree(
     return loadFailure;
   }
 
-  // Normalize batch items into a map by id. Accept both bare array and { value: [...] } body shapes.
-  const itemsField = raw.items as { value?: unknown } | unknown[] | null;
+  const itemsById = indexItemsById(raw.items);
+  const { childrenById, rootIds } = buildTreeAdjacency(relations);
+
+  // Recursively build the tree from each root, guarding cycles and depth.
+  const roots: TrackedWorkItem[] = [];
+  for (const rootId of rootIds) {
+    const node = buildNode(rootId, itemsById, childrenById, etaFieldByType, new Set(), 0);
+    if (node !== null) {
+      roots.push(node);
+    }
+  }
+
+  return { isTreeQuery: true, roots, error: null, folderPath };
+}
+
+/**
+ * Index the batch work items by id. Accepts both a bare array and a `{ value: [...] }` body shape
+ * because the two ADO endpoints that feed this differ, and skips anything without a numeric id.
+ */
+function indexItemsById(rawItems: unknown): Map<number, unknown> {
+  const itemsField = rawItems as { value?: unknown } | unknown[] | null;
   const itemsArray = Array.isArray(itemsField)
     ? itemsField
     : Array.isArray(itemsField?.value)
@@ -216,8 +235,18 @@ export function parseTrackedTree(
       }
     }
   }
+  return itemsById;
+}
 
-  // Build parent→children adjacency list and identify roots from the relations array.
+/**
+ * Split the WIQL relations into a parent→children adjacency list and the ordered root ids. A
+ * relation with `source === null` marks its target as a root; otherwise `source.id → target.id` is a
+ * parent-child link. Encounter order is preserved so siblings render in the query's own order.
+ */
+function buildTreeAdjacency(relations: unknown[]): {
+  childrenById: Map<number, number[]>;
+  rootIds: number[];
+} {
   const childrenById = new Map<number, number[]>();
   const rootIds: number[] = [];
   for (const relation of relations) {
@@ -225,35 +254,28 @@ export function parseTrackedTree(
       continue;
     }
     const { source, target } = relation as { source?: unknown; target?: unknown };
-    const targetObj = target as { id?: unknown } | null;
-    const targetId = typeof targetObj?.id === "number" ? targetObj.id : null;
+    const targetId = readRelationEndpointId(target);
     if (targetId === null) {
       continue;
     }
-    // source === null means the target is a root; otherwise source.id → target.id is a parent-child link.
     if (source === null) {
       rootIds.push(targetId);
-    } else {
-      const sourceObj = source as { id?: unknown } | null;
-      const sourceId = typeof sourceObj?.id === "number" ? sourceObj.id : null;
-      if (sourceId !== null) {
-        const children = childrenById.get(sourceId) ?? [];
-        children.push(targetId);
-        childrenById.set(sourceId, children);
-      }
+      continue;
+    }
+    const sourceId = readRelationEndpointId(source);
+    if (sourceId !== null) {
+      const children = childrenById.get(sourceId) ?? [];
+      children.push(targetId);
+      childrenById.set(sourceId, children);
     }
   }
+  return { childrenById, rootIds };
+}
 
-  // Recursively build the tree from each root, guarding cycles and depth.
-  const roots: TrackedWorkItem[] = [];
-  for (const rootId of rootIds) {
-    const node = buildNode(rootId, itemsById, childrenById, etaFieldByType, new Set(), 0);
-    if (node !== null) {
-      roots.push(node);
-    }
-  }
-
-  return { isTreeQuery: true, roots, error: null, folderPath };
+/** Read a relation endpoint's numeric work-item id, or null when the endpoint is absent/malformed. */
+function readRelationEndpointId(endpoint: unknown): number | null {
+  const id = (endpoint as { id?: unknown } | null)?.id;
+  return typeof id === "number" ? id : null;
 }
 
 /**
@@ -279,46 +301,8 @@ function buildNode(
   if (typeof item !== "object" || item === null) {
     return null;
   }
-  const { rev, fields } = item as { rev?: unknown; fields?: unknown };
-  const fieldsObj = typeof fields === "object" && fields !== null ? fields : {};
-  const field = (key: string): unknown => (fieldsObj as Record<string, unknown>)[key];
 
-  const type = String(field("System.WorkItemType") ?? "");
-  const title = String(field("System.Title") ?? "");
-  const state = String(field("System.State") ?? "");
-  const assignedTo = parseIdentity(field("System.AssignedTo"));
-  const iterationPath = field("System.IterationPath");
-  const iterationPathStr = typeof iterationPath === "string" ? iterationPath : null;
-  const sprintName = sprintLeaf(iterationPathStr);
-  const createdDate = String(field("System.CreatedDate") ?? "");
-  const createdBy = parseIdentity(field("System.CreatedBy"));
-  const changedDate = String(field("System.ChangedDate") ?? "");
-  const changedBy = parseIdentity(field("System.ChangedBy"));
-  const description = htmlToText(String(field("System.Description") ?? ""));
-  const revisionValue = typeof rev === "number" ? rev : 0;
-
-  // ETA comes from the type-specific field, if one is configured.
-  const etaFieldRef = etaFieldByType.get(type);
-  const etaValue = etaFieldRef ? field(etaFieldRef) : null;
-  const eta = typeof etaValue === "string" && etaValue.length > 0 ? etaValue : null;
-
-  const node: TrackedWorkItem = {
-    id,
-    rev: revisionValue,
-    type,
-    title,
-    state,
-    assignedTo,
-    iterationPath: iterationPathStr,
-    sprintName,
-    createdDate,
-    createdBy,
-    changedDate,
-    changedBy,
-    description,
-    eta,
-    children: [],
-  };
+  const node = hydrateTrackedWorkItem(id, item, etaFieldByType);
 
   // Recursively build children, preserving encounter order.
   const childIds = childrenById.get(id) ?? [];
@@ -330,6 +314,49 @@ function buildNode(
   }
 
   return node;
+}
+
+/**
+ * Hydrate a TrackedWorkItem's own fields from a batch item (children are attached by the caller). The
+ * nested `field`/`readString` closures keep the many repeated `fields[...] ?? ""` reads out of this
+ * function's own branching so it stays simple to follow.
+ */
+function hydrateTrackedWorkItem(
+  id: number,
+  item: object,
+  etaFieldByType: ReadonlyMap<string, string>,
+): TrackedWorkItem {
+  const { rev, fields } = item as { rev?: unknown; fields?: unknown };
+  const fieldsObj = typeof fields === "object" && fields !== null ? fields : {};
+  const field = (key: string): unknown => (fieldsObj as Record<string, unknown>)[key];
+  const readString = (key: string): string => String(field(key) ?? "");
+
+  const type = readString("System.WorkItemType");
+  const iterationPath = field("System.IterationPath");
+  const iterationPathStr = typeof iterationPath === "string" ? iterationPath : null;
+
+  // ETA comes from the type-specific field, if one is configured.
+  const etaFieldRef = etaFieldByType.get(type);
+  const etaValue = etaFieldRef ? field(etaFieldRef) : null;
+  const eta = typeof etaValue === "string" && etaValue.length > 0 ? etaValue : null;
+
+  return {
+    id,
+    rev: typeof rev === "number" ? rev : 0,
+    type,
+    title: readString("System.Title"),
+    state: readString("System.State"),
+    assignedTo: parseIdentity(field("System.AssignedTo")),
+    iterationPath: iterationPathStr,
+    sprintName: sprintLeaf(iterationPathStr),
+    createdDate: readString("System.CreatedDate"),
+    createdBy: parseIdentity(field("System.CreatedBy")),
+    changedDate: readString("System.ChangedDate"),
+    changedBy: parseIdentity(field("System.ChangedBy")),
+    description: htmlToText(readString("System.Description")),
+    eta,
+    children: [],
+  };
 }
 
 /**

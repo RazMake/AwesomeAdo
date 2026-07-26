@@ -72,10 +72,7 @@ export function resolveViewTypePropertyValue(
   const seed = (stored ?? "").trim() || (property.defaultValue ?? "");
   const kind = viewTypePropertyKind(property);
   if (kind === "select") {
-    // A stored value only survives if it is still one of the offered choices, so a binding written
-    // by a newer build (or a dropped option) falls back to the default rather than an orphan value.
-    const isOffered = property.options?.some((option) => option.value === seed) ?? false;
-    return isOffered ? seed : (property.defaultValue ?? "");
+    return resolveSelectValue(property, seed);
   }
   if (kind !== "number" || seed === "") {
     return seed;
@@ -83,6 +80,16 @@ export function resolveViewTypePropertyValue(
   return String(
     clampToRange(toWholeNumber(seed, property.defaultValue), property.min, property.max),
   );
+}
+
+/**
+ * The value a `select` property keeps: the seed only survives when it is still one of the offered
+ * choices, so a binding written by a newer build (or one whose option was dropped) falls back to the
+ * declared default rather than persisting an orphan value the picker can no longer show.
+ */
+function resolveSelectValue(property: ViewTypeProperty, seed: string): string {
+  const isOffered = property.options?.some((option) => option.value === seed) ?? false;
+  return isOffered ? seed : (property.defaultValue ?? "");
 }
 
 /** Parse a whole number, falling back to the property's default (then 0) when the text is not one. */

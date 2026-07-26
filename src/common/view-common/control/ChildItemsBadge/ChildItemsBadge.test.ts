@@ -50,11 +50,11 @@ const badgeOf = (root: HTMLElement): HTMLElement =>
 const popupOf = (root: HTMLElement): HTMLElement | null =>
   root.querySelector<HTMLElement>(".awesomeado-child-items__popup");
 
-describe("renderChildItemsBadge", () => {
-  afterEach(() => {
-    document.body.innerHTML = "";
-  });
+afterEach(() => {
+  document.body.innerHTML = "";
+});
 
+describe("renderChildItemsBadge - badge and popup rendering", () => {
   it("shows the completed / total count", () => {
     const root = renderChildItemsBadge(document, {
       children: [childOf(), childOf(), childOf()],
@@ -99,7 +99,9 @@ describe("renderChildItemsBadge", () => {
     const rows = root.querySelectorAll(".awesomeado-child-items__row");
     expect(rows).toHaveLength(2);
   });
+});
 
+describe("renderChildItemsBadge - row content", () => {
   it("renders each child's assignee via the shared AssignedTo control", () => {
     const root = renderChildItemsBadge(document, {
       children: [childOf()],
@@ -161,7 +163,9 @@ describe("renderChildItemsBadge", () => {
       "\u2197",
     );
   });
+});
 
+describe("renderChildItemsBadge - interaction and dismissal", () => {
   it("forwards a picked assignee to the child's onAssigneeChange", async () => {
     const directory = new FakeUserDirectory();
     directory.setSearchResults([

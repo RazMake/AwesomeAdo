@@ -10,9 +10,9 @@
 import type { IFeatureCrewWriter } from "../ado/IFeatureCrewWriter";
 import type { IUserDirectory } from "../ado/IUserDirectory";
 import type {
-  WorkItemStateWriteRequest,
-  WorkItemStateWriteResult,
-} from "../ado/IWorkItemStateWriter";
+  WorkItemFieldWriteRequest,
+  WorkItemFieldWriteResult,
+} from "../ado/IWorkItemFieldWriter";
 import type { WorkItemTreeResult } from "../ado/IWorkItemTreeLoader";
 import type { TypeCatalogEntry } from "../ado/TrackedWorkItem";
 import type { SprintWindow } from "../ado/sprintWindow";
@@ -61,12 +61,12 @@ export interface EnhancedViewServices {
    */
   featureCrew: IFeatureCrewWriter;
   /**
-   * Writes a work item's state (System.State) back to Azure DevOps, using the item's last-known rev
-   * as an optimistic-concurrency guard. The write is atomic and fails when the item was edited
-   * concurrently by someone else (its rev advanced), so the caller can retry after refetching or
-   * report the stale-rev conflict to the user.
+   * Writes a single work item field back to Azure DevOps (e.g. `System.State` or a type's ETA date
+   * field), using the item's last-known rev as an optimistic-concurrency guard. The write is atomic
+   * and fails when the item was edited concurrently by someone else (its rev advanced), so the caller
+   * can retry after refetching or report the stale-rev conflict to the user.
    */
-  writeState(request: WorkItemStateWriteRequest): Promise<WorkItemStateWriteResult>;
+  writeField(request: WorkItemFieldWriteRequest): Promise<WorkItemFieldWriteResult>;
 }
 
 /** Everything a view needs to render, injected so a view never reaches for a global (Dependency Inversion). */

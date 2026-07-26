@@ -1,5 +1,8 @@
-import type { FeatureCrewAssignee, FeatureCrewMember } from "./FeatureCrew";
-
+import type {
+  FeatureCrewAssignee,
+  FeatureCrewMember,
+  FeatureCrewTagAssignment,
+} from "./FeatureCrew";
 /**
  * The request to reconcile a Feature Crew work item: create or update the roster so it contains all
  * currently assigned people from the project's tree. The Feature Crew work item is the dedicated
@@ -14,6 +17,12 @@ export interface FeatureCrewReconcileRequest {
   typeName: string;
   /** The distinct people currently assigned somewhere in the project, in first-seen order. */
   assignees: FeatureCrewAssignee[];
+  /**
+   * Optional hand-picked tag choices to record on the roster (e.g. from the assignee control's tag
+   * editor). Each names a person by alias and the tag to store; only members already on the roster
+   * are touched. Omit when merely reconciling who is assigned.
+   */
+  tagAssignments?: FeatureCrewTagAssignment[];
 }
 
 /**

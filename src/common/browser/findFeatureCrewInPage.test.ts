@@ -24,7 +24,7 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
 });
 
-describe("findFeatureCrewInPage", () => {
+describe("findFeatureCrewInPage - match resolution", () => {
   it("finds the matching candidate and returns { id, rev, description }, with single-quote escaping in the WIQL", async () => {
     const wiqlBody = { workItems: [{ id: 100 }] };
     const itemBody = {
@@ -65,7 +65,9 @@ describe("findFeatureCrewInPage", () => {
 
     expect(result).toEqual({ id: 100, rev: 5, description: "Test description" });
   });
+});
 
+describe("findFeatureCrewInPage - prefix-lookalike disambiguation", () => {
   it("skips a candidate whose relation url last segment is a prefix lookalike (12 vs 123) and picks the truly-linked one", async () => {
     const wiqlBody = { workItems: [{ id: 100 }, { id: 101 }] };
 
@@ -132,7 +134,9 @@ describe("findFeatureCrewInPage", () => {
     expect(result).toBeNull();
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+});
 
+describe("findFeatureCrewInPage - no-match cases", () => {
   it("returns null when no candidate has the affectedBy relation to root", async () => {
     const wiqlBody = { workItems: [{ id: 100 }] };
     const itemBody = {
@@ -202,7 +206,9 @@ describe("findFeatureCrewInPage", () => {
 
     expect(result).toEqual({ id: 101, rev: 2, description: "Has relations" });
   });
+});
 
+describe("findFeatureCrewInPage - candidate GET resilience", () => {
   it("tolerates a candidate GET returning non-ok and continues to the next candidate", async () => {
     const wiqlBody = { workItems: [{ id: 100 }, { id: 101 }] };
 
@@ -280,7 +286,9 @@ describe("findFeatureCrewInPage", () => {
 
     expect(result).toBeNull();
   });
+});
 
+describe("findFeatureCrewInPage - url and field normalization", () => {
   it("handles a relation url with a query string by stripping it before matching", async () => {
     const wiqlBody = { workItems: [{ id: 100 }] };
     const itemBody = {
@@ -345,7 +353,9 @@ describe("findFeatureCrewInPage", () => {
 
     expect(result).toEqual({ id: 100, rev: 0, description: "" });
   });
+});
 
+describe("findFeatureCrewInPage - id and description fallbacks", () => {
   it("uses candidateId when item body id is not a number, and empty string when description is not a string", async () => {
     const wiqlBody = { workItems: [{ id: 200 }] };
     const itemBody = {
@@ -406,7 +416,9 @@ describe("findFeatureCrewInPage", () => {
     expect(result).toBeNull();
     expect(candidateCheckCount).toBe(20);
   });
+});
 
+describe("findFeatureCrewInPage - candidate capping and rejection", () => {
   it("tolerates a candidate GET fetch rejection and continues to the next candidate", async () => {
     const wiqlBody = { workItems: [{ id: 100 }, { id: 101 }] };
 
@@ -466,7 +478,9 @@ describe("findFeatureCrewInPage", () => {
     // Should not call item endpoint since no valid candidate IDs.
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+});
 
+describe("findFeatureCrewInPage - relation filtering", () => {
   it("skips relations that are not objects or are null and continues checking", async () => {
     const wiqlBody = { workItems: [{ id: 100 }] };
     const itemBody = {

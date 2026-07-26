@@ -63,7 +63,9 @@ describe("normalizeSettings", () => {
       defaultView: DEFAULT_SETTINGS.defaultView,
     });
   });
+});
 
+describe("normalizeSettings - team, sprint, and collection fields", () => {
   it("keeps a valid currentTeam and drops an invalid one", () => {
     expect(normalizeSettings({ currentTeam: { id: "t1", name: "Platform" } }).currentTeam).toEqual({
       id: "t1",
@@ -378,7 +380,9 @@ describe("normalizeWorkItemTypes", () => {
       { name: "Task", color: "", icon: "", columns: [] },
     ]);
   });
+});
 
+describe("normalizeWorkItemTypes - name dedup and column normalization", () => {
   it("drops nameless types and dedupes by case-insensitive name", () => {
     expect(
       normalizeWorkItemTypes([

@@ -76,14 +76,19 @@ describe("renderBreadcrumbs", () => {
     const nav = renderBreadcrumbs(document, {
       segments: [{ label: "Team A" }, { label: "Reports" }],
     });
+    expect(nav).not.toBeNull();
 
-    const crumbs = nav?.querySelectorAll(".awesomeado-breadcrumb");
-    expect(crumbs?.length).toBe(2);
+    // Narrow to non-null locals once so the per-crumb assertions below don't each need an
+    // optional-chaining short-circuit (every `?.` counts toward cyclomatic complexity).
+    const crumbs = nav!.querySelectorAll(".awesomeado-breadcrumb");
+    expect(crumbs.length).toBe(2);
+    const first = crumbs[0]!;
+    const second = crumbs[1]!;
     // No URL → rendered as <span>, never an <a>, so there is no broken/fabricated link target.
-    expect(crumbs?.[0]?.tagName).toBe("SPAN");
-    expect(crumbs?.[1]?.tagName).toBe("SPAN");
-    expect(crumbs?.[0]?.textContent).toBe("Team A");
-    expect(crumbs?.[1]?.textContent).toBe("Reports");
-    expect(nav?.querySelectorAll(".awesomeado-breadcrumb-sep").length).toBe(1);
+    expect(first.tagName).toBe("SPAN");
+    expect(second.tagName).toBe("SPAN");
+    expect(first.textContent).toBe("Team A");
+    expect(second.textContent).toBe("Reports");
+    expect(nav!.querySelectorAll(".awesomeado-breadcrumb-sep").length).toBe(1);
   });
 });

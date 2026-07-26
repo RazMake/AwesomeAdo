@@ -5,7 +5,7 @@ import {
   RECONCILE_FEATURE_CREW_MESSAGE,
 } from "./FeatureCrewRequest";
 
-describe("isReconcileFeatureCrewMessage", () => {
+describe("isReconcileFeatureCrewMessage - message shape", () => {
   it("accepts a valid message", () => {
     expect(
       isReconcileFeatureCrewMessage({
@@ -59,7 +59,9 @@ describe("isReconcileFeatureCrewMessage", () => {
       }),
     ).toBe(false);
   });
+});
 
+describe("isReconcileFeatureCrewMessage - typeName and assignees", () => {
   it("rejects a missing typeName", () => {
     expect(
       isReconcileFeatureCrewMessage({
@@ -121,6 +123,56 @@ describe("isReconcileFeatureCrewMessage", () => {
         rootId: 123,
         typeName: "Epic",
         assignees: [{ alias: "alice" }],
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("isReconcileFeatureCrewMessage - tagAssignments", () => {
+  it("accepts a message carrying a well-formed tagAssignments array", () => {
+    expect(
+      isReconcileFeatureCrewMessage({
+        type: RECONCILE_FEATURE_CREW_MESSAGE,
+        rootId: 123,
+        typeName: "Epic",
+        assignees: [{ alias: "alice", fullName: "Alice Smith" }],
+        tagAssignments: [{ alias: "alice", tag: "Core" }],
+      }),
+    ).toBe(true);
+  });
+
+  it("rejects a non-array tagAssignments", () => {
+    expect(
+      isReconcileFeatureCrewMessage({
+        type: RECONCILE_FEATURE_CREW_MESSAGE,
+        rootId: 123,
+        typeName: "Epic",
+        assignees: [],
+        tagAssignments: "nope",
+      }),
+    ).toBe(false);
+  });
+
+  it("rejects a tagAssignments entry missing tag", () => {
+    expect(
+      isReconcileFeatureCrewMessage({
+        type: RECONCILE_FEATURE_CREW_MESSAGE,
+        rootId: 123,
+        typeName: "Epic",
+        assignees: [],
+        tagAssignments: [{ alias: "alice" }],
+      }),
+    ).toBe(false);
+  });
+
+  it("rejects a tagAssignments entry that is not an object", () => {
+    expect(
+      isReconcileFeatureCrewMessage({
+        type: RECONCILE_FEATURE_CREW_MESSAGE,
+        rootId: 123,
+        typeName: "Epic",
+        assignees: [],
+        tagAssignments: [null],
       }),
     ).toBe(false);
   });

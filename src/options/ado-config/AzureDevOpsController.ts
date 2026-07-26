@@ -53,6 +53,15 @@ const LABEL_ROLE = "label";
 const DELETE_ROLE = "delete";
 const ROW_SELECTOR = ".area-path-row";
 
+/** The empty metadata used when no ADO tab is open, so `renderMetadata` never optional-chains. */
+const EMPTY_METADATA_CONTEXT: AdoMetadataContext = {
+  organization: "",
+  project: null,
+  teams: [],
+  areaPaths: [],
+  workItemTypes: [],
+};
+
 /**
  * Drives the Azure DevOps tab: shows the detected organization/project, and binds the current-team
  * picker, the future-sprints count, and the pinned area-path list to the synced settings store.
@@ -171,12 +180,16 @@ export class AzureDevOpsController {
   }
 
   private renderMetadata(metadata: AdoMetadataContext | null): void {
-    this.setConfigField(this.elements.organization, metadata?.organization ?? null);
-    this.setConfigField(this.elements.project, metadata?.project ?? null);
-    this.teams = metadata?.teams ?? [];
+    // Normalize once so each field read below is a plain property access, not another optional-chain
+    // + fallback. An absent tab yields empty strings/lists, which `setConfigField` renders identically
+    // to `null` (its "No active query tab" placeholder), so behavior is unchanged.
+    const context = metadata ?? EMPTY_METADATA_CONTEXT;
+    this.setConfigField(this.elements.organization, context.organization);
+    this.setConfigField(this.elements.project, context.project);
+    this.teams = context.teams;
     this.teamCombobox.setOptions(this.teams.map((team) => team.name));
-    this.applyAreaPathSuggestions(metadata?.areaPaths ?? []);
-    this.workItemTypes.setAvailableTypes(metadata?.workItemTypes ?? []);
+    this.applyAreaPathSuggestions(context.areaPaths);
+    this.workItemTypes.setAvailableTypes(context.workItemTypes);
   }
 
   private applyAreaPathSuggestions(suggestions: readonly string[]): void {

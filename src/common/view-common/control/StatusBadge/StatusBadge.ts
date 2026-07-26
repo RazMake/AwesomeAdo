@@ -51,6 +51,78 @@ export interface StatusBadgeHandle extends HTMLElement {
 }
 
 /**
+ * Build the dropdown popup listing the columns the badge can move to. Receives `close` so a picked
+ * column dismisses the popup immediately (persist-on-select). It reads `currentState` at open time
+ * and filters it out — the active state is context, not a possible transition — so after a committed
+ * move the list once more offers the column just left and excludes the new one.
+ */
+function buildStatusPopup(
+  doc: Document,
+  columns: StatusColumnOption[],
+  currentState: string,
+  onChange: StatusBadgeOptions["onChange"],
+  close: () => void,
+): HTMLElement {
+  const popup = doc.createElement("div");
+  popup.className = "awesomeado-status__popup";
+  // Theme-aware colors: use ADO custom properties with fallbacks.
+  popup.style.cssText = [
+    "position:absolute",
+    "top:100%",
+    "left:0",
+    "margin-top:4px",
+    "background:var(--callout-background-color, var(--background-color, #fff))",
+    "border:1px solid var(--palette-neutral-20, #ddd)",
+    "border-radius:3px",
+    "box-shadow:0 2px 8px rgba(0,0,0,0.15)",
+    "min-width:150px",
+    "max-width:300px",
+    "padding:4px 0",
+    "z-index:1000",
+  ].join(";");
+
+  columns
+    .filter((col) => col.primaryState !== currentState && col.column !== currentState)
+    .forEach((col) => {
+      const row = doc.createElement("button");
+      row.type = "button";
+      row.className = "awesomeado-status__row";
+      row.textContent = col.column;
+      const rowColors = colorsForOrdinal(col.ordinal);
+      row.style.cssText = [
+        "cursor:pointer",
+        `background:${rowColors.background}`,
+        `color:${rowColors.textColor}`,
+        `border:1px solid ${rowColors.borderColor}`,
+        "border-radius:3px",
+        "padding:4px 8px",
+        "margin:2px 4px",
+        "width:calc(100% - 8px)",
+        "text-align:left",
+        "font:inherit",
+        "white-space:nowrap",
+      ].join(";");
+
+      row.addEventListener("click", () => {
+        onChange?.(col.primaryState, col.column);
+        close();
+      });
+
+      // Hover highlight uses ADO theme token.
+      row.addEventListener("mouseenter", () => {
+        row.style.boxShadow = "inset 0 0 0 999px var(--palette-neutral-4, rgba(128,128,128,0.12))";
+      });
+      row.addEventListener("mouseleave", () => {
+        row.style.boxShadow = "none";
+      });
+
+      popup.append(row);
+    });
+
+  return popup;
+}
+
+/**
  * A work-item status badge showing the current ADO state with a muted, position-specific tint.
  *
  * The badge colors the state by its global board-column ordinal (see `colorsForOrdinal`) so the same
@@ -62,6 +134,12 @@ export function renderStatusBadge(doc: Document, options: StatusBadgeOptions): S
   const { state, ordinal, columns = [], editable = false, minWidthCh, onChange } = options;
 
   const isInteractive = editable && columns.length > 0;
+
+  // The currently-displayed Status. Tracked as mutable state (not just the initial `state` const)
+  // because the dropdown is rebuilt every time it opens: after a committed move via `setStatus` the
+  // popup must exclude the NEW current column and offer the one just left, so the option list stays
+  // correct across repeated changes instead of freezing on the first render's state.
+  let currentState = state;
 
   // Root container: position:relative so the popup can anchor to it.
   const root = doc.createElement("span");
@@ -118,73 +196,16 @@ export function renderStatusBadge(doc: Document, options: StatusBadgeOptions): S
 
   root.append(badge);
 
-  // Build the dropdown popup listing the columns the badge can move to. Receives `close` so a picked
-  // column dismisses the popup immediately (persist-on-select). The active state is context, not a
-  // possible transition, so it is filtered out.
-  const buildPopup = (close: () => void): HTMLElement => {
-    const popup = doc.createElement("div");
-    popup.className = "awesomeado-status__popup";
-    // Theme-aware colors: use ADO custom properties with fallbacks.
-    popup.style.cssText = [
-      "position:absolute",
-      "top:100%",
-      "left:0",
-      "margin-top:4px",
-      "background:var(--callout-background-color, var(--background-color, #fff))",
-      "border:1px solid var(--palette-neutral-20, #ddd)",
-      "border-radius:3px",
-      "box-shadow:0 2px 8px rgba(0,0,0,0.15)",
-      "min-width:150px",
-      "max-width:300px",
-      "padding:4px 0",
-      "z-index:1000",
-    ].join(";");
-
-    columns
-      .filter((col) => col.primaryState !== state && col.column !== state)
-      .forEach((col) => {
-        const row = doc.createElement("button");
-        row.type = "button";
-        row.className = "awesomeado-status__row";
-        row.textContent = col.column;
-        const rowColors = colorsForOrdinal(col.ordinal);
-        row.style.cssText = [
-          "cursor:pointer",
-          `background:${rowColors.background}`,
-          `color:${rowColors.textColor}`,
-          `border:1px solid ${rowColors.borderColor}`,
-          "border-radius:3px",
-          "padding:4px 8px",
-          "margin:2px 4px",
-          "width:calc(100% - 8px)",
-          "text-align:left",
-          "font:inherit",
-          "white-space:nowrap",
-        ].join(";");
-
-        row.addEventListener("click", () => {
-          onChange?.(col.primaryState, col.column);
-          close();
-        });
-
-        // Hover highlight uses ADO theme token.
-        row.addEventListener("mouseenter", () => {
-          row.style.boxShadow =
-            "inset 0 0 0 999px var(--palette-neutral-4, rgba(128,128,128,0.12))";
-        });
-        row.addEventListener("mouseleave", () => {
-          row.style.boxShadow = "none";
-        });
-
-        popup.append(row);
-      });
-
-    return popup;
-  };
-
   // The popup lifecycle (toggle on click, outside-click and Escape dismissal) is owned by the shared
-  // host; a non-interactive badge is not wired, so it never opens.
-  createPopupHost({ doc, trigger: badge, mountInto: root, buildPopup, interactive: isInteractive });
+  // host; a non-interactive badge is not wired, so it never opens. The dropdown is rebuilt on each
+  // open so it always excludes the CURRENT column and offers the one just left after a committed move.
+  createPopupHost({
+    doc,
+    trigger: badge,
+    mountInto: root,
+    buildPopup: (close) => buildStatusPopup(doc, columns, currentState, onChange, close),
+    interactive: isInteractive,
+  });
 
   const handle = root as StatusBadgeHandle;
   handle.setStatus = (newState, newOrdinal) => {
@@ -194,6 +215,9 @@ export function renderStatusBadge(doc: Document, options: StatusBadgeOptions): S
     if (textNode) {
       textNode.textContent = newState;
     }
+    // Track the new label so the next time the dropdown opens it excludes this column and once more
+    // offers the one just left, keeping the choices in step with the committed state.
+    currentState = newState;
     applyColors(newOrdinal);
   };
   return handle;

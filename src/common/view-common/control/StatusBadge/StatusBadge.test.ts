@@ -2,20 +2,20 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { renderStatusBadge } from "./StatusBadge";
 
-describe("renderStatusBadge", () => {
-  // Clean up any DOM created by tests.
-  afterEach(() => {
-    document.body.innerHTML = "";
-  });
+// Clean up any DOM created by tests (top-level hook applies to every describe below).
+afterEach(() => {
+  document.body.innerHTML = "";
+});
 
-  /** Read the badge chip element from a rendered badge. */
-  const chipOf = (badge: HTMLElement): HTMLElement =>
-    badge.querySelector<HTMLElement>(".awesomeado-status__badge")!;
+/** Read the badge chip element from a rendered badge. */
+const chipOf = (badge: HTMLElement): HTMLElement =>
+  badge.querySelector<HTMLElement>(".awesomeado-status__badge")!;
 
-  /** Whitespace-insensitive contains, so `rgb(30, 140, 45)` matches `rgb(30,140,45)`. */
-  const containsColor = (cssValue: string, needle: string): boolean =>
-    cssValue.replace(/\s/g, "").includes(needle.replace(/\s/g, ""));
+/** Whitespace-insensitive contains, so `rgb(30, 140, 45)` matches `rgb(30,140,45)`. */
+const containsColor = (cssValue: string, needle: string): boolean =>
+  cssValue.replace(/\s/g, "").includes(needle.replace(/\s/g, ""));
 
+describe("renderStatusBadge - colors and text", () => {
   it("renders the state text", () => {
     const badge = renderStatusBadge(document, { state: "In Progress" });
 
@@ -87,7 +87,9 @@ describe("renderStatusBadge", () => {
 
     expect(containsColor(chipOf(badge).style.background, "rgba(197,15,31,0.2)")).toBe(true);
   });
+});
 
+describe("renderStatusBadge - editability and caret", () => {
   it("read-only mode has cursor:default and no caret", () => {
     const badge = renderStatusBadge(document, {
       state: "Resolved",
@@ -129,7 +131,9 @@ describe("renderStatusBadge", () => {
     expect(chip?.style.cursor).toBe("pointer");
     expect(chip?.textContent).toContain("▾");
   });
+});
 
+describe("renderStatusBadge - opening the state popup", () => {
   it("clicking the badge opens a popup containing only alternative state badges", () => {
     const badge = renderStatusBadge(document, {
       state: "New",
@@ -187,7 +191,9 @@ describe("renderStatusBadge", () => {
     expect(calledColumn).toBe("In Progress");
     expect(badge.querySelector(".awesomeado-status__popup")).toBeNull();
   });
+});
 
+describe("renderStatusBadge - popup dismissal", () => {
   it("pressing Escape closes the popup", () => {
     const badge = renderStatusBadge(document, {
       state: "New",
@@ -246,7 +252,9 @@ describe("renderStatusBadge", () => {
     chip?.click();
     expect(badge.querySelector(".awesomeado-status__popup")).toBeNull();
   });
+});
 
+describe("renderStatusBadge - option list and safety", () => {
   it("excludes a column whose display label matches the current state", () => {
     const badge = renderStatusBadge(document, {
       state: "In Progress",
@@ -312,7 +320,9 @@ describe("renderStatusBadge", () => {
     expect(chip.textContent).toContain("▾");
     expect(containsColor(chip.style.background, "rgba(16,124,16,0.2)")).toBe(true);
   });
+});
 
+describe("renderStatusBadge - setStatus and sizing", () => {
   it("setStatus re-tints to neutral for an unmapped ordinal", () => {
     const badge = renderStatusBadge(document, { state: "Done", ordinal: 3 });
 
@@ -337,5 +347,38 @@ describe("renderStatusBadge", () => {
 
     const width = Number.parseInt(chipOf(badge).style.width, 10);
     expect(width).toBeGreaterThanOrEqual("A very long status label".length);
+  });
+
+  it("refreshes the dropdown options after a committed move so the list tracks the new state", () => {
+    // Regression: the option list is rebuilt on every open. Before the fix it closed over the
+    // ORIGINAL state, so after moving to a new column the dropdown kept excluding the old column and
+    // hid the one just left. It must instead exclude the CURRENT column and re-offer the previous one.
+    const badge = renderStatusBadge(document, {
+      state: "New",
+      ordinal: 0,
+      editable: true,
+      columns: [
+        { column: "New", primaryState: "New", ordinal: 0 },
+        { column: "Active", primaryState: "Active", ordinal: 1 },
+        { column: "Done", primaryState: "Closed", ordinal: 3 },
+      ],
+    });
+    document.body.append(badge);
+
+    const chip = chipOf(badge);
+
+    // First open excludes the initial "New" column.
+    chip.click();
+    let labels = [...badge.querySelectorAll(".awesomeado-status__row")].map((r) => r.textContent);
+    expect(labels).toEqual(["Active", "Done"]);
+    chip.click(); // Close.
+
+    // Commit a move to "Active" (as the owner does on a successful write).
+    badge.setStatus("Active", 1);
+
+    // Reopening must now exclude "Active" and once again offer "New".
+    chip.click();
+    labels = [...badge.querySelectorAll(".awesomeado-status__row")].map((r) => r.textContent);
+    expect(labels).toEqual(["New", "Done"]);
   });
 });

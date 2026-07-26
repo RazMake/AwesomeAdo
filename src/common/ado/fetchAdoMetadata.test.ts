@@ -197,7 +197,9 @@ describe("parseWorkItemTypes", () => {
       }),
     ).toEqual([{ name: "Epic", color: "", icon: "", states: [], dateFields: [] }]);
   });
+});
 
+describe("parseWorkItemTypes - date fields and guards", () => {
   it("attaches only date-typed fields, deduped and sorted by name", () => {
     const dateFieldRefs = new Set([
       "Microsoft.VSTS.Scheduling.TargetDate",

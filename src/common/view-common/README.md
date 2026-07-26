@@ -43,9 +43,10 @@ renderer.
   views (carrying the tree loader, user directory, type catalog, sprint window, clock, logger), absent
   for placeholder views.
 - `EnhancedViewServices` — the cross-view data/service singletons injected at the composition root:
-  `loadTree`, `featureCrew`, `writeState`, `userDirectory`, `getTypes`, `getBoardColumns`,
-  `loadSprintWindow`, `now`, `logger`. `writeState` persists a work item's state (System.State) change
-  back to Azure DevOps, using the item's last-known rev as an optimistic-concurrency guard.
+  `loadTree`, `featureCrew`, `writeField`, `userDirectory`, `getTypes`, `getBoardColumns`,
+  `loadSprintWindow`, `now`, `logger`. `writeField` persists a single work item field change (e.g.
+  `System.State` or a type's ETA date field) back to Azure DevOps, using the item's last-known rev as
+  an optimistic-concurrency guard; a `null` value clears the field.
   `loadSprintWindow` is the single shared entry point every sprint-filtering view uses to populate its
   sprint picker: it resolves the configured team's iterations around the current one, each labelled by
   its offset, plus the name to select by default.
@@ -62,14 +63,14 @@ DOM-bearing area of `view-common`: unlike the pure contracts above, these contro
 and are theme-aware via ADO CSS custom properties (with hard-coded fallbacks). They stay here so any
 view — regardless of which bundle renders it — reuses the same consistent parts.
 
-| Control            | Folder                                                             | What it renders                                                         |
-| ------------------ | ------------------------------------------------------------------ | ----------------------------------------------------------------------- |
-| `AssignedTo`       | [`control/AssignedTo`](./control/AssignedTo/README.md)             | The assignee's name as clickable text that opens a people picker popup. |
-| `Breadcrumbs`      | [`control/Breadcrumbs`](./control/Breadcrumbs/README.md)           | A trail of clickable segments separated by a glyph (a "you are here").  |
-| `DateLabel`        | [`control/DateLabel`](./control/DateLabel/README.md)               | A `MM/DD/YYYY` PST date label with a full-timestamp hover tooltip.      |
-| `EtaBadge`         | [`control/EtaBadge`](./control/EtaBadge/README.md)                 | An ETA date badge with severity color and a countdown tooltip.          |
-| `TagPill`          | [`control/TagPill`](./control/TagPill/README.md)                   | A colored Feature Crew tag pill (a neutral "??" pill when untagged).    |
-| `WriteQueueStatus` | [`control/WriteQueueStatus`](./control/WriteQueueStatus/README.md) | A "Saving N change(s)…" spinner shown only while writes are in flight.  |
-| `ViewScaffold`     | [`control/ViewScaffold`](./control/ViewScaffold/README.md)         | The centered title + message placeholder shell every view starts from.  |
+| Control            | Folder                                                             | What it renders                                                                                   |
+| ------------------ | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
+| `AssignedTo`       | [`control/AssignedTo`](./control/AssignedTo/README.md)             | The assignee's name as clickable text that opens a people picker popup.                           |
+| `Breadcrumbs`      | [`control/Breadcrumbs`](./control/Breadcrumbs/README.md)           | A trail of clickable segments separated by a glyph (a "you are here").                            |
+| `DateLabel`        | [`control/DateLabel`](./control/DateLabel/README.md)               | A `MM/DD/YYYY` PST date label with a full-timestamp hover tooltip.                                |
+| `EtaBadge`         | [`control/EtaBadge`](./control/EtaBadge/README.md)                 | An ETA date badge with severity color, a countdown tooltip, and an optional editable date picker. |
+| `TagPill`          | [`control/TagPill`](./control/TagPill/README.md)                   | A colored Feature Crew tag pill (a neutral "??" pill when untagged).                              |
+| `WriteQueueStatus` | [`control/WriteQueueStatus`](./control/WriteQueueStatus/README.md) | A "Saving N change(s)…" spinner shown only while writes are in flight.                            |
+| `ViewScaffold`     | [`control/ViewScaffold`](./control/ViewScaffold/README.md)         | The centered title + message placeholder shell every view starts from.                            |
 
 See each control's own `README.md` for its API.

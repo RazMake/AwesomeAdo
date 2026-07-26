@@ -178,6 +178,30 @@ function fire(target: EventTarget, type: string): void {
   target.dispatchEvent(new Event(type, { bubbles: true }));
 }
 
+// One fixture builder shared by every sibling describe below, so splitting a long describe into
+// aspect-focused groups never copy-pastes setup (jscpd threshold is 0).
+interface AdoFixture {
+  store: FakeSettingsStore;
+  reader: FakeMetadataReader;
+  elements: AzureDevOpsElements;
+}
+
+function makeFixture(): AdoFixture {
+  return {
+    store: new FakeSettingsStore(),
+    reader: new FakeMetadataReader(CONTEXT),
+    elements: makeElements(),
+  };
+}
+
+// The persistence-focused describes below all boot a fully initialized controller against a fresh
+// store; centralizing that avoids repeating the same async wiring in each group.
+async function bootController(fixture: AdoFixture): Promise<AzureDevOpsController> {
+  const controller = new AzureDevOpsController(fixture.store, fixture.reader, fixture.elements);
+  await controller.init();
+  return controller;
+}
+
 afterEach(() => {
   document.body.innerHTML = "";
 });
@@ -186,15 +210,13 @@ afterEach(() => {
 // Tests
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("AzureDevOpsController — initialization", () => {
+describe("AzureDevOpsController — initialization controls & metadata", () => {
   let store: FakeSettingsStore;
   let reader: FakeMetadataReader;
   let elements: AzureDevOpsElements;
 
   beforeEach(() => {
-    store = new FakeSettingsStore();
-    reader = new FakeMetadataReader(CONTEXT);
-    elements = makeElements();
+    ({ store, reader, elements } = makeFixture());
   });
 
   it("disables the controls at construction", () => {
@@ -259,6 +281,16 @@ describe("AzureDevOpsController — initialization", () => {
     path.dispatchEvent(new Event("input", { bubbles: true }));
     expect(comboboxOptions(path)).toEqual(["Web", "Web\\Api"]);
     controller.dispose();
+  });
+});
+
+describe("AzureDevOpsController — initialization seeding & errors", () => {
+  let store: FakeSettingsStore;
+  let reader: FakeMetadataReader;
+  let elements: AzureDevOpsElements;
+
+  beforeEach(() => {
+    ({ store, reader, elements } = makeFixture());
   });
 
   it("seeds the controls from stored settings", async () => {
@@ -436,16 +468,14 @@ describe("AzureDevOpsController — past sprints", () => {
   });
 });
 
-describe("AzureDevOpsController — area paths", () => {
-  let store: FakeSettingsStore;
+describe("AzureDevOpsController — area paths editing", () => {
   let elements: AzureDevOpsElements;
   let controller: AzureDevOpsController;
 
   beforeEach(async () => {
-    store = new FakeSettingsStore();
-    elements = makeElements();
-    controller = new AzureDevOpsController(store, new FakeMetadataReader(CONTEXT), elements);
-    await controller.init();
+    const fixture = makeFixture();
+    ({ elements } = fixture);
+    controller = await bootController(fixture);
   });
 
   afterEach(() => controller.dispose());
@@ -483,6 +513,20 @@ describe("AzureDevOpsController — area paths", () => {
     fire(path, "input");
     expect(label.value).toBe("Mine");
   });
+});
+
+describe("AzureDevOpsController — area paths persistence", () => {
+  let store: FakeSettingsStore;
+  let elements: AzureDevOpsElements;
+  let controller: AzureDevOpsController;
+
+  beforeEach(async () => {
+    const fixture = makeFixture();
+    ({ store, elements } = fixture);
+    controller = await bootController(fixture);
+  });
+
+  afterEach(() => controller.dispose());
 
   it("persists committed rows on change, defaulting a blank label", async () => {
     elements.areaPathAddButton.click();

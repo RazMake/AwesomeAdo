@@ -240,6 +240,36 @@ function setup(options?: {
   return { store, elements, controller };
 }
 
+// ETA-section helpers shared by the ETA field describe. Kept at module scope so that group's
+// callback stays under the executable-line ceiling without dropping any assertion.
+const etaRows = (elements: WorkItemTypesElements): HTMLElement[] => [
+  ...elements.etaBody.querySelectorAll<HTMLElement>(".wit-eta-row"),
+];
+
+const etaRowFor = (elements: WorkItemTypesElements, typeName: string): HTMLElement => {
+  const select = elements.etaBody.querySelector<HTMLSelectElement>(
+    `[data-role="eta"][data-type-name="${typeName}"]`,
+  );
+  if (select === null) {
+    throw new Error(`no ETA row for ${typeName}`);
+  }
+  return select.closest<HTMLElement>(".wit-eta-row")!;
+};
+
+const etaSelect = (row: HTMLElement): HTMLSelectElement =>
+  row.querySelector<HTMLSelectElement>('[data-role="eta"]')!;
+
+const etaOptionValues = (select: HTMLSelectElement): string[] =>
+  [...select.options].map((option) => option.value);
+
+const bugWithEta: WorkItemType = {
+  name: "Bug",
+  color: "CC293D",
+  icon: "https://ado/bug",
+  columns: [],
+  etaField: "Microsoft.VSTS.Scheduling.TargetDate",
+};
+
 afterEach(() => {
   document.body.innerHTML = "";
 });
@@ -732,7 +762,9 @@ describe("WorkItemTypesController — reordering types (parent → child)", () =
     expect(rowTypeOrder(elements)).toEqual(["Task", "Bug"]);
     expect(etaTypeOrder(elements)).toEqual(["Task", "Bug"]);
   });
+});
 
+describe("WorkItemTypesController — reordering drop preview", () => {
   it("previews the drop above the hovered row when dragging a row up", () => {
     const { elements } = setup({ boardColumns: ["Active"] });
     const bug = addTypeRow(elements, "Bug");
@@ -897,35 +929,6 @@ describe("WorkItemTypesController — disposal", () => {
 });
 
 describe("WorkItemTypesController — ETA field", () => {
-  /** The ETA rows currently shown in the read-only ETA section. */
-  const etaRows = (elements: WorkItemTypesElements): HTMLElement[] => [
-    ...elements.etaBody.querySelectorAll<HTMLElement>(".wit-eta-row"),
-  ];
-
-  const etaRowFor = (elements: WorkItemTypesElements, typeName: string): HTMLElement => {
-    const select = elements.etaBody.querySelector<HTMLSelectElement>(
-      `[data-role="eta"][data-type-name="${typeName}"]`,
-    );
-    if (select === null) {
-      throw new Error(`no ETA row for ${typeName}`);
-    }
-    return select.closest<HTMLElement>(".wit-eta-row")!;
-  };
-
-  const etaSelect = (row: HTMLElement): HTMLSelectElement =>
-    row.querySelector<HTMLSelectElement>('[data-role="eta"]')!;
-
-  const optionValues = (select: HTMLSelectElement): string[] =>
-    [...select.options].map((option) => option.value);
-
-  const bugWithEta: WorkItemType = {
-    name: "Bug",
-    color: "CC293D",
-    icon: "https://ado/bug",
-    columns: [],
-    etaField: "Microsoft.VSTS.Scheduling.TargetDate",
-  };
-
   it("lists one ETA row per committed type, offering that type's date fields", () => {
     const { elements } = setup({
       boardColumns: ["Active"],
@@ -935,7 +938,7 @@ describe("WorkItemTypesController — ETA field", () => {
     expect(etaRows(elements)).toHaveLength(1);
     const select = etaSelect(etaRowFor(elements, "Bug"));
     // A leading blank ("None") plus the type's two date fields, in the metadata's sorted order.
-    expect(optionValues(select)).toEqual([
+    expect(etaOptionValues(select)).toEqual([
       "",
       "Microsoft.VSTS.Common.ResolvedDate",
       "Microsoft.VSTS.Scheduling.TargetDate",
@@ -1000,6 +1003,6 @@ describe("WorkItemTypesController — ETA field", () => {
 
     const select = etaSelect(etaRowFor(elements, "Bug"));
     expect(select.value).toBe("Microsoft.VSTS.Scheduling.TargetDate");
-    expect(optionValues(select)).toEqual(["", "Microsoft.VSTS.Scheduling.TargetDate"]);
+    expect(etaOptionValues(select)).toEqual(["", "Microsoft.VSTS.Scheduling.TargetDate"]);
   });
 });

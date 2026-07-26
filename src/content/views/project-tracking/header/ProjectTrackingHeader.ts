@@ -21,7 +21,6 @@ import {
   renderBreadcrumbs,
   type BreadcrumbSegment,
 } from "../../../../common/view-common/control/Breadcrumbs/Breadcrumbs";
-import { renderEtaBadge } from "../../../../common/view-common/control/EtaBadge/EtaBadge";
 
 /** Everything the header tile needs to render, injected so the control never fetches ADO data. */
 export interface ProjectTrackingHeaderOptions {
@@ -39,10 +38,11 @@ export interface ProjectTrackingHeaderOptions {
    * this control stays free of the user directory. Null when view services are unavailable.
    */
   techLead: HTMLElement | null;
-  /** The root item's ETA (ISO 8601), or null when unset. */
-  eta: string | null;
-  /** Reference "now" for the ETA countdown, injected for deterministic rendering. */
-  now: Date;
+  /**
+   * The root item's ETA badge, pre-built by the view so ETA read/write wiring lives in one place;
+   * the header only lays it out. Null when view services are unavailable.
+   */
+  eta: HTMLElement | null;
   /** The sprint picker control element, pinned to the right of the controls band. */
   sprintPicker: HTMLElement;
   /**
@@ -105,8 +105,9 @@ function renderInfoColumn(doc: Document, options: ProjectTrackingHeaderOptions):
   if (options.techLead) {
     techLeadRow.append(options.techLead);
   }
-  const etaBadge = renderEtaBadge(doc, { eta: options.eta, now: options.now });
-  techLeadRow.append(etaBadge);
+  if (options.eta) {
+    techLeadRow.append(options.eta);
+  }
   info.append(techLeadRow);
 
   return info;
@@ -129,16 +130,24 @@ export function renderProjectTrackingHeader(
   // a fixed grey (not --palette-neutral-20): in "Follow ADO" that token resolves to ADO's own value,
   // which is too faint on the callout surface and made the card's outline vanish — the same reason
   // the +/- band buttons already pin a fixed grey. The pinned themes read identically to before.
+  // Pinned to the top of the scroll container (position:sticky + top:0) so the project title,
+  // sprint picker, and expand/collapse controls stay reachable while the board's items scroll under
+  // it. The card's fill is an OPAQUE surface (--callout-background-color), which is required for a
+  // sticky header: a translucent fill would let scrolled rows show through. The z-index keeps the
+  // card above the rows it overlaps.
   header.style.cssText = [
     "display:flex",
     "flex-direction:column",
     "gap:8px",
-    "padding:16px",
+    "padding:8px 16px",
     "background:var(--callout-background-color, var(--palette-neutral-4, rgba(128,128,128,0.08)))",
     "border:1px solid rgba(128,128,128,0.35)",
     "border-radius:6px",
     "box-shadow:0 1px 3px var(--palette-neutral-20, rgba(0,0,0,0.12))",
     "margin-bottom:16px",
+    "position:sticky",
+    "top:0",
+    "z-index:2",
   ].join(";");
 
   const breadcrumbs = renderBreadcrumbs(doc, {

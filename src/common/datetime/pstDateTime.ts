@@ -10,13 +10,14 @@ const PST_TIMEZONE = "America/Los_Angeles";
 /**
  * Parse an ISO 8601 string and format it in PST with the given options, or "" when the input is
  * empty/invalid. Centralizing the parse+guard here keeps every formatter's validation identical
- * (and avoids duplicating the boilerplate per format).
+ * (and avoids duplicating the boilerplate per format). The locale defaults to en-US; callers that
+ * need a specific part order (e.g. the ISO `yyyy-MM-dd` an `<input type="date">` requires) pass one.
  */
-function formatPst(iso: string, options: Intl.DateTimeFormatOptions): string {
+function formatPst(iso: string, options: Intl.DateTimeFormatOptions, locale = "en-US"): string {
   if (!iso) return "";
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
-  return new Intl.DateTimeFormat("en-US", { timeZone: PST_TIMEZONE, ...options }).format(date);
+  return new Intl.DateTimeFormat(locale, { timeZone: PST_TIMEZONE, ...options }).format(date);
 }
 
 /**
@@ -29,6 +30,19 @@ function formatPst(iso: string, options: Intl.DateTimeFormatOptions): string {
  */
 export function formatPstDate(iso: string): string {
   return formatPst(iso, { year: "numeric", month: "2-digit", day: "2-digit" });
+}
+
+/**
+ * Format an ISO 8601 timestamp as `yyyy-MM-dd` in America/Los_Angeles — the value shape an
+ * `<input type="date">` requires. Uses the en-CA locale, which renders the parts in ISO order.
+ *
+ * Examples:
+ * - "2026-07-24T15:30:00Z" → "2026-07-24"
+ * - "" → ""
+ * - "invalid" → ""
+ */
+export function formatPstDateInput(iso: string): string {
+  return formatPst(iso, { year: "numeric", month: "2-digit", day: "2-digit" }, "en-CA");
 }
 
 /**

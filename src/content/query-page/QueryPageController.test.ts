@@ -44,24 +44,26 @@ const queryUrl = (id: string): string => `https://dev.azure.com/org/project/_que
 // The request a bound Sprint query resolves to, so enhanced expectations stay in one place.
 const sprintRequest = (id: string): unknown => ({ viewId: "sprint", queryId: id, properties: {} });
 
-describe("QueryPageController", () => {
-  let surface: EnhancedViewSurface;
-  let logger: ILogger;
-  // The in-session view override the controller reads to resolve a bound query's presentation. The
-  // real implementation is used so a test's `set` is seen by the controller exactly as in production.
-  let overrides: SessionActiveViewOverrides;
+// Shared across the sibling describes below so each split group reuses one wiring with zero
+// duplication (jscpd threshold is 0).
+let surface: EnhancedViewSurface;
+let logger: ILogger;
+// The in-session view override the controller reads to resolve a bound query's presentation. The
+// real implementation is used so a test's `set` is seen by the controller exactly as in production.
+let overrides: SessionActiveViewOverrides;
 
-  // A single wiring keeps every test's construction identical, so the injected logger spy and
-  // surface spy are always the ones the assertions inspect.
-  const makeController = (url: string): QueryPageController =>
-    new QueryPageController(surface, url, overrides, logger);
+// A single wiring keeps every test's construction identical, so the injected logger spy and
+// surface spy are always the ones the assertions inspect.
+const makeController = (url: string): QueryPageController =>
+  new QueryPageController(surface, url, overrides, logger);
 
-  beforeEach(() => {
-    surface = makeSurfaceSpy();
-    logger = makeLoggerSpy();
-    overrides = new SessionActiveViewOverrides();
-  });
+beforeEach(() => {
+  surface = makeSurfaceSpy();
+  logger = makeLoggerSpy();
+  overrides = new SessionActiveViewOverrides();
+});
 
+describe("QueryPageController - routing", () => {
   it("does not call the surface before settings arrive", () => {
     makeController("https://dev.azure.com/org/_queries");
     expect(surface.apply).not.toHaveBeenCalled();
@@ -141,7 +143,9 @@ describe("QueryPageController", () => {
     controller.navigate("https://dev.azure.com/org/_queries");
     expect(surface.apply).not.toHaveBeenCalled();
   });
+});
 
+describe("QueryPageController - session overrides", () => {
   it("restores ADO after defaultView changes from enhanced to original", () => {
     const controller = makeController("https://dev.azure.com/org/_queries");
     controller.applySettings(settings({ defaultView: "enhanced" }));
@@ -206,7 +210,9 @@ describe("QueryPageController", () => {
     controller.applyBindings({ [GUID]: { view: "sprint", properties: {} } });
     expect(surface.apply).not.toHaveBeenCalled();
   });
+});
 
+describe("QueryPageController - decision logging", () => {
   it("logs the enhance decision with its reason, view, and signals only when it changes", () => {
     const controller = makeController(queryUrl(GUID));
     controller.applyBindings({ [GUID]: { view: "sprint", properties: {} } });

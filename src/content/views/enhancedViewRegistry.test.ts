@@ -11,6 +11,14 @@ const context = (queryId: string): EnhancedViewContext => ({
   properties: {},
 });
 
+// Rendering + querying through the registry both use optional chaining; keeping those branches in
+// module-scope helpers keeps each test's cyclomatic complexity low without changing what it asserts.
+const renderView = (viewId: string): HTMLElement | undefined =>
+  getEnhancedView(viewId)?.render(context(viewId));
+
+const textOf = (element: HTMLElement | undefined, selector: string): string | null | undefined =>
+  element?.querySelector(selector)?.textContent;
+
 describe("enhancedViewRegistry", () => {
   it("has a renderer for every view in the catalog, and no orphans", () => {
     const rendererIds = ENHANCED_VIEWS.map((view) => view.id).sort();
@@ -28,16 +36,14 @@ describe("enhancedViewRegistry", () => {
   });
 
   it("renders each view's own title text into a fresh element", () => {
-    const sprint = getEnhancedView("sprint")?.render(context("sprint"));
-    const tracking = getEnhancedView("projectTracking")?.render(context("projectTracking"));
+    const sprint = renderView("sprint");
+    const tracking = renderView("projectTracking");
 
-    expect(sprint?.querySelector(".awesomeado-view__title")?.textContent).toBe("Sprint View");
-    expect(tracking?.querySelector(".awesomeado-view__title")?.textContent).toBe(
-      "Project Tracking",
-    );
+    expect(textOf(sprint, ".awesomeado-view__title")).toBe("Sprint View");
+    expect(textOf(tracking, ".awesomeado-view__title")).toBe("Project Tracking");
     // A different view produces different body copy, so the surface visibly changes per view type.
-    expect(sprint?.querySelector(".awesomeado-view__message")?.textContent).not.toBe(
-      tracking?.querySelector(".awesomeado-view__message")?.textContent,
+    expect(textOf(sprint, ".awesomeado-view__message")).not.toBe(
+      textOf(tracking, ".awesomeado-view__message"),
     );
   });
 });

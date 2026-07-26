@@ -2,12 +2,12 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { renderSprintPicker } from "./SprintPicker";
 
-describe("renderSprintPicker", () => {
-  // Clean up any DOM created by tests.
-  afterEach(() => {
-    document.body.innerHTML = "";
-  });
+// Clean up any DOM created by tests (top-level hook applies to every describe below).
+afterEach(() => {
+  document.body.innerHTML = "";
+});
 
+describe("renderSprintPicker - rendering and initial selection", () => {
   it("renders a button followed by a select", () => {
     const handle = renderSprintPicker(document, {
       sprints: [
@@ -72,7 +72,9 @@ describe("renderSprintPicker", () => {
     expect(options[1]?.value).toBe("Sprint 2");
     expect(handle.selectedSprint()).toBe("Sprint 2");
   });
+});
 
+describe("renderSprintPicker - default selection and empty state", () => {
   it("selects the first sprint when selectedName is missing or does not match", () => {
     const handle = renderSprintPicker(document, {
       sprints: [
@@ -116,7 +118,9 @@ describe("renderSprintPicker", () => {
 
     expect(handle.selectedSprint()).toBeNull();
   });
+});
 
+describe("renderSprintPicker - filter enable state", () => {
   it("disables the select while the filter is inactive", () => {
     const handle = renderSprintPicker(document, {
       sprints: [{ path: "Team\\Sprint 1", name: "Sprint 1" }],
@@ -164,7 +168,9 @@ describe("renderSprintPicker", () => {
     button?.click();
     expect(select?.disabled).toBe(true);
   });
+});
 
+describe("renderSprintPicker - toggle and change callbacks", () => {
   it("clicking the button flips isFilterActive() and calls onFilterToggle", () => {
     let toggleCalled = false;
     let toggleActive: boolean | null = null;
@@ -218,7 +224,9 @@ describe("renderSprintPicker", () => {
     expect(changeCalled).toBe(true);
     expect(changedName).toBe("Sprint 2");
   });
+});
 
+describe("renderSprintPicker - button appearance and accessibility", () => {
   it("the button contains an SVG icon and no literal text label", () => {
     const handle = renderSprintPicker(document, {
       sprints: [{ path: "Team\\Sprint 1", name: "Sprint 1" }],

@@ -52,6 +52,40 @@ const BUILD_PATTERN = /^(0|[1-9]\d*)$/;
 
 /** @typedef {import("adm-zip").IZipEntry} ZipEntry */
 
+/** @param {string} metadataPath */
+function requireMetadataSize(metadataPath) {
+  const metadataSize = statSync(metadataPath).size;
+  if (
+    !Number.isSafeInteger(metadataSize) ||
+    metadataSize <= 0 ||
+    metadataSize > MAX_METADATA_BYTES
+  ) {
+    throw new Error("release metadata size is invalid");
+  }
+}
+
+/**
+ * @param {ReleaseMetadata} metadata
+ * @param {{ expectedSha: string, expectedFull: string | undefined, officialTag: string | undefined, officialTagSha: string | undefined }} expectations
+ */
+function assertMetadataMatches(
+  metadata,
+  { expectedSha, expectedFull, officialTag, officialTagSha },
+) {
+  if (metadata.GITHUB_SHA !== expectedSha) {
+    throw new Error("release metadata SHA does not match expected SHA");
+  }
+  if (expectedFull !== undefined && metadata.full !== expectedFull) {
+    throw new Error("release metadata version does not match expected version");
+  }
+  if (officialTag !== undefined) {
+    requireSha(officialTagSha, "official tag SHA");
+    if (officialTag !== `v${metadata.base}` || officialTagSha !== expectedSha) {
+      throw new Error("official tag is not bound to the validated release SHA");
+    }
+  }
+}
+
 /** @param {ValidateReleaseOptions} options @returns {ValidationResult} */
 export function validateRelease({
   artifactDirectory,
@@ -69,28 +103,10 @@ export function validateRelease({
   requireDirectory(directory);
   const metadataPath = path.join(directory, "release-metadata.json");
   requireRegularFile(metadataPath, "release metadata");
-  const metadataSize = statSync(metadataPath).size;
-  if (
-    !Number.isSafeInteger(metadataSize) ||
-    metadataSize <= 0 ||
-    metadataSize > MAX_METADATA_BYTES
-  ) {
-    throw new Error("release metadata size is invalid");
-  }
+  requireMetadataSize(metadataPath);
   const metadata = parseMetadata(readFileSync(metadataPath, "utf8"));
 
-  if (metadata.GITHUB_SHA !== expectedSha) {
-    throw new Error("release metadata SHA does not match expected SHA");
-  }
-  if (expectedFull !== undefined && metadata.full !== expectedFull) {
-    throw new Error("release metadata version does not match expected version");
-  }
-  if (officialTag !== undefined) {
-    requireSha(officialTagSha, "official tag SHA");
-    if (officialTag !== `v${metadata.base}` || officialTagSha !== expectedSha) {
-      throw new Error("official tag is not bound to the validated release SHA");
-    }
-  }
+  assertMetadataMatches(metadata, { expectedSha, expectedFull, officialTag, officialTagSha });
 
   const chromeName = `awesomeado-chrome-${metadata.full}.zip`;
   const edgeName = `awesomeado-edge-${metadata.full}.zip`;
@@ -108,6 +124,28 @@ export function validateRelease({
     chrome_archive: chromeArchive,
     edge_archive: edgeArchive,
   };
+}
+
+/** @param {Record<string, unknown>} value */
+function assertMetadataVersions(value) {
+  if (
+    typeof value.base !== "string" ||
+    typeof value.build !== "string" ||
+    typeof value.full !== "string"
+  ) {
+    throw new Error("release metadata version fields must be strings");
+  }
+  const baseMatch = BASE_PATTERN.exec(value.base);
+  if (!baseMatch || !BUILD_PATTERN.test(value.build)) {
+    throw new Error("release metadata version fields are malformed");
+  }
+  const parts = [...baseMatch.slice(1), value.build].map(Number);
+  if (parts.some((part) => !Number.isSafeInteger(part) || part > 65_535)) {
+    throw new Error("release metadata version component is out of range");
+  }
+  if (value.full !== `${value.base}.${value.build}`) {
+    throw new Error("release metadata full version is inconsistent");
+  }
 }
 
 /** @param {string} text @returns {ReleaseMetadata} */
@@ -128,31 +166,13 @@ function parseMetadata(text) {
   if (value.format !== 1) {
     throw new Error("unsupported release metadata format");
   }
-  if (
-    typeof value.base !== "string" ||
-    typeof value.build !== "string" ||
-    typeof value.full !== "string"
-  ) {
-    throw new Error("release metadata version fields must be strings");
-  }
-  const baseMatch = BASE_PATTERN.exec(value.base);
-  if (!baseMatch || !BUILD_PATTERN.test(value.build)) {
-    throw new Error("release metadata version fields are malformed");
-  }
-  const parts = [...baseMatch.slice(1), value.build].map(Number);
-  if (parts.some((part) => !Number.isSafeInteger(part) || part > 65_535)) {
-    throw new Error("release metadata version component is out of range");
-  }
-  if (value.full !== `${value.base}.${value.build}`) {
-    throw new Error("release metadata full version is inconsistent");
-  }
+  assertMetadataVersions(value);
   requireSha(value.GITHUB_SHA, "release metadata GITHUB_SHA");
   return value;
 }
 
-/** @param {string} archivePath @param {string} expectedVersion */
-function validateArchive(archivePath, expectedVersion) {
-  requireRegularFile(archivePath, "release archive");
+/** @param {string} archivePath @returns {ZipEntry[]} */
+function readArchiveEntries(archivePath) {
   const archiveSize = statSync(archivePath).size;
   if (!Number.isSafeInteger(archiveSize) || archiveSize <= 0 || archiveSize > MAX_ARCHIVE_BYTES) {
     throw new Error(`release archive size is invalid: ${archivePath}`);
@@ -170,8 +190,53 @@ function validateArchive(archivePath, expectedVersion) {
   if (entries.length === 0 || entries.length > MAX_ENTRIES) {
     throw new Error(`release archive entry count is invalid: ${archivePath}`);
   }
+  return entries;
+}
 
-  const entryMap = indexEntries(entries, archivePath);
+/**
+ * @param {ZipEntry} entry
+ * @param {string} entryName
+ * @param {string} archivePath
+ * @returns {Buffer}
+ */
+function decodeEntryData(entry, entryName, archivePath) {
+  let data;
+  try {
+    data = entry.getData();
+  } catch (error) {
+    throw new Error(`cannot decode ${entryName} in ${archivePath}: ${errorMessage(error)}`, {
+      cause: error,
+    });
+  }
+  if (!Buffer.isBuffer(data) || data.length !== entry.header.size) {
+    throw new Error(`decoded size mismatch for ${entryName} in ${archivePath}`);
+  }
+  return data;
+}
+
+/**
+ * @param {Buffer} data
+ * @returns {unknown}
+ */
+function parseArchivedManifest(data) {
+  if (data.length > MAX_MANIFEST_BYTES) {
+    throw new Error("archived manifest exceeds its size limit");
+  }
+  try {
+    return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(data));
+  } catch (error) {
+    throw new Error(`archived manifest is invalid: ${errorMessage(error)}`, { cause: error });
+  }
+}
+
+/**
+ * Decode every non-directory entry, enforcing the decoded-size budget, and return
+ * the parsed manifest once its entry is reached.
+ * @param {Map<string, ZipEntry>} entryMap
+ * @param {string} archivePath
+ * @returns {unknown}
+ */
+function decodeArchiveEntries(entryMap, archivePath) {
   let decodedTotal = 0;
   /** @type {unknown} */
   let manifest;
@@ -179,33 +244,25 @@ function validateArchive(archivePath, expectedVersion) {
     if (entry.isDirectory) {
       continue;
     }
-    let data;
-    try {
-      data = entry.getData();
-    } catch (error) {
-      throw new Error(`cannot decode ${entryName} in ${archivePath}: ${errorMessage(error)}`, {
-        cause: error,
-      });
-    }
-    if (!Buffer.isBuffer(data) || data.length !== entry.header.size) {
-      throw new Error(`decoded size mismatch for ${entryName} in ${archivePath}`);
-    }
+    const data = decodeEntryData(entry, entryName, archivePath);
     if (decodedTotal > MAX_TOTAL_BYTES - data.length) {
       throw new Error(`decoded archive content exceeds ${MAX_TOTAL_BYTES} bytes: ${archivePath}`);
     }
     decodedTotal += data.length;
     if (entryName === "manifest.json") {
-      if (data.length > MAX_MANIFEST_BYTES) {
-        throw new Error("archived manifest exceeds its size limit");
-      }
-      try {
-        manifest = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(data));
-      } catch (error) {
-        throw new Error(`archived manifest is invalid: ${errorMessage(error)}`, { cause: error });
-      }
+      manifest = parseArchivedManifest(data);
     }
   }
+  return manifest;
+}
 
+/**
+ * @param {Map<string, ZipEntry>} entryMap
+ * @param {unknown} manifest
+ * @param {string} expectedVersion
+ * @param {string} archivePath
+ */
+function assertArchiveContents(entryMap, manifest, expectedVersion, archivePath) {
   for (const requiredName of REQUIRED_ARCHIVE_FILES) {
     const entry = entryMap.get(requiredName);
     if (!entry || entry.isDirectory) {
@@ -222,6 +279,86 @@ function validateArchive(archivePath, expectedVersion) {
   }
 }
 
+/** @param {string} archivePath @param {string} expectedVersion */
+function validateArchive(archivePath, expectedVersion) {
+  requireRegularFile(archivePath, "release archive");
+  const entries = readArchiveEntries(archivePath);
+  const entryMap = indexEntries(entries, archivePath);
+  const manifest = decodeArchiveEntries(entryMap, archivePath);
+  assertArchiveContents(entryMap, manifest, expectedVersion, archivePath);
+}
+
+/**
+ * Reject unsafe, absolute, traversing, or malformed-slash entry names.
+ * @param {ZipEntry} entry
+ * @param {string} rawName
+ * @param {string} archivePath
+ */
+function assertEntryNameForm(entry, rawName, archivePath) {
+  if (typeof rawName !== "string" || rawName.length === 0 || /[\0\\]/.test(rawName)) {
+    throw new Error(`archive entry name is unsafe: ${archivePath}`);
+  }
+  if (path.posix.isAbsolute(rawName) || /^[A-Za-z]:/.test(rawName)) {
+    throw new Error(`archive entry path is absolute: ${rawName}`);
+  }
+  if (rawName.split("/").includes("..")) {
+    throw new Error(`archive entry traverses its root: ${rawName}`);
+  }
+  const hasTrailingSlash = rawName.endsWith("/");
+  if (entry.isDirectory ? !hasTrailingSlash || rawName.endsWith("//") : hasTrailingSlash) {
+    throw new Error(`archive entry slash form is invalid: ${rawName}`);
+  }
+}
+
+/**
+ * Validate an entry's name form and return its raw and canonical names.
+ * The duplicate check stays with the caller because it owns the accumulating map.
+ * @param {ZipEntry} entry
+ * @param {string} archivePath
+ * @returns {{ rawName: string, canonicalName: string }}
+ */
+function canonicalEntryName(entry, archivePath) {
+  const rawName = entry.entryName;
+  assertEntryNameForm(entry, rawName, archivePath);
+  const strippedName = entry.isDirectory ? rawName.slice(0, -1) : rawName;
+  const canonicalName = path.posix.normalize(strippedName);
+  if (canonicalName === "." || canonicalName !== strippedName) {
+    throw new Error(`archive entry is duplicate or noncanonical: ${rawName}`);
+  }
+  return { rawName, canonicalName };
+}
+
+/**
+ * Enforce per-entry size, manifest, budget, encryption, and symlink policies in
+ * the original order, returning the running declared-size total.
+ * @param {ZipEntry} entry
+ * @param {string} rawName
+ * @param {string} canonicalName
+ * @param {number} declaredTotal
+ * @param {string} archivePath
+ * @returns {number} the updated declared-size total
+ */
+function assertEntryPolicies(entry, rawName, canonicalName, declaredTotal, archivePath) {
+  const declaredSize = entry.header.size;
+  validateEntrySizes(declaredSize, entry.header.compressedSize, rawName);
+  if (canonicalName === "manifest.json" && declaredSize > MAX_MANIFEST_BYTES) {
+    throw new Error("archived manifest exceeds its declared size limit");
+  }
+  if (declaredTotal > MAX_TOTAL_BYTES - declaredSize) {
+    throw new Error(`declared archive content exceeds ${MAX_TOTAL_BYTES} bytes: ${archivePath}`);
+  }
+  if ((entry.header.flags & 0x1) !== 0) {
+    throw new Error(`encrypted archive entry is forbidden: ${rawName}`);
+  }
+  if (entry.header.made >>> 8 === 3) {
+    const mode = (entry.attr >>> 16) & 0xffff;
+    if ((mode & 0o170000) === 0o120000) {
+      throw new Error(`symbolic-link archive entry is forbidden: ${rawName}`);
+    }
+  }
+  return declaredTotal + declaredSize;
+}
+
 /**
  * @param {ZipEntry[]} entries
  * @param {string} archivePath
@@ -231,46 +368,11 @@ function indexEntries(entries, archivePath) {
   const entryMap = new Map();
   let declaredTotal = 0;
   for (const entry of entries) {
-    const rawName = entry.entryName;
-    if (typeof rawName !== "string" || rawName.length === 0 || /[\0\\]/.test(rawName)) {
-      throw new Error(`archive entry name is unsafe: ${archivePath}`);
-    }
-    if (path.posix.isAbsolute(rawName) || /^[A-Za-z]:/.test(rawName)) {
-      throw new Error(`archive entry path is absolute: ${rawName}`);
-    }
-    const rawSegments = rawName.split("/");
-    if (rawSegments.includes("..")) {
-      throw new Error(`archive entry traverses its root: ${rawName}`);
-    }
-    const hasTrailingSlash = rawName.endsWith("/");
-    if (entry.isDirectory ? !hasTrailingSlash || rawName.endsWith("//") : hasTrailingSlash) {
-      throw new Error(`archive entry slash form is invalid: ${rawName}`);
-    }
-    const strippedName = entry.isDirectory ? rawName.slice(0, -1) : rawName;
-    const canonicalName = path.posix.normalize(strippedName);
-    if (canonicalName === "." || canonicalName !== strippedName || entryMap.has(canonicalName)) {
+    const { rawName, canonicalName } = canonicalEntryName(entry, archivePath);
+    if (entryMap.has(canonicalName)) {
       throw new Error(`archive entry is duplicate or noncanonical: ${rawName}`);
     }
-
-    const declaredSize = entry.header.size;
-    const compressedSize = entry.header.compressedSize;
-    validateEntrySizes(declaredSize, compressedSize, rawName);
-    if (canonicalName === "manifest.json" && declaredSize > MAX_MANIFEST_BYTES) {
-      throw new Error("archived manifest exceeds its declared size limit");
-    }
-    if (declaredTotal > MAX_TOTAL_BYTES - declaredSize) {
-      throw new Error(`declared archive content exceeds ${MAX_TOTAL_BYTES} bytes: ${archivePath}`);
-    }
-    declaredTotal += declaredSize;
-    if ((entry.header.flags & 0x1) !== 0) {
-      throw new Error(`encrypted archive entry is forbidden: ${rawName}`);
-    }
-    if (entry.header.made >>> 8 === 3) {
-      const mode = (entry.attr >>> 16) & 0xffff;
-      if ((mode & 0o170000) === 0o120000) {
-        throw new Error(`symbolic-link archive entry is forbidden: ${rawName}`);
-      }
-    }
+    declaredTotal = assertEntryPolicies(entry, rawName, canonicalName, declaredTotal, archivePath);
     entryMap.set(canonicalName, entry);
   }
   return entryMap;

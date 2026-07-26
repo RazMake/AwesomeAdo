@@ -106,77 +106,86 @@ describe("buildWorkItemUpdateUrl", () => {
   });
 });
 
-describe("parseTrackedTree", () => {
-  it("parses a tree query with a single root Epic and nested children", () => {
-    const etaFieldByType = new Map([
-      ["Epic", "Microsoft.VSTS.Scheduling.TargetDate"],
-      ["Feature", "Microsoft.VSTS.Scheduling.TargetDate"],
-      ["User Story", "Microsoft.VSTS.Scheduling.TargetDate"],
-    ]);
+// Shared fixture for the nested-tree happy path: a three-level Epic > Feature > User Story tree
+// exercising object- and string-shaped people fields plus an HTML-entity description, so every
+// field-normalization assertion below has a single source of truth to arrange against.
+function buildNestedEpicTree(): { raw: AdoRawTree; etaFieldByType: Map<string, string> } {
+  const etaFieldByType = new Map([
+    ["Epic", "Microsoft.VSTS.Scheduling.TargetDate"],
+    ["Feature", "Microsoft.VSTS.Scheduling.TargetDate"],
+    ["User Story", "Microsoft.VSTS.Scheduling.TargetDate"],
+  ]);
 
-    const raw: AdoRawTree = {
-      wiql: {
-        queryType: "tree",
-        workItemRelations: [
-          { source: null, target: { id: 1 } },
-          { source: { id: 1 }, target: { id: 2 } },
-          { source: { id: 2 }, target: { id: 3 } },
-        ],
-      },
-      items: [
-        {
-          id: 1,
-          rev: 5,
-          fields: {
-            "System.WorkItemType": "Epic",
-            "System.Title": "Quarterly Goal",
-            "System.State": "In Progress",
-            "System.AssignedTo": {
-              displayName: "Alice",
-              uniqueName: "alice@contoso.com",
-              imageUrl: "https://ado/alice.jpg",
-            },
-            "System.IterationPath": "Project\\Team\\Sprint 1",
-            "System.CreatedDate": "2024-01-01T10:00:00Z",
-            "System.CreatedBy": { displayName: "Bob", uniqueName: "bob@contoso.com" },
-            "System.ChangedDate": "2024-01-15T14:30:00Z",
-            "System.ChangedBy": { displayName: "Charlie" },
-            "System.Description": "<p>Epic <b>description</b> with &amp; entities.</p>",
-            "Microsoft.VSTS.Scheduling.TargetDate": "2024-03-31T00:00:00Z",
-          },
-        },
-        {
-          id: 2,
-          rev: 3,
-          fields: {
-            "System.WorkItemType": "Feature",
-            "System.Title": "Feature Alpha",
-            "System.State": "Active",
-            "System.AssignedTo": "Dan",
-            "System.IterationPath": "Project\\Team\\Sprint 2",
-            "System.CreatedDate": "2024-01-05T09:00:00Z",
-            "System.CreatedBy": "Eve",
-            "System.ChangedDate": "2024-01-20T11:00:00Z",
-            "System.ChangedBy": { displayName: "Frank", imageUrl: "https://ado/frank.jpg" },
-            "System.Description": "",
-            "Microsoft.VSTS.Scheduling.TargetDate": "2024-02-28T00:00:00Z",
-          },
-        },
-        {
-          id: 3,
-          rev: 1,
-          fields: {
-            "System.WorkItemType": "User Story",
-            "System.Title": "Story One",
-            "System.State": "New",
-            "System.IterationPath": "Project\\Team\\Sprint 2",
-            "System.CreatedDate": "2024-01-10T08:00:00Z",
-            "System.ChangedDate": "2024-01-10T08:00:00Z",
-            "System.Description": "<div>Story notes</div>",
-          },
-        },
+  const raw: AdoRawTree = {
+    wiql: {
+      queryType: "tree",
+      workItemRelations: [
+        { source: null, target: { id: 1 } },
+        { source: { id: 1 }, target: { id: 2 } },
+        { source: { id: 2 }, target: { id: 3 } },
       ],
-    };
+    },
+    items: [
+      {
+        id: 1,
+        rev: 5,
+        fields: {
+          "System.WorkItemType": "Epic",
+          "System.Title": "Quarterly Goal",
+          "System.State": "In Progress",
+          "System.AssignedTo": {
+            displayName: "Alice",
+            uniqueName: "alice@contoso.com",
+            imageUrl: "https://ado/alice.jpg",
+          },
+          "System.IterationPath": "Project\\Team\\Sprint 1",
+          "System.CreatedDate": "2024-01-01T10:00:00Z",
+          "System.CreatedBy": { displayName: "Bob", uniqueName: "bob@contoso.com" },
+          "System.ChangedDate": "2024-01-15T14:30:00Z",
+          "System.ChangedBy": { displayName: "Charlie" },
+          "System.Description": "<p>Epic <b>description</b> with &amp; entities.</p>",
+          "Microsoft.VSTS.Scheduling.TargetDate": "2024-03-31T00:00:00Z",
+        },
+      },
+      {
+        id: 2,
+        rev: 3,
+        fields: {
+          "System.WorkItemType": "Feature",
+          "System.Title": "Feature Alpha",
+          "System.State": "Active",
+          "System.AssignedTo": "Dan",
+          "System.IterationPath": "Project\\Team\\Sprint 2",
+          "System.CreatedDate": "2024-01-05T09:00:00Z",
+          "System.CreatedBy": "Eve",
+          "System.ChangedDate": "2024-01-20T11:00:00Z",
+          "System.ChangedBy": { displayName: "Frank", imageUrl: "https://ado/frank.jpg" },
+          "System.Description": "",
+          "Microsoft.VSTS.Scheduling.TargetDate": "2024-02-28T00:00:00Z",
+        },
+      },
+      {
+        id: 3,
+        rev: 1,
+        fields: {
+          "System.WorkItemType": "User Story",
+          "System.Title": "Story One",
+          "System.State": "New",
+          "System.IterationPath": "Project\\Team\\Sprint 2",
+          "System.CreatedDate": "2024-01-10T08:00:00Z",
+          "System.ChangedDate": "2024-01-10T08:00:00Z",
+          "System.Description": "<div>Story notes</div>",
+        },
+      },
+    ],
+  };
+
+  return { raw, etaFieldByType };
+}
+
+describe("parseTrackedTree - nested tree", () => {
+  it("parses a tree query with a single root Epic and nested children", () => {
+    const { raw, etaFieldByType } = buildNestedEpicTree();
 
     const result = parseTrackedTree(raw, etaFieldByType);
 
@@ -239,7 +248,9 @@ describe("parseTrackedTree", () => {
     expect(story.eta).toBeNull();
     expect(story.children).toHaveLength(0);
   });
+});
 
+describe("parseTrackedTree - query shape guards", () => {
   it("returns isTreeQuery:false for a flat query", () => {
     const raw: AdoRawTree = {
       wiql: {
@@ -302,7 +313,9 @@ describe("parseTrackedTree", () => {
     expect(result.roots[0]?.id).toBe(1);
     expect(result.roots[1]?.id).toBe(2);
   });
+});
 
+describe("parseTrackedTree - relation and batch shapes", () => {
   it("guards against cyclic relations without infinite loop", () => {
     const raw: AdoRawTree = {
       wiql: {
@@ -359,7 +372,9 @@ describe("parseTrackedTree", () => {
     expect(result.roots).toHaveLength(1);
     expect(result.roots[0]?.title).toBe("Epic 1");
   });
+});
 
+describe("parseTrackedTree - people and eta fields", () => {
   it("sets assignedTo/createdBy/changedBy to null when absent", () => {
     const raw: AdoRawTree = {
       wiql: {
@@ -425,7 +440,9 @@ describe("parseTrackedTree", () => {
     const result = parseTrackedTree(raw, etaFieldByType);
     expect(result.roots[0]?.eta).toBeNull();
   });
+});
 
+describe("parseTrackedTree - eta, sprint and description", () => {
   it("sets eta to null when the ETA field is missing or empty", () => {
     const etaFieldByType = new Map([["Epic", "Microsoft.VSTS.Scheduling.TargetDate"]]);
     const raw: AdoRawTree = {
@@ -489,7 +506,9 @@ describe("parseTrackedTree", () => {
     const result = parseTrackedTree(raw, new Map());
     expect(result.roots[0]?.description).toBe("Less than & greater > and \"quotes\" 'apos'  space");
   });
+});
 
+describe("parseTrackedTree - malformed data", () => {
   it("skips malformed relations gracefully", () => {
     const raw: AdoRawTree = {
       wiql: {

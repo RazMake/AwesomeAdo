@@ -153,6 +153,26 @@ async function initReady(
   return controller;
 }
 
+// One booted-and-ready fixture shared by the change-handling sibling describes, so splitting that
+// group into smaller callbacks never copy-pastes the async init wiring (jscpd threshold is 0).
+interface ChangeFixture {
+  store: FakeSettingsStore;
+  reader: FakeAdoTabReader;
+  elements: OptionsElements;
+  controller: OptionsController;
+}
+
+async function initChangeFixture(): Promise<ChangeFixture> {
+  const store = new FakeSettingsStore();
+  const reader = new FakeAdoTabReader();
+  const elements = makeElements();
+  const controller = await initReady(store, reader, elements, {
+    theme: "auto",
+    defaultView: "enhanced",
+  });
+  return { store, reader, elements, controller };
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Tests
 // ─────────────────────────────────────────────────────────────────────────────
@@ -256,20 +276,13 @@ describe("OptionsController — external observation", () => {
   });
 });
 
-describe("OptionsController — change handling and write queue", () => {
+describe("OptionsController — change handling", () => {
   let store: FakeSettingsStore;
-  let reader: FakeAdoTabReader;
   let elements: OptionsElements;
   let controller: OptionsController;
 
   beforeEach(async () => {
-    store = new FakeSettingsStore();
-    reader = new FakeAdoTabReader();
-    elements = makeElements();
-    controller = await initReady(store, reader, elements, {
-      theme: "auto",
-      defaultView: "enhanced",
-    });
+    ({ store, elements, controller } = await initChangeFixture());
   });
 
   afterEach(() => {
@@ -300,6 +313,21 @@ describe("OptionsController — change handling and write queue", () => {
     expect(elements.root.dataset.theme).toBe("light");
     writeD.resolve();
     store.clearWriteDeferred();
+  });
+});
+
+describe("OptionsController — write queue", () => {
+  let store: FakeSettingsStore;
+  let elements: OptionsElements;
+  let controller: OptionsController;
+
+  beforeEach(async () => {
+    ({ store, elements, controller } = await initChangeFixture());
+  });
+
+  afterEach(() => {
+    controller.dispose();
+    document.body.innerHTML = "";
   });
 
   it("does not overwrite a select while its write is pending", async () => {

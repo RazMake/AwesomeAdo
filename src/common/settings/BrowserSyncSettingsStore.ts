@@ -25,6 +25,19 @@ const SETTING_KEYS = [
   WORK_ITEM_TYPES_KEY,
 ] as const;
 
+// Pairs each writable setting with its own synced storage key. Driving the write from one table
+// keeps the change detection uniform (and the log names accurate) without one branch per setting.
+const SETTING_WRITE_MAP: readonly { name: keyof ExtensionSettings; key: string }[] = [
+  { name: "theme", key: THEME_KEY },
+  { name: "defaultView", key: DEFAULT_VIEW_KEY },
+  { name: "currentTeam", key: CURRENT_TEAM_KEY },
+  { name: "futureSprintsCount", key: FUTURE_SPRINTS_KEY },
+  { name: "pastSprintsCount", key: PAST_SPRINTS_KEY },
+  { name: "areaPaths", key: AREA_PATHS_KEY },
+  { name: "boardColumns", key: BOARD_COLUMNS_KEY },
+  { name: "workItemTypes", key: WORK_ITEM_TYPES_KEY },
+];
+
 /** Project a raw key→value record from storage into the shape `normalizeSettings` expects. */
 function projectSettings(raw: Record<string, unknown>): ExtensionSettings {
   return normalizeSettings({
@@ -68,50 +81,11 @@ export class BrowserSyncSettingsStore implements ISettingsStore {
     // Pair each changed setting with its write so the log can name exactly what changed (the signal)
     // without ever recording the value — values can contain the user's org/team/area-path names.
     const changes: { name: keyof ExtensionSettings; write: Promise<void> }[] = [];
-    if (update.theme !== undefined) {
-      changes.push({ name: "theme", write: this.storage.set(THEME_KEY, update.theme) });
-    }
-    if (update.defaultView !== undefined) {
-      changes.push({
-        name: "defaultView",
-        write: this.storage.set(DEFAULT_VIEW_KEY, update.defaultView),
-      });
-    }
-    if (update.currentTeam !== undefined) {
-      changes.push({
-        name: "currentTeam",
-        write: this.storage.set(CURRENT_TEAM_KEY, update.currentTeam),
-      });
-    }
-    if (update.futureSprintsCount !== undefined) {
-      changes.push({
-        name: "futureSprintsCount",
-        write: this.storage.set(FUTURE_SPRINTS_KEY, update.futureSprintsCount),
-      });
-    }
-    if (update.pastSprintsCount !== undefined) {
-      changes.push({
-        name: "pastSprintsCount",
-        write: this.storage.set(PAST_SPRINTS_KEY, update.pastSprintsCount),
-      });
-    }
-    if (update.areaPaths !== undefined) {
-      changes.push({
-        name: "areaPaths",
-        write: this.storage.set(AREA_PATHS_KEY, update.areaPaths),
-      });
-    }
-    if (update.boardColumns !== undefined) {
-      changes.push({
-        name: "boardColumns",
-        write: this.storage.set(BOARD_COLUMNS_KEY, update.boardColumns),
-      });
-    }
-    if (update.workItemTypes !== undefined) {
-      changes.push({
-        name: "workItemTypes",
-        write: this.storage.set(WORK_ITEM_TYPES_KEY, update.workItemTypes),
-      });
+    for (const { name, key } of SETTING_WRITE_MAP) {
+      const value = update[name];
+      if (value !== undefined) {
+        changes.push({ name, write: this.storage.set(key, value) });
+      }
     }
     await Promise.all(changes.map((change) => change.write));
     if (changes.length > 0) {

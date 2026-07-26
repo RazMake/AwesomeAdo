@@ -27,13 +27,22 @@ const WORK_ITEM_TYPES_URL =
 const FIELDS_URL =
   "https://dev.azure.com/O365Exchange/O365%20Core/_apis/wit/fields?api-version=7.1";
 
-describe("ChromeAdoMetadataReader", () => {
+interface MetadataContext {
+  chromeMock: MockChrome;
+  reader: ChromeAdoMetadataReader;
+}
+
+// Shared arrange for every ChromeAdoMetadataReader group: a fresh mock chrome + reader per test.
+function setupReader(): MetadataContext {
+  return { chromeMock: installMockChrome(), reader: new ChromeAdoMetadataReader() };
+}
+
+describe("ChromeAdoMetadataReader - guards", () => {
   let chromeMock: MockChrome;
   let reader: ChromeAdoMetadataReader;
 
   beforeEach(() => {
-    chromeMock = installMockChrome();
-    reader = new ChromeAdoMetadataReader();
+    ({ chromeMock, reader } = setupReader());
   });
 
   it("returns null when no active tab is an ADO Query page", async () => {
@@ -45,6 +54,56 @@ describe("ChromeAdoMetadataReader", () => {
   it("returns null when the ADO URL carries no organization", async () => {
     chromeMock.query.mockResolvedValue([{ id: 9, url: "https://dev.azure.com/_queries" }]);
     expect(await reader.read()).toBeNull();
+  });
+
+  it("returns empty metadata (still with org/project) when the injection fails", async () => {
+    chromeMock.query.mockResolvedValue([ADO_TAB]);
+    chromeMock.executeScript.mockRejectedValue(new Error("no target"));
+
+    expect(await reader.read()).toEqual({
+      organization: "O365Exchange",
+      project: "O365 Core",
+      teams: [],
+      areaPaths: [],
+      workItemTypes: [],
+    });
+  });
+
+  it("guards against a missing injection result", async () => {
+    chromeMock.query.mockResolvedValue([ADO_TAB]);
+    chromeMock.executeScript.mockResolvedValue([]);
+
+    expect(await reader.read()).toEqual({
+      organization: "O365Exchange",
+      project: "O365 Core",
+      teams: [],
+      areaPaths: [],
+      workItemTypes: [],
+    });
+  });
+
+  it("skips injection for an org-level tab that names no project", async () => {
+    chromeMock.query.mockResolvedValue([
+      { id: 5, url: "https://o365exchange.visualstudio.com/_queries" },
+    ]);
+
+    expect(await reader.read()).toEqual({
+      organization: "o365exchange",
+      project: null,
+      teams: [],
+      areaPaths: [],
+      workItemTypes: [],
+    });
+    expect(chromeMock.executeScript).not.toHaveBeenCalled();
+  });
+});
+
+describe("ChromeAdoMetadataReader - injection parsing", () => {
+  let chromeMock: MockChrome;
+  let reader: ChromeAdoMetadataReader;
+
+  beforeEach(() => {
+    ({ chromeMock, reader } = setupReader());
   });
 
   it("injects a MAIN-world fetch and parses the teams and area tree it returns", async () => {
@@ -111,46 +170,5 @@ describe("ChromeAdoMetadataReader", () => {
       func: expect.any(Function),
       args: [TEAMS_URL, AREAS_URL, WORK_ITEM_TYPES_URL, FIELDS_URL],
     });
-  });
-
-  it("returns empty metadata (still with org/project) when the injection fails", async () => {
-    chromeMock.query.mockResolvedValue([ADO_TAB]);
-    chromeMock.executeScript.mockRejectedValue(new Error("no target"));
-
-    expect(await reader.read()).toEqual({
-      organization: "O365Exchange",
-      project: "O365 Core",
-      teams: [],
-      areaPaths: [],
-      workItemTypes: [],
-    });
-  });
-
-  it("guards against a missing injection result", async () => {
-    chromeMock.query.mockResolvedValue([ADO_TAB]);
-    chromeMock.executeScript.mockResolvedValue([]);
-
-    expect(await reader.read()).toEqual({
-      organization: "O365Exchange",
-      project: "O365 Core",
-      teams: [],
-      areaPaths: [],
-      workItemTypes: [],
-    });
-  });
-
-  it("skips injection for an org-level tab that names no project", async () => {
-    chromeMock.query.mockResolvedValue([
-      { id: 5, url: "https://o365exchange.visualstudio.com/_queries" },
-    ]);
-
-    expect(await reader.read()).toEqual({
-      organization: "o365exchange",
-      project: null,
-      teams: [],
-      areaPaths: [],
-      workItemTypes: [],
-    });
-    expect(chromeMock.executeScript).not.toHaveBeenCalled();
   });
 });

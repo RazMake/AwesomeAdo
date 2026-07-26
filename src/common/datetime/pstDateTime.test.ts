@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatPstDate, formatPstTime, formatPstTooltip } from "./pstDateTime";
+import { formatPstDate, formatPstDateInput, formatPstTime, formatPstTooltip } from "./pstDateTime";
 
 describe("pstDateTime", () => {
   describe("formatPstDate", () => {
@@ -29,6 +29,22 @@ describe("pstDateTime", () => {
     it("returns empty string for invalid ISO string", () => {
       expect(formatPstDate("not-a-date")).toBe("");
       expect(formatPstDate("2026-99-99")).toBe("");
+    });
+  });
+
+  describe("formatPstDateInput", () => {
+    it("formats a valid ISO timestamp as yyyy-MM-dd in PST (input[type=date] shape)", () => {
+      expect(formatPstDateInput("2026-07-24T15:30:00Z")).toBe("2026-07-24");
+    });
+
+    it("uses the PST calendar day when the UTC instant falls on it", () => {
+      // Noon UTC on Aug 10 is still Aug 10 in PST (5 AM PDT), so the picked day is preserved.
+      expect(formatPstDateInput("2026-08-10T12:00:00Z")).toBe("2026-08-10");
+    });
+
+    it("returns empty string for empty or invalid input", () => {
+      expect(formatPstDateInput("")).toBe("");
+      expect(formatPstDateInput("not-a-date")).toBe("");
     });
   });
 

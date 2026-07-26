@@ -31,7 +31,7 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
 });
 
-describe("applyFeatureCrewInPage", () => {
+describe("applyFeatureCrewInPage - create and transition", () => {
   it("creates a work item in its default state then transitions it to the requested closed state, returning { id }", async () => {
     const config: FeatureCrewApplyConfig = {
       mode: "create",
@@ -88,7 +88,9 @@ describe("applyFeatureCrewInPage", () => {
     const transitionOps = parseJsonPatchBody(transitionInit);
     expect(transitionOps).toEqual([{ op: "add", path: "/fields/System.State", value: "Removed" }]);
   });
+});
 
+describe("applyFeatureCrewInPage - create failures and update", () => {
   it("reports the transition error and does not return an id when the state PATCH is rejected", async () => {
     const config: FeatureCrewApplyConfig = {
       mode: "create",
@@ -166,7 +168,9 @@ describe("applyFeatureCrewInPage", () => {
       { op: "add", path: "/multilineFieldsFormat/System.Description", value: "Markdown" },
     ]);
   });
+});
 
+describe("applyFeatureCrewInPage - error reporting", () => {
   it("reports the HTTP status and ADO error message when the response is not ok", async () => {
     const config: FeatureCrewApplyConfig = {
       mode: "create",
@@ -228,7 +232,9 @@ describe("applyFeatureCrewInPage", () => {
 
     expect(result).toEqual({ id: null, error: "HTTP 502" });
   });
+});
 
+describe("applyFeatureCrewInPage - missing id reporting", () => {
   it("reports a missing numeric id on an otherwise-ok response", async () => {
     const config: FeatureCrewApplyConfig = {
       mode: "update",

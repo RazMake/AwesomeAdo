@@ -74,7 +74,7 @@ const AREA_PATHS_KEY = "settings.areaPaths";
 const BOARD_COLUMNS_KEY = "settings.boardColumns";
 const WORK_ITEM_TYPES_KEY = "settings.workItemTypes";
 
-describe("BrowserSyncSettingsStore", () => {
+describe("BrowserSyncSettingsStore - read", () => {
   describe("read", () => {
     it("normalizes missing values to the defaults", async () => {
       const fake = new FakeBrowserSyncStorage();
@@ -154,7 +154,9 @@ describe("BrowserSyncSettingsStore", () => {
       expect(fake.getStoredKeys()).toEqual([]);
     });
   });
+});
 
+describe("BrowserSyncSettingsStore - write (scalars and team)", () => {
   describe("write", () => {
     it("persists a supplied theme value", async () => {
       const fake = new FakeBrowserSyncStorage();
@@ -199,7 +201,11 @@ describe("BrowserSyncSettingsStore", () => {
       expect(fake.getStoredKeys()).toEqual([CURRENT_TEAM_KEY]);
       expect(await fake.get(CURRENT_TEAM_KEY)).toBeNull();
     });
+  });
+});
 
+describe("BrowserSyncSettingsStore - write (sprints, columns, and types)", () => {
+  describe("write", () => {
     it("persists the future-sprints and area-path keys", async () => {
       const fake = new FakeBrowserSyncStorage();
       const store = new BrowserSyncSettingsStore(fake);
@@ -243,7 +249,9 @@ describe("BrowserSyncSettingsStore", () => {
       expect(await fake.get(WORK_ITEM_TYPES_KEY)).toEqual(workItemTypes);
     });
   });
+});
 
+describe("BrowserSyncSettingsStore - logging", () => {
   describe("logging", () => {
     const makeLogger = () => ({ info: vi.fn(), error: vi.fn() });
 
@@ -269,7 +277,9 @@ describe("BrowserSyncSettingsStore", () => {
       expect(logger.info).not.toHaveBeenCalled();
     });
   });
+});
 
+describe("BrowserSyncSettingsStore - observe", () => {
   describe("observe", () => {
     it("subscribes to every key before reading", async () => {
       const fake = new FakeBrowserSyncStorage();

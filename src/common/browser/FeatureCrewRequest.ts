@@ -1,5 +1,8 @@
-import type { FeatureCrewAssignee, FeatureCrewMember } from "../ado/FeatureCrew";
-
+import type {
+  FeatureCrewAssignee,
+  FeatureCrewMember,
+  FeatureCrewTagAssignment,
+} from "../ado/FeatureCrew";
 /**
  * The content→background message contract for reconciling the Feature Crew work item.
  *
@@ -17,6 +20,8 @@ export interface ReconcileFeatureCrewMessage {
   rootId: number;
   typeName: string;
   assignees: FeatureCrewAssignee[];
+  /** Optional hand-picked tag choices to record on the roster (see `FeatureCrewReconcileRequest`). */
+  tagAssignments?: FeatureCrewTagAssignment[];
 }
 
 export interface ReconcileFeatureCrewResponse {
@@ -47,11 +52,35 @@ export function isReconcileFeatureCrewMessage(
   if (!Array.isArray(candidate.assignees)) {
     return false;
   }
-  return candidate.assignees.every((assignee) => {
+  if (!isAssigneeArray(candidate.assignees)) {
+    return false;
+  }
+  // `tagAssignments` is optional; when present it must be a well-formed array of {alias, tag}.
+  if (candidate.tagAssignments !== undefined && !isTagAssignmentArray(candidate.tagAssignments)) {
+    return false;
+  }
+  return true;
+}
+
+function isAssigneeArray(value: unknown[]): value is FeatureCrewAssignee[] {
+  return value.every((assignee) => {
     if (typeof assignee !== "object" || assignee === null) {
       return false;
     }
     const a = assignee as Partial<FeatureCrewAssignee>;
     return typeof a.alias === "string" && typeof a.fullName === "string";
+  });
+}
+
+function isTagAssignmentArray(value: unknown): value is FeatureCrewTagAssignment[] {
+  if (!Array.isArray(value)) {
+    return false;
+  }
+  return value.every((entry) => {
+    if (typeof entry !== "object" || entry === null) {
+      return false;
+    }
+    const a = entry as Partial<FeatureCrewTagAssignment>;
+    return typeof a.alias === "string" && typeof a.tag === "string";
   });
 }

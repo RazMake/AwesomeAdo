@@ -37,6 +37,51 @@ export interface SprintPickerHandle {
 }
 
 /**
+ * Build the theme-monochrome funnel icon shown inside the filter toggle. It inherits `currentColor`
+ * so it flips with the button's active/inactive text color without a separate style pass.
+ */
+function buildFunnelIcon(doc: Document): SVGSVGElement {
+  const svg = doc.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 16 16");
+  svg.setAttribute("width", "14");
+  svg.setAttribute("height", "14");
+  svg.style.cssText = "display:block";
+
+  const path = doc.createElementNS("http://www.w3.org/2000/svg", "path");
+  // A simple funnel shape: wide top narrowing to a spout at the bottom.
+  path.setAttribute("d", "M2 2 L14 2 L10 8 L10 14 L6 14 L6 8 Z");
+  path.setAttribute("fill", "currentColor");
+
+  svg.append(path);
+  return svg;
+}
+
+/**
+ * Fill the dropdown with one option per sprint (value = raw name for matching, label = display text)
+ * and select the initial sprint: the caller's `selectedName` when it matches an option, else the
+ * first sprint. Kept separate so the picker's render stays focused on wiring, not list-building.
+ */
+function populateSprintSelect(
+  doc: Document,
+  select: HTMLSelectElement,
+  sprints: SprintOption[],
+  selectedName: string | null | undefined,
+): void {
+  for (const sprint of sprints) {
+    const option = doc.createElement("option");
+    option.value = sprint.name;
+    option.textContent = sprint.label ?? sprint.name;
+    select.append(option);
+  }
+
+  if (selectedName && sprints.some((s) => s.name === selectedName)) {
+    select.value = selectedName;
+  } else if (sprints.length > 0) {
+    select.value = sprints[0]!.name;
+  }
+}
+
+/**
  * A sprint filter control = an ICON filter toggle button in front of a sprint dropdown.
  *
  * The filter button uses an SVG funnel icon (not text) and shows its active state via aria-pressed
@@ -64,21 +109,7 @@ export function renderSprintPicker(
   button.setAttribute("aria-label", "Filter by sprint");
   button.title = "Filter by sprint";
   button.disabled = isEmpty;
-
-  // Inline SVG funnel icon (theme-monochrome, inherits currentColor).
-  const svg = doc.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("viewBox", "0 0 16 16");
-  svg.setAttribute("width", "14");
-  svg.setAttribute("height", "14");
-  svg.style.cssText = "display:block";
-
-  const path = doc.createElementNS("http://www.w3.org/2000/svg", "path");
-  // A simple funnel shape: wide top narrowing to a spout at the bottom.
-  path.setAttribute("d", "M2 2 L14 2 L10 8 L10 14 L6 14 L6 8 Z");
-  path.setAttribute("fill", "currentColor");
-
-  svg.append(path);
-  button.append(svg);
+  button.append(buildFunnelIcon(doc));
 
   // Apply theme-aware styling to the button.
   const updateButtonStyle = () => {
@@ -123,20 +154,7 @@ export function renderSprintPicker(
     "font:inherit",
   ].join(";");
 
-  // Populate the select with sprint options (value = raw name for matching; label = display text).
-  for (const sprint of sprints) {
-    const option = doc.createElement("option");
-    option.value = sprint.name;
-    option.textContent = sprint.label ?? sprint.name;
-    select.append(option);
-  }
-
-  // Select the initial sprint.
-  if (selectedName && sprints.some((s) => s.name === selectedName)) {
-    select.value = selectedName;
-  } else if (sprints.length > 0) {
-    select.value = sprints[0]!.name;
-  }
+  populateSprintSelect(doc, select, sprints, selectedName);
 
   root.append(button, select);
 

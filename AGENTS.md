@@ -92,7 +92,7 @@ release, authenticated browser behavior, and final memory updates belong to seri
 `pnpm verify` runs the following checks in order:
 
 1. `format:check` — Prettier format check
-2. `lint` — ESLint check
+2. `lint` — ESLint check (`--max-warnings 0`: **zero tolerance for warnings**)
 3. `typecheck` — TypeScript type-check (no emit)
 4. `duplication` — jscpd duplicate detection
 5. `test:scripts` — node:test for `scripts/*.test.mjs`
@@ -100,6 +100,22 @@ release, authenticated browser behavior, and final memory updates belong to seri
 7. `validate:workflows` — validate CI/CD YAML schemas
 
 This gate is enforced locally by the `pre-push` git hook and remotely by CI on every push.
+
+### Zero tolerance for lint warnings
+
+Lint runs with `--max-warnings 0`, so a **warning fails the build exactly like an error**. There is
+no such thing as an "acceptable" or "pre-existing" warning. When you touch the codebase you leave it
+with **zero** ESLint warnings across `src/**`, `scripts/**`, and every test file — no exemptions.
+
+- Fix warnings by **improving the code**, not by silencing it: extract well-named helpers to cut
+  `complexity` and `max-lines-per-function`, group tests into cohesive sibling `describe` blocks with
+  shared module-scope setup, etc. Never weaken a test assertion to shrink a function.
+- Do **not** add blanket `eslint-disable` comments or per-file rule overrides to dodge a warning. A
+  rule may only be relaxed by editing `eslint.config.js` with a recorded rationale (and, for a
+  policy change, an ADR in `.agents/memory-bank/decisions.md`).
+- `max-lines-per-function` counts **executable** lines only (`skipComments`/`skipBlankLines`), so the
+  mandated "why" comments in §8 never push a function over budget — long functions are a real code
+  smell, not a documentation artifact.
 
 ---
 

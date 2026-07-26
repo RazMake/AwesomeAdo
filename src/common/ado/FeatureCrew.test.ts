@@ -5,6 +5,7 @@ import {
   collectAssignedTags,
   collectFeatureCrewAssignees,
   applyFeatureCrewTags,
+  applyTagAssignments,
   deriveAlias,
   formatFeatureCrewDescription,
   mergeFeatureCrew,
@@ -220,6 +221,56 @@ describe("mergeFeatureCrew", () => {
 
     expect(result.changed).toBe(false);
     expect(result.members).toEqual(existing);
+  });
+});
+
+describe("applyTagAssignments", () => {
+  it("sets a matching member's tag (matched case-insensitively) and reports changed", () => {
+    const members: FeatureCrewMember[] = [
+      { alias: "alice", fullName: "Alice", tag: "" },
+      { alias: "bob", fullName: "Bob", tag: "Core" },
+    ];
+
+    const result = applyTagAssignments(members, [{ alias: "ALICE", tag: "Platform" }]);
+
+    expect(result.changed).toBe(true);
+    expect(result.members).toEqual<FeatureCrewMember[]>([
+      { alias: "alice", fullName: "Alice", tag: "Platform" },
+      { alias: "bob", fullName: "Bob", tag: "Core" },
+    ]);
+  });
+
+  it("reports no change when the assigned tag equals the stored one", () => {
+    const members: FeatureCrewMember[] = [{ alias: "alice", fullName: "Alice", tag: "Core" }];
+
+    const result = applyTagAssignments(members, [{ alias: "alice", tag: "Core" }]);
+
+    expect(result.changed).toBe(false);
+    expect(result.members).toEqual(members);
+  });
+
+  it("clears a member's tag when assigned an empty string", () => {
+    const members: FeatureCrewMember[] = [{ alias: "alice", fullName: "Alice", tag: "Core" }];
+
+    const result = applyTagAssignments(members, [{ alias: "alice", tag: "" }]);
+
+    expect(result.changed).toBe(true);
+    expect(result.members[0]?.tag).toBe("");
+  });
+
+  it("ignores an assignment for an alias not on the roster (never conjures a floating member)", () => {
+    const members: FeatureCrewMember[] = [{ alias: "alice", fullName: "Alice", tag: "" }];
+
+    const result = applyTagAssignments(members, [{ alias: "ghost", tag: "Core" }]);
+
+    expect(result.changed).toBe(false);
+    expect(result.members).toEqual(members);
+  });
+
+  it("reports no change for an empty assignment list", () => {
+    const members: FeatureCrewMember[] = [{ alias: "alice", fullName: "Alice", tag: "Core" }];
+
+    expect(applyTagAssignments(members, []).changed).toBe(false);
   });
 });
 

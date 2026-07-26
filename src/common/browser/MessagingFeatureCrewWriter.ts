@@ -37,6 +37,7 @@ export class MessagingFeatureCrewWriter implements IFeatureCrewWriter {
       rootId: request.rootId,
       typeName: request.typeName,
       assignees: request.assignees,
+      tagAssignments: request.tagAssignments,
     };
 
     try {

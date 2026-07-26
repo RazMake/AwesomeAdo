@@ -25,12 +25,13 @@ halves of the view — its configuration and its renderer.
        wired).
     2. Write-queue status: a right-aligned row above the sprint picker showing the shared
        [`WriteQueueStatus`](../../../common/view-common/control/WriteQueueStatus/README.md)
-       indicator, driven live by the board's `StateWriteQueue`. It stays hidden until a Status write
+       indicator, driven live by the board's `FieldWriteQueue`. It stays hidden until a field write
        is in flight, then shows an animated "Saving N change(s)…" spinner and disappears once the
        queue drains.
     3. Title + controls: the root item's title (colored by type) with the expand-all/collapse-all
        (`+`/`−`) buttons beside it and the sprint picker pinned to the right edge of the same band.
-    4. Tech Lead + ETA: "TechLead:" label + root's Assigned To, followed by the root's ETA badge.
+    4. Tech Lead + ETA: "TechLead:" label + root's Assigned To, followed by the root's editable ETA
+       badge (click to pick a date or clear it, when the root type has an ETA field configured).
   - **Sprint filter**: uses the reusable `SprintPicker` control, populated from the shared sprint
     window (`services.loadSprintWindow()` → the configured team's iterations around the current one,
     each labelled by its offset such as `Current - Sprint 5` or `2 sprints ago`). Filter ON by
@@ -41,13 +42,14 @@ halves of the view — its configuration and its renderer.
     (type-colored), description toggle ("?" button), Assigned To control (with the assignee's Feature
     Crew **tag pill**), sprint pill (when filter
     OFF — shown only for items on a real, leaf iteration; an item parked on the iteration root shows
-    no pill), and ETA badge (right-aligned). Clicking the twisty expands/collapses that node's children.
+    no pill), and ETA badge (right-aligned; editable — click to pick a date or clear it when the
+    item's type has an ETA field configured). Clicking the twisty expands/collapses that node's children.
     The Status badge uses [`renderStatusBadge`](../../../common/view-common/control/StatusBadge/README.md)
     and displays the **Status** (the board-column label the item's ADO State maps to), never the raw
     ADO State. Choosing a new Status optimistically updates the row and enqueues a serialized write of
     that column's primary ADO State via
-    [`StateWriteQueue`](../../../common/ado/StateWriteQueue/README.md) (one queue per board, so writes
-    never race on `System.Rev`).
+    [`FieldWriteQueue`](../../../common/ado/FieldWriteQueue/README.md) (one queue per board, shared
+    with ETA edits, so writes never race on `System.Rev`).
   - **Indentation**: 70% less than before (~7px vs 24px) with a discrete themed vertical guide line
     showing parent-child relationships (low-alpha neutral border).
   - **Description panel**: toggles below each row; displays "Created on: <date>, Last Modified on:

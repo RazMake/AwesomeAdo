@@ -47,26 +47,14 @@ export function tagPillBackground(tag: string | null): string {
   return `hsl(${hueForTag(tag)}, 75%, 42%)`;
 }
 
-/**
- * Render a Feature Crew tag as a colored pill. A real tag gets a bright, per-tag color; a missing tag
- * (`null`/empty) gets the neutral grey "??" pill. When `interactive`, it is a toggle button the tag
- * filter panel uses; otherwise it is a static label the assignee chip shows.
- */
-export function renderTagPill(doc: Document, options: TagPillOptions): HTMLElement {
-  const { tag, interactive = false, selected = false, onToggle } = options;
-  const normalized = tag !== null && tag.length > 0 ? tag : null;
+/** Collapse a tag to its non-empty text, or `null` for the untagged ("??") bucket. */
+function normalizeTag(tag: string | null): string | null {
+  return tag !== null && tag.length > 0 ? tag : null;
+}
 
-  const pill = doc.createElement(interactive ? "button" : "span");
-  pill.className = "awesomeado-tag-pill";
-  if (normalized === null) {
-    pill.classList.add("awesomeado-tag-pill--untagged");
-  }
-  if (interactive && selected) {
-    pill.classList.add("awesomeado-tag-pill--selected");
-  }
-  pill.textContent = normalized ?? UNTAGGED_LABEL;
-
-  const styles = [
+/** The shared pill styling every tag pill wears, before any interactive (toggle) additions. */
+function baseTagPillStyles(normalized: string | null): string[] {
+  return [
     "display:inline-flex",
     "align-items:center",
     "vertical-align:middle",
@@ -79,15 +67,48 @@ export function renderTagPill(doc: Document, options: TagPillOptions): HTMLEleme
     "color:#fff",
     `background:${tagPillBackground(normalized)}`,
   ];
+}
 
+/**
+ * Turn a pill into an interactive filter toggle: a hand cursor, an always-present 2px border (so
+ * selecting/deselecting never shifts the pill's size — only its color changes), and a dim/full-
+ * strength look so the selected (white-ringed) pills pop, plus the click handler.
+ */
+function applyInteractiveTagPill(
+  pill: HTMLElement,
+  styles: string[],
+  selected: boolean,
+  onToggle: (() => void) | undefined,
+): void {
+  (pill as HTMLButtonElement).type = "button";
+  styles.push("cursor:pointer");
+  styles.push(selected ? "border:2px solid #fff" : "border:2px solid transparent");
+  styles.push(selected ? "opacity:1" : "opacity:0.55");
+  pill.addEventListener("click", () => onToggle?.());
+}
+
+/**
+ * Render a Feature Crew tag as a colored pill. A real tag gets a bright, per-tag color; a missing tag
+ * (`null`/empty) gets the neutral grey "??" pill. When `interactive`, it is a toggle button the tag
+ * filter panel uses; otherwise it is a static label the assignee chip shows.
+ */
+export function renderTagPill(doc: Document, options: TagPillOptions): HTMLElement {
+  const { tag, interactive = false, selected = false, onToggle } = options;
+  const normalized = normalizeTag(tag);
+
+  const pill = doc.createElement(interactive ? "button" : "span");
+  pill.className = "awesomeado-tag-pill";
+  if (normalized === null) {
+    pill.classList.add("awesomeado-tag-pill--untagged");
+  }
+  if (interactive && selected) {
+    pill.classList.add("awesomeado-tag-pill--selected");
+  }
+  pill.textContent = normalized ?? UNTAGGED_LABEL;
+
+  const styles = baseTagPillStyles(normalized);
   if (interactive) {
-    (pill as HTMLButtonElement).type = "button";
-    styles.push("cursor:pointer");
-    // A 2px border is always present so selecting/deselecting never shifts the pill's size; only its
-    // color changes. Unselected pills dim so the selected (full-strength, white-ringed) ones pop.
-    styles.push(selected ? "border:2px solid #fff" : "border:2px solid transparent");
-    styles.push(selected ? "opacity:1" : "opacity:0.55");
-    pill.addEventListener("click", () => onToggle?.());
+    applyInteractiveTagPill(pill, styles, selected, onToggle);
   }
 
   pill.style.cssText = styles.join(";");

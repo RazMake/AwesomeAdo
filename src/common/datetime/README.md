@@ -17,6 +17,8 @@ deterministically in any engine.
 
 - `formatPstDate(iso)` — formats an ISO 8601 timestamp as `MM/DD/YYYY` in America/Los_Angeles; returns
   `""` for invalid input.
+- `formatPstDateInput(iso)` — formats an ISO 8601 timestamp as `yyyy-MM-dd` in America/Los_Angeles —
+  the value shape an `<input type="date">` requires; returns `""` for invalid input.
 - `formatPstTime(iso)` — formats an ISO 8601 timestamp as `h:mm AM/PM` PST; returns `""` for invalid
   input.
 - `formatPstTooltip(iso)` — formats an ISO 8601 timestamp as `@ h:mm AM/PM PST` for tooltip hovers;

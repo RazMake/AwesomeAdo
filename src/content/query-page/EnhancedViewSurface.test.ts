@@ -22,20 +22,22 @@ const hostEl = (): HTMLElement | null => document.getElementById(HOST_ID);
 const titleText = (): string | null =>
   document.querySelector(`#${HOST_ID} .awesomeado-view__title`)?.textContent ?? null;
 
-describe("EnhancedViewSurface", () => {
-  let surface: EnhancedViewSurface;
+// Shared across the sibling describes below so each split group reuses one setup with zero
+// duplication (jscpd threshold is 0).
+let surface: EnhancedViewSurface;
 
-  beforeEach(() => {
-    document.head.innerHTML = "";
-    document.body.innerHTML = "";
-    surface = new EnhancedViewSurface(document);
-  });
+beforeEach(() => {
+  document.head.innerHTML = "";
+  document.body.innerHTML = "";
+  surface = new EnhancedViewSurface(document);
+});
 
-  afterEach(() => {
-    // Disconnect the keep-alive observer so it never leaks into the next test.
-    surface.apply(null);
-  });
+afterEach(() => {
+  // Disconnect the keep-alive observer so it never leaks into the next test.
+  surface.apply(null);
+});
 
+describe("EnhancedViewSurface - mounting", () => {
   it("does nothing when applied with null before anything is shown", () => {
     surface.apply(null);
     expect(styleEl()).toBeNull();
@@ -98,7 +100,9 @@ describe("EnhancedViewSurface", () => {
     expect(hostEl()?.style.top).toBe("0px");
     expect(hostEl()?.style.left).toBe("0px");
   });
+});
 
+describe("EnhancedViewSurface - rendering", () => {
   it("mounts a host that renders the requested view's own text", () => {
     surface.apply(sprint);
 
@@ -160,7 +164,9 @@ describe("EnhancedViewSurface", () => {
     expect(styleEl()).toBeNull();
     expect(hostEl()).toBeNull();
   });
+});
 
+describe("EnhancedViewSurface - keep-alive", () => {
   it("re-attaches the host after ADO's re-render drops it", async () => {
     surface.apply(sprint);
     hostEl()?.remove();
@@ -213,7 +219,7 @@ describe("EnhancedViewSurface", () => {
       loadSprintWindow: () => Promise.resolve({ entries: [], currentName: null }),
       now: () => new Date(),
       logger: { info: () => {}, error: () => {} },
-      writeState: () => Promise.resolve({ ok: true }),
+      writeField: () => Promise.resolve({ ok: true }),
     };
     const surfaceWithServices = new EnhancedViewSurface(document, fakeServices);
 
@@ -230,7 +236,9 @@ describe("EnhancedViewSurface", () => {
     expect(styleEl()).toBeNull();
     expect(hostEl()).toBeNull();
   });
+});
 
+describe("EnhancedViewSurface - theming", () => {
   it("pins the chosen theme's tokens on the host so every control follows it", () => {
     surface.applyTheme("dark");
     surface.apply(sprint);

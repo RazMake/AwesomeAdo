@@ -69,294 +69,310 @@ function errorResp(status, message) {
   };
 }
 
+// Default fixture state for the stateful GitHub fetch fake; merged under caller overrides.
+const STATEFUL_FETCH_DEFAULTS = {
+  existingBuildTag: false,
+  existingOfficialTag: null,
+  officialReleases: [],
+  buildReleases: [],
+  immutablePolicyEnabled: true,
+  botId: 12345,
+  existingDraftRelease: null,
+  race422OnRef: false,
+  race422OfficialRef: false,
+  mutableOfficialRelease: false,
+};
+
+// The release-publisher app authors every bot-created release/tag; sharing one author object
+// keeps the fixtures free of copy-pasted identity blocks (jscpd) — tests only read these fields.
+function botAuthor(/** @type {number} */ botId) {
+  return { id: botId, login: "awesomeado-release-publisher[bot]", type: "Bot" };
+}
+
+/** @param {Record<string, any>} ctx @returns {Array<Record<string, any>>} */
+function buildReleasesList(ctx) {
+  const author = botAuthor(ctx.botId);
+  return [
+    ...ctx.officialReleases.map((/** @type {any} */ r, /** @type {any} */ i) => ({
+      id: 100 + i,
+      tag_name: `v${r.base}`,
+      name: `AwesomeADO v${r.base}`,
+      body: JSON.stringify({
+        base: r.base,
+        format: 1,
+        full: r.full,
+        kind: "official",
+        source_sha: r.sha,
+      }),
+      draft: false,
+      prerelease: false,
+      immutable: !ctx.mutableOfficialRelease,
+      author,
+      assets: [],
+      upload_url: `${ctx.apiBase}/releases/999/assets{?name,label}`,
+    })),
+    ...ctx.buildReleases.map((/** @type {any} */ r, /** @type {any} */ i) => ({
+      id: 200 + i,
+      tag_name: `v${r.full}`,
+      draft: false,
+      prerelease: true,
+      immutable: true,
+      author,
+      assets: [],
+    })),
+    ...(ctx.existingDraftRelease
+      ? [
+          {
+            id: ctx.existingDraftRelease.id,
+            tag_name: ctx.existingDraftRelease.tag_name ?? "v0.1",
+            draft: true,
+            prerelease: false,
+            immutable: undefined,
+            author,
+            assets: ctx.existingDraftRelease.assets ?? [],
+            upload_url: `${ctx.apiBase}/releases/${ctx.existingDraftRelease.id}/assets{?name,label}`,
+          },
+        ]
+      : []),
+  ];
+}
+
+/** @param {Record<string, any>} ctx @param {string} urlPath */
+function singleReleaseById(ctx, urlPath) {
+  const idMatch = urlPath.match(/\/releases\/(\d+)$/);
+  const id = Number(idMatch?.[1]);
+  const assets = ctx.uploadedAssets.get(id) ?? [];
+  if (ctx.existingDraftRelease && id === ctx.existingDraftRelease.id) {
+    return jsonResp({
+      id,
+      tag_name: ctx.existingDraftRelease.tag_name ?? "v0.1",
+      draft: true,
+      prerelease: false,
+      immutable: undefined,
+      author: botAuthor(ctx.botId),
+      assets: ctx.existingDraftRelease.assets ?? assets,
+      upload_url: `${ctx.apiBase}/releases/${id}/assets{?name,label}`,
+    });
+  }
+  return jsonResp({
+    id: id || 999,
+    tag_name: "v0.1.1",
+    draft: true,
+    prerelease: false,
+    immutable: undefined,
+    author: botAuthor(ctx.botId),
+    assets,
+    upload_url: `${ctx.apiBase}/releases/${id || 999}/assets{?name,label}`,
+  });
+}
+
+/** @param {Record<string, any>} ctx */
+function officialTagRef(ctx) {
+  if (!ctx.existingOfficialTag && !ctx.race422OfficialRef) {
+    return errorResp(404, "Not Found");
+  }
+  if (ctx.existingOfficialTag) {
+    return jsonResp({ ref: "refs/tags/v0.1", object: { type: "tag", sha: "tag-obj-sha-111" } });
+  }
+  // race422OfficialRef: first check returns 404 (before create), then winner after race
+  return errorResp(404, "Not Found");
+}
+
+/** @param {Record<string, any>} ctx */
+function officialTagObject(ctx) {
+  const tagFull = ctx.existingOfficialTag?.full ?? "0.1.1";
+  const tagSha = ctx.existingOfficialTag?.sha ?? FAKE_SHA;
+  return jsonResp({
+    tag: "v0.1",
+    message: JSON.stringify({ base: "0.1", format: 1, full: tagFull, source_sha: tagSha }),
+    object: { type: "commit", sha: tagSha },
+  });
+}
+
+/** @param {Record<string, any>} ctx @param {any} init */
+function createRef(ctx, init) {
+  const body = JSON.parse(/** @type {string} */ (init.body));
+  if (body.ref?.includes("v0.1.") && ctx.race422OnRef) {
+    return errorResp(422, "Reference already exists");
+  }
+  if (body.ref === "refs/tags/v0.1" && ctx.race422OfficialRef) {
+    return errorResp(422, "Reference already exists");
+  }
+  return jsonResp({ ref: body.ref, object: { sha: body.sha } }, 201);
+}
+
+/** @param {Record<string, any>} ctx */
+function resolveRaceWinnerRef(ctx) {
+  if (ctx.race422OfficialRef) {
+    return jsonResp({ ref: "refs/tags/v0.1", object: { type: "tag", sha: "new-tag-obj-sha" } });
+  }
+  if (ctx.race422OnRef) {
+    return jsonResp({ ref: "refs/tags/v0.1.1", object: { type: "commit", sha: FAKE_SHA } });
+  }
+  // Neither race flag set: this branch matched the URL but yields no response, so the caller
+  // must fall through to the remaining routes exactly as the original if-ladder did.
+  return undefined;
+}
+
+/** @param {Record<string, any>} ctx @param {any} init */
+function createRelease(ctx, init) {
+  const body = JSON.parse(/** @type {string} */ (init.body));
+  ctx.uploadedAssets.set(999, []);
+  return jsonResp(
+    {
+      id: 999,
+      tag_name: body.tag_name,
+      draft: body.draft,
+      prerelease: body.prerelease,
+      author: botAuthor(ctx.botId),
+      assets: [],
+      upload_url: `${ctx.apiBase}/releases/999/assets{?name,label}`,
+    },
+    201,
+  );
+}
+
+/** @param {Record<string, any>} ctx @param {URL} urlObj @param {string} urlPath */
+function uploadAsset(ctx, urlObj, urlPath) {
+  const assetName = urlObj.searchParams.get("name") ?? "";
+  const idMatch = urlPath.match(/\/releases\/(\d+)\/assets/);
+  const releaseId = Number(idMatch?.[1] ?? 999);
+  const existing = ctx.uploadedAssets.get(releaseId) ?? [];
+  existing.push({ id: existing.length + 1, name: assetName, state: "uploaded", size: 100 });
+  ctx.uploadedAssets.set(releaseId, existing);
+  return jsonResp({ id: existing.length, name: assetName, state: "uploaded", size: 100 }, 201);
+}
+
+// Route table replaces the fetch mock's URL if/else ladder. Order mirrors the original ladder
+// exactly (earlier matchers win). A `run` returning undefined means "matched but produced no
+// response" so the loop falls through to later routes — reproducing the ladder's fall-through
+// for the post-422 race-resolution branch.
+const GITHUB_ROUTES = [
+  {
+    test: (/** @type {string} */ m, /** @type {string} */ url) =>
+      m === "GET" && url.includes("/users/awesomeado-release-publisher"),
+    run: (/** @type {Record<string, any>} */ ctx) => jsonResp(botAuthor(ctx.botId)),
+  },
+  {
+    test: (/** @type {string} */ m, /** @type {string} */ url, /** @type {string} */ p) =>
+      m === "GET" && p.endsWith("/releases") && !url.includes("/tags/"),
+    run: (/** @type {Record<string, any>} */ ctx) => jsonResp(buildReleasesList(ctx)),
+  },
+  {
+    test: (/** @type {string} */ m, /** @type {string} */ _url, /** @type {string} */ p) =>
+      m === "GET" && /\/releases\/\d+$/.test(p) && !p.includes("/assets"),
+    run: (/** @type {Record<string, any>} */ ctx, /** @type {Record<string, any>} */ req) =>
+      singleReleaseById(ctx, req.urlPath),
+  },
+  {
+    test: (/** @type {string} */ m, /** @type {string} */ _url, /** @type {string} */ p) =>
+      m === "GET" && p.includes("/immutable-releases"),
+    run: (/** @type {Record<string, any>} */ ctx) =>
+      jsonResp({
+        enabled: ctx.immutablePolicyEnabled,
+        enforced_by_owner: ctx.immutablePolicyEnabled,
+      }),
+  },
+  {
+    test: (/** @type {string} */ m, /** @type {string} */ _url, /** @type {string} */ p) =>
+      m === "GET" && p.includes("/git/ref/tags/v0.1.1"),
+    run: (/** @type {Record<string, any>} */ ctx) =>
+      ctx.existingBuildTag
+        ? jsonResp({ ref: "refs/tags/v0.1.1", object: { type: "commit", sha: FAKE_SHA } })
+        : errorResp(404, "Not Found"),
+  },
+  {
+    test: (/** @type {string} */ m, /** @type {string} */ _url, /** @type {string} */ p) =>
+      m === "GET" && /\/git\/ref\/tags\/v0\.1$/.test(p),
+    run: (/** @type {Record<string, any>} */ ctx) => officialTagRef(ctx),
+  },
+  {
+    test: (/** @type {string} */ m, /** @type {string} */ _url, /** @type {string} */ p) =>
+      m === "GET" && p.includes("/git/tags/tag-obj-sha-111"),
+    run: (/** @type {Record<string, any>} */ ctx) => officialTagObject(ctx),
+  },
+  {
+    test: (/** @type {string} */ m, /** @type {string} */ _url, /** @type {string} */ p) =>
+      m === "POST" && p.endsWith("/git/tags"),
+    run: () => jsonResp({ sha: "new-tag-obj-sha" }, 201),
+  },
+  {
+    test: (/** @type {string} */ m, /** @type {string} */ _url, /** @type {string} */ p) =>
+      m === "POST" && p.endsWith("/git/refs"),
+    run: (/** @type {Record<string, any>} */ ctx, /** @type {Record<string, any>} */ req) =>
+      createRef(ctx, req.init),
+  },
+  {
+    test: (/** @type {string} */ m, /** @type {string} */ _url, /** @type {string} */ p) =>
+      m === "GET" && (/\/git\/ref\/tags\/v0\.1$/.test(p) || p.includes("/git/ref/tags/v0.1.")),
+    run: (/** @type {Record<string, any>} */ ctx) => resolveRaceWinnerRef(ctx),
+  },
+  {
+    test: (/** @type {string} */ m, /** @type {string} */ _url, /** @type {string} */ p) =>
+      m === "GET" && p.includes("/git/tags/new-tag-obj-sha"),
+    run: () =>
+      jsonResp({
+        tag: "v0.1",
+        message: JSON.stringify({ base: "0.1", format: 1, full: "0.1.1", source_sha: FAKE_SHA }),
+        object: { type: "commit", sha: FAKE_SHA },
+      }),
+  },
+  {
+    test: (/** @type {string} */ m, /** @type {string} */ _url, /** @type {string} */ p) =>
+      m === "POST" && p.endsWith("/releases"),
+    run: (/** @type {Record<string, any>} */ ctx, /** @type {Record<string, any>} */ req) =>
+      createRelease(ctx, req.init),
+  },
+  {
+    test: (/** @type {string} */ m, /** @type {string} */ _url, /** @type {string} */ p) =>
+      m === "POST" && p.includes("/assets"),
+    run: (/** @type {Record<string, any>} */ ctx, /** @type {Record<string, any>} */ req) =>
+      uploadAsset(ctx, req.urlObj, req.urlPath),
+  },
+  {
+    test: (/** @type {string} */ m, /** @type {string} */ _url, /** @type {string} */ p) =>
+      m === "PATCH" && /\/releases\/\d+$/.test(p),
+    run: () =>
+      jsonResp({ id: 999, draft: false, prerelease: false, immutable: true, tag_name: "v0.1" }),
+  },
+  {
+    test: (/** @type {string} */ m, /** @type {string} */ _url, /** @type {string} */ p) =>
+      m === "DELETE" && p.includes("/releases/assets/"),
+    run: () => ({ status: 204, ok: true, headers: { get: () => null }, json: async () => ({}) }),
+  },
+];
+
 /**
  * Build a minimal stateful HTTP fake for the GitHub API.
  * @param {Record<string, any>} [opts]
  */
 function buildStatefulFetch(opts = {}) {
-  const {
-    existingBuildTag = false,
-    existingOfficialTag = null,
-    officialReleases = [],
-    buildReleases = [],
-    immutablePolicyEnabled = true,
-    botId = 12345,
-    existingDraftRelease = null,
-    race422OnRef = false,
-    race422OfficialRef = false,
-    mutableOfficialRelease = false,
-  } = opts;
-
   const calls = /** @type {Array<Record<string, any>>} */ ([]);
   // Track uploaded assets per release id
   const uploadedAssets = new Map();
 
+  // Spread over the defaults instead of per-field destructuring defaults: this keeps the
+  // fixture's cyclomatic complexity flat (each `= default` in a destructure is a branch) while
+  // preserving the original behavior — omitted keys fall back to defaults, every test either
+  // sets a concrete value or leaves the key out entirely.
+  const ctx = {
+    ...STATEFUL_FETCH_DEFAULTS,
+    ...opts,
+    uploadedAssets,
+    apiBase: `https://api.github.com/repos/${REPO}`,
+  };
+
   const fetchImpl = async (/** @type {any} */ url, /** @type {any} */ init = {}) => {
     const method = (init.method ?? "GET").toUpperCase();
     calls.push({ url, method });
-
-    const apiBase = `https://api.github.com/repos/${REPO}`;
     const urlObj = new URL(url);
     const urlPath = urlObj.pathname;
+    const req = { url, urlObj, urlPath, init };
 
-    // Bot user lookup
-    if (method === "GET" && url.includes("/users/awesomeado-release-publisher")) {
-      return jsonResp({
-        id: botId,
-        login: "awesomeado-release-publisher[bot]",
-        type: "Bot",
-      });
-    }
-
-    // Releases list (paginated)
-    if (method === "GET" && urlPath.endsWith("/releases") && !url.includes("/tags/")) {
-      const allReleases = [
-        ...officialReleases.map((/** @type {any} */ r, /** @type {any} */ i) => ({
-          id: 100 + i,
-          tag_name: `v${r.base}`,
-          name: `AwesomeADO v${r.base}`,
-          body: JSON.stringify({
-            base: r.base,
-            format: 1,
-            full: r.full,
-            kind: "official",
-            source_sha: r.sha,
-          }),
-          draft: false,
-          prerelease: false,
-          immutable: !mutableOfficialRelease,
-          author: {
-            id: botId,
-            login: "awesomeado-release-publisher[bot]",
-            type: "Bot",
-          },
-          assets: [],
-          upload_url: `${apiBase}/releases/999/assets{?name,label}`,
-        })),
-        ...buildReleases.map((/** @type {any} */ r, /** @type {any} */ i) => ({
-          id: 200 + i,
-          tag_name: `v${r.full}`,
-          draft: false,
-          prerelease: true,
-          immutable: true,
-          author: {
-            id: botId,
-            login: "awesomeado-release-publisher[bot]",
-            type: "Bot",
-          },
-          assets: [],
-        })),
-        ...(existingDraftRelease
-          ? [
-              {
-                id: existingDraftRelease.id,
-                tag_name: existingDraftRelease.tag_name ?? "v0.1",
-                draft: true,
-                prerelease: false,
-                immutable: undefined,
-                author: {
-                  id: botId,
-                  login: "awesomeado-release-publisher[bot]",
-                  type: "Bot",
-                },
-                assets: existingDraftRelease.assets ?? [],
-                upload_url: `${apiBase}/releases/${existingDraftRelease.id}/assets{?name,label}`,
-              },
-            ]
-          : []),
-      ];
-      return jsonResp(allReleases);
-    }
-
-    // Single release by ID — returns current uploaded assets
-    if (method === "GET" && urlPath.match(/\/releases\/\d+$/) && !urlPath.includes("/assets")) {
-      const idMatch = urlPath.match(/\/releases\/(\d+)$/);
-      const id = Number(idMatch?.[1]);
-      const assets = uploadedAssets.get(id) ?? [];
-      if (existingDraftRelease && id === existingDraftRelease.id) {
-        return jsonResp({
-          id,
-          tag_name: existingDraftRelease.tag_name ?? "v0.1",
-          draft: true,
-          prerelease: false,
-          immutable: undefined,
-          author: {
-            id: botId,
-            login: "awesomeado-release-publisher[bot]",
-            type: "Bot",
-          },
-          assets: existingDraftRelease.assets ?? assets,
-          upload_url: `${apiBase}/releases/${id}/assets{?name,label}`,
-        });
-      }
-      return jsonResp({
-        id: id || 999,
-        tag_name: "v0.1.1",
-        draft: true,
-        prerelease: false,
-        immutable: undefined,
-        author: {
-          id: botId,
-          login: "awesomeado-release-publisher[bot]",
-          type: "Bot",
-        },
-        assets,
-        upload_url: `${apiBase}/releases/${id || 999}/assets{?name,label}`,
-      });
-    }
-
-    // Immutable releases policy
-    if (method === "GET" && urlPath.includes("/immutable-releases")) {
-      return jsonResp({
-        enabled: immutablePolicyEnabled,
-        enforced_by_owner: immutablePolicyEnabled,
-      });
-    }
-
-    // Build tag ref check (v0.1.1)
-    if (method === "GET" && urlPath.includes("/git/ref/tags/v0.1.1")) {
-      if (!existingBuildTag) {
-        return errorResp(404, "Not Found");
-      }
-      return jsonResp({
-        ref: "refs/tags/v0.1.1",
-        object: { type: "commit", sha: FAKE_SHA },
-      });
-    }
-
-    // Official tag ref check (v0.1 but not v0.1.x)
-    if (method === "GET" && urlPath.match(/\/git\/ref\/tags\/v0\.1$/)) {
-      if (!existingOfficialTag && !race422OfficialRef) {
-        return errorResp(404, "Not Found");
-      }
-      if (existingOfficialTag) {
-        return jsonResp({
-          ref: "refs/tags/v0.1",
-          object: { type: "tag", sha: "tag-obj-sha-111" },
-        });
-      }
-      // race422OfficialRef: first check returns 404 (before create), then winner after race
-      return errorResp(404, "Not Found");
-    }
-
-    // Official tag object
-    if (method === "GET" && urlPath.includes("/git/tags/tag-obj-sha-111")) {
-      const tagFull = existingOfficialTag?.full ?? "0.1.1";
-      const tagSha = existingOfficialTag?.sha ?? FAKE_SHA;
-      return jsonResp({
-        tag: "v0.1",
-        message: JSON.stringify({
-          base: "0.1",
-          format: 1,
-          full: tagFull,
-          source_sha: tagSha,
-        }),
-        object: { type: "commit", sha: tagSha },
-      });
-    }
-
-    // Create annotated tag object
-    if (method === "POST" && urlPath.endsWith("/git/tags")) {
-      return jsonResp({ sha: "new-tag-obj-sha" }, 201);
-    }
-
-    // Create refs
-    if (method === "POST" && urlPath.endsWith("/git/refs")) {
-      const body = JSON.parse(/** @type {string} */ (init.body));
-      if (body.ref?.includes("v0.1.") && race422OnRef) {
-        return errorResp(422, "Reference already exists");
-      }
-      if (body.ref === "refs/tags/v0.1" && race422OfficialRef) {
-        return errorResp(422, "Reference already exists");
-      }
-      return jsonResp({ ref: body.ref, object: { sha: body.sha } }, 201);
-    }
-
-    // Resolve race winner tag ref after 422
-    if (
-      method === "GET" &&
-      (urlPath.match(/\/git\/ref\/tags\/v0\.1$/) || urlPath.includes("/git/ref/tags/v0.1."))
-    ) {
-      if (race422OfficialRef) {
-        return jsonResp({
-          ref: "refs/tags/v0.1",
-          object: { type: "tag", sha: "new-tag-obj-sha" },
-        });
-      }
-      if (race422OnRef) {
-        return jsonResp({
-          ref: "refs/tags/v0.1.1",
-          object: { type: "commit", sha: FAKE_SHA },
-        });
-      }
-    }
-
-    // Resolve race tag object after 422
-    if (method === "GET" && urlPath.includes("/git/tags/new-tag-obj-sha")) {
-      return jsonResp({
-        tag: "v0.1",
-        message: JSON.stringify({
-          base: "0.1",
-          format: 1,
-          full: "0.1.1",
-          source_sha: FAKE_SHA,
-        }),
-        object: { type: "commit", sha: FAKE_SHA },
-      });
-    }
-
-    // Create release
-    if (method === "POST" && urlPath.endsWith("/releases")) {
-      const body = JSON.parse(/** @type {string} */ (init.body));
-      uploadedAssets.set(999, []);
-      return jsonResp(
-        {
-          id: 999,
-          tag_name: body.tag_name,
-          draft: body.draft,
-          prerelease: body.prerelease,
-          author: {
-            id: botId,
-            login: "awesomeado-release-publisher[bot]",
-            type: "Bot",
-          },
-          assets: [],
-          upload_url: `${apiBase}/releases/999/assets{?name,label}`,
-        },
-        201,
-      );
-    }
-
-    // Upload asset — track in state
-    if (method === "POST" && urlPath.includes("/assets")) {
-      const assetName = urlObj.searchParams.get("name") ?? "";
-      const idMatch = urlPath.match(/\/releases\/(\d+)\/assets/);
-      const releaseId = Number(idMatch?.[1] ?? 999);
-      const existing = uploadedAssets.get(releaseId) ?? [];
-      existing.push({ id: existing.length + 1, name: assetName, state: "uploaded", size: 100 });
-      uploadedAssets.set(releaseId, existing);
-      return jsonResp({ id: existing.length, name: assetName, state: "uploaded", size: 100 }, 201);
-    }
-
-    // Patch release (publish)
-    if (method === "PATCH" && urlPath.match(/\/releases\/\d+$/)) {
-      return jsonResp({
-        id: 999,
-        draft: false,
-        prerelease: false,
-        immutable: true,
-        tag_name: "v0.1",
-      });
-    }
-
-    // Delete asset
-    if (method === "DELETE" && urlPath.includes("/releases/assets/")) {
-      return {
-        status: 204,
-        ok: true,
-        headers: { get: () => null },
-        json: async () => ({}),
-      };
+    for (const route of GITHUB_ROUTES) {
+      if (!route.test(method, url, urlPath)) continue;
+      const response = route.run(ctx, req);
+      if (response !== undefined) return response;
     }
 
     console.warn(`Unhandled URL: ${method} ${url}`);
@@ -513,7 +529,9 @@ describe("publishGitHubRelease — official release", () => {
 
     await rm(dir, { recursive: true });
   });
+});
 
+describe("publishGitHubRelease — official release recovery", () => {
   it("returns claimed=false for lost claim (different full)", async () => {
     const dir = mktemp();
     const { chrome, edge, metadata, storeAssets } = createArtifacts(dir, "0.1.1");

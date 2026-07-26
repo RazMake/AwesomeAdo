@@ -37,7 +37,7 @@ function makeRequest(): FeatureCrewReconcileRequest {
   };
 }
 
-describe("MessagingFeatureCrewWriter", () => {
+describe("MessagingFeatureCrewWriter - success paths", () => {
   it("sends the correct message shape", async () => {
     const send = vi.fn<SendReconcileRequest>().mockResolvedValue({
       ok: true,
@@ -57,6 +57,16 @@ describe("MessagingFeatureCrewWriter", () => {
       { alias: "alice", fullName: "Alice Smith" },
       { alias: "bob", fullName: "Bob Jones" },
     ]);
+  });
+
+  it("forwards tagAssignments when the request carries them", async () => {
+    const send = vi.fn<SendReconcileRequest>().mockResolvedValue({ ok: true, changed: true });
+    const { writer } = makeWriter(send);
+
+    await writer.reconcile({ ...makeRequest(), tagAssignments: [{ alias: "alice", tag: "Core" }] });
+
+    const message = send.mock.calls[0]?.[0] as ReconcileFeatureCrewMessage;
+    expect(message.tagAssignments).toEqual([{ alias: "alice", tag: "Core" }]);
   });
 
   it("returns success and logs info when response.ok is true", async () => {
@@ -92,7 +102,9 @@ describe("MessagingFeatureCrewWriter", () => {
       "Feature Crew reconciled for root 123: changed=false, id=none.",
     );
   });
+});
 
+describe("MessagingFeatureCrewWriter - failure responses", () => {
   it("returns failure and logs error when response is undefined", async () => {
     const send = vi.fn<SendReconcileRequest>().mockResolvedValue(undefined);
     const { writer, logger } = makeWriter(send);
@@ -137,7 +149,9 @@ describe("MessagingFeatureCrewWriter", () => {
       "Feature Crew reconcile failed for root 123: network timeout.",
     );
   });
+});
 
+describe("MessagingFeatureCrewWriter - failure logging", () => {
   it("returns failure and logs 'unknown error' when response.ok is false without error field", async () => {
     const send = vi.fn<SendReconcileRequest>().mockResolvedValue({
       ok: false,

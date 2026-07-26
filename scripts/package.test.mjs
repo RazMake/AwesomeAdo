@@ -218,7 +218,9 @@ describe("packageExtension — failures", () => {
 
     await rm(tmp, { recursive: true, force: true });
   });
+});
 
+describe("packageExtension — filesystem and build failures", () => {
   it("rejects a symlink under dist/", async () => {
     const tmp = join(tmpdir(), `pkg-test-symlink-${Date.now()}`);
     const distDir = join(tmp, "dist");
@@ -276,7 +278,9 @@ describe("packageExtension — failures", () => {
 
     await rm(tmp, { recursive: true, force: true });
   });
+});
 
+describe("packageExtension — archive and build failure cleanup", () => {
   it("removes artifacts/ directory on archive failure", async () => {
     const tmp = join(tmpdir(), `pkg-test-archivefail-${Date.now()}`);
     const distDir = join(tmp, "dist");

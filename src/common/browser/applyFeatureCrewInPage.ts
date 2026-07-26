@@ -91,23 +91,27 @@ export function applyFeatureCrewInPage(
     return typeof id === "number" ? id : null;
   };
 
+  // Turn a completed json-patch outcome into the final result: propagate ADO's specific error
+  // verbatim, otherwise require the numeric id the caller keys off of. Shared by both write paths.
+  const toResult = (outcome: { body: unknown } | { error: string }): FeatureCrewApplyResult => {
+    if ("error" in outcome) {
+      return { id: null, error: outcome.error };
+    }
+    const id = readId(outcome.body);
+    return id === null ? { id: null, error: "response had no numeric work item id" } : { id };
+  };
+
+  // Render System.Description as Markdown; without this ADO stores the field as HTML and collapses
+  // the roster's newlines onto one line, so every crew member runs into the title. Shared by the
+  // update and create payloads so the two representations cannot drift apart.
+  const descriptionOps = [
+    { op: "add", path: "/fields/System.Description", value: config.description },
+    { op: "add", path: "/multilineFieldsFormat/System.Description", value: "Markdown" },
+  ];
+
   if (config.mode === "update") {
-    const ops = [
-      { op: "add", path: "/fields/System.Description", value: config.description },
-      // Render System.Description as Markdown; without this ADO stores the field as HTML and
-      // collapses the roster's newlines onto one line, so every crew member runs into the title.
-      { op: "add", path: "/multilineFieldsFormat/System.Description", value: "Markdown" },
-    ];
-    return sendJsonPatch(config.url, "PATCH", ops)
-      .then((result) => {
-        if ("error" in result) {
-          return { id: null, error: result.error };
-        }
-        const id = readId(result.body);
-        // A 2xx with no numeric id means ADO accepted the request but returned a shape we can't act
-        // on; surface that so the caller logs the anomaly instead of a generic failure.
-        return id === null ? { id: null, error: "response had no numeric work item id" } : { id };
-      })
+    return sendJsonPatch(config.url, "PATCH", descriptionOps)
+      .then(toResult)
       .catch((err) => ({ id: null, error: String(err) }));
   }
 
@@ -115,10 +119,7 @@ export function applyFeatureCrewInPage(
   // state, because ADO rejects a direct create into "Removed".
   const createOps = [
     { op: "add", path: "/fields/System.Title", value: config.title },
-    { op: "add", path: "/fields/System.Description", value: config.description },
-    // Render System.Description as Markdown; without this ADO stores the field as HTML and collapses
-    // the roster's newlines onto one line, so every crew member runs into the title.
-    { op: "add", path: "/multilineFieldsFormat/System.Description", value: "Markdown" },
+    ...descriptionOps,
     {
       op: "add",
       path: "/relations/-",
@@ -127,23 +128,20 @@ export function applyFeatureCrewInPage(
   ];
   return sendJsonPatch(config.url, "POST", createOps)
     .then((created) => {
-      if ("error" in created) {
-        return { id: null, error: created.error };
-      }
-      const id = readId(created.body);
-      if (id === null) {
-        return { id: null, error: "response had no numeric work item id" };
-      }
-      const transitionUrl = config.itemBaseUrl + "/" + String(id) + "?api-version=7.1";
+      const result = toResult(created);
+      // On any create failure (error body or a 2xx with no id) stop here; there is nothing to
+      // transition and `result` already carries the reason.
+      if (result.id === null) return result;
+      // The item now exists but is stuck in its new state; a transition failure strands it, so report
+      // that error carrying the id the caller needs to find it for cleanup.
       const stateOps = [{ op: "add", path: "/fields/System.State", value: config.state }];
-      return sendJsonPatch(transitionUrl, "PATCH", stateOps).then((transitioned) => {
-        if ("error" in transitioned) {
-          // The item exists but is stuck in its new state; report the transition failure with the id
-          // so the caller can log which item needs cleanup.
-          return { id: null, error: transitioned.error };
-        }
-        return { id };
-      });
+      return sendJsonPatch(
+        config.itemBaseUrl + "/" + String(result.id) + "?api-version=7.1",
+        "PATCH",
+        stateOps,
+      ).then((transitioned) =>
+        "error" in transitioned ? { id: null, error: transitioned.error } : result,
+      );
     })
     .catch((err) => ({ id: null, error: String(err) }));
 }

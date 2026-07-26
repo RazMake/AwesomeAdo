@@ -40,7 +40,10 @@ export default tseslint.config(
       ],
       eqeqeq: "error",
       complexity: ["warn", 10],
-      "max-lines-per-function": ["warn", 80],
+      // Count executable lines only: this repo mandates heavy "why" comments (AGENTS.md §8), so
+      // measuring documentation and blank lines against a function-length budget would penalize the
+      // very commenting the guidelines require. The budget targets logical code size, not prose.
+      "max-lines-per-function": ["warn", { max: 80, skipComments: true, skipBlankLines: true }],
       "no-console": ["warn", { allow: ["warn", "error"] }],
     },
   },

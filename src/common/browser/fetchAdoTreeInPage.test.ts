@@ -26,7 +26,7 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
 });
 
-describe("fetchAdoTreeInPage", () => {
+describe("fetchAdoTreeInPage - tree hydration", () => {
   it("requests the WIQL with the session credentials and hydrates deduped ids from workItemRelations", async () => {
     const wiqlBody = {
       queryType: "tree",
@@ -79,7 +79,9 @@ describe("fetchAdoTreeInPage", () => {
       query: QUERY_META,
     });
   });
+});
 
+describe("fetchAdoTreeInPage - paging and flat queries", () => {
   it("hydrates ids from workItems when the query is flat (no relations)", async () => {
     const wiqlBody = { queryType: "flat", workItems: [{ id: 5 }, { id: 7 }, { id: 5 }] };
     const fetchMock = vi.fn((url: string, init?: RequestInit) => {
@@ -127,7 +129,9 @@ describe("fetchAdoTreeInPage", () => {
     expect(batchIdCounts).toEqual([200, 50]);
     expect(result.items).toHaveLength(250);
   });
+});
 
+describe("fetchAdoTreeInPage - failure handling", () => {
   it("resolves to no wiql and no items when the WIQL response is not ok, without calling the batch endpoint", async () => {
     const fetchMock = vi.fn(() => Promise.resolve(jsonResponse(null, false)));
     globalThis.fetch = fetchMock as unknown as typeof fetch;

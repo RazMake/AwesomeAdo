@@ -170,25 +170,26 @@ response-parsing logic, kept pure so they are unit-testable without a browser.
   implementation injects a credentialed fetch into the ADO tab's page (MAIN) world; a test fake
   returns canned results.
 
-### `IWorkItemStateWriter.ts`
+### `IWorkItemFieldWriter.ts`
 
-- `WorkItemStateWriteRequest` — `{ id, rev, state }`; the request to write a work item's state back
-  to Azure DevOps. Includes the item's last-known `rev` as an optimistic-concurrency guard so the
-  PATCH fails when the item was edited concurrently by someone else (its rev advanced).
-- `WorkItemStateWriteResult` — `{ ok, rev?, error? }`; the result of writing a work item's state;
+- `WorkItemFieldWriteRequest` — `{ id, rev, field, value }`; the request to write a single work item
+  field back to Azure DevOps. `field` is the ADO field reference name (e.g. `System.State` or a
+  type's ETA date field) and `value` is the new value, or `null` to clear the field. Includes the
+  item's last-known `rev` as an optimistic-concurrency guard so the PATCH fails when the item was
+  edited concurrently by someone else (its rev advanced).
+- `WorkItemFieldWriteResult` — `{ ok, rev?, error? }`; the result of writing a work item field;
   `ok` indicates success, `rev` is the item's new System.Rev after a successful write, and `error` is
   a short description when `ok` is false.
-- `IWorkItemStateWriter` — writes a work item's state (System.State) back to Azure DevOps. The real
+- `IWorkItemFieldWriter` — writes a single work item field back to Azure DevOps. The real
   implementation injects a credentialed PATCH into the ADO tab's MAIN world; a test fake returns
   canned results.
-  returns canned results.
 
-### `StateWriteQueue/`
+### `FieldWriteQueue/`
 
-- `StateWriteQueue` — a strictly-sequential queue for work-item state writes. Serializes every
-  `writeState` call so ordering is deterministic and no two writes race on `System.Rev`
+- `FieldWriteQueue` — a strictly-sequential queue for work-item field writes. Serializes every
+  `writeField` call so ordering is deterministic and no two writes race on `System.Rev`
   (ADR-030). `enqueue` always resolves (never rejects), and a failed write never stalls the chain.
-  See [`StateWriteQueue/README.md`](./StateWriteQueue/README.md).
+  See [`FieldWriteQueue/README.md`](./FieldWriteQueue/README.md).
 
 ## Usage guidance
 

@@ -2,30 +2,30 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createPopupHost } from "./popupHost";
 
-describe("createPopupHost", () => {
-  afterEach(() => {
-    document.body.innerHTML = "";
+afterEach(() => {
+  document.body.innerHTML = "";
+});
+
+/** Build a host over a fresh trigger + mount point appended to the document. */
+const setup = (interactive = true) => {
+  const trigger = document.createElement("button");
+  const mountInto = document.createElement("div");
+  mountInto.append(trigger);
+  document.body.append(mountInto);
+  const buildPopup = vi.fn((close: () => void) => {
+    const el = document.createElement("div");
+    el.className = "popup";
+    const closer = document.createElement("button");
+    closer.className = "closer";
+    closer.addEventListener("click", () => close());
+    el.append(closer);
+    return el;
   });
+  const host = createPopupHost({ doc: document, trigger, mountInto, buildPopup, interactive });
+  return { trigger, mountInto, buildPopup, host };
+};
 
-  /** Build a host over a fresh trigger + mount point appended to the document. */
-  const setup = (interactive = true) => {
-    const trigger = document.createElement("button");
-    const mountInto = document.createElement("div");
-    mountInto.append(trigger);
-    document.body.append(mountInto);
-    const buildPopup = vi.fn((close: () => void) => {
-      const el = document.createElement("div");
-      el.className = "popup";
-      const closer = document.createElement("button");
-      closer.className = "closer";
-      closer.addEventListener("click", () => close());
-      el.append(closer);
-      return el;
-    });
-    const host = createPopupHost({ doc: document, trigger, mountInto, buildPopup, interactive });
-    return { trigger, mountInto, buildPopup, host };
-  };
-
+describe("createPopupHost - open and toggle", () => {
   it("opens the popup when the trigger is clicked", () => {
     const { trigger, mountInto, host } = setup();
 
@@ -63,7 +63,9 @@ describe("createPopupHost", () => {
 
     expect(host.isOpen).toBe(false);
   });
+});
 
+describe("createPopupHost - dismissal and lifecycle", () => {
   it("closes on an outside pointerdown", () => {
     const outside = document.createElement("div");
     document.body.append(outside);

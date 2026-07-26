@@ -296,8 +296,14 @@ function normalizeWorkItemColumn(raw: unknown, seenStates: Set<string>): WorkIte
   if (column.length === 0 || !Array.isArray(candidate.states)) {
     return null;
   }
+  const states = collectColumnStates(candidate.states, seenStates);
+  return states.length > 0 ? { column, states } : null;
+}
+
+/** Collect a column's non-empty states, dropping any state already claimed by an earlier column. */
+function collectColumnStates(rawStates: unknown[], seenStates: Set<string>): string[] {
   const states: string[] = [];
-  for (const state of candidate.states) {
+  for (const state of rawStates) {
     if (typeof state !== "string") {
       continue;
     }
@@ -310,7 +316,29 @@ function normalizeWorkItemColumn(raw: unknown, seenStates: Set<string>): WorkIte
     seenStates.add(key);
     states.push(trimmed);
   }
-  return states.length > 0 ? { column, states } : null;
+  return states;
+}
+
+/**
+ * Collect a type's columns, keyed by their user-typed name (case-insensitive) so the same column can
+ * never appear twice, and sharing one seen-states set so the same state can never land in two columns.
+ */
+function collectTypeColumns(raw: unknown): WorkItemColumn[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  const columns: WorkItemColumn[] = [];
+  const seenColumns = new Set<string>();
+  const seenStates = new Set<string>();
+  for (const rawColumn of raw) {
+    const column = normalizeWorkItemColumn(rawColumn, seenStates);
+    const key = column?.column.toLowerCase();
+    if (column !== null && key !== undefined && !seenColumns.has(key)) {
+      seenColumns.add(key);
+      columns.push(column);
+    }
+  }
+  return columns;
 }
 
 function normalizeWorkItemType(raw: unknown): WorkItemType | null {
@@ -330,22 +358,7 @@ function normalizeWorkItemType(raw: unknown): WorkItemType | null {
   }
   const color = typeof candidate.color === "string" ? candidate.color.trim() : "";
   const icon = typeof candidate.icon === "string" ? candidate.icon.trim() : "";
-  const columns: WorkItemColumn[] = [];
-  // Columns are keyed by their user-typed name (case-insensitive), so the same column can never
-  // appear twice even in a corrupt payload.
-  const seenColumns = new Set<string>();
-  // One shared seen-states set spans every column so the same state can never land in two columns.
-  const seenStates = new Set<string>();
-  if (Array.isArray(candidate.columns)) {
-    for (const rawColumn of candidate.columns) {
-      const column = normalizeWorkItemColumn(rawColumn, seenStates);
-      const key = column?.column.toLowerCase();
-      if (column !== null && key !== undefined && !seenColumns.has(key)) {
-        seenColumns.add(key);
-        columns.push(column);
-      }
-    }
-  }
+  const columns = collectTypeColumns(candidate.columns);
   const type: WorkItemType = { name, color, icon, columns };
   // The ETA field is optional and per-type, so store it only when set; a blank never bloats the map
   // (mirrors how bindings omit an absent name/active).

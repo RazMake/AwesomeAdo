@@ -28,17 +28,17 @@ import {
   type SendIterationsRequest,
 } from "../common/browser/MessagingTeamIterationsLoader";
 import {
-  MessagingWorkItemStateWriter,
-  type SendUpdateStateRequest,
-} from "../common/browser/MessagingWorkItemStateWriter";
+  MessagingWorkItemFieldWriter,
+  type SendUpdateFieldRequest,
+} from "../common/browser/MessagingWorkItemFieldWriter";
 import {
   MessagingWorkItemTreeLoader,
   type SendTreeRequest,
 } from "../common/browser/MessagingWorkItemTreeLoader";
 import {
-  type UpdateWorkItemStateMessage,
-  type UpdateWorkItemStateResponse,
-} from "../common/browser/WorkItemStateRequest";
+  type UpdateWorkItemFieldMessage,
+  type UpdateWorkItemFieldResponse,
+} from "../common/browser/WorkItemFieldRequest";
 import { createLoggerFactory } from "../common/logging/createLogger";
 import { type AdoThemeResponse, isAdoThemeRequest } from "../common/navigation/AdoContext";
 import { isAdoNavigationMessage } from "../common/navigation/AdoQueryRoute";
@@ -130,15 +130,15 @@ const featureCrewWriter = new MessagingFeatureCrewWriter(
   loggers.forSource("content/views"),
 );
 
-// The state write mirrors the tree read and roster write: the isolated content world cannot reach
+// The field write mirrors the tree read and roster write: the isolated content world cannot reach
 // the credentialed ADO REST API, so the writer messages the background worker (which runs the
 // MAIN-world PATCH with the user's session cookies).
-const sendUpdateStateRequest: SendUpdateStateRequest = (message) =>
-  chrome.runtime.sendMessage<UpdateWorkItemStateMessage, UpdateWorkItemStateResponse | undefined>(
+const sendUpdateFieldRequest: SendUpdateFieldRequest = (message) =>
+  chrome.runtime.sendMessage<UpdateWorkItemFieldMessage, UpdateWorkItemFieldResponse | undefined>(
     message,
   );
-const workItemStateWriter = new MessagingWorkItemStateWriter(
-  sendUpdateStateRequest,
+const workItemFieldWriter = new MessagingWorkItemFieldWriter(
+  sendUpdateFieldRequest,
   loggers.forSource("content/views"),
 );
 
@@ -174,7 +174,7 @@ const trackingServices: EnhancedViewServices = {
   },
   now: () => new Date(),
   logger: loggers.forSource("content/views"),
-  writeState: (request) => workItemStateWriter.writeState(request),
+  writeField: (request) => workItemFieldWriter.writeField(request),
 };
 
 // The in-session view choice lives here, in memory only: switching a query between its enhanced view

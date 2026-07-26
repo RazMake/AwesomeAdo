@@ -202,7 +202,9 @@ describe("validateRelease — metadata failures", () => {
     );
     rmSync(dir, { recursive: true });
   });
+});
 
+describe("validateRelease — metadata consistency failures", () => {
   it("rejects inconsistent full version", () => {
     const dir = mktemp();
     createArtifacts(dir, "0.1.1", {
@@ -326,7 +328,9 @@ describe("validateRelease — ZIP validation failures", () => {
     );
     rmSync(dir, { recursive: true });
   });
+});
 
+describe("validateRelease — ZIP manifest and traversal failures", () => {
   it("rejects a ZIP with wrong manifest version", () => {
     const dir = mktemp();
     mkdirSync(dir, { recursive: true });

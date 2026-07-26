@@ -25,6 +25,32 @@ export function fetchAdoTreeInPage(
   const PAGE_SIZE = 200;
   const MAX_BATCH_PAGES = 100;
 
+  // Collect the work-item ids to hydrate from the WIQL body. Defined inline (not imported) because
+  // this whole function is serialized and injected into the ADO MAIN world. A tree query carries both
+  // endpoints of every parent/child edge (an item can be a target in one relation and a source in
+  // another, so both sides are collected); a flat query lists its items directly.
+  const collectIds = (wiql: unknown): number[] => {
+    const ids = new Set<number>();
+    const addId = (endpoint: unknown): void => {
+      const id = (endpoint as { id?: unknown } | null)?.id;
+      if (typeof id === "number") ids.add(id);
+    };
+    const relations = (wiql as { workItemRelations?: unknown } | null)?.workItemRelations;
+    const workItems = (wiql as { workItems?: unknown } | null)?.workItems;
+    if (Array.isArray(relations)) {
+      for (const relation of relations) {
+        if (typeof relation !== "object" || relation === null) continue;
+        const { source, target } = relation as { source?: unknown; target?: unknown };
+        addId(target);
+        // source === null marks the relation's target as a root, so there is no source id to add.
+        if (source !== null) addId(source);
+      }
+    } else if (Array.isArray(workItems)) {
+      for (const item of workItems) addId(item);
+    }
+    return Array.from(ids).slice(0, MAX_IDS);
+  };
+
   // The query's metadata (for its folder `path`) is an independent, best-effort read: it must never
   // block or fail the tree load, so it runs in parallel and degrades to `null` on any error.
   const queryMeta = fetch(queryUrl, {
@@ -39,44 +65,8 @@ export function fetchAdoTreeInPage(
       response.ok ? response.json() : Promise.reject(new Error("wiql request failed")),
     )
     .then((wiql) => {
-      const relations = (wiql as { workItemRelations?: unknown } | null)?.workItemRelations;
-      const workItems = (wiql as { workItems?: unknown } | null)?.workItems;
-      const ids = new Set<number>();
-      if (Array.isArray(relations)) {
-        // A tree query's relations carry both endpoints of every parent/child edge; a work item can
-        // appear as a target in one relation and a source in another, so both sides must be collected.
-        for (const relation of relations) {
-          if (typeof relation !== "object" || relation === null) {
-            continue;
-          }
-          const { source, target } = relation as { source?: unknown; target?: unknown };
-          const targetId = (target as { id?: unknown } | null)?.id;
-          if (typeof targetId === "number") {
-            ids.add(targetId);
-          }
-          // source === null marks the relation's target as a root, so there is no source id to add.
-          if (source !== null) {
-            const sourceId = (source as { id?: unknown } | null)?.id;
-            if (typeof sourceId === "number") {
-              ids.add(sourceId);
-            }
-          }
-        }
-      } else if (Array.isArray(workItems)) {
-        for (const item of workItems) {
-          if (typeof item === "object" && item !== null) {
-            const id = (item as { id?: unknown }).id;
-            if (typeof id === "number") {
-              ids.add(id);
-            }
-          }
-        }
-      }
-
-      const idList = Array.from(ids).slice(0, MAX_IDS);
-      if (idList.length === 0) {
-        return { wiql, items: [] };
-      }
+      const idList = collectIds(wiql);
+      if (idList.length === 0) return { wiql, items: [] };
 
       const items: unknown[] = [];
       const readBatchPage = (start: number, pagesLeft: number): Promise<void> => {
@@ -91,15 +81,9 @@ export function fetchAdoTreeInPage(
           .catch(() => null)
           .then((body) => {
             const page = body as { value?: unknown } | null;
-            if (page !== null && Array.isArray(page.value)) {
-              for (const workItem of page.value) {
-                items.push(workItem);
-              }
-            }
+            if (page !== null && Array.isArray(page.value)) items.push(...page.value);
             const nextStart = start + PAGE_SIZE;
-            if (nextStart >= idList.length || pagesLeft <= 1) {
-              return undefined;
-            }
+            if (nextStart >= idList.length || pagesLeft <= 1) return undefined;
             return readBatchPage(nextStart, pagesLeft - 1);
           });
       };

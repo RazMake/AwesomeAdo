@@ -546,3 +546,27 @@ bindings)`→indented JSON {awesomeAdoConfigVersion,settings,enhancedQueries}; `
   QueryBindingsController.revealFixedQuery re-reads the store (picks up a binding added since load)
   then re-runs initFixedQuery. Test tip: seed a post-load binding via store.read.mockResolvedValueOnce
   (NOT store.bind(...) directly — vi.fn ReturnType isn't callable under TS, TS2348).
+
+## Feature Crew reconciles MUST be serialized (lost-update / reverted-tag bug)
+
+- SYMPTOM: adding a new assignee tag on the Project Tracking board set the pill for ~1s then reverted,
+  and the tag was not persisted anywhere (no error logged).
+- ROOT CAUSE: `createFeatureCrewSync.reconcile` (content/views/project-tracking/ProjectTrackingView.ts)
+  was fire-and-forget. Every reconcile is a READ-MODIFY-WRITE against the ONE shared Feature Crew work
+  item (`background/index.ts reconcileFeatureCrew` → MAIN-world find + apply). The load-time `seed()`
+  reconcile and a `setTag()` reconcile ran CONCURRENTLY. The seed reconcile (which knows nothing about
+  the just-picked tag) resolves last, so its `onReconciled(members-without-tag)` → `applyCrewMembers`
+  → `applyFeatureCrewTags` repaints the pill tag-less (the "revert"). On a first-ever load the two
+  concurrent creates also clobber each other so the tag lands nowhere. The tree renders "??" pills
+  SYNCHRONOUSLY before the seed resolves, so the user can retag inside the race window.
+- FIX: chain every reconcile onto a single `reconcileChain: Promise<void>` in `createFeatureCrewSync`
+  so they run strictly one-at-a-time (snapshot `assignees` at execution time; swallow errors to keep
+  the chain alive — the writer logs its own failures). seed then always completes (creating the item)
+  before setTag reads it, so the tag write is last and is never lost/reverted. General rule: any
+  read-modify-write against a shared ADO item from the view MUST be serialized, never fired in parallel.
+- TEST TIMING: serialization adds ONE microtask hop before `services.featureCrew.reconcile` is called,
+  so tests that assert reconcile-request counts right after `render()` must drain with
+  `await new Promise((r) => setTimeout(r, 0))` (full macrotask flush), NOT one or two
+  `await Promise.resolve()`. The regression test drives a DEFERRED fake reconcile (pending[] of
+  settle() closures that apply the request like the real background) and asserts the setTag reconcile
+  does NOT fire until the seed is settled.

@@ -6,6 +6,64 @@ import { pathToFileURL } from "node:url";
 import { createVersion } from "./version.mjs";
 
 /**
+ * Advance fenced-code-block tracking for one line. Content inside fences is
+ * ignored so a sample like "## X.Y" in a code block never counts as a heading.
+ * @param {{ inFence: boolean, fenceChar: string, fenceMinLen: number }} fence
+ * @param {string} trimmed
+ * @returns {boolean} true when the line was consumed by fence handling
+ */
+function trackFence(fence, trimmed) {
+  if (fence.inFence) {
+    const closingPattern = new RegExp(`^\\${fence.fenceChar}{${fence.fenceMinLen},}$`);
+    if (closingPattern.test(trimmed)) {
+      fence.inFence = false;
+    }
+    return true;
+  }
+  const fenceMatch = /^(`{3,}|~{3,})/.exec(trimmed);
+  if (fenceMatch) {
+    const fenceStr = fenceMatch[1] ?? "";
+    fence.fenceChar = fenceStr.charAt(0) || "`";
+    fence.fenceMinLen = fenceStr.length;
+    fence.inFence = true;
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Apply an H2 heading line to the section-tracking state, enforcing the
+ * "previous target needed a bullet" and "no duplicate target" rules.
+ * @param {{ inTarget: boolean, targetHasBullet: boolean, matches: number }} state
+ * @param {string} line
+ * @param {string} base
+ * @returns {boolean} true when the line was an H2 heading
+ */
+function applyHeading(state, line, base) {
+  const h2Match = /^## ([^#].*)$/.exec(line);
+  if (!h2Match) {
+    return false;
+  }
+  if (state.inTarget && !state.targetHasBullet) {
+    throw new Error(
+      `ChangeLog.md section "## ${base}" has no release bullet. Add at least one "- " bullet before the next heading.`,
+    );
+  }
+  const heading = h2Match[1]?.trim() ?? "";
+  state.inTarget = `## ${heading}` === `## ${base}`;
+  if (state.inTarget) {
+    state.matches += 1;
+    if (state.matches > 1) {
+      throw new Error(
+        `ChangeLog.md contains duplicate "## ${base}" sections. Remove the duplicate.`,
+      );
+    }
+    state.targetHasBullet = false;
+  }
+  return true;
+}
+
+/**
  * Parse ChangeLog.md to determine if there is a release section for the given base version.
  * Implements the exact state machine from the spec.
  * @param {string} changelogText
@@ -13,75 +71,29 @@ import { createVersion } from "./version.mjs";
  * @returns {void} throws if no valid release section found
  */
 function requireChangelogSection(changelogText, base) {
-  const lines = changelogText.split(/\r?\n/);
-  let inFence = false;
-  let fenceChar = "";
-  let fenceMinLen = 0;
-  let matches = 0;
-  let inTarget = false;
-  let targetHasBullet = false;
+  const fence = { inFence: false, fenceChar: "", fenceMinLen: 0 };
+  const state = { inTarget: false, targetHasBullet: false, matches: 0 };
 
-  for (const line of lines) {
-    const trimmed = line.trim();
-
-    // Fence detection
-    if (!inFence) {
-      const fenceMatch = /^(`{3,}|~{3,})/.exec(trimmed);
-      if (fenceMatch) {
-        // Opening fence: record char and minimum length
-        const fenceStr = fenceMatch[1] ?? "";
-        fenceChar = fenceStr.charAt(0) || "`";
-        fenceMinLen = fenceStr.length;
-        inFence = true;
-        continue;
-      }
-    } else {
-      // Inside fence: check for closing delimiter (same char, same or longer length)
-      const closingPattern = new RegExp(`^\\${fenceChar}{${fenceMinLen},}$`);
-      if (closingPattern.test(trimmed)) {
-        inFence = false;
-      }
+  for (const line of changelogText.split(/\r?\n/)) {
+    if (trackFence(fence, line.trim())) {
       continue;
     }
-
-    // Outside fences: check for H2
-    const h2Match = /^## ([^#].*)$/.exec(line);
-    if (h2Match) {
-      // Fail the previous target if it had no bullet
-      if (inTarget && !targetHasBullet) {
-        throw new Error(
-          `ChangeLog.md section "## ${base}" has no release bullet. Add at least one "- " bullet before the next heading.`,
-        );
-      }
-      // Set inTarget based on exact match with target heading
-      const heading = h2Match[1]?.trim() ?? "";
-      inTarget = `## ${heading}` === `## ${base}`;
-      if (inTarget) {
-        matches += 1;
-        if (matches > 1) {
-          throw new Error(
-            `ChangeLog.md contains duplicate "## ${base}" sections. Remove the duplicate.`,
-          );
-        }
-        targetHasBullet = false;
-      }
+    if (applyHeading(state, line, base)) {
       continue;
     }
-
-    // While in target, check for bullet
-    if (inTarget && /^- \S/.test(line)) {
-      targetHasBullet = true;
+    if (state.inTarget && /^- \S/.test(line)) {
+      state.targetHasBullet = true;
     }
   }
 
   // End of file: fail open target without bullet
-  if (inTarget && !targetHasBullet) {
+  if (state.inTarget && !state.targetHasBullet) {
     throw new Error(
       `ChangeLog.md section "## ${base}" has no release bullet. Add at least one "- " bullet.`,
     );
   }
 
-  if (matches === 0) {
+  if (state.matches === 0) {
     throw new Error(
       `ChangeLog.md is missing a "## ${base}" section. Add one with at least one "- " bullet before releasing.`,
     );
@@ -108,6 +120,30 @@ function checkTagExists(base) {
 }
 
 /**
+ * Require a lowercase 40-hex RELEASE_SHA when running under GitHub Actions.
+ * @param {unknown} releaseSha
+ */
+function requireGithubActionsSha(releaseSha) {
+  if (typeof releaseSha !== "string" || !/^[0-9a-f]{40}$/.test(releaseSha)) {
+    throw new Error("RELEASE_SHA must be a lowercase 40-hex string in GitHub Actions");
+  }
+}
+
+/**
+ * Resolve whether the base tag is a new official release, surfacing git errors.
+ * @param {(base: string) => { exists: boolean } | { error: string }} tagExists
+ * @param {string} base
+ * @returns {boolean}
+ */
+function resolveNewOfficial(tagExists, base) {
+  const tagResult = tagExists(base);
+  if ("error" in tagResult) {
+    throw new Error(tagResult.error);
+  }
+  return !tagResult.exists;
+}
+
+/**
  * Compute the release version from the current environment.
  * @param {{
  *   packageMetadata?: unknown,
@@ -131,21 +167,13 @@ export function computeVersion(options = {}) {
 
   // In GitHub Actions, RELEASE_SHA must be lowercase 40-hex
   if (isGithubActions) {
-    if (typeof releaseSha !== "string" || !/^[0-9a-f]{40}$/.test(releaseSha)) {
-      throw new Error("RELEASE_SHA must be a lowercase 40-hex string in GitHub Actions");
-    }
+    requireGithubActionsSha(releaseSha);
   }
 
   // Check changelog before setting should_release_official
   requireChangelogSection(changelogText, base);
 
-  // Check tag presence
-  const tagResult = tagExists(base);
-  if ("error" in tagResult) {
-    throw new Error(tagResult.error);
-  }
-
-  const is_new_official = !tagResult.exists;
+  const is_new_official = resolveNewOfficial(tagExists, base);
   const should_release_official = true;
 
   return { base, build, full, is_new_official, should_release_official };

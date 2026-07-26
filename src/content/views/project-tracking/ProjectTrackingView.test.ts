@@ -77,7 +77,7 @@ function createFakeServices(overrides?: Partial<EnhancedViewServices>): Enhanced
         logCalls.push({ level: "error", message: String(err) });
       },
     },
-    writeState: async () => ({ ok: true, rev: 1 }),
+    writeField: async () => ({ ok: true, rev: 1 }),
     ...overrides,
   };
 }
@@ -175,7 +175,7 @@ function createFixtureTree(): TrackedWorkItem {
   return epic;
 }
 
-describe("ProjectTrackingView", () => {
+describe("ProjectTrackingView — services & load errors", () => {
   it("should show unavailable message when services are undefined", async () => {
     const doc = document;
 
@@ -244,7 +244,9 @@ describe("ProjectTrackingView", () => {
 
     expect(root.textContent).toContain("requires a tree");
   });
+});
 
+describe("ProjectTrackingView — query shape errors", () => {
   it("should show error when query returns no items", async () => {
     const doc = document;
 
@@ -324,7 +326,9 @@ describe("ProjectTrackingView", () => {
 
     expect(root.textContent).toContain("must be a Epic");
   });
+});
 
+describe("ProjectTrackingView — header & tech lead", () => {
   it("should render header with root title and type color", async () => {
     const doc = document;
 
@@ -413,7 +417,9 @@ describe("ProjectTrackingView", () => {
     const headerEta = root.querySelector(".awesomeado-tracking__header .awesomeado-eta");
     expect(headerEta).toBeTruthy();
   });
+});
 
+describe("ProjectTrackingView — tree rows", () => {
   it("should render tree rows for each item", async () => {
     const doc = document;
 
@@ -477,7 +483,9 @@ describe("ProjectTrackingView", () => {
     const childrenContainers = root.querySelectorAll(".awesomeado-tracking__children");
     expect(childrenContainers.length).toBeGreaterThan(0);
   });
+});
 
+describe("ProjectTrackingView — expand & collapse", () => {
   it("should toggle twisty to collapse and expand children", async () => {
     const doc = document;
 
@@ -560,7 +568,9 @@ describe("ProjectTrackingView", () => {
       expect(tw.textContent).toBe("▼\uFE0E");
     });
   });
+});
 
+describe("ProjectTrackingView — collapse all & description", () => {
   it("should collapse all nodes when collapse-all clicked", async () => {
     const doc = document;
 
@@ -639,7 +649,9 @@ describe("ProjectTrackingView", () => {
     expect(descButton.getAttribute("aria-expanded")).toBe("false");
     expect(descPanel.style.display).toBe("none");
   });
+});
 
+describe("ProjectTrackingView — meta line", () => {
   it("should render meta line with Created and Last Modified", async () => {
     const doc = document;
 
@@ -707,7 +719,9 @@ describe("ProjectTrackingView", () => {
     const dateLabels = meta?.querySelectorAll(".awesomeado-date");
     expect(dateLabels?.length).toBe(2);
   });
+});
 
+describe("ProjectTrackingView — item title & ETA", () => {
   it("should render item title with type color", async () => {
     const doc = document;
 
@@ -779,7 +793,9 @@ describe("ProjectTrackingView", () => {
     // Epic and one Feature have eta set
     expect(etaBadges.length).toBeGreaterThan(0);
   });
+});
 
+describe("ProjectTrackingView — sprint filter", () => {
   it("should default sprint filter to ON when sprints exist", async () => {
     const doc = document;
 
@@ -876,7 +892,9 @@ describe("ProjectTrackingView", () => {
     const pills = root.querySelectorAll(".awesomeado-tracking__sprint-pill");
     expect(pills.length).toBe(0);
   });
+});
 
+describe("ProjectTrackingView — status badge", () => {
   it("should render status badge with editable state per row", async () => {
     const doc = document;
 
@@ -911,19 +929,20 @@ describe("ProjectTrackingView", () => {
     expect(firstChip?.style.background.replace(/\s/g, "")).toContain("rgba(0,120,212,0.2)");
   });
 
-  it("should call writeState when status badge is changed", async () => {
+  it("should call writeField when status badge is changed", async () => {
     const doc = document;
 
     const epic = createFixtureTree();
-    const writeStateCalls: Array<{ id: number; rev: number; state: string }> = [];
+    const writeFieldCalls: Array<{ id: number; rev: number; field: string; value: string | null }> =
+      [];
     const services = createFakeServices({
       loadTree: async () => ({
         isTreeQuery: true,
         roots: [epic],
         error: null,
       }),
-      writeState: async (request) => {
-        writeStateCalls.push(request);
+      writeField: async (request) => {
+        writeFieldCalls.push(request);
         return { ok: true, rev: request.rev + 1 };
       },
     });
@@ -949,15 +968,18 @@ describe("ProjectTrackingView", () => {
     firstRow.click();
     await Promise.resolve();
 
-    expect(writeStateCalls.length).toBeGreaterThan(0);
-    const firstCall = writeStateCalls[0];
+    expect(writeFieldCalls.length).toBeGreaterThan(0);
+    const firstCall = writeFieldCalls[0];
     // The first badge is the Feature (id 2, rev 2, ADO State "Active"); its only alternative Status
     // is "Done", whose primary ADO State is "Closed".
     expect(firstCall?.id).toBe(2);
     expect(firstCall?.rev).toBe(2);
-    expect(firstCall?.state).toBe("Closed");
+    expect(firstCall?.field).toBe("System.State");
+    expect(firstCall?.value).toBe("Closed");
   });
+});
 
+describe("ProjectTrackingView — status writes", () => {
   it("displays the mapped Status label, never the raw ADO State", async () => {
     const doc = document;
 
@@ -989,15 +1011,16 @@ describe("ProjectTrackingView", () => {
     const doc = document;
 
     const epic = createFixtureTree();
-    const writeStateCalls: Array<{ id: number; rev: number; state: string }> = [];
+    const writeFieldCalls: Array<{ id: number; rev: number; field: string; value: string | null }> =
+      [];
     const services = createFakeServices({
       loadTree: async () => ({
         isTreeQuery: true,
         roots: [epic],
         error: null,
       }),
-      writeState: async (request) => {
-        writeStateCalls.push(request);
+      writeField: async (request) => {
+        writeFieldCalls.push(request);
         return { ok: true, rev: request.rev + 1 };
       },
     });
@@ -1023,13 +1046,16 @@ describe("ProjectTrackingView", () => {
     }
 
     // The queued write carries the primary ADO State, not the Status label.
-    expect(writeStateCalls[0]?.state).toBe("Closed");
+    expect(writeFieldCalls[0]?.field).toBe("System.State");
+    expect(writeFieldCalls[0]?.value).toBe("Closed");
     // After the write commits, the badge shows the new Status label ("Done")...
     expect(firstBadge.childNodes[0]?.textContent).toBe("Done");
     // ...and re-tints to that column's ordinal ("Done" is position 3 → green), so color tracks label.
     expect(firstBadge.style.background.replace(/\s/g, "")).toContain("rgba(16,124,16,0.2)");
   });
+});
 
+describe("ProjectTrackingView — write-queue indicator", () => {
   it("shows the write-queue status indicator while a save is in flight and hides it once it settles", async () => {
     const doc = document;
 
@@ -1046,7 +1072,7 @@ describe("ProjectTrackingView", () => {
         roots: [epic],
         error: null,
       }),
-      writeState: async (request) => {
+      writeField: async (request) => {
         await writeGate;
         return { ok: true, rev: request.rev + 1 };
       },
@@ -1082,7 +1108,9 @@ describe("ProjectTrackingView", () => {
     }
     expect(indicator.style.display).toBe("none");
   });
+});
 
+describe("ProjectTrackingView — sprint pills", () => {
   it("should toggle filter OFF and show sprint pills", async () => {
     const doc = document;
 
@@ -1165,7 +1193,9 @@ describe("ProjectTrackingView", () => {
     const pillTexts = Array.from(pills, (pill) => pill.textContent);
     expect(pillTexts).not.toContain("Project");
   });
+});
 
+describe("ProjectTrackingView — no-sprint toggle & theming", () => {
   it("should force filter OFF and disable toggle when no sprints", async () => {
     const doc = document;
 
@@ -1237,7 +1267,9 @@ describe("ProjectTrackingView", () => {
     const expandStyle = expandAll.getAttribute("style") ?? "";
     expect(expandStyle).toContain("var(");
   });
+});
 
+describe("ProjectTrackingView — themed layout", () => {
   it("should render header as themed panel with subtle background", async () => {
     const doc = document;
 
@@ -1303,7 +1335,9 @@ describe("ProjectTrackingView", () => {
     // Self-contained grey guide color so it stays visible under "Follow ADO".
     expect(style).toMatch(/rgba\(128,\s*128,\s*128,\s*0\.45\)/);
   });
+});
 
+describe("ProjectTrackingView — sanitization", () => {
   it("should not create img element when title contains <img>", async () => {
     const doc = document;
 
@@ -1377,7 +1411,9 @@ describe("ProjectTrackingView", () => {
       expect(img.closest(".awesomeado-tracking__desc-text")).toBeFalsy();
     });
   });
+});
 
+describe("ProjectTrackingView — validation logging", () => {
   it("should log validation conclusion with signals", async () => {
     const doc = document;
 
@@ -1461,7 +1497,9 @@ describe("ProjectTrackingView", () => {
     );
     expect(hasUnassigned).toBe(true);
   });
+});
 
+describe("ProjectTrackingView — missing actor", () => {
   it("should omit the actor tooltip when createdBy is missing", async () => {
     const doc = document;
 
@@ -1497,7 +1535,9 @@ describe("ProjectTrackingView", () => {
     const createdLabel = meta?.querySelector<HTMLElement>(".awesomeado-lifecycle__event");
     expect(createdLabel?.title).toBe("");
   });
+});
 
+describe("ProjectTrackingView — feature crew reconcile", () => {
   it("should reconcile the Feature Crew with everyone assigned on load", async () => {
     const doc = document;
 
@@ -1525,8 +1565,7 @@ describe("ProjectTrackingView", () => {
     };
 
     projectTrackingView.render(context);
-    await Promise.resolve();
-    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(requests).toHaveLength(1);
     // Stored under the LAST configured type (Story) and linked to the root epic id.
@@ -1538,7 +1577,9 @@ describe("ProjectTrackingView", () => {
       { alias: "carol.white", fullName: "Carol White" },
     ]);
   });
+});
 
+describe("ProjectTrackingView — feature crew re-reconcile", () => {
   it("should re-reconcile with a new person after an inline assignee change", async () => {
     const doc = document;
 
@@ -1572,8 +1613,7 @@ describe("ProjectTrackingView", () => {
     };
 
     const root = projectTrackingView.render(context);
-    await Promise.resolve();
-    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(requests).toHaveLength(1);
 
@@ -1588,12 +1628,14 @@ describe("ProjectTrackingView", () => {
 
     const option = root.querySelector(".awesomeado-assigned__result button") as HTMLButtonElement;
     option.click();
-    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(requests).toHaveLength(2);
     expect(requests[1]?.assignees.map((a) => a.alias)).toContain("dave");
   });
+});
 
+describe("ProjectTrackingView — feature crew skip", () => {
   it("should not reconcile the Feature Crew when no work item types are configured", async () => {
     const doc = document;
 
@@ -1627,7 +1669,9 @@ describe("ProjectTrackingView", () => {
 
     expect(requests).toHaveLength(0);
   });
+});
 
+describe("ProjectTrackingView — tag filter pills", () => {
   it("renders the tag filter panel with a pill per roster tag once the crew resolves", async () => {
     const doc = document;
 
@@ -1690,7 +1734,237 @@ describe("ProjectTrackingView", () => {
     const treePills = [...root.querySelectorAll(".awesomeado-tracking__tree .awesomeado-tag-pill")];
     expect(treePills.some((p) => p.textContent === "Platform")).toBe(true);
   });
+});
 
+describe("ProjectTrackingView — tag retag", () => {
+  it("re-reconciles with a tagAssignment when a row's tag pill is retagged", async () => {
+    const doc = document;
+
+    const epic = createFixtureTree();
+    const requests: FeatureCrewReconcileRequest[] = [];
+    const services = createFakeServices({
+      loadTree: async () => ({ isTreeQuery: true, roots: [epic], error: null }),
+      featureCrew: {
+        reconcile: async (request) => {
+          requests.push(request);
+          return {
+            ok: true,
+            changed: false,
+            members: [
+              { alias: "alice.smith", fullName: "Alice Smith", tag: "Core" },
+              { alias: "bob.jones", fullName: "Bob Jones", tag: "Platform" },
+            ],
+          };
+        },
+      },
+    });
+
+    const context: EnhancedViewContext = { doc, queryId: "q1", properties: {}, services };
+    const root = projectTrackingView.render(context);
+    await Promise.resolve();
+    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await Promise.resolve();
+
+    const reconcilesBefore = requests.length;
+
+    // Open Bob's editable tag pill and move him onto the "Core" tag already worn by Alice.
+    const bobPill = [
+      ...root.querySelectorAll<HTMLElement>(".awesomeado-tracking__tree .awesomeado-tag-pill"),
+    ].find((p) => p.textContent === "Platform");
+    bobPill?.click();
+
+    const coreChoice = [
+      ...root.querySelectorAll<HTMLButtonElement>(
+        ".awesomeado-assigned__tag-choices .awesomeado-tag-pill",
+      ),
+    ].find((c) => c.textContent === "Core");
+    coreChoice?.click();
+    await Promise.resolve();
+
+    expect(requests.length).toBe(reconcilesBefore + 1);
+    expect(requests[requests.length - 1]?.tagAssignments).toEqual([
+      { alias: "bob.jones", tag: "Core" },
+    ]);
+  });
+});
+
+describe("ProjectTrackingView — tag reconcile serialization", () => {
+  it("serializes reconciles so a new tag added during the load reconcile is not lost", async () => {
+    const doc = document;
+
+    const epic = createFixtureTree();
+
+    // A background stand-in: one shared roster whose writes only settle when the test releases them,
+    // so the ordering of the load-time seed reconcile and the setTag reconcile is fully controlled.
+    // Each settle applies the request (add assignees, then stamp any tag) exactly as the real
+    // background does, so a lost/reverted tag would surface here.
+    const roster = new Map<string, { fullName: string; tag: string }>();
+    const pending: Array<{
+      request: FeatureCrewReconcileRequest;
+      settle: () => void;
+    }> = [];
+    const services = createFakeServices({
+      loadTree: async () => ({ isTreeQuery: true, roots: [epic], error: null }),
+      featureCrew: {
+        reconcile: (request) =>
+          new Promise((resolve) => {
+            pending.push({
+              request,
+              settle: () => {
+                for (const a of request.assignees) {
+                  if (!roster.has(a.alias)) roster.set(a.alias, { fullName: a.fullName, tag: "" });
+                }
+                for (const t of request.tagAssignments ?? []) {
+                  const member = roster.get(t.alias);
+                  if (member) member.tag = t.tag;
+                }
+                const members = [...roster.entries()].map(([alias, v]) => ({
+                  alias,
+                  fullName: v.fullName,
+                  tag: v.tag,
+                }));
+                resolve({ ok: true, changed: true, members });
+              },
+            });
+          }),
+      },
+    });
+
+    const context: EnhancedViewContext = { doc, queryId: "q1", properties: {}, services };
+    const root = projectTrackingView.render(context);
+    await Promise.resolve();
+    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await Promise.resolve();
+
+    // The seed reconcile is in flight (not yet settled), but the tree already shows each assignee's
+    // neutral "??" pill. Add a brand-new tag to Bob's row while the seed is still outstanding.
+    expect(pending.length).toBe(1);
+    const bobPill = [
+      ...root.querySelectorAll<HTMLElement>(".awesomeado-tracking__tree .awesomeado-tag-pill"),
+    ].find((p) => p.textContent === "??");
+    bobPill?.click();
+    const input = root.querySelector<HTMLInputElement>(".awesomeado-assigned__tag-input")!;
+    const addButton = root.querySelector<HTMLButtonElement>(
+      ".awesomeado-assigned__tag-add-button",
+    )!;
+    input.value = "Data";
+    input.dispatchEvent(new Event("input"));
+    addButton.click();
+    await Promise.resolve();
+
+    // Serialization proof: the setTag reconcile must NOT have started yet — it is queued behind the
+    // still-outstanding seed. Were they allowed to race, this second call would already be pending.
+    expect(pending.length).toBe(1);
+
+    // Release the seed; the queued setTag reconcile then runs against the now-created roster.
+    pending[0]!.settle();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(pending.length).toBe(2);
+    expect(pending[1]?.request.tagAssignments).toEqual([{ alias: "bob.jones", tag: "Data" }]);
+
+    pending[1]!.settle();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await Promise.resolve();
+
+    // Bob keeps his new "Data" tag: it was persisted to the roster and painted, never reverted.
+    const bobAfter = [
+      ...root.querySelectorAll<HTMLElement>(".awesomeado-tracking__tree .awesomeado-tag-pill"),
+    ].some((p) => p.textContent === "Data");
+    expect(bobAfter).toBe(true);
+    expect(roster.get("bob.jones")?.tag).toBe("Data");
+  });
+});
+
+describe("ProjectTrackingView — tag saving indicator", () => {
+  it("shows the saving indicator for a user tag reconcile but not for the load-time seed", async () => {
+    const doc = document;
+
+    const epic = createFixtureTree();
+
+    // Gate every reconcile so its in-flight window is fully controlled: the seed and the setTag
+    // reconcile only settle when the test releases them, letting us observe the indicator per call.
+    const roster = new Map<string, { fullName: string; tag: string }>();
+    const pending: Array<{
+      request: FeatureCrewReconcileRequest;
+      settle: () => void;
+    }> = [];
+    const services = createFakeServices({
+      loadTree: async () => ({ isTreeQuery: true, roots: [epic], error: null }),
+      featureCrew: {
+        reconcile: (request) =>
+          new Promise((resolve) => {
+            pending.push({
+              request,
+              settle: () => {
+                for (const a of request.assignees) {
+                  if (!roster.has(a.alias)) roster.set(a.alias, { fullName: a.fullName, tag: "" });
+                }
+                for (const t of request.tagAssignments ?? []) {
+                  const member = roster.get(t.alias);
+                  if (member) member.tag = t.tag;
+                }
+                const members = [...roster.entries()].map(([alias, v]) => ({
+                  alias,
+                  fullName: v.fullName,
+                  tag: v.tag,
+                }));
+                resolve({ ok: true, changed: true, members });
+              },
+            });
+          }),
+      },
+    });
+
+    const context: EnhancedViewContext = { doc, queryId: "q1", properties: {}, services };
+    const root = projectTrackingView.render(context);
+    await Promise.resolve();
+    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await Promise.resolve();
+
+    const indicator = root.querySelector(".awesomeado-write-queue-status") as HTMLElement;
+
+    // The load-time seed reconcile is in flight, but it is background housekeeping — the indicator
+    // must stay hidden. Only a save the user is waiting on should reveal "Saving…".
+    expect(pending.length).toBe(1);
+    expect(indicator.style.display).toBe("none");
+
+    // Let the seed settle so the roster exists and the tree paints each assignee's neutral pill.
+    pending[0]!.settle();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await Promise.resolve();
+    expect(indicator.style.display).toBe("none");
+
+    // Add a brand-new tag to Bob's row: a user-triggered reconcile that the indicator must reflect
+    // the moment it is queued.
+    const bobPill = [
+      ...root.querySelectorAll<HTMLElement>(".awesomeado-tracking__tree .awesomeado-tag-pill"),
+    ].find((p) => p.textContent === "??");
+    bobPill?.click();
+    const input = root.querySelector<HTMLInputElement>(".awesomeado-assigned__tag-input")!;
+    const addButton = root.querySelector<HTMLButtonElement>(
+      ".awesomeado-assigned__tag-add-button",
+    )!;
+    input.value = "Data";
+    input.dispatchEvent(new Event("input"));
+    addButton.click();
+    await Promise.resolve();
+
+    expect(pending.length).toBe(2);
+    expect(indicator.style.display).not.toBe("none");
+    expect(indicator.textContent).toContain("Saving 1 change");
+
+    // Settle the tag reconcile; the indicator returns to hidden once the user's save lands.
+    pending[1]!.settle();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await Promise.resolve();
+    expect(indicator.style.display).toBe("none");
+  });
+});
+
+describe("ProjectTrackingView — tag filtering", () => {
   it("filters the tree to people wearing a selected tag when its pill is clicked", async () => {
     const doc = document;
 
@@ -1783,8 +2057,10 @@ describe("ProjectTrackingView", () => {
     expect(rowText.some((t) => t?.includes("Login UI"))).toBe(true);
     expect(rowText.some((t) => t?.includes("Data Migration"))).toBe(false);
   });
+});
 
-  it("updates the TechLead pill with the epic assignee's tag once the crew resolves", async () => {
+describe("ProjectTrackingView — techlead tag", () => {
+  it("does not show a Feature Crew tag on the TechLead, even after the crew resolves", async () => {
     const doc = document;
 
     const epic = createFixtureTree();
@@ -1807,6 +2083,6 @@ describe("ProjectTrackingView", () => {
     await Promise.resolve();
 
     const techLeadPill = root.querySelector(".awesomeado-tracking__techlead .awesomeado-tag-pill");
-    expect(techLeadPill?.textContent).toBe("Core");
+    expect(techLeadPill).toBeNull();
   });
 });

@@ -77,17 +77,19 @@ function toggleSource(elements: DiagnosticsElements, source: string, checked: bo
   checkbox.dispatchEvent(new Event("change"));
 }
 
-describe("DiagnosticsController", () => {
-  let store: FakeLogStore;
-  let elements: DiagnosticsElements;
-  let controller: DiagnosticsController;
+// Shared across the sibling describes below so each split group reuses one setup with zero
+// duplication (jscpd threshold is 0).
+let store: FakeLogStore;
+let elements: DiagnosticsElements;
+let controller: DiagnosticsController;
 
-  beforeEach(() => {
-    store = new FakeLogStore();
-    elements = makeElements();
-    controller = new DiagnosticsController(store, elements);
-  });
+beforeEach(() => {
+  store = new FakeLogStore();
+  elements = makeElements();
+  controller = new DiagnosticsController(store, elements);
+});
 
+describe("DiagnosticsController — rendering & filtering", () => {
   it("renders entries oldest → newest regardless of arrival order", async () => {
     await controller.init();
 
@@ -126,7 +128,9 @@ describe("DiagnosticsController", () => {
     const detail = elements.list.querySelector(".log-row__detail");
     expect(detail?.textContent).toBe("Error: boom\n    at here");
   });
+});
 
+describe("DiagnosticsController — actions & lifecycle", () => {
   it("clears the log when the clear button is clicked", async () => {
     await controller.init();
 
@@ -196,87 +200,87 @@ describe("DiagnosticsController", () => {
     expect(messagesShown(elements)).toEqual(["info line", "error line"]);
     expect(store.unsubscribe).toHaveBeenCalledOnce();
   });
+});
 
-  describe("source filter", () => {
-    it("offers one sorted option per distinct source", async () => {
-      await controller.init();
+describe("DiagnosticsController — source filter", () => {
+  it("offers one sorted option per distinct source", async () => {
+    await controller.init();
 
-      store.emit([
-        info(10, "a", "QueryPageController"),
-        info(20, "b", "background"),
-        info(30, "c", "QueryPageController"),
-      ]);
+    store.emit([
+      info(10, "a", "QueryPageController"),
+      info(20, "b", "background"),
+      info(30, "c", "QueryPageController"),
+    ]);
 
-      expect(sourceOptions(elements)).toEqual(["QueryPageController", "background"].sort());
-    });
+    expect(sourceOptions(elements)).toEqual(["QueryPageController", "background"].sort());
+  });
 
-    it("buckets an entry with no source under the unlabeled option", async () => {
-      await controller.init();
+  it("buckets an entry with no source under the unlabeled option", async () => {
+    await controller.init();
 
-      store.emit([info(10, "a", "content"), info(20, "legacy")]);
+    store.emit([info(10, "a", "content"), info(20, "legacy")]);
 
-      expect(sourceOptions(elements)).toEqual(["(unlabeled)", "content"]);
-    });
+    expect(sourceOptions(elements)).toEqual(["(unlabeled)", "content"]);
+  });
 
-    it("hides the lines of an unchecked source and shows them again when re-checked", async () => {
-      await controller.init();
-      store.emit([info(10, "from content", "content"), info(20, "from background", "background")]);
+  it("hides the lines of an unchecked source and shows them again when re-checked", async () => {
+    await controller.init();
+    store.emit([info(10, "from content", "content"), info(20, "from background", "background")]);
 
-      toggleSource(elements, "background", false);
-      expect(messagesShown(elements)).toEqual(["from content"]);
+    toggleSource(elements, "background", false);
+    expect(messagesShown(elements)).toEqual(["from content"]);
 
-      // Re-checking restores the hidden source's lines.
-      toggleSource(elements, "background", true);
-      expect(messagesShown(elements)).toEqual(["from content", "from background"]);
-    });
+    // Re-checking restores the hidden source's lines.
+    toggleSource(elements, "background", true);
+    expect(messagesShown(elements)).toEqual(["from content", "from background"]);
+  });
 
-    it("keeps a source hidden as new lines for it arrive", async () => {
-      await controller.init();
-      store.emit([info(10, "first", "background"), info(20, "keep", "content")]);
+  it("keeps a source hidden as new lines for it arrive", async () => {
+    await controller.init();
+    store.emit([info(10, "first", "background"), info(20, "keep", "content")]);
 
-      toggleSource(elements, "background", false);
-      expect(messagesShown(elements)).toEqual(["keep"]);
+    toggleSource(elements, "background", false);
+    expect(messagesShown(elements)).toEqual(["keep"]);
 
-      // A later batch that reintroduces the hidden source must not resurface its lines: the user's
-      // choice is keyed by source, so it survives re-renders.
-      store.emit([
-        info(10, "first", "background"),
-        info(20, "keep", "content"),
-        info(30, "second", "background"),
-      ]);
+    // A later batch that reintroduces the hidden source must not resurface its lines: the user's
+    // choice is keyed by source, so it survives re-renders.
+    store.emit([
+      info(10, "first", "background"),
+      info(20, "keep", "content"),
+      info(30, "second", "background"),
+    ]);
 
-      expect(messagesShown(elements)).toEqual(["keep"]);
-    });
+    expect(messagesShown(elements)).toEqual(["keep"]);
+  });
 
-    it("combines the source filter with the errors-only filter", async () => {
-      await controller.init();
-      store.emit([
-        info(10, "content info", "content"),
-        { timestamp: 20, level: "error", message: "content error", source: "content" },
-        {
-          timestamp: 30,
-          level: "error",
-          message: "settings error",
-          source: "BrowserSyncSettingsStore",
-        },
-      ]);
+  it("combines the source filter with the errors-only filter", async () => {
+    await controller.init();
+    store.emit([
+      info(10, "content info", "content"),
+      { timestamp: 20, level: "error", message: "content error", source: "content" },
+      {
+        timestamp: 30,
+        level: "error",
+        message: "settings error",
+        source: "BrowserSyncSettingsStore",
+      },
+    ]);
 
-      elements.errorsOnlyToggle.checked = true;
-      elements.errorsOnlyToggle.dispatchEvent(new Event("change"));
-      toggleSource(elements, "BrowserSyncSettingsStore", false);
+    elements.errorsOnlyToggle.checked = true;
+    elements.errorsOnlyToggle.dispatchEvent(new Event("change"));
+    toggleSource(elements, "BrowserSyncSettingsStore", false);
 
-      // Errors-only removes the info line; the source filter removes the settings error; only the
-      // content error survives both.
-      expect(messagesShown(elements)).toEqual(["content error"]);
-    });
+    // Errors-only removes the info line; the source filter removes the settings error; only the
+    // content error survives both.
+    expect(messagesShown(elements)).toEqual(["content error"]);
+  });
 
-    it("renders each row's source next to its level", async () => {
-      await controller.init();
+  it("renders each row's source next to its level", async () => {
+    await controller.init();
 
-      store.emit([info(10, "a", "BrowserSyncQueryBindingStore")]);
+    store.emit([info(10, "a", "BrowserSyncQueryBindingStore")]);
 
-      const sourceCell = elements.list.querySelector(".log-row__source");
-      expect(sourceCell?.textContent).toBe("BrowserSyncQueryBindingStore");
-    });
+    const sourceCell = elements.list.querySelector(".log-row__source");
+    expect(sourceCell?.textContent).toBe("BrowserSyncQueryBindingStore");
   });
 });

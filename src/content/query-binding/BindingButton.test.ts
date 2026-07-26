@@ -6,24 +6,26 @@ import { BindingButton } from "./BindingButton";
 // macrotask guarantees any pending observer callback has run before we assert.
 const flushMutations = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
-describe("BindingButton", () => {
-  let button: BindingButton;
+// Shared across the sibling describes below so each split group reuses one setup with zero
+// duplication (jscpd threshold is 0).
+let button: BindingButton;
 
-  beforeEach(() => {
-    document.head.innerHTML = "";
-    document.body.innerHTML = "";
-    button = new BindingButton(
-      document,
-      "chrome-extension://abc/icons/icon.svg",
-      "Enhance with AwesomeADO",
-    );
-  });
+beforeEach(() => {
+  document.head.innerHTML = "";
+  document.body.innerHTML = "";
+  button = new BindingButton(
+    document,
+    "chrome-extension://abc/icons/icon.svg",
+    "Enhance with AwesomeADO",
+  );
+});
 
-  // Disconnect the persistence observer so it can't re-insert a stale button into the next test.
-  afterEach(() => {
-    button.hide();
-  });
+// Disconnect the persistence observer so it can't re-insert a stale button into the next test.
+afterEach(() => {
+  button.hide();
+});
 
+describe("BindingButton - placement", () => {
   it("injects an icon button labelled for accessibility on show", () => {
     button.show(vi.fn());
 
@@ -101,7 +103,9 @@ describe("BindingButton", () => {
     // Fixed overlay so it stays visible above ADO's own top bar even without an anchor.
     expect(injected?.style.position).toBe("fixed");
   });
+});
 
+describe("BindingButton - interaction", () => {
   it("runs the click handler with the button as its anchor when clicked", () => {
     const onClick = vi.fn();
     button.show(onClick);
@@ -161,7 +165,9 @@ describe("BindingButton", () => {
     expect(first).not.toHaveBeenCalled();
     expect(second).toHaveBeenCalledTimes(1);
   });
+});
 
+describe("BindingButton - persistence", () => {
   it("re-attaches itself when Azure DevOps removes it from the DOM", async () => {
     const onClick = vi.fn();
     button.show(onClick);

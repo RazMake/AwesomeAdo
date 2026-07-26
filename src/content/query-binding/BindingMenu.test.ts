@@ -33,19 +33,21 @@ function menuItems(): HTMLButtonElement[] {
   );
 }
 
-describe("BindingMenu", () => {
-  let menu: BindingMenu;
+// Shared across the sibling describes below so each split group reuses one setup with zero
+// duplication (jscpd threshold is 0).
+let menu: BindingMenu;
 
-  beforeEach(() => {
-    document.body.innerHTML = "";
-    menu = new BindingMenu(document);
-  });
+beforeEach(() => {
+  document.body.innerHTML = "";
+  menu = new BindingMenu(document);
+});
 
-  // Detach the document-level listeners so an open menu can't leak into the next test.
-  afterEach(() => {
-    menu.close();
-  });
+// Detach the document-level listeners so an open menu can't leak into the next test.
+afterEach(() => {
+  menu.close();
+});
 
+describe("BindingMenu - rendering", () => {
   it("reports closed until opened and open once shown", () => {
     expect(menu.isOpen).toBe(false);
 
@@ -85,7 +87,9 @@ describe("BindingMenu", () => {
     expect(checked?.firstElementChild?.textContent).toBe("\u2713");
     expect(unchecked?.firstElementChild?.textContent).toBe("");
   });
+});
 
+describe("BindingMenu - interaction", () => {
   it("runs the item's onSelect and closes when an item is clicked", () => {
     const onSelect = vi.fn();
     menu.open(makeAnchor(), [{ kind: "item", label: "Options", onSelect }]);
@@ -107,7 +111,9 @@ describe("BindingMenu", () => {
     item.dispatchEvent(new MouseEvent("mouseleave"));
     expect(item.style.backgroundColor).toBe("transparent");
   });
+});
 
+describe("BindingMenu - dismissal", () => {
   it("closes on a pointer down outside the menu and its anchor", () => {
     menu.open(makeAnchor(), [{ kind: "item", label: "Options", onSelect: vi.fn() }]);
 
@@ -153,7 +159,9 @@ describe("BindingMenu", () => {
     expect(document.querySelectorAll(MENU_SELECTOR)).toHaveLength(1);
     expect(menuItems()[0]?.textContent).toBe("Second");
   });
+});
 
+describe("BindingMenu - positioning", () => {
   it("aligns its right edge and top to the anchor", () => {
     const anchor = makeAnchor({ bottom: 40, right: 774 });
     menu.open(anchor, [{ kind: "item", label: "Options", onSelect: vi.fn() }]);

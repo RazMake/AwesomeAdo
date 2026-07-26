@@ -139,7 +139,9 @@ describe("computeVersion — changelog parsing", () => {
     });
     assert.equal(result.base, "0.1");
   });
+});
 
+describe("computeVersion — changelog fenced-code handling", () => {
   it("ignores H2 headings inside a backtick fence", () => {
     const changelog = `# Changelog\n\n\`\`\`\n## 0.1\n- fake\n\`\`\`\n\n## 0.1\n\n- Real bullet.\n`;
     const result = computeVersion({

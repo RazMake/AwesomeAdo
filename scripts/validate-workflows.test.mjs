@@ -553,7 +553,9 @@ describe("validateWorkflowFiles — Release structural checks", () => {
       /literal scalar runner/,
     );
   });
+});
 
+describe("validateWorkflowFiles — Release step and permission checks", () => {
   it("rejects missing release_context step id", () => {
     const badRelease = minimalReleaseYaml.replace(
       "        id: release_context",

@@ -24,29 +24,31 @@ function triggerText(root: HTMLElement): string {
   return root.querySelector(".multiselect__trigger")?.textContent ?? "";
 }
 
-describe("MultiSelectFilter", () => {
-  let root: HTMLElement;
-  let onChange: Mock<() => void>;
-  let filter: MultiSelectFilter;
+// Shared across the sibling describes below so each split group reuses one setup with zero
+// duplication (jscpd threshold is 0).
+let root: HTMLElement;
+let onChange: Mock<() => void>;
+let filter: MultiSelectFilter;
 
-  const options: () => MultiSelectFilterOptions = () => ({
-    allLabel: "All sources",
-    itemNoun: "sources",
-    searchPlaceholder: "Filter sources…",
-    noMatchesText: "No matching sources.",
-    onChange,
-  });
+const options: () => MultiSelectFilterOptions = () => ({
+  allLabel: "All sources",
+  itemNoun: "sources",
+  searchPlaceholder: "Filter sources…",
+  noMatchesText: "No matching sources.",
+  onChange,
+});
 
-  beforeEach(() => {
-    root = makeRoot();
-    onChange = vi.fn<() => void>();
-    filter = new MultiSelectFilter(root, options());
-  });
+beforeEach(() => {
+  root = makeRoot();
+  onChange = vi.fn<() => void>();
+  filter = new MultiSelectFilter(root, options());
+});
 
-  const open = (): void => {
-    (root.querySelector(".multiselect__trigger") as HTMLButtonElement).click();
-  };
+const open = (): void => {
+  (root.querySelector(".multiselect__trigger") as HTMLButtonElement).click();
+};
 
+describe("MultiSelectFilter — visibility & summary", () => {
   it("stays hidden until it has items, then reveals itself", () => {
     expect(root.hidden).toBe(true);
 
@@ -86,7 +88,9 @@ describe("MultiSelectFilter", () => {
 
     expect(optionLabels(root)).toEqual(["background", "content"]);
   });
+});
 
+describe("MultiSelectFilter — search", () => {
   it("filters the checkbox list by the typed search text", () => {
     filter.setItems(["QueryPageController", "QueryBindingController", "BrowserSyncSettingsStore"]);
     open();
@@ -109,7 +113,9 @@ describe("MultiSelectFilter", () => {
     expect(optionLabels(root)).toEqual([]);
     expect(root.querySelector(".multiselect__empty")?.textContent).toBe("No matching sources.");
   });
+});
 
+describe("MultiSelectFilter — selection", () => {
   it("hides an unchecked item and reports the change", () => {
     filter.setItems(["a", "b"]);
     open();
@@ -155,7 +161,9 @@ describe("MultiSelectFilter", () => {
     expect(["a", "b", "c"].some((item) => filter.isHidden(item))).toBe(false);
     expect(triggerText(root)).toBe("All sources");
   });
+});
 
+describe("MultiSelectFilter — dismissal & lifecycle", () => {
   it("closes when the user interacts outside the control", () => {
     filter.setItems(["a"]);
     open();

@@ -381,49 +381,51 @@ success, or `{ id: null, error }` on failure — the `error` carries the HTTP st
 message, or the thrown value — so the caller logs the specific reason). Serialized with
 `Function.prototype.toString`.
 
-## Writing a work item's state back to ADO
+## Writing a work item field back to ADO
 
-An enhanced view can persist a work item's state change (moving it between board columns) back to
-Azure DevOps. The write needs the credentialed ADO REST API, which the isolated content world cannot
-reach, so the pattern mirrors the tree read and Feature Crew reconcile: the content script messages
-the background worker, which runs the PATCH in the ADO tab's MAIN world.
+An enhanced view can persist a single work item field change (moving it between board columns via
+`System.State`, editing a type's ETA date field, etc.) back to Azure DevOps. The write needs the
+credentialed ADO REST API, which the isolated content world cannot reach, so the pattern mirrors the
+tree read and Feature Crew reconcile: the content script messages the background worker, which runs
+the PATCH in the ADO tab's MAIN world.
 
-### `WorkItemStateRequest.ts` — the content→background message contract
+### `WorkItemFieldRequest.ts` — the content→background message contract
 
-- `UPDATE_WORK_ITEM_STATE_MESSAGE` / `UpdateWorkItemStateMessage` (`{ type, id, rev, state }`) — the
-  request the content view sends to update a work item's state. Includes `rev` as an
+- `UPDATE_WORK_ITEM_FIELD_MESSAGE` / `UpdateWorkItemFieldMessage` (`{ type, id, rev, field, value }`)
+  — the request the content view sends to update a single work item field. `field` is the ADO field
+  reference name and `value` is the new value (or `null` to clear the field). Includes `rev` as an
   optimistic-concurrency guard; the PATCH fails when the item was edited concurrently (its rev
   advanced).
-- `UpdateWorkItemStateResponse` (`{ ok, rev?, error? }`) — the worker's reply; `ok` is false with an
+- `UpdateWorkItemFieldResponse` (`{ ok, rev?, error? }`) — the worker's reply; `ok` is false with an
   `error` string when the update could not complete, and `rev` is the item's new System.Rev on
   success.
-- `isUpdateWorkItemStateMessage(value)` — the guard the worker uses to accept only well-formed
+- `isUpdateWorkItemFieldMessage(value)` — the guard the worker uses to accept only well-formed
   requests.
 
-### `MessagingWorkItemStateWriter` (class) — the content-side writer
+### `MessagingWorkItemFieldWriter` (class) — the content-side writer
 
-The `IWorkItemStateWriter` implementation the enhanced view depends on. Browser-agnostic: the
-`chrome.runtime.sendMessage` binding is injected as a `SendUpdateStateRequest`, so this class never
+The `IWorkItemFieldWriter` implementation the enhanced view depends on. Browser-agnostic: the
+`chrome.runtime.sendMessage` binding is injected as a `SendUpdateFieldRequest`, so this class never
 touches `chrome` directly.
 
 ```typescript
-const writer = new MessagingWorkItemStateWriter(sendUpdateStateRequest, logger);
-const result = await writer.writeState({ id, rev, state }); // WorkItemStateWriteResult
+const writer = new MessagingWorkItemFieldWriter(sendUpdateFieldRequest, logger);
+const result = await writer.writeField({ id, rev, field, value }); // WorkItemFieldWriteResult
 ```
 
-`writeState` builds the message, sends it, and maps the reply to a `WorkItemStateWriteResult`. A
+`writeField` builds the message, sends it, and maps the reply to a `WorkItemFieldWriteResult`. A
 thrown send, a missing/`undefined` reply, or an `ok: false` response is logged and reported as
 `{ ok: false }` — the write never throws, so a failure can be handled gracefully by the view.
 Constructed only in the composition root (`src/content/index.ts`); feature code depends on
-`IWorkItemStateWriter`.
+`IWorkItemFieldWriter`.
 
-### `updateWorkItemStateInPage(updateUrl, id, rev, state)` — `updateWorkItemStateInPage.ts`
+### `updateWorkItemFieldInPage(updateUrl, id, rev, field, value)` — `updateWorkItemFieldInPage.ts`
 
 The self-contained function the **background worker** injects into the ADO tab's MAIN world to PATCH
-a work item's state. Uses JSON Patch (`application/json-patch+json`) with a test-and-set: the rev is
-tested first (`{ op: "test", path: "/rev", value: rev }`), then the state is added
-(`{ op: "add", path: "/fields/System.State", value: state }`). Returns `{ ok: true, rev }` on success
-(extracting the new rev from the response body), or `{ ok: false, error }` on failure. The URL is
-built by `buildWorkItemUpdateUrl` (in `common/ado/fetchAdoTree`) from the sender's own trusted tab
-URL, keeping this a closed "update this item's state" operation rather than a write-any-field proxy.
+a single work item field. Uses JSON Patch (`application/json-patch+json`) with a test-and-set: the
+rev is tested first (`{ op: "test", path: "/rev", value: rev }`), then the field is written — a set
+value adds it (`{ op: "add", path: "/fields/<field>", value }`) and a `null` value clears it
+(`{ op: "remove", path: "/fields/<field>" }`). Returns `{ ok: true, rev }` on success (extracting the
+new rev from the response body), or `{ ok: false, error }` on failure. The URL is built by
+`buildWorkItemUpdateUrl` (in `common/ado/fetchAdoTree`) from the sender's own trusted tab URL.
 Serialized with `Function.prototype.toString`, so it references only its parameters and page globals.

@@ -26,8 +26,9 @@ Renders a single subtle-filled tile with these bands:
    the expand-all (`+`) and collapse-all (`−`) buttons beside it, and the sprint picker
    (`options.sprintPicker`) pinned to the right edge of the same band.
 4. **Tech Lead + ETA** — the caller-supplied Tech Lead control (`options.techLead`) followed by the
-   root's ETA, rendered with the shared
-   [`renderEtaBadge`](../../../../common/view-common/control/EtaBadge/README.md).
+   caller-supplied ETA badge (`options.eta`, built with the shared
+   [`renderEtaBadge`](../../../../common/view-common/control/EtaBadge/README.md) so the view owns its
+   read/write wiring).
 
 The `+`/`−` buttons are vertically centered against the two-line title/tech-lead block.
 
@@ -39,8 +40,7 @@ The `+`/`−` buttons are vertically centered against the two-line title/tech-le
 | `title`            | The project (root item) title.                                                                           |
 | `titleColor`       | Hex color for the title, or `null` for the themed default.                                               |
 | `techLead`         | The Tech Lead control element, or `null` when view services are unavailable.                             |
-| `eta`              | The root item's ETA (ISO 8601), or `null` when unset.                                                    |
-| `now`              | Reference "now" for the ETA countdown (injected for deterministic rendering).                            |
+| `eta`              | The root item's ETA badge element (pre-built by the view), or `null` when view services are unavailable. |
 | `sprintPicker`     | The sprint picker element, pinned to the right of the controls band.                                     |
 | `writeQueueStatus` | The write-queue status indicator, on its own row above the sprint picker (`null`/omitted hides the row). |
 

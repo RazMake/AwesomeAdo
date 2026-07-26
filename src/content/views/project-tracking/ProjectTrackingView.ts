@@ -5,11 +5,16 @@ import {
   deriveAlias,
   type FeatureCrewAssignee,
   type FeatureCrewMember,
+  type FeatureCrewTagAssignment,
 } from "../../../common/ado/FeatureCrew";
+import { FieldWriteQueue } from "../../../common/ado/FieldWriteQueue/FieldWriteQueue";
 import type { DirectoryUser } from "../../../common/ado/IUserDirectory";
 import type { QueryFolderCrumb, WorkItemTreeResult } from "../../../common/ado/IWorkItemTreeLoader";
-import { StateWriteQueue } from "../../../common/ado/StateWriteQueue/StateWriteQueue";
-import type { TrackedWorkItem, TypeCatalogEntry } from "../../../common/ado/TrackedWorkItem";
+import type {
+  TrackedUser,
+  TrackedWorkItem,
+  TypeCatalogEntry,
+} from "../../../common/ado/TrackedWorkItem";
 import { buildQueryFolderUrl } from "../../../common/ado/fetchAdoTree";
 import type { SprintWindow } from "../../../common/ado/sprintWindow";
 import type {
@@ -18,7 +23,10 @@ import type {
   EnhancedViewServices,
 } from "../../../common/view-common/EnhancedView";
 import { renderAssignedTo } from "../../../common/view-common/control/AssignedTo/AssignedTo";
-import { renderEtaBadge } from "../../../common/view-common/control/EtaBadge/EtaBadge";
+import {
+  renderEtaBadge,
+  type EtaBadgeHandle,
+} from "../../../common/view-common/control/EtaBadge/EtaBadge";
 import { renderItemLifecycleInfo } from "../../../common/view-common/control/ItemLifecycleInfo/ItemLifecycleInfo";
 import {
   renderSprintPicker,
@@ -229,7 +237,7 @@ function createRowControls(
   doc: Document,
   item: TrackedWorkItem,
   typeMap: Map<string, TypeCatalogEntry>,
-  queue: StateWriteQueue,
+  queue: FieldWriteQueue,
   statusWidthCh: number,
   boardColumns: string[],
 ): { gutter: HTMLElement; stateBadge: HTMLElement; twisty: HTMLButtonElement | null } {
@@ -296,15 +304,17 @@ function createRowControls(
     onChange: (primaryState, column) => {
       // Optimistically reflect the new Status, then enqueue a serialized write of its primary ADO
       // State. The queue logs failures and never rejects, so reconcile on its resolved result.
-      queue.enqueue({ id: item.id, rev: item.rev, state: primaryState }).then((result) => {
-        if (result.ok && result.rev !== undefined) {
-          item.state = primaryState;
-          item.rev = result.rev;
-          // Reflect the new Status label and re-tint to its board-column ordinal so the badge's
-          // color tracks the label (the badge owns its own coloring).
-          stateBadge.setStatus(column, boardColumnOrdinal(column, boardColumns));
-        }
-      });
+      queue
+        .enqueue({ id: item.id, rev: item.rev, field: "System.State", value: primaryState })
+        .then((result) => {
+          if (result.ok && result.rev !== undefined) {
+            item.state = primaryState;
+            item.rev = result.rev;
+            // Reflect the new Status label and re-tint to its board-column ordinal so the badge's
+            // color tracks the label (the badge owns its own coloring).
+            stateBadge.setStatus(column, boardColumnOrdinal(column, boardColumns));
+          }
+        });
     },
   });
   // The badge flows inline at the head of the content block, so it sits on the same line as the
@@ -359,6 +369,55 @@ function isLeafSprint(item: TrackedWorkItem): boolean {
 }
 
 /**
+ * The tag-editing capability wired into each assignee pill: the tags already in use (offered as
+ * quick-pick choices) plus a hook that persists the chosen/added tag onto the Feature Crew roster.
+ */
+interface AssigneeTagEditor {
+  /** The distinct Feature Crew tags currently worn across the board, in first-seen order. */
+  tagsInUse(): string[];
+  /** Record the chosen or newly-added tag for the given assignee (writes the roster, then refreshes). */
+  assign(user: TrackedUser, tag: string): void;
+}
+
+/**
+ * Builds an item's ETA badge, wired to persist edits when the item's type has an ETA field
+ * configured. Shared by the tree rows and the header (root) so ETA read/write lives in one place.
+ *
+ * The badge is editable ONLY when the type declares an ETA field to write to; without one it is a
+ * read-only "No ETA". Picking a date or clearing enqueues a serialized field write against that
+ * type's configured field and reflects the committed value on success — so a failed write never
+ * leaves a misleading date on screen (persist-then-reflect, matching the status badge).
+ */
+function createItemEtaBadge(
+  doc: Document,
+  item: TrackedWorkItem,
+  typeMap: Map<string, TypeCatalogEntry>,
+  queue: FieldWriteQueue,
+  now: Date,
+): EtaBadgeHandle {
+  const etaField = typeMap.get(item.type)?.etaField ?? null;
+  // The onChange closure needs the badge handle to reflect a committed change, but the handle only
+  // exists after renderEtaBadge returns. A ref cell breaks that cycle with a single const binding:
+  // the closure runs only on a later user pick, by which point `badge.handle` is set.
+  const badge: { handle?: EtaBadgeHandle } = {};
+  const onChange = etaField
+    ? (newEta: string | null): void => {
+        queue
+          .enqueue({ id: item.id, rev: item.rev, field: etaField, value: newEta })
+          .then((result) => {
+            if (result.ok && result.rev !== undefined) {
+              item.eta = newEta;
+              item.rev = result.rev;
+              badge.handle?.setEta(newEta);
+            }
+          });
+      }
+    : undefined;
+  badge.handle = renderEtaBadge(doc, { eta: item.eta, now, onChange });
+  return badge.handle;
+}
+
+/**
  * Creates the row right-side controls. The assignee and sprint pill flow inline right after the
  * title (returned in `inline`); the ETA is pinned to the row's far right (returned separately).
  */
@@ -368,15 +427,21 @@ function createRowRightControls(
   context: EnhancedViewContext,
   showSprintPills: boolean,
   onAssigneeChange: (user: DirectoryUser) => void,
+  tagEditor: AssigneeTagEditor | null,
+  typeMap: Map<string, TypeCatalogEntry>,
+  queue: FieldWriteQueue,
 ): { inline: HTMLElement[]; eta: HTMLElement | null } {
   const inline: HTMLElement[] = [];
 
   if (context.services) {
+    const assignee = item.assignedTo;
     const assignedEl = renderAssignedTo(doc, {
       user: item.assignedTo,
       userDirectory: context.services.userDirectory,
       onChange: onAssigneeChange,
       showTag: true,
+      assignableTags: tagEditor ? tagEditor.tagsInUse() : undefined,
+      onTagChange: tagEditor && assignee ? (tag) => tagEditor.assign(assignee, tag) : undefined,
     });
     // Flows inline right behind the ? disc so it hugs the title; middle-aligned to the text line.
     assignedEl.style.verticalAlign = "middle";
@@ -413,13 +478,15 @@ function createRowRightControls(
 
   let eta: HTMLElement | null = null;
   if (context.services) {
-    const etaBadge = renderEtaBadge(doc, { eta: item.eta, now: context.services.now() });
-    // Pinned to the far right of the row, kept on one line. It shares the content block's 1.8em
-    // line-height and top-aligns with the row, so its single line and the content's FIRST line have
-    // the same box height and top — putting the ETA at the vertical center of the first line, even
-    // when the title wraps to more lines below.
+    const etaBadge = createItemEtaBadge(doc, item, typeMap, queue, context.services.now());
+    // Pinned to the far right of the row, kept on one line. A FIXED font-size keeps every ETA the
+    // same size across the whole tree: the nested rows shrink 10% per depth (childrenContainer's
+    // font-size:90% compounds), which would otherwise render deeper ETAs progressively smaller.
+    // It still top-aligns and shares the content block's 1.8em line-height, so it sits at the
+    // vertical center of the row's FIRST line even when the title wraps to more lines below.
     etaBadge.style.flex = "0 0 auto";
     etaBadge.style.whiteSpace = "nowrap";
+    etaBadge.style.fontSize = "11px";
     etaBadge.style.lineHeight = "1.8";
     etaBadge.style.alignSelf = "flex-start";
     eta = etaBadge;
@@ -439,7 +506,8 @@ function renderRow(
   typeMap: Map<string, TypeCatalogEntry>,
   showSprintPills: boolean,
   onAssigneeChange: (user: DirectoryUser) => void,
-  queue: StateWriteQueue,
+  tagEditor: AssigneeTagEditor | null,
+  queue: FieldWriteQueue,
   depth: number,
   statusWidthCh: number,
   boardColumns: string[],
@@ -471,6 +539,9 @@ function renderRow(
     context,
     showSprintPills,
     onAssigneeChange,
+    tagEditor,
+    typeMap,
+    queue,
   );
 
   // Status badge, title, ? disc and assignee share ONE inline-flow block so they read as a single
@@ -541,7 +612,8 @@ function renderTree(
   showSprintPills: boolean,
   allTwisties: HTMLButtonElement[],
   onAssigneeChange: (user: DirectoryUser) => void,
-  queue: StateWriteQueue,
+  tagEditor: AssigneeTagEditor | null,
+  queue: FieldWriteQueue,
   depth: number,
   statusWidthCh: number,
   boardColumns: string[],
@@ -556,6 +628,7 @@ function renderTree(
         typeMap,
         showSprintPills,
         onAssigneeChange,
+        tagEditor,
         queue,
         depth,
         statusWidthCh,
@@ -573,6 +646,7 @@ function renderTree(
         showSprintPills,
         allTwisties,
         onAssigneeChange,
+        tagEditor,
         queue,
         depth + 1,
         statusWidthCh,
@@ -600,8 +674,7 @@ function renderSprintControls(doc: Document, sprintWindow: SprintWindow): Sprint
 
 /**
  * Fills (or refills) the tech lead group with its label and the epic assignee's picker. Split out so
- * the group can be rebuilt in place once the Feature Crew roster resolves and the epic assignee's tag
- * becomes known — the header is not part of the tree re-render, so its pill would otherwise stay "??".
+ * the group can be rebuilt in place from the header, which is not part of the tree re-render.
  */
 function populateTechLead(
   doc: Document,
@@ -622,8 +695,12 @@ function populateTechLead(
     user: root.assignedTo,
     userDirectory: context.services.userDirectory,
     onChange: onAssigneeChange,
-    showTag: true,
+    // The Tech Lead is a single named owner, not a Feature Crew member, so its chip never shows a tag.
+    showTag: false,
   });
+  // Nudge the chip 1px down so it reads as optically centered against the "TechLead:" label.
+  assignedEl.style.position = "relative";
+  assignedEl.style.top = "1px";
   group.append(assignedEl);
 }
 
@@ -661,6 +738,7 @@ function renderHeader(
   onAssigneeChange: (user: DirectoryUser) => void,
   writeQueueStatus: HTMLElement,
   folderPath: QueryFolderCrumb[],
+  queue: FieldWriteQueue,
 ): {
   header: HTMLElement;
   sprintPickerHandle: SprintPickerHandle;
@@ -690,8 +768,13 @@ function renderHeader(
     title: root.title,
     titleColor: typeColorOf(root.type, typeMap),
     techLead,
-    eta: root.eta,
-    now: context.services ? context.services.now() : new Date(),
+    eta: createItemEtaBadge(
+      doc,
+      root,
+      typeMap,
+      queue,
+      context.services ? context.services.now() : new Date(),
+    ),
     sprintPicker: sprintPickerHandle.element,
     writeQueueStatus,
   });
@@ -743,66 +826,137 @@ interface BoardHandle {
    * than once (e.g. after a fresh person is picked and the roster grows).
    */
   applyCrewMembers(members: FeatureCrewMember[]): void;
+  /**
+   * Feed the count of in-flight user-triggered roster reconciles (tag picks / inline assignee
+   * changes) so the shared "Saving…" indicator reflects those saves too, not just state writes.
+   */
+  setReconcilePending(count: number): void;
 }
 
 /**
- * Renders the complete board: header + tree, wired with expand/collapse and sprint-picker filter controls.
+ * A "Saving…" indicator driven by BOTH in-flight field writes (status column, ETA) AND
+ * user-triggered roster reconciles (tag picks / inline assignee changes). Each source reports its own
+ * pending count; the displayed total is their sum, so the indicator shows for either kind of save.
+ *
+ * Subscribing to the queue reveals it while writes are in flight and hides it once the queue drains.
+ * No explicit unsubscribe is needed — the control and the queue share the board's lifetime (one
+ * render per tab), so their lifetimes match.
  */
-function renderBoard(
+function createBoardWriteStatus(
   doc: Document,
-  root: TrackedWorkItem,
-  context: EnhancedViewContext,
-  typeMap: Map<string, TypeCatalogEntry>,
-  sprintWindow: SprintWindow,
-  onAssigneeChange: (user: DirectoryUser) => void,
-  folderPath: QueryFolderCrumb[],
-): BoardHandle {
-  const board = doc.createElement("div");
-  // Trim the top padding to 2px so the header card sits close to the top of the view; keep the
-  // other sides at 16px for breathing room.
-  board.style.cssText = "padding:2px 16px 16px 16px";
-
-  // One serialized write queue per board (per tab): state edits never race on System.Rev.
-  const services = context.services!;
-  const stateWrites = new StateWriteQueue(services.writeState, services.logger);
-  // A "Saving…" indicator driven live by the write queue: subscribing reveals it while state writes
-  // are in flight and hides it once the queue drains. No explicit unsubscribe is needed — the
-  // control and the queue share the board's lifetime (one render per tab), so their lifetimes match.
+  fieldWrites: FieldWriteQueue,
+): { element: HTMLElement; setReconcilePending: (count: number) => void } {
   const writeStatus = renderWriteQueueStatus(doc);
-  stateWrites.onPendingChange((count) => writeStatus.setCount(count));
-  // One shared badge width for the whole board so every status badge renders the same size.
-  const statusWidthCh = widestStatusLabelLength(root, typeMap);
-  // The global board-column order, so a status colors by its position (identical across every type).
-  const boardColumns = services.getBoardColumns();
+  let statePending = 0;
+  let reconcilePending = 0;
+  const refresh = (): void => writeStatus.setCount(statePending + reconcilePending);
+  fieldWrites.onPendingChange((count) => {
+    statePending = count;
+    refresh();
+  });
+  return {
+    element: writeStatus.element,
+    setReconcilePending: (count) => {
+      reconcilePending = count;
+      refresh();
+    },
+  };
+}
 
-  const { header, sprintPickerHandle, expandAll, collapseAll, techLead } = renderHeader(
+/**
+ * The tag-editing capability wired into every assignee pill: the tags currently worn across the
+ * board (offered as quick-pick choices) plus the persist hook. Null when the project cannot store a
+ * roster (no `onTagAssign`), so the pills stay read-only rather than pretending to save.
+ */
+function createTagEditor(
+  root: TrackedWorkItem,
+  onTagAssign: ((user: TrackedUser, tag: string) => void) | null,
+): AssigneeTagEditor | null {
+  return onTagAssign
+    ? {
+        tagsInUse: () => collectAssignedTags([root]).filter((tag): tag is string => tag !== null),
+        assign: onTagAssign,
+      }
+    : null;
+}
+
+/**
+ * Wire the sprint picker so toggling the funnel or changing the sprint re-renders the tree. The
+ * click is deferred a tick because the picker toggles its OWN internal state on the same click; the
+ * re-render must read the state after that flip, not before.
+ */
+function wireSprintPickerRerender(
+  sprintPickerHandle: SprintPickerHandle,
+  renderTreeContent: () => void,
+): void {
+  const pickerElement = sprintPickerHandle.element;
+  const button = pickerElement.querySelector(
+    ".awesomeado-sprint-picker__button",
+  ) as HTMLButtonElement;
+  const select = pickerElement.querySelector(
+    ".awesomeado-sprint-picker__select",
+  ) as HTMLSelectElement;
+
+  if (button) {
+    button.addEventListener("click", () => {
+      setTimeout(() => renderTreeContent(), 0);
+    });
+  }
+
+  if (select) {
+    select.addEventListener("change", () => {
+      renderTreeContent();
+    });
+  }
+}
+
+/** Everything the board's tree + tag-filter renderer needs to (re)build both from current state. */
+interface BoardTreeRendererParams {
+  doc: Document;
+  root: TrackedWorkItem;
+  context: EnhancedViewContext;
+  typeMap: Map<string, TypeCatalogEntry>;
+  selectedTags: Set<string | null>;
+  treeContainer: HTMLElement;
+  tagPanelContainer: HTMLElement;
+  sprintPickerHandle: SprintPickerHandle;
+  onAssigneeChange: (user: DirectoryUser) => void;
+  tagEditor: AssigneeTagEditor | null;
+  fieldWrites: FieldWriteQueue;
+  statusWidthCh: number;
+  boardColumns: string[];
+  expandAll: HTMLButtonElement;
+  collapseAll: HTMLButtonElement;
+}
+
+/**
+ * The board's two mutually-referencing renderers: `renderTreeContent` rebuilds the tree under the
+ * current sprint + tag filters, and `refreshTagPanel` rebuilds the filter panel from the tags worn
+ * across the tree. They are paired here because the panel's onChange re-runs both.
+ */
+function createBoardTreeRenderer(params: BoardTreeRendererParams): {
+  renderTreeContent: () => void;
+  refreshTagPanel: () => void;
+} {
+  const {
     doc,
     root,
     context,
     typeMap,
-    sprintWindow,
+    selectedTags,
+    treeContainer,
+    tagPanelContainer,
+    sprintPickerHandle,
     onAssigneeChange,
-    writeStatus.element,
-    folderPath,
-  );
-  board.append(header);
+    tagEditor,
+    fieldWrites,
+    statusWidthCh,
+    boardColumns,
+    expandAll,
+    collapseAll,
+  } = params;
 
-  // The active tag filter (OR across the selected tags; empty = show everyone). `null` is the "??"
-  // bucket for assigned-but-untagged people. Owned here as the single source of truth so the panel
-  // pills and the tree filter never drift.
-  const selectedTags = new Set<string | null>();
-  // The tag filter panel sits above the tree; it stays empty until the Feature Crew roster resolves,
-  // since a person's tag is only known once the roster loads.
-  const tagPanelContainer = doc.createElement("div");
-  tagPanelContainer.className = "awesomeado-tracking__tag-filter";
-  board.append(tagPanelContainer);
-
-  const treeContainer = doc.createElement("div");
-  treeContainer.className = "awesomeado-tracking__tree";
-  board.append(treeContainer);
-
-  // Render tree with current filter state from the sprint picker and tag panel.
-  const renderTreeContent = () => {
+  const renderTreeContent = (): void => {
     const filterOn = sprintPickerHandle.isFilterActive();
     const selectedSprint = filterOn ? sprintPickerHandle.selectedSprint() : null;
     const showPills = !filterOn;
@@ -821,7 +975,8 @@ function renderBoard(
       showPills,
       allTwisties,
       onAssigneeChange,
-      stateWrites,
+      tagEditor,
+      fieldWrites,
       0,
       statusWidthCh,
       boardColumns,
@@ -834,7 +989,7 @@ function renderBoard(
   // Rebuild the tag filter panel from the tags currently worn across the tree. Dropping any selected
   // tag that no longer exists keeps the filter from getting stuck on a vanished tag. The panel hides
   // entirely when nobody in the tree is assigned (nothing to filter by).
-  const refreshTagPanel = () => {
+  const refreshTagPanel = (): void => {
     const tags = collectAssignedTags([root]);
     for (const selected of [...selectedTags]) {
       if (!tags.includes(selected)) selectedTags.delete(selected);
@@ -853,39 +1008,96 @@ function renderBoard(
     );
   };
 
+  return { renderTreeContent, refreshTagPanel };
+}
+
+/**
+ * Renders the complete board: header + tree, wired with expand/collapse and sprint-picker filter controls.
+ */
+function renderBoard(
+  doc: Document,
+  root: TrackedWorkItem,
+  context: EnhancedViewContext,
+  typeMap: Map<string, TypeCatalogEntry>,
+  sprintWindow: SprintWindow,
+  onAssigneeChange: (user: DirectoryUser) => void,
+  onTagAssign: ((user: TrackedUser, tag: string) => void) | null,
+  folderPath: QueryFolderCrumb[],
+): BoardHandle {
+  const board = doc.createElement("div");
+  // Trim the top padding to 2px so the header card sits close to the top of the view; keep the
+  // other sides at 16px for breathing room.
+  board.style.cssText = "padding:2px 16px 16px 16px";
+
+  // One serialized write queue per board (per tab): field edits never race on System.Rev.
+  const services = context.services!;
+  const fieldWrites = new FieldWriteQueue(services.writeField, services.logger);
+  const writeStatus = createBoardWriteStatus(doc, fieldWrites);
+
+  // One shared badge width for the whole board so every status badge renders the same size.
+  const statusWidthCh = widestStatusLabelLength(root, typeMap);
+  // The global board-column order, so a status colors by its position (identical across every type).
+  const boardColumns = services.getBoardColumns();
+  const tagEditor = createTagEditor(root, onTagAssign);
+
+  const { header, sprintPickerHandle, expandAll, collapseAll, techLead } = renderHeader(
+    doc,
+    root,
+    context,
+    typeMap,
+    sprintWindow,
+    onAssigneeChange,
+    writeStatus.element,
+    folderPath,
+    fieldWrites,
+  );
+  board.append(header);
+
+  // The active tag filter (OR across the selected tags; empty = show everyone). `null` is the "??"
+  // bucket for assigned-but-untagged people. Owned here as the single source of truth so the panel
+  // pills and the tree filter never drift.
+  const selectedTags = new Set<string | null>();
+  // The tag filter panel sits above the tree; it stays empty until the Feature Crew roster resolves,
+  // since a person's tag is only known once the roster loads.
+  const tagPanelContainer = doc.createElement("div");
+  tagPanelContainer.className = "awesomeado-tracking__tag-filter";
+  board.append(tagPanelContainer);
+
+  const treeContainer = doc.createElement("div");
+  treeContainer.className = "awesomeado-tracking__tree";
+  board.append(treeContainer);
+
+  const { renderTreeContent, refreshTagPanel } = createBoardTreeRenderer({
+    doc,
+    root,
+    context,
+    typeMap,
+    selectedTags,
+    treeContainer,
+    tagPanelContainer,
+    sprintPickerHandle,
+    onAssigneeChange,
+    tagEditor,
+    fieldWrites,
+    statusWidthCh,
+    boardColumns,
+    expandAll,
+    collapseAll,
+  });
+
   renderTreeContent();
-
-  // Wire the sprint picker's onFilterToggle to re-render the tree.
-  const pickerElement = sprintPickerHandle.element;
-  const button = pickerElement.querySelector(
-    ".awesomeado-sprint-picker__button",
-  ) as HTMLButtonElement;
-  const select = pickerElement.querySelector(
-    ".awesomeado-sprint-picker__select",
-  ) as HTMLSelectElement;
-
-  if (button) {
-    button.addEventListener("click", () => {
-      // The picker already toggles its internal state; just re-render.
-      setTimeout(() => renderTreeContent(), 0);
-    });
-  }
-
-  if (select) {
-    select.addEventListener("change", () => {
-      renderTreeContent();
-    });
-  }
+  wireSprintPickerRerender(sprintPickerHandle, renderTreeContent);
 
   return {
     element: board,
     applyCrewMembers: (members) => {
       applyFeatureCrewTags([root], members);
-      // The header is not part of the tree re-render, so refresh the epic's TechLead pill in place.
+      // The header is not part of the tree re-render, so refresh the epic's TechLead in place.
       if (techLead) populateTechLead(doc, techLead, root, context, onAssigneeChange);
       refreshTagPanel();
       renderTreeContent();
     },
+    setReconcilePending: writeStatus.setReconcilePending,
   };
 }
 
@@ -978,9 +1190,27 @@ function createFeatureCrewSync(
   rootId: number,
   typeName: string,
   onReconciled: (members: FeatureCrewMember[]) => void,
-): { seed(roots: TrackedWorkItem[]): void; onAssigneeChange(user: DirectoryUser): void } {
+  onUserWritePendingChange: (count: number) => void = () => {},
+): {
+  seed(roots: TrackedWorkItem[]): void;
+  onAssigneeChange(user: DirectoryUser): void;
+  setTag(user: TrackedUser, tag: string): void;
+} {
   const known = new Set<string>();
   const assignees: FeatureCrewAssignee[] = [];
+
+  // Serializes every reconcile so read-modify-writes on the shared roster item never race (see the
+  // note in `reconcile`). Each call appends to this chain; failures are swallowed to keep it alive.
+  let reconcileChain: Promise<void> = Promise.resolve();
+
+  // In-flight count of USER-triggered reconciles (tag picks / inline assignee changes) reported to
+  // the board's "Saving…" indicator. The load-time seed reconcile is background housekeeping, not a
+  // save the user is waiting on, so it is deliberately excluded.
+  let userPending = 0;
+  const bumpUserPending = (delta: number): void => {
+    userPending += delta;
+    onUserWritePendingChange(userPending);
+  };
 
   const add = (assignee: FeatureCrewAssignee): boolean => {
     const key = assignee.alias.toLowerCase();
@@ -992,16 +1222,40 @@ function createFeatureCrewSync(
     return true;
   };
 
-  const reconcile = (): void => {
-    // Fire-and-forget by design (the writer logs its own failures), but when it resolves with the
-    // roster hand back the tags so the view can paint each assignee's pill and offer them as filters.
-    void services.featureCrew
-      .reconcile({ rootId, typeName, assignees: [...assignees] })
-      .then((result) => {
+  const reconcile = (tagAssignments?: FeatureCrewTagAssignment[], userTriggered = false): void => {
+    // Each reconcile is a read-modify-write against the one shared roster item, so they MUST run
+    // strictly one-at-a-time. Left to race, the load-time seed reconcile (which knows nothing about a
+    // tag the user just picked) can resolve after a setTag reconcile and repaint the pill with the
+    // tag-less roster — and on a first-ever load two concurrent creates clobber each other so the tag
+    // lands nowhere. Chaining every call onto the previous one makes the write atomic here: seed
+    // finishes (creating the item) before setTag reads it, so a tag is never lost or reverted.
+    //
+    // Count a user-triggered save toward the "Saving…" indicator from the moment it is QUEUED (so the
+    // spinner appears immediately, even while it waits behind another reconcile) until its chained
+    // write settles — decremented in `finally` so a failure still clears the count.
+    if (userTriggered) {
+      bumpUserPending(1);
+    }
+    reconcileChain = reconcileChain.then(async () => {
+      // Snapshot the roster at execution time so a call queued behind another still sends the latest
+      // assignees. The writer logs its own failures; swallow here only to keep the chain alive.
+      try {
+        const result = await services.featureCrew.reconcile({
+          rootId,
+          typeName,
+          assignees: [...assignees],
+          tagAssignments,
+        });
         if (result.ok && result.members) {
           onReconciled(result.members);
         }
-      });
+      } finally {
+        if (userTriggered) {
+          bumpUserPending(-1);
+        }
+      }
+    });
+    void reconcileChain.catch(() => {});
   };
 
   return {
@@ -1017,10 +1271,107 @@ function createFeatureCrewSync(
         fullName: user.displayName,
       });
       if (added) {
-        reconcile();
+        reconcile(undefined, true);
       }
     },
+    setTag(user, tag) {
+      // The person is already assigned somewhere, so they are on the roster; record their chosen tag
+      // and reconcile. The resolved roster then repaints every pill and refreshes the tag filter.
+      const alias = deriveAlias(user.uniqueName, user.displayName);
+      reconcile([{ alias, tag }], true);
+    },
   };
+}
+
+/**
+ * Renders the board once the tree and sprint window have loaded: validates the result, wires the
+ * Feature Crew roster sync, builds the board, and kicks off the initial reconcile. Split out of the
+ * view's `render` so that method stays a thin "create shell, load, then hand off" flow.
+ *
+ * The roster item is parked under the LAST configured type and linked to the root (the FIRST type);
+ * with no types configured there is nowhere to store it, so the sync is skipped. When the reconcile
+ * resolves it hands back the roster's tags, which the board projects onto every assignee.
+ */
+function renderLoadedBoard(
+  context: EnhancedViewContext,
+  root: HTMLElement,
+  services: EnhancedViewServices,
+  result: WorkItemTreeResult,
+  sprintWindow: SprintWindow,
+): void {
+  // Remove title and loading, render error or board.
+  root.innerHTML = "";
+
+  if (!validateAndRenderErrors(result, root, context.doc, services)) {
+    return;
+  }
+
+  const treeRoot = result.roots[0]!;
+  const types = services.getTypes();
+  const typeMap = new Map(types.map((t) => [t.name, t]));
+
+  const lastTypeName = types[types.length - 1]?.name;
+  // The board is rendered below; the reconcile callback needs it, so route through a mutable handle
+  // that is filled in right after the board is built (the reconcile can only resolve after this
+  // synchronous setup, so the handle is always ready by the time it fires).
+  let applyCrewMembers: (members: FeatureCrewMember[]) => void = () => {};
+  // Same mutable-handle pattern as applyCrewMembers: the board is built below, so route the
+  // reconcile-pending signal through a handle filled in right after, letting a user-triggered
+  // reconcile drive the board's shared "Saving…" indicator.
+  let reportReconcilePending: (count: number) => void = () => {};
+  const crewSync =
+    lastTypeName === undefined
+      ? null
+      : createFeatureCrewSync(
+          services,
+          treeRoot.id,
+          lastTypeName,
+          (members) => applyCrewMembers(members),
+          (count) => reportReconcilePending(count),
+        );
+  const onAssigneeChange = (user: DirectoryUser): void => {
+    crewSync?.onAssigneeChange(user);
+  };
+  // Only offer tag editing when a roster can actually be stored (a crew sync exists); otherwise the
+  // pills stay read-only rather than pretending to persist a choice that has nowhere to go.
+  const onTagAssign = crewSync
+    ? (user: TrackedUser, tag: string): void => crewSync.setTag(user, tag)
+    : null;
+
+  const board = renderBoard(
+    context.doc,
+    treeRoot,
+    context,
+    typeMap,
+    sprintWindow,
+    onAssigneeChange,
+    onTagAssign,
+    result.folderPath ?? [],
+  );
+  applyCrewMembers = board.applyCrewMembers;
+  reportReconcilePending = board.setReconcilePending;
+  root.append(board.element);
+
+  // Reconcile once now the whole tree is known (create-if-missing, append any new assignees); its
+  // resolved roster then paints the assignee tags and fills the tag filter panel.
+  crewSync?.seed([treeRoot]);
+}
+
+/** Renders the load-failure scaffold when the tree read rejects; the error is logged first. */
+function renderTreeLoadFailure(
+  context: EnhancedViewContext,
+  root: HTMLElement,
+  services: EnhancedViewServices,
+  err: unknown,
+): void {
+  services.logger.error("Project Tracking failed to load its tree", err);
+  root.innerHTML = "";
+  root.append(
+    renderViewScaffold(context.doc, {
+      title: "Project Tracking",
+      message: "Could not load this query.",
+    }),
+  );
 }
 
 /**
@@ -1031,6 +1382,8 @@ export const projectTrackingView: EnhancedView = {
   render: (context) => {
     const root = context.doc.createElement("section");
     root.className = "awesomeado-view awesomeado-tracking";
+    // Trim the top padding to 2px so the (sticky) header card sits close to the top ADO bar; keep
+    // the other sides at 16px for breathing room. The board below adds its own matching top padding.
     root.style.cssText = [
       "display:flex",
       "flex-direction:column",
@@ -1039,7 +1392,7 @@ export const projectTrackingView: EnhancedView = {
       "font-family:inherit",
       "color:var(--text-primary-color, inherit)",
       "text-align:left",
-      "padding:16px",
+      "padding:2px 16px 16px 16px",
     ].join(";");
 
     // Render title immediately so it's available synchronously for tests.
@@ -1073,63 +1426,10 @@ export const projectTrackingView: EnhancedView = {
     // both resolve; the picker opens populated. A sprint-window failure resolves to an empty window
     // (the filter is simply left disabled) and never blocks the board.
     Promise.all([services.loadTree(context.queryId), services.loadSprintWindow()])
-      .then(([result, sprintWindow]) => {
-        // Remove title and loading, render error or board.
-        root.innerHTML = "";
-
-        if (!validateAndRenderErrors(result, root, context.doc, services)) {
-          return;
-        }
-
-        const treeRoot = result.roots[0]!;
-        const types = services.getTypes();
-        const typeMap = new Map(types.map((t) => [t.name, t]));
-
-        // Keep the project's Feature Crew roster in sync with who is assigned. The roster item is
-        // parked under the LAST configured type and linked to the root (the FIRST type); with no
-        // types configured there is nowhere to store it, so the sync is skipped. When the reconcile
-        // resolves it hands back the roster's tags, which the board projects onto every assignee.
-        const lastTypeName = types[types.length - 1]?.name;
-        // The board is rendered below; the reconcile callback needs it, so route through a mutable
-        // handle that is filled in right after the board is built (the reconcile can only resolve
-        // after this synchronous setup, so the handle is always ready by the time it fires).
-        let applyCrewMembers: (members: FeatureCrewMember[]) => void = () => {};
-        const crewSync =
-          lastTypeName === undefined
-            ? null
-            : createFeatureCrewSync(services, treeRoot.id, lastTypeName, (members) =>
-                applyCrewMembers(members),
-              );
-        const onAssigneeChange = (user: DirectoryUser): void => {
-          crewSync?.onAssigneeChange(user);
-        };
-
-        const board = renderBoard(
-          context.doc,
-          treeRoot,
-          context,
-          typeMap,
-          sprintWindow,
-          onAssigneeChange,
-          result.folderPath ?? [],
-        );
-        applyCrewMembers = board.applyCrewMembers;
-        root.append(board.element);
-
-        // Reconcile once now the whole tree is known (create-if-missing, append any new assignees);
-        // its resolved roster then paints the assignee tags and fills the tag filter panel.
-        crewSync?.seed([treeRoot]);
-      })
-      .catch((err: unknown) => {
-        services.logger.error("Project Tracking failed to load its tree", err);
-        root.innerHTML = "";
-        root.append(
-          renderViewScaffold(context.doc, {
-            title: "Project Tracking",
-            message: "Could not load this query.",
-          }),
-        );
-      });
+      .then(([result, sprintWindow]) =>
+        renderLoadedBoard(context, root, services, result, sprintWindow),
+      )
+      .catch((err: unknown) => renderTreeLoadFailure(context, root, services, err));
 
     return root;
   },

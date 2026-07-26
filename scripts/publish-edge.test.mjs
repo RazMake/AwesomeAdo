@@ -28,64 +28,78 @@ function buildMockFetch(opts = {}) {
   let uploadPollIdx = 0;
   let publishPollIdx = 0;
 
+  // The Edge API only returns the operation Location header on the initial 202 accept; every
+  // other response omits it. Centralizing that shape keeps each route handler tiny.
+  const locationHeaders = (/** @type {string | null} */ location) => ({
+    get: (/** @type {any} */ name) => (name.toLowerCase() === "location" ? location : null),
+  });
+
+  const uploadResponse = () => {
+    if (uploadError) throw new Error(uploadError);
+    return {
+      status: uploadStatus,
+      ok: uploadStatus >= 200 && uploadStatus < 300,
+      headers: locationHeaders(
+        uploadStatus === 202
+          ? `/v1/products/x/submissions/draft/package/operations/${uploadOperationId}`
+          : null,
+      ),
+      json: async () => ({}),
+    };
+  };
+
+  const publishResponse = () => {
+    if (publishError) throw new Error(publishError);
+    return {
+      status: publishStatus,
+      ok: publishStatus >= 200 && publishStatus < 300,
+      headers: locationHeaders(
+        publishStatus === 202
+          ? `/v1/products/x/submissions/operations/${publishOperationId}`
+          : null,
+      ),
+      json: async () => ({}),
+    };
+  };
+
+  const pollResponse = (/** @type {Record<string, any>} */ resp) => ({
+    status: 200,
+    ok: true,
+    headers: { get: () => null },
+    json: async () => resp,
+  });
+
+  // Route table replaces a URL if/else ladder: the first matcher whose predicate holds handles
+  // the request. Order matters — the operation-poll routes must precede their initiators so a
+  // ".../operations/..." URL never falls through to the POST-initiator branch.
+  const routes = [
+    {
+      match: (/** @type {string} */ url) =>
+        url.includes("/submissions/draft/package") && !url.includes("/operations/"),
+      handle: () => uploadResponse(),
+    },
+    {
+      match: (/** @type {string} */ url) => url.includes("/submissions/draft/package/operations/"),
+      handle: () => pollResponse(uploadPollResponses[uploadPollIdx++] ?? { status: "Succeeded" }),
+    },
+    {
+      match: (/** @type {string} */ url, /** @type {any} */ init) =>
+        url.includes("/submissions") &&
+        (init.method ?? "") === "POST" &&
+        !url.includes("/operations/"),
+      handle: () => publishResponse(),
+    },
+    {
+      match: (/** @type {string} */ url) => url.includes("/submissions/operations/"),
+      handle: () => pollResponse(publishPollResponses[publishPollIdx++] ?? { status: "Succeeded" }),
+    },
+  ];
+
   const fetchImpl = async (/** @type {any} */ url, /** @type {any} */ init = {}) => {
     calls.push({ url, method: init.method ?? "GET", headers: init.headers ?? {} });
-
-    if (url.includes("/submissions/draft/package") && !url.includes("/operations/")) {
-      if (uploadError) throw new Error(uploadError);
-      return {
-        status: uploadStatus,
-        ok: uploadStatus >= 200 && uploadStatus < 300,
-        headers: {
-          get: (/** @type {any} */ name) =>
-            name.toLowerCase() === "location" && uploadStatus === 202
-              ? `/v1/products/x/submissions/draft/package/operations/${uploadOperationId}`
-              : null,
-        },
-        json: async () => ({}),
-      };
-    }
-
-    if (url.includes("/submissions/draft/package/operations/")) {
-      const resp = uploadPollResponses[uploadPollIdx++] ?? { status: "Succeeded" };
-      return {
-        status: 200,
-        ok: true,
-        headers: { get: () => null },
-        json: async () => resp,
-      };
-    }
-
-    if (
-      url.includes("/submissions") &&
-      (init.method ?? "") === "POST" &&
-      !url.includes("/operations/")
-    ) {
-      if (publishError) throw new Error(publishError);
-      return {
-        status: publishStatus,
-        ok: publishStatus >= 200 && publishStatus < 300,
-        headers: {
-          get: (/** @type {any} */ name) =>
-            name.toLowerCase() === "location" && publishStatus === 202
-              ? `/v1/products/x/submissions/operations/${publishOperationId}`
-              : null,
-        },
-        json: async () => ({}),
-      };
-    }
-
-    if (url.includes("/submissions/operations/")) {
-      const resp = publishPollResponses[publishPollIdx++] ?? { status: "Succeeded" };
-      return {
-        status: 200,
-        ok: true,
-        headers: { get: () => null },
-        json: async () => resp,
-      };
-    }
-
-    throw new Error(`Unexpected URL: ${url}`);
+    const route = routes.find((r) => r.match(url, init));
+    if (!route) throw new Error(`Unexpected URL: ${url}`);
+    return route.handle();
   };
 
   return { fetchImpl: /** @type {any} */ (fetchImpl), calls };
@@ -135,7 +149,9 @@ describe("publishEdge — successful flow", () => {
       assert.equal(call.headers?.["X-ClientID"], FAKE_CLIENT_ID);
     }
   });
+});
 
+describe("publishEdge — request body and polling", () => {
   it("sends certificationNotes in the publish body", async () => {
     let publishBody;
     const { fetchImpl } = buildMockFetch({});

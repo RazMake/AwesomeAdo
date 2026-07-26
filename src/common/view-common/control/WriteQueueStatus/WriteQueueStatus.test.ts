@@ -2,12 +2,12 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { renderWriteQueueStatus } from "./WriteQueueStatus";
 
-describe("renderWriteQueueStatus", () => {
-  // Clean up any DOM created by tests.
-  afterEach(() => {
-    document.body.innerHTML = "";
-  });
+// Clean up any DOM created by tests (top-level hook applies to every describe below).
+afterEach(() => {
+  document.body.innerHTML = "";
+});
 
+describe("renderWriteQueueStatus - idle and count rendering", () => {
   it("is idle (hidden, empty text) by default with the correct role and aria-live", () => {
     const handle = renderWriteQueueStatus(document);
 
@@ -57,7 +57,9 @@ describe("renderWriteQueueStatus", () => {
       expect(animate).not.toBeNull();
     }
   });
+});
 
+describe("renderWriteQueueStatus - setCount transitions and edge cases", () => {
   it("setCount(2) from idle shows the plural state; setCount(0) hides and clears again", () => {
     const handle = renderWriteQueueStatus(document);
     const label = handle.element.querySelector(".awesomeado-write-queue-status__label");

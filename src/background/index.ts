@@ -4,8 +4,11 @@ import {
   FEATURE_CREW_STATE,
   FEATURE_CREW_TITLE,
   formatFeatureCrewDescription,
+  applyTagAssignments,
   mergeFeatureCrew,
   parseFeatureCrewDescription,
+  type FeatureCrewMember,
+  type FeatureCrewUrls,
 } from "../common/ado/FeatureCrew";
 import { buildAdoIterationsUrl } from "../common/ado/TeamIteration";
 import {
@@ -39,10 +42,10 @@ import {
   type ReconcileFeatureCrewResponse,
 } from "../common/browser/FeatureCrewRequest";
 import {
-  isUpdateWorkItemStateMessage,
-  type UpdateWorkItemStateMessage,
-  type UpdateWorkItemStateResponse,
-} from "../common/browser/WorkItemStateRequest";
+  isUpdateWorkItemFieldMessage,
+  type UpdateWorkItemFieldMessage,
+  type UpdateWorkItemFieldResponse,
+} from "../common/browser/WorkItemFieldRequest";
 import {
   applyFeatureCrewInPage,
   type FeatureCrewApplyConfig,
@@ -51,7 +54,7 @@ import {
 import { fetchAdoIterationsInPage } from "../common/browser/fetchAdoIterationsInPage";
 import { fetchAdoTreeInPage } from "../common/browser/fetchAdoTreeInPage";
 import { findFeatureCrewInPage } from "../common/browser/findFeatureCrewInPage";
-import { updateWorkItemStateInPage } from "../common/browser/updateWorkItemStateInPage";
+import { updateWorkItemFieldInPage } from "../common/browser/updateWorkItemFieldInPage";
 import { createLoggerFactory } from "../common/logging/createLogger";
 import { notifyNavigation } from "../common/navigation/NavigationNotifier";
 
@@ -276,44 +279,23 @@ const reconcileFeatureCrew = async (
         FEATURE_CREW_AFFECTED_BY_REL,
       ],
     });
-    const found =
-      (findResults[0]?.result as { id: number; rev: number; description: string } | undefined) ??
-      null;
+    const found = firstScriptResult<{ id: number; rev: number; description: string }>(findResults);
 
-    // Merge the currently-assigned people into whatever roster already exists; a brand-new item
-    // starts from an empty roster. When nothing new is added to an existing item there is nothing to
-    // write, so the roster's hand-edited tags are left completely untouched.
-    const existing = found === null ? [] : parseFeatureCrewDescription(found.description);
-    const merged = mergeFeatureCrew(existing, message.assignees);
-    if (found !== null && !merged.changed) {
-      return { ok: true, changed: false, id: found.id, members: merged.members };
+    const roster = reconcileFeatureCrewRoster(found, message);
+    // When nothing new was added and no tag moved on an existing item there is nothing to write, so
+    // the roster's hand-edited tags are left completely untouched.
+    if (found !== null && !roster.changed) {
+      return { ok: true, changed: false, id: found.id, members: roster.members };
     }
-    const description = formatFeatureCrewDescription(merged.members);
 
-    const applyConfig: FeatureCrewApplyConfig =
-      found === null
-        ? {
-            mode: "create",
-            url: urls.createUrl,
-            description,
-            title: FEATURE_CREW_TITLE,
-            state: FEATURE_CREW_STATE,
-            rootRelationUrl: urls.rootRelationUrl,
-            affectedByRel: FEATURE_CREW_AFFECTED_BY_REL,
-            itemBaseUrl: urls.itemBaseUrl,
-          }
-        : {
-            mode: "update",
-            url: `${urls.itemBaseUrl}/${found.id}?api-version=7.1`,
-            description,
-          };
+    const applyConfig = buildFeatureCrewApplyConfig(found, urls, roster.description);
     const applyResults = await chrome.scripting.executeScript({
       target: { tabId },
       world: "MAIN",
       func: applyFeatureCrewInPage,
       args: [applyConfig],
     });
-    const applied = (applyResults[0]?.result as FeatureCrewApplyResult | undefined) ?? null;
+    const applied = firstScriptResult<FeatureCrewApplyResult>(applyResults);
     if (applied === null || applied.id === null) {
       // The MAIN-world write failed (e.g. a process rule blocking the transition into "Removed", or
       // a permission error); log the specific reason it reported and hand it back so the view degrades
@@ -327,17 +309,68 @@ const reconcileFeatureCrew = async (
     logger.info(
       `Feature Crew reconciled for root ${message.rootId}: ${found === null ? "created" : "updated"} item ${applied.id}.`,
     );
-    return { ok: true, changed: true, id: applied.id, members: merged.members };
+    return { ok: true, changed: true, id: applied.id, members: roster.members };
   } catch (error) {
     // Injection fails on a closed/navigated/restricted tab; report the failure so the view degrades.
     logger.error(`Could not reconcile Feature Crew for root ${message.rootId}`, error);
-    return {
-      ok: false,
-      changed: false,
-      error: error instanceof Error ? error.message : String(error),
-    };
+    return { ok: false, changed: false, error: describeError(error) };
   }
 };
+
+// Reduce a thrown value to its human-readable message, preserving an Error's own message while still
+// coping with non-Error throws, so failures surface a real cause instead of "[object Object]".
+function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+// Unwrap the single MAIN-world injection result, normalizing the "no result" cases (empty array or a
+// frame that returned nothing) to null so every caller reads one shape.
+function firstScriptResult<T>(results: { result?: unknown }[]): T | null {
+  return (results[0]?.result as T | undefined) ?? null;
+}
+
+// Merge the currently-assigned people into whatever roster already exists (a brand-new item starts
+// empty), then stamp any hand-picked tag choices onto it. Either a new person or a moved tag is a
+// reason to write, surfaced as `changed`.
+function reconcileFeatureCrewRoster(
+  found: { description: string } | null,
+  message: ReconcileFeatureCrewMessage,
+): { members: FeatureCrewMember[]; description: string; changed: boolean } {
+  const existing = found === null ? [] : parseFeatureCrewDescription(found.description);
+  const merged = mergeFeatureCrew(existing, message.assignees);
+  const tagged = applyTagAssignments(merged.members, message.tagAssignments ?? []);
+  return {
+    members: tagged.members,
+    description: formatFeatureCrewDescription(tagged.members),
+    changed: merged.changed || tagged.changed,
+  };
+}
+
+// Build the apply config: a missing item is created (two-step, since ADO rejects a direct create
+// into "Removed"), an existing one is patched by id.
+function buildFeatureCrewApplyConfig(
+  found: { id: number } | null,
+  urls: FeatureCrewUrls,
+  description: string,
+): FeatureCrewApplyConfig {
+  if (found === null) {
+    return {
+      mode: "create",
+      url: urls.createUrl,
+      description,
+      title: FEATURE_CREW_TITLE,
+      state: FEATURE_CREW_STATE,
+      rootRelationUrl: urls.rootRelationUrl,
+      affectedByRel: FEATURE_CREW_AFFECTED_BY_REL,
+      itemBaseUrl: urls.itemBaseUrl,
+    };
+  }
+  return {
+    mode: "update",
+    url: `${urls.itemBaseUrl}/${found.id}?api-version=7.1`,
+    description,
+  };
+}
 
 chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
   if (!isReconcileFeatureCrewMessage(message)) {
@@ -363,52 +396,52 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
   return true;
 });
 
-// An enhanced view can persist a work item's state change back to Azure DevOps. Like the tree load
-// and Feature Crew reconcile, the credentialed PATCH can only run in the ADO tab's MAIN world, so
-// the content side asks this worker to update: build the URL from the SENDER's own trusted tab URL
-// (never a content-supplied one — this stays a closed "update this item's state" operation, not a
-// write-any-field proxy), run the JSON Patch with an optimistic-concurrency rev test, and hand back
-// the result (success + new rev, or a failure).
-const updateWorkItemState = async (
-  message: UpdateWorkItemStateMessage,
+// An enhanced view can persist a work item field change back to Azure DevOps (e.g. its status or
+// its ETA date). Like the tree load and Feature Crew reconcile, the credentialed PATCH can only run
+// in the ADO tab's MAIN world, so the content side asks this worker to update: build the URL from
+// the SENDER's own trusted tab URL (never a content-supplied one — this stays a closed "update this
+// item's field" operation scoped to the sender's own tab), run the JSON Patch with an
+// optimistic-concurrency rev test, and hand back the result (success + new rev, or a failure).
+const updateWorkItemField = async (
+  message: UpdateWorkItemFieldMessage,
   tabId: number,
   tabUrl: string,
-): Promise<UpdateWorkItemStateResponse> => {
+): Promise<UpdateWorkItemFieldResponse> => {
   const updateUrl = buildWorkItemUpdateUrl(tabUrl, message.id);
   if (updateUrl === null) {
     // A non-ADO URL (or an unresolvable one) has no collection base to build the update URL from.
-    logger.info(`Work item ${message.id} state update skipped: tab is not a supported ADO URL.`);
+    logger.info(`Work item ${message.id} field update skipped: tab is not a supported ADO URL.`);
     return { ok: false, error: "not a supported ADO URL" };
   }
   try {
     const results = await chrome.scripting.executeScript({
       target: { tabId },
       world: "MAIN",
-      func: updateWorkItemStateInPage,
-      args: [updateUrl, message.id, message.rev, message.state],
+      func: updateWorkItemFieldInPage,
+      args: [updateUrl, message.id, message.rev, message.field, message.value],
     });
-    const result = (results[0]?.result as UpdateWorkItemStateResponse | undefined) ?? null;
+    const result = (results[0]?.result as UpdateWorkItemFieldResponse | undefined) ?? null;
     if (result === null) {
-      logger.error(`Work item ${message.id} state update returned no result.`);
+      logger.error(`Work item ${message.id} field update returned no result.`);
       return { ok: false, error: "no result" };
     }
     if (result.ok === false) {
-      logger.error(`Work item ${message.id} state update failed: ${result.error ?? "unknown"}.`);
+      logger.error(`Work item ${message.id} field update failed: ${result.error ?? "unknown"}.`);
     } else {
       logger.info(
-        `Work item ${message.id} state updated to ${message.state}, rev=${result.rev ?? "none"}.`,
+        `Work item ${message.id} field ${message.field} updated, rev=${result.rev ?? "none"}.`,
       );
     }
     return result;
   } catch (error) {
     // Injection fails on a closed/navigated/restricted tab; report the failure.
-    logger.error(`Could not update work item ${message.id} state`, error);
+    logger.error(`Could not update work item ${message.id} field`, error);
     return { ok: false, error: "exception" };
   }
 };
 
 chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
-  if (!isUpdateWorkItemStateMessage(message)) {
+  if (!isUpdateWorkItemFieldMessage(message)) {
     // Not ours — leave it for the other listeners above to handle.
     return undefined;
   }
@@ -416,11 +449,11 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
   const tabUrl = sender.tab?.url;
   if (tabId === undefined || tabUrl === undefined) {
     // Only a real ADO tab can be scripted; a message with no sender tab cannot be served.
-    logger.error(`Cannot update work item ${message.id} state: message has no sender tab.`);
-    sendResponse({ ok: false, error: "no sender tab" } satisfies UpdateWorkItemStateResponse);
+    logger.error(`Cannot update work item ${message.id} field: message has no sender tab.`);
+    sendResponse({ ok: false, error: "no sender tab" } satisfies UpdateWorkItemFieldResponse);
     return undefined;
   }
-  void updateWorkItemState(message, tabId, tabUrl).then(sendResponse);
+  void updateWorkItemField(message, tabId, tabUrl).then(sendResponse);
   // Keep the message channel open for the async PATCH reply above.
   return true;
 });

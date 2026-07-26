@@ -77,6 +77,120 @@ function walkDir(dir, base) {
 }
 
 /**
+ * Require GITHUB_SHA to be a lowercase 40-hex string before any mutation.
+ * @param {NodeJS.ProcessEnv} env
+ * @returns {string}
+ */
+function requireGithubSha(env) {
+  const githubSha = env.GITHUB_SHA;
+  if (typeof githubSha !== "string" || !SHA_PATTERN.test(githubSha)) {
+    throw new Error("GITHUB_SHA must be a lowercase 40-hex string before packaging");
+  }
+  return githubSha;
+}
+
+/**
+ * Require every mandatory dist file to exist as a regular (non-symlink) file.
+ * @param {string} distDir
+ */
+function assertRequiredDistFiles(distDir) {
+  for (const required of REQUIRED_DIST_FILES) {
+    const filePath = path.join(distDir, required);
+    let stat;
+    try {
+      stat = lstatSync(filePath);
+    } catch {
+      throw new Error(`Required dist file is missing: ${required}`);
+    }
+    if (stat.isSymbolicLink() || !stat.isFile()) {
+      throw new Error(`Required dist file is not a regular file: ${required}`);
+    }
+  }
+}
+
+/**
+ * Parse the built manifest and require its version to equal the expected full version.
+ * @param {string} distDir
+ * @param {string} full
+ */
+async function assertManifestVersion(distDir, full) {
+  const manifestPath = path.join(distDir, "manifest.json");
+  const manifestText = await readFile(manifestPath, "utf8");
+  let manifest;
+  try {
+    manifest = JSON.parse(manifestText);
+  } catch (error) {
+    throw new Error(
+      `Cannot parse built manifest.json: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
+    );
+  }
+  if (manifest.version !== full) {
+    throw new Error(
+      `Built manifest version '${manifest.version}' does not match expected '${full}'`,
+    );
+  }
+}
+
+/**
+ * Walk dist/, reject duplicates, and return entries in Unicode code-point order.
+ * @param {string} distDir
+ * @returns {Array<{ absolutePath: string, name: string }>}
+ */
+function collectSortedEntries(distDir) {
+  const entries = walkDir(path.resolve(distDir), path.resolve(distDir));
+  if (entries.length === 0) {
+    throw new Error("dist/ contains no files to archive");
+  }
+
+  const nameSet = new Set();
+  for (const entry of entries) {
+    if (nameSet.has(entry.name)) {
+      throw new Error(`Duplicate normalized archive entry: ${entry.name}`);
+    }
+    nameSet.add(entry.name);
+  }
+
+  entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  return entries;
+}
+
+/**
+ * Recreate artifacts/, write both store archives, then the metadata file.
+ * Cleans up the artifacts directory if either archive fails.
+ * @param {{
+ *   artifactsDir: string,
+ *   entries: Array<{ absolutePath: string, name: string }>,
+ *   base: string,
+ *   build: string,
+ *   full: string,
+ *   githubSha: string,
+ * }} params
+ */
+async function writeReleaseArtifacts({ artifactsDir, entries, base, build, full, githubSha }) {
+  await rm(artifactsDir, { recursive: true, force: true });
+  await mkdir(artifactsDir, { recursive: true });
+
+  const chromeArchive = path.join(artifactsDir, `awesomeado-chrome-${full}.zip`);
+  const edgeArchive = path.join(artifactsDir, `awesomeado-edge-${full}.zip`);
+
+  try {
+    // Create archives sequentially for deterministic error attribution
+    await writeArchive(chromeArchive, entries);
+    await writeArchive(edgeArchive, entries);
+  } catch (error) {
+    // Remove partially recreated artifacts/ on any failure
+    await rm(artifactsDir, { recursive: true, force: true });
+    throw error;
+  }
+
+  // Write metadata only after both archives close successfully
+  const metadata = { format: 1, base, build, full, GITHUB_SHA: githubSha };
+  const metadataPath = path.join(artifactsDir, "release-metadata.json");
+  await writeFile(metadataPath, JSON.stringify(metadata, null, 2) + "\n", "utf8");
+}
+
+/**
  * Package the extension into store ZIP archives.
  * @param {{
  *   packageMetadata?: unknown,
@@ -100,97 +214,16 @@ export async function packageExtension(options = {}) {
     distDir = "dist",
   } = options;
 
-  // Require GITHUB_SHA before any mutation
-  const githubSha = env.GITHUB_SHA;
-  if (typeof githubSha !== "string" || !SHA_PATTERN.test(githubSha)) {
-    throw new Error("GITHUB_SHA must be a lowercase 40-hex string before packaging");
-  }
-
+  const githubSha = requireGithubSha(env);
   const { base, build, full } = createVersion(packageMetadata, env.BUILD_NUMBER);
 
   // Run store build with STORE_BUILD=1 in a copied env (never mutate process.env)
-  const buildEnv = { ...env, STORE_BUILD: "1" };
-  runBuild(buildEnv);
+  runBuild({ ...env, STORE_BUILD: "1" });
 
-  // Validate required dist files exist and are regular files (not symlinks)
-  for (const required of REQUIRED_DIST_FILES) {
-    const filePath = path.join(distDir, required);
-    let stat;
-    try {
-      stat = lstatSync(filePath);
-    } catch {
-      throw new Error(`Required dist file is missing: ${required}`);
-    }
-    if (stat.isSymbolicLink() || !stat.isFile()) {
-      throw new Error(`Required dist file is not a regular file: ${required}`);
-    }
-  }
-
-  // Parse the built manifest and require version === full
-  const manifestPath = path.join(distDir, "manifest.json");
-  const manifestText = await readFile(manifestPath, "utf8");
-  let manifest;
-  try {
-    manifest = JSON.parse(manifestText);
-  } catch (error) {
-    throw new Error(
-      `Cannot parse built manifest.json: ${error instanceof Error ? error.message : String(error)}`,
-      { cause: error },
-    );
-  }
-  if (manifest.version !== full) {
-    throw new Error(
-      `Built manifest version '${manifest.version}' does not match expected '${full}'`,
-    );
-  }
-
-  // Walk dist/ and collect sorted entries
-  const entries = walkDir(path.resolve(distDir), path.resolve(distDir));
-  if (entries.length === 0) {
-    throw new Error("dist/ contains no files to archive");
-  }
-
-  // Check for duplicate normalized names
-  const nameSet = new Set();
-  for (const entry of entries) {
-    if (nameSet.has(entry.name)) {
-      throw new Error(`Duplicate normalized archive entry: ${entry.name}`);
-    }
-    nameSet.add(entry.name);
-  }
-
-  // Sort by Unicode code-point order
-  entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
-
-  // Recreate artifacts/ directory
-  await rm(artifactsDir, { recursive: true, force: true });
-  await mkdir(artifactsDir, { recursive: true });
-
-  const chromeName = `awesomeado-chrome-${full}.zip`;
-  const edgeName = `awesomeado-edge-${full}.zip`;
-  const chromeArchive = path.join(artifactsDir, chromeName);
-  const edgeArchive = path.join(artifactsDir, edgeName);
-
-  try {
-    // Create archives sequentially for deterministic error attribution
-    await writeArchive(chromeArchive, entries);
-    await writeArchive(edgeArchive, entries);
-  } catch (error) {
-    // Remove partially recreated artifacts/ on any failure
-    await rm(artifactsDir, { recursive: true, force: true });
-    throw error;
-  }
-
-  // Write metadata only after both archives close successfully
-  const metadata = {
-    format: 1,
-    base,
-    build,
-    full,
-    GITHUB_SHA: githubSha,
-  };
-  const metadataPath = path.join(artifactsDir, "release-metadata.json");
-  await writeFile(metadataPath, JSON.stringify(metadata, null, 2) + "\n", "utf8");
+  assertRequiredDistFiles(distDir);
+  await assertManifestVersion(distDir, full);
+  const entries = collectSortedEntries(distDir);
+  await writeReleaseArtifacts({ artifactsDir, entries, base, build, full, githubSha });
 }
 
 const invokedPath = process.argv[1] ? pathToFileURL(path.resolve(process.argv[1])).href : undefined;

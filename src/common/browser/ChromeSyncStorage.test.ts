@@ -33,99 +33,121 @@ function makeMockChrome(): MockChrome {
   };
 }
 
-describe("ChromeSyncStorage", () => {
+interface StorageContext {
+  mockChrome: MockChrome;
+  storage: ChromeSyncStorage;
+}
+
+// Shared arrange for every ChromeSyncStorage group: a fresh mock chrome + storage per test.
+function setupStorage(): StorageContext {
+  const mockChrome = makeMockChrome();
+  globalThis.chrome = mockChrome as unknown as typeof chrome;
+  return { mockChrome, storage: new ChromeSyncStorage() };
+}
+
+describe("ChromeSyncStorage - get", () => {
   let mockChrome: MockChrome;
   let storage: ChromeSyncStorage;
 
   beforeEach(() => {
-    mockChrome = makeMockChrome();
-    globalThis.chrome = mockChrome as unknown as typeof chrome;
-    storage = new ChromeSyncStorage();
+    ({ mockChrome, storage } = setupStorage());
   });
 
-  describe("get", () => {
-    it("returns the value for the requested key", async () => {
-      mockChrome.storage.sync.get.mockResolvedValue({
-        "settings.theme": "dark",
-      });
-      const result = await storage.get("settings.theme");
-      expect(result).toBe("dark");
-      expect(mockChrome.storage.sync.get).toHaveBeenCalledWith("settings.theme");
+  it("returns the value for the requested key", async () => {
+    mockChrome.storage.sync.get.mockResolvedValue({
+      "settings.theme": "dark",
     });
-
-    it("returns undefined when the key is absent from storage", async () => {
-      mockChrome.storage.sync.get.mockResolvedValue({});
-      const result = await storage.get("settings.theme");
-      expect(result).toBeUndefined();
-    });
+    const result = await storage.get("settings.theme");
+    expect(result).toBe("dark");
+    expect(mockChrome.storage.sync.get).toHaveBeenCalledWith("settings.theme");
   });
 
-  describe("set", () => {
-    it("writes the key/value pair to sync storage", async () => {
-      mockChrome.storage.sync.set.mockResolvedValue(undefined);
-      await storage.set("settings.defaultView", "original");
-      expect(mockChrome.storage.sync.set).toHaveBeenCalledWith({
-        "settings.defaultView": "original",
-      });
-    });
+  it("returns undefined when the key is absent from storage", async () => {
+    mockChrome.storage.sync.get.mockResolvedValue({});
+    const result = await storage.get("settings.theme");
+    expect(result).toBeUndefined();
+  });
+});
+
+describe("ChromeSyncStorage - set", () => {
+  let mockChrome: MockChrome;
+  let storage: ChromeSyncStorage;
+
+  beforeEach(() => {
+    ({ mockChrome, storage } = setupStorage());
   });
 
-  describe("subscribe", () => {
-    it("forwards the newValue for the matching key and area", () => {
-      const listener = vi.fn();
-      let capturedHandler: StorageChangeListener | undefined;
-      mockChrome.storage.onChanged.addListener.mockImplementation(
-        (handler: StorageChangeListener) => {
-          capturedHandler = handler;
-        },
-      );
-
-      storage.subscribe("settings.theme", listener);
-      expect(mockChrome.storage.onChanged.addListener).toHaveBeenCalledOnce();
-
-      capturedHandler!({ "settings.theme": { newValue: false } }, "sync");
-      expect(listener).toHaveBeenCalledWith(false);
+  it("writes the key/value pair to sync storage", async () => {
+    mockChrome.storage.sync.set.mockResolvedValue(undefined);
+    await storage.set("settings.defaultView", "original");
+    expect(mockChrome.storage.sync.set).toHaveBeenCalledWith({
+      "settings.defaultView": "original",
     });
+  });
+});
 
-    it("ignores changes for a different area", () => {
-      const listener = vi.fn();
-      let capturedHandler: StorageChangeListener | undefined;
-      mockChrome.storage.onChanged.addListener.mockImplementation(
-        (handler: StorageChangeListener) => {
-          capturedHandler = handler;
-        },
-      );
+describe("ChromeSyncStorage - subscribe", () => {
+  let mockChrome: MockChrome;
+  let storage: ChromeSyncStorage;
 
-      storage.subscribe("settings.theme", listener);
-      capturedHandler!({ "settings.theme": { newValue: true } }, "local");
-      expect(listener).not.toHaveBeenCalled();
-    });
+  beforeEach(() => {
+    ({ mockChrome, storage } = setupStorage());
+  });
 
-    it("ignores changes for a different key", () => {
-      const listener = vi.fn();
-      let capturedHandler: StorageChangeListener | undefined;
-      mockChrome.storage.onChanged.addListener.mockImplementation(
-        (handler: StorageChangeListener) => {
-          capturedHandler = handler;
-        },
-      );
+  it("forwards the newValue for the matching key and area", () => {
+    const listener = vi.fn();
+    let capturedHandler: StorageChangeListener | undefined;
+    mockChrome.storage.onChanged.addListener.mockImplementation(
+      (handler: StorageChangeListener) => {
+        capturedHandler = handler;
+      },
+    );
 
-      storage.subscribe("settings.theme", listener);
-      capturedHandler!({ "other.key": { newValue: true } }, "sync");
-      expect(listener).not.toHaveBeenCalled();
-    });
+    storage.subscribe("settings.theme", listener);
+    expect(mockChrome.storage.onChanged.addListener).toHaveBeenCalledOnce();
 
-    it("calls removeListener when the unsubscribe function is called", () => {
-      let capturedHandler: StorageChangeListener | undefined;
-      mockChrome.storage.onChanged.addListener.mockImplementation(
-        (handler: StorageChangeListener) => {
-          capturedHandler = handler;
-        },
-      );
+    capturedHandler!({ "settings.theme": { newValue: false } }, "sync");
+    expect(listener).toHaveBeenCalledWith(false);
+  });
 
-      const unsubscribe = storage.subscribe("settings.theme", vi.fn());
-      unsubscribe();
-      expect(mockChrome.storage.onChanged.removeListener).toHaveBeenCalledWith(capturedHandler);
-    });
+  it("ignores changes for a different area", () => {
+    const listener = vi.fn();
+    let capturedHandler: StorageChangeListener | undefined;
+    mockChrome.storage.onChanged.addListener.mockImplementation(
+      (handler: StorageChangeListener) => {
+        capturedHandler = handler;
+      },
+    );
+
+    storage.subscribe("settings.theme", listener);
+    capturedHandler!({ "settings.theme": { newValue: true } }, "local");
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it("ignores changes for a different key", () => {
+    const listener = vi.fn();
+    let capturedHandler: StorageChangeListener | undefined;
+    mockChrome.storage.onChanged.addListener.mockImplementation(
+      (handler: StorageChangeListener) => {
+        capturedHandler = handler;
+      },
+    );
+
+    storage.subscribe("settings.theme", listener);
+    capturedHandler!({ "other.key": { newValue: true } }, "sync");
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it("calls removeListener when the unsubscribe function is called", () => {
+    let capturedHandler: StorageChangeListener | undefined;
+    mockChrome.storage.onChanged.addListener.mockImplementation(
+      (handler: StorageChangeListener) => {
+        capturedHandler = handler;
+      },
+    );
+
+    const unsubscribe = storage.subscribe("settings.theme", vi.fn());
+    unsubscribe();
+    expect(mockChrome.storage.onChanged.removeListener).toHaveBeenCalledWith(capturedHandler);
   });
 });

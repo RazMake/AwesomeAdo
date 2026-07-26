@@ -70,7 +70,7 @@ class FakeBrowserSyncStorage implements IBrowserSyncStorage {
 
 const KEY = "bindings.queries";
 
-describe("BrowserSyncQueryBindingStore", () => {
+describe("BrowserSyncQueryBindingStore - reads and mutations", () => {
   describe("read", () => {
     it("returns an empty map when nothing is stored", async () => {
       const store = new BrowserSyncQueryBindingStore(new FakeBrowserSyncStorage());
@@ -142,7 +142,9 @@ describe("BrowserSyncQueryBindingStore", () => {
       expect(setSpy).not.toHaveBeenCalled();
     });
   });
+});
 
+describe("BrowserSyncQueryBindingStore - replaceAll and logging", () => {
   describe("replaceAll", () => {
     it("overwrites the whole map, dropping bindings the new set omits", async () => {
       const fake = new FakeBrowserSyncStorage();
@@ -211,7 +213,9 @@ describe("BrowserSyncQueryBindingStore", () => {
       expect(logger.info).toHaveBeenCalledWith("Unbound query q: was view=sprint");
     });
   });
+});
 
+describe("BrowserSyncQueryBindingStore - observe", () => {
   describe("observe", () => {
     it("emits the initial snapshot after ready resolves", async () => {
       const fake = new FakeBrowserSyncStorage();
