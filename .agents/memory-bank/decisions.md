@@ -554,3 +554,46 @@
 - Consequence: a view that renders items must read its ordering from live board state, never
   re-derive it from `context.properties` inside a render pass, or a picked order silently reverts on
   the next repaint (a roster reconcile, a tag change, a sprint toggle).
+
+## ADR-040: A move is not a field write — it gets its own contract, and rides the same queue
+
+- Decision: drag-to-reorder is persisted through a **separate** contract, `IWorkItemReorderWriter`
+  (`common/ado/IWorkItemReorderWriter`), wired as `EnhancedViewServices.reorderItem` beside
+  `writeField`. Position is expressed as the two siblings the item lands **between** (`previousId`/
+  `nextId`, with `0` as ADO's start/end/no-parent sentinel) plus its `parentId` — never as a rank.
+  The background worker runs two MAIN-world calls in order: re-point the
+  `System.LinkTypes.Hierarchy-Reverse` link under a `/rev` test (skipped when the parent is
+  unchanged), then PATCH the team-scoped `_apis/work/workitemsorder` endpoint.
+- Rationale: a re-parent changes the item's **links** and its rank lives behind a team-scoped backlog
+  endpoint, so neither is a `/fields/` patch — folding it into `IWorkItemFieldWriter` would have
+  widened a deliberately closed "update one field on one item" operation into one that can
+  restructure a tree (Interface Segregation). Naming neighbours instead of computing a rank leaves
+  the arithmetic to ADO, which already renumbers a level when no gap is left; two clients computing
+  their own ranks against a stale board would collide. The link is moved first so a rejected
+  re-parent leaves **both** the tree and the rank untouched.
+- Consequence: `FieldWriteQueue` became `WorkItemWriteQueue` and gained `enqueueReorder`. The queue
+  is shared rather than duplicated because a re-parent patches the same item under the same `/rev`
+  test a field write does — two queues would race exactly where serialization matters most — and
+  because the board's one "Saving…" indicator must cover moves too.
+- Consequence: `workitemsorder` has never left preview, so its api-version is pinned locally
+  (`WORK_ITEMS_ORDER_API_VERSION`) instead of dragging the shared `ADO_API_VERSION` onto a preview
+  contract.
+
+## ADR-041: Drag-to-reorder is depth-fixed, importance-only, and ranked against unfiltered siblings
+
+- Decision: a row may only be dropped at the depth it came from; the ordering glyph is the status
+  light that says when dragging is unavailable (heavily-transparent red plus the reason in its
+  tooltip); the affordance exists only under `MANUAL_ORDERING_POLICY` and only when a team is
+  configured; and `previousId`/`nextId` are computed from the level's **full** sibling list, not the
+  rows the active sprint/tag filters leave on screen.
+- Rationale: depth-fixed keeps a parent from becoming a peer's child by accident while still allowing
+  a leaf to move between parents at its own level. Under a derived policy (title, ETA) a dropped row
+  would be re-sorted straight back out of its slot, so offering the handle would be a lie — and
+  backlog rank is per-team in ADO, so without a team a move would rank against a guess. Ranking
+  against only the visible rows would place the item relative to whatever the filter happened to
+  leave, so clearing the filter would reveal it somewhere the user never dropped it.
+- Consequence: the tree renderer takes the **parent item** rather than a bare list, because a level's
+  identity (which item a dropped row becomes a child of, plus its full sibling order) is what a drag
+  needs and a list alone cannot supply.
+- Consequence: the move is persist-then-reflect like every other control on the board — the tree is
+  not touched until ADO accepts it — so there is no rollback path to get wrong.

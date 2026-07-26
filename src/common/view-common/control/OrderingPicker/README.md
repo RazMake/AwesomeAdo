@@ -15,6 +15,11 @@ import { renderOrderingPicker } from "path/to/OrderingPicker";
 const picker = renderOrderingPicker(document, {
   policy: orderingPolicyOf(context.properties),
   onChange: (policy) => resortBoard(policy),
+  // Optional: the glyph doubles as the drag-to-reorder status light.
+  dragReorderUnavailable: (policy) =>
+    policy === MANUAL_ORDERING_POLICY
+      ? null
+      : "drag to reorder is only available when ordering by importance",
 });
 header.append(picker);
 ```
@@ -26,10 +31,11 @@ header.append(picker);
 Returns the picker element (a `<span class="awesomeado-ordering">` wrapping the trigger button and,
 while open, its menu).
 
-| Option     | Meaning                                                                             |
-| ---------- | ----------------------------------------------------------------------------------- |
-| `policy`   | The `OrderingPolicy` items are ordered by right now; sets the tooltip and the mark. |
-| `onChange` | Called with the newly picked policy, immediately (pick-and-apply).                  |
+| Option                   | Meaning                                                                              |
+| ------------------------ | ------------------------------------------------------------------------------------ |
+| `policy`                 | The `OrderingPolicy` items are ordered by right now; sets the tooltip and the mark.  |
+| `onChange`               | Called with the newly picked policy, immediately (pick-and-apply).                   |
+| `dragReorderUnavailable` | Optional. Why drag-to-reorder is off under a policy, or `null` when it is available. |
 
 ### Behaviour
 
@@ -45,6 +51,23 @@ while open, its menu).
   user's expanded items.
 - Outside clicks, Escape, and staying on screen near a window edge are handled by the shared
   [`popupHost`](../popupHost/README.md).
+
+### Drag-reorder status
+
+When `dragReorderUnavailable` is supplied, the glyph doubles as the status light for a view's
+drag-to-reorder affordance — it is already the one place that answers "what decides this order?", so
+when a view can only honour a manual drag under one policy, the same indicator has to say so or the
+rows silently stop responding with no explanation on screen.
+
+- Available → the normal muted secondary color, `data-drag-reorder="available"`.
+- Unavailable → a heavily-transparent red (`var(--status-error-text, #c50f1f)` at `0.25` opacity),
+  `data-drag-reorder="unavailable"`, and the reason appended to the `title`/`aria-label`. The
+  transparency is deliberate: reordering being off is worth noticing but is not an error to fix, so
+  it must not read as an alarm in a header the user looks at all day. Hover still reaches full
+  opacity so the tooltip is reachable.
+- Re-evaluated after every pick, so the glyph flips state without the view re-rendering it.
+- The **rule** and its wording stay with the view (this is a reason string, not a boolean); the
+  control only presents it.
 
 The control never re-orders anything and never persists the choice — the view that renders the
 items decides what a new policy means for what is on screen.

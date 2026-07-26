@@ -467,3 +467,75 @@ value adds it (`{ op: "add", path: "/fields/<field>", value }`) and a `null` val
 new rev from the response body), or `{ ok: false, error }` on failure. The URL is built by
 `buildWorkItemUpdateUrl` (in `common/ado/fetchAdoTree`) from the sender's own trusted tab URL.
 Serialized with `Function.prototype.toString`, so it references only its parameters and page globals.
+
+## Moving a work item (drag-to-reorder)
+
+Dragging a row to a new position in an enhanced view changes two things in Azure DevOps: the item's
+manual backlog rank and, when it lands under a different parent, its hierarchy link. Both need the
+credentialed REST API, so the pattern is the same as every other write here — the content script
+messages the background worker, which runs the calls in the ADO tab's MAIN world.
+
+### `WorkItemReorderRequest.ts` — the content→background message contract
+
+- `REORDER_WORK_ITEM_MESSAGE` / `ReorderWorkItemMessage`
+  (`{ type, id, rev, parentId, currentParentId, previousId, nextId, team }`) — the move. Position is
+  named as the two siblings the item lands **between** (`0` means start of the list / end of the list
+  / no parent) rather than as a rank, because ADO owns the rank arithmetic. `team` is required
+  because backlog order is per-team in ADO.
+- `ReorderWorkItemResponse` (`{ ok, order?, rev?, error?, detail? }`) — the worker's reply; `order` is
+  the rank ADO assigned and `rev` the item's new System.Rev when the re-parent patch ran. `detail`
+  carries the raw body ADO returned with a rejected request (truncated), kept separate from `error`
+  so the page world can stay minimal — it reports what the server said, and module code turns that
+  into a sentence.
+- `isReorderWorkItemMessage(value)` / `reorderMessageProblem(value)` — the guard the worker uses, and
+  the same check phrased as a **reason**. The worker validates with the latter and replies with the
+  offending field rather than ignoring a malformed message: an ignored message reaches the content
+  side as the uninformative "no response from background", which looks identical to a worker that has
+  no handler at all. Every id must be a positive integer, except the parent/neighbour references
+  which may also be `0` (ADO's own sentinel); `rev` must be a non-negative integer and `team`
+  non-blank.
+- `describeReorderFailure(response)` — folds a rejected response into one readable sentence,
+  preferring the JSON body's `message` ("TF401232: work item 123 does not exist") over the raw body
+  and over the bare status. This is what turns "order HTTP 400" into something actionable in the log.
+
+### `MessagingWorkItemReorderWriter` (class) — the content-side writer
+
+The `IWorkItemReorderWriter` implementation the enhanced view depends on. Browser-agnostic: the
+`chrome.runtime.sendMessage` binding is injected as a `SendReorderRequest`, so this class never
+touches `chrome` directly.
+
+```typescript
+const writer = new MessagingWorkItemReorderWriter(sendReorderRequest, logger);
+const result = await writer.reorder({
+  id,
+  rev,
+  parentId,
+  currentParentId,
+  previousId,
+  nextId,
+  team,
+});
+```
+
+A thrown send, a missing reply, or an `ok: false` response is logged and reported as `{ ok: false }`,
+so a move never throws. A successful move logs the ids it moved between — never a title, since the
+diagnostics log is exported into bug reports. Constructed only in the composition root
+(`src/content/index.ts`); feature code depends on `IWorkItemReorderWriter`.
+
+### `reorderWorkItemInPage(config)` — `reorderWorkItemInPage.ts`
+
+The self-contained function the **background worker** injects into the ADO tab's MAIN world to move
+an item. It runs up to two calls, in this order:
+
+1. **Re-parent** (skipped when `config.reparent` is false): GET the item with `$expand=relations` to
+   find the index of its `System.LinkTypes.Hierarchy-Reverse` link — JSON Patch can only remove a link
+   by index — then PATCH `test /rev` + `remove` the old link + `add` the new one. A `null`
+   `parentLinkUrl` removes the parent without adding one.
+2. **Re-rank**: PATCH the team-scoped `_apis/work/workitemsorder` endpoint with
+   `{ ids, parentId, previousId, nextId }` and read the assigned `order` back.
+
+Doing the link first means a rejected re-parent leaves **both** the tree and the rank untouched. The
+re-rank carries no rev because backlog order is team state, not a field on the item, so a rev test
+there would reject harmlessly concurrent moves of unrelated items. Every URL in `config` is built by
+the worker from the sender's own trusted tab URL (see `common/ado/reorderWorkItems`). Serialized with
+`Function.prototype.toString`, so it references only its parameter and page globals.

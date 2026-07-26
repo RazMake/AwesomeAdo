@@ -26,6 +26,16 @@ export const ORDERING_POLICIES: readonly OrderingPolicyOption[] = [
 /** The policy a binding uses until the user picks another. */
 export const DEFAULT_ORDERING_POLICY: OrderingPolicy = "importance";
 
+/**
+ * The one policy whose order a human controls directly: the manual backlog rank.
+ *
+ * Named because it is the only ordering a view can let the user rearrange by hand. Every other policy
+ * is *derived* from the items themselves (their titles, their dates), so a manual move under one of
+ * them would be undone by the very next sort. A view that offers drag-to-reorder compares against
+ * this constant rather than the literal `"importance"`, so the rule cannot drift from the policy list.
+ */
+export const MANUAL_ORDERING_POLICY: OrderingPolicy = "importance";
+
 /** The minimum an item must expose to be ordered by any policy. */
 export interface OrderableItem {
   /** Manual backlog rank; a lower number means more important (higher in the backlog). */

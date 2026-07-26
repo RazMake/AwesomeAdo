@@ -309,6 +309,98 @@ describe("renderAssignedTo - picker tags", () => {
   });
 });
 
+/**
+ * One person whose display name and directory address are both far wider than the popup's width
+ * cap — the case that used to drag a horizontal scrollbar in under the whole result list.
+ */
+const longNamedCrew: TrackedUser[] = [
+  {
+    displayName: "Bartholomew Wolfeschlegelsteinhausenbergerdorff-Fitzgerald III",
+    uniqueName: "bartholomew.wolfeschlegelsteinhausenbergerdorff@contoso-engineering.example.com",
+    imageUrl: null,
+    tag: "Platform",
+  },
+];
+
+/** Open a picker over `longNamedCrew` and hand back its root plus the single result row. */
+const openLongNamePicker = (): { control: AssignedToHandle; row: HTMLButtonElement } => {
+  const control = renderAssignedTo(document, {
+    user: null,
+    userDirectory: new FakeUserDirectory(),
+    suggestions: () => longNamedCrew,
+  });
+  document.body.append(control);
+  control.querySelector<HTMLButtonElement>(".awesomeado-assigned__name")?.click();
+  const row = control.querySelector<HTMLButtonElement>(".awesomeado-assigned__result button");
+  // Throw rather than assert-and-continue: a missing row would otherwise make every truncation
+  // assertion below vacuously pass against `undefined`.
+  if (row === null) {
+    throw new Error("the picker must render a result row for the offered person");
+  }
+  return { control, row };
+};
+
+describe("renderAssignedTo - picker result truncation", () => {
+  it("never scrolls the result list sideways", () => {
+    const { control } = openLongNamePicker();
+
+    // A directory address is one unbreakable token, so a single long one would otherwise widen every
+    // row, put a horizontal scrollbar under the list, and steal vertical space from it as well.
+    const results = control.querySelector<HTMLElement>(".awesomeado-assigned__results");
+    expect(results?.style.overflowX).toBe("hidden");
+  });
+
+  it("clips both lines of a result row with an ellipsis instead of widening it", () => {
+    const { row } = openLongNamePicker();
+
+    for (const selector of [
+      ".awesomeado-assigned__result-name",
+      ".awesomeado-assigned__result-unique",
+    ]) {
+      const line = row.querySelector<HTMLElement>(selector);
+      expect(line?.style.overflow).toBe("hidden");
+      expect(line?.style.textOverflow).toBe("ellipsis");
+      expect(line?.style.whiteSpace).toBe("nowrap");
+    }
+  });
+
+  it("keeps the full untruncated value reachable through each line's tooltip", () => {
+    const { row } = openLongNamePicker();
+    const person = longNamedCrew[0]!;
+
+    // Truncating is only free if the clipped value is still readable on hover.
+    expect(row.querySelector<HTMLElement>(".awesomeado-assigned__result-name")?.title).toBe(
+      person.displayName,
+    );
+    expect(row.querySelector<HTMLElement>(".awesomeado-assigned__result-unique")?.title).toBe(
+      person.uniqueName,
+    );
+  });
+
+  it("caps the row's own box so its intrinsic content cannot widen the list", () => {
+    const { row } = openLongNamePicker();
+
+    // `width:100%` alone is a floor rather than a ceiling: the untruncated content still sets the
+    // row's intrinsic width unless the box is capped and measured border-box.
+    expect(row.style.boxSizing).toBe("border-box");
+    expect(row.style.maxWidth).toBe("100%");
+  });
+
+  it("still shows the name, the address and the crew tag while truncating", () => {
+    const { row } = openLongNamePicker();
+    const person = longNamedCrew[0]!;
+
+    // Truncation is a paint concern; it must not cost the row any of the content it carries.
+    expect(row.querySelector(".awesomeado-assigned__result-name")?.textContent).toBe(
+      person.displayName,
+    );
+    expect(row.querySelector(".awesomeado-assigned__result-unique")?.textContent).toBe(
+      person.uniqueName,
+    );
+    expect(row.querySelector(".awesomeado-tag-pill")?.textContent).toBe("Platform");
+  });
+});
+
 describe("renderAssignedTo - picker keyboard", () => {
   it("highlights the first person so Enter alone accepts the top match", () => {
     let picked: DirectoryUser | null = null;

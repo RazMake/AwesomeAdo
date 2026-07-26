@@ -43,10 +43,19 @@ renderer.
   views (carrying the tree loader, user directory, type catalog, sprint window, clock, logger), absent
   for placeholder views.
 - `EnhancedViewServices` — the cross-view data/service singletons injected at the composition root:
-  `loadTree`, `featureCrew`, `writeField`, `userDirectory`, `getTypes`, `getBoardColumns`,
-  `loadSprintWindow`, `now`, `logger`. `writeField` persists a single work item field change (e.g.
+  `loadTree`, `featureCrew`, `writeField`, `reorderItem`, `currentTeam`, `userDirectory`, `getTypes`,
+  `getBoardColumns`, `loadSprintWindow`, `now`, `logger`. `writeField` persists a single work item
+  field change (e.g.
   `System.State` or a type's ETA date field) back to Azure DevOps, using the item's last-known rev as
   an optimistic-concurrency guard; a `null` value clears the field.
+  `reorderItem` persists a drag-reorder: it moves an item to a new position among its siblings and,
+  when it changed, under a new parent. It is kept separate from `writeField` because it is not a field
+  patch — it moves the item's hierarchy **link** and re-ranks it through a team-scoped backlog
+  endpoint, which owns the rank arithmetic (so the caller names the neighbours the item lands
+  between, never a rank).
+  `currentTeam` is the configured team's id, or `null` when none is set; backlog rank is per-team in
+  Azure DevOps, so a view must refuse to reorder rather than guess a team — a move ranked against the
+  wrong team's backlog silently reorders someone else's board.
   `loadSprintWindow` is the single shared entry point every sprint-filtering view uses to populate its
   sprint picker: it resolves the configured team's iterations around the current one, each labelled by
   its offset, plus the name to select by default.

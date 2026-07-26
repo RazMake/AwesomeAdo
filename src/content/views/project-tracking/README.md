@@ -31,11 +31,14 @@ halves of the view — its configuration and its renderer.
     1. Breadcrumbs + ordering: the query's clickable parent-folder trail on the left, and the
        discrete [`OrderingPicker`](../../../common/view-common/control/OrderingPicker/README.md)
        glyph pinned to the tile's top-right corner.
-    2. Write-queue status: a right-aligned row above the sprint picker showing the shared
+    2. Write-queue status: the shared
        [`WriteQueueStatus`](../../../common/view-common/control/WriteQueueStatus/README.md)
-       indicator, driven live by the board's `FieldWriteQueue`. It stays hidden until a field write
+       indicator shares the top-right corner with the ordering glyph, sitting just to its left and
+       driven live by the board's `WorkItemWriteQueue`. It stays hidden until a field write or a move
        is in flight, then shows an animated "Saving N change(s)…" spinner and disappears once the
-       queue drains.
+       queue drains; a rejected write turns it into a filled red alert chip that can be clicked away.
+       That band's height is **reserved**, so the indicator appearing and disappearing never resizes
+       the sticky header — which would otherwise shove the whole board down and back on every edit.
     3. Title + controls: the root item's title (colored by type) with the expand-all/collapse-all
        (`+`/`−`) buttons beside it and the sprint picker pinned to the right edge of the same band.
     4. Tech Lead + ETA: "TechLead:" label + root's Assigned To, followed by the root's editable ETA
@@ -50,7 +53,28 @@ halves of the view — its configuration and its renderer.
     (and the rolled-up children popup) **immediately**, from the items already loaded — no ADO read.
     The pick lasts for the life of the board only; it is deliberately not written back to the
     binding, because a synced write would rebuild the whole board to show items nobody re-fetched.
-    The binding's `orderingPolicy` remains the order every board opens on.
+    The binding's `orderingPolicy` remains the order every board opens on. The glyph doubles as the
+    drag-reorder status light: it turns a heavily-transparent red whenever dragging is unavailable,
+    and its tooltip says why.
+  - **Drag to reorder**: while the board is ordered **by importance**, a row's title is a drag handle
+    (the pointer shows `grab` over it and nowhere else). Dragging shows a themed insertion line where
+    the row would land; dropping it under a different parent also washes that parent's children
+    container so the re-parent is visible before the mouse is released. Dropping persists the move
+    through the shared write queue: the item is re-ranked with ADO's **own** backlog-order endpoint
+    (which owns the rank arithmetic) and, when the parent changed, its `System.Parent` link is
+    re-pointed first under a `/rev` test so a concurrent edit is rejected rather than overwritten.
+    See [`drag-reorder`](./drag-reorder/README.md).
+    - A row can only land at its **own level**: an item never becomes a child of a row it was a peer
+      of, so a parent is only ever reordered among its own siblings while a leaf may move to any
+      parent at its depth.
+    - Rank is computed against the level's **full** sibling list, so a move made while the sprint or
+      tag filter hides rows still lands where the user aimed once the filter comes off.
+    - Persist-then-reflect like every other control here: the row does not move until ADO accepts it,
+      the "Saving…" indicator covers the gap, and a rejected move is reported there rather than
+      leaving the board showing a position nobody saved.
+    - Unavailable under any other ordering policy (a dropped row would be re-sorted straight back
+      out of its slot) and when no team is configured (backlog rank is per-team in ADO, so there is
+      no backlog to rank against).
   - **Resolved-item window**: an item whose Status maps to the board column _before_ Removed (the
     resolved/Done column) drops off the board once its **state** last changed more than `days` days
     ago — so re-reading or re-tagging finished work does not bring it back. It stays visible while an
@@ -73,7 +97,7 @@ halves of the view — its configuration and its renderer.
     and displays the **Status** (the board-column label the item's ADO State maps to), never the raw
     ADO State. Choosing a new Status optimistically updates the row and enqueues a serialized write of
     that column's primary ADO State via
-    [`FieldWriteQueue`](../../../common/ado/FieldWriteQueue/README.md) (one queue per board, shared
+    [`WorkItemWriteQueue`](../../../common/ado/WorkItemWriteQueue/README.md) (one queue per board, shared
     with ETA edits, so writes never race on `System.Rev`).
   - **Rolled-up minor children**: the level below the last rendered row is summarized inline by
     [`ChildItemsBadge`](../../../common/view-common/control/ChildItemsBadge/README.md) — a

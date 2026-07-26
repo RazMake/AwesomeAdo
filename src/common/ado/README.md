@@ -132,6 +132,11 @@ response-parsing logic, kept pure so they are unit-testable without a browser.
   URL-encoded project) for a project-scoped ADO href, or `null` when the URL is not project-scoped.
   Shared by `buildAdoMetadataUrls` and `fetchAdoTree`'s `buildAdoTreeUrls` so the parse-and-encode
   boilerplate lives in one place.
+- `buildTeamScopedApiUrl(href, team, path, apiVersion)` — builds a **team**-scoped REST URL
+  (`{base}/{project}/{team}/_apis/{path}?api-version=…`), or `null` when the href is not
+  project-scoped or `team` is blank. Shared by every team-owned endpoint (a team's iterations, its
+  backlog order) so they cannot drift on encoding or on the "no team means no URL" rule.
+  `apiVersion` is a parameter because not every team-scoped route has left preview.
 - `AdoMetadataUrls` — the `{ teamsUrl, areaPathsUrl, workItemTypesUrl, fieldsUrl }` shape
   `buildAdoMetadataUrls` returns.
 
@@ -224,12 +229,41 @@ response-parsing logic, kept pure so they are unit-testable without a browser.
   implementation injects a credentialed PATCH into the ADO tab's MAIN world; a test fake returns
   canned results.
 
-### `FieldWriteQueue/`
+### `IWorkItemReorderWriter.ts`
 
-- `FieldWriteQueue` — a strictly-sequential queue for work-item field writes. Serializes every
-  `writeField` call so ordering is deterministic and no two writes race on `System.Rev`
-  (ADR-030). `enqueue` always resolves (never rejects), and a failed write never stalls the chain.
-  See [`FieldWriteQueue/README.md`](./FieldWriteQueue/README.md).
+- `WorkItemReorderRequest` — `{ id, rev, parentId, currentParentId, previousId, nextId, team }`; the
+  request to move an item. Position is named as the two siblings it lands **between** (`0` = start /
+  end / no parent) rather than as a rank, because ADO owns the rank arithmetic — and naming
+  neighbours survives a stale board, where two independently-computed ranks would collide.
+- `WorkItemReorderResult` — `{ ok, order?, rev?, error? }`; `order` is the rank ADO assigned (so a
+  caller can refresh its model without re-reading the tree) and `rev` the item's new rev when the
+  re-parent patch ran.
+- `IWorkItemReorderWriter` — moves a work item within or between parents. Kept separate from
+  `IWorkItemFieldWriter` (Interface Segregation): a re-parent changes the item's **links** and its
+  rank lives behind a team-scoped backlog endpoint, so neither is a field patch, and a consumer that
+  only edits fields must not be handed the ability to restructure a tree.
+
+### `reorderWorkItems.ts`
+
+- `buildWorkItemsOrderUrl(href, team)` — the team-scoped backlog-order endpoint
+  (`_apis/work/workitemsorder`), or `null` for a non-project URL or a blank team.
+- `WORK_ITEMS_ORDER_API_VERSION` — that endpoint's api-version. Deliberately **not**
+  `ADO_API_VERSION`: the route has never left preview and ADO rejects a plain `7.1` on it, so the
+  preview suffix is pinned beside the one URL that needs it.
+- `buildWorkItemRelationsUrl(href, id)` — reads one item **with its links**, the only way to learn the
+  index JSON Patch needs to remove the existing parent relation.
+- `buildWorkItemLinkUrl(href, id)` — the item's identity as a link target (the `url` written into a
+  new parent relation). Carries **no** api-version: it is an identity, not a request.
+- `PARENT_LINK_TYPE` — ADO's child→parent link type (`System.LinkTypes.Hierarchy-Reverse`).
+- `parseReorderedRank(body, id)` — the new rank from a `ReorderResult[]` body (bare array or
+  `{ value: [...] }`), or `null` when absent/unusable so a caller never trusts a fabricated rank.
+
+### `WorkItemWriteQueue/`
+
+- `WorkItemWriteQueue` — a strictly-sequential queue for work-item writes. Serializes every
+  `writeField` **and** every reorder so ordering is deterministic and no two writes race on
+  `System.Rev` (ADR-030). Both entry points always resolve (never reject), and a failed write never
+  stalls the chain. See [`WorkItemWriteQueue/README.md`](./WorkItemWriteQueue/README.md).
 
 ## Usage guidance
 

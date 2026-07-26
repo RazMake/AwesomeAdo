@@ -29,6 +29,31 @@ function openMenu(picker: HTMLElement): HTMLButtonElement[] {
   return [...picker.querySelectorAll<HTMLButtonElement>(".awesomeado-ordering__option")];
 }
 
+/** Picks `policy` from the menu, as a user would. */
+function pick(picker: HTMLElement, policy: OrderingPolicy): void {
+  openMenu(picker)
+    .find((row) => row.dataset.policy === policy)!
+    .click();
+}
+
+/** Renders a picker whose owning view reports when drag-to-reorder is off under a given policy. */
+function renderWithReorderRule(
+  policy: OrderingPolicy,
+  dragReorderUnavailable: (policy: OrderingPolicy) => string | null,
+): HTMLElement {
+  const picker = renderOrderingPicker(document, {
+    policy,
+    onChange: () => undefined,
+    dragReorderUnavailable,
+  });
+  document.body.append(picker);
+  return picker;
+}
+
+/** The rule a board that only honours a manual drag under "By Importance" would supply. */
+const onlyUnderImportance = (policy: OrderingPolicy): string | null =>
+  policy === "importance" ? null : "drag to reorder is only available under By Importance";
+
 describe("renderOrderingPicker - indicator", () => {
   it("shows a single sorting glyph", () => {
     expect(triggerOf(renderMounted("importance")).textContent).toBe("\u21C5");
@@ -139,5 +164,77 @@ describe("renderOrderingPicker - picking", () => {
 
     expect(picked).toEqual([]);
     expect(picker.querySelector(".awesomeado-ordering__popup")).toBeNull();
+  });
+});
+
+describe("renderOrderingPicker - drag-reorder status", () => {
+  it("stays in its resting state when the view supplies no reorder rule", () => {
+    const trigger = triggerOf(renderMounted("importance"));
+
+    expect(trigger.dataset.dragReorder).toBe("available");
+    expect(trigger.style.color).toBe("var(--text-secondary-color, #8a8886)");
+    expect(trigger.style.opacity).toBe("0.7");
+  });
+
+  it("stays in its resting state while the rule reports no blocker", () => {
+    const trigger = triggerOf(renderWithReorderRule("importance", onlyUnderImportance));
+
+    expect(trigger.dataset.dragReorder).toBe("available");
+    expect(trigger.style.color).toBe("var(--text-secondary-color, #8a8886)");
+    expect(trigger.style.opacity).toBe("0.7");
+    expect(trigger.title).toBe("Ordering: By Importance (most important first)");
+  });
+
+  it("names the blocker in red, faintly enough to inform rather than alarm", () => {
+    const trigger = triggerOf(renderWithReorderRule("title", onlyUnderImportance));
+
+    expect(trigger.dataset.dragReorder).toBe("unavailable");
+    expect(trigger.style.color).toBe("var(--status-error-text, #c50f1f)");
+    expect(trigger.style.opacity).toBe("0.25");
+  });
+
+  it("appends the reason to both the tooltip and the assistive label", () => {
+    const trigger = triggerOf(renderWithReorderRule("title", onlyUnderImportance));
+
+    expect(trigger.title).toBe(
+      "Ordering: By Title (a-z) \u2014 drag to reorder is only available under By Importance",
+    );
+    expect(trigger.getAttribute("aria-label")).toBe(trigger.title);
+  });
+
+  it("re-asks the rule after every pick, so the glyph flips without the view re-rendering it", () => {
+    const picker = renderWithReorderRule("importance", onlyUnderImportance);
+    const trigger = triggerOf(picker);
+
+    pick(picker, "title");
+
+    expect(trigger.dataset.dragReorder).toBe("unavailable");
+    expect(trigger.style.opacity).toBe("0.25");
+    expect(trigger.title).toContain("only available under By Importance");
+
+    pick(picker, "importance");
+
+    expect(trigger.dataset.dragReorder).toBe("available");
+    expect(trigger.style.opacity).toBe("0.7");
+    expect(trigger.title).toBe("Ordering: By Importance (most important first)");
+  });
+
+  it("brightens on hover in either state, then settles back to that state's own opacity", () => {
+    // The tooltip carries the reason, so the glyph has to be readable while the pointer rests on it
+    // — but leaving must not strand it at full strength once reordering is off.
+    const picker = renderWithReorderRule("importance", onlyUnderImportance);
+    const trigger = triggerOf(picker);
+
+    trigger.dispatchEvent(new MouseEvent("mouseenter"));
+    expect(trigger.style.opacity).toBe("1");
+    trigger.dispatchEvent(new MouseEvent("mouseleave"));
+    expect(trigger.style.opacity).toBe("0.7");
+
+    pick(picker, "title");
+
+    trigger.dispatchEvent(new MouseEvent("mouseenter"));
+    expect(trigger.style.opacity).toBe("1");
+    trigger.dispatchEvent(new MouseEvent("mouseleave"));
+    expect(trigger.style.opacity).toBe("0.25");
   });
 });

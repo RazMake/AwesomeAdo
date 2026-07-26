@@ -13,6 +13,7 @@ import type {
   WorkItemFieldWriteRequest,
   WorkItemFieldWriteResult,
 } from "../ado/IWorkItemFieldWriter";
+import type { WorkItemReorderRequest, WorkItemReorderResult } from "../ado/IWorkItemReorderWriter";
 import type { WorkItemTreeResult } from "../ado/IWorkItemTreeLoader";
 import type { TypeCatalogEntry } from "../ado/TrackedWorkItem";
 import type { SprintWindow } from "../ado/sprintWindow";
@@ -67,6 +68,21 @@ export interface EnhancedViewServices {
    * can retry after refetching or report the stale-rev conflict to the user.
    */
   writeField(request: WorkItemFieldWriteRequest): Promise<WorkItemFieldWriteResult>;
+  /**
+   * Moves a work item to a new position among its siblings and, when it changed, under a new parent
+   * — the persistence behind drag-reordering a tree view. Azure DevOps owns the rank arithmetic, so
+   * the caller names the neighbours the item lands between rather than computing a rank itself.
+   *
+   * Kept separate from `writeField` because it is not a field patch: it moves the item's hierarchy
+   * LINK and re-ranks it through a team-scoped backlog endpoint.
+   */
+  reorderItem(request: WorkItemReorderRequest): Promise<WorkItemReorderResult>;
+  /**
+   * The team whose backlog order applies, or `null` when no team is configured. Backlog rank is
+   * per-team in Azure DevOps, so a view must refuse to reorder rather than guess a team — a move
+   * ranked against the wrong team's backlog silently reorders someone else's board.
+   */
+  currentTeam(): string | null;
 }
 
 /** Everything a view needs to render, injected so a view never reaches for a global (Dependency Inversion). */

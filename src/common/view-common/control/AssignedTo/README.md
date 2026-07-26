@@ -92,6 +92,11 @@ accepts it, so a rejected write can never leave a name on screen that was never 
   which is the common case for a reassignment.
 - **Theme-aware:** Uses Azure DevOps CSS custom properties (`--callout-background-color`, `--palette-neutral-20`, `--palette-neutral-4`) with fallbacks, so it adapts to light/dark themes.
 - **Out-of-order response guard:** Ignores stale search results if a newer query has already been issued.
+- **Never scrolls sideways:** The result list is `overflow-x: hidden` and each row's display name and
+  directory address are clipped with an ellipsis on a single line. A directory address is one
+  unbreakable token, so without this a single long address would widen every row and drag a
+  horizontal scrollbar in under the list — forcing the user to scroll just to read who is next. The
+  full value stays on each line's `title`, so truncating costs the reader nothing.
 - **HTML injection safety:** Result names are inserted as `textContent`, not `innerHTML`.
 
 ## Tag editing

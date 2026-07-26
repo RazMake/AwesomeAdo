@@ -57,8 +57,20 @@ The extension is feature-complete for its current scope:
   bridge (`AdoIdentityRequest` + `fetchAdoIdentitiesInPage`, URL/body from
   `common/ado/fetchAdoIdentities`). The `AssignedTo` control opens on the project's crew
   (`collectAssignedDirectoryUsers` over the live tree), filters locally, and searches ADO from two
-  characters up; picking someone writes `System.AssignedTo` through the board's `FieldWriteQueue` and
+  characters up; picking someone writes `System.AssignedTo` through the board's `WorkItemWriteQueue` and
   repaints only on success (`AssignedToHandle.setUser`).
+  Rows can also be **dragged to reorder** (ADR-040/041): the title is the drag handle, a themed
+  insertion line shows the landing spot and a wash names the destination parent when the drop also
+  re-parents. `content/views/project-tracking/drag-reorder` decides and previews the move (pure
+  `movePlacement` for the placement math, `applyMoveToTree` for the model); persistence goes through
+  `EnhancedViewServices.reorderItem` → `MessagingWorkItemReorderWriter` → the background worker, which
+  re-points the `System.LinkTypes.Hierarchy-Reverse` link under a `/rev` test and then PATCHes the
+  team-scoped `_apis/work/workitemsorder` endpoint (`common/ado/reorderWorkItems`,
+  `reorderWorkItemInPage`). Drops are depth-fixed, offered only under `MANUAL_ORDERING_POLICY` and
+  only with a configured team (the ordering glyph turns faint red with the reason otherwise), ranked
+  against the level's **unfiltered** sibling list, and persist-then-reflect on the board's single
+  `WorkItemWriteQueue` — which now serializes field writes and moves together (`enqueueReorder`)
+  because a re-parent tests the same `/rev` a field write does.
 - Configuration import/export: `src/common/settings-transfer` serializes the whole configuration
   (all settings + every binding) to/from an `AwesomeADO.config` file; `src/options/settings-transfer`
   wires it to the Appearance tab's Import/Export controls. Import replaces bindings wholesale via
@@ -78,6 +90,9 @@ The extension is feature-complete for its current scope:
 
 - `observeStorageKeys` (`src/common/browser`) — the one place the storage observe race protocol
   lives; both stores use it.
+- `buildTeamScopedApiUrl` (`src/common/ado/fetchAdoMetadata`) — the one place the
+  `{base}/{project}/{team}/_apis/…` shape and the "blank team means no URL" rule live; every
+  team-owned endpoint (iterations, backlog order) builds through it.
 - `AdoHost` (`src/common/navigation`) — the one source of truth for ADO host matching, mirrored by
   the manifest.
 - `requestFromTab` (`src/common/browser`) — the shared best-effort tab message round-trip.

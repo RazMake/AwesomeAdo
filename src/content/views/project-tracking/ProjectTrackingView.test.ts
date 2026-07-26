@@ -90,6 +90,10 @@ function createFakeServices(overrides?: Partial<EnhancedViewServices>): Enhanced
       error: () => undefined,
     },
     writeField: async () => ({ ok: true, rev: 1 }),
+    reorderItem: async () => ({ ok: true }),
+    // A configured team by default, so drag-to-reorder is available in the fixtures that exercise it.
+    // Tests covering the "no team" degradation override this with null.
+    currentTeam: () => "team-guid",
     ...overrides,
   };
 }
@@ -2786,7 +2790,7 @@ describe("ProjectTrackingView — ordering picker", () => {
     const root = await renderBoardForTree(unorderedFeatures(), { orderingPolicy: "eta" });
 
     const trigger = root.querySelector<HTMLButtonElement>(".awesomeado-ordering__trigger")!;
-    expect(trigger.title).toBe("Ordering: By ETA (past/recent - future)");
+    expect(trigger.title).toContain("Ordering: By ETA (past/recent - future)");
   });
 
   it("re-sorts the rows on the spot when a new policy is picked", async () => {

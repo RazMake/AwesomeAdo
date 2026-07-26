@@ -17,6 +17,12 @@ import {
   reconcileFeatureCrewRoster,
 } from "../common/ado/reconcileFeatureCrew";
 import {
+  buildWorkItemLinkUrl,
+  buildWorkItemRelationsUrl,
+  buildWorkItemsOrderUrl,
+  PARENT_LINK_TYPE,
+} from "../common/ado/reorderWorkItems";
+import {
   bindingSettingsPath,
   isOpenBindingSettingsMessage,
   isOpenOptionsMessage,
@@ -52,6 +58,13 @@ import {
   type UpdateWorkItemFieldResponse,
 } from "../common/browser/WorkItemFieldRequest";
 import {
+  describeReorderFailure,
+  REORDER_WORK_ITEM_MESSAGE,
+  reorderMessageProblem,
+  type ReorderWorkItemMessage,
+  type ReorderWorkItemResponse,
+} from "../common/browser/WorkItemReorderRequest";
+import {
   applyFeatureCrewInPage,
   type FeatureCrewApplyResult,
 } from "../common/browser/applyFeatureCrewInPage";
@@ -62,6 +75,10 @@ import {
 import { fetchAdoIterationsInPage } from "../common/browser/fetchAdoIterationsInPage";
 import { fetchAdoTreeInPage } from "../common/browser/fetchAdoTreeInPage";
 import { findFeatureCrewInPage } from "../common/browser/findFeatureCrewInPage";
+import {
+  reorderWorkItemInPage,
+  type ReorderWorkItemConfig,
+} from "../common/browser/reorderWorkItemInPage";
 import { updateWorkItemFieldInPage } from "../common/browser/updateWorkItemFieldInPage";
 import { createLoggerFactory } from "../common/logging/createLogger";
 import { notifyNavigation } from "../common/navigation/NavigationNotifier";
@@ -512,6 +529,132 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
     return undefined;
   }
   void updateWorkItemField(message, tabId, tabUrl).then(sendResponse);
+  // Keep the message channel open for the async PATCH reply above.
+  return true;
+});
+
+// An enhanced view can also MOVE an item: drag-reordering the tree changes the item's backlog rank
+// and, when it lands under a different parent, its hierarchy link. Both are credentialed calls that
+// can only run in the ADO tab's MAIN world, so the content side asks this worker to perform them.
+//
+// The operation is closed the same way the field update is: every URL is built from the SENDER's own
+// trusted tab URL (never a content-supplied one), the ids are validated as real work item ids or
+// ADO's `0` sentinel (`isReorderWorkItemMessage`), and the only patch this can express is "replace
+// the hierarchy-parent link and re-rank" — it can neither address arbitrary fields nor reach a
+// collection the sender's own page could not already reach with its own session.
+const reorderWorkItem = async (
+  message: ReorderWorkItemMessage,
+  tabId: number,
+  tabUrl: string,
+): Promise<ReorderWorkItemResponse> => {
+  const config = buildReorderConfig(message, tabUrl);
+  if (typeof config === "string") {
+    // A non-project ADO URL (org-level or folder tab) has no team-scoped backlog to re-rank in.
+    // Which URL could not be built is reported, because "not a project-scoped ADO URL" alone leaves
+    // the reader guessing between the tab, the team setting, and the parent id.
+    logger.error(`Work item ${message.id} reorder skipped: ${config} (tab ${tabUrl}).`);
+    return { ok: false, error: config };
+  }
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: "MAIN",
+      func: reorderWorkItemInPage,
+      args: [config],
+    });
+    const result = (results[0]?.result as ReorderWorkItemResponse | undefined) ?? null;
+    if (result === null) {
+      logger.error(`Work item ${message.id} reorder returned no result.`);
+      return { ok: false, error: "no result" };
+    }
+    if (!result.ok) {
+      // The page world hands back the raw body; naming what ADO actually objected to is what makes
+      // this diagnosable from the log instead of only from a live repro.
+      const reason = describeReorderFailure(result);
+      logger.error(
+        `Work item ${message.id} reorder failed (parent ${message.currentParentId}\u2192${message.parentId}, ` +
+          `between ${message.previousId} and ${message.nextId}, base rev ${message.rev}): ${reason}`,
+      );
+      return { ok: false, error: reason };
+    }
+    logger.info(
+      `Work item ${message.id} reordered under parent ${message.parentId} ` +
+        `(was ${message.currentParentId}), order=${result.order ?? "unchanged"}.`,
+    );
+    return result;
+  } catch (error) {
+    // Injection fails on a closed/navigated/restricted tab; report the failure so the view degrades.
+    logger.error(`Could not reorder work item ${message.id}`, error);
+    return { ok: false, error: "exception" };
+  }
+};
+
+// Resolve every URL the in-page move needs from the sender's own tab. Returns a REASON string when
+// any of them is unresolvable, so a partially-addressable move is never attempted — a re-parent that
+// succeeded against a fabricated order URL would leave the tree changed and the rank stale — and so
+// the caller can say which piece was missing rather than reporting a blanket failure.
+function buildReorderConfig(
+  message: ReorderWorkItemMessage,
+  tabUrl: string,
+): ReorderWorkItemConfig | string {
+  const orderUrl = buildWorkItemsOrderUrl(tabUrl, message.team);
+  if (orderUrl === null) {
+    return `could not build the backlog-order URL for team "${message.team}" (tab is not a project-scoped ADO URL, or the team is blank)`;
+  }
+  const relationsUrl = buildWorkItemRelationsUrl(tabUrl, message.id);
+  const itemUrl = buildWorkItemUpdateUrl(tabUrl, message.id);
+  if (relationsUrl === null || itemUrl === null) {
+    return "could not build the work item URL (tab is not a supported ADO URL)";
+  }
+  // `0` means "top level", which is the absence of a parent link rather than a link to item 0.
+  const parentLinkUrl =
+    message.parentId === 0 ? null : buildWorkItemLinkUrl(tabUrl, message.parentId);
+  if (message.parentId !== 0 && parentLinkUrl === null) {
+    return `could not build the link URL for new parent ${message.parentId}`;
+  }
+  return {
+    orderUrl,
+    relationsUrl,
+    itemUrl,
+    parentLinkUrl,
+    parentLinkType: PARENT_LINK_TYPE,
+    id: message.id,
+    rev: message.rev,
+    parentId: message.parentId,
+    previousId: message.previousId,
+    nextId: message.nextId,
+    reparent: message.parentId !== message.currentParentId,
+  };
+}
+
+chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
+  const claimsToBeReorder =
+    typeof message === "object" &&
+    message !== null &&
+    (message as { type?: unknown }).type === REORDER_WORK_ITEM_MESSAGE;
+  if (!claimsToBeReorder) {
+    // Not ours — leave it for the other listeners above to handle.
+    return undefined;
+  }
+  const problem = reorderMessageProblem(message);
+  if (problem !== null) {
+    // Answered rather than ignored on purpose: an ignored message reaches the content side as the
+    // uninformative "no response from background", which looks identical to a worker that has no
+    // handler at all. Replying with the offending field turns a dead end into a diagnosis.
+    logger.error(`Rejected a malformed reorder request: ${problem}.`);
+    sendResponse({ ok: false, error: `malformed request: ${problem}` });
+    return undefined;
+  }
+  const reorder = message as ReorderWorkItemMessage;
+  const tabId = sender.tab?.id;
+  const tabUrl = sender.tab?.url;
+  if (tabId === undefined || tabUrl === undefined) {
+    // Only a real ADO tab can be scripted; a message with no sender tab cannot be served.
+    logger.error(`Cannot reorder work item ${reorder.id}: message has no sender tab.`);
+    sendResponse({ ok: false, error: "no sender tab" } satisfies ReorderWorkItemResponse);
+    return undefined;
+  }
+  void reorderWorkItem(reorder, tabId, tabUrl).then(sendResponse);
   // Keep the message channel open for the async PATCH reply above.
   return true;
 });

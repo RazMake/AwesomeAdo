@@ -8,7 +8,6 @@ import {
   type FeatureCrewMember,
   type FeatureCrewTagAssignment,
 } from "../../../common/ado/FeatureCrew";
-import { FieldWriteQueue } from "../../../common/ado/FieldWriteQueue/FieldWriteQueue";
 import type { DirectoryUser } from "../../../common/ado/IUserDirectory";
 import type { QueryFolderCrumb, WorkItemTreeResult } from "../../../common/ado/IWorkItemTreeLoader";
 import type {
@@ -16,10 +15,15 @@ import type {
   TrackedWorkItem,
   TypeCatalogEntry,
 } from "../../../common/ado/TrackedWorkItem";
+import { WorkItemWriteQueue } from "../../../common/ado/WorkItemWriteQueue/WorkItemWriteQueue";
 import { ASSIGNED_TO_FIELD, identityFieldValue } from "../../../common/ado/adoApi";
 import { buildQueryFolderUrl, buildWorkItemUrl } from "../../../common/ado/fetchAdoTree";
 import type { SprintWindow } from "../../../common/ado/sprintWindow";
-import { orderItems, type OrderingPolicy } from "../../../common/ordering/ItemOrdering";
+import {
+  MANUAL_ORDERING_POLICY,
+  orderItems,
+  type OrderingPolicy,
+} from "../../../common/ordering/ItemOrdering";
 import type {
   DataDrivenViewContext,
   EnhancedView,
@@ -48,6 +52,8 @@ import { renderStatusBadge } from "../../../common/view-common/control/StatusBad
 import { renderViewScaffold } from "../../../common/view-common/control/ViewScaffold/ViewScaffold";
 import { renderWriteQueueStatus } from "../../../common/view-common/control/WriteQueueStatus/WriteQueueStatus";
 
+import { DragReorderController, type PlannedMove } from "./drag-reorder/DragReorderController";
+import { applyMoveToTree } from "./drag-reorder/applyMoveToTree";
 import { renderProjectTrackingHeader } from "./header/ProjectTrackingHeader";
 import {
   hideResolvedAfterDays,
@@ -310,7 +316,7 @@ interface AssigneeChipContext {
   doc: Document;
   services: EnhancedViewServices;
   /** The board's single serialized field-write queue, shared with the status and ETA edits. */
-  queue: FieldWriteQueue;
+  queue: WorkItemWriteQueue;
   /**
    * The people offered before anything is typed — everyone already assigned across this project,
    * each carrying the crew tag the picker shows beside their name.
@@ -399,7 +405,7 @@ interface TreeRenderOptions {
   context: DataDrivenViewContext;
   typeMap: Map<string, TypeCatalogEntry>;
   /** The board's single serialized field-write queue, shared by status and ETA edits. */
-  queue: FieldWriteQueue;
+  queue: WorkItemWriteQueue;
   /** The shared status-badge width so every badge on the board renders one uniform size. */
   statusWidthCh: number;
   /** The team's global board columns in order; a status colors by its position in this list. */
@@ -415,6 +421,13 @@ interface TreeRenderOptions {
   allTwisties: HTMLButtonElement[];
   /** The color the rolled-up child badge tints from; null leaves it a neutral chip. */
   minorChildColor: string | null;
+  /**
+   * Registers each row for drag-to-reorder, or null when reordering is unavailable this pass (any
+   * ordering other than importance, or no configured team to rank against). Null is what leaves the
+   * titles with a normal cursor and no drag handlers at all, rather than a handle that silently
+   * refuses every drop.
+   */
+  dragReorder: DragReorderController | null;
 }
 
 /**
@@ -433,6 +446,16 @@ const COMPLETED_COLUMN_FROM_END = 2;
 
 /** Milliseconds in a day, the unit the "hide resolved after" window is configured in. */
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/**
+ * The horizontal breathing room on each side of the board, in pixels.
+ *
+ * Applied at BOTH nesting levels (the view root and the board inside it), so the real inset is twice
+ * this. Kept deliberately tight: this view replaces ADO's own page, and every pixel spent on an
+ * outer margin is a pixel a wrapped item title cannot use — on a dense tree board, wider rows buy
+ * far more than symmetrical whitespace does. Named once so the two levels cannot drift apart.
+ */
+const BOARD_EDGE_PADDING_PX = 6;
 
 /**
  * The board-column position that means "this item is finished": the column before the abandoned
@@ -673,7 +696,7 @@ function createItemEtaBadge(
   doc: Document,
   item: TrackedWorkItem,
   typeMap: Map<string, TypeCatalogEntry>,
-  queue: FieldWriteQueue,
+  queue: WorkItemWriteQueue,
   now: Date,
 ): EtaBadgeHandle {
   const etaField = typeMap.get(item.type)?.etaField ?? null;
@@ -845,7 +868,15 @@ function renderRow(
   item: TrackedWorkItem,
   options: TreeRenderOptions,
   depth: number,
-): { row: HTMLElement; childrenContainer: HTMLElement; twisty: HTMLButtonElement | null } {
+): {
+  row: HTMLElement;
+  childrenContainer: HTMLElement;
+  twisty: HTMLButtonElement | null;
+  /** The row's own line box, whose midpoint tells a drag whether a drop lands above or below it. */
+  line: HTMLElement;
+  /** The title, which doubles as the drag handle when reordering is available. */
+  title: HTMLElement;
+} {
   const { doc, typeMap } = options;
   // Past the last rendered level a row's children become a rollup badge, not an expandable branch.
   const showsChildRows = depth < MAX_ROW_DEPTH;
@@ -911,32 +942,46 @@ function renderRow(
     });
   }
 
-  return { row: rowWrapper, childrenContainer, twisty };
+  return { row: rowWrapper, childrenContainer, twisty, line: row, title: titleSpan };
 }
 
 /**
- * Recursively renders the tree of work items: each level is narrowed by the active filters, then
+ * Recursively renders `parent`'s children: each level is narrowed by the active filters, then
  * ordered by the binding's ordering policy. Returns an array of row wrappers (each contains row +
  * description + children container).
+ *
+ * The PARENT is passed rather than a bare list because a drag needs both halves of the level's
+ * identity: which item a dropped row becomes a child of, and the level's FULL sibling order —
+ * including the rows the active filters hide, so a filtered board still ranks a move where the user
+ * aimed rather than relative to whatever happened to be on screen.
  *
  * Recursion stops at `MAX_ROW_DEPTH`: deeper items are summarized by the deepest row's rollup badge
  * (see `createMinorChildrenBadge`) instead of extending the outline.
  */
 function renderTree(
-  items: TrackedWorkItem[],
+  parent: TrackedWorkItem,
   options: TreeRenderOptions,
   depth: number,
 ): HTMLElement[] {
-  const visible = orderTrackedItems(
-    items.filter((item) => isVisibleUnderFilter(item, options.filter)),
-    options.orderingPolicy,
-  );
+  const ordered = orderTrackedItems(parent.children, options.orderingPolicy);
+  const siblingIds = ordered.map((item) => item.id);
+  const visible = ordered.filter((item) => isVisibleUnderFilter(item, options.filter));
   return visible.map((item) => {
-    const { row, childrenContainer, twisty } = renderRow(item, options, depth);
+    const { row, childrenContainer, twisty, line, title } = renderRow(item, options, depth);
     if (twisty) options.allTwisties.push(twisty);
 
+    options.dragReorder?.register({
+      id: item.id,
+      depth,
+      parentId: parent.id,
+      siblingIds,
+      handle: title,
+      row: line,
+      wrapper: row,
+    });
+
     if (depth < MAX_ROW_DEPTH) {
-      childrenContainer.append(...renderTree(item.children, options, depth + 1));
+      childrenContainer.append(...renderTree(item, options, depth + 1));
     }
 
     return row;
@@ -1023,7 +1068,7 @@ function renderHeader(
   chipContext: AssigneeChipContext,
   boardControls: HeaderBoardControls,
   folderPath: QueryFolderCrumb[],
-  queue: FieldWriteQueue,
+  queue: WorkItemWriteQueue,
 ): {
   header: HTMLElement;
   sprintPickerHandle: SprintPickerHandle;
@@ -1110,7 +1155,7 @@ interface BoardHandle {
  */
 function createBoardWriteStatus(
   doc: Document,
-  fieldWrites: FieldWriteQueue,
+  fieldWrites: WorkItemWriteQueue,
 ): { element: HTMLElement; setReconcilePending: (count: number) => void } {
   const writeStatus = renderWriteQueueStatus(doc);
   let statePending = 0;
@@ -1120,8 +1165,8 @@ function createBoardWriteStatus(
     statePending = count;
     refresh();
   });
-  fieldWrites.onWriteFailed((count) => {
-    writeStatus.setFailedCount(count);
+  fieldWrites.onWriteFailed((count, lastError) => {
+    writeStatus.setFailedCount(count, lastError);
   });
   return {
     element: writeStatus.element,
@@ -1190,10 +1235,8 @@ interface BoardTreeRendererParams {
   tagPanelContainer: HTMLElement;
   sprintPickerHandle: SprintPickerHandle;
   chipContext: AssigneeChipContext;
-  fieldWrites: FieldWriteQueue;
-  statusWidthCh: number;
-  boardColumns: string[];
-  minorChildColor: string | null;
+  fieldWrites: WorkItemWriteQueue;
+  metrics: BoardMetrics;
   expandAll: HTMLButtonElement;
   collapseAll: HTMLButtonElement;
   /**
@@ -1201,6 +1244,12 @@ interface BoardTreeRendererParams {
    * changes it between passes, and a captured value would keep re-painting the original order.
    */
   currentOrderingPolicy: () => OrderingPolicy;
+  /**
+   * Registers each pass's rows for drag-to-reorder, or null when the board can never reorder (no
+   * team is configured to rank against). Read at render time because availability also depends on
+   * the live ordering policy.
+   */
+  dragReorder: DragReorderController | null;
 }
 
 /**
@@ -1227,13 +1276,17 @@ function createBoardTreeRenderer(params: BoardTreeRendererParams): {
     const filterOn = sprintPickerHandle.isFilterActive();
     const allTwisties: HTMLButtonElement[] = [];
     const properties = params.context.properties;
+    const orderingPolicy = params.currentOrderingPolicy();
+    // Every element from the previous pass is about to be discarded, so the controller's row map is
+    // cleared before the new rows register themselves against it.
+    params.dragReorder?.reset();
     const options: TreeRenderOptions = {
       doc,
       context: params.context,
       typeMap: params.typeMap,
       queue: params.fieldWrites,
-      statusWidthCh: params.statusWidthCh,
-      boardColumns: params.boardColumns,
+      statusWidthCh: params.metrics.statusWidthCh,
+      boardColumns: params.metrics.boardColumns,
       filter: {
         sprint: filterOn ? sprintPickerHandle.selectedSprint() : null,
         tags: selectedTags,
@@ -1241,23 +1294,26 @@ function createBoardTreeRenderer(params: BoardTreeRendererParams): {
         // enough ages an item out the next time anything repaints it.
         isResolvedPastWindow: createResolvedWindowFilter(
           params.typeMap,
-          params.boardColumns,
+          params.metrics.boardColumns,
           hideResolvedAfterDays(properties),
           params.context.services.now(),
         ),
       },
-      orderingPolicy: params.currentOrderingPolicy(),
+      orderingPolicy,
       // Sprint pills only earn their space when the sprint filter is not already narrowing the board.
       showSprintPills: !filterOn,
       chip: params.chipContext,
       allTwisties,
-      minorChildColor: params.minorChildColor,
+      minorChildColor: params.metrics.minorChildColor,
+      // Manual drag order only means anything while the board is showing the manual rank; under any
+      // other policy a dropped row would be re-sorted straight back out of the slot it landed in.
+      dragReorder: orderingPolicy === MANUAL_ORDERING_POLICY ? params.dragReorder : null,
     };
 
     treeContainer.innerHTML = "";
     // The epic is already summarized in the header (title + TechLead), so the tree lists its
     // children downward rather than repeating the epic as the top row.
-    treeContainer.append(...renderTree(root.children, options, 0));
+    treeContainer.append(...renderTree(root, options, 0));
 
     wireExpandCollapseButtons(expandAll, collapseAll, allTwisties);
   };
@@ -1299,10 +1355,12 @@ function createBoardTreeRenderer(params: BoardTreeRendererParams): {
 function createOrderingControl(
   context: DataDrivenViewContext,
   resort: () => void,
+  dragReorderUnavailable: (policy: OrderingPolicy) => string | null,
 ): { element: HTMLElement; policy: () => OrderingPolicy } {
   let policy = orderingPolicyOf(context.properties);
   const element = renderOrderingPicker(context.doc, {
     policy,
+    dragReorderUnavailable,
     onChange: (picked) => {
       // A rare, user-driven flip that changes what the whole board shows, so record the policies it
       // moved between — "why is this sorted like that?" is then answerable from the log alone.
@@ -1318,8 +1376,244 @@ function createOrderingControl(
 }
 
 /**
+ * Persists a drag-reorder and repaints the board once Azure DevOps has accepted it.
+ *
+ * Persist-then-reflect, exactly like every other editable control on this board: the tree is not
+ * touched until ADO confirms, so a rejected move leaves the item visibly where it started rather
+ * than in a place nobody saved. The board's shared "Saving…" indicator covers the gap (the move
+ * rides the same queue as the field writes) and reports the loss, so there is nothing to roll back.
+ *
+ * The move goes through that shared queue for a second reason: a re-parent patches the item under a
+ * `/rev` test, so running it beside an in-flight status or ETA write on the same item would race on
+ * exactly the value the test guards.
+ */
+function persistMove(params: {
+  root: TrackedWorkItem;
+  move: PlannedMove;
+  team: string;
+  queue: WorkItemWriteQueue;
+  services: EnhancedViewServices;
+  repaint: () => void;
+}): void {
+  const { root, move, queue, services, repaint } = params;
+  const moved = findTrackedItem(root, move.id);
+  if (moved === null) {
+    // The board is showing a tree that no longer contains the dragged item; writing a rev from a
+    // stale model would be worse than declining the move.
+    services.logger.error(`Drag-reorder aborted: item ${move.id} is not in the rendered tree.`);
+    return;
+  }
+  void queue
+    .enqueueReorder({
+      id: move.id,
+      currentRev: () => moved.rev,
+      parentId: move.parentId,
+      currentParentId: move.currentParentId,
+      previousId: move.previousId,
+      nextId: move.nextId,
+      team: params.team,
+    })
+    .then((result) => {
+      if (!result.ok) {
+        return;
+      }
+      if (result.rev !== undefined) {
+        moved.rev = result.rev;
+      }
+      if (applyMoveToTree(root, move, result.order ?? null)) {
+        repaint();
+      }
+    });
+}
+
+/** The item with `id` at or below `root`, or null when this tree does not hold it. */
+function findTrackedItem(root: TrackedWorkItem, id: number): TrackedWorkItem | null {
+  if (root.id === id) {
+    return root;
+  }
+  for (const child of root.children) {
+    const found = findTrackedItem(child, id);
+    if (found !== null) {
+      return found;
+    }
+  }
+  return null;
+}
+
+/**
+ * The two containers the board repaints into, appended in reading order.
+ *
+ * The tag filter panel stays empty until the Feature Crew roster resolves (a person's tag is only
+ * known once it loads), so it is created up front rather than inserted later — appearing between the
+ * header and the tree would otherwise shove the whole board down mid-read.
+ */
+function createBoardPanels(
+  doc: Document,
+  board: HTMLElement,
+): { tagPanelContainer: HTMLElement; treeContainer: HTMLElement } {
+  const tagPanelContainer = doc.createElement("div");
+  tagPanelContainer.className = "awesomeado-tracking__tag-filter";
+  const treeContainer = doc.createElement("div");
+  treeContainer.className = "awesomeado-tracking__tree";
+  board.append(tagPanelContainer, treeContainer);
+  return { tagPanelContainer, treeContainer };
+}
+
+/**
+ * How every assignee chip on this board offers people and persists a pick.
+ *
+ * `crew` walks the live tree on each popup open rather than caching a list, so a person assigned a
+ * moment ago is already offered and there is no second copy of "who is on this project" to drift.
+ */
+function createChipContext(
+  doc: Document,
+  services: EnhancedViewServices,
+  queue: WorkItemWriteQueue,
+  root: TrackedWorkItem,
+  onPicked: (user: DirectoryUser) => void,
+  tagEditor: AssigneeTagEditor | null,
+): AssigneeChipContext {
+  return {
+    doc,
+    services,
+    queue,
+    crew: () => collectAssignedDirectoryUsers([root]),
+    onPicked,
+    tagEditor,
+  };
+}
+
+/**
+ * The board's drag-to-reorder half: the controller that turns rows into a drop surface, and the rule
+ * that decides whether reordering is offered at all.
+ *
+ * Both are built together because they answer the same question from opposite ends — the rule tells
+ * the user why a drag is unavailable, the controller is simply absent in exactly those cases — and a
+ * board that explained one condition while enforcing another would be worse than silent.
+ */
+function createBoardReordering(params: {
+  root: TrackedWorkItem;
+  services: EnhancedViewServices;
+  queue: WorkItemWriteQueue;
+  doc: Document;
+  repaint: () => void;
+}): {
+  controller: DragReorderController | null;
+  dragReorderUnavailable: (policy: OrderingPolicy) => string | null;
+} {
+  const { root, services, queue, doc, repaint } = params;
+  // Backlog rank is per-team in Azure DevOps, so without a configured team there is no backlog to
+  // rank a dragged item against — the board says so on the ordering glyph instead of offering a
+  // handle that would fail on every drop.
+  const team = services.currentTeam();
+  return {
+    controller:
+      team === null
+        ? null
+        : new DragReorderController(
+            doc,
+            (move) => persistMove({ root, move, team, queue, services, repaint }),
+            services.logger,
+          ),
+    dragReorderUnavailable: (policy) => {
+      if (team === null) {
+        return "drag to reorder needs a team (set one in AwesomeADO options)";
+      }
+      return policy === MANUAL_ORDERING_POLICY
+        ? null
+        : "drag to reorder is only available when ordering by importance";
+    },
+  };
+}
+
+/**
  * Renders the complete board: header + tree, wired with expand/collapse and sprint-picker filter controls.
  */
+/**
+ * Everything a board assembles once and then shares between its header, its rows, and every repaint.
+ *
+ * Gathered into one factory because these collaborators are mutually dependent — the write queue
+ * feeds the status indicator, the ordering glyph and the drag controller both need to trigger a
+ * repaint, and the repaint only exists after the renderer is built. Wiring that knot inline left
+ * `renderBoard` reading as a list of unrelated locals in which the one real ordering constraint (the
+ * late-bound repaint) was invisible.
+ */
+interface BoardCore {
+  services: EnhancedViewServices;
+  /** The board's single serialized ADO write queue: field edits and moves never race on System.Rev. */
+  writes: WorkItemWriteQueue;
+  writeStatus: { element: HTMLElement; setReconcilePending: (count: number) => void };
+  metrics: BoardMetrics;
+  chipContext: AssigneeChipContext;
+  ordering: { element: HTMLElement; policy: () => OrderingPolicy };
+  dragReorder: DragReorderController | null;
+  /**
+   * Hand the core the tree renderer once it exists, so the ordering glyph and a completed drag can
+   * repaint. Safe to call after construction only: neither a click nor a drop can arrive before the
+   * board's synchronous setup finishes.
+   */
+  setRepaint(repaint: () => void): void;
+}
+
+/** Values derived once per board that every row on it shares. */
+interface BoardMetrics {
+  /** One shared badge width so every status badge on the board renders the same size. */
+  statusWidthCh: number;
+  /** The global board-column order, so a status colors by its position (identical across types). */
+  boardColumns: string[];
+  /** The tint the rolled-up child badge wears; null leaves it a neutral chip. */
+  minorChildColor: string | null;
+}
+
+function createBoardCore(params: {
+  doc: Document;
+  root: TrackedWorkItem;
+  context: DataDrivenViewContext;
+  typeMap: Map<string, TypeCatalogEntry>;
+  onAssigneeChange: (user: DirectoryUser) => void;
+  onTagAssign: ((user: TrackedUser, tag: string) => void) | null;
+}): BoardCore {
+  const { doc, root, context, typeMap } = params;
+  const services = context.services;
+  const writes = new WorkItemWriteQueue(services.writeField, services.logger, services.reorderItem);
+
+  let repaint: () => void = () => {};
+  const reordering = createBoardReordering({
+    root,
+    services,
+    queue: writes,
+    doc,
+    repaint: () => repaint(),
+  });
+
+  return {
+    services,
+    writes,
+    writeStatus: createBoardWriteStatus(doc, writes),
+    metrics: {
+      statusWidthCh: widestStatusLabelLength(root, typeMap),
+      boardColumns: services.getBoardColumns(),
+      // Rolled-up children always sit at the bottom of the configured hierarchy, so the rollup badge
+      // wears a discrete tint of the LAST configured type's color — it reads as "these are the Tasks"
+      // without having to name the type on a badge that only has room for a count.
+      minorChildColor: lastTypeColor(services.getTypes()),
+    },
+    chipContext: createChipContext(
+      doc,
+      services,
+      writes,
+      root,
+      params.onAssigneeChange,
+      createTagEditor(root, params.onTagAssign),
+    ),
+    ordering: createOrderingControl(context, () => repaint(), reordering.dragReorderUnavailable),
+    dragReorder: reordering.controller,
+    setRepaint: (next) => {
+      repaint = next;
+    },
+  };
+}
+
 function renderBoard(
   doc: Document,
   root: TrackedWorkItem,
@@ -1331,41 +1625,12 @@ function renderBoard(
   folderPath: QueryFolderCrumb[],
 ): BoardHandle {
   const board = doc.createElement("div");
-  // Trim the top padding to 2px so the header card sits close to the top of the view; keep the
-  // other sides at 16px for breathing room.
-  board.style.cssText = "padding:2px 16px 16px 16px";
+  // Trim the top padding to 2px so the header card sits close to the top of the view; the sides and
+  // bottom keep the board's shared edge padding.
+  board.style.cssText = `padding:2px ${BOARD_EDGE_PADDING_PX}px ${BOARD_EDGE_PADDING_PX}px`;
 
-  // One serialized write queue per board (per tab): field edits never race on System.Rev.
-  const services = context.services;
-  const fieldWrites = new FieldWriteQueue(services.writeField, services.logger);
-  const writeStatus = createBoardWriteStatus(doc, fieldWrites);
-
-  // One shared badge width for the whole board so every status badge renders the same size.
-  const statusWidthCh = widestStatusLabelLength(root, typeMap);
-  // The global board-column order, so a status colors by its position (identical across every type).
-  const boardColumns = services.getBoardColumns();
-  // Rolled-up children always sit at the bottom of the configured hierarchy, so the rollup badge
-  // wears a discrete tint of the LAST configured type's color — it reads as "these are the Tasks"
-  // without having to name the type on a badge that only has room for a count.
-  const minorChildColor = lastTypeColor(services.getTypes());
-  const tagEditor = createTagEditor(root, onTagAssign);
-
-  // Points at the tree renderer built further below, so the ordering picker can re-sort in place. A
-  // pick can only arrive from a click, which cannot happen before this synchronous setup finishes.
-  let resortTree: () => void = () => {};
-  const ordering = createOrderingControl(context, () => resortTree());
-
-  // Built once and shared by every assignee chip on the board (rows, rolled-up children, Tech Lead).
-  // `crew` walks the live tree on each popup open rather than caching a list, so a person assigned a
-  // moment ago is already offered and there is no second copy of "who is on this project" to drift.
-  const chipContext: AssigneeChipContext = {
-    doc,
-    services,
-    queue: fieldWrites,
-    crew: () => collectAssignedDirectoryUsers([root]),
-    onPicked: onAssigneeChange,
-    tagEditor,
-  };
+  const core = createBoardCore({ doc, root, context, typeMap, onAssigneeChange, onTagAssign });
+  const { chipContext, writeStatus } = core;
 
   const { header, sprintPickerHandle, expandAll, collapseAll, techLead } = renderHeader(
     doc,
@@ -1374,9 +1639,9 @@ function renderBoard(
     typeMap,
     sprintWindow,
     chipContext,
-    { writeQueueStatus: writeStatus.element, orderingPicker: ordering.element },
+    { writeQueueStatus: writeStatus.element, orderingPicker: core.ordering.element },
     folderPath,
-    fieldWrites,
+    core.writes,
   );
   board.append(header);
 
@@ -1384,15 +1649,7 @@ function renderBoard(
   // bucket for assigned-but-untagged people. Owned here as the single source of truth so the panel
   // pills and the tree filter never drift.
   const selectedTags = new Set<string | null>();
-  // The tag filter panel sits above the tree; it stays empty until the Feature Crew roster resolves,
-  // since a person's tag is only known once the roster loads.
-  const tagPanelContainer = doc.createElement("div");
-  tagPanelContainer.className = "awesomeado-tracking__tag-filter";
-  board.append(tagPanelContainer);
-
-  const treeContainer = doc.createElement("div");
-  treeContainer.className = "awesomeado-tracking__tree";
-  board.append(treeContainer);
+  const { tagPanelContainer, treeContainer } = createBoardPanels(doc, board);
 
   const { renderTreeContent, refreshTagPanel } = createBoardTreeRenderer({
     doc,
@@ -1404,17 +1661,16 @@ function renderBoard(
     tagPanelContainer,
     sprintPickerHandle,
     chipContext,
-    fieldWrites,
-    statusWidthCh,
-    boardColumns,
-    minorChildColor,
+    fieldWrites: core.writes,
+    metrics: core.metrics,
     expandAll,
     collapseAll,
-    currentOrderingPolicy: ordering.policy,
+    currentOrderingPolicy: core.ordering.policy,
+    dragReorder: core.dragReorder,
   });
 
   renderTreeContent();
-  resortTree = renderTreeContent;
+  core.setRepaint(renderTreeContent);
   wireSprintPickerRerender(sprintPickerHandle, renderTreeContent);
 
   return {
@@ -1725,8 +1981,9 @@ export const projectTrackingView: EnhancedView = {
   render: (context) => {
     const root = context.doc.createElement("section");
     root.className = "awesomeado-view awesomeado-tracking";
-    // Trim the top padding to 2px so the (sticky) header card sits close to the top ADO bar; keep
-    // the other sides at 16px for breathing room. The board below adds its own matching top padding.
+    // Trim the top padding to 2px so the (sticky) header card sits close to the top ADO bar; the
+    // sides and bottom use the board's shared edge padding. The board below adds its own matching
+    // top padding.
     root.style.cssText = [
       "display:flex",
       "flex-direction:column",
@@ -1735,7 +1992,7 @@ export const projectTrackingView: EnhancedView = {
       "font-family:inherit",
       "color:var(--text-primary-color, inherit)",
       "text-align:left",
-      "padding:2px 16px 16px 16px",
+      `padding:2px ${BOARD_EDGE_PADDING_PX}px ${BOARD_EDGE_PADDING_PX}px`,
     ].join(";");
 
     // Render title immediately so it's available synchronously for tests.

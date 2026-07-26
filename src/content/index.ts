@@ -40,6 +40,10 @@ import {
   type SendUpdateFieldRequest,
 } from "../common/browser/MessagingWorkItemFieldWriter";
 import {
+  MessagingWorkItemReorderWriter,
+  type SendReorderRequest,
+} from "../common/browser/MessagingWorkItemReorderWriter";
+import {
   MessagingWorkItemTreeLoader,
   type SendTreeRequest,
 } from "../common/browser/MessagingWorkItemTreeLoader";
@@ -47,6 +51,10 @@ import {
   type UpdateWorkItemFieldMessage,
   type UpdateWorkItemFieldResponse,
 } from "../common/browser/WorkItemFieldRequest";
+import {
+  type ReorderWorkItemMessage,
+  type ReorderWorkItemResponse,
+} from "../common/browser/WorkItemReorderRequest";
 import { createLoggerFactory } from "../common/logging/createLogger";
 import { type AdoThemeResponse, isAdoThemeRequest } from "../common/navigation/AdoContext";
 import { isAdoNavigationMessage } from "../common/navigation/AdoQueryRoute";
@@ -150,6 +158,16 @@ const workItemFieldWriter = new MessagingWorkItemFieldWriter(
   loggers.forSource("content/views"),
 );
 
+// Drag-reordering the tree persists the same way every other ADO write here does: the isolated
+// content world cannot reach the credentialed REST API, so the writer messages the background worker
+// (which runs the MAIN-world link patch and the team-scoped backlog re-rank).
+const sendReorderRequest: SendReorderRequest = (message) =>
+  chrome.runtime.sendMessage<ReorderWorkItemMessage, ReorderWorkItemResponse | undefined>(message);
+const workItemReorderWriter = new MessagingWorkItemReorderWriter(
+  sendReorderRequest,
+  loggers.forSource("content/views"),
+);
+
 // The people picker resolves names against ADO's own identity directory the same way: the isolated
 // content world cannot reach the credentialed REST API, so the directory messages the background
 // worker (which runs the MAIN-world search with the user's session cookies).
@@ -192,6 +210,13 @@ const trackingServices: EnhancedViewServices = {
   now: () => new Date(),
   logger: loggers.forSource("content/views"),
   writeField: (request) => workItemFieldWriter.writeField(request),
+  reorderItem: (request) => workItemReorderWriter.reorder(request),
+  // The team's stable id, not its display name: it is the URL segment the backlog-order endpoint is
+  // reached through, and a GUID is safe there where a name containing spaces or slashes is not.
+  currentTeam: () => {
+    const team = latestSettings?.currentTeam ?? null;
+    return team !== null && team.id.trim().length > 0 ? team.id : null;
+  },
 };
 
 // The in-session view choice lives here, in memory only: switching a query between its enhanced view

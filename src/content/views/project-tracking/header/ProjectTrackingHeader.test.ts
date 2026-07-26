@@ -133,8 +133,12 @@ describe("renderProjectTrackingHeader - ordering picker", () => {
 
     const topRow = element.querySelector(".awesomeado-tracking__header-top");
     expect(topRow?.contains(orderingPicker)).toBe(true);
-    // `margin-left:auto` is what pushes it to the right edge of that band.
-    expect(orderingPicker.style.marginLeft).toBe("auto");
+    // The picker shares a right-pushed group with the write-queue status; `margin-left:auto` on that
+    // group is what pins the pair to the right edge, and the picker is its LAST child so the glyph
+    // holds the same corner position whether or not a save is in flight.
+    const corner = element.querySelector<HTMLElement>(".awesomeado-tracking__header-corner");
+    expect(corner?.style.marginLeft).toBe("auto");
+    expect(corner?.lastElementChild).toBe(orderingPicker);
     // The band it sits in is the tile's FIRST row, so "top-right corner" is literal.
     expect(element.children[0]).toBe(topRow);
   });
@@ -169,27 +173,86 @@ describe("renderProjectTrackingHeader - controls & write status", () => {
     expect(techLeadRow?.querySelector(".awesomeado-eta")).toBeTruthy();
   });
 
-  it("mounts the write-queue status indicator on its own row above the sprint picker", () => {
+  it("mounts the write-queue status indicator beside the ordering picker in the top corner", () => {
     const writeQueueStatus = document.createElement("span");
     writeQueueStatus.className = "awesomeado-write-queue-status";
 
     const { element } = renderProjectTrackingHeader(document, baseOptions({ writeQueueStatus }));
 
-    const statusRow = element.querySelector(".awesomeado-tracking__write-status-row");
-    expect(statusRow?.contains(writeQueueStatus)).toBe(true);
+    const corner = element.querySelector(".awesomeado-tracking__header-corner");
+    expect(corner?.contains(writeQueueStatus)).toBe(true);
+    // The status sits BEFORE the ordering glyph, so the glyph keeps the same corner position whether
+    // or not a save is in flight.
+    const cornerChildren = [...(corner?.children ?? [])];
+    expect(cornerChildren.indexOf(writeQueueStatus)).toBeLessThan(cornerChildren.length - 1);
+  });
 
-    // The status row must precede the controls band (which carries the sprint picker) so the
-    // indicator sits ABOVE the sprint picker rather than beside or below it.
-    const mainRow = element.querySelector(".awesomeado-tracking__header-main");
-    const children = [...element.children];
-    expect(children.indexOf(statusRow as Element)).toBeLessThan(
-      children.indexOf(mainRow as Element),
+  it("reserves the top band's height so showing the status cannot resize the header", () => {
+    const { element } = renderProjectTrackingHeader(document, baseOptions());
+
+    // The indicator shows and hides itself as saves come and go; without a reserved row that would
+    // grow and shrink the sticky header on every edit, shoving the whole board down and back.
+    const topRow = element.querySelector<HTMLElement>(".awesomeado-tracking__header-top");
+    expect(topRow?.style.minHeight).toBe("24px");
+  });
+
+  it("still renders the corner when no indicator is supplied", () => {
+    const { element } = renderProjectTrackingHeader(document, baseOptions());
+
+    const corner = element.querySelector(".awesomeado-tracking__header-corner");
+    expect(corner?.querySelector(".awesomeado-write-queue-status")).toBeNull();
+    // The ordering glyph belongs in that corner whether or not anything is saving.
+    expect(corner?.children).toHaveLength(1);
+  });
+});
+
+describe("renderProjectTrackingHeader - top band layout", () => {
+  /** A stand-in for the real write-queue status; the header only lays whatever it is handed out. */
+  function writeQueueStatusStub(): HTMLElement {
+    const status = document.createElement("span");
+    status.className = "awesomeado-write-queue-status";
+    return status;
+  }
+
+  it("keeps the corner group last in the band so the folder trail stays on the left", () => {
+    const { element } = renderProjectTrackingHeader(
+      document,
+      baseOptions({
+        breadcrumbs: [
+          { label: "Shared Queries", url: "https://dev.azure.com/org/proj/_queries/all" },
+        ],
+        writeQueueStatus: writeQueueStatusStub(),
+      }),
+    );
+
+    const topRow = element.querySelector(".awesomeado-tracking__header-top");
+    expect(topRow?.firstElementChild).toBe(element.querySelector(".awesomeado-breadcrumbs"));
+    expect(topRow?.lastElementChild).toBe(
+      element.querySelector(".awesomeado-tracking__header-corner"),
     );
   });
 
-  it("omits the write-status row when no indicator is supplied", () => {
-    const { element } = renderProjectTrackingHeader(document, baseOptions());
+  it("reserves the band's height even when a write-queue status is supplied", () => {
+    const { element } = renderProjectTrackingHeader(
+      document,
+      baseOptions({ writeQueueStatus: writeQueueStatusStub() }),
+    );
 
+    // The reservation has to be unconditional: the status appears and disappears with every save,
+    // and a band sized to its current contents would grow and shrink the sticky header underneath
+    // the reader. Sizing it only in the empty case would leave exactly that flicker in place.
+    const topRow = element.querySelector<HTMLElement>(".awesomeado-tracking__header-top");
+    expect(topRow?.style.minHeight).toBe("24px");
+  });
+
+  it("no longer emits a separate write-status row", () => {
+    const { element } = renderProjectTrackingHeader(
+      document,
+      baseOptions({ writeQueueStatus: writeQueueStatusStub() }),
+    );
+
+    // The status moved into the top band; a leftover row would reserve dead vertical space in a
+    // header that is pinned over the board.
     expect(element.querySelector(".awesomeado-tracking__write-status-row")).toBeNull();
   });
 });

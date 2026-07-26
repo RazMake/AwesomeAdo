@@ -189,6 +189,11 @@ function buildPickerPopup(doc: Document): {
     "padding:0",
     "max-height:200px",
     "overflow-y:auto",
+    // Never scroll sideways: each row truncates instead (see `truncatedLine`). A directory address
+    // is one unbreakable token, so without this a single long address would widen every row and put
+    // a horizontal scrollbar under the whole list — forcing the user to scroll just to see who is
+    // next, and stealing vertical space from the list at the same time.
+    "overflow-x:hidden",
   ].join(";");
 
   // The picker used to render an empty box while it had nothing to offer, which is indistinguishable
@@ -230,6 +235,25 @@ function buildPickerPopup(doc: Document): {
 const HIGHLIGHT_BACKGROUND = "rgba(128,128,128,0.28)";
 
 /**
+ * The declarations that keep one line of a result row on a single line, clipped with an ellipsis.
+ *
+ * Named once because both lines of the row need identical treatment: the popup is width-capped, and
+ * a display name or directory address longer than that cap would otherwise push the row wider than
+ * the list and drag a horizontal scrollbar in behind it. An address is a single unbreakable token,
+ * so wrapping is not an option either. The full value stays reachable through the element's `title`,
+ * so truncating costs the reader nothing.
+ */
+function truncatedLine(...extra: string[]): string {
+  return [
+    "display:block",
+    "overflow:hidden",
+    "text-overflow:ellipsis",
+    "white-space:nowrap",
+    ...extra,
+  ].join(";");
+}
+
+/**
  * Build one selectable result row. The unique name is shown underneath because a directory search
  * routinely returns two people who share a display name, and the address is the only thing that
  * tells them apart; the crew tag (or the neutral "??" pill for anyone without one) sits at the end
@@ -244,6 +268,11 @@ function buildResultRow(doc: Document, user: TrackedUser, showTags: boolean): HT
     "background:transparent",
     "padding:4px 8px",
     "width:100%",
+    // Without this the row's intrinsic (untruncated) content sets its width, so `width:100%` is a
+    // floor rather than a ceiling and a long name still widens the list.
+    "box-sizing:border-box",
+    "max-width:100%",
+    "min-width:0",
     "text-align:left",
     "font:inherit",
     "color:inherit",
@@ -259,19 +288,21 @@ function buildResultRow(doc: Document, user: TrackedUser, showTags: boolean): HT
 
   const name = doc.createElement("span");
   name.className = "awesomeado-assigned__result-name";
-  name.style.cssText = "display:block";
+  name.style.cssText = truncatedLine();
   name.textContent = user.displayName;
+  // The tooltip is the escape hatch for a name the row had to clip.
+  name.title = user.displayName;
   identity.append(name);
 
   if (user.uniqueName !== null && user.uniqueName.length > 0) {
     const unique = doc.createElement("span");
     unique.className = "awesomeado-assigned__result-unique";
-    unique.style.cssText = [
-      "display:block",
+    unique.style.cssText = truncatedLine(
       "font-size:10px",
       "color:var(--text-secondary-color, #8a8886)",
-    ].join(";");
+    );
     unique.textContent = user.uniqueName;
+    unique.title = user.uniqueName;
     identity.append(unique);
   }
   button.append(identity);

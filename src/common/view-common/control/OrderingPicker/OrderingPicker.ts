@@ -12,6 +12,17 @@ export interface OrderingPickerOptions {
    * user's expanded items for no result.
    */
   onChange(policy: OrderingPolicy): void;
+  /**
+   * Why drag-to-reorder is unavailable under `policy`, or null when it is available. Called again
+   * after every pick, so the glyph re-states the situation the new policy creates.
+   *
+   * The glyph doubles as the reorder affordance's status light because it is already the one place
+   * that answers "what decides this order?": when a view can only honour a manual drag under one
+   * policy, the same indicator has to say so, or the rows silently stop responding to a drag with no
+   * explanation anywhere on screen. The RULE and its wording stay with the view (this is a reason
+   * string, not a boolean); the control only presents it.
+   */
+  dragReorderUnavailable?(policy: OrderingPolicy): string | null;
 }
 
 // A single glyph reads as "sorting" in every locale and needs no translation, which is what lets the
@@ -30,6 +41,27 @@ function labelOf(policy: OrderingPolicy): string {
 /** The hover/assistive text: what the items are ordered by, plus what clicking does. */
 function describe(policy: OrderingPolicy): string {
   return `Ordering: ${labelOf(policy)}`;
+}
+
+// How the glyph looks in each of its two states. Both are themed custom properties with literal
+// fallbacks so they read on light, dark, blue and "Follow ADO" alike (ADR-034).
+//
+// The unavailable state is a deliberately WEAK warning: reordering by hand is off, which is worth
+// noticing but is not an error the user has to fix. Red names the condition; the heavy transparency
+// keeps it from reading as an alarm in a header the user looks at all day.
+const GLYPH_AVAILABLE: GlyphAppearance = {
+  color: "var(--text-secondary-color, #8a8886)",
+  opacity: "0.7",
+};
+const GLYPH_UNAVAILABLE: GlyphAppearance = {
+  color: "var(--status-error-text, #c50f1f)",
+  opacity: "0.25",
+};
+
+/** How the glyph paints itself in one of its two states. */
+interface GlyphAppearance {
+  color: string;
+  opacity: string;
 }
 
 /** One selectable policy row, marked when it is the policy currently in force. */
@@ -150,21 +182,33 @@ export function renderOrderingPicker(doc: Document, options: OrderingPickerOptio
     "border:none",
     "background-color:transparent",
     "padding:0 2px",
-    "color:var(--text-secondary-color, #8a8886)",
+    `color:${GLYPH_AVAILABLE.color}`,
     "font-size:13px",
     "line-height:1",
-    "opacity:0.7",
+    `opacity:${GLYPH_AVAILABLE.opacity}`,
   ].join(";");
+
+  // Hover always reaches full opacity, including in the unavailable state: the tooltip carries the
+  // reason, so the glyph has to be readable long enough for the pointer to rest on it.
+  let restingOpacity = GLYPH_AVAILABLE.opacity;
   trigger.addEventListener("mouseenter", () => {
     trigger.style.opacity = "1";
   });
   trigger.addEventListener("mouseleave", () => {
-    trigger.style.opacity = "0.7";
+    trigger.style.opacity = restingOpacity;
   });
 
   const applyDescription = (): void => {
-    trigger.title = describe(current);
-    trigger.setAttribute("aria-label", describe(current));
+    const unavailable = options.dragReorderUnavailable?.(current) ?? null;
+    const appearance = unavailable === null ? GLYPH_AVAILABLE : GLYPH_UNAVAILABLE;
+    restingOpacity = appearance.opacity;
+    trigger.style.color = appearance.color;
+    trigger.style.opacity = appearance.opacity;
+    trigger.dataset.dragReorder = unavailable === null ? "available" : "unavailable";
+    const description =
+      unavailable === null ? describe(current) : `${describe(current)} \u2014 ${unavailable}`;
+    trigger.title = description;
+    trigger.setAttribute("aria-label", description);
   };
   applyDescription();
   root.append(trigger);

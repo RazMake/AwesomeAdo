@@ -1,5 +1,5 @@
 import { ADO_API_VERSION } from "./adoApi";
-import { resolveAdoProjectContext } from "./fetchAdoMetadata";
+import { buildTeamScopedApiUrl } from "./fetchAdoMetadata";
 
 const API_VERSION = ADO_API_VERSION;
 
@@ -36,16 +36,7 @@ export interface TeamIteration {
  * runs in the ADO page's MAIN world (see `common/browser/fetchAdoIterationsInPage`).
  */
 export function buildAdoIterationsUrl(href: string, team: string): string | null {
-  if (team.trim().length === 0) {
-    return null;
-  }
-  const resolved = resolveAdoProjectContext(href);
-  if (resolved === null) {
-    return null;
-  }
-  const { base, project } = resolved;
-  const encodedTeam = encodeURIComponent(team);
-  return `${base}/${project}/${encodedTeam}/_apis/work/teamsettings/iterations?api-version=${API_VERSION}`;
+  return buildTeamScopedApiUrl(href, team, "work/teamsettings/iterations", API_VERSION);
 }
 
 /**

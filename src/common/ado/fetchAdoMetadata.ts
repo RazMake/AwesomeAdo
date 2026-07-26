@@ -51,6 +51,36 @@ export function resolveAdoProjectContext(href: string): { base: string; project:
 }
 
 /**
+ * Build a TEAM-scoped ADO REST URL (`{base}/{project}/{team}/_apis/{path}?api-version=…`), or null
+ * when `href` is not project-scoped or `team` is blank.
+ *
+ * Several ADO concepts are owned by a team rather than by the project — the iterations a team
+ * subscribes to, the order it ranks its backlog in — and each is reached through the same
+ * project/team/_apis shape. Building that shape in one place keeps every team-scoped endpoint
+ * agreeing on the encoding and on the "no team means no URL" rule, which a per-endpoint copy of the
+ * boilerplate had already started to duplicate.
+ *
+ * `apiVersion` is a parameter rather than the shared constant because not every team-scoped route
+ * has left preview; the caller pins the version its own endpoint is served under.
+ */
+export function buildTeamScopedApiUrl(
+  href: string,
+  team: string,
+  path: string,
+  apiVersion: string,
+): string | null {
+  if (team.trim().length === 0) {
+    return null;
+  }
+  const resolved = resolveAdoProjectContext(href);
+  if (resolved === null) {
+    return null;
+  }
+  const { base, project } = resolved;
+  return `${base}/${project}/${encodeURIComponent(team)}/_apis/${path}?api-version=${apiVersion}`;
+}
+
+/**
  * Build the teams and area-tree REST URLs for the ADO organization/project named by `href`, or null
  * when the URL is not a project-scoped ADO location (org-level or folder tabs have nothing to fetch).
  *

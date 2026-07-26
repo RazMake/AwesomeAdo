@@ -8,15 +8,15 @@
  *
  * Layout (a single subtle-filled tile so it reads as a card):
  *
- *   Folder / Folder / …                                                                          ⇅
- *                                                    Saving N changes… (write-queue status, right)
+ *   Folder / Folder / …                                     Saving N changes…  ⇅
  *   Title                         + −                               Sprint Picker
  *   TechLead  ETA
  *
  * The `+`/`−` expand-all / collapse-all buttons are vertically centred against the two-line
  * title/tech-lead block; the sprint picker sits on that same band but pinned to the right edge. The
  * ordering indicator is deliberately parked in the top-right corner, away from those controls: it is
- * a quiet "this is how the items are sorted" readout that only occasionally gets clicked.
+ * a quiet "this is how the items are sorted" readout that only occasionally gets clicked, and the
+ * write-queue status shares that corner with it.
  */
 
 import {
@@ -53,8 +53,9 @@ export interface ProjectTrackingHeaderOptions {
   /** The sprint picker control element, pinned to the right of the controls band. */
   sprintPicker: HTMLElement;
   /**
-   * The write-queue status indicator, mounted on its own row directly above the sprint picker so it
-   * reports in-flight saves without disturbing the title band. Null/omitted hides the row entirely.
+   * The write-queue status indicator, mounted in the tile's top-right corner beside the ordering
+   * indicator so it reports in-flight saves without disturbing the title band. Null/omitted simply
+   * leaves the corner to the ordering indicator.
    */
   writeQueueStatus?: HTMLElement | null;
 }
@@ -69,6 +70,16 @@ export interface ProjectTrackingHeaderHandle {
   collapseAllButton: HTMLButtonElement;
 }
 
+/**
+ * The height the top band always occupies, in pixels.
+ *
+ * Sized to the tallest thing that band can hold: the write-queue status chip in its failed state
+ * (12px text + 3px padding + 1px border, top and bottom, plus slack). Reserving it unconditionally
+ * is what stops the sticky header from growing and shrinking every time a save starts, finishes or
+ * fails — which reads as the whole board flickering up and down while the user is looking at it.
+ */
+const TOP_ROW_MIN_HEIGHT_PX = 24;
+
 /** Builds one themed expand/collapse button carrying the class the board's wiring queries by. */
 function renderBandButton(doc: Document, className: string, glyph: string): HTMLButtonElement {
   const button = doc.createElement("button");
@@ -77,11 +88,13 @@ function renderBandButton(doc: Document, className: string, glyph: string): HTML
   button.textContent = glyph;
   // Subtle themed affordance: neutral fill + a clearly visible rounded border so it reads as a button
   // on any theme (ADO's --palette-neutral-20 is too faint under the pinned themes, so use a fixed grey).
+  // The box is trimmed via padding alone (32px -> 27.2px, 15% smaller) so the glyph stays legible at
+  // the same 14px as the rest of the band.
   button.style.cssText = [
     "cursor:pointer",
     "border:1px solid rgba(128,128,128,0.5)",
     "border-radius:6px",
-    "padding:8px 8px",
+    "padding:5.6px 5.6px",
     "background:var(--palette-neutral-4, rgba(128,128,128,0.08))",
     "color:var(--text-primary-color, #323130)",
     "font-size:14px",
@@ -157,12 +170,21 @@ export function renderProjectTrackingHeader(
     "z-index:2",
   ].join(";");
 
-  // The top band carries the folder trail on the left and the ordering indicator pinned to the
-  // right corner. It is rendered even with no breadcrumbs, because the indicator belongs in that
-  // corner whether or not the query sits in a folder.
+  // The top band carries the folder trail on the left and, pinned to the right corner, the ordering
+  // indicator with the write-queue status beside it. It is rendered even with no breadcrumbs,
+  // because the indicator belongs in that corner whether or not the query sits in a folder.
+  //
+  // Its height is PINNED to the tallest thing it can hold (the write-queue chip). The status shows
+  // and hides itself as saves come and go, and without a reserved row that would grow and shrink the
+  // sticky header on every edit — shoving the whole board down and back while the user is reading it.
   const topRow = doc.createElement("div");
   topRow.className = "awesomeado-tracking__header-top";
-  topRow.style.cssText = ["display:flex", "align-items:center", "gap:16px"].join(";");
+  topRow.style.cssText = [
+    "display:flex",
+    "align-items:center",
+    "gap:16px",
+    `min-height:${TOP_ROW_MIN_HEIGHT_PX}px`,
+  ].join(";");
 
   const breadcrumbs = renderBreadcrumbs(doc, {
     segments: options.breadcrumbs,
@@ -171,21 +193,20 @@ export function renderProjectTrackingHeader(
   if (breadcrumbs) {
     topRow.append(breadcrumbs);
   }
-  options.orderingPicker.style.marginLeft = "auto";
-  topRow.append(options.orderingPicker);
-  header.append(topRow);
 
-  // A dedicated row directly above the controls band so the "Saving…" indicator appears over the
-  // sprint picker without reflowing the title/tech-lead layout. Right-aligned to line up with the
-  // sprint picker it reports on; the indicator hides itself while idle, so the row reserves no
-  // visible space until a save is actually in flight.
+  // Grouped and pushed right together, so the ordering glyph keeps the same corner position whether
+  // or not a save is in flight — the status grows leftward into the gap instead of displacing it.
+  const corner = doc.createElement("div");
+  corner.className = "awesomeado-tracking__header-corner";
+  corner.style.cssText = ["display:flex", "align-items:center", "gap:8px", "margin-left:auto"].join(
+    ";",
+  );
   if (options.writeQueueStatus) {
-    const writeStatusRow = doc.createElement("div");
-    writeStatusRow.className = "awesomeado-tracking__write-status-row";
-    writeStatusRow.style.cssText = ["display:flex", "justify-content:flex-end"].join(";");
-    writeStatusRow.append(options.writeQueueStatus);
-    header.append(writeStatusRow);
+    corner.append(options.writeQueueStatus);
   }
+  corner.append(options.orderingPicker);
+  topRow.append(corner);
+  header.append(topRow);
 
   // The controls band shares one row with the info column and is vertically centred against it, so
   // the +/− buttons line up with the middle of the two-line title/tech-lead block.
