@@ -2,7 +2,7 @@
 
 Renders an inline badge displaying the target ETA date with semantic urgency color and countdown
 tooltip. When handed an `onChange` callback the badge becomes **editable**: it invites a click with a
-hand cursor and opens a small date-picker popup.
+hand cursor and opens a small editor with a date field, a calendar button, and a Clear button.
 
 ## API
 
@@ -13,9 +13,9 @@ interface EtaBadgeOptions {
   /** The reference point (current time) for countdown calculation. */
   now: Date;
   /**
-   * When provided, the badge is editable: clicking opens a date picker (plus a Clear button while an
-   * ETA is set). Picking a date calls this with an ISO timestamp; Clear calls it with `null`. The
-   * caller persists the choice and then reflects the committed value via the handle's `setEta`.
+   * When provided, the badge is editable: clicking opens the editor (date field, calendar, Clear).
+   * Picking a date calls this with an ISO timestamp; Clear calls it with `null`. The caller persists
+   * the choice and then reflects the committed value via the handle's `setEta`.
    */
   onChange?: (eta: string | null) => void;
 }
@@ -23,6 +23,8 @@ interface EtaBadgeOptions {
 interface EtaBadgeHandle extends HTMLElement {
   /** Update the displayed ETA (or `null` to show "No ETA") after a committed write. */
   setEta(eta: string | null): void;
+  /** Flag (message) or clear (`null`) a failed write so it is never invisible. */
+  setWriteError(message: string | null): void;
 }
 
 function renderEtaBadge(doc: Document, options: EtaBadgeOptions): EtaBadgeHandle;
@@ -46,17 +48,25 @@ urgency signaling across all themes.
 
 ### Editing (when `onChange` is provided)
 
-- The badge shows a **hand cursor**; clicking opens a date-picker popup pre-filled with the current
-  ETA's PST calendar date.
-- **Picking a date** calls `onChange` with the chosen day as a noon-UTC ISO timestamp
-  (`YYYY-MM-DDT12:00:00Z`) — noon keeps the picked calendar day intact when rendered back in PST —
-  then dismisses the popup.
-- A **Clear** button appears only while an ETA is set and calls `onChange(null)` to reset the item to
-  the "No ETA" state.
+- The badge shows a **hand cursor**; clicking opens an editor popup with three controls: a date
+  field pre-filled with the current ETA's PST calendar date, a **calendar** button, and **Clear**.
+- The **calendar** button toggles the extension's own themed calendar
+  ([DatePicker](../DatePicker/README.md)). The browser's native picker is deliberately hidden: it
+  renders in the browser's color scheme rather than the view's theme, and cannot be kept inside the
+  window.
+- **Picking a date** (from the calendar or by typing into the field) calls `onChange` with the chosen
+  day as a noon-UTC ISO timestamp (`YYYY-MM-DDT12:00:00Z`) — noon keeps the picked calendar day
+  intact when rendered back in PST — then dismisses the popup.
+- **Clear** is always offered; while an ETA is set it calls `onChange(null)` to reset the item to the
+  "No ETA" state, and with nothing set it simply dismisses.
 - The badge follows a **persist-then-reflect** flow: it does **not** update itself on a pick. The
   caller persists the change and calls `handle.setEta(...)` with the committed value, so a failed
-  write never leaves a misleading date on screen (mirroring the status badge).
-- The popup's lifecycle (outside-click / Escape dismissal) is owned by the shared popup host.
+  write never leaves a misleading date on screen (mirroring the status badge). When the write fails,
+  call `handle.setWriteError(message)`: the badge appends a red ⚠ and shows the message as its
+  tooltip, so a rejected write is never indistinguishable from "nothing happened". The next
+  `setEta` clears it.
+- The popup's lifecycle (outside-click / Escape dismissal, and staying inside the window) is owned by
+  the shared popup host.
 
 ## Usage
 
@@ -80,6 +90,8 @@ const handle = renderEtaBadge(document, {
         item.eta = newEta;
         item.rev = result.rev;
         handle.setEta(newEta);
+      } else {
+        handle.setWriteError("Could not save this ETA. See the AwesomeADO diagnostics log.");
       }
     });
   },

@@ -409,7 +409,14 @@ function createItemEtaBadge(
               item.eta = newEta;
               item.rev = result.rev;
               badge.handle?.setEta(newEta);
+              return;
             }
+            // Without this the badge would simply keep showing the old date and the user could not
+            // tell a rejected write (stale rev, read-only field, expired session) from "nothing
+            // happened"; the queue has already logged the detail for the Diagnostics view.
+            badge.handle?.setWriteError(
+              `Could not save this ETA${result.error === undefined ? "" : `: ${result.error}`}. See the AwesomeADO diagnostics log.`,
+            );
           });
       }
     : undefined;

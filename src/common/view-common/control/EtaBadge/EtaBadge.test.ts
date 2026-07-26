@@ -111,7 +111,7 @@ describe("renderEtaBadge - editing interactions", () => {
     badge.remove();
   });
 
-  it("calls onChange with a noon-UTC ISO timestamp when a date is picked", () => {
+  it("calls onChange with a noon-UTC ISO timestamp when a date is typed", () => {
     const picks: Array<string | null> = [];
     const badge = renderEtaBadge(document, {
       eta: null,
@@ -136,7 +136,65 @@ describe("renderEtaBadge - editing interactions", () => {
     badge.remove();
   });
 
-  it("shows a Clear button only when an ETA is set and calls onChange(null)", () => {
+  it("treats an emptied date field as a clear", () => {
+    const picks: Array<string | null> = [];
+    const badge = renderEtaBadge(document, {
+      eta: "2026-08-10T00:00:00-07:00",
+      now,
+      onChange: (eta) => picks.push(eta),
+    });
+    document.body.append(badge);
+
+    badge.querySelector<HTMLElement>(".awesomeado-eta__label")?.click();
+    const input = badge.querySelector<HTMLInputElement>(".awesomeado-eta__date");
+    input!.value = "";
+    input!.dispatchEvent(new Event("change"));
+
+    expect(picks).toEqual([null]);
+
+    badge.remove();
+  });
+});
+
+describe("renderEtaBadge - calendar, clearing and reflecting", () => {
+  it("keeps the themed calendar hidden until its button is clicked", () => {
+    const badge = renderEtaBadge(document, { eta: null, now, onChange: () => {} });
+    document.body.append(badge);
+
+    badge.querySelector<HTMLElement>(".awesomeado-eta__label")?.click();
+    const calendarHost = badge.querySelector<HTMLElement>(".awesomeado-eta__calendar");
+    expect(calendarHost?.style.display).toBe("none");
+    expect(calendarHost?.querySelector(".awesomeado-datepicker")).toBeTruthy();
+
+    const calendarButton = badge.querySelector<HTMLButtonElement>(".awesomeado-eta__calendar-btn");
+    expect(calendarButton?.style.cursor).toBe("pointer");
+    calendarButton?.click();
+    expect(calendarHost?.style.display).toBe("block");
+
+    badge.remove();
+  });
+
+  it("saves the day clicked in the themed calendar", () => {
+    const picks: Array<string | null> = [];
+    const badge = renderEtaBadge(document, {
+      eta: "2026-08-10T00:00:00-07:00",
+      now,
+      onChange: (eta) => picks.push(eta),
+    });
+    document.body.append(badge);
+
+    badge.querySelector<HTMLElement>(".awesomeado-eta__label")?.click();
+    badge.querySelector<HTMLButtonElement>(".awesomeado-eta__calendar-btn")?.click();
+    badge.querySelector<HTMLButtonElement>('[data-day="2026-08-21"]')?.click();
+
+    expect(picks).toEqual(["2026-08-21T12:00:00Z"]);
+    // Picking dismisses the popup.
+    expect(badge.querySelector(".awesomeado-eta__popup")).toBeNull();
+
+    badge.remove();
+  });
+
+  it("shows a Clear button that calls onChange(null) when an ETA is set", () => {
     const picks: Array<string | null> = [];
     const badge = renderEtaBadge(document, {
       eta: "2026-08-10T00:00:00-07:00",
@@ -157,18 +215,28 @@ describe("renderEtaBadge - editing interactions", () => {
     badge.remove();
   });
 
-  it("omits the Clear button when no ETA is set", () => {
-    const badge = renderEtaBadge(document, { eta: null, now, onChange: () => {} });
+  it("still offers Clear with no ETA set, and dismisses without a pointless write", () => {
+    const picks: Array<string | null> = [];
+    const badge = renderEtaBadge(document, {
+      eta: null,
+      now,
+      onChange: (eta) => picks.push(eta),
+    });
     document.body.append(badge);
 
-    const label = badge.querySelector<HTMLElement>(".awesomeado-eta__label");
-    label?.click();
+    badge.querySelector<HTMLElement>(".awesomeado-eta__label")?.click();
+    const clear = badge.querySelector<HTMLButtonElement>(".awesomeado-eta__clear");
+    expect(clear).toBeTruthy();
+    clear!.click();
 
-    expect(badge.querySelector(".awesomeado-eta__clear")).toBeNull();
+    expect(picks).toEqual([]);
+    expect(badge.querySelector(".awesomeado-eta__popup")).toBeNull();
 
     badge.remove();
   });
+});
 
+describe("renderEtaBadge - reflecting a write's outcome", () => {
   it("reflects a committed change through setEta", () => {
     const badge = renderEtaBadge(document, { eta: null, now, onChange: () => {} });
     expect(badge.textContent).toBe("No ETA");
@@ -178,5 +246,23 @@ describe("renderEtaBadge - editing interactions", () => {
 
     badge.setEta(null);
     expect(badge.textContent).toBe("No ETA");
+  });
+
+  it("flags a failed write and clears the flag on the next committed value", () => {
+    const badge = renderEtaBadge(document, {
+      eta: "2026-08-10T00:00:00-07:00",
+      now,
+      onChange: () => {},
+    });
+
+    badge.setWriteError("Could not save this ETA.");
+    expect(badge.textContent).toContain("\u26A0");
+    expect(badge.title).toBe("Could not save this ETA.");
+    // The stored value stays on screen; only the marker says the pick did not stick.
+    expect(badge.textContent).toContain("ETA 08/10/2026");
+
+    badge.setEta("2026-08-12T00:00:00-07:00");
+    expect(badge.textContent).not.toContain("\u26A0");
+    expect(badge.title).toContain("in ");
   });
 });

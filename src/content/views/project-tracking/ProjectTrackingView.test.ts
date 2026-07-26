@@ -2086,3 +2086,86 @@ describe("ProjectTrackingView — techlead tag", () => {
     expect(techLeadPill).toBeNull();
   });
 });
+
+describe("ProjectTrackingView — ETA writes", () => {
+  /** Render the board over the fixture tree, recording every field write it enqueues. */
+  const renderBoard = async (
+    result: { ok: boolean; rev?: number } = { ok: true, rev: 4 },
+  ): Promise<{
+    root: HTMLElement;
+    writes: Array<{ id: number; rev: number; field: string; value: string | null }>;
+  }> => {
+    const epic = createFixtureTree();
+    const writes: Array<{ id: number; rev: number; field: string; value: string | null }> = [];
+    const services = createFakeServices({
+      loadTree: async () => ({ isTreeQuery: true, roots: [epic], error: null }),
+      writeField: async (request) => {
+        writes.push(request);
+        return result;
+      },
+    });
+    const root = projectTrackingView.render({
+      doc: document,
+      queryId: "q1",
+      properties: {},
+      services,
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    return { root, writes };
+  };
+
+  /** Open the header (epic) ETA editor and reveal its calendar. */
+  const openEtaCalendar = (root: HTMLElement): HTMLElement => {
+    const badge = root.querySelector<HTMLElement>(".awesomeado-eta");
+    badge?.querySelector<HTMLElement>(".awesomeado-eta__label")?.click();
+    badge?.querySelector<HTMLButtonElement>(".awesomeado-eta__calendar-btn")?.click();
+    return badge as HTMLElement;
+  };
+
+  it("writes the type's ETA field when a calendar day is picked, then reflects it", async () => {
+    const { root, writes } = await renderBoard();
+
+    const badge = openEtaCalendar(root);
+    // The epic's ETA is 2026-12-31, so its calendar opens on December 2026.
+    badge.querySelector<HTMLButtonElement>('[data-day="2026-12-24"]')?.click();
+    for (let tick = 0; tick < 6; tick += 1) {
+      await Promise.resolve();
+    }
+
+    expect(writes).toEqual([
+      { id: 1, rev: 3, field: "Custom.EpicETA", value: "2026-12-24T12:00:00Z" },
+    ]);
+    expect(badge.textContent).toContain("ETA 12/24/2026");
+  });
+
+  it("clears the ETA field when Clear is used", async () => {
+    const { root, writes } = await renderBoard();
+
+    const badge = root.querySelector<HTMLElement>(".awesomeado-eta");
+    badge?.querySelector<HTMLElement>(".awesomeado-eta__label")?.click();
+    badge?.querySelector<HTMLButtonElement>(".awesomeado-eta__clear")?.click();
+    for (let tick = 0; tick < 6; tick += 1) {
+      await Promise.resolve();
+    }
+
+    expect(writes[0]?.value).toBeNull();
+    expect(badge?.textContent).toContain("No ETA");
+  });
+
+  it("flags the badge instead of silently keeping the old date when the write fails", async () => {
+    const { root, writes } = await renderBoard({ ok: false });
+
+    const badge = openEtaCalendar(root);
+    badge.querySelector<HTMLButtonElement>('[data-day="2026-12-24"]')?.click();
+    for (let tick = 0; tick < 6; tick += 1) {
+      await Promise.resolve();
+    }
+
+    expect(writes).toHaveLength(1);
+    // The stored date stays on screen (in PST), now carrying the warning marker and its tooltip.
+    expect(badge.textContent).toContain("ETA 12/30/2026");
+    expect(badge.textContent).toContain("\u26A0");
+    expect(badge.title).toContain("Could not save this ETA");
+  });
+});

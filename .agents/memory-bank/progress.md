@@ -18,6 +18,11 @@ This is a flattened snapshot of what exists now, not a build log.
   `ENHANCED_VIEWS` registry), a shared placeholder shell (`renderViewScaffold`), and `sprint` /
   `project-tracking` views. Options imports only `content/views/viewCatalog` (scoped §6 exception,
   ADR-027, lint-enforced).
+- **Shared view controls** (`src/common/view-common/control`): `popupHost` (lazy popup lifecycle,
+  outside/Escape dismissal, and keeping an opened popup inside the window), `controlStyles` (the one
+  id-guarded stylesheet injector), `DatePicker` (themed month calendar replacing the browser's native
+  picker), `DateLabel`, `EtaBadge` (editable ETA: date field, calendar, Clear, `setWriteError`),
+  `AssignedTo`, and `StatusBadge` — ADR-034/ADR-035.
 - **Settings transfer** (`src/common/settings-transfer` + `src/options/settings-transfer`):
   `AwesomeADO.config` export/import of the whole configuration, wired to the Appearance tab.
 - **Navigation** (`src/common/navigation`): `AdoHost` single-source host matching, query-route and

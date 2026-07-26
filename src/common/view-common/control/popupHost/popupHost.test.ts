@@ -116,3 +116,59 @@ describe("createPopupHost - dismissal and lifecycle", () => {
     expect(host.isOpen).toBe(false);
   });
 });
+
+describe("createPopupHost - staying inside the window", () => {
+  /** Open a popup whose laid-out box is fixed at the given viewport rectangle. */
+  const openAt = (box: { left: number; top: number; width: number; height: number }) => {
+    const trigger = document.createElement("button");
+    const mountInto = document.createElement("div");
+    mountInto.append(trigger);
+    document.body.append(mountInto);
+    const popup = document.createElement("div");
+    popup.getBoundingClientRect = () =>
+      ({
+        left: box.left,
+        top: box.top,
+        width: box.width,
+        height: box.height,
+        right: box.left + box.width,
+        bottom: box.top + box.height,
+      }) as DOMRect;
+    createPopupHost({ doc: document, trigger, mountInto, buildPopup: () => popup });
+    trigger.click();
+    return popup;
+  };
+
+  it("shifts a popup that overflows the right edge back into view", () => {
+    // The window is 1024 wide; the popup ends 100px past it, with room to spare on its left.
+    const popup = openAt({ left: 900, top: 10, width: 232, height: 40 });
+
+    expect(popup.style.transform).toBe("translate(-116px, 0px)");
+  });
+
+  it("never shifts a popup further than the opposite edge allows", () => {
+    // Wider than the window: shifting by the full overflow would push its left edge off-screen.
+    const popup = openAt({ left: 20, top: 10, width: 1100, height: 40 });
+
+    expect(popup.style.transform).toBe("translate(-12px, 0px)");
+  });
+
+  it("shifts a popup that overflows the bottom edge upwards", () => {
+    // The window is 768 tall.
+    const popup = openAt({ left: 10, top: 700, width: 100, height: 200 });
+
+    expect(popup.style.transform).toBe("translate(0px, -140px)");
+  });
+
+  it("leaves a popup that already fits untouched", () => {
+    const popup = openAt({ left: 10, top: 10, width: 100, height: 40 });
+
+    expect(popup.style.transform).toBe("");
+  });
+
+  it("leaves an unlaid-out popup alone (no viewport to fit it to)", () => {
+    const popup = openAt({ left: 0, top: 0, width: 0, height: 0 });
+
+    expect(popup.style.transform).toBe("");
+  });
+});

@@ -44,3 +44,11 @@ const host = createPopupHost({
 The identical lazy-popup skeleton (create-on-open, remove-on-close, capture-phase outside/Escape
 dismissal) previously lived inside every popup control. Centralising it keeps behaviour consistent
 and satisfies the repo's DRY duplication gate.
+
+## Staying inside the window
+
+Every control anchors its popup at the trigger's bottom-left, so a control near the right or bottom
+window edge — the ETA badge sits at the far right of every board row — would open partly out of
+sight. On open the host measures the mounted popup and, when it overflows, shifts it back with a
+`transform`, capped by the distance to the opposite edge so correcting one overflow can never create
+another. Controls keep their own anchoring styles; nothing needs to opt in.

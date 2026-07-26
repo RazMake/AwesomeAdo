@@ -570,3 +570,27 @@ bindings)`→indented JSON {awesomeAdoConfigVersion,settings,enhancedQueries}; `
   `await Promise.resolve()`. The regression test drives a DEFERRED fake reconcile (pending[] of
   settle() closures that apply the request like the real background) and asserts the setTag reconcile
   does NOT fire until the seed is settled.
+
+## ETA editor / shared popup controls
+
+- **Never use the native `<input type="date">` picker for a themed view.** It renders in the
+  browser's color scheme (ignores the view theme), cannot be positioned or clamped to the window, and
+  routing a pick through its native `change` event is unreliable — that was the "picking a date does
+  not save" defect. `EtaBadge` hides the indicator
+  (`::-webkit-calendar-picker-indicator { display: none }`, injected via `ensureControlStyles` since
+  a shadow pseudo-element cannot be set inline) and opens `DatePicker` instead; a day cell click is an
+  ordinary handler that calls `onChange` directly.
+- **Under "Follow ADO" the theme pins nothing**, so `--palette-neutral-20` borders can render
+  invisible. Controls that must always show an edge use the literal `rgba(128, 128, 128, 0.45)` — the
+  same mid-grey the tree's child-indent guide already uses; it reads on both light and dark ADO.
+- **Popup placement is `popupHost`'s job, not the control's.** Every popup anchors at
+  `top: 100%; left: 0` of its trigger, so any of them can overflow at a window edge; `keepInsideWindow`
+  shifts the mounted popup with a `transform`, capped by the distance to the opposite edge.
+- **ETA timestamps are written as `${yyyy-MM-dd}T12:00:00Z`** (noon UTC). Midnight UTC renders as the
+  _previous_ day in PST — `2026-12-31T00:00:00Z` shows as `12/30/2026`. All calendar arithmetic uses
+  `Date.UTC(...)`; never build a local `Date` from a `yyyy-MM-dd` string.
+- **jsdom quirks that bite these tests:** `style.borderColor` normalizes to
+  `rgba(128, 128, 128, 0.45)` (with spaces); `background: transparent` inside a `cssText` block is
+  dropped (both `style.background` and `style.backgroundColor` read `""`); `font: inherit` makes
+  `style.fontWeight === "inherit"`; `getBoundingClientRect()` returns zeros unless stubbed (hence the
+  `rect.width === 0` no-op guard in `keepInsideWindow`); the default viewport is 1024×768.

@@ -382,3 +382,24 @@
   with no theme-detection code in the control. Muted status tints keep the state hue legible without a
   solid block of color fighting the page on any theme. Recorded as principle #13 in systemPatterns and
   enforced as a standing review gate (a control that hard-codes non-theme colors is a defect).
+
+## ADR-035: Enhanced views own their calendar and their popup placement
+
+- Decision: A date is picked from the extension's own calendar control
+  (`common/view-common/control/DatePicker`), never from the browser's native `<input type="date">`
+  picker, whose indicator is hidden. The date field stays for keyboard entry. Days cross the control
+  boundary as `yyyy-MM-dd` strings and "today" is injected by the caller (the views reckon dates in
+  PST), so no local-timezone conversion can shift a day. Placement is a shared concern: `popupHost`
+  measures every popup it opens and shifts it back inside the window with a `transform`, capped by the
+  distance to the opposite edge. The few rules that cannot be expressed inline (`:hover`, the
+  `::-webkit-calendar-picker-indicator` shadow pseudo-element) go through one id-guarded injector,
+  `common/view-common/control/controlStyles`.
+- Rationale: The native picker breaks three project rules at once: it renders in the browser's color
+  scheme rather than the view's theme (ADR-034), it cannot be positioned or kept inside the window, and
+  it routes a pick through a native `change` event — the ETA editor's "picking a date does not save"
+  defect. Owning the calendar makes a pick an ordinary click handler in our own DOM: deterministic,
+  unit-testable in jsdom, and themed like every other control. Putting the viewport correction in
+  `popupHost` (rather than in the ETA badge) fixes it once for every popup control, since they all
+  anchor at the trigger's bottom-left and any of them can sit near an edge. Persist-then-reflect is
+  kept, but a failed write is no longer invisible: the ETA badge exposes `setWriteError`, so a rejected
+  save shows a ⚠ plus the reason instead of looking like "nothing happened".

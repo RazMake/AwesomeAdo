@@ -19,7 +19,10 @@ The extension is feature-complete for its current scope:
   `src/common/view-common`. Options imports only `content/views/viewCatalog` (config) — a scoped,
   lint-enforced §6 exception (ADR-027) so it still never bundles view DOM. Shared per-view building
   blocks live in `views/shared`: `renderViewScaffold` (placeholder shell) plus the reusable controls
-  `DateLabel` (PST date + time-on-hover), `EtaBadge` (ETA date + countdown, colored by urgency), and
+  `DateLabel` (PST date + time-on-hover), `EtaBadge` (ETA date + countdown, colored by urgency; when
+  editable it opens a date field + own themed calendar + Clear, and flags a failed write via
+  `setWriteError`), `DatePicker` (the themed month calendar that replaces the browser's native, and
+  unthemeable, picker — ADR-035), and
   `AssignedTo` (assignee label + inline directory-search picker). `sprint` is still a placeholder shell;
   `project-tracking` is now a **data-driven tree board**. Adding a view is a folder plus two
   registrations — see the `add-enhanced-view` skill.
@@ -71,6 +74,11 @@ The extension is feature-complete for its current scope:
   (source is the owning component folder by convention, e.g. `content/query-page` / `common/settings`,
   a free-form string); injected from composition roots so no class hard-codes its own source. Shared
   stores take the logger as an optional argument (absent = no-op).
+- `createPopupHost` (`common/view-common/control/popupHost`) — the one lazy-popup lifecycle: build on
+  open, remove on close, capture-phase outside/Escape dismissal, and shifting the opened popup back
+  inside the window (ADR-035). Every popup control uses it; none re-implements placement.
+- `ensureControlStyles` (`common/view-common/control/controlStyles`) — the single, id-guarded escape
+  hatch for the few control rules an inline style cannot express (`:hover`, shadow pseudo-elements).
 
 ## Pending (developer / org-owner owned)
 
