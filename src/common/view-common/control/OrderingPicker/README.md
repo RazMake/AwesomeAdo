@@ -36,7 +36,7 @@ while open, its menu).
 - The trigger is deliberately **discrete**: a bare, muted glyph with no border or fill that brightens
   on hover, so it can sit in a header corner as a quiet indicator instead of competing with the
   view's real controls.
-- The trigger's `title`/`aria-label` read `Ordering: <policy label> (click to change)` and are
+- The trigger's `title`/`aria-label` read `Ordering: <policy label>` and are
   re-written after every pick, so the tooltip never describes a stale order.
 - Clicking opens a menu of every policy; the active one is checked (`aria-checked="true"`) and bold.
   Picking one closes the menu and calls `onChange`.

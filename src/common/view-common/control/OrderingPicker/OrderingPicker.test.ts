@@ -37,7 +37,7 @@ describe("renderOrderingPicker - indicator", () => {
   it("names the policy in force in its tooltip", () => {
     const trigger = triggerOf(renderMounted("title"));
 
-    expect(trigger.title).toBe("Ordering: By Title (a-z) (click to change)");
+    expect(trigger.title).toBe("Ordering: By Title (a-z)");
     expect(trigger.getAttribute("aria-label")).toBe(trigger.title);
   });
 
@@ -113,9 +113,7 @@ describe("renderOrderingPicker - picking", () => {
       .find((row) => row.dataset.policy === "eta")!
       .click();
 
-    expect(triggerOf(picker).title).toBe(
-      "Ordering: By ETA (past/recent - future) (click to change)",
-    );
+    expect(triggerOf(picker).title).toBe("Ordering: By ETA (past/recent - future)");
   });
 
   it("moves the check mark to the newly picked policy on the next open", () => {

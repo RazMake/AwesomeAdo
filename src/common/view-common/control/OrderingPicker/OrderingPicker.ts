@@ -29,7 +29,7 @@ function labelOf(policy: OrderingPolicy): string {
 
 /** The hover/assistive text: what the items are ordered by, plus what clicking does. */
 function describe(policy: OrderingPolicy): string {
-  return `Ordering: ${labelOf(policy)} (click to change)`;
+  return `Ordering: ${labelOf(policy)}`;
 }
 
 /** One selectable policy row, marked when it is the policy currently in force. */
