@@ -98,25 +98,75 @@ const PAST_SPRINT_COLOR = "#c26c1d";
 const FUTURE_SPRINT_COLOR = "var(--communication-foreground, #0078d4)";
 
 /**
- * Tint an option by where its sprint sits in time: past = amber, future = theme accent, current =
- * bold in the inherited color (emphasis without competing with the two colored directions). The
- * relation is also mirrored onto `data-relation` so callers and tests can assert it without parsing
- * styles.
+ * The style declarations that express a sprint's position in time: past = amber, future = theme
+ * accent, current = bold in the inherited color (emphasis without competing with the two colored
+ * directions). Shared by the dropdown options and the collapsed select so both read identically.
+ */
+function relationDeclarations(relation: SprintRelation | undefined): [string, string][] {
+  if (relation === "past") {
+    return [["color", PAST_SPRINT_COLOR]];
+  }
+  if (relation === "future") {
+    return [["color", FUTURE_SPRINT_COLOR]];
+  }
+  if (relation === "current") {
+    return [["font-weight", "bold"]];
+  }
+  return [];
+}
+
+/**
+ * Apply a relation's declarations as individual longhand properties. `setProperty` (rather than a
+ * `cssText` append) is deliberate: the select's base style uses the `font` shorthand, and only a
+ * longhand set afterwards reliably wins over it.
+ */
+function applyRelationDeclarations(
+  style: CSSStyleDeclaration,
+  relation: SprintRelation | undefined,
+): void {
+  for (const [property, value] of relationDeclarations(relation)) {
+    style.setProperty(property, value);
+  }
+}
+
+/**
+ * Tint an option by where its sprint sits in time. The relation is also mirrored onto
+ * `data-relation` so callers and tests can assert it without parsing styles.
  */
 function applyRelationStyle(option: HTMLOptionElement, relation: SprintRelation | undefined): void {
   if (!relation) {
     return;
   }
   option.dataset.relation = relation;
-  if (relation === "past") {
-    option.style.cssText = `color:${PAST_SPRINT_COLOR}`;
-  } else if (relation === "future") {
-    option.style.cssText = `color:${FUTURE_SPRINT_COLOR}`;
+  applyRelationDeclarations(option.style, relation);
+}
+
+const SELECT_BASE_STYLE = [
+  "background:var(--background-color, #fff)",
+  "color:var(--text-primary-color, #323130)",
+  "border:1px solid rgba(128,128,128,0.5)",
+  "border-radius:6px",
+  "padding:4px 8px",
+  // Deliberately the font longhands instead of the `font` shorthand: the shorthand resets
+  // font-weight, which would fight the current-sprint bold applied on top of this base style.
+  "font-family:inherit",
+  "font-size:inherit",
+];
+
+/**
+ * Restyle the dropdown itself from the selected sprint's relation. Browsers render the collapsed
+ * <select> with the select's own color/weight and ignore the selected <option>'s styling, so
+ * without this the time-direction cue would vanish the moment the dropdown closes.
+ */
+function styleSelectForSelection(select: HTMLSelectElement, sprints: SprintOption[]): void {
+  const relation = sprints.find((sprint) => sprint.name === select.value)?.relation;
+  if (relation) {
+    select.dataset.relation = relation;
   } else {
-    // The current sprint keeps the inherited color so it does not compete with the two colored
-    // directions; weight alone marks "you are here".
-    option.style.cssText = "font-weight:bold";
+    delete select.dataset.relation;
   }
+  select.style.cssText = SELECT_BASE_STYLE.join(";");
+  applyRelationDeclarations(select.style, relation);
 }
 
 /**
@@ -183,16 +233,9 @@ export function renderSprintPicker(
     select.disabled = isEmpty || !active;
   };
   updateSelectEnabled();
-  select.style.cssText = [
-    "background:var(--background-color, #fff)",
-    "color:var(--text-primary-color, #323130)",
-    "border:1px solid rgba(128,128,128,0.5)",
-    "border-radius:6px",
-    "padding:4px 8px",
-    "font:inherit",
-  ].join(";");
 
   populateSprintSelect(doc, select, sprints, selectedName);
+  styleSelectForSelection(select, sprints);
 
   root.append(button, select);
 
@@ -207,6 +250,7 @@ export function renderSprintPicker(
 
   // Call onSprintChange when the select changes.
   select.addEventListener("change", () => {
+    styleSelectForSelection(select, sprints);
     onSprintChange?.(select.value);
   });
 

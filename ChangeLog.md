@@ -5,6 +5,7 @@ Major.Minor with a CI build number to form Major.Minor.Build.
 
 ## Next Version
 
+- The **Project Tracking** sprint picker now keeps its color cue when the dropdown is **closed**: the collapsed box shows the selected sprint in orange (past), your theme's accent blue (future), or bold (current), instead of only showing those colors while the list is open.
 - The **Project Tracking** sprint dropdown now reads at a glance: past sprints (_Previous_, _2 sprints ago_, …) are shown in orange, future sprints (_Next_, _2 sprints ahead_, …) in your theme's accent blue, and the **Current** sprint is bold. The next sprint is now labelled simply **Next - _name_** instead of _Next sprint - name_.
 
 - On the **Project Tracking** board, each item's **ETA** is now **editable**: it shows in a muted color, turns to a hand cursor on hover, and clicking it opens a small date picker. Pick a date to save it to that item type's configured ETA field, or use the **Clear** button to reset the item back to _No ETA_. An **overdue** ETA is shown in **bold**.
