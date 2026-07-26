@@ -4,6 +4,7 @@ import {
   buildAdoTreeUrls,
   buildQueryFolderUrl,
   buildWorkItemUpdateUrl,
+  buildWorkItemUrl,
   parseQueryFolderPath,
   parseTrackedTree,
   TRACKING_FIELDS,
@@ -626,6 +627,24 @@ describe("buildQueryFolderUrl", () => {
 
   it("returns null when the href is not a project-scoped ADO location", () => {
     expect(buildQueryFolderUrl("https://example.com/", "Shared Queries/Team A")).toBeNull();
+  });
+});
+
+describe("buildWorkItemUrl", () => {
+  it("builds the project-scoped work item deep link", () => {
+    expect(
+      buildWorkItemUrl("https://dev.azure.com/contoso/My%20Project/_queries/query/abc-123", 42),
+    ).toBe("https://dev.azure.com/contoso/My%20Project/_workitems/edit/42");
+  });
+
+  it("builds the deep link on the legacy visualstudio.com host", () => {
+    expect(
+      buildWorkItemUrl("https://o365exchange.visualstudio.com/O365%20Core/_queries/query/abc", 7),
+    ).toBe("https://o365exchange.visualstudio.com/O365%20Core/_workitems/edit/7");
+  });
+
+  it("returns null when the href is not a project-scoped ADO location", () => {
+    expect(buildWorkItemUrl("https://example.com/", 42)).toBeNull();
   });
 });
 

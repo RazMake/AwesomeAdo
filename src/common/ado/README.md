@@ -138,6 +138,9 @@ response-parsing logic, kept pure so they are unit-testable without a browser.
   (`{base}/{project}/_queries/folder/?path={path}`) that opens a folder's contents, percent-encoding
   each path segment while keeping the separators literal; `null` when `href` is not a project-scoped
   ADO URL.
+- `buildWorkItemUrl(href, id)` — builds the human-facing work item deep link
+  (`{base}/{project}/_workitems/edit/{id}`) a view hands to an anchor; `null` when `href` is not a
+  project-scoped ADO URL. This is the **web** link, not the REST endpoint (`buildWorkItemUpdateUrl`).
 - `TRACKING_FIELDS` — the readonly array of System.* field reference names fetched for tree queries.
 - `AdoRawTree` — `{ wiql, items, query? }` shape wrapping the raw REST bodies before parsing;
   `query` is the best-effort query-metadata body (may be absent when that read fails).

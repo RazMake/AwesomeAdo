@@ -6,8 +6,9 @@ import { createPopupHost } from "../popupHost/popupHost";
 /**
  * One child work item summarized by the badge and rendered as a popup row.
  *
- * The badge stays domain-agnostic: the caller resolves each child's type color, type icon, and ADO
- * deep link, so the control never has to know how a work item maps to a URL or a theme.
+ * The badge stays domain-agnostic: the caller resolves each child's type color, type icon, ADO deep
+ * link, and ETA control, so the control never has to know how a work item maps to a URL, a theme, or
+ * a persisted date field.
  */
 export interface ChildItemDescriptor {
   /** The child's assignee; null means unassigned. Fed to the shared AssignedTo control. */
@@ -16,6 +17,12 @@ export interface ChildItemDescriptor {
   title: string;
   /** The child's type color (hex, WITH a leading `#`); null uses the theme's primary text color. */
   titleColor: string | null;
+  /**
+   * The child's ETA control, built by the caller (typically the shared `EtaBadge`) so the write path
+   * — which field to persist to, and the queue that serializes it — stays with the owning view;
+   * null renders no ETA for that row.
+   */
+  eta: HTMLElement | null;
   /** The child's type icon URL, shown as the open-in-ADO affordance; null falls back to a glyph. */
   iconUrl: string | null;
   /** The ADO web URL that opens this item; null renders the affordance inert. */
@@ -35,36 +42,76 @@ export interface ChildItemsBadgeOptions {
   completedCount: number;
   /** The user directory forwarded to each child row's AssignedTo picker. */
   userDirectory: IUserDirectory;
+  /**
+   * The color the badge's discrete tint derives from (hex, with or without a leading `#`) — normally
+   * the work item type of the children it summarizes. Omitted, null, or unparseable falls back to a
+   * neutral themed chip, so a type with no configured color still renders.
+   */
+  color?: string | null;
+}
+
+/** The alpha the badge fill and border use so any source hue stays discrete on every ADO theme. */
+const TINT_FILL_ALPHA = 0.12;
+const TINT_BORDER_ALPHA = 0.35;
+
+/** The neutral themed chip used when no usable color is supplied. */
+const NEUTRAL_TINT = {
+  background: "var(--palette-neutral-4, rgba(128,128,128,0.12))",
+  borderColor: "var(--palette-neutral-20, #ddd)",
+} as const;
+
+/**
+ * Resolve the badge's fill and border from a source hex color.
+ *
+ * The hue is rendered at a very low alpha rather than at full strength so the badge reads as a quiet
+ * progress hint next to the far louder status badge, and so the same tint sits legibly on light,
+ * dark, and Follow-ADO themes without being re-picked per theme.
+ */
+function tintFromColor(color: string | null | undefined): {
+  background: string;
+  borderColor: string;
+} {
+  const hex = (color ?? "").replace(/^#/, "");
+  if (!/^[0-9a-fA-F]{6}$/.test(hex)) {
+    return { ...NEUTRAL_TINT };
+  }
+  const r = parseInt(hex.slice(0, 2), 16);
+  const g = parseInt(hex.slice(2, 4), 16);
+  const b = parseInt(hex.slice(4, 6), 16);
+  return {
+    background: `rgba(${r},${g},${b},${TINT_FILL_ALPHA})`,
+    borderColor: `rgba(${r},${g},${b},${TINT_BORDER_ALPHA})`,
+  };
 }
 
 /**
- * A "completed / total" badge for an item's direct children, in a very muted yellow.
+ * A "completed / total" badge for an item's direct children, tinted from their work item type.
  *
  * Shows e.g. `2 / 3` (2 of 3 children completed). Clicking toggles a popup listing every child as a
- * row — the shared AssignedTo picker, the child's title in its type color, and a type-icon link that
- * opens the item in Azure DevOps in a new tab. The popup closes on an outside click, a second badge
- * click, or Escape. Theme-aware via ADO CSS custom properties; renders nothing meaningful when there
- * are no children (the caller decides whether to show it at all).
+ * row — the shared AssignedTo picker, the child's title in its type color, its ETA, and a type-icon
+ * link that opens the item in Azure DevOps in a new tab. The popup closes on an outside click, a
+ * second badge click, or Escape. Theme-aware via ADO CSS custom properties; renders nothing
+ * meaningful when there are no children (the caller decides whether to show it at all).
  */
 export function renderChildItemsBadge(doc: Document, options: ChildItemsBadgeOptions): HTMLElement {
-  const { children, completedCount, userDirectory } = options;
+  const { children, completedCount, userDirectory, color } = options;
 
   // Root container: position:relative so the popup anchors to it.
   const root = doc.createElement("span");
   root.className = "awesomeado-child-items";
   root.style.cssText = ["position:relative", "display:inline-flex", "align-items:center"].join(";");
 
-  // The badge chip: "completed / total" in a very muted yellow so it reads as a subtle progress hint
-  // rather than competing with the status badge. The yellow hue matches the board's 3rd-position
-  // (rgb(224,168,0)) but at a much lower alpha so it stays faint on any theme.
+  // The badge chip: "completed / total" in a discrete tint of the summarized children's type color,
+  // so it reads as a subtle progress hint that still belongs to that type at a glance.
+  const tint = tintFromColor(color);
   const badge = doc.createElement("button");
   badge.className = "awesomeado-child-items__badge";
   badge.type = "button";
   badge.textContent = `${completedCount} / ${children.length}`;
   badge.style.cssText = [
     "cursor:pointer",
-    "border:1px solid rgba(224,168,0,0.35)",
-    "background:rgba(224,168,0,0.12)",
+    `border:1px solid ${tint.borderColor}`,
+    `background:${tint.background}`,
     "color:var(--text-primary-color, #323130)",
     "border-radius:3px",
     "padding:3px 8px",
@@ -125,8 +172,8 @@ function buildPopup(
 }
 
 /**
- * Renders one child row: the shared AssignedTo picker, the title in its type color, and a type-icon
- * link that opens the item in ADO.
+ * Renders one child row: the shared AssignedTo picker, the title in its type color, the caller's ETA
+ * control, and a type-icon link that opens the item in ADO.
  */
 function renderChildRow(
   doc: Document,
@@ -165,7 +212,18 @@ function renderChildRow(
     title.style.color = child.titleColor;
   }
 
-  row.append(assignedEl, title, renderOpenAffordance(doc, child));
+  row.append(assignedEl, title);
+
+  if (child.eta) {
+    // The title grows, so the ETA lands hard against the open affordance at the row's right edge —
+    // the same right-aligned reading order the tree rows use.
+    child.eta.classList.add("awesomeado-child-items__eta");
+    child.eta.style.flex = "0 0 auto";
+    child.eta.style.whiteSpace = "nowrap";
+    row.append(child.eta);
+  }
+
+  row.append(renderOpenAffordance(doc, child));
   return row;
 }
 

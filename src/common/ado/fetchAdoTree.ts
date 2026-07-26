@@ -137,6 +137,24 @@ export function buildQueryFolderUrl(href: string, folderPath: string): string | 
 }
 
 /**
+ * Build the ADO **web** URL that opens a work item by id, or null when `href` is not a
+ * project-scoped ADO location.
+ *
+ * This is the human-facing deep link (`_workitems/edit/{id}`), not the REST endpoint: it is what a
+ * view hands to an anchor so a reader can jump from a summarized child straight to the item in ADO.
+ * The link is project-scoped because ADO's work item hub is reached through a project route, even
+ * though the id alone identifies the item.
+ */
+export function buildWorkItemUrl(href: string, id: number): string | null {
+  const resolved = resolveAdoProjectContext(href);
+  if (resolved === null) {
+    return null;
+  }
+  const { base, project } = resolved;
+  return `${base}/${project}/_workitems/edit/${id}`;
+}
+
+/**
  * Build the ADO REST URL for updating a work item by id, or null when the URL is not a supported
  * ADO location.
  *

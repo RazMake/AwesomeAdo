@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import type { FeatureCrewAssignee } from "../../../common/ado/FeatureCrew";
 import type { FeatureCrewReconcileRequest } from "../../../common/ado/IFeatureCrewWriter";
-import type { TrackedUser, TrackedWorkItem } from "../../../common/ado/TrackedWorkItem";
+import type { WorkItemFieldWriteRequest } from "../../../common/ado/IWorkItemFieldWriter";
+import type {
+  TrackedUser,
+  TrackedWorkItem,
+  TypeCatalogEntry,
+} from "../../../common/ado/TrackedWorkItem";
 import type {
   EnhancedViewContext,
   EnhancedViewServices,
@@ -2094,5 +2099,243 @@ describe("ProjectTrackingView — techlead tag", () => {
 
     const techLeadPill = root.querySelector(".awesomeado-tracking__techlead .awesomeado-tag-pill");
     expect(techLeadPill).toBeNull();
+  });
+});
+
+/** The four-level type catalog (Epic → Feature → Story → Task) the rollup tests need. */
+const DEEP_TYPES: TypeCatalogEntry[] = [
+  { name: "Epic", color: "ff6b6b", icon: "epic.svg", etaField: null, columns: [] },
+  { name: "Feature", color: "6bcf7f", icon: "feature.svg", etaField: null, columns: [] },
+  { name: "Story", color: "4fc3f7", icon: "story.svg", etaField: null, columns: [] },
+  {
+    name: "Task",
+    color: "F2CB1D",
+    icon: "https://ado/task.svg",
+    etaField: "Custom.TaskETA",
+    columns: [
+      { column: "Active", states: ["Active", "New"] },
+      { column: "Done", states: ["Closed"] },
+      { column: "Removed", states: ["Removed"] },
+    ],
+  },
+];
+
+/** A work item with the fixture defaults every rollup test shares, overridable per item. */
+function createItem(overrides: Partial<TrackedWorkItem> & { id: number }): TrackedWorkItem {
+  return {
+    rev: 1,
+    type: "Task",
+    title: `Item ${overrides.id}`,
+    state: "Active",
+    assignedTo: null,
+    iterationPath: "Project\\Sprint 1",
+    sprintName: "Sprint 1",
+    createdDate: "2026-01-10T08:00:00Z",
+    createdBy: null,
+    changedDate: "2026-01-10T08:00:00Z",
+    changedBy: null,
+    description: "",
+    eta: null,
+    children: [],
+    ...overrides,
+  };
+}
+
+/**
+ * Epic → Feature → Story → three Tasks (one Done, one Active, one Removed, the last on Sprint 2),
+ * so the rollup badge can be checked for depth, completion counting, and filter agreement.
+ */
+function createDeepTree(): TrackedWorkItem {
+  return createItem({
+    id: 1,
+    type: "Epic",
+    title: "Platform Modernization",
+    assignedTo: createUser("Alice Smith"),
+    children: [
+      createItem({
+        id: 2,
+        type: "Feature",
+        title: "User Authentication",
+        children: [
+          createItem({
+            id: 3,
+            type: "Story",
+            title: "Login UI",
+            children: [
+              createItem({ id: 4, title: "Wire the form", state: "Closed" }),
+              createItem({
+                id: 5,
+                title: "Style the form",
+                state: "Active",
+                assignedTo: createUser("Bob Jones"),
+                eta: "2026-09-01T00:00:00Z",
+              }),
+              createItem({
+                id: 6,
+                title: "Drop the old form",
+                state: "Removed",
+                iterationPath: "Project\\Sprint 2",
+                sprintName: "Sprint 2",
+              }),
+            ],
+          }),
+        ],
+      }),
+    ],
+  });
+}
+
+/** Renders the deep tree board and waits for its async load to settle. */
+async function renderDeepBoard(overrides?: Partial<EnhancedViewServices>): Promise<HTMLElement> {
+  const services = createFakeServices({
+    getTypes: () => DEEP_TYPES,
+    loadTree: async () => ({ isTreeQuery: true, roots: [createDeepTree()], error: null }),
+    ...overrides,
+  });
+  const context: EnhancedViewContext = { doc: document, queryId: "q1", properties: {}, services };
+  const root = projectTrackingView.render(context);
+  await Promise.resolve();
+  await Promise.resolve();
+  return root;
+}
+
+/** Turns the sprint filter off (it defaults ON, on the current sprint) and waits for the re-render. */
+async function turnSprintFilterOff(root: HTMLElement): Promise<void> {
+  (root.querySelector(".awesomeado-sprint-picker__button") as HTMLButtonElement).click();
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  await Promise.resolve();
+}
+
+const rollupBadgeOf = (root: HTMLElement): HTMLElement =>
+  root.querySelector<HTMLElement>(
+    ".awesomeado-tracking__minor-children .awesomeado-child-items__badge",
+  )!;
+
+describe("ProjectTrackingView — rolled-up minor children", () => {
+  it("renders rows only two levels below the root", async () => {
+    const root = await renderDeepBoard();
+    await turnSprintFilterOff(root);
+
+    const titles = [...root.querySelectorAll(".awesomeado-tracking__item-title")].map(
+      (title) => title.textContent,
+    );
+    // The Feature and its Story are rows; the Story's Tasks are rolled up, not listed.
+    expect(titles).toEqual(["User Authentication", "Login UI"]);
+  });
+
+  it("gives the deepest rendered row no twisty, since it has no child rows to expand", async () => {
+    const root = await renderDeepBoard();
+    await turnSprintFilterOff(root);
+
+    // Only the Feature (whose Story IS a row) can expand; the Story's rolled-up Tasks are not rows.
+    expect(root.querySelectorAll(".awesomeado-tracking__twisty")).toHaveLength(1);
+  });
+
+  it("counts only children in the last column before Removed as completed", async () => {
+    const root = await renderDeepBoard();
+    await turnSprintFilterOff(root);
+
+    // 3 Tasks: one Closed→Done (completed), one Active, one Removed (abandoned, never completed).
+    expect(rollupBadgeOf(root).textContent).toBe("1 / 3");
+  });
+
+  it("summarizes only the children the active sprint filter leaves visible", async () => {
+    const root = await renderDeepBoard();
+
+    // Filter defaults ON at Sprint 1, so the Sprint 2 Task drops out of the rollup entirely.
+    expect(rollupBadgeOf(root).textContent).toBe("1 / 2");
+  });
+
+  it("tints the rollup badge with a discrete wash of the last configured type's color", async () => {
+    const root = await renderDeepBoard();
+
+    // Task (the last configured type) is F2CB1D → rgb(242,203,29).
+    expect(rollupBadgeOf(root).style.background.replace(/\s/g, "")).toContain(
+      "rgba(242,203,29,0.12)",
+    );
+  });
+
+  it("hides the rollup badge when the row has no children", async () => {
+    const services = {
+      loadTree: async () => ({ isTreeQuery: true, roots: [epicOnly()], error: null }),
+    };
+    const root = await renderDeepBoard(services);
+
+    expect(root.querySelector(".awesomeado-tracking__minor-children")).toBeNull();
+  });
+});
+
+/** An epic whose Feature has a childless Story, so no rollup badge can be rendered. */
+function epicOnly(): TrackedWorkItem {
+  return createItem({
+    id: 1,
+    type: "Epic",
+    title: "Platform Modernization",
+    children: [
+      createItem({
+        id: 2,
+        type: "Feature",
+        title: "User Authentication",
+        children: [createItem({ id: 3, type: "Story", title: "Login UI" })],
+      }),
+    ],
+  });
+}
+
+describe("ProjectTrackingView — rollup popup rows", () => {
+  it("lists each rolled-up child with its assignee, title, ETA and ADO link", async () => {
+    const root = await renderDeepBoard();
+    await turnSprintFilterOff(root);
+
+    rollupBadgeOf(root).click();
+
+    const rows = [...root.querySelectorAll(".awesomeado-child-items__row")];
+    expect(rows).toHaveLength(3);
+
+    const styleTheForm = rows[1]!;
+    expect(styleTheForm.querySelector(".awesomeado-assigned__name")?.textContent).toBe("Bob Jones");
+    const title = styleTheForm.querySelector<HTMLElement>(".awesomeado-child-items__title")!;
+    expect(title.textContent).toBe("Style the form");
+    // Task's configured color (F2CB1D) tints the title, matching the tree's type coloring.
+    expect(title.style.color).toBe("rgb(242, 203, 29)");
+    expect(styleTheForm.querySelector(".awesomeado-child-items__eta")?.textContent).toContain(
+      "ETA ",
+    );
+    expect(styleTheForm.querySelector<HTMLImageElement>(".awesomeado-child-items__icon")?.src).toBe(
+      "https://ado/task.svg",
+    );
+  });
+
+  it("shows No ETA for a rolled-up child with no ETA set", async () => {
+    const root = await renderDeepBoard();
+    await turnSprintFilterOff(root);
+
+    rollupBadgeOf(root).click();
+
+    const firstRow = root.querySelector(".awesomeado-child-items__row")!;
+    expect(firstRow.querySelector(".awesomeado-child-items__eta")?.textContent).toBe("No ETA");
+  });
+
+  it("persists an ETA picked on a rolled-up child through the board's write queue", async () => {
+    const writes: WorkItemFieldWriteRequest[] = [];
+    const root = await renderDeepBoard({
+      writeField: async (request) => {
+        writes.push(request);
+        return { ok: true, rev: 2 };
+      },
+    });
+    await turnSprintFilterOff(root);
+
+    rollupBadgeOf(root).click();
+    const firstRow = root.querySelector(".awesomeado-child-items__row")!;
+    (firstRow.querySelector(".awesomeado-eta__label") as HTMLElement).click();
+    const input = firstRow.querySelector<HTMLInputElement>(".awesomeado-eta__date")!;
+    input.value = "2026-10-05";
+    input.dispatchEvent(new Event("change"));
+    await Promise.resolve();
+
+    expect(writes).toEqual([
+      { id: 4, rev: 1, field: "Custom.TaskETA", value: "2026-10-05T12:00:00Z" },
+    ]);
   });
 });

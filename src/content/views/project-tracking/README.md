@@ -38,7 +38,8 @@ halves of the view — its configuration and its renderer.
     default when sprints exist and pre-selected on the current sprint (rows filtered to selected
     sprint + ancestor paths, pills hidden); OFF shows all rows with sprint pills. Empty sprints →
     forced OFF, toggle disabled.
-  - **Tree rows**: each row shows twisty (when children exist), editable Status badge, title
+  - **Tree rows**: the tree renders only **two levels below the root** — the root's children and
+    their children. Each row shows twisty (when it has child rows), editable Status badge, title
     (type-colored), description toggle ("?" button), Assigned To control (with the assignee's Feature
     Crew **tag pill**), sprint pill (when filter
     OFF — shown only for items on a real, leaf iteration; an item parked on the iteration root shows
@@ -50,6 +51,16 @@ halves of the view — its configuration and its renderer.
     that column's primary ADO State via
     [`FieldWriteQueue`](../../../common/ado/FieldWriteQueue/README.md) (one queue per board, shared
     with ETA edits, so writes never race on `System.Rev`).
+  - **Rolled-up minor children**: the level below the last rendered row is summarized inline by
+    [`ChildItemsBadge`](../../../common/view-common/control/ChildItemsBadge/README.md) — a
+    "completed / total" chip (e.g. `1 / 3`) tinted with a discrete wash of the **last configured work
+    item type's** color. "Completed" is the last board column _before_ Removed (Done), so an
+    abandoned child never counts as finished. The rollup honors the active sprint and tag filters, so
+    it always agrees with what the board claims to be showing, and a deepest row therefore has no
+    twisty (there is no branch to expand). Clicking the chip opens a popup with one row per child:
+    `{Assigned To} {title in its type color} {ETA} {type icon → opens the item in ADO}`. Both the
+    assignee picker and the ETA behave exactly as they do in a tree row — the ETA is built with the
+    same helper, so edits persist through the board's shared write queue.
   - **Indentation**: 70% less than before (~7px vs 24px) with a discrete themed vertical guide line
     showing parent-child relationships (low-alpha neutral border).
   - **Description panel**: toggles below each row; displays "Created on: <date>, Last Modified on:

@@ -15,7 +15,7 @@ import type {
   TrackedWorkItem,
   TypeCatalogEntry,
 } from "../../../common/ado/TrackedWorkItem";
-import { buildQueryFolderUrl } from "../../../common/ado/fetchAdoTree";
+import { buildQueryFolderUrl, buildWorkItemUrl } from "../../../common/ado/fetchAdoTree";
 import type { SprintWindow } from "../../../common/ado/sprintWindow";
 import type {
   EnhancedView,
@@ -23,6 +23,10 @@ import type {
   EnhancedViewServices,
 } from "../../../common/view-common/EnhancedView";
 import { renderAssignedTo } from "../../../common/view-common/control/AssignedTo/AssignedTo";
+import {
+  renderChildItemsBadge,
+  type ChildItemDescriptor,
+} from "../../../common/view-common/control/ChildItemsBadge/ChildItemsBadge";
 import {
   renderEtaBadge,
   type EtaBadgeHandle,
@@ -47,6 +51,17 @@ import { renderTagFilterPanel } from "./tag-filter/TagFilterPanel";
 function typeColorOf(typeName: string, typeMap: Map<string, TypeCatalogEntry>): string | null {
   const entry = typeMap.get(typeName);
   return entry ? `#${entry.color}` : null;
+}
+
+/**
+ * The hex color (with `#`) of the LAST configured work item type — the bottom of the hierarchy —
+ * or null when no type is configured or that type carries no color. Returned separately from
+ * `typeColorOf` because the rollup badge is keyed off the hierarchy's position, not off any
+ * particular item's own type.
+ */
+function lastTypeColor(types: TypeCatalogEntry[]): string | null {
+  const color = types[types.length - 1]?.color ?? "";
+  return color.length > 0 ? `#${color}` : null;
 }
 
 /**
@@ -229,22 +244,76 @@ function boardColumnOrdinal(label: string, boardColumns: string[]): number {
 }
 
 /**
+ * The tag-editing capability wired into each assignee pill: the tags already in use (offered as
+ * quick-pick choices) plus a hook that persists the chosen/added tag onto the Feature Crew roster.
+ */
+interface AssigneeTagEditor {
+  /** The distinct Feature Crew tags currently worn across the board, in first-seen order. */
+  tagsInUse(): string[];
+  /** Record the chosen or newly-added tag for the given assignee (writes the roster, then refreshes). */
+  assign(user: TrackedUser, tag: string): void;
+}
+
+/**
+ * Everything the tree renderer holds constant for one pass over the tree, bundled so the recursive
+ * render functions take a depth and an item rather than a dozen positional arguments that every
+ * intermediate function would otherwise have to forward verbatim.
+ */
+interface TreeRenderOptions {
+  doc: Document;
+  context: EnhancedViewContext;
+  typeMap: Map<string, TypeCatalogEntry>;
+  /** The board's single serialized field-write queue, shared by status and ETA edits. */
+  queue: FieldWriteQueue;
+  /** The shared status-badge width so every badge on the board renders one uniform size. */
+  statusWidthCh: number;
+  /** The team's global board columns in order; a status colors by its position in this list. */
+  boardColumns: string[];
+  /** The sprint the board is filtered to, or null when the sprint filter is off. */
+  filterSprint: string | null;
+  /** The active Feature Crew tag filter (empty = everyone); `null` is the untagged "??" bucket. */
+  selectedTags: Set<string | null>;
+  showSprintPills: boolean;
+  onAssigneeChange: (user: DirectoryUser) => void;
+  tagEditor: AssigneeTagEditor | null;
+  /** Collects every twisty rendered in this pass so expand-all/collapse-all can drive them. */
+  allTwisties: HTMLButtonElement[];
+  /** The color the rolled-up child badge tints from; null leaves it a neutral chip. */
+  minorChildColor: string | null;
+}
+
+/**
+ * How many levels below the root render as their own rows: the root's children (depth 0) and their
+ * children (depth 1). Anything deeper is detail that buries the plan, so it is rolled up into a
+ * single badge on the deepest row instead of extending the outline.
+ */
+const MAX_ROW_DEPTH = 1;
+
+/**
+ * How far the "completed" board column sits from the end of the board order. The last column is the
+ * abandoned bucket (Removed), so the one before it (Done) is what "completed" means for a rollup —
+ * an abandoned child is not work that got finished.
+ */
+const COMPLETED_COLUMN_FROM_END = 2;
+
+/**
  * Creates the row controls: the fixed tree gutter (twisty or spacer) and the editable status badge.
  * The gutter is a rigid flex child on the row; the status badge flows inline at the head of the
  * content block (with the title, ? and assignee) so those four read as one line that wraps together.
+ *
+ * A row whose children are rolled up into a badge gets no twisty — there are no child rows to
+ * expand, so offering the affordance would promise an outline that does not exist.
  */
 function createRowControls(
-  doc: Document,
   item: TrackedWorkItem,
-  typeMap: Map<string, TypeCatalogEntry>,
-  queue: FieldWriteQueue,
-  statusWidthCh: number,
-  boardColumns: string[],
+  options: TreeRenderOptions,
+  showsChildRows: boolean,
 ): { gutter: HTMLElement; stateBadge: HTMLElement; twisty: HTMLButtonElement | null } {
+  const { doc, typeMap, queue, statusWidthCh, boardColumns } = options;
   let twisty: HTMLButtonElement | null = null;
   let gutter: HTMLElement;
 
-  if (item.children.length > 0) {
+  if (showsChildRows && item.children.length > 0) {
     twisty = doc.createElement("button");
     twisty.className = "awesomeado-tracking__twisty";
     twisty.type = "button";
@@ -369,17 +438,6 @@ function isLeafSprint(item: TrackedWorkItem): boolean {
 }
 
 /**
- * The tag-editing capability wired into each assignee pill: the tags already in use (offered as
- * quick-pick choices) plus a hook that persists the chosen/added tag onto the Feature Crew roster.
- */
-interface AssigneeTagEditor {
-  /** The distinct Feature Crew tags currently worn across the board, in first-seen order. */
-  tagsInUse(): string[];
-  /** Record the chosen or newly-added tag for the given assignee (writes the roster, then refreshes). */
-  assign(user: TrackedUser, tag: string): void;
-}
-
-/**
  * Builds an item's ETA badge, wired to persist edits when the item's type has an ETA field
  * configured. Shared by the tree rows and the header (root) so ETA read/write lives in one place.
  *
@@ -418,42 +476,118 @@ function createItemEtaBadge(
 }
 
 /**
- * Creates the row right-side controls. The assignee and sprint pill flow inline right after the
- * title (returned in `inline`); the ETA is pinned to the row's far right (returned separately).
+ * Describes one rolled-up child for the badge's popup: its assignee, type-colored title, its own
+ * editable ETA badge, and the type icon that deep-links the item in ADO. The ETA badge is built with
+ * the SAME helper the tree rows use, so a rolled-up child's ETA is edited and persisted exactly like
+ * a row's rather than being a read-only echo.
+ */
+function describeMinorChild(
+  child: TrackedWorkItem,
+  options: TreeRenderOptions,
+): ChildItemDescriptor {
+  const { doc, typeMap, queue, context, onAssigneeChange } = options;
+  const icon = typeMap.get(child.type)?.icon ?? "";
+  return {
+    assignedTo: child.assignedTo,
+    title: child.title,
+    titleColor: typeColorOf(child.type, typeMap),
+    eta: createItemEtaBadge(
+      doc,
+      child,
+      typeMap,
+      queue,
+      context.services ? context.services.now() : new Date(),
+    ),
+    iconUrl: icon.length > 0 ? icon : null,
+    // The view runs on the ADO query page, so the page's own URL supplies the org/project the item
+    // link resolves against; an unrecognizable location leaves the affordance inert.
+    url: buildWorkItemUrl(doc.location?.href ?? "", child.id),
+    onAssigneeChange,
+  };
+}
+
+/**
+ * Rolls a row's children up into a single "completed / total" badge, or null when there is nothing
+ * to summarize. Only children that survive the active sprint and tag filters are counted or listed,
+ * so the rollup always agrees with what those filters claim the board is showing.
+ */
+function createMinorChildrenBadge(
+  item: TrackedWorkItem,
+  options: TreeRenderOptions,
+): HTMLElement | null {
+  const { context, typeMap, boardColumns, filterSprint, selectedTags } = options;
+  if (!context.services) return null;
+
+  const visible = item.children.filter((child) =>
+    isVisibleUnderFilter(child, filterSprint, selectedTags),
+  );
+  if (visible.length === 0) return null;
+
+  const completedOrdinal = boardColumns.length - COMPLETED_COLUMN_FROM_END;
+  const completedCount = visible.filter(
+    (child) =>
+      boardColumnOrdinal(statusLabelOf(child, typeMap.get(child.type)), boardColumns) ===
+      completedOrdinal,
+  ).length;
+
+  const badge = renderChildItemsBadge(options.doc, {
+    children: visible.map((child) => describeMinorChild(child, options)),
+    completedCount,
+    userDirectory: context.services.userDirectory,
+    color: options.minorChildColor,
+  });
+  badge.classList.add("awesomeado-tracking__minor-children");
+  badge.style.verticalAlign = "middle";
+  badge.style.marginLeft = "6px";
+  return badge;
+}
+
+/**
+ * Creates the inline assignee control for a row, styled for this board's dense layout.
+ */
+function createRowAssignee(
+  item: TrackedWorkItem,
+  services: EnhancedViewServices,
+  options: TreeRenderOptions,
+): HTMLElement {
+  const { doc, onAssigneeChange, tagEditor } = options;
+  const assignee = item.assignedTo;
+  const assignedEl = renderAssignedTo(doc, {
+    user: item.assignedTo,
+    userDirectory: services.userDirectory,
+    onChange: onAssigneeChange,
+    showTag: true,
+    assignableTags: tagEditor ? tagEditor.tagsInUse() : undefined,
+    onTagChange: tagEditor && assignee ? (tag) => tagEditor.assign(assignee, tag) : undefined,
+  });
+  // Flows inline right behind the ? disc so it hugs the title; middle-aligned to the text line.
+  assignedEl.style.verticalAlign = "middle";
+  assignedEl.style.whiteSpace = "nowrap";
+  // Project-Tracking-only tweak: dim the assignee name a touch so it recedes behind the title on
+  // this dense board. Applied here (not in the shared control) so other views keep the brighter
+  // default; opacity keeps it theme-agnostic across light/dark/Follow-ADO.
+  const assignedName = assignedEl.querySelector<HTMLElement>(".awesomeado-assigned__name");
+  if (assignedName) {
+    assignedName.style.opacity = "0.75";
+  }
+  return assignedEl;
+}
+
+/**
+ * Creates the row right-side controls. The assignee, sprint pill and rolled-up child badge flow
+ * inline right after the title (returned in `inline`); the ETA is pinned to the row's far right
+ * (returned separately).
  */
 function createRowRightControls(
-  doc: Document,
   item: TrackedWorkItem,
-  context: EnhancedViewContext,
-  showSprintPills: boolean,
-  onAssigneeChange: (user: DirectoryUser) => void,
-  tagEditor: AssigneeTagEditor | null,
-  typeMap: Map<string, TypeCatalogEntry>,
-  queue: FieldWriteQueue,
+  options: TreeRenderOptions,
+  showsChildRows: boolean,
 ): { inline: HTMLElement[]; eta: HTMLElement | null } {
+  const { doc, context, typeMap, queue, showSprintPills } = options;
   const inline: HTMLElement[] = [];
 
   if (context.services) {
-    const assignee = item.assignedTo;
-    const assignedEl = renderAssignedTo(doc, {
-      user: item.assignedTo,
-      userDirectory: context.services.userDirectory,
-      onChange: onAssigneeChange,
-      showTag: true,
-      assignableTags: tagEditor ? tagEditor.tagsInUse() : undefined,
-      onTagChange: tagEditor && assignee ? (tag) => tagEditor.assign(assignee, tag) : undefined,
-    });
-    // Flows inline right behind the ? disc so it hugs the title; middle-aligned to the text line.
-    assignedEl.style.verticalAlign = "middle";
-    assignedEl.style.whiteSpace = "nowrap";
-    // Project-Tracking-only tweak: dim the assignee name a touch so it recedes behind the title on
-    // this dense board. Applied here (not in the shared control) so other views keep the brighter
-    // default; opacity keeps it theme-agnostic across light/dark/Follow-ADO.
-    const assignedName = assignedEl.querySelector<HTMLElement>(".awesomeado-assigned__name");
-    if (assignedName) {
-      assignedName.style.opacity = "0.75";
-    }
-    inline.push(assignedEl);
+    inline.push(createRowAssignee(item, context.services, options));
   }
 
   if (showSprintPills && isLeafSprint(item)) {
@@ -476,6 +610,14 @@ function createRowRightControls(
     inline.push(pill);
   }
 
+  // The deepest rendered row carries its children as a rollup badge instead of an expandable branch.
+  if (!showsChildRows) {
+    const minorChildren = createMinorChildrenBadge(item, options);
+    if (minorChildren) {
+      inline.push(minorChildren);
+    }
+  }
+
   let eta: HTMLElement | null = null;
   if (context.services) {
     const etaBadge = createItemEtaBadge(doc, item, typeMap, queue, context.services.now());
@@ -496,22 +638,19 @@ function createRowRightControls(
 }
 
 /**
- * Renders a single work item row with all its controls (twisty, state, title, assignee, sprint pill, ETA).
- * Returns the row element, the children container, and the twisty button (null when no children).
+ * Renders a single work item row with all its controls (twisty, state, title, assignee, sprint pill,
+ * rolled-up child badge, ETA). Returns the row element, the children container, and the twisty
+ * button (null when the row has no expandable child rows).
  */
 function renderRow(
-  doc: Document,
   item: TrackedWorkItem,
-  context: EnhancedViewContext,
-  typeMap: Map<string, TypeCatalogEntry>,
-  showSprintPills: boolean,
-  onAssigneeChange: (user: DirectoryUser) => void,
-  tagEditor: AssigneeTagEditor | null,
-  queue: FieldWriteQueue,
+  options: TreeRenderOptions,
   depth: number,
-  statusWidthCh: number,
-  boardColumns: string[],
 ): { row: HTMLElement; childrenContainer: HTMLElement; twisty: HTMLButtonElement | null } {
+  const { doc, typeMap } = options;
+  // Past the last rendered level a row's children become a rollup badge, not an expandable branch.
+  const showsChildRows = depth < MAX_ROW_DEPTH;
+
   const row = doc.createElement("div");
   row.className = "awesomeado-tracking__row";
   // The row never wraps: the ETA stays pinned to the far right (via its own auto margin) so it always
@@ -522,27 +661,11 @@ function renderRow(
     ";",
   );
 
-  const { gutter, stateBadge, twisty } = createRowControls(
-    doc,
-    item,
-    typeMap,
-    queue,
-    statusWidthCh,
-    boardColumns,
-  );
+  const { gutter, stateBadge, twisty } = createRowControls(item, options, showsChildRows);
   row.append(gutter);
 
   const { titleSpan, descButton, descPanel } = createTitleControls(doc, item, typeMap);
-  const { inline, eta } = createRowRightControls(
-    doc,
-    item,
-    context,
-    showSprintPills,
-    onAssigneeChange,
-    tagEditor,
-    typeMap,
-    queue,
-  );
+  const { inline, eta } = createRowRightControls(item, options, showsChildRows);
 
   // Status badge, title, ? disc and assignee share ONE inline-flow block so they read as a single
   // line. Because they flow as inline content (not rigid flex items) they pack tightly and wrap
@@ -599,60 +722,26 @@ function renderRow(
 }
 
 /**
- * Recursively renders the tree of work items, respecting the sprint filter.
+ * Recursively renders the tree of work items, respecting the sprint and tag filters.
  * Returns an array of row wrappers (each contains row + description + children container).
+ *
+ * Recursion stops at `MAX_ROW_DEPTH`: deeper items are summarized by the deepest row's rollup badge
+ * (see `createMinorChildrenBadge`) instead of extending the outline.
  */
 function renderTree(
-  doc: Document,
   items: TrackedWorkItem[],
-  context: EnhancedViewContext,
-  typeMap: Map<string, TypeCatalogEntry>,
-  filterSprint: string | null,
-  selectedTags: Set<string | null>,
-  showSprintPills: boolean,
-  allTwisties: HTMLButtonElement[],
-  onAssigneeChange: (user: DirectoryUser) => void,
-  tagEditor: AssigneeTagEditor | null,
-  queue: FieldWriteQueue,
+  options: TreeRenderOptions,
   depth: number,
-  statusWidthCh: number,
-  boardColumns: string[],
 ): HTMLElement[] {
   return items
-    .filter((item) => isVisibleUnderFilter(item, filterSprint, selectedTags))
+    .filter((item) => isVisibleUnderFilter(item, options.filterSprint, options.selectedTags))
     .map((item) => {
-      const { row, childrenContainer, twisty } = renderRow(
-        doc,
-        item,
-        context,
-        typeMap,
-        showSprintPills,
-        onAssigneeChange,
-        tagEditor,
-        queue,
-        depth,
-        statusWidthCh,
-        boardColumns,
-      );
-      if (twisty) allTwisties.push(twisty);
+      const { row, childrenContainer, twisty } = renderRow(item, options, depth);
+      if (twisty) options.allTwisties.push(twisty);
 
-      const childRows = renderTree(
-        doc,
-        item.children,
-        context,
-        typeMap,
-        filterSprint,
-        selectedTags,
-        showSprintPills,
-        allTwisties,
-        onAssigneeChange,
-        tagEditor,
-        queue,
-        depth + 1,
-        statusWidthCh,
-        boardColumns,
-      );
-      childrenContainer.append(...childRows);
+      if (depth < MAX_ROW_DEPTH) {
+        childrenContainer.append(...renderTree(item.children, options, depth + 1));
+      }
 
       return row;
     });
@@ -925,6 +1014,7 @@ interface BoardTreeRendererParams {
   fieldWrites: FieldWriteQueue;
   statusWidthCh: number;
   boardColumns: string[];
+  minorChildColor: string | null;
   expandAll: HTMLButtonElement;
   collapseAll: HTMLButtonElement;
 }
@@ -941,47 +1031,38 @@ function createBoardTreeRenderer(params: BoardTreeRendererParams): {
   const {
     doc,
     root,
-    context,
-    typeMap,
     selectedTags,
     treeContainer,
     tagPanelContainer,
     sprintPickerHandle,
-    onAssigneeChange,
-    tagEditor,
-    fieldWrites,
-    statusWidthCh,
-    boardColumns,
     expandAll,
     collapseAll,
   } = params;
 
   const renderTreeContent = (): void => {
     const filterOn = sprintPickerHandle.isFilterActive();
-    const selectedSprint = filterOn ? sprintPickerHandle.selectedSprint() : null;
-    const showPills = !filterOn;
-
     const allTwisties: HTMLButtonElement[] = [];
+    const options: TreeRenderOptions = {
+      doc,
+      context: params.context,
+      typeMap: params.typeMap,
+      queue: params.fieldWrites,
+      statusWidthCh: params.statusWidthCh,
+      boardColumns: params.boardColumns,
+      filterSprint: filterOn ? sprintPickerHandle.selectedSprint() : null,
+      selectedTags,
+      // Sprint pills only earn their space when the sprint filter is not already narrowing the board.
+      showSprintPills: !filterOn,
+      onAssigneeChange: params.onAssigneeChange,
+      tagEditor: params.tagEditor,
+      allTwisties,
+      minorChildColor: params.minorChildColor,
+    };
+
     treeContainer.innerHTML = "";
     // The epic is already summarized in the header (title + TechLead), so the tree lists its
     // children downward rather than repeating the epic as the top row.
-    const rows = renderTree(
-      doc,
-      root.children,
-      context,
-      typeMap,
-      selectedSprint,
-      selectedTags,
-      showPills,
-      allTwisties,
-      onAssigneeChange,
-      tagEditor,
-      fieldWrites,
-      0,
-      statusWidthCh,
-      boardColumns,
-    );
-    treeContainer.append(...rows);
+    treeContainer.append(...renderTree(root.children, options, 0));
 
     wireExpandCollapseButtons(expandAll, collapseAll, allTwisties);
   };
@@ -1038,6 +1119,10 @@ function renderBoard(
   const statusWidthCh = widestStatusLabelLength(root, typeMap);
   // The global board-column order, so a status colors by its position (identical across every type).
   const boardColumns = services.getBoardColumns();
+  // Rolled-up children always sit at the bottom of the configured hierarchy, so the rollup badge
+  // wears a discrete tint of the LAST configured type's color — it reads as "these are the Tasks"
+  // without having to name the type on a badge that only has room for a count.
+  const minorChildColor = lastTypeColor(services.getTypes());
   const tagEditor = createTagEditor(root, onTagAssign);
 
   const { header, sprintPickerHandle, expandAll, collapseAll, techLead } = renderHeader(
@@ -1081,6 +1166,7 @@ function renderBoard(
     fieldWrites,
     statusWidthCh,
     boardColumns,
+    minorChildColor,
     expandAll,
     collapseAll,
   });

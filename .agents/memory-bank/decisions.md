@@ -382,3 +382,27 @@
   with no theme-detection code in the control. Muted status tints keep the state hue legible without a
   solid block of color fighting the page on any theme. Recorded as principle #13 in systemPatterns and
   enforced as a standing review gate (a control that hard-codes non-theme colors is a defect).
+
+## ADR-035: Project Tracking renders two child levels and rolls the rest into `ChildItemsBadge`
+
+- Decision: The Project Tracking tree renders at most **two levels below the root** (`MAX_ROW_DEPTH = 1`
+  in `ProjectTrackingView`: the root's children at depth 0, theirs at depth 1). A row at the last
+  rendered level gets **no twisty**; its children are summarized inline by the shared
+  `common/view-common/control/ChildItemsBadge` control as a `completed / total` chip whose popup lists
+  one row per child (`{AssignedTo} {title} {ETA} {type icon -> ADO}`). "Completed" is the
+  **last board column before Removed** (`COMPLETED_COLUMN_FROM_END = 2` against the fixed five-column
+  list), so an abandoned child never counts as done. The chip's tint derives from the **last configured
+  work item type's** color via the control's `color` option, kept discrete per ADR-034. The rollup runs
+  its children through the same `isVisibleUnderFilter` predicate as the tree, so its count always agrees
+  with the active sprint/tag filters.
+- Rationale: A four-plus-level tree scrolls off the screen and buries the level people actually manage.
+  Capping the rows keeps the board scannable while the rollup keeps the leaf work **countable and
+  reachable** rather than hidden. `ChildItemsBadge` already existed (built, tested, documented, but
+  unwired) for exactly this shape, so it was extended rather than duplicated — it gained a caller-supplied
+  `eta` element per child and a `color` tint source. The ETA element is **built by the caller**
+  (`describeMinorChild` calls the view's own `createItemEtaBadge`) so a rolled-up ETA edits and persists
+  through the board's shared `FieldWriteQueue` exactly like a tree row, without the shared control taking
+  a dependency on ADO write plumbing. Per-render tree invariants were bundled into one
+  `TreeRenderOptions` object because the renderer parameter lists had already reached 11-14 arguments.
+- Consequence: `common/ado/fetchAdoTree` gained `buildWorkItemUrl(href, id)` — the **web** deep link
+  (`{base}/{project}/_workitems/edit/{id}`), distinct from the REST `buildWorkItemUpdateUrl`.

@@ -35,6 +35,7 @@ const childOf = (overrides: Partial<ChildItemDescriptor> = {}): ChildItemDescrip
   assignedTo: alice,
   title: "Do the thing",
   titleColor: "#CC293D",
+  eta: null,
   iconUrl: "https://example.com/story.png",
   url: "https://dev.azure.com/contoso/web/_workitems/edit/42",
   ...overrides,
@@ -65,14 +66,33 @@ describe("renderChildItemsBadge - badge and popup rendering", () => {
     expect(badgeOf(root).textContent).toBe("2 / 3");
   });
 
-  it("tints the badge a very muted yellow", () => {
+  it("tints the badge with a discrete wash of the supplied type color", () => {
     const root = renderChildItemsBadge(document, {
       children: [childOf()],
       completedCount: 0,
       userDirectory: new FakeUserDirectory(),
+      color: "#4FC3F7",
     });
 
-    expect(containsColor(badgeOf(root).style.background, "rgba(224,168,0,0.12)")).toBe(true);
+    expect(containsColor(badgeOf(root).style.background, "rgba(79,195,247,0.12)")).toBe(true);
+    expect(containsColor(badgeOf(root).style.borderColor, "rgba(79,195,247,0.35)")).toBe(true);
+  });
+
+  it("falls back to a neutral themed chip when no usable color is supplied", () => {
+    const withoutColor = renderChildItemsBadge(document, {
+      children: [childOf()],
+      completedCount: 0,
+      userDirectory: new FakeUserDirectory(),
+    });
+    const withGarbage = renderChildItemsBadge(document, {
+      children: [childOf()],
+      completedCount: 0,
+      userDirectory: new FakeUserDirectory(),
+      color: "not-a-color",
+    });
+
+    expect(badgeOf(withoutColor).style.background).toContain("--palette-neutral-4");
+    expect(badgeOf(withGarbage).style.background).toContain("--palette-neutral-4");
   });
 
   it("does not render a popup until the badge is clicked", () => {
@@ -129,7 +149,48 @@ describe("renderChildItemsBadge - row content", () => {
     const title = popupOf(root)!.querySelector<HTMLElement>(".awesomeado-child-items__title")!;
     expect(title.style.color).toBe("rgb(204, 41, 61)");
   });
+});
 
+describe("renderChildItemsBadge - row ETA slot", () => {
+  it("places the caller's ETA control between the title and the open affordance", () => {
+    const eta = document.createElement("span");
+    eta.className = "fake-eta";
+    eta.textContent = "Aug 15";
+    const root = renderChildItemsBadge(document, {
+      children: [childOf({ eta })],
+      completedCount: 0,
+      userDirectory: new FakeUserDirectory(),
+    });
+    document.body.append(root);
+
+    badgeOf(root).click();
+
+    const row = popupOf(root)!.querySelector<HTMLElement>(".awesomeado-child-items__row")!;
+    const classes = [...row.children].map((child) => child.className);
+    expect(classes).toEqual([
+      "awesomeado-assigned",
+      "awesomeado-child-items__title",
+      "fake-eta awesomeado-child-items__eta",
+      "awesomeado-child-items__open",
+    ]);
+    expect(row.textContent).toContain("Aug 15");
+  });
+
+  it("omits the ETA slot for a child with no ETA control", () => {
+    const root = renderChildItemsBadge(document, {
+      children: [childOf({ eta: null })],
+      completedCount: 0,
+      userDirectory: new FakeUserDirectory(),
+    });
+    document.body.append(root);
+
+    badgeOf(root).click();
+
+    expect(popupOf(root)!.querySelector(".awesomeado-child-items__eta")).toBeNull();
+  });
+});
+
+describe("renderChildItemsBadge - row open affordance", () => {
   it("links the child's icon to its ADO url in a new tab", () => {
     const root = renderChildItemsBadge(document, {
       children: [childOf({ url: "https://dev.azure.com/contoso/web/_workitems/edit/42" })],
