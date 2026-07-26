@@ -72,29 +72,40 @@ describe("importConfig", () => {
     expect(imported.enhancedQueries).toEqual(sampleBindings);
   });
 
-  it("defaults missing sections rather than failing when a marker is present", () => {
-    const imported = importConfig(JSON.stringify({ awesomeAdoConfigVersion: 1 }));
-
-    expect(imported.settings).toEqual({
-      ...DEFAULT_SETTINGS,
-      areaPaths: [],
-      boardColumns: DEFAULT_SETTINGS.boardColumns,
-    });
-    expect(imported.enhancedQueries).toEqual({});
-  });
-
-  it("accepts a file recognized only by its settings section", () => {
-    const imported = importConfig(JSON.stringify({ settings: { theme: "blue" } }));
-
-    expect(imported.settings.theme).toBe("blue");
-  });
-
-  it("accepts a file recognized only by its enhancedQueries section", () => {
-    const imported = importConfig(
-      JSON.stringify({ enhancedQueries: { q: { view: "sprint", properties: {} } } }),
+  it("rejects a file that carries a version marker but no payload", () => {
+    // An import replaces BOTH stores wholesale, so normalizing an absent payload into defaults
+    // would destroy the user's real configuration and report success.
+    expect(() => importConfig(JSON.stringify({ awesomeAdoConfigVersion: 1 }))).toThrow(
+      /not a complete AwesomeADO configuration/,
     );
+  });
 
-    expect(imported.enhancedQueries.q?.view).toBe("sprint");
+  it("rejects a file that carries only its settings section", () => {
+    expect(() => importConfig(JSON.stringify({ settings: { theme: "blue" } }))).toThrow(
+      /not a complete AwesomeADO configuration/,
+    );
+  });
+
+  it("rejects a file that carries only its enhancedQueries section", () => {
+    expect(() =>
+      importConfig(JSON.stringify({ enhancedQueries: { q: { view: "sprint", properties: {} } } })),
+    ).toThrow(/not a complete AwesomeADO configuration/);
+  });
+
+  it("rejects a file whose sections are present but not objects", () => {
+    expect(() => importConfig(JSON.stringify({ settings: [], enhancedQueries: {} }))).toThrow(
+      /not a complete AwesomeADO configuration/,
+    );
+    expect(() => importConfig(JSON.stringify({ settings: {}, enhancedQueries: null }))).toThrow(
+      /not a complete AwesomeADO configuration/,
+    );
+  });
+
+  it("normalizes both sections of a complete but sparse file", () => {
+    const imported = importConfig(JSON.stringify({ settings: {}, enhancedQueries: {} }));
+
+    expect(imported.settings).toEqual(DEFAULT_SETTINGS);
+    expect(imported.enhancedQueries).toEqual({});
   });
 
   it("drops malformed bindings while keeping valid ones", () => {
@@ -121,9 +132,21 @@ describe("importConfig", () => {
     expect(() => importConfig("null")).toThrow(/not an AwesomeADO configuration/);
   });
 
-  it("rejects an unrelated JSON object with no recognizable marker", () => {
+  it("rejects an unrelated JSON object with no recognizable sections", () => {
     expect(() => importConfig(JSON.stringify({ hello: "world" }))).toThrow(
-      /not an AwesomeADO configuration/,
+      /not a complete AwesomeADO configuration/,
     );
+  });
+
+  it("keeps a __proto__ key from silently discarding the binding it names", () => {
+    // Written as raw JSON: a `__proto__` key in an object LITERAL sets the prototype instead of
+    // adding an entry, so the fixture has to come from the parser, exactly as a real file would.
+    const imported = importConfig(
+      '{"settings":{},"enhancedQueries":{"__proto__":{"view":"sprint","properties":{}},' +
+        '"good":{"view":"sprint","properties":{}}}}',
+    );
+
+    expect(Object.keys(imported.enhancedQueries).sort()).toEqual(["__proto__", "good"]);
+    expect(Object.getPrototypeOf(imported.enhancedQueries)).toBeNull();
   });
 });

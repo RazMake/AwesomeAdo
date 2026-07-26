@@ -81,6 +81,20 @@ async function postForOperationId({ fetchImpl, url, init, requestFailed, badStat
 }
 
 /**
+ * Throw naming the first option that is missing or blank. The VALUE is never included in the
+ * message, because these are credentials.
+ * @param {Record<string, unknown>} required
+ * @returns {void}
+ */
+function requireNonEmptyStrings(required) {
+  for (const [name, value] of Object.entries(required)) {
+    if (typeof value !== "string" || value.trim() === "") {
+      throw new Error(`${name} must be a non-empty string`);
+    }
+  }
+}
+
+/**
  * Publish an extension to the Microsoft Edge Add-ons store.
  * @param {PublishEdgeOptions} options
  * @returns {Promise<void>}
@@ -103,6 +117,11 @@ export async function publishEdge(options) {
   if (typeof certificationNotes !== "string" || certificationNotes.trim() === "") {
     throw new Error("certificationNotes must be a non-empty string");
   }
+
+  // Fail on a missing credential itself rather than on the 401 it eventually causes. An unset CI
+  // secret otherwise reaches the store as the literal string "undefined" and comes back as an
+  // authentication error, which reads like a store-side outage and hides the real cause.
+  requireNonEmptyStrings({ archivePath, productId, clientId, apiKey });
 
   const encodedProductId = encodeURIComponent(productId);
   const apiRoot = `https://api.addons.microsoftedge.microsoft.com/v1/products/${encodedProductId}`;

@@ -1,8 +1,9 @@
 import { parseAdoContext } from "../navigation/AdoContext";
 
 import type { AdoTeam, AdoWorkItemField, AdoWorkItemType } from "./AdoMetadata";
+import { ADO_API_VERSION } from "./adoApi";
 
-const API_VERSION = "7.1";
+const API_VERSION = ADO_API_VERSION;
 // Area classification trees are shallow in practice; 10 levels covers every realistic hierarchy
 // while keeping the single request bounded.
 const AREA_TREE_DEPTH = 10;

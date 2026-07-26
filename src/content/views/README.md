@@ -12,13 +12,14 @@ building blocks every view can reuse live in [`shared/`](./shared/README.md).
 content/views/
   viewCatalog.ts            the ordered list of view CONFIGS (ViewType)
   enhancedViewRegistry.ts   the ordered list of view RENDERERS (EnhancedView)
-  shared/                   building blocks every view reuses (ViewScaffold, …)
   sprint/                   sprintViewType.ts (config) + SprintView.ts (renderer)
   project-tracking/         projectTrackingViewType.ts + ProjectTrackingView.ts
 ```
 
-`VIEW_TYPES` and `ENHANCED_VIEWS` are kept in the **same order**, and every entry in one has a
-matching entry (by id) in the other.
+Every entry in `VIEW_TYPES` has a matching entry (by id) in `ENHANCED_VIEWS`, pinned by
+`enhancedViewRegistry.test.ts`. `VIEW_TYPES` order **is** user-visible — it is the order the options
+page offers the views in, pinned by `viewCatalog.test.ts`. `ENHANCED_VIEWS` order is not: renderers
+are resolved by id lookup, so the registry is a set, and nothing should fail if it is reordered.
 
 ## The one cross-layer import (an intentional, scoped exception)
 

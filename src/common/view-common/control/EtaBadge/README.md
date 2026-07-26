@@ -39,7 +39,8 @@ When an ETA is set, the badge shows **"ETA MM/DD/YYYY"** with a severity color r
 
 Hover displays a countdown tooltip (e.g., "in 2 weeks 3 days" or "overdue by 3 days").
 
-When no ETA is set (`null` or empty string), the badge displays **"No ETA"** in a muted color. This
+When no ETA is set (`null` or empty string), the badge displays **"No ETA"** in a muted color, dimmed
+further with opacity so it reads as fainter than any row that carries a real date. This
 muted text is **theme-aware** via CSS variable `--text-secondary-color`, ensuring it adapts to light
 or dark themes. The severity colors remain **semantic** (fixed color values) to maintain consistent
 urgency signaling across all themes.
@@ -52,7 +53,18 @@ urgency signaling across all themes.
   (`YYYY-MM-DDT12:00:00Z`) — noon keeps the picked calendar day intact when rendered back in PST —
   then dismisses the popup.
 - A **Clear** button appears only while an ETA is set and calls `onChange(null)` to reset the item to
-  the "No ETA" state.
+  the "No ETA" state. It carries a subtle border and brightens on hover so it reads as a button.
+- The popup, the date input, and the Clear button draw their borders from a **self-contained** low-alpha
+  grey rather than an ADO neutral palette token, so the chrome stays visible under the "Follow ADO"
+  theme (which pins no palette tokens). Surfaces and text still follow the theme.
+- The browser's **own** calendar popup and its indicator glyph follow the view's `color-scheme`, which
+  the enhanced-view host declares (see `common/view-common/theme`). The date field is therefore left
+  transparent over the popup's themed surface — painting it from an unpinned token would leave the
+  browser's calendar button unreadable against it.
+- Opening the popup injects one document-level rule (`#awesomeado-eta-picker-style`) giving that
+  calendar button a **hand cursor**. It is the control's only non-inline style: the button is a UA
+  pseudo-element that no inline style can reach. The rule is re-added on open if ADO's re-render drops
+  it, and the id keeps it from stacking.
 - The badge follows a **persist-then-reflect** flow: it does **not** update itself on a pick. The
   caller persists the change and calls `handle.setEta(...)` with the committed value, so a failed
   write never leaves a misleading date on screen (mirroring the status badge).

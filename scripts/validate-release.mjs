@@ -14,7 +14,7 @@ const MAX_METADATA_BYTES = MIB;
 const REQUIRED_ARCHIVE_FILES = [
   "manifest.json",
   "background/service-worker.js",
-  "content/blank-query-page.js",
+  "content/awesomeado-content.js",
   "options/options.js",
   "options/options.html",
 ];

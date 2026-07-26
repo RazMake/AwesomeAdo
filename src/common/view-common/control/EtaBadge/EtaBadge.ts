@@ -36,6 +36,38 @@ export interface EtaBadgeHandle extends HTMLElement {
 // Muted, theme-aware color for the "No ETA" placeholder — reads on both light and dark ADO themes.
 const NO_ETA_COLOR = "var(--text-secondary-color, #8a8886)";
 
+// Popup chrome is drawn with fixed low-alpha greys rather than a neutral palette token: under
+// "Follow ADO" nothing is pinned and ADO's own --palette-neutral-* value leaves these outlines
+// invisible, so the popup and its date input lost their borders on that theme only. A grey at low
+// alpha reads on light and dark surfaces alike — the same self-contained fix the tracking header and
+// sprint picker already use.
+const POPUP_BORDER = "1px solid rgba(128,128,128,0.5)";
+const CLEAR_BORDER = "1px solid rgba(128,128,128,0.35)";
+const CLEAR_BACKGROUND = "rgba(128,128,128,0.12)";
+// Hover feedback for Clear: the same grey at a stronger alpha, so the affordance is visible on any
+// theme without picking a per-theme highlight color.
+const CLEAR_HOVER_BACKGROUND = "rgba(128,128,128,0.28)";
+
+const PICKER_STYLE_ID = "awesomeado-eta-picker-style";
+
+/**
+ * Give the date field's calendar button a hand cursor.
+ *
+ * The browser draws that button as a UA pseudo-element whose own stylesheet pins `cursor:default`,
+ * so no inline style can reach it — a real stylesheet rule is the only way to advertise that it is
+ * clickable. Injected on each popup open rather than once at load: ADO re-renders its page and drops
+ * foreign nodes, and the id guard makes the re-add idempotent.
+ */
+function ensurePickerCursorStyle(doc: Document): void {
+  if (doc.getElementById(PICKER_STYLE_ID)) {
+    return;
+  }
+  const style = doc.createElement("style");
+  style.id = PICKER_STYLE_ID;
+  style.textContent = `.awesomeado-eta__date::-webkit-calendar-picker-indicator{cursor:pointer}`;
+  (doc.head ?? doc.documentElement).append(style);
+}
+
 /**
  * Build the ETA date-picker popup. `close` dismisses it, so picking a date or clearing persists and
  * closes immediately (persist-on-select), mirroring the status badge's dropdown. It reads the latest
@@ -59,7 +91,7 @@ function buildEtaPopup(
     "align-items:center",
     "gap:6px",
     "background:var(--callout-background-color, var(--background-color, #fff))",
-    "border:1px solid var(--palette-neutral-20, #ddd)",
+    `border:${POPUP_BORDER}`,
     "border-radius:3px",
     "box-shadow:0 2px 8px rgba(0,0,0,0.15)",
     "padding:6px",
@@ -69,6 +101,7 @@ function buildEtaPopup(
   const input = doc.createElement("input");
   input.type = "date";
   input.className = "awesomeado-eta__date";
+  ensurePickerCursorStyle(doc);
   // Pre-fill with the current ETA's PST calendar date so editing starts from what is shown.
   const initial = currentEta ? formatPstDateInput(currentEta) : "";
   if (initial) {
@@ -77,8 +110,11 @@ function buildEtaPopup(
   input.style.cssText = [
     "font:inherit",
     "color:var(--text-primary-color, #323130)",
-    "background:var(--input-background, transparent)",
-    "border:1px solid var(--palette-neutral-20, #ddd)",
+    // Deliberately transparent rather than an --input-background token: that token is not one the
+    // view pins, so on a pinned dark theme over a light ADO page it painted the field white and hid
+    // the browser's own calendar button. Sitting on the popup's themed surface keeps it legible.
+    "background:transparent",
+    `border:${POPUP_BORDER}`,
     "border-radius:2px",
     "padding:2px 4px",
   ].join(";");
@@ -104,11 +140,17 @@ function buildEtaPopup(
       "cursor:pointer",
       "font:inherit",
       "color:var(--text-primary-color, #323130)",
-      "background:var(--palette-neutral-4, rgba(128,128,128,0.12))",
-      "border:1px solid var(--palette-neutral-20, #ddd)",
+      `background:${CLEAR_BACKGROUND}`,
+      `border:${CLEAR_BORDER}`,
       "border-radius:3px",
       "padding:2px 8px",
     ].join(";");
+    clear.addEventListener("mouseenter", () => {
+      clear.style.background = CLEAR_HOVER_BACKGROUND;
+    });
+    clear.addEventListener("mouseleave", () => {
+      clear.style.background = CLEAR_BACKGROUND;
+    });
     clear.addEventListener("click", () => {
       onChange?.(null);
       close();
@@ -164,6 +206,11 @@ export function renderEtaBadge(doc: Document, options: EtaBadgeOptions): EtaBadg
     currentEta = eta;
     // Reset the weight each render so a value that is no longer overdue drops back to normal.
     root.style.fontWeight = "normal";
+    // "No ETA" says no deadline is planned, so it should recede next to the rows that carry a real date.
+    // Dimming with opacity (on the label, never the root, so an open popup stays full-strength) mutes
+    // whatever color the theme resolved, including on Follow ADO where the secondary-color token can
+    // collapse into the primary text color and stop muting on its own.
+    label.style.opacity = eta ? "1" : "0.6";
     if (!eta) {
       textNode.textContent = "No ETA";
       root.style.color = NO_ETA_COLOR;

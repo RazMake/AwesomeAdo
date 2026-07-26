@@ -1,5 +1,5 @@
 import type { IBrowserLocalStorage } from "../browser/IBrowserLocalStorage";
-import type { StorageObservation } from "../browser/observeSyncKeys";
+import { observeStorageKeys, type StorageObservation } from "../browser/observeStorageKeys";
 
 import type { ILogStore, ILogWriter } from "./ILogStore";
 import { type LogEntry, MAX_LOG_ENTRIES, normalizeLogEntries } from "./LogEntry";
@@ -48,33 +48,14 @@ export class BrowserLocalLogStore implements ILogWriter, ILogStore {
   }
 
   observe(listener: (entries: LogEntry[]) => void): StorageObservation {
-    // Subscribe before the initial read so an append landing during the read is not missed. A
-    // revision guard drops the initial snapshot when a live change already delivered a newer one.
-    let active = true;
-    let revision = 0;
-    const stop = this.storage.subscribe(LOG_KEY, (value) => {
-      if (active) {
-        revision += 1;
-        listener(normalizeLogEntries(value));
-      }
-    });
-    const readRevision = revision;
-    const unsubscribe = (): void => {
-      if (active) {
-        active = false;
-        stop();
-      }
-    };
-    const ready = this.read()
-      .then((entries) => {
-        if (active && revision === readRevision) {
-          listener(entries);
-        }
-      })
-      .catch((error: unknown) => {
-        unsubscribe();
-        throw error;
-      });
-    return { ready, unsubscribe };
+    // Delegate the subscribe-before-read race to the one module that owns it, rather than keeping a
+    // second hand-written copy of it here: local and synced storage share the same key-value
+    // contract, so the protocol is identical and a divergent copy could only drift.
+    return observeStorageKeys(
+      this.storage,
+      [LOG_KEY],
+      (raw) => normalizeLogEntries(raw[LOG_KEY]),
+      listener,
+    );
   }
 }

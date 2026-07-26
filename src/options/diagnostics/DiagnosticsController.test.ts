@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { StorageObservation } from "../../common/browser/observeSyncKeys";
+import type { StorageObservation } from "../../common/browser/observeStorageKeys";
 import type { ILogStore } from "../../common/logging/ILogStore";
 import { formatLogEntry, type LogEntry } from "../../common/logging/LogEntry";
 
@@ -82,11 +82,13 @@ function toggleSource(elements: DiagnosticsElements, source: string, checked: bo
 let store: FakeLogStore;
 let elements: DiagnosticsElements;
 let controller: DiagnosticsController;
+let reported: unknown[];
 
 beforeEach(() => {
   store = new FakeLogStore();
   elements = makeElements();
-  controller = new DiagnosticsController(store, elements);
+  reported = [];
+  controller = new DiagnosticsController(store, elements, (error) => reported.push(error));
 });
 
 describe("DiagnosticsController — rendering & filtering", () => {
@@ -137,19 +139,33 @@ describe("DiagnosticsController — actions & lifecycle", () => {
     elements.clearButton.click();
 
     expect(store.clear).toHaveBeenCalledOnce();
+    expect(reported).toEqual([]);
+  });
+
+  it("reports a failed clear instead of leaving the entries on screen unexplained", async () => {
+    const failure = new Error("quota exceeded");
+    store.clear.mockRejectedValueOnce(failure);
+    await controller.init();
+
+    elements.clearButton.click();
+    await Promise.resolve();
+
+    expect(reported).toEqual([failure]);
   });
 
   it("exports the shown lines as a timestamped text file", async () => {
     vi.spyOn(Date, "now").mockReturnValue(0);
     const created: Blob[] = [];
     let downloadName = "";
-    const createObjectURL = vi.fn((blob: Blob) => {
-      created.push(blob);
-      return "blob:mock";
-    });
-    const revokeObjectURL = vi.fn();
-    URL.createObjectURL = createObjectURL as unknown as typeof URL.createObjectURL;
-    URL.revokeObjectURL = revokeObjectURL as unknown as typeof URL.revokeObjectURL;
+    // Spied, not assigned: `restoreMocks` undoes a spy between tests, but a direct assignment to a
+    // global stays clobbered for the rest of the file and silently leaks into the next test.
+    const createObjectURL = vi
+      .spyOn(URL, "createObjectURL")
+      .mockImplementation((blob: Blob | MediaSource) => {
+        created.push(blob as Blob);
+        return "blob:mock";
+      });
+    const revokeObjectURL = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
     vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
       this: HTMLAnchorElement,
     ) {
@@ -168,8 +184,7 @@ describe("DiagnosticsController — actions & lifecycle", () => {
   });
 
   it("does not export when nothing is shown", async () => {
-    const createObjectURL = vi.fn();
-    URL.createObjectURL = createObjectURL as unknown as typeof URL.createObjectURL;
+    const createObjectURL = vi.spyOn(URL, "createObjectURL").mockImplementation(() => "blob:mock");
 
     await controller.init();
     store.emit([]);

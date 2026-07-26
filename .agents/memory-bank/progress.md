@@ -23,7 +23,7 @@ This is a flattened snapshot of what exists now, not a build log.
 - **Navigation** (`src/common/navigation`): `AdoHost` single-source host matching, query-route and
   identity parsing, navigation + theme + query-name message contracts, `NavigationNotifier`.
 - **Browser isolation** (`src/common/browser`): `ChromeSyncStorage`, the two ADO tab readers, and
-  the shared `observeSyncKeys` / `requestFromTab` helpers.
+  the shared `observeStorageKeys` / `requestFromTab` helpers.
 - **Logging** (`src/common/logging`): device-local ring-buffer log store, `ILoggerFactory` /
   `LoggerFactory` minting source-tagged `Logger`s (source is the emitting class name, a free-form
   string), `createLoggerFactory` / `createLogging` composition. Diagnostics decisions log their

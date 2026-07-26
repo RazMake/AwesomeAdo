@@ -83,7 +83,7 @@
 ## ADR-017: Shared synced-storage observation helper
 
 - Decision: The race-sensitive "subscribe before reading, revision-guard the initial read" protocol
-  lives once in `observeSyncKeys` (`src/common/browser`); both `BrowserSyncSettingsStore` and
+  lives once in `observeStorageKeys` (`src/common/browser`); both `BrowserSyncSettingsStore` and
   `BrowserSyncQueryBindingStore` delegate to it.
 - Rationale: The two stores previously reimplemented the same protocol and had begun to drift. One
   tested implementation removes the drift and gives the logic a single test surface.
@@ -248,20 +248,43 @@
   Inversion (§5-D), not a §6 exception. This does not open general options→content coupling: the
   linter blocks every path except the one catalog module.
 
-## ADR-028: Credentialed ADO REST runs through a MAIN-world bridge with a closed op-set
+## ADR-028: Credentialed ADO REST runs through the background worker with a closed op-set
 
-- Decision: All credentialed Azure DevOps REST access from an enhanced view goes through a manifest
-  `world:"MAIN"` bridge content script that owns the fetcher, because a content script (isolated
-  world) cannot call `chrome.scripting`. The isolated content script and the bridge exchange messages
-  guarded by a **per-session nonce** plus strict `event.origin` **and** `event.source` checks, and the
-  bridge exposes a **closed operation vocabulary** (read/set item props, read/add/update comment,
-  reorder, …) — never a generic "fetch any URL" proxy. Responses are returned only to us; field values
-  and identity are never logged.
-- Rationale: The only credentialed path available to a content script is a MAIN-world fetch, and MAIN
-  world shares the page's DOM with a potentially hostile ADO or injected script. A generic proxy would
-  let any page on the origin exfiltrate through our authenticated session, so the surface is reduced to
-  a fixed op-set behind an authenticated, origin/source-checked channel. Recorded as principle #2 in
-  systemPatterns "Enhanced View Runtime Principles".
+> **Amended.** The original decision described a manifest `world:"MAIN"` **bridge content script**
+> exchanging nonce-guarded, `event.origin`/`event.source`-checked `postMessage`s. That design was
+> never built. Auditing against the old text would credit controls that do not exist, and
+> implementing against it would build the weaker design, so the Decision below now describes what
+> actually ships.
+
+- Decision: All credentialed Azure DevOps REST access from an enhanced view goes through the
+  **background service worker**, which is the only context that can call `chrome.scripting`. The
+  content script sends a typed message; the worker injects a self-contained fetcher into the ADO
+  tab's MAIN world with `chrome.scripting.executeScript({ world: "MAIN" })` and hands the raw body
+  back for parsing. There is **no page-reachable message channel at all** — no `postMessage` bridge,
+  and no `externally_connectable` in the manifest — so no nonce or origin/source check is applicable;
+  the sender is necessarily the extension's own content script. The worker exposes a **closed
+  operation vocabulary** (load a query's tree, load a team's iterations, reconcile the Feature Crew
+  roster, update one work item field) and never a generic "fetch any URL" proxy: every request URL is
+  built from the **sender's own tab URL**, which must parse as a supported ADO location
+  (`AdoHost`), and never from a value in the message. The field-update op additionally requires an
+  ADO field **reference-name shape** and roots its JSON Patch at `/fields/`, so it cannot address
+  `/rev` or `/relations`. Values the MAIN world returns are shape-checked before use, because the
+  page — not the extension — owns the globals that produced them. Field values and identity are never
+  logged.
+- Rationale: The only credentialed path available is a MAIN-world fetch, and MAIN world shares the
+  page's realm with a potentially hostile ADO page. Removing the page-reachable channel entirely is
+  strictly stronger than guarding one, and reducing the surface to a fixed op-set whose targets are
+  derived from the sender's own tab means the extension can never be used to reach an origin, a
+  collection, or a resource the calling page could not already reach with its own session. Recorded
+  as principle #2 in systemPatterns "Enhanced View Runtime Principles".
+- Known residual: the content script's own UI (the top-bar button and its menu) lives in the page's
+  DOM, so page script can dispatch a synthetic click on it. The usual mitigation is an
+  `Event.isTrusted` check, which is **not** implemented: `isTrusted` is `[LegacyUnforgeable]`, so
+  jsdom cannot produce a trusted event and the guard would be untestable while disabling every
+  existing behaviour test. The reachable impact is bounded — bindings are keyed by an unguessable
+  query GUID, so a synthetic "Disable Enhanced View" can only unbind a GUID the attacker already
+  knows — and the remaining surface is an unsolicited options tab carrying attacker-chosen text.
+  Revisit if the suite ever gains a real-browser runner.
 
 ## ADR-029: The ADO server is the only source of truth (no live in-page shared state)
 
@@ -276,19 +299,37 @@
 
 ## ADR-030: Fluid optimistic writes via a per-tab sequential queue
 
-- Decision: View edits are **optimistic**: a change updates the in-memory model immediately and enqueues
-  a write onto a **per-tab, strictly-sequential** queue (two tabs on the same query keep separate
-  queues). The queue coalesces rapid ops on the same target, **reads back** changed properties after
-  each committed write to reconcile server-side rule effects, tracks `System.Rev` for optimistic
-  concurrency, and backs a **single-level, in-memory undo stack per query**. Failures roll back the
-  optimistic UI and surface in a themed top panel: transient errors (network/5xx/timeout) auto-retry
-  with backoff then surface; 409/412 stale-rev roll back with **no auto-rebase**; 403/404 surface
-  immediately. Pending writes block view-switching and raise a themed unload / SPA-nav-away guard.
+> **Status: partially implemented.** What ships is the sequential queue, `System.Rev` optimistic
+> concurrency with the rev bound at **execution** time, a live pending count, and a user-visible
+> failure state. What does **not** ship: coalescing, read-back reconciliation, the undo stack,
+> auto-retry with backoff, differentiated 403/404/409/412 handling, view-switch blocking, and the
+> unload / SPA-nav-away guard. Those remain design intent, not as-built behaviour. Note also that the
+> shipped controls are **persist-then-reflect**, not optimistic: a badge only moves once the write
+> commits, so there is nothing to roll back — the failure is reported instead.
+
+- Decision: View edits enqueue a write onto a **per-tab, strictly-sequential** queue (two tabs on the
+  same query keep separate queues). The queue coalesces rapid ops on the same target, **reads back**
+  changed properties after each committed write to reconcile server-side rule effects, tracks
+  `System.Rev` for optimistic concurrency, and backs a **single-level, in-memory undo stack per
+  query**. Failures roll back the optimistic UI and surface in a themed top panel: transient errors
+  (network/5xx/timeout) auto-retry with backoff then surface; 409/412 stale-rev roll back with **no
+  auto-rebase**; 403/404 surface immediately. Pending writes block view-switching and raise a themed
+  unload / SPA-nav-away guard.
 - Rationale: ADO writes are latency-bound and rule-driven; blocking the UI per write would feel
   sluggish, while firing writes concurrently would race on `Rev` and on reorder. A sequential per-tab
   queue keeps ordering deterministic and undo reasoning single-level, and read-back reconciliation plus
   no-auto-rebase avoid silently overwriting a concurrent change. Recorded as principles #5–#8 in
   systemPatterns.
+- Amendment (rev binding): serialization alone does **not** deliver the stated goal. A queued write
+  originally captured `rev` when the user clicked, so a second edit to the same item inside the write
+  latency window carried a pre-commit rev and was rejected by the `/rev` test — a silently discarded
+  edit. The queue now takes a `currentRev` **resolver** and evaluates it inside `perform()`, after the
+  previous write has settled and committed its new rev onto the item. The item stays the single owner
+  of its rev; the queue keeps no shadow copy to drift.
+- Amendment (failure channel): every editable control is persist-then-reflect, so a rejected write
+  left the screen unchanged and was indistinguishable from a slow one. `FieldWriteQueue` now exposes
+  `onWriteFailed` as a second, narrow subscription (deliberately not a widening of the pending-count
+  callback), and the board's write-status control renders "Couldn't save N change(s)".
 
 ## ADR-031: Tab-local view override with fixed precedence
 
@@ -309,14 +350,20 @@
 
 ## ADR-032: Data-driven views consume injected `EnhancedViewServices`; the tree loader is a placeholder pending the MAIN-world bridge
 
+> **Corrected.** The member list below was written before the bag grew. The shipped
+> `EnhancedViewServices` is `loadTree`, `userDirectory`, `getTypes`, `getBoardColumns`,
+> `loadSprintWindow`, `now`, `logger`, `featureCrew`, `writeField` — there is no `getSprints`. The
+> shared DOM controls moved from `content/views/shared` (which no longer exists) to
+> `common/view-common/control/**`.
+
 - Decision: A data-driven enhanced view depends only on an injected `EnhancedViewServices` abstraction
-  (`loadTree`, `userDirectory`, `getTypes`, `getSprints`, `now`, `logger`) added as an **optional** field
-  on `EnhancedViewContext`; `EnhancedViewSurface` receives the services once at the content composition
+  added as an **optional** field on `EnhancedViewContext`; `EnhancedViewSurface` receives the services
+  once at the content composition
   root and forwards them per render. The normalized tree model (`TrackedWorkItem`/`TrackedUser`/
   `TypeCatalogEntry`/`SprintRef`) and the loader/directory contracts (`IWorkItemTreeLoader`,
   `IUserDirectory`) live in `common/ado`; view-facing UX helpers — PST date formatting + ETA countdown
-  (`common/datetime`) and the shared DOM controls `DateLabel`/`EtaBadge`/`AssignedTo`
-  (`content/views/shared`) — are reused by every view. The Project Tracking view renders a single-root
+  (`common/datetime`) and the shared DOM controls `DateLabel`/`EtaBadge`/`AssignedTo` — are reused by
+  every view. The Project Tracking view renders a single-root
   tree board against this model and validates its binding (tree query, exactly one root, root is the
   first configured type). The composition-root `loadTree` is today a **clearly-labeled placeholder**
   returning a "coming soon" message; the real credentialed fetch is the follow-up under ADR-028.
@@ -327,6 +374,17 @@
   the placeholder loader for the live bridge without touching any view. `services` is optional so the
   remaining placeholder views and their tests keep compiling unchanged. **Superseded in part by ADR-033**,
   which replaced the placeholder `loadTree` with the live MAIN-world bridge at that same seam.
+- Amendment (optionality): the optional field's cost landed entirely in the consumer. In production
+  `services` is never absent — the content composition root always supplies it — so every downstream
+  `if (context.services)` was a branch that existed only for tests, and the one inconvenient site was
+  bypassed with a non-null assertion: the same file simultaneously claimed services could be missing
+  and asserted they were not. `services` stays optional on `EnhancedViewContext` (placeholder views
+  such as `SprintView` genuinely need nothing), but `common/view-common` now also exports
+  `DataDrivenViewContext = EnhancedViewContext & { services: EnhancedViewServices }`. A data-driven
+  view checks once at its entry point and every helper below takes the narrowed type, so no helper
+  re-checks and none can reach for an assertion. Rejected alternative: a `DataDrivenEnhancedView`
+  interface the registry narrows — `render` is declared with method shorthand, so its parameters are
+  checked **bivariantly** even under `strict`, and the compiler would catch nothing.
 
 ## ADR-033: Project Tracking loads live via a content→background→MAIN-world tree-fetch bridge
 
@@ -406,3 +464,49 @@
   `TreeRenderOptions` object because the renderer parameter lists had already reached 11-14 arguments.
 - Consequence: `common/ado/fetchAdoTree` gained `buildWorkItemUrl(href, id)` — the **web** deep link
   (`{base}/{project}/_workitems/edit/{id}`), distinct from the REST `buildWorkItemUpdateUrl`.
+
+## ADR-036: One storage-observation implementation, with no revision guard
+
+- Decision: `common/browser/observeStorageKeys` (renamed from `observeSyncKeys`) is typed against the
+  shared `IBrowserKeyValueStorage` contract and is the **only** implementation of the
+  subscribe-before-read protocol. `BrowserLocalLogStore.observe` delegates to it instead of keeping a
+  hand-written copy. The revision counter is deleted: the post-read snapshot is emitted
+  unconditionally, and freshness is guaranteed solely by the read refusing to fill a key the live
+  subscription has already recorded.
+- Rationale: The module documented itself as the reason two stores "cannot silently drift on this
+  logic", while a third store had already re-implemented the whole protocol by hand — including its
+  defect. The duplication was possible only because of a naming and typing illusion:
+  `IBrowserSyncStorage` and `IBrowserLocalStorage` are both aliases of `IBrowserKeyValueStorage`, so
+  the helper was always reusable and only the word "Sync" in its name suggested otherwise. Neither
+  the type system, the linter, nor jscpd could see the drift, so the single-source-of-truth claim was
+  held up by a comment.
+- The revision guard was also wrong, not merely redundant. It gated a **multi-key** projection on a
+  **global** counter: when any key changed during the initial read, the complete post-read snapshot
+  was suppressed — but the change-driven emit that "replaced" it fired before the reads had filled in
+  the _other_ keys, so every one of them was projected at its default and stayed there for the life
+  of the tab. The `if (!(key in raw))` check already delivers the intended invariant on its own, so
+  removing the counter makes the second emit at worst an idempotent duplicate.
+
+## ADR-037: Reconcile decision logic lives outside the background composition root
+
+- Decision: A composition root may construct concrete browser-backed collaborators and register them
+  with browser event APIs. It may **not** own a named symbol that branches on data, enforces a
+  security precondition, or holds mutable state across events. `reconcileFeatureCrewRoster`,
+  `buildFeatureCrewApplyConfig` and the MAIN-world result shape check moved out of
+  `src/background/index.ts` into `common/ado/reconcileFeatureCrew.ts`, with tests. The shared
+  `ADO_API_VERSION` moved to `common/ado/adoApi.ts` so the update URL cannot target a different API
+  version than the create URL beside it.
+- Rationale: `src/**/index.ts` is excluded from the coverage gate on the stated grounds that a
+  composition root is wiring. That premise had stopped describing the background worker, which had
+  accumulated the create-vs-update branch, the roster merge that decides whether a developer's
+  hand-edited tags get overwritten, and a hand-built `?api-version=7.1` duplicating a constant
+  `common/ado` already owned — all in the one file both coverage and jscpd are blind to.
+- Explicitly **not** done: removing `src/background/index.ts` from the exclusion list. The file
+  performs privileged side effects at module scope (`chrome.webNavigation` and five
+  `chrome.runtime.onMessage` registrations), so importing it under jsdom without a full `chrome` fake
+  is not possible; un-excluding it would add ~20 uncovered functions and turn the gate red without
+  making one line more tested. Extracting the decisions is what actually raises coverage.
+- MAIN-world results are shape-checked rather than cast. The injected functions run in the ADO page's
+  own realm, so the page controls the globals that produce their return values, and the Feature Crew
+  lookup's `id` is concatenated into a credentialed request URL. `firstScriptResult` now returns
+  `unknown` so a caller cannot accidentally inherit a type nobody verified.

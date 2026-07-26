@@ -114,7 +114,7 @@ describe("BrowserLocalLogStore", () => {
     observation.unsubscribe();
   });
 
-  it("skips the initial snapshot when a change wins the race during the read", async () => {
+  it("lets a change during the initial read win over the value the read returns", async () => {
     let resolveRead: (value: unknown) => void = () => undefined;
     storage.getImpl = () => new Promise((resolve) => (resolveRead = resolve));
     const seen: LogEntry[][] = [];
@@ -125,7 +125,9 @@ describe("BrowserLocalLogStore", () => {
     resolveRead([]);
     await observation.ready;
 
-    expect(seen).toEqual([[entry(9, "live")]]);
+    // The read must not clobber the fresher live value, whether or not it also emits a snapshot.
+    expect(seen[seen.length - 1]).toEqual([entry(9, "live")]);
+    expect(seen.every((entries) => entries.length === 1)).toBe(true);
     observation.unsubscribe();
   });
 

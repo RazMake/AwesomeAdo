@@ -189,7 +189,16 @@ export const MIN_PAST_SPRINTS = 0;
 export const MAX_PAST_SPRINTS = 6;
 const DEFAULT_PAST_SPRINTS = 0;
 
-export const DEFAULT_SETTINGS: ExtensionSettings = {
+/**
+ * The settings a fresh install starts from, and the fallback every normalizer falls back to.
+ *
+ * Deeply frozen because it is a module-level singleton that both production code and test fakes
+ * hand out: a shallow copy (`{ ...DEFAULT_SETTINGS }`) still shares the nested arrays and the
+ * marker-tag objects, so one accidental in-place `push`/`sort` would silently redefine "default"
+ * for the rest of the process. Freezing turns that into an immediate throw in strict mode instead
+ * of a failure that surfaces in an unrelated place later.
+ */
+export const DEFAULT_SETTINGS: ExtensionSettings = deepFreeze({
   theme: "auto",
   defaultView: "enhanced",
   currentTeam: null,
@@ -199,7 +208,18 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   boardColumns: [...DEFAULT_BOARD_COLUMNS],
   workItemTypes: [],
   markerTags: normalizeMarkerTags(undefined),
-};
+});
+
+/** Freeze `value` and every plain object/array it owns, returning the same reference. */
+function deepFreeze<T>(value: T): T {
+  if (typeof value !== "object" || value === null || Object.isFrozen(value)) {
+    return value;
+  }
+  for (const nested of Object.values(value)) {
+    deepFreeze(nested);
+  }
+  return Object.freeze(value);
+}
 
 function isTheme(value: unknown): value is Theme {
   return typeof value === "string" && (THEMES as readonly string[]).includes(value);
@@ -341,6 +361,36 @@ function collectTypeColumns(raw: unknown): WorkItemColumn[] {
   return columns;
 }
 
+/**
+ * Reduce a stored work-item-type icon to a URL that is safe to render, or empty.
+ *
+ * The value ends up in `img.src` on the extension's OWN origin (the options page) as well as on the
+ * ADO page, so it must not be taken on trust: it round-trips through synced storage and through
+ * config import, and an imported file can name any host. Only `https:` is kept — that rejects
+ * `data:`, `blob:`, `javascript:` and plaintext `http:` (an active-mixed-content downgrade) while
+ * never rejecting a real ADO icon, which is always HTTPS. Every render site already falls back to a
+ * glyph for an empty icon, so this degrades cleanly.
+ *
+ * Note this is not a trust decision about WHICH host serves the icon: ADO serves type icons from
+ * tenant-specific CDN and scale-unit hosts, so a host allow-list would silently blank legitimate
+ * icons. Pair this with `referrerPolicy="no-referrer"` at the render sites.
+ */
+function normalizeIconUrl(raw: unknown): string {
+  if (typeof raw !== "string") {
+    return "";
+  }
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) {
+    return "";
+  }
+  try {
+    return new URL(trimmed).protocol === "https:" ? trimmed : "";
+  } catch {
+    // Not a parseable absolute URL, so it cannot be a usable icon source.
+    return "";
+  }
+}
+
 function normalizeWorkItemType(raw: unknown): WorkItemType | null {
   if (typeof raw !== "object" || raw === null) {
     return null;
@@ -357,7 +407,7 @@ function normalizeWorkItemType(raw: unknown): WorkItemType | null {
     return null;
   }
   const color = typeof candidate.color === "string" ? candidate.color.trim() : "";
-  const icon = typeof candidate.icon === "string" ? candidate.icon.trim() : "";
+  const icon = normalizeIconUrl(candidate.icon);
   const columns = collectTypeColumns(candidate.columns);
   const type: WorkItemType = { name, color, icon, columns };
   // The ETA field is optional and per-type, so store it only when set; a blank never bloats the map
@@ -431,9 +481,14 @@ export function normalizeMarkerTags(raw: unknown): WorkItemMarkerTags {
  * add/remove, or a value synced from a different version), so this positionally coerces to exactly
  * `BOARD_COLUMN_COUNT` entries — keeping the user's renamed title at each position when one is stored
  * and non-blank, and otherwise falling back to that position's default title. Extra entries are
- * dropped and missing ones filled, so the count is always fixed while renames survive. A title that
- * collides case-insensitively with an earlier position falls back to that position's default so
- * every column stays uniquely identifiable.
+ * dropped and missing ones filled, so the count is always fixed while renames survive.
+ *
+ * Titles are forced to be unique because a column is looked up BY TITLE downstream (the board
+ * resolves an item's column with a first-match search), so two columns sharing a title would
+ * silently alias to the first one — mis-tinting every badge and breaking the completed-child
+ * rollup with no error anywhere. A collision falls back to the position's own default, and because
+ * that default can itself already be taken (renaming column 0 to "Done" steals column 3's default),
+ * the fallback is then suffixed until it is genuinely unique rather than assumed to be.
  */
 export function normalizeBoardColumns(raw: unknown): string[] {
   const stored = Array.isArray(raw) ? raw : [];
@@ -442,9 +497,11 @@ export function normalizeBoardColumns(raw: unknown): string[] {
   for (let index = 0; index < BOARD_COLUMN_COUNT; index += 1) {
     const value = stored[index];
     const trimmed = typeof value === "string" ? value.trim() : "";
-    let name = trimmed.length > 0 ? trimmed : DEFAULT_BOARD_COLUMNS[index]!;
-    if (seen.has(name.toLowerCase())) {
-      name = DEFAULT_BOARD_COLUMNS[index]!;
+    const preferred = trimmed.length > 0 ? trimmed : DEFAULT_BOARD_COLUMNS[index]!;
+    const base = seen.has(preferred.toLowerCase()) ? DEFAULT_BOARD_COLUMNS[index]! : preferred;
+    let name = base;
+    for (let suffix = 2; seen.has(name.toLowerCase()); suffix += 1) {
+      name = `${base} (${suffix})`;
     }
     result.push(name);
     seen.add(name.toLowerCase());

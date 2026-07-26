@@ -41,8 +41,13 @@ export interface QueryBindingsElements {
 
 type ReportError = (error: unknown) => void;
 
-const defaultReportError: ReportError = (error) =>
-  console.error("AwesomeADO could not update the query binding", error);
+/** The optional collaborators, grouped so no caller ever passes a positional `undefined`. */
+export interface QueryBindingsOptions {
+  /** The catalog the view picker offers. Defaults to the shipped catalog. */
+  viewTypes?: readonly ViewType[];
+  /** Resolves the query id of the ADO tab the user is on. Defaults to "none". */
+  resolveCurrentQueryId?: CurrentQueryIdResolver;
+}
 
 /**
  * Resolves the query id of the ADO tab the user is currently on, or null when none can be
@@ -73,13 +78,22 @@ export class QueryBindingsController {
   private selectedQueryId: string | null = null;
   private editing: QueryBinding | undefined;
 
+  private readonly viewTypes: readonly ViewType[];
+  private readonly resolveCurrentQueryId: CurrentQueryIdResolver;
+
+  // `reportError` is REQUIRED, not defaulted: it is the only route a failure here has to the user
+  // and to the device-local diagnostics log, so a default would silently opt a caller out of the
+  // observability the rest of the extension guarantees. The remaining collaborators are grouped in
+  // an options object so nobody has to pass a positional `undefined` to skip one.
   constructor(
     private readonly store: IQueryBindingStore,
     private readonly elements: QueryBindingsElements,
-    private readonly viewTypes: readonly ViewType[] = VIEW_TYPES,
-    private readonly reportError: ReportError = defaultReportError,
-    private readonly resolveCurrentQueryId: CurrentQueryIdResolver = async () => null,
-  ) {}
+    private readonly reportError: ReportError,
+    options: QueryBindingsOptions = {},
+  ) {
+    this.viewTypes = options.viewTypes ?? VIEW_TYPES;
+    this.resolveCurrentQueryId = options.resolveCurrentQueryId ?? (async () => null);
+  }
 
   /**
    * Wire the form and enter fixed-query mode (when `queryId` is given — the user started a bind from a

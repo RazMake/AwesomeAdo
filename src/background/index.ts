@@ -3,12 +3,6 @@ import {
   FEATURE_CREW_AFFECTED_BY_REL,
   FEATURE_CREW_STATE,
   FEATURE_CREW_TITLE,
-  formatFeatureCrewDescription,
-  applyTagAssignments,
-  mergeFeatureCrew,
-  parseFeatureCrewDescription,
-  type FeatureCrewMember,
-  type FeatureCrewUrls,
 } from "../common/ado/FeatureCrew";
 import { buildAdoIterationsUrl } from "../common/ado/TeamIteration";
 import {
@@ -16,6 +10,11 @@ import {
   buildWorkItemUpdateUrl,
   type AdoRawTree,
 } from "../common/ado/fetchAdoTree";
+import {
+  buildFeatureCrewApplyConfig,
+  parseFeatureCrewLookup,
+  reconcileFeatureCrewRoster,
+} from "../common/ado/reconcileFeatureCrew";
 import {
   bindingSettingsPath,
   isOpenBindingSettingsMessage,
@@ -48,7 +47,6 @@ import {
 } from "../common/browser/WorkItemFieldRequest";
 import {
   applyFeatureCrewInPage,
-  type FeatureCrewApplyConfig,
   type FeatureCrewApplyResult,
 } from "../common/browser/applyFeatureCrewInPage";
 import { fetchAdoIterationsInPage } from "../common/browser/fetchAdoIterationsInPage";
@@ -93,30 +91,55 @@ const reuseOrOpenOptionsTab = async (path: string, reveal?: RevealMessage): Prom
   if (lastOpenedOptionsTabId !== undefined) {
     const focused = await focusExistingOptionsTab(lastOpenedOptionsTabId, reveal);
     if (focused) {
-      logger.info(`Revealed options page in existing tab: ${path}`);
+      // Log the destination only — never `path`, which carries the query NAME. The diagnostics log
+      // is exported and attached to bug reports, and AGENTS.md §9 requires query names to be
+      // recorded by identifier, not by value (a title routinely names a team or a customer).
+      logger.info("Revealed the options page in the existing tab");
       return;
     }
-    // The tab was closed since we opened it; drop the stale id and fall through to a fresh open.
+    // The tab was closed or is no longer ours; drop the stale id and fall through to a fresh open.
     lastOpenedOptionsTabId = undefined;
   }
-  logger.info(`Opening options page: ${path}`);
+  logger.info("Opening the options page");
   const tab = await chrome.tabs.create({ url: chrome.runtime.getURL(path) });
   lastOpenedOptionsTabId = tab.id;
 };
 
-// Returns true when the remembered tab still exists and was focused (and, for a reveal, nudged to
-// the requested section or query); false when the tab is gone so the caller opens a new one.
+// Returns true when the remembered tab still exists, is still showing the options page, and was
+// focused (and, for a reveal, nudged to the requested section or query); false when the caller
+// should open a new one instead.
 const focusExistingOptionsTab = async (tabId: number, reveal?: RevealMessage): Promise<boolean> => {
+  const optionsPrefix = chrome.runtime.getURL("options/");
+  let tab: chrome.tabs.Tab;
   try {
-    const tab = await chrome.tabs.update(tabId, { active: true });
-    if (tab?.windowId !== undefined) {
+    tab = await chrome.tabs.get(tabId);
+  } catch {
+    // The only expected reason `get` rejects is that the tab is gone, which is routine and is
+    // exactly what the boolean return is for — so this is a recovery, not a swallowed error.
+    logger.info(`The remembered options tab ${tabId} is gone; opening a fresh one`);
+    return false;
+  }
+  // A settings tab is an ordinary tab the user can navigate away from. Reusing it blindly would
+  // deliver the reveal message to whatever page is there now (our own ADO content script included),
+  // which ignores it — so the click would steal focus, do nothing, and still log success.
+  if (tab.url === undefined || !tab.url.startsWith(optionsPrefix)) {
+    logger.info(`Tab ${tabId} is no longer the options page; opening a fresh one`);
+    return false;
+  }
+  try {
+    await chrome.tabs.update(tabId, { active: true });
+    if (tab.windowId !== undefined) {
       await chrome.windows.update(tab.windowId, { focused: true });
     }
     if (reveal !== undefined) {
       await chrome.tabs.sendMessage(tabId, reveal);
     }
     return true;
-  } catch {
+  } catch (error: unknown) {
+    // The tab exists and is ours, so a failure here is NOT the routine "tab was closed" case — it is
+    // a real fault (e.g. the page has not registered its listener yet) and must not be reported as
+    // if the tab had vanished.
+    logger.error(`Could not reveal the options page in tab ${tabId}`, error);
     return false;
   }
 };
@@ -279,7 +302,7 @@ const reconcileFeatureCrew = async (
         FEATURE_CREW_AFFECTED_BY_REL,
       ],
     });
-    const found = firstScriptResult<{ id: number; rev: number; description: string }>(findResults);
+    const found = parseFeatureCrewLookup(firstScriptResult(findResults));
 
     const roster = reconcileFeatureCrewRoster(found, message);
     // When nothing new was added and no tag moved on an existing item there is nothing to write, so
@@ -295,7 +318,7 @@ const reconcileFeatureCrew = async (
       func: applyFeatureCrewInPage,
       args: [applyConfig],
     });
-    const applied = firstScriptResult<FeatureCrewApplyResult>(applyResults);
+    const applied = firstScriptResult(applyResults) as FeatureCrewApplyResult | null;
     if (applied === null || applied.id === null) {
       // The MAIN-world write failed (e.g. a process rule blocking the transition into "Removed", or
       // a permission error); log the specific reason it reported and hand it back so the view degrades
@@ -324,52 +347,11 @@ function describeError(error: unknown): string {
 }
 
 // Unwrap the single MAIN-world injection result, normalizing the "no result" cases (empty array or a
-// frame that returned nothing) to null so every caller reads one shape.
-function firstScriptResult<T>(results: { result?: unknown }[]): T | null {
-  return (results[0]?.result as T | undefined) ?? null;
-}
-
-// Merge the currently-assigned people into whatever roster already exists (a brand-new item starts
-// empty), then stamp any hand-picked tag choices onto it. Either a new person or a moved tag is a
-// reason to write, surfaced as `changed`.
-function reconcileFeatureCrewRoster(
-  found: { description: string } | null,
-  message: ReconcileFeatureCrewMessage,
-): { members: FeatureCrewMember[]; description: string; changed: boolean } {
-  const existing = found === null ? [] : parseFeatureCrewDescription(found.description);
-  const merged = mergeFeatureCrew(existing, message.assignees);
-  const tagged = applyTagAssignments(merged.members, message.tagAssignments ?? []);
-  return {
-    members: tagged.members,
-    description: formatFeatureCrewDescription(tagged.members),
-    changed: merged.changed || tagged.changed,
-  };
-}
-
-// Build the apply config: a missing item is created (two-step, since ADO rejects a direct create
-// into "Removed"), an existing one is patched by id.
-function buildFeatureCrewApplyConfig(
-  found: { id: number } | null,
-  urls: FeatureCrewUrls,
-  description: string,
-): FeatureCrewApplyConfig {
-  if (found === null) {
-    return {
-      mode: "create",
-      url: urls.createUrl,
-      description,
-      title: FEATURE_CREW_TITLE,
-      state: FEATURE_CREW_STATE,
-      rootRelationUrl: urls.rootRelationUrl,
-      affectedByRel: FEATURE_CREW_AFFECTED_BY_REL,
-      itemBaseUrl: urls.itemBaseUrl,
-    };
-  }
-  return {
-    mode: "update",
-    url: `${urls.itemBaseUrl}/${found.id}?api-version=7.1`,
-    description,
-  };
+// frame that returned nothing) to null so every caller reads one shape. Deliberately returns
+// `unknown`: the value was produced in the page's own realm, so the caller must shape-check it
+// rather than have this helper hand back a type nobody verified.
+function firstScriptResult(results: { result?: unknown }[]): unknown {
+  return results[0]?.result ?? null;
 }
 
 chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
@@ -399,9 +381,14 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
 // An enhanced view can persist a work item field change back to Azure DevOps (e.g. its status or
 // its ETA date). Like the tree load and Feature Crew reconcile, the credentialed PATCH can only run
 // in the ADO tab's MAIN world, so the content side asks this worker to update: build the URL from
-// the SENDER's own trusted tab URL (never a content-supplied one — this stays a closed "update this
-// item's field" operation scoped to the sender's own tab), run the JSON Patch with an
+// the SENDER's own trusted tab URL (never a content-supplied one), run the JSON Patch with an
 // optimistic-concurrency rev test, and hand back the result (success + new rev, or a failure).
+//
+// The operation is closed in three independent ways: the collection comes from the sender's own tab,
+// the field name must match an ADO reference-name shape (`isUpdateWorkItemFieldMessage`), and the
+// patch path is rooted at `/fields/` so it cannot address `/rev` or `/relations`. The item id is
+// still caller-chosen within that collection — the same items the sender's own page could already
+// PATCH with its own session.
 const updateWorkItemField = async (
   message: UpdateWorkItemFieldMessage,
   tabId: number,

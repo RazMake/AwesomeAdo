@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 
 import type { AdoWorkItemType } from "../../common/ado/AdoMetadata";
-import type { StorageObservation } from "../../common/browser/observeSyncKeys";
+import type { StorageObservation } from "../../common/browser/observeStorageKeys";
 import {
   DEFAULT_SETTINGS,
   type ExtensionSettings,
@@ -33,7 +33,9 @@ class FakeSettingsStore implements ISettingsStore {
   }
 
   read(): Promise<ExtensionSettings> {
-    return Promise.resolve({ ...DEFAULT_SETTINGS });
+    // Deep clone: a shallow spread would share DEFAULT_SETTINGS' nested arrays with every other
+    // test in the process, so one in-place mutation would leak across the suite.
+    return Promise.resolve(structuredClone(DEFAULT_SETTINGS));
   }
 
   write(update: Partial<ExtensionSettings>): Promise<void> {

@@ -442,4 +442,41 @@ describe("publishEdge — unknown options", () => {
       /certificationNotes/,
     );
   });
+
+  it("names the missing credential instead of letting it surface as a store auth error", async () => {
+    // An unset CI secret otherwise reaches the API as the literal string "undefined" and comes back
+    // as a 401, which reads like a store outage rather than a misconfigured repository secret.
+    for (const missing of ["archivePath", "productId", "clientId", "apiKey"]) {
+      const options = {
+        archivePath: FAKE_ARCHIVE_PATH,
+        productId: FAKE_PRODUCT_ID,
+        clientId: FAKE_CLIENT_ID,
+        apiKey: FAKE_API_KEY,
+        fetchImpl: buildMockFetch({}).fetchImpl,
+        sleep: () => Promise.resolve(),
+      };
+      delete (/** @type {any} */ (options)[missing]);
+      await assert.rejects(
+        () => publishEdge(/** @type {any} */ (options)),
+        new RegExp(`${missing} must be a non-empty string`),
+      );
+    }
+  });
+
+  it("does not echo the credential value in the failure message", async () => {
+    await assert.rejects(
+      () =>
+        publishEdge(
+          /** @type {any} */ ({
+            archivePath: FAKE_ARCHIVE_PATH,
+            productId: FAKE_PRODUCT_ID,
+            clientId: FAKE_CLIENT_ID,
+            apiKey: "   ",
+            fetchImpl: buildMockFetch({}).fetchImpl,
+            sleep: () => Promise.resolve(),
+          }),
+        ),
+      (error) => error instanceof Error && !error.message.includes(FAKE_API_KEY),
+    );
+  });
 });

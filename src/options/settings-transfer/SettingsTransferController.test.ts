@@ -70,11 +70,13 @@ function setup(overrides?: { settings?: ExtensionSettings; bindings?: QueryBindi
   const errors: unknown[] = [];
   const downloaded = { name: "", blobs: [] as Blob[] };
 
-  URL.createObjectURL = vi.fn((blob: Blob) => {
-    downloaded.blobs.push(blob);
+  // Spied, not assigned: `restoreMocks` undoes a spy between tests, but a direct assignment to a
+  // global stays clobbered for the rest of the file and silently leaks into the next test.
+  vi.spyOn(URL, "createObjectURL").mockImplementation((blob: Blob | MediaSource) => {
+    downloaded.blobs.push(blob as Blob);
     return "blob:mock";
-  }) as unknown as typeof URL.createObjectURL;
-  URL.revokeObjectURL = vi.fn() as unknown as typeof URL.revokeObjectURL;
+  });
+  vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
   vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
     this: HTMLAnchorElement,
   ) {

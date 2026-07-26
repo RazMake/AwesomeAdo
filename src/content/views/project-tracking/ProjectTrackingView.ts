@@ -18,6 +18,7 @@ import type {
 import { buildQueryFolderUrl, buildWorkItemUrl } from "../../../common/ado/fetchAdoTree";
 import type { SprintWindow } from "../../../common/ado/sprintWindow";
 import type {
+  DataDrivenViewContext,
   EnhancedView,
   EnhancedViewContext,
   EnhancedViewServices,
@@ -261,7 +262,7 @@ interface AssigneeTagEditor {
  */
 interface TreeRenderOptions {
   doc: Document;
-  context: EnhancedViewContext;
+  context: DataDrivenViewContext;
   typeMap: Map<string, TypeCatalogEntry>;
   /** The board's single serialized field-write queue, shared by status and ETA edits. */
   queue: FieldWriteQueue;
@@ -371,10 +372,18 @@ function createRowControls(
     editable: true,
     minWidthCh: statusWidthCh,
     onChange: (primaryState, column) => {
-      // Optimistically reflect the new Status, then enqueue a serialized write of its primary ADO
-      // State. The queue logs failures and never rejects, so reconcile on its resolved result.
+      // Persist first, then reflect the committed Status: the badge label only moves once the write
+      // succeeds, so a rejected write never leaves a value on screen that ADO did not accept. The
+      // rev is read at WRITE time (not here), so a second edit queued behind this one still carries
+      // a current rev. The queue logs and counts failures and never rejects, so there is nothing to
+      // roll back — the board's write-status indicator reports the loss.
       queue
-        .enqueue({ id: item.id, rev: item.rev, field: "System.State", value: primaryState })
+        .enqueue({
+          id: item.id,
+          currentRev: () => item.rev,
+          field: "System.State",
+          value: primaryState,
+        })
         .then((result) => {
           if (result.ok && result.rev !== undefined) {
             item.state = primaryState;
@@ -461,7 +470,7 @@ function createItemEtaBadge(
   const onChange = etaField
     ? (newEta: string | null): void => {
         queue
-          .enqueue({ id: item.id, rev: item.rev, field: etaField, value: newEta })
+          .enqueue({ id: item.id, currentRev: () => item.rev, field: etaField, value: newEta })
           .then((result) => {
             if (result.ok && result.rev !== undefined) {
               item.eta = newEta;
@@ -491,13 +500,7 @@ function describeMinorChild(
     assignedTo: child.assignedTo,
     title: child.title,
     titleColor: typeColorOf(child.type, typeMap),
-    eta: createItemEtaBadge(
-      doc,
-      child,
-      typeMap,
-      queue,
-      context.services ? context.services.now() : new Date(),
-    ),
+    eta: createItemEtaBadge(doc, child, typeMap, queue, context.services.now()),
     iconUrl: icon.length > 0 ? icon : null,
     // The view runs on the ADO query page, so the page's own URL supplies the org/project the item
     // link resolves against; an unrecognizable location leaves the affordance inert.
@@ -516,7 +519,6 @@ function createMinorChildrenBadge(
   options: TreeRenderOptions,
 ): HTMLElement | null {
   const { context, typeMap, boardColumns, filterSprint, selectedTags } = options;
-  if (!context.services) return null;
 
   const visible = item.children.filter((child) =>
     isVisibleUnderFilter(child, filterSprint, selectedTags),
@@ -586,9 +588,7 @@ function createRowRightControls(
   const { doc, context, typeMap, queue, showSprintPills } = options;
   const inline: HTMLElement[] = [];
 
-  if (context.services) {
-    inline.push(createRowAssignee(item, context.services, options));
-  }
+  inline.push(createRowAssignee(item, context.services, options));
 
   if (showSprintPills && isLeafSprint(item)) {
     const pill = doc.createElement("span");
@@ -618,23 +618,19 @@ function createRowRightControls(
     }
   }
 
-  let eta: HTMLElement | null = null;
-  if (context.services) {
-    const etaBadge = createItemEtaBadge(doc, item, typeMap, queue, context.services.now());
-    // Pinned to the far right of the row, kept on one line. A FIXED font-size keeps every ETA the
-    // same size across the whole tree: the nested rows shrink 10% per depth (childrenContainer's
-    // font-size:90% compounds), which would otherwise render deeper ETAs progressively smaller.
-    // It still top-aligns and shares the content block's 1.8em line-height, so it sits at the
-    // vertical center of the row's FIRST line even when the title wraps to more lines below.
-    etaBadge.style.flex = "0 0 auto";
-    etaBadge.style.whiteSpace = "nowrap";
-    etaBadge.style.fontSize = "11px";
-    etaBadge.style.lineHeight = "1.8";
-    etaBadge.style.alignSelf = "flex-start";
-    eta = etaBadge;
-  }
+  const etaBadge = createItemEtaBadge(doc, item, typeMap, queue, context.services.now());
+  // Pinned to the far right of the row, kept on one line. A FIXED font-size keeps every ETA the
+  // same size across the whole tree: the nested rows shrink 10% per depth (childrenContainer's
+  // font-size:90% compounds), which would otherwise render deeper ETAs progressively smaller.
+  // It still top-aligns and shares the content block's 1.8em line-height, so it sits at the
+  // vertical center of the row's FIRST line even when the title wraps to more lines below.
+  etaBadge.style.flex = "0 0 auto";
+  etaBadge.style.whiteSpace = "nowrap";
+  etaBadge.style.fontSize = "11px";
+  etaBadge.style.lineHeight = "1.8";
+  etaBadge.style.alignSelf = "flex-start";
 
-  return { inline, eta };
+  return { inline, eta: etaBadge };
 }
 
 /**
@@ -769,10 +765,9 @@ function populateTechLead(
   doc: Document,
   group: HTMLElement,
   root: TrackedWorkItem,
-  context: EnhancedViewContext,
+  context: DataDrivenViewContext,
   onAssigneeChange: (user: DirectoryUser) => void,
 ): void {
-  if (!context.services) return;
   group.innerHTML = "";
 
   const label = doc.createElement("span");
@@ -799,11 +794,9 @@ function populateTechLead(
 function createTechLeadGroup(
   doc: Document,
   root: TrackedWorkItem,
-  context: EnhancedViewContext,
+  context: DataDrivenViewContext,
   onAssigneeChange: (user: DirectoryUser) => void,
 ): HTMLElement | null {
-  if (!context.services) return null;
-
   const techLeadGroup = doc.createElement("div");
   techLeadGroup.className = "awesomeado-tracking__techlead";
   techLeadGroup.style.cssText = ["display:flex", "align-items:center", "gap:8px"].join(";");
@@ -821,7 +814,7 @@ function createTechLeadGroup(
 function renderHeader(
   doc: Document,
   root: TrackedWorkItem,
-  context: EnhancedViewContext,
+  context: DataDrivenViewContext,
   typeMap: Map<string, TypeCatalogEntry>,
   sprintWindow: SprintWindow,
   onAssigneeChange: (user: DirectoryUser) => void,
@@ -857,13 +850,7 @@ function renderHeader(
     title: root.title,
     titleColor: typeColorOf(root.type, typeMap),
     techLead,
-    eta: createItemEtaBadge(
-      doc,
-      root,
-      typeMap,
-      queue,
-      context.services ? context.services.now() : new Date(),
-    ),
+    eta: createItemEtaBadge(doc, root, typeMap, queue, context.services.now()),
     sprintPicker: sprintPickerHandle.element,
     writeQueueStatus,
   });
@@ -927,7 +914,10 @@ interface BoardHandle {
  * user-triggered roster reconciles (tag picks / inline assignee changes). Each source reports its own
  * pending count; the displayed total is their sum, so the indicator shows for either kind of save.
  *
- * Subscribing to the queue reveals it while writes are in flight and hides it once the queue drains.
+ * It also subscribes to the queue's FAILED count, because every editable control on this board is
+ * persist-then-reflect: a rejected write leaves the screen unchanged, so without this the user
+ * cannot tell a lost edit from a slow one.
+ *
  * No explicit unsubscribe is needed — the control and the queue share the board's lifetime (one
  * render per tab), so their lifetimes match.
  */
@@ -942,6 +932,9 @@ function createBoardWriteStatus(
   fieldWrites.onPendingChange((count) => {
     statePending = count;
     refresh();
+  });
+  fieldWrites.onWriteFailed((count) => {
+    writeStatus.setFailedCount(count);
   });
   return {
     element: writeStatus.element,
@@ -1003,7 +996,7 @@ function wireSprintPickerRerender(
 interface BoardTreeRendererParams {
   doc: Document;
   root: TrackedWorkItem;
-  context: EnhancedViewContext;
+  context: DataDrivenViewContext;
   typeMap: Map<string, TypeCatalogEntry>;
   selectedTags: Set<string | null>;
   treeContainer: HTMLElement;
@@ -1098,7 +1091,7 @@ function createBoardTreeRenderer(params: BoardTreeRendererParams): {
 function renderBoard(
   doc: Document,
   root: TrackedWorkItem,
-  context: EnhancedViewContext,
+  context: DataDrivenViewContext,
   typeMap: Map<string, TypeCatalogEntry>,
   sprintWindow: SprintWindow,
   onAssigneeChange: (user: DirectoryUser) => void,
@@ -1111,7 +1104,7 @@ function renderBoard(
   board.style.cssText = "padding:2px 16px 16px 16px";
 
   // One serialized write queue per board (per tab): field edits never race on System.Rev.
-  const services = context.services!;
+  const services = context.services;
   const fieldWrites = new FieldWriteQueue(services.writeField, services.logger);
   const writeStatus = createBoardWriteStatus(doc, fieldWrites);
 
@@ -1232,14 +1225,18 @@ function validateRoot(
 
 /**
  * Validates the tree result and renders an error scaffold if validation fails.
- * Returns true if validation passed, false otherwise.
+ *
+ * Returns the validated root rather than a boolean: `validateRoot` has already established it, and
+ * handing back only "it was fine" forces the caller to re-derive `result.roots[0]` behind a non-null
+ * assertion — correct today only because of a fact the type system cannot see, and silently wrong
+ * the day the validation rules change.
  */
 function validateAndRenderErrors(
   result: WorkItemTreeResult,
   root: HTMLElement,
   doc: Document,
   services: EnhancedViewServices,
-): boolean {
+): TrackedWorkItem | null {
   const types = services.getTypes();
   const firstType = types[0]?.name;
 
@@ -1253,15 +1250,15 @@ function validateAndRenderErrors(
 
   if (result.error) {
     renderValidationError(root, doc, result.error);
-    return false;
+    return null;
   }
 
   if (!isTreeQuery) {
     renderValidationError(root, doc, "Project Tracking requires a tree (work item links) query.");
-    return false;
+    return null;
   }
 
-  return validateRoot(result, root, doc, firstType) !== null;
+  return validateRoot(result, root, doc, firstType);
 }
 
 /**
@@ -1286,7 +1283,8 @@ function createFeatureCrewSync(
   const assignees: FeatureCrewAssignee[] = [];
 
   // Serializes every reconcile so read-modify-writes on the shared roster item never race (see the
-  // note in `reconcile`). Each call appends to this chain; failures are swallowed to keep it alive.
+  // note in `reconcile`). Each call appends to this chain; a failure is caught INTO the chain so a
+  // rejection can never poison every later reconcile.
   let reconcileChain: Promise<void> = Promise.resolve();
 
   // In-flight count of USER-triggered reconciles (tag picks / inline assignee changes) reported to
@@ -1322,26 +1320,33 @@ function createFeatureCrewSync(
     if (userTriggered) {
       bumpUserPending(1);
     }
-    reconcileChain = reconcileChain.then(async () => {
-      // Snapshot the roster at execution time so a call queued behind another still sends the latest
-      // assignees. The writer logs its own failures; swallow here only to keep the chain alive.
-      try {
-        const result = await services.featureCrew.reconcile({
-          rootId,
-          typeName,
-          assignees: [...assignees],
-          tagAssignments,
-        });
-        if (result.ok && result.members) {
-          onReconciled(result.members);
+    reconcileChain = reconcileChain
+      .then(async () => {
+        // Snapshot the roster at execution time so a call queued behind another still sends the
+        // latest assignees.
+        try {
+          const result = await services.featureCrew.reconcile({
+            rootId,
+            typeName,
+            assignees: [...assignees],
+            tagAssignments,
+          });
+          if (result.ok && result.members) {
+            onReconciled(result.members);
+          }
+        } finally {
+          if (userTriggered) {
+            bumpUserPending(-1);
+          }
         }
-      } finally {
-        if (userTriggered) {
-          bumpUserPending(-1);
-        }
-      }
-    });
-    void reconcileChain.catch(() => {});
+      })
+      // The CAUGHT promise becomes the chain. Catching a derived one instead would silence the
+      // unhandled-rejection warning while leaving `reconcileChain` itself rejected, so every later
+      // `.then` would short-circuit — no tag would ever save again, and the pending count would
+      // climb forever because its `finally` would never run.
+      .catch((error: unknown) => {
+        services.logger.error(`Feature Crew reconcile failed for root ${rootId}`, error);
+      });
   };
 
   return {
@@ -1379,7 +1384,7 @@ function createFeatureCrewSync(
  * resolves it hands back the roster's tags, which the board projects onto every assignee.
  */
 function renderLoadedBoard(
-  context: EnhancedViewContext,
+  context: DataDrivenViewContext,
   root: HTMLElement,
   services: EnhancedViewServices,
   result: WorkItemTreeResult,
@@ -1388,11 +1393,11 @@ function renderLoadedBoard(
   // Remove title and loading, render error or board.
   root.innerHTML = "";
 
-  if (!validateAndRenderErrors(result, root, context.doc, services)) {
+  const treeRoot = validateAndRenderErrors(result, root, context.doc, services);
+  if (treeRoot === null) {
     return;
   }
 
-  const treeRoot = result.roots[0]!;
   const types = services.getTypes();
   const typeMap = new Map(types.map((t) => [t.name, t]));
 
@@ -1496,6 +1501,10 @@ export const projectTrackingView: EnhancedView = {
       root.append(message);
       return root;
     }
+    // The ONE place this view checks for its services. Everything below takes
+    // `DataDrivenViewContext`, so no helper re-checks and none can be tempted into a non-null
+    // assertion when a check is inconvenient.
+    const dataContext: DataDrivenViewContext = { ...context, services };
 
     const loading = context.doc.createElement("div");
     loading.className = "awesomeado-tracking__loading";
@@ -1513,9 +1522,9 @@ export const projectTrackingView: EnhancedView = {
     // (the filter is simply left disabled) and never blocks the board.
     Promise.all([services.loadTree(context.queryId), services.loadSprintWindow()])
       .then(([result, sprintWindow]) =>
-        renderLoadedBoard(context, root, services, result, sprintWindow),
+        renderLoadedBoard(dataContext, root, services, result, sprintWindow),
       )
-      .catch((err: unknown) => renderTreeLoadFailure(context, root, services, err));
+      .catch((err: unknown) => renderTreeLoadFailure(dataContext, root, services, err));
 
     return root;
   },

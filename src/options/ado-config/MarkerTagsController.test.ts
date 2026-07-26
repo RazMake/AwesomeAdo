@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import type { StorageObservation } from "../../common/browser/observeSyncKeys";
+import type { StorageObservation } from "../../common/browser/observeStorageKeys";
 import {
   DEFAULT_MARKER_TAGS,
   WORK_ITEM_MARKERS,

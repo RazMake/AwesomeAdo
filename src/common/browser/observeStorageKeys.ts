@@ -1,4 +1,4 @@
-import type { IBrowserSyncStorage } from "./IBrowserSyncStorage";
+import type { IBrowserKeyValueStorage } from "./IBrowserKeyValueStorage";
 
 /** The handle returned by an active observation: a readiness promise plus a way to stop it. */
 export interface StorageObservation {
@@ -9,26 +9,31 @@ export interface StorageObservation {
 }
 
 /**
- * Owns the one race-sensitive part of observing synced storage so no store has to re-implement it.
+ * Owns the one race-sensitive part of observing browser storage so no store has to re-implement it.
  *
  * The protocol: subscribe to every key BEFORE the initial read, accumulate the latest raw value of
- * each key, and project the accumulated record into a complete snapshot. A revision counter lets a
- * change that lands *during* the initial read win — the initial read never clobbers a fresher live
- * value, and the initial emit is skipped when a change already emitted a newer snapshot. If the
- * initial read fails, the subscriptions are released and the error is rethrown through `ready`.
+ * each key, and project the accumulated record into a complete snapshot. A change that lands
+ * *during* the initial read wins, because the read only fills a key it has not already seen — so by
+ * the time the reads settle, `raw` holds the freshest known value for every key and the post-read
+ * emit is never stale. It is emitted unconditionally: skipping it whenever any key changed mid-read
+ * would strand every OTHER key at the projection's default, since the change-driven emit fires
+ * before the reads have filled them in. If the initial read fails, the subscriptions are released
+ * and the error is rethrown through `ready`.
  *
- * Centralizing this here is why the settings store and the bindings store cannot silently drift on
- * this logic. `project` maps the accumulated key→value record into the snapshot type and must be
- * pure (it is called on every change and on the initial read).
+ * Centralizing this here is why the settings store, the bindings store and the diagnostics log
+ * cannot silently drift on this logic. It is typed against `IBrowserKeyValueStorage` rather than the
+ * synced or local alias so every store can share it — the race is a property of the
+ * subscribe-then-read protocol, not of which storage area is behind it. `project` maps the
+ * accumulated key→value record into the snapshot type and must be pure (it is called on every change
+ * and on the initial read).
  */
-export function observeSyncKeys<T>(
-  storage: IBrowserSyncStorage,
+export function observeStorageKeys<T>(
+  storage: IBrowserKeyValueStorage,
   keys: readonly string[],
   project: (raw: Record<string, unknown>) => T,
   listener: (value: T) => void,
 ): StorageObservation {
   let active = true;
-  let revision = 0;
   const raw: Record<string, unknown> = {};
   const emit = (): void => {
     if (active) {
@@ -38,11 +43,9 @@ export function observeSyncKeys<T>(
   const stops = keys.map((key) =>
     storage.subscribe(key, (value) => {
       raw[key] = value;
-      revision += 1;
       emit();
     }),
   );
-  const readRevision = revision;
   const unsubscribe = (): void => {
     if (active) {
       active = false;
@@ -62,10 +65,7 @@ export function observeSyncKeys<T>(
     ),
   )
     .then(() => {
-      // Skip the initial emit if any change already emitted a newer snapshot during the read.
-      if (active && revision === readRevision) {
-        emit();
-      }
+      emit();
     })
     .catch((error: unknown) => {
       unsubscribe();

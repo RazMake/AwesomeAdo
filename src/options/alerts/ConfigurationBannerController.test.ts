@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import type { IQueryBindingStore } from "../../common/bindings/IQueryBindingStore";
 import type { QueryBinding, QueryBindings } from "../../common/bindings/QueryBinding";
-import type { StorageObservation } from "../../common/browser/observeSyncKeys";
+import type { StorageObservation } from "../../common/browser/observeStorageKeys";
 import { DEFAULT_SETTINGS, type ExtensionSettings } from "../../common/settings/ExtensionSettings";
 import type { ISettingsStore } from "../../common/settings/ISettingsStore";
 
@@ -44,7 +44,7 @@ class FakeSettingsStore implements ISettingsStore {
   }
 
   read(): Promise<ExtensionSettings> {
-    return Promise.resolve({ ...DEFAULT_SETTINGS });
+    return Promise.resolve(structuredClone(DEFAULT_SETTINGS));
   }
 
   write(): Promise<void> {

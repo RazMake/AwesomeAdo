@@ -255,13 +255,9 @@ if (
   if (queryId !== null) {
     tabs.activate("tab-bindings");
   }
-  const bindings = new QueryBindingsController(
-    bindingStore,
-    bindingElements,
-    undefined,
-    report,
-    () => adoTabReader.readCurrentQueryId(),
-  );
+  const bindings = new QueryBindingsController(bindingStore, bindingElements, report, {
+    resolveCurrentQueryId: () => adoTabReader.readCurrentQueryId(),
+  });
   void bindings.init(queryId, queryName).catch((error: unknown) => {
     bindings.dispose();
     report(error);
@@ -310,7 +306,7 @@ if (logList && logEmpty && logErrorsOnly && logSources && logExport && logClear)
     exportButton: logExport,
     clearButton: logClear,
   };
-  const diagnostics = new DiagnosticsController(logStore, diagnosticsElements);
+  const diagnostics = new DiagnosticsController(logStore, diagnosticsElements, report);
   void diagnostics.init().catch((error: unknown) => {
     diagnostics.dispose();
     report(error);

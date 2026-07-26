@@ -1,6 +1,7 @@
+import { ADO_API_VERSION } from "./adoApi";
 import { resolveAdoProjectContext } from "./fetchAdoMetadata";
 
-const API_VERSION = "7.1";
+const API_VERSION = ADO_API_VERSION;
 
 /**
  * Where an iteration sits relative to today, as Azure DevOps itself classifies it. ADO marks exactly

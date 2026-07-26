@@ -1,6 +1,6 @@
 import type { IQueryBindingStore } from "../../common/bindings/IQueryBindingStore";
 import type { QueryBindings } from "../../common/bindings/QueryBinding";
-import type { StorageObservation } from "../../common/browser/observeSyncKeys";
+import type { StorageObservation } from "../../common/browser/observeStorageKeys";
 import {
   DEFAULT_SETTINGS,
   isAdoConfigured,

@@ -175,16 +175,44 @@ describe("normalizeBoardColumns", () => {
     ]);
   });
 
-  it("drops a title that collides case-insensitively with an earlier position", () => {
+  it("falls back to its own default when a title collides with an earlier position", () => {
     // The second column reusing the first's title would make two columns indistinguishable, so it
     // falls back to its own default instead.
-    expect(normalizeBoardColumns(["Done", "done"])).toEqual([
-      "Done",
+    expect(normalizeBoardColumns(["Backlog", "backlog"])).toEqual([
+      "Backlog",
       "In Progress",
       "Waiting",
       "Done",
       "Removed",
     ]);
+  });
+
+  it("suffixes when a position's own default is already taken by an earlier rename", () => {
+    // Renaming column 0 to "Done" steals column 3's default, so column 3's fallback must not be
+    // assumed free — the board resolves a column BY TITLE, and a duplicate silently aliases it.
+    expect(normalizeBoardColumns(["Done", "done"])).toEqual([
+      "Done",
+      "In Progress",
+      "Waiting",
+      "Done (2)",
+      "Removed",
+    ]);
+  });
+
+  it("never yields two columns with the same title", () => {
+    const cases: unknown[] = [
+      ["Done", "done"],
+      ["Done"],
+      ["Removed"],
+      ["Removed", "removed"],
+      ["In Queue", "In Queue", "In Queue", "In Queue", "In Queue"],
+      ["Waiting", "Waiting", "Waiting"],
+    ];
+    for (const stored of cases) {
+      const columns = normalizeBoardColumns(stored);
+      expect(columns).toHaveLength(BOARD_COLUMN_COUNT);
+      expect(new Set(columns.map((column) => column.toLowerCase())).size).toBe(BOARD_COLUMN_COUNT);
+    }
   });
 });
 
@@ -198,7 +226,8 @@ describe("normalizeMarkerTags", () => {
   it("has an entry for every configured marker", () => {
     const result = normalizeMarkerTags({});
     for (const { key } of WORK_ITEM_MARKERS) {
-      expect(result[key]).toBeDefined();
+      // toBeDefined would pass for any wrong-but-present value; pin the actual default.
+      expect(result[key]).toEqual(DEFAULT_MARKER_TAGS[key]);
     }
   });
 
@@ -350,8 +379,31 @@ describe("normalizeWorkItemTypes", () => {
 
   it("trims name/color/icon and keeps a type even with no columns", () => {
     expect(
-      normalizeWorkItemTypes([{ name: "  Bug ", color: " CC293D ", icon: " url ", columns: [] }]),
-    ).toEqual([{ name: "Bug", color: "CC293D", icon: "url", columns: [] }]);
+      normalizeWorkItemTypes([
+        {
+          name: "  Bug ",
+          color: " CC293D ",
+          icon: " https://cdn.example/bug.png ",
+          columns: [],
+        },
+      ]),
+    ).toEqual([{ name: "Bug", color: "CC293D", icon: "https://cdn.example/bug.png", columns: [] }]);
+  });
+
+  it("drops an icon that is not an https URL, because it is rendered with img.src", () => {
+    // The value round-trips through synced storage and through config import, and both render sites
+    // fall back to a glyph, so a non-https source is dropped rather than trusted.
+    for (const icon of [
+      "http://cdn.example/bug.png",
+      "javascript:alert(1)",
+      "data:image/png;base64,AAAA",
+      "blob:https://dev.azure.com/abc",
+      "not a url",
+      "/relative/bug.png",
+      42,
+    ]) {
+      expect(normalizeWorkItemTypes([{ name: "Bug", icon, columns: [] }])[0]?.icon).toBe("");
+    }
   });
 
   it("keeps a trimmed etaField when set and omits it when blank or missing", () => {

@@ -39,6 +39,24 @@ const host = createPopupHost({
 - **`close(): void`** — Close if open (idempotent).
 - **`isOpen: boolean`** — Whether the popup is currently open.
 
+## Staying on screen
+
+Controls anchor their popup under the trigger (`position:absolute; top:100%; left:0`). On every open
+the host measures the mounted popup and corrects that anchoring so the whole popup stays visible:
+
+- It shifts the popup left by exactly what spills past the right edge of the **visible area** — never
+  far enough to push it off the left edge, so a popup wider than that area is left as-is.
+- It flips the popup **above** the trigger (`top:auto; bottom:100%`) when it spills past the bottom
+  edge and actually fits above.
+- A popup that cannot be measured (zero-sized, e.g. a detached or hidden host) is left untouched.
+
+The visible area is the window's client box narrowed by every ancestor that clips or scrolls its
+content. That is deliberately **not** `window.innerWidth`: enhanced views live in a scrolling overlay
+whose scrollbars cover the last ~15px of the window, which is exactly where a popup anchored to a
+right-most control would land.
+
+Controls get this for free; they only supply the popup's contents.
+
 ## Why
 
 The identical lazy-popup skeleton (create-on-open, remove-on-close, capture-phase outside/Escape

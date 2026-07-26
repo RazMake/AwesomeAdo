@@ -26,7 +26,7 @@
   "content_scripts": [
     {
       "matches": ["https://dev.azure.com/*", "https://*.visualstudio.com/*"],
-      "js": ["content/blank-query-page.js"],
+      "js": ["content/awesomeado-content.js"],
       "run_at": "document_idle"
     }
   ],

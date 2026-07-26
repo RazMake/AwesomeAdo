@@ -48,10 +48,13 @@ export function exportConfig(settings: ExtensionSettings, enhancedQueries: Query
 /**
  * Parse and validate the text of a selected `AwesomeADO.config` file.
  *
- * Rejects anything that is not JSON or not shaped like a config, so importing an unrelated file
- * cannot silently wipe the user's settings down to defaults. Recognized files are run through the
- * same normalizers as storage reads, so a hand-edited or newer-version file can never persist a
- * malformed setting or binding.
+ * Both sections must be present and object-shaped, because an import REPLACES both stores
+ * wholesale: a file that merely mentions the format but carries no payload would normalize into an
+ * all-defaults configuration and silently destroy the user's real one, synced to every device, and
+ * report success. Recognized files are run through the same normalizers as storage reads, so a
+ * hand-edited or newer-version file can never persist a malformed setting or binding. Note that
+ * this validates SHAPE, not trustworthiness — an imported file is as trusted as the person the
+ * user got it from.
  */
 export function importConfig(text: string): ImportedConfig {
   let raw: unknown;
@@ -64,14 +67,10 @@ export function importConfig(text: string): ImportedConfig {
     throw new Error("The selected file is not an AwesomeADO configuration.");
   }
   const candidate = raw as Record<string, unknown>;
-  // Require at least one recognizable marker so an arbitrary JSON object is rejected rather than
-  // normalized into an all-defaults configuration that would overwrite the user's real one.
-  const looksLikeConfig =
-    typeof candidate.awesomeAdoConfigVersion === "number" ||
-    "settings" in candidate ||
-    "enhancedQueries" in candidate;
-  if (!looksLikeConfig) {
-    throw new Error("The selected file is not an AwesomeADO configuration.");
+  const isSection = (value: unknown): boolean =>
+    typeof value === "object" && value !== null && !Array.isArray(value);
+  if (!isSection(candidate.settings) || !isSection(candidate.enhancedQueries)) {
+    throw new Error("The selected file is not a complete AwesomeADO configuration.");
   }
   return {
     settings: normalizeSettings(candidate.settings),

@@ -1,5 +1,5 @@
 import type { IBrowserSyncStorage } from "../browser/IBrowserSyncStorage";
-import { observeSyncKeys, type StorageObservation } from "../browser/observeSyncKeys";
+import { observeStorageKeys, type StorageObservation } from "../browser/observeStorageKeys";
 import type { ILogger } from "../logging/ILogger";
 
 import type { IQueryBindingStore } from "./IQueryBindingStore";
@@ -63,10 +63,10 @@ export class BrowserSyncQueryBindingStore implements IQueryBindingStore {
   }
 
   observe(listener: (bindings: QueryBindings) => void): StorageObservation {
-    // The subtle revision-guarded subscribe-then-read protocol lives in observeSyncKeys so this
+    // The subtle subscribe-then-read race protocol lives in observeStorageKeys so this
     // store and the settings store share one tested implementation. Bindings live under a single
     // key, so the projection normalizes just that key's value.
-    return observeSyncKeys(
+    return observeStorageKeys(
       this.storage,
       [BINDINGS_KEY],
       (raw) => normalizeBindings(raw[BINDINGS_KEY]),

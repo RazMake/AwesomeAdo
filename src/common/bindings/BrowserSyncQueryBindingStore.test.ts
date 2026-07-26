@@ -260,10 +260,14 @@ describe("BrowserSyncQueryBindingStore - observe", () => {
       fake.resolveDeferred(KEY, {});
       await ready;
 
-      expect(listener).toHaveBeenCalledTimes(1);
-      expect(listener).toHaveBeenCalledWith({
+      // Every snapshot carries the live value: the read only fills a key it has not already seen,
+      // so the emptier read result can never overwrite it.
+      expect(listener).toHaveBeenLastCalledWith({
         live: { view: "sprint", properties: {} },
       });
+      expect(
+        listener.mock.calls.every(([bindings]) => Object.keys(bindings as object).length === 1),
+      ).toBe(true);
     });
 
     it("stops emitting and releases the subscription after unsubscribe", async () => {

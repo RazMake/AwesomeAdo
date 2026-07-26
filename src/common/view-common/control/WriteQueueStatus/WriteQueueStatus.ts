@@ -10,16 +10,43 @@ export interface WriteQueueStatusHandle {
   element: HTMLElement;
   /** Update the pending-write count; 0 hides the indicator, > 0 shows the animated "saving" state. */
   setCount(count: number): void;
+  /**
+   * Update the count of writes that failed. A positive count wins over "saving", because a user who
+   * has lost an edit needs to know that before they need to know a later edit is still in flight.
+   */
+  setFailedCount(count: number): void;
+}
+
+/** Grammatically-correct singular/plural for the change count in either state's label. */
+function pluralizeChanges(count: number): string {
+  return count === 1 ? "change" : "changes";
+}
+
+/**
+ * The inline row both visible states share, differing only in text color. Kept in one place so the
+ * saving and failed states cannot drift apart in layout.
+ */
+function visibleRowStyle(color: string): string {
+  return [
+    "display:inline-flex",
+    "align-items:center",
+    "gap:6px",
+    "font-size:11px",
+    `color:${color}`,
+  ].join(";");
 }
 
 /**
  * A presentational write-queue status indicator: an animated spinner + "Saving N change(s)…" text
- * shown only while writes are in flight.
+ * while writes are in flight, and a static "Couldn't save N change(s)" warning once any write has
+ * failed.
  *
- * It is driven purely by a numeric count and knows nothing about the queue or ADO — the caller feeds
- * it counts so the control stays decoupled and reusable. Idle (count <= 0) hides the indicator; a
- * positive count reveals an accent-colored "saving" state. Kept stylesheet-free (the spinner is a
- * self-contained SMIL SVG) so it animates deterministically without depending on injected CSS.
+ * It is driven purely by numeric counts and knows nothing about the queue or ADO — the caller feeds
+ * it counts so the control stays decoupled and reusable. The failed state exists because every
+ * editable control on the board is persist-then-reflect: when a write is rejected nothing on screen
+ * changes, so without this the user cannot tell a lost edit from a slow one. Idle (both counts 0)
+ * hides the indicator. Kept stylesheet-free (the spinner is a self-contained SMIL SVG) so it
+ * animates deterministically without depending on injected CSS.
  */
 export function renderWriteQueueStatus(
   doc: Document,
@@ -30,6 +57,9 @@ export function renderWriteQueueStatus(
   // role/aria-live so assistive tech announces when saves start and finish.
   root.setAttribute("role", "status");
   root.setAttribute("aria-live", "polite");
+
+  let pendingCount = 0;
+  let failedCount = 0;
 
   // The spinner is a self-contained inline SVG driven by SMIL (<animateTransform>) so it spins
   // without any @keyframes/stylesheet — this keeps the control deterministic and independent of
@@ -71,11 +101,23 @@ export function renderWriteQueueStatus(
 
   root.append(svg, label);
 
-  // Apply the visible/hidden state and text for a given count. Extracted so the initial render and
-  // every setCount call share one code path and stay idempotent.
-  const apply = (rawCount: number): void => {
+  // Apply the visible/hidden state and text for the current counts. Extracted so the initial render
+  // and every setter share one code path and stay idempotent.
+  const apply = (): void => {
     // Treat negatives and non-finite values as idle so a bad count can never show a bogus indicator.
-    const count = Number.isFinite(rawCount) && rawCount > 0 ? Math.floor(rawCount) : 0;
+    const count = Number.isFinite(pendingCount) && pendingCount > 0 ? Math.floor(pendingCount) : 0;
+    const failed = Number.isFinite(failedCount) && failedCount > 0 ? Math.floor(failedCount) : 0;
+
+    if (failed > 0) {
+      // Failed wins over busy: a lost edit is the more urgent thing to report, and the spinner would
+      // otherwise imply the write is still on its way.
+      svg.style.display = "none";
+      root.style.cssText = visibleRowStyle("var(--palette-error-text, #a4262c)");
+      label.textContent = `Couldn't save ${failed} ${pluralizeChanges(failed)}`;
+      return;
+    }
+
+    svg.style.display = "block";
 
     if (count <= 0) {
       // Idle → nothing in the queue: hide entirely and clear the announced text.
@@ -85,22 +127,24 @@ export function renderWriteQueueStatus(
     }
 
     // Busy → accent-colored inline row so "saving" reads as an active state on any theme.
-    root.style.cssText = [
-      "display:inline-flex",
-      "align-items:center",
-      "gap:6px",
-      "font-size:11px",
-      "color:var(--communication-foreground, var(--text-primary-color, #323130))",
-    ].join(";");
-    // Grammatically-correct singular/plural.
-    const noun = count === 1 ? "change" : "changes";
-    label.textContent = `Saving ${count} ${noun}…`;
+    root.style.cssText = visibleRowStyle(
+      "var(--communication-foreground, var(--text-primary-color, #323130))",
+    );
+    label.textContent = `Saving ${count} ${pluralizeChanges(count)}…`;
   };
 
-  apply(options.count ?? 0);
+  pendingCount = options.count ?? 0;
+  apply();
 
   return {
     element: root,
-    setCount: (count: number) => apply(count),
+    setCount: (count: number) => {
+      pendingCount = count;
+      apply();
+    },
+    setFailedCount: (count: number) => {
+      failedCount = count;
+      apply();
+    },
   };
 }

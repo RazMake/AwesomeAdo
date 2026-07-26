@@ -36,6 +36,9 @@ function sourceKey(entry: LogEntry): string {
     : UNLABELED_SOURCE_KEY;
 }
 
+/** Presents a failure to the person using the options page (the page's `role="alert"` status line). */
+export type ReportError = (error: unknown) => void;
+
 /**
  * Drives the Diagnostics log view: renders the local log ordered by timestamp, offers a quick
  * "errors only" filter and a searchable per-source multi-select filter, exports the shown lines to a
@@ -43,7 +46,9 @@ function sourceKey(entry: LogEntry): string {
  *
  * Depends only on ILogStore (Dependency Inversion) so it reads/observes/clears the log without ever
  * touching chrome.* and is fully testable with a fake store. It never logs — rendering must not feed
- * the same store it observes, which would loop.
+ * the same store it observes, which would loop — so a failure here is reported to the user through
+ * the injected `reportError` instead. That matters most for Clear: a storage failure would otherwise
+ * leave every entry on screen with no explanation, which reads as the button being broken.
  */
 export class DiagnosticsController {
   private entries: LogEntry[] = [];
@@ -57,6 +62,7 @@ export class DiagnosticsController {
   constructor(
     private readonly store: ILogStore,
     private readonly elements: DiagnosticsElements,
+    private readonly reportError: ReportError,
   ) {
     this.sourceFilter = new MultiSelectFilter(elements.sourceFilter, {
       allLabel: "All sources",
@@ -104,7 +110,9 @@ export class DiagnosticsController {
   };
 
   private readonly handleClear = (): void => {
-    void this.store.clear().catch(() => undefined);
+    void this.store.clear().catch((error: unknown) => {
+      this.reportError(error);
+    });
   };
 
   private readonly handleExport = (): void => {

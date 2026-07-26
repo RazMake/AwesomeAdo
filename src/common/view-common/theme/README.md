@@ -15,6 +15,7 @@ one place re-themes _all_ controls at once, and adding a control needs no themin
 ```ts
 import {
   VIEW_THEME_VARIABLES,
+  resolveViewThemeColorScheme,
   resolveViewThemePalette,
   type ViewThemePalette,
 } from "common/view-common/theme/viewTheme";
@@ -25,6 +26,10 @@ import {
   tokens so controls inherit ADO's own theme.
 - `VIEW_THEME_VARIABLES` — the token names the palette covers, so a host can clear exactly the tokens
   it may have set when switching back to Follow ADO.
+- `resolveViewThemeColorScheme(theme)` — the `color-scheme` (`"dark"` / `"light"`) the theme paints
+  in, or `null` for `"auto"` (ask ADO's own page). Widgets the **browser** draws — a date input's
+  calendar popup and its indicator glyph, scrollbars — ignore CSS custom properties and read
+  `color-scheme`, so the host must declare it alongside the pinned palette.
 
 ## Intent
 

@@ -12,7 +12,7 @@ Isolating the browser APIs here
 means all other code (settings, content, options) can be unit-tested with injected fakes and remains
 browser-agnostic.
 
-This layer also owns small utilities shared by the higher layers: `observeSyncKeys`, the
+This layer also owns small utilities shared by the higher layers: `observeStorageKeys`, the
 race-safe protocol both stores use to observe synced storage; `onStorageAreaChange`, the single
 change-event filter both storage adapters reuse; and `requestFromTab`, the best-effort round-trip
 `ChromeAdoTabReader` uses to ask a tab's content script a question.
@@ -106,7 +106,7 @@ unsubscribe();
 
 ## Observing synced keys
 
-### `observeSyncKeys(storage, keys, project, listener)` — `observeSyncKeys.ts`
+### `observeStorageKeys(storage, keys, project, listener)` — `observeStorageKeys.ts`
 
 The shared way to watch one or more synced keys and receive a complete, normalized snapshot: once
 after the initial read, and again on every later change. It subscribes before reading so no change
@@ -115,7 +115,7 @@ live value). `project` maps the accumulated key→value record into the snapshot
 pure.
 
 ```typescript
-const { ready, unsubscribe } = observeSyncKeys(
+const { ready, unsubscribe } = observeStorageKeys(
   storage,
   ["settings.theme", "settings.defaultView"],
   (raw) =>

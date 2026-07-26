@@ -18,7 +18,7 @@ The extension is feature-complete for its current scope:
   `enhancedViewRegistry.ts`). The pure contracts (`ViewType`, `EnhancedView`) live in
   `src/common/view-common`. Options imports only `content/views/viewCatalog` (config) — a scoped,
   lint-enforced §6 exception (ADR-027) so it still never bundles view DOM. Shared per-view building
-  blocks live in `views/shared`: `renderViewScaffold` (placeholder shell) plus the reusable controls
+  blocks live in `common/view-common/control/**`: `renderViewScaffold` (placeholder shell) plus the reusable controls
   `DateLabel` (PST date + time-on-hover), `EtaBadge` (ETA date + countdown, colored by urgency), and
   `AssignedTo` (assignee label + inline directory-search picker). `sprint` is still a placeholder shell;
   `project-tracking` is now a **data-driven tree board**. Adding a view is a folder plus two
@@ -66,7 +66,7 @@ The extension is feature-complete for its current scope:
 
 ## Shared abstractions to build on
 
-- `observeSyncKeys` (`src/common/browser`) — the one place the synced-storage observe race protocol
+- `observeStorageKeys` (`src/common/browser`) — the one place the storage observe race protocol
   lives; both stores use it.
 - `AdoHost` (`src/common/navigation`) — the one source of truth for ADO host matching, mirrored by
   the manifest.

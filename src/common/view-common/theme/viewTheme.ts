@@ -85,3 +85,24 @@ export function resolveViewThemePalette(theme: Theme): ViewThemePalette | null {
       return null;
   }
 }
+
+/** The two color schemes a browser renders its own widgets in. */
+export type ViewColorScheme = "dark" | "light";
+
+/**
+ * The `color-scheme` a chosen theme paints in, or `null` for "auto" where Azure DevOps' own theme
+ * decides. Widgets the *browser* draws — a date input's calendar popup and its indicator glyph,
+ * scrollbars — ignore CSS custom properties and read `color-scheme` instead, so a view has to declare
+ * its scheme separately from the palette it pins or those widgets stay stubbornly light.
+ */
+export function resolveViewThemeColorScheme(theme: Theme): ViewColorScheme | null {
+  switch (theme) {
+    case "dark":
+      return "dark";
+    case "light":
+    case "blue":
+      return "light";
+    default:
+      return null;
+  }
+}

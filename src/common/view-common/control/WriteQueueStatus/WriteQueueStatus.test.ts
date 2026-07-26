@@ -111,3 +111,61 @@ describe("renderWriteQueueStatus - setCount transitions and edge cases", () => {
     expect(label?.innerHTML).toBe("Saving 5 changes…");
   });
 });
+
+describe("renderWriteQueueStatus - failed writes", () => {
+  it("reports a single failed write in the singular", () => {
+    const handle = renderWriteQueueStatus(document);
+    const label = handle.element.querySelector(".awesomeado-write-queue-status__label");
+
+    handle.setFailedCount(1);
+
+    expect(handle.element.style.display).not.toBe("none");
+    expect(label?.textContent).toBe("Couldn't save 1 change");
+  });
+
+  it("reports several failed writes in the plural and hides the spinner", () => {
+    const handle = renderWriteQueueStatus(document);
+    const label = handle.element.querySelector(".awesomeado-write-queue-status__label");
+
+    handle.setFailedCount(3);
+
+    expect(label?.textContent).toBe("Couldn't save 3 changes");
+    // The spinner would imply the write is still on its way, which is exactly what it is not.
+    expect(handle.element.querySelector("svg")?.style.display).toBe("none");
+  });
+
+  it("keeps reporting the failure while a later write is still in flight", () => {
+    const handle = renderWriteQueueStatus(document);
+    const label = handle.element.querySelector(".awesomeado-write-queue-status__label");
+
+    handle.setFailedCount(1);
+    handle.setCount(2);
+
+    // A lost edit is the more urgent thing to report, so it wins over "saving".
+    expect(label?.textContent).toBe("Couldn't save 1 change");
+  });
+
+  it("returns to the saving state when the failure count is cleared", () => {
+    const handle = renderWriteQueueStatus(document);
+    const label = handle.element.querySelector(".awesomeado-write-queue-status__label");
+
+    handle.setCount(1);
+    handle.setFailedCount(1);
+    handle.setFailedCount(0);
+
+    expect(label?.textContent).toBe("Saving 1 change…");
+    expect(handle.element.querySelector("svg")?.style.display).toBe("block");
+  });
+
+  it("treats negative and non-finite failure counts as no failure", () => {
+    const handle = renderWriteQueueStatus(document);
+    const label = handle.element.querySelector(".awesomeado-write-queue-status__label");
+
+    handle.setFailedCount(-2);
+    expect(handle.element.style.display).toBe("none");
+
+    handle.setFailedCount(Number.NaN);
+    expect(handle.element.style.display).toBe("none");
+    expect(label?.textContent).toBe("");
+  });
+});

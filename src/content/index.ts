@@ -69,10 +69,10 @@ import { QueryPageController } from "./query-page/QueryPageController";
 // (see BindingButton.show). The theme probe runs only when the options page asks for it; the
 // query-name probe runs only when the user starts a bind from the top-bar button.
 //
-// One logger factory backs every source in this context so all their lines share the same synced
-// diagnostics log; each collaborator is stamped with the component folder that owns the emitting
-// code — e.g. `content/query-page`, `common/settings`, or `content` for this composition-root wiring
-// (see logging/README.md).
+// One logger factory backs every source in this context so all their lines share the same
+// device-local diagnostics log (chrome.storage.local, never synced — see logging/README.md); each
+// collaborator is stamped with the component folder that owns the emitting code — e.g.
+// `content/query-page`, `common/settings`, or `content` for this composition-root wiring.
 const loggers = createLoggerFactory();
 const logger = loggers.forSource("content");
 

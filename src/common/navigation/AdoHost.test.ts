@@ -37,14 +37,25 @@ describe("ADO_HOST_MATCH_PATTERNS", () => {
     expect(ADO_HOST_MATCH_PATTERNS).toContain(`https://*${VISUAL_STUDIO_SUFFIX}/*`);
   });
 
-  it("stays in sync with the manifest content_scripts matches", () => {
-    // The manifest cannot import TypeScript, so this pins the two hand-maintained copies together:
-    // if they diverge, the tab readers would scan a different origin set than where the content
-    // script is injected, and probes would silently return null for tabs that do have a receiver.
+  it("stays in sync with every host-glob site in the manifest", () => {
+    // The manifest cannot import TypeScript, so this pins the hand-maintained copies together.
+    // All three sites matter, for different reasons:
+    //  - content_scripts.matches: if it diverges, the tab readers scan a different origin set than
+    //    where the content script is injected, and probes silently return null for tabs that do
+    //    have a receiver.
+    //  - host_permissions: this is the key that actually bounds chrome.scripting.executeScript, so
+    //    widening it (e.g. to <all_urls>) would silently widen where MAIN-world code can be
+    //    injected. Nothing else in the build would notice.
+    //  - web_accessible_resources.matches: it decides which origins may load extension resources.
     const manifestPath = resolve(process.cwd(), "src/manifest.json");
     const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
+      host_permissions: string[];
       content_scripts: { matches: string[] }[];
+      web_accessible_resources: { matches: string[] }[];
     };
-    expect(manifest.content_scripts[0]?.matches).toEqual([...ADO_HOST_MATCH_PATTERNS]);
+    const expected = [...ADO_HOST_MATCH_PATTERNS];
+    expect(manifest.content_scripts[0]?.matches).toEqual(expected);
+    expect(manifest.host_permissions).toEqual(expected);
+    expect(manifest.web_accessible_resources[0]?.matches).toEqual(expected);
   });
 });

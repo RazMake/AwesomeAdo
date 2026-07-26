@@ -1,8 +1,9 @@
 import type { QueryFolderCrumb, WorkItemTreeResult } from "./IWorkItemTreeLoader";
 import type { TrackedUser, TrackedWorkItem } from "./TrackedWorkItem";
+import { ADO_API_VERSION } from "./adoApi";
 import { resolveAdoProjectContext } from "./fetchAdoMetadata";
 
-const API_VERSION = "7.1";
+const API_VERSION = ADO_API_VERSION;
 // Cap tree depth to prevent runaway recursion if the ADO data contains cycles or deeply nested chains.
 const MAX_TREE_DEPTH = 50;
 
@@ -412,6 +413,16 @@ function sprintLeaf(iterationPath: string | null): string | null {
   return leaf && leaf.length > 0 ? leaf : null;
 }
 
+/** The HTML entities `htmlToText` decodes, mapped to the character each one stands for. */
+const HTML_ENTITIES: Readonly<Record<string, string>> = {
+  "&amp;": "&",
+  "&lt;": "<",
+  "&gt;": ">",
+  "&quot;": '"',
+  "&#39;": "'",
+  "&nbsp;": " ",
+};
+
 /**
  * Strip HTML tags and decode a few common entities (&amp;&lt;&gt;&quot;&#39;&nbsp;) to plain text.
  * Returns "" when empty. Pure string ops — does NOT use DOM/DOMParser; this module must stay DOM-free.
@@ -424,12 +435,13 @@ function htmlToText(html: string): string {
   // entity-encoded (e.g. `&lt;p&gt;`), so decoding first turns those back into real tags that the
   // strip pass then removes — otherwise the encoded tags would survive as visible text. A literal
   // tag is unaffected by the decode pass and still gets stripped.
-  const decoded = html
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&nbsp;/g, " ");
+  //
+  // The decode is ONE pass over the string, not a chain of replaces: chained replaces let an earlier
+  // substitution manufacture an entity a later one then decodes, so `&amp;lt;` — which encodes the
+  // literal text `&lt;` — would wrongly come out as `<`.
+  const decoded = html.replace(
+    /&(?:amp|lt|gt|quot|#39|nbsp);/g,
+    (entity) => HTML_ENTITIES[entity] ?? entity,
+  );
   return decoded.replace(/<[^>]*>/g, "");
 }

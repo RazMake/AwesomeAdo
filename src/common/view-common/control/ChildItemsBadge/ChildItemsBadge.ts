@@ -238,6 +238,8 @@ function renderOpenAffordance(doc: Document, child: ChildItemDescriptor): HTMLEl
       const icon = doc.createElement("img");
       icon.className = "awesomeado-child-items__icon";
       icon.src = child.iconUrl;
+      // The icon host is whatever the tenant configured, so do not tell it which page is showing.
+      icon.referrerPolicy = "no-referrer";
       icon.alt = "";
       icon.width = 14;
       icon.height = 14;

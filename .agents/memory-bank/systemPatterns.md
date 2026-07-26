@@ -30,15 +30,32 @@ folder holds the options-page project metadata (`AdoMetadata`, `buildAdoMetadata
 
 ### `src/common/browser`
 
-The **only** place allowed to touch `chrome.*`:
+The **only** place allowed to touch `chrome.*`, plus the browser-adjacent plumbing that pairs with
+it. Four groups live here:
 
-- `ChromeSyncStorage` — the only user of `chrome.storage.sync` (`IBrowserSyncStorage`).
-- `ChromeAdoTabReader` — the only user of `chrome.tabs` (`IAdoTabReader`), used by the options page
-  to read the active ADO tab's org/project/theme.
-- `observeSyncKeys` — the shared, race-safe "subscribe before reading, revision-guard the initial
-  read" protocol both stores use to observe synced storage. Returns `StorageObservation`.
+1. **Chrome adapters** — `ChromeSyncStorage` / `ChromeLocalStorage` (the only users of
+   `chrome.storage`), `ChromeAdoTabReader` / `ChromeAdoMetadataReader` (the only users of
+   `chrome.tabs`), `observeStorageKeys`, `onStorageAreaChange`, `requestFromTab`, `pickAdoQueryTab`.
+2. **Message contracts** — `AdoTreeRequest`, `AdoIterationsRequest`, `FeatureCrewRequest`,
+   `WorkItemFieldRequest`: the typed content↔background shapes plus their guards. Pure data.
+3. **MAIN-world fetchers** — `fetchAdoTreeInPage`, `fetchAdoIterationsInPage`, `fetchAdoRawInPage`,
+   `findFeatureCrewInPage`, `applyFeatureCrewInPage`, `updateWorkItemFieldInPage`. Each is
+   serialized by `chrome.scripting.executeScript` and must therefore stay import-free.
+4. **Messaging adapters** implementing `common/ado` contracts — `MessagingWorkItemTreeLoader`,
+   `MessagingTeamIterationsLoader`, `MessagingFeatureCrewWriter`, `MessagingWorkItemFieldWriter`.
+
+Key members:
+
+- `observeStorageKeys` — the shared, race-safe "subscribe before reading, never let the read clobber
+  a live change" protocol. Typed against `IBrowserKeyValueStorage`, so the settings store, the
+  bindings store and the diagnostics log store all delegate to it (ADR-036). Returns
+  `StorageObservation`.
 - `requestFromTab` — the shared best-effort tab round-trip (missing receiver → a fallback value)
   both tab readers use.
+
+Known cohesion debt: groups 2 and 3 contain no `chrome.*` calls at all — they are message shapes and
+ADO REST bodies. Moving them to `common/messaging` and `common/ado/in-page` is tracked as follow-up
+work; it is pure file movement and was deliberately not bundled with correctness fixes.
 
 ### `src/common/settings`
 
@@ -129,8 +146,11 @@ extension in a real browser.
 
 ## Single-Source-of-Truth Rules
 
-- **Synced-storage observation** lives once in `observeSyncKeys`. Both stores delegate to it, so the
-  subtle revision-guard race logic cannot drift between them.
+- **Synced-storage observation** lives once in `observeStorageKeys`. The settings store, the bindings
+  store and the diagnostics log store all delegate to it, so the subtle race logic cannot drift
+  between them (ADR-036).
+- **The ADO REST API version** lives once in `common/ado/adoApi.ts` (`ADO_API_VERSION`); every URL
+  builder derives from it, so a read and the write beside it cannot target different API versions.
 - **"Which URLs are ADO"** lives once in `AdoHost` (predicate + match patterns). The route parser,
   the identity parser, and both tab readers all derive from it; the manifest globs are pinned to it
   by `AdoHost.test.ts`.

@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { ILogger } from "../../logging/ILogger";
 import type { WorkItemFieldWriteRequest, WorkItemFieldWriteResult } from "../IWorkItemFieldWriter";
 
-import { FieldWriteQueue } from "./FieldWriteQueue";
+import { FieldWriteQueue, type QueuedFieldWrite } from "./FieldWriteQueue";
 
 /** A no-op logger that records calls so tests can assert on what was logged. */
 function createRecordingLogger(): {
@@ -23,7 +23,21 @@ function createRecordingLogger(): {
   };
 }
 
+/** A queued write whose rev never moves — the common case where only one edit is in flight. */
 const req = (
+  id: number,
+  rev: number,
+  value: string | null,
+  field = "System.State",
+): QueuedFieldWrite => ({
+  id,
+  currentRev: () => rev,
+  field,
+  value,
+});
+
+/** The shape the queue is expected to hand the writer once it has bound the rev. */
+const sent = (
   id: number,
   rev: number,
   value: string | null,
@@ -44,9 +58,47 @@ describe("FieldWriteQueue - write behavior", () => {
     const result = await queue.enqueue(req(1, 4, "Active"));
 
     expect(result).toEqual({ ok: true, rev: 5 });
-    expect(writeField).toHaveBeenCalledWith(req(1, 4, "Active"));
+    expect(writeField).toHaveBeenCalledWith(sent(1, 4, "Active"));
   });
 
+  it("binds each write's rev when it runs, so a second edit to one item sees the first's new rev", async () => {
+    const { logger } = createRecordingLogger();
+    // Mirrors production: the tracked item owns its rev and the caller advances it on success.
+    const item = { id: 1, rev: 1 };
+    const writeField = vi.fn(
+      async (request: WorkItemFieldWriteRequest): Promise<WorkItemFieldWriteResult> =>
+        request.rev === item.rev
+          ? { ok: true, rev: request.rev + 1 }
+          : { ok: false, error: "stale rev" },
+    );
+    const queue = new FieldWriteQueue(writeField, logger);
+    const commit = (result: WorkItemFieldWriteResult): void => {
+      if (result.ok && result.rev !== undefined) {
+        item.rev = result.rev;
+      }
+    };
+    const edit = (value: string): Promise<WorkItemFieldWriteResult> => {
+      const run = queue.enqueue({
+        id: item.id,
+        currentRev: () => item.rev,
+        field: "System.State",
+        value,
+      });
+      void run.then(commit);
+      return run;
+    };
+
+    // Both edits are queued before either write runs — the double-edit window.
+    const first = edit("Active");
+    const second = edit("Closed");
+
+    expect(await first).toEqual({ ok: true, rev: 2 });
+    expect(await second).toEqual({ ok: true, rev: 3 });
+    expect(writeField.mock.calls.map(([request]) => request.rev)).toEqual([1, 2]);
+  });
+});
+
+describe("FieldWriteQueue - ordering", () => {
   it("runs writes strictly sequentially, never overlapping", async () => {
     const { logger } = createRecordingLogger();
     let active = 0;
@@ -101,7 +153,7 @@ describe("FieldWriteQueue - write behavior", () => {
     await queue.enqueue(req(4, 2, null, "Microsoft.VSTS.Scheduling.TargetDate"));
 
     expect(writeField).toHaveBeenCalledWith(
-      req(4, 2, null, "Microsoft.VSTS.Scheduling.TargetDate"),
+      sent(4, 2, null, "Microsoft.VSTS.Scheduling.TargetDate"),
     );
   });
 
@@ -228,5 +280,91 @@ describe("FieldWriteQueue - listener resilience", () => {
     expect(result).toEqual({ ok: true, rev: 9 });
     expect(seen).toEqual([0, 1, 0]);
     expect(errors.some((entry) => entry.message.includes("listener"))).toBe(true);
+  });
+});
+
+describe("FieldWriteQueue - failed count", () => {
+  it("notifies a new subscriber immediately with the current failed count", () => {
+    const { logger } = createRecordingLogger();
+    const writeField = vi.fn(async (): Promise<WorkItemFieldWriteResult> => ({ ok: true, rev: 2 }));
+    const queue = new FieldWriteQueue(writeField, logger);
+
+    const seen: number[] = [];
+    queue.onWriteFailed((count) => seen.push(count));
+
+    expect(seen).toEqual([0]);
+    expect(queue.failedCount).toBe(0);
+  });
+
+  it("reports a rejected write so a lost edit is distinguishable from a slow one", async () => {
+    const { logger } = createRecordingLogger();
+    const writeField = vi.fn(async (): Promise<WorkItemFieldWriteResult> => ({
+      ok: false,
+      error: "stale rev",
+    }));
+    const queue = new FieldWriteQueue(writeField, logger);
+
+    const seen: number[] = [];
+    queue.onWriteFailed((count) => seen.push(count));
+
+    await queue.enqueue(req(1, 1, "Active"));
+    await queue.enqueue(req(1, 1, "Closed"));
+
+    expect(seen).toEqual([0, 1, 2]);
+    expect(queue.failedCount).toBe(2);
+  });
+
+  it("reports a thrown write and leaves a successful one uncounted", async () => {
+    const { logger } = createRecordingLogger();
+    const writeField = vi
+      .fn<(request: WorkItemFieldWriteRequest) => Promise<WorkItemFieldWriteResult>>()
+      .mockRejectedValueOnce(new Error("boom"))
+      .mockResolvedValueOnce({ ok: true, rev: 4 });
+    const queue = new FieldWriteQueue(writeField, logger);
+
+    const seen: number[] = [];
+    queue.onWriteFailed((count) => seen.push(count));
+
+    await queue.enqueue(req(1, 1, "Active"));
+    await queue.enqueue(req(1, 3, "Closed"));
+
+    expect(seen).toEqual([0, 1]);
+  });
+
+  it("stops notifying a failure listener after it unsubscribes", async () => {
+    const { logger } = createRecordingLogger();
+    const writeField = vi.fn(async (): Promise<WorkItemFieldWriteResult> => ({
+      ok: false,
+      error: "nope",
+    }));
+    const queue = new FieldWriteQueue(writeField, logger);
+
+    const seen: number[] = [];
+    const unsubscribe = queue.onWriteFailed((count) => seen.push(count));
+    unsubscribe();
+
+    await queue.enqueue(req(1, 1, "Active"));
+
+    expect(seen).toEqual([0]);
+  });
+
+  it("isolates a throwing failure listener", async () => {
+    const { logger, errors } = createRecordingLogger();
+    const writeField = vi.fn(async (): Promise<WorkItemFieldWriteResult> => ({
+      ok: false,
+      error: "nope",
+    }));
+    const queue = new FieldWriteQueue(writeField, logger);
+
+    const seen: number[] = [];
+    queue.onWriteFailed(() => {
+      throw new Error("listener boom");
+    });
+    queue.onWriteFailed((count) => seen.push(count));
+
+    await queue.enqueue(req(1, 1, "Active"));
+
+    expect(seen).toEqual([0, 1]);
+    expect(errors.some((entry) => entry.message.includes("Failed-count listener"))).toBe(true);
   });
 });

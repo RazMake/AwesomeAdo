@@ -53,6 +53,13 @@ here so every agent, teammate, and clone sees them.
   `settings.theme` via `surface.applyTheme(theme)` EVERY settings change (a theme flip re-themes the
   open view WITHOUT rebuild; `applyTheme` does not touch signature/DOM). Test surface spies MUST add
   `applyTheme: vi.fn()`.
+- CSS custom properties DO NOT reach browser-drawn widgets (native `<input type=date>` calendar popup
+  - its indicator glyph, scrollbars): those read `color-scheme`. `applyThemeToHost()` therefore ALSO
+    sets `color-scheme` on the host (inherited by the whole subtree):
+    `resolveViewThemeColorScheme(theme) ?? detectAdoTheme(doc) ?? "light"` (dark→dark, light/blue→light,
+    auto→ask ADO). Without it a dark view opened a stark WHITE calendar. Corollary: never style a
+    control from a token the view does NOT pin (`--input-background` painted the ETA date field white
+    under a pinned dark theme over a light ADO page) — use `transparent` over the popup's themed surface.
 - Scope decision: `BindingMenu`/`BindingButton` (ADO top bar) intentionally still follow ADO (they
   live in ADO's header context). Only the enhanced-view overlay + its controls take the extension theme.
 
@@ -198,7 +205,7 @@ settings.defaultView==="enhanced")`; unbound → not enhanced. `content/index.ts
 
 ## Single-source-of-truth abstractions (post deep-review refactor)
 
-- `observeSyncKeys` (`src/common/browser/observeSyncKeys.ts`) = THE synced-storage observe race
+- `observeStorageKeys` (`src/common/browser/observeStorageKeys.ts`) = THE storage observe race
   protocol (subscribe-before-read, revision-guarded initial read). BOTH `BrowserSyncSettingsStore` and
   `BrowserSyncQueryBindingStore` delegate `observe()` to it. Do NOT reinline the loop in a store.
 - `AdoHost` (`src/common/navigation/AdoHost.ts`) = THE ADO host decision: `isSupportedAdoHost`
@@ -384,7 +391,7 @@ iterationPath.includes("\\")`. sprintName = leaf of iterationPath (`sprintLeaf` 
 ## Memory bank / changelog state (deep-review)
 
 - Memory bank was FLATTENED (no wave/history narrative) — treat current state as the repo baseline.
-  `decisions.md` ADR-017..020 cover observeSyncKeys, AdoHost single-source, store-owns-RMW, and the
+  `decisions.md` ADR-017..020 cover observeStorageKeys, AdoHost single-source, store-owns-RMW, and the
   host-wide-injection+route-gated performance posture. `systemPatterns.md` references ADR-020.
   ADR-021..023 now cover source-aware logging, decisions-log-their-signals, and the Diagnostics
   source filter + View Log deep link. ADR-025 records the component→source rename + dropdown filter.
@@ -463,7 +470,7 @@ sectionTabId(section))`. Section contract is a typed OptionsSection (isOptionsSe
 - GUARDRAIL (why the exception is safe): a `<view>ViewType.ts` must NEVER import its `<view>View.ts`, so
   viewCatalog pulls ZERO renderer DOM into the options bundle (tree-shaking keeps options clean).
   The renderer (enhancedViewRegistry + *View.ts) is imported ONLY by content.
-- Shared per-view building blocks live in `src/content/views/shared` (renderViewScaffold = placeholder
+- Shared per-view building blocks live in `src/common/view-common/control/**` (ViewScaffold = placeholder
   title+message shell, self-contained inline styles, textContent so XSS-safe). Future cross-view
   components (context menu, sprint selector, queued writes back to ADO) go here too.
 - FULL-WINDOW COVERAGE is solved ONCE in `EnhancedViewSurface` (NOT per view): the host div is a FIXED

@@ -2,8 +2,10 @@ import type { Theme } from "../../common/settings/ExtensionSettings";
 import type { EnhancedViewServices } from "../../common/view-common/EnhancedView";
 import {
   VIEW_THEME_VARIABLES,
+  resolveViewThemeColorScheme,
   resolveViewThemePalette,
 } from "../../common/view-common/theme/viewTheme";
+import { detectAdoTheme } from "../ado-probe/AdoThemeProbe";
 import { getEnhancedView } from "../views/enhancedViewRegistry";
 
 const STYLE_ID = "awesomeado-enhanced-view-style";
@@ -136,6 +138,13 @@ export class EnhancedViewSurface {
         this.host.style.removeProperty(name);
       }
     }
+    // Widgets the browser draws itself — the ETA picker's calendar popup and its indicator glyph,
+    // scrollbars — read `color-scheme`, not our tokens, so a dark view opened a stark white calendar
+    // with a barely-visible button. Declaring the scheme on the host fixes all of them at once
+    // because color-scheme inherits. For "auto" we ask ADO's own page which scheme it is painting,
+    // and fall back to light when that is unknowable (still-loading or un-themed page).
+    const scheme = resolveViewThemeColorScheme(this.theme) ?? detectAdoTheme(this.doc) ?? "light";
+    this.host.style.setProperty("color-scheme", scheme);
   }
 
   private restore(): void {

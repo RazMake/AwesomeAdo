@@ -88,6 +88,17 @@ export interface EnhancedViewContext {
   services?: EnhancedViewServices;
 }
 
+/**
+ * An `EnhancedViewContext` whose services are known to be present.
+ *
+ * A data-driven view checks `services` once at its entry point and degrades there; every helper
+ * below that point takes this type instead of re-checking. Without it the checks multiply into
+ * branches that cannot be reached in production (the content composition root always supplies
+ * services), and the first inconvenient one gets bypassed with a non-null assertion — a
+ * contradiction the type system can otherwise neither see nor prevent.
+ */
+export type DataDrivenViewContext = EnhancedViewContext & { services: EnhancedViewServices };
+
 /** A renderable enhanced view: the surface AwesomeADO paints in place of ADO's own query page. */
 export interface EnhancedView {
   /** Matches the owning `ViewType.id`, so the registry resolves a binding's view to its renderer. */

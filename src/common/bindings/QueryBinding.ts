@@ -56,7 +56,10 @@ export function normalizeBindings(raw: unknown): QueryBindings {
   if (typeof raw !== "object" || raw === null) {
     return {};
   }
-  const result: QueryBindings = {};
+  // Built prototype-less because the keys are query ids read straight from storage or from an
+  // imported config file: assigning a `__proto__` key onto a normal object literal invokes the
+  // Object.prototype setter instead of adding an entry, which would silently drop that binding.
+  const result = Object.create(null) as QueryBindings;
   for (const [queryId, value] of Object.entries(raw)) {
     const binding = normalizeBinding(value);
     if (binding !== null) {

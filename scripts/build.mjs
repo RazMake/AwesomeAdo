@@ -30,7 +30,7 @@ const copyPlugin = {
 const options = {
   entryPoints: {
     "background/service-worker": "src/background/index.ts",
-    "content/blank-query-page": "src/content/index.ts",
+    "content/awesomeado-content": "src/content/index.ts",
     "options/options": "src/options/index.ts",
   },
   outdir,

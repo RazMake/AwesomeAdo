@@ -19,7 +19,6 @@ import { projectTrackingView } from "./ProjectTrackingView";
  * Creates a fake EnhancedViewServices for testing with controlled return values.
  */
 function createFakeServices(overrides?: Partial<EnhancedViewServices>): EnhancedViewServices {
-  const logCalls: Array<{ level: string; message: string }> = [];
   return {
     loadTree: async () => ({
       isTreeQuery: true,
@@ -84,13 +83,11 @@ function createFakeServices(overrides?: Partial<EnhancedViewServices>): Enhanced
       currentName: "Sprint 1",
     }),
     now: () => new Date("2026-07-24T12:00:00Z"),
+    // A no-op logger by default: nothing here could read a recorded call, and a recorder no test can
+    // reach is dead state. Tests that care about logging override this with their own.
     logger: {
-      info: (message: string) => {
-        logCalls.push({ level: "info", message });
-      },
-      error: (message: string, err?: unknown) => {
-        logCalls.push({ level: "error", message: String(err) });
-      },
+      info: () => undefined,
+      error: () => undefined,
     },
     writeField: async () => ({ ok: true, rev: 1 }),
     ...overrides,
@@ -983,14 +980,10 @@ describe("ProjectTrackingView — status badge", () => {
     firstRow.click();
     await Promise.resolve();
 
-    expect(writeFieldCalls.length).toBeGreaterThan(0);
-    const firstCall = writeFieldCalls[0];
-    // The first badge is the Feature (id 2, rev 2, ADO State "Active"); its only alternative Status
-    // is "Done", whose primary ADO State is "Closed".
-    expect(firstCall?.id).toBe(2);
-    expect(firstCall?.rev).toBe(2);
-    expect(firstCall?.field).toBe("System.State");
-    expect(firstCall?.value).toBe("Closed");
+    // Exact shape AND exact count: asserting only `length > 0` would pass a regression that
+    // enqueues the same edit twice. The first badge is the Feature (id 2, rev 2, ADO State
+    // "Active"); its only alternative Status is "Done", whose primary ADO State is "Closed".
+    expect(writeFieldCalls).toEqual([{ id: 2, rev: 2, field: "System.State", value: "Closed" }]);
   });
 });
 
@@ -1594,6 +1587,24 @@ describe("ProjectTrackingView — feature crew reconcile", () => {
   });
 });
 
+/**
+ * Drives an inline assignee pick: open the TechLead picker, search, and choose the first result.
+ * Shared so the re-reconcile tests assert on the outcome rather than on the click sequence.
+ */
+async function pickFirstSearchedAssignee(root: HTMLElement): Promise<void> {
+  const nameButton = root.querySelector(".awesomeado-assigned__name") as HTMLButtonElement;
+  nameButton.click();
+  const searchInput = root.querySelector(".awesomeado-assigned__search") as HTMLInputElement;
+  searchInput.value = "dave";
+  searchInput.dispatchEvent(new Event("input"));
+  await Promise.resolve();
+  await Promise.resolve();
+
+  const option = root.querySelector(".awesomeado-assigned__result button") as HTMLButtonElement;
+  option.click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 describe("ProjectTrackingView — feature crew re-reconcile", () => {
   it("should re-reconcile with a new person after an inline assignee change", async () => {
     const doc = document;
@@ -1632,21 +1643,60 @@ describe("ProjectTrackingView — feature crew re-reconcile", () => {
 
     expect(requests).toHaveLength(1);
 
-    // Drive an inline assignee pick by opening the TechLead picker and choosing the searched user.
-    const nameButton = root.querySelector(".awesomeado-assigned__name") as HTMLButtonElement;
-    nameButton.click();
-    const searchInput = root.querySelector(".awesomeado-assigned__search") as HTMLInputElement;
-    searchInput.value = "dave";
-    searchInput.dispatchEvent(new Event("input"));
-    await Promise.resolve();
-    await Promise.resolve();
-
-    const option = root.querySelector(".awesomeado-assigned__result button") as HTMLButtonElement;
-    option.click();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await pickFirstSearchedAssignee(root);
 
     expect(requests).toHaveLength(2);
     expect(requests[1]?.assignees.map((a) => a.alias)).toContain("dave");
+  });
+
+  it("keeps reconciling after one reconcile rejects, and releases the pending indicator", async () => {
+    const doc = document;
+
+    const epic = createFixtureTree();
+    const requests: FeatureCrewReconcileRequest[] = [];
+    // The load-time seed reconcile rejects. A rejection assigned into the serial chain would poison
+    // every later `.then`, so no tag or assignee would ever save again and the "Saving…" indicator
+    // would climb forever because its `finally` would never run.
+    const services = createFakeServices({
+      loadTree: async () => ({
+        isTreeQuery: true,
+        roots: [epic],
+        error: null,
+      }),
+      featureCrew: {
+        reconcile: async (request) => {
+          requests.push(request);
+          if (requests.length === 1) {
+            throw new Error("reconcile boom");
+          }
+          return { ok: true, changed: false };
+        },
+      },
+      userDirectory: {
+        search: async () => [
+          { displayName: "Dave New", uniqueName: "dave@example.com", imageUrl: null },
+        ],
+        resolve: async () => null,
+      },
+    });
+
+    const root = projectTrackingView.render({
+      doc,
+      queryId: "q1",
+      properties: {},
+      services,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(requests).toHaveLength(1);
+
+    await pickFirstSearchedAssignee(root);
+
+    // The chain survived the rejection: the later reconcile ran.
+    expect(requests).toHaveLength(2);
+    // …and the indicator went back to idle rather than showing a save that will never complete.
+    const status = root.querySelector(".awesomeado-write-queue-status") as HTMLElement;
+    expect(status.style.display).toBe("none");
   });
 });
 

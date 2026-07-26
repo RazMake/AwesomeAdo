@@ -116,3 +116,97 @@ describe("createPopupHost - dismissal and lifecycle", () => {
     expect(host.isOpen).toBe(false);
   });
 });
+
+describe("createPopupHost - keeping the popup on screen", () => {
+  /** Open a host whose popup reports a fixed box, so the repositioning maths is deterministic. */
+  const openWithBox = (
+    box: { left: number; top: number; width: number; height: number },
+    parent: HTMLElement = document.body,
+  ) => {
+    const trigger = document.createElement("button");
+    const mountInto = document.createElement("div");
+    mountInto.append(trigger);
+    parent.append(mountInto);
+    createPopupHost({
+      doc: document,
+      trigger,
+      mountInto,
+      buildPopup: () => {
+        const element = document.createElement("div");
+        element.className = "popup";
+        element.getBoundingClientRect = () =>
+          ({
+            ...box,
+            right: box.left + box.width,
+            bottom: box.top + box.height,
+          }) as DOMRect;
+        return element;
+      },
+    });
+    trigger.click();
+    return mountInto.querySelector<HTMLElement>(".popup")!;
+  };
+
+  it("shifts a popup that spills past the right edge back into view", () => {
+    const popup = openWithBox({ left: window.innerWidth - 100, top: 100, width: 200, height: 120 });
+
+    // Spilled 100px past the edge plus the 8px margin.
+    expect(popup.style.left).toBe("-108px");
+  });
+
+  it("leaves a popup that already fits horizontally alone", () => {
+    const popup = openWithBox({ left: 10, top: 100, width: 200, height: 120 });
+
+    expect(popup.style.left).toBe("");
+  });
+
+  it("never shifts a popup past the left edge to fix the right one", () => {
+    // Wider than the window: any shift would only trade a hidden right side for a hidden left side.
+    const popup = openWithBox({ left: 0, top: 100, width: window.innerWidth + 200, height: 120 });
+
+    expect(popup.style.left).toBe("");
+  });
+
+  it("flips a popup above its trigger when it spills below and fits above", () => {
+    const popup = openWithBox({ left: 10, top: window.innerHeight - 20, width: 200, height: 120 });
+
+    expect(popup.style.top).toBe("auto");
+    expect(popup.style.bottom).toBe("100%");
+    expect(popup.style.marginBottom).toBe("4px");
+  });
+
+  it("keeps a popup below its trigger when it is too tall to fit above", () => {
+    const popup = openWithBox({ left: 10, top: 40, width: 200, height: window.innerHeight });
+
+    expect(popup.style.bottom).toBe("");
+  });
+
+  it("leaves an unmeasurable popup untouched", () => {
+    // jsdom reports a zero box for a plain element; without a measurement there is nothing to fix.
+    const { trigger, mountInto } = setup();
+
+    trigger.click();
+
+    const popup = mountInto.querySelector<HTMLElement>(".popup")!;
+    expect(popup.style.left).toBe("");
+    expect(popup.style.bottom).toBe("");
+  });
+
+  it("clamps to a scrolling ancestor's client box, not the window", () => {
+    // A scroll container's scrollbars shrink what is actually visible, so a popup can sit inside the
+    // window (1024px wide here) yet still be hidden under the container's scrollbar. The overflow
+    // longhands are set individually because jsdom's computed style does not expand the shorthand.
+    const scroller = document.createElement("div");
+    scroller.style.overflowX = "auto";
+    scroller.style.overflowY = "auto";
+    scroller.getBoundingClientRect = () => ({ left: 0, top: 0 }) as DOMRect;
+    Object.defineProperty(scroller, "clientWidth", { value: 300 });
+    Object.defineProperty(scroller, "clientHeight", { value: 300 });
+    document.body.append(scroller);
+
+    const popup = openWithBox({ left: 200, top: 10, width: 150, height: 100 }, scroller);
+
+    // Spilled 50px past the container's 300px client edge plus the 8px margin.
+    expect(popup.style.left).toBe("-58px");
+  });
+});

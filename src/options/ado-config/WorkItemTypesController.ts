@@ -1,5 +1,9 @@
 import type { AdoWorkItemType } from "../../common/ado/AdoMetadata";
-import { type WorkItemColumn, type WorkItemType } from "../../common/settings/ExtensionSettings";
+import {
+  DEFAULT_BOARD_COLUMNS,
+  type WorkItemColumn,
+  type WorkItemType,
+} from "../../common/settings/ExtensionSettings";
 import type { ISettingsStore } from "../../common/settings/ISettingsStore";
 
 import { AutocompleteInput } from "./AutocompleteInput";
@@ -554,6 +558,8 @@ export class WorkItemTypesController {
     icon.height = 18;
     icon.alt = "";
     icon.hidden = true;
+    // The icon host is whatever the tenant configured, so do not tell it which page is showing.
+    icon.referrerPolicy = "no-referrer";
     // An ADO icon URL may not load from the extension origin; degrade to the colored name alone.
     icon.addEventListener("error", () => {
       icon.hidden = true;
@@ -704,6 +710,8 @@ export class WorkItemTypesController {
     icon.width = 16;
     icon.height = 16;
     icon.alt = "";
+    // The icon host is whatever the tenant configured, so do not tell it which page is showing.
+    icon.referrerPolicy = "no-referrer";
     if (type?.icon) {
       icon.src = type.icon;
       icon.addEventListener("error", () => icon.remove());
@@ -836,7 +844,13 @@ export class WorkItemTypesController {
   }
 
   private collectColumns(): string[] {
-    return this.columns.map((column) => column.name).filter((name) => name.length > 0);
+    // Positional contract: `normalizeBoardColumns` maps stored titles to positions BY INDEX, so this
+    // must never change length. Dropping an entry would shift every later column's title one place
+    // left and silently rewrite the user's whole board, so a blank falls back to its position's
+    // default instead of being filtered out.
+    return this.columns.map(
+      (column, index) => column.name.trim() || DEFAULT_BOARD_COLUMNS[index] || "",
+    );
   }
 
   private collect(): WorkItemType[] {
@@ -943,6 +957,8 @@ export class WorkItemTypesController {
       icon.width = 18;
       icon.height = 18;
       icon.alt = "";
+      // The icon host is whatever the tenant configured, so do not tell it which page is showing.
+      icon.referrerPolicy = "no-referrer";
       icon.src = type.icon;
       // An ADO icon URL may not load from the extension origin; degrade to the colored name alone.
       icon.addEventListener("error", () => icon.remove());

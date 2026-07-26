@@ -278,4 +278,31 @@ describe("EnhancedViewSurface - theming", () => {
     await flushMutations();
     expect(hostEl()?.style.getPropertyValue("--text-primary-color")).toBe("#e6e6e6");
   });
+
+  it("declares the theme's color-scheme so browser-drawn widgets follow it", () => {
+    surface.applyTheme("dark");
+    surface.apply(sprint);
+    expect(hostEl()?.style.getPropertyValue("color-scheme")).toBe("dark");
+
+    surface.applyTheme("blue");
+    expect(hostEl()?.style.getPropertyValue("color-scheme")).toBe("light");
+  });
+
+  it("takes the color-scheme from ADO's own page under 'auto'", () => {
+    document.body.style.setProperty("--background-color", "rgb(32, 32, 32)");
+    try {
+      surface.applyTheme("auto");
+      surface.apply(sprint);
+      expect(hostEl()?.style.getPropertyValue("color-scheme")).toBe("dark");
+    } finally {
+      document.body.style.removeProperty("--background-color");
+    }
+  });
+
+  it("falls back to a light color-scheme when ADO's theme is unknowable", () => {
+    surface.applyTheme("auto");
+    surface.apply(sprint);
+
+    expect(hostEl()?.style.getPropertyValue("color-scheme")).toBe("light");
+  });
 });

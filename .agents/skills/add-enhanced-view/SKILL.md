@@ -108,5 +108,5 @@ parity test to be covered.
 
 - View API + "adding a view" summary: `src/content/views/README.md`
 - View contracts: `src/common/view-common/README.md`
-- Shared shell: `src/content/views/shared/README.md`
+- Shared controls: `src/common/view-common/control/`
 - Reference views: `src/content/views/sprint`, `src/content/views/project-tracking`

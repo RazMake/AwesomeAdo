@@ -57,7 +57,11 @@ class FakeSettingsStore implements ISettingsStore {
   }
 
   read(): Promise<ExtensionSettings> {
-    return Promise.resolve({ ...DEFAULT_SETTINGS, theme: "auto", defaultView: "enhanced" });
+    return Promise.resolve({
+      ...structuredClone(DEFAULT_SETTINGS),
+      theme: "auto",
+      defaultView: "enhanced",
+    });
   }
 
   write(settings: Partial<ExtensionSettings>): Promise<void> {

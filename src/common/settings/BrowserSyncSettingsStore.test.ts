@@ -331,22 +331,48 @@ describe("BrowserSyncSettingsStore - observe", () => {
       expect(fake.getListenerCount(THEME_KEY)).toBe(0);
       expect(fake.getListenerCount(DEFAULT_VIEW_KEY)).toBe(0);
     });
+  });
+});
 
-    it("a newer storage event suppresses the stale initial snapshot", async () => {
+describe("BrowserSyncSettingsStore - observe races", () => {
+  describe("observe", () => {
+    it("a newer storage event wins over the stale value the initial read returns", async () => {
       const fake = new FakeBrowserSyncStorage();
       fake.setDeferred(THEME_KEY);
       const store = new BrowserSyncSettingsStore(fake);
       const themes: string[] = [];
       const { ready } = store.observe((s) => themes.push(s.theme));
 
-      // Fire a change BEFORE the initial get resolves → increments revision.
+      // Fire a change BEFORE the initial get resolves.
       fake.emit(THEME_KEY, "dark");
       // Now resolve the deferred get with a different value.
       fake.resolveDeferred(THEME_KEY, "light");
       await ready;
 
-      // The event (dark) wins; the stale get snapshot (light) is suppressed.
-      expect(themes).toEqual(["dark"]);
+      // The event (dark) wins: the read only fills a key it has not already seen, so no snapshot
+      // can ever carry the stale "light".
+      expect(themes.every((theme) => theme === "dark")).toBe(true);
+      expect(themes.length).toBeGreaterThan(0);
+    });
+
+    it("still delivers every other key's stored value when one key changes mid-read", async () => {
+      const fake = new FakeBrowserSyncStorage();
+      await fake.set(DEFAULT_VIEW_KEY, "original");
+      fake.setDeferred(THEME_KEY);
+      const store = new BrowserSyncSettingsStore(fake);
+      const snapshots: ExtensionSettings[] = [];
+      const { ready } = store.observe((s) => snapshots.push(s));
+
+      // The theme change fires before the reads settle, so its emit cannot yet know defaultView.
+      // Suppressing the post-read snapshot would strand defaultView at its default for the tab's
+      // whole life — the user's stored choice would silently revert.
+      fake.emit(THEME_KEY, "dark");
+      fake.resolveDeferred(THEME_KEY, "light");
+      await ready;
+
+      const last = snapshots[snapshots.length - 1]!;
+      expect(last.theme).toBe("dark");
+      expect(last.defaultView).toBe("original");
     });
 
     it("cleans up every subscription when the initial read fails", async () => {

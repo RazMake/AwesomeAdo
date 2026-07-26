@@ -157,9 +157,8 @@ const controllerFor = (
   new QueryBindingsController(
     store as unknown as IQueryBindingStore,
     elements,
-    views,
     reportError as unknown as (error: unknown) => void,
-    resolveCurrentQueryId,
+    { viewTypes: views, resolveCurrentQueryId },
   );
 
 const propInput = (key: string): HTMLInputElement | null =>

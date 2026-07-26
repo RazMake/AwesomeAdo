@@ -4,7 +4,7 @@ import type {
   AdoMetadataContext,
   IAdoMetadataReader,
 } from "../../common/browser/IAdoMetadataReader";
-import type { StorageObservation } from "../../common/browser/observeSyncKeys";
+import type { StorageObservation } from "../../common/browser/observeStorageKeys";
 import { DEFAULT_SETTINGS, type ExtensionSettings } from "../../common/settings/ExtensionSettings";
 import type { ISettingsStore } from "../../common/settings/ISettingsStore";
 
@@ -26,7 +26,7 @@ class FakeSettingsStore implements ISettingsStore {
   private writeError: unknown = null;
 
   constructor(initial: Partial<ExtensionSettings> = {}) {
-    this.readValue = { ...DEFAULT_SETTINGS, ...initial };
+    this.readValue = { ...structuredClone(DEFAULT_SETTINGS), ...initial };
   }
 
   setReadError(error: unknown): void {

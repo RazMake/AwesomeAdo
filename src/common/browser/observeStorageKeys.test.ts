@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { IBrowserSyncStorage } from "./IBrowserSyncStorage";
-import { observeSyncKeys } from "./observeSyncKeys";
+import { observeStorageKeys } from "./observeStorageKeys";
 
 // Minimal fake so no real chrome.* is touched. Supports deferring a get to simulate a change that
 // lands mid-read, and failing a get to exercise the ready-rejection path.
@@ -65,14 +65,14 @@ class FakeStorage implements IBrowserSyncStorage {
 const project = (raw: Record<string, unknown>): string =>
   `${String(raw.a ?? "?")}/${String(raw.b ?? "?")}`;
 
-describe("observeSyncKeys", () => {
+describe("observeStorageKeys", () => {
   it("projects every key into the initial snapshot", async () => {
     const storage = new FakeStorage();
     await storage.set("a", "1");
     await storage.set("b", "2");
     const listener = vi.fn();
 
-    const { ready, unsubscribe } = observeSyncKeys(storage, ["a", "b"], project, listener);
+    const { ready, unsubscribe } = observeStorageKeys(storage, ["a", "b"], project, listener);
     await ready;
 
     expect(listener).toHaveBeenCalledTimes(1);
@@ -85,7 +85,7 @@ describe("observeSyncKeys", () => {
     await storage.set("a", "1");
     await storage.set("b", "2");
     const listener = vi.fn();
-    const { ready, unsubscribe } = observeSyncKeys(storage, ["a", "b"], project, listener);
+    const { ready, unsubscribe } = observeStorageKeys(storage, ["a", "b"], project, listener);
     await ready;
     listener.mockClear();
 
@@ -96,26 +96,45 @@ describe("observeSyncKeys", () => {
     unsubscribe();
   });
 
-  it("lets a change during the initial read win and skips the stale initial emit", async () => {
+  it("lets a change during the initial read win over the value the read returns", async () => {
     const storage = new FakeStorage();
     storage.defer("a");
     const listener = vi.fn();
-    const { ready, unsubscribe } = observeSyncKeys(storage, ["a"], project, listener);
+    const { ready, unsubscribe } = observeStorageKeys(storage, ["a"], project, listener);
 
     // The change lands before the initial read resolves, so the initial read must not clobber it.
     storage.emit("a", "live");
     storage.resolveDeferred("a", "stale");
     await ready;
 
-    expect(listener).toHaveBeenCalledTimes(1);
+    // Two emits (the change, then the post-read snapshot) but both carry the live value: the read
+    // is only allowed to fill a key it has not already seen.
     expect(listener).toHaveBeenCalledWith("live/?");
+    expect(listener.mock.calls.every(([value]) => value === "live/?")).toBe(true);
+    unsubscribe();
+  });
+
+  it("still delivers every OTHER key's stored value when one key changes mid-read", async () => {
+    const storage = new FakeStorage();
+    await storage.set("b", "stored-b");
+    storage.defer("a");
+    const listener = vi.fn();
+    const { ready, unsubscribe } = observeStorageKeys(storage, ["a", "b"], project, listener);
+
+    // The change on "a" fires before the reads settle, so its emit cannot yet know "b" — only the
+    // post-read snapshot can. Suppressing that snapshot would strand "b" at its default forever.
+    storage.emit("a", "live-a");
+    storage.resolveDeferred("a", "read-a");
+    await ready;
+
+    expect(listener).toHaveBeenLastCalledWith("live-a/stored-b");
     unsubscribe();
   });
 
   it("stops emitting and releases subscriptions after unsubscribe", async () => {
     const storage = new FakeStorage();
     const listener = vi.fn();
-    const { ready, unsubscribe } = observeSyncKeys(storage, ["a"], project, listener);
+    const { ready, unsubscribe } = observeStorageKeys(storage, ["a"], project, listener);
     await ready;
     listener.mockClear();
 
@@ -130,7 +149,7 @@ describe("observeSyncKeys", () => {
     const storage = new FakeStorage();
     storage.defer("a");
     const listener = vi.fn();
-    const { ready, unsubscribe } = observeSyncKeys(storage, ["a"], project, listener);
+    const { ready, unsubscribe } = observeStorageKeys(storage, ["a"], project, listener);
 
     unsubscribe();
     storage.resolveDeferred("a", "1");
@@ -142,7 +161,7 @@ describe("observeSyncKeys", () => {
   it("rejects ready and releases subscriptions when the initial read fails", async () => {
     const storage = new FakeStorage();
     storage.failNextGet("a");
-    const { ready } = observeSyncKeys(storage, ["a"], project, vi.fn());
+    const { ready } = observeStorageKeys(storage, ["a"], project, vi.fn());
 
     await expect(ready).rejects.toThrow("boom:a");
     expect(storage.listenerCount("a")).toBe(0);

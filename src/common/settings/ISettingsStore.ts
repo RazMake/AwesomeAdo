@@ -1,4 +1,4 @@
-import type { StorageObservation } from "../browser/observeSyncKeys";
+import type { StorageObservation } from "../browser/observeStorageKeys";
 
 import type { ExtensionSettings } from "./ExtensionSettings";
 

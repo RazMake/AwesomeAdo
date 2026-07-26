@@ -1,4 +1,5 @@
 import type { TrackedUser, TrackedWorkItem } from "./TrackedWorkItem";
+import { ADO_API_VERSION } from "./adoApi";
 import { resolveAdoProjectContext } from "./fetchAdoMetadata";
 
 /**
@@ -241,7 +242,7 @@ export function applyTagAssignments(
   return { members: next, changed };
 }
 
-const API_VERSION = "7.1";
+const API_VERSION = ADO_API_VERSION;
 
 /** The REST URLs the Feature Crew reconcile needs, resolved from the ADO tab's project context. */
 export interface FeatureCrewUrls {

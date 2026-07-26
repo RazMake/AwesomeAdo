@@ -1,5 +1,5 @@
 import type { IBrowserSyncStorage } from "../browser/IBrowserSyncStorage";
-import { observeSyncKeys, type StorageObservation } from "../browser/observeSyncKeys";
+import { observeStorageKeys, type StorageObservation } from "../browser/observeStorageKeys";
 import type { ILogger } from "../logging/ILogger";
 
 import { normalizeSettings, type ExtensionSettings } from "./ExtensionSettings";
@@ -94,9 +94,9 @@ export class BrowserSyncSettingsStore implements ISettingsStore {
   }
 
   observe(listener: (settings: ExtensionSettings) => void): StorageObservation {
-    // The subtle revision-guarded subscribe-then-read protocol lives in observeSyncKeys so the
+    // The subtle subscribe-then-read race protocol lives in observeStorageKeys so the
     // settings store and the bindings store share one tested implementation. Each setting has its
     // own key, so a change to one still emits a complete snapshot built from all of them.
-    return observeSyncKeys(this.storage, SETTING_KEYS, projectSettings, listener);
+    return observeStorageKeys(this.storage, SETTING_KEYS, projectSettings, listener);
   }
 }

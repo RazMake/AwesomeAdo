@@ -28,7 +28,7 @@ function createValidZip(zipPath, version, opts = {}) {
   };
   zip.addFile("manifest.json", Buffer.from(JSON.stringify(manifest)));
   zip.addFile("background/service-worker.js", Buffer.from("// sw"));
-  zip.addFile("content/blank-query-page.js", Buffer.from("// content"));
+  zip.addFile("content/awesomeado-content.js", Buffer.from("// content"));
   zip.addFile("options/options.js", Buffer.from("// options"));
   zip.addFile("options/options.html", Buffer.from("<html></html>"));
   for (const [name, content] of extraFiles) {
@@ -317,7 +317,7 @@ describe("validateRelease — ZIP validation failures", () => {
       ),
     );
     // Missing background/service-worker.js
-    zip.addFile("content/blank-query-page.js", Buffer.from("// content"));
+    zip.addFile("content/awesomeado-content.js", Buffer.from("// content"));
     zip.addFile("options/options.js", Buffer.from("// options"));
     zip.addFile("options/options.html", Buffer.from("<html></html>"));
     zip.writeZip(join(dir, "awesomeado-chrome-0.1.1.zip"));

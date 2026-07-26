@@ -14,6 +14,16 @@ describe("renderEtaBadge - rendering and severity", () => {
     expect(badge.title).toBe("");
   });
 
+  it("dims the 'No ETA' placeholder and restores full strength once a date is set", () => {
+    const badge = renderEtaBadge(document, { eta: null, now });
+    const label = badge.querySelector<HTMLElement>(".awesomeado-eta__label")!;
+
+    expect(Number(label.style.opacity)).toBeLessThan(1);
+
+    badge.setEta("2026-08-10T00:00:00-07:00");
+    expect(label.style.opacity).toBe("1");
+  });
+
   it("renders 'No ETA' when eta is empty string", () => {
     const badge = renderEtaBadge(document, { eta: "", now });
 
@@ -178,5 +188,66 @@ describe("renderEtaBadge - editing interactions", () => {
 
     badge.setEta(null);
     expect(badge.textContent).toBe("No ETA");
+  });
+});
+
+describe("renderEtaBadge - popup chrome", () => {
+  // "Follow ADO" pins no palette tokens, so a border expressed as var(--palette-neutral-*) collapses
+  // to nothing on that theme. These assert the chrome carries its own resolved color instead.
+  const openPopup = (eta: string | null): HTMLElement => {
+    const badge = renderEtaBadge(document, { eta, now, onChange: () => {} });
+    document.body.append(badge);
+    badge.querySelector<HTMLElement>(".awesomeado-eta__label")?.click();
+    return badge;
+  };
+
+  it("borders the popup and the date input with a self-contained color", () => {
+    const badge = openPopup(null);
+
+    const popup = badge.querySelector<HTMLElement>(".awesomeado-eta__popup");
+    const input = badge.querySelector<HTMLElement>(".awesomeado-eta__date");
+    for (const element of [popup, input]) {
+      expect(element!.style.borderStyle).toBe("solid");
+      expect(element!.style.borderColor).not.toContain("var(");
+      expect(element!.style.borderColor).not.toBe("");
+    }
+
+    badge.remove();
+  });
+
+  it("borders the Clear button and highlights it on hover", () => {
+    const badge = openPopup("2026-08-10T00:00:00-07:00");
+
+    const clear = badge.querySelector<HTMLButtonElement>(".awesomeado-eta__clear")!;
+    expect(clear.style.borderStyle).toBe("solid");
+    expect(clear.style.borderColor).not.toContain("var(");
+    expect(clear.style.borderColor).not.toBe("");
+
+    const resting = clear.style.background;
+    expect(resting).not.toBe("");
+
+    clear.dispatchEvent(new MouseEvent("mouseenter"));
+    expect(clear.style.background).not.toBe(resting);
+
+    clear.dispatchEvent(new MouseEvent("mouseleave"));
+    expect(clear.style.background).toBe(resting);
+
+    badge.remove();
+  });
+
+  it("installs one hand-cursor rule for the browser's calendar button", () => {
+    // The UA pseudo-element cannot be styled inline, so the control injects a stylesheet rule; a
+    // second open must reuse it rather than stack copies.
+    const first = openPopup(null);
+    const second = openPopup(null);
+
+    const styles = document.querySelectorAll("#awesomeado-eta-picker-style");
+    expect(styles).toHaveLength(1);
+    expect(styles[0]?.textContent).toContain("::-webkit-calendar-picker-indicator");
+    expect(styles[0]?.textContent).toContain("cursor:pointer");
+
+    first.remove();
+    second.remove();
+    styles[0]?.remove();
   });
 });
