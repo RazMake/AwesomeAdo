@@ -63,8 +63,18 @@ function createFakeServices(overrides?: Partial<EnhancedViewServices>): Enhanced
     getBoardColumns: () => ["Queue", "Active", "Waiting", "Done", "Removed"],
     loadSprintWindow: async () => ({
       entries: [
-        { path: "Project\\Sprint 1", name: "Sprint 1", label: "Current - Sprint 1" },
-        { path: "Project\\Sprint 2", name: "Sprint 2", label: "Next sprint - Sprint 2" },
+        {
+          path: "Project\\Sprint 1",
+          name: "Sprint 1",
+          label: "Current - Sprint 1",
+          relation: "current",
+        },
+        {
+          path: "Project\\Sprint 2",
+          name: "Sprint 2",
+          label: "Next - Sprint 2",
+          relation: "future",
+        },
       ],
       currentName: "Sprint 1",
     }),

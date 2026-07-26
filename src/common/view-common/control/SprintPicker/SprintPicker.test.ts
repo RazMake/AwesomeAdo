@@ -226,6 +226,64 @@ describe("renderSprintPicker - toggle and change callbacks", () => {
   });
 });
 
+describe("renderSprintPicker - relative-time option styling", () => {
+  function styledOptions(): NodeListOf<HTMLOptionElement> {
+    const handle = renderSprintPicker(document, {
+      sprints: [
+        {
+          path: "Team\\Sprint 1",
+          name: "Sprint 1",
+          label: "Previous - Sprint 1",
+          relation: "past",
+        },
+        {
+          path: "Team\\Sprint 2",
+          name: "Sprint 2",
+          label: "Current - Sprint 2",
+          relation: "current",
+        },
+        { path: "Team\\Sprint 3", name: "Sprint 3", label: "Next - Sprint 3", relation: "future" },
+      ],
+    });
+    return handle.element.querySelectorAll("option");
+  }
+
+  it("colors past sprints orange without bolding them", () => {
+    const past = styledOptions()[0]!;
+
+    expect(past.dataset.relation).toBe("past");
+    expect(past.style.cssText).toContain("rgb(194, 108, 29)");
+    expect(past.style.cssText).not.toContain("font-weight");
+  });
+
+  it("bolds the current sprint and leaves its color inherited", () => {
+    const current = styledOptions()[1]!;
+
+    expect(current.dataset.relation).toBe("current");
+    expect(current.style.cssText).toContain("bold");
+    expect(current.style.cssText).not.toContain("color");
+  });
+
+  it("colors future sprints with the theme accent without bolding them", () => {
+    const future = styledOptions()[2]!;
+
+    expect(future.dataset.relation).toBe("future");
+    expect(future.style.cssText).toContain("var(--communication-foreground");
+    expect(future.style.cssText).not.toContain("font-weight");
+  });
+
+  it("leaves options without a relation unstyled", () => {
+    const handle = renderSprintPicker(document, {
+      sprints: [{ path: "Team\\Sprint 1", name: "Sprint 1" }],
+    });
+
+    const option = handle.element.querySelector<HTMLOptionElement>("option");
+
+    expect(option?.dataset.relation).toBeUndefined();
+    expect(option?.style.cssText).toBe("");
+  });
+});
+
 describe("renderSprintPicker - button appearance and accessibility", () => {
   it("the button contains an SVG icon and no literal text label", () => {
     const handle = renderSprintPicker(document, {

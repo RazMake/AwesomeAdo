@@ -43,7 +43,7 @@ export interface EnhancedViewServices {
   getBoardColumns(): string[];
   /**
    * Load the current team's sprint window: the iterations around the current one (bounded by the
-   * configured past/future sprint counts), each labelled by its offset ("Current", "Next sprint",
+   * configured past/future sprint counts), each labelled by its offset ("Current", "Next",
    * "2 sprints ago", …), plus the name to select by default. This is the single shared entry point
    * every sprint-filtering view uses to populate its sprint picker; the composition root owns the
    * fetch + windowing so views only render the result. Resolves to an empty window when no team is

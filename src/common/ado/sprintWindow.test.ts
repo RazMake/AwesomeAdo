@@ -33,11 +33,11 @@ describe("buildSprintWindow", () => {
 
     expect(window.currentName).toBe("S4");
     expect(window.entries).toEqual([
-      { path: "Project\\S2", name: "S2", label: "2 sprints ago - S2" },
-      { path: "Project\\S3", name: "S3", label: "Previous - S3" },
-      { path: "Project\\S4", name: "S4", label: "Current - S4" },
-      { path: "Project\\S5", name: "S5", label: "Next sprint - S5" },
-      { path: "Project\\S6", name: "S6", label: "2 sprints ahead - S6" },
+      { path: "Project\\S2", name: "S2", label: "2 sprints ago - S2", relation: "past" },
+      { path: "Project\\S3", name: "S3", label: "Previous - S3", relation: "past" },
+      { path: "Project\\S4", name: "S4", label: "Current - S4", relation: "current" },
+      { path: "Project\\S5", name: "S5", label: "Next - S5", relation: "future" },
+      { path: "Project\\S6", name: "S6", label: "2 sprints ahead - S6", relation: "future" },
     ]);
   });
 
@@ -57,7 +57,9 @@ describe("buildSprintWindow", () => {
 
   it("shows only the current sprint when both counts are zero", () => {
     const window = buildSprintWindow(sevenSprints(), { pastCount: 0, futureCount: 0 });
-    expect(window.entries).toEqual([{ path: "Project\\S4", name: "S4", label: "Current - S4" }]);
+    expect(window.entries).toEqual([
+      { path: "Project\\S4", name: "S4", label: "Current - S4", relation: "current" },
+    ]);
   });
 
   it("anchors on the first future sprint when none is marked current", () => {
@@ -72,9 +74,9 @@ describe("buildSprintWindow", () => {
     // S3 (first future) becomes the anchor and is labelled "Current".
     expect(window.currentName).toBe("S3");
     expect(window.entries).toEqual([
-      { path: "Project\\S2", name: "S2", label: "Previous - S2" },
-      { path: "Project\\S3", name: "S3", label: "Current - S3" },
-      { path: "Project\\S4", name: "S4", label: "Next sprint - S4" },
+      { path: "Project\\S2", name: "S2", label: "Previous - S2", relation: "past" },
+      { path: "Project\\S3", name: "S3", label: "Current - S3", relation: "current" },
+      { path: "Project\\S4", name: "S4", label: "Next - S4", relation: "future" },
     ]);
   });
 
@@ -84,8 +86,8 @@ describe("buildSprintWindow", () => {
 
     expect(window.currentName).toBe("S2");
     expect(window.entries).toEqual([
-      { path: "Project\\S1", name: "S1", label: "Previous - S1" },
-      { path: "Project\\S2", name: "S2", label: "Current - S2" },
+      { path: "Project\\S1", name: "S1", label: "Previous - S1", relation: "past" },
+      { path: "Project\\S2", name: "S2", label: "Current - S2", relation: "current" },
     ]);
   });
 });
