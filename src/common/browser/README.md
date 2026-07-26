@@ -321,6 +321,44 @@ list is small and unpaged) and returns the raw body, or `null` on any non-ok/thr
 is built by `buildAdoIterationsUrl` (in `common/ado/TeamIteration`) from the sender's own trusted tab
 URL, keeping the worker a closed "read this team's iterations" operation.
 
+## Searching Azure DevOps for people
+
+An assignee picker resolves names against ADO's own identity directory. That read is credentialed
+too, so it follows the same bridge as the tree and iterations reads.
+
+### `AdoIdentityRequest.ts` — the content→background message contract
+
+- `SEARCH_ADO_IDENTITIES_MESSAGE` / `SearchAdoIdentitiesMessage` (`{ type, query }`) — the request a
+  people picker sends with the text the user typed.
+- `SearchAdoIdentitiesResponse` (`{ raw }`) — the raw Identity Picker body, or `null` on failure.
+- `isSearchAdoIdentitiesMessage(value)` — the type guard the worker uses before serving the request.
+
+### `MessagingUserDirectory` (class) — the content-side directory
+
+The `IUserDirectory` implementation the assignee pickers depend on. It messages the worker with the
+typed query, parses the returned body with `parseAdoIdentities`, and degrades to an empty list
+(logged) on any failure. Queries shorter than the search minimum are answered without a round-trip,
+and each answered query is remembered for the directory's lifetime so backspacing over a name does
+not re-ask ADO. `resolve` returns an identity only on an exact display-name or unique-name match, so
+it never guesses a person from a partial one.
+
+### `fetchAdoIdentitiesInPage(url, body)` — `fetchAdoIdentitiesInPage.ts`
+
+The self-contained function the background worker injects into the ADO tab's MAIN world to serve a
+`SearchAdoIdentitiesMessage`. It performs one credentialed POST of the caller-built search and
+returns an `AdoIdentitySearchOutcome` (`{ status, body, failure }`) rather than a bare body, so the
+worker can log **why** a search came back empty:
+
+- `failure: "none"` — `body` holds the parsed response.
+- `failure: "http"` — ADO rejected the request; `status` says how.
+- `failure: "sign-in"` — a 200 that was not JSON, i.e. ADO's HTML sign-in page (expired session).
+- `failure: "network"` — the request never completed (`status` is `0`).
+
+Only the status and the classification are reported: ADO's error text quotes the query, which is a
+person's name, and the diagnostics log is exported into bug reports. The URL and body come from
+`buildAdoIdentitySearchRequest` (in `common/ado/fetchAdoIdentities`), built from the sender's own
+trusted tab URL, keeping the worker a closed "search this organization's people" operation.
+
 ## Reconciling the Feature Crew roster
 
 The Project Tracking view keeps a project's **Feature Crew** roster — the list of everyone assigned

@@ -510,3 +510,30 @@
   own realm, so the page controls the globals that produce their return values, and the Feature Crew
   lookup's `id` is concatenated into a credentialed request URL. `firstScriptResult` now returns
   `unknown` so a caller cannot accidentally inherit a type nobody verified.
+
+## ADR-038: The assignee picker is suggestion-first, and reassignment is a normal field write
+
+- Decision: `AssignedTo` offers a caller-supplied `suggestions()` list the instant it opens, filters
+  it locally as the user types, and only asks `IUserDirectory` from `MIN_IDENTITY_SEARCH_LENGTH`
+  characters up (directory matches are appended **below** the suggestions). Project Tracking supplies
+  the suggestions by walking the live tree (`collectAssignedDirectoryUsers`) on each open. Picking a
+  person enqueues an ordinary `System.AssignedTo` write on the board's shared `FieldWriteQueue`, and
+  the chip repaints only on success via a new `AssignedToHandle.setUser` — persist-then-reflect, the
+  same contract `StatusBadge` and `EtaBadge` already use.
+- Rationale: the picker previously opened empty and searched an unimplemented directory, so it could
+  never offer anybody, and a pick only touched the Feature Crew roster — the work item kept its old
+  owner. Suggestion-first makes the overwhelmingly common case (reassigning within the project) cost
+  no network round-trip at all, which is what makes the control feel as light as the other write
+  controls; the directory search is the escape hatch for everyone else.
+- The live directory is `MessagingUserDirectory` over the same content→background→MAIN-world bridge as
+  the tree, iterations and Feature Crew reads (ADR-033), targeting the org-scoped **Identity Picker**
+  endpoint — the one ADO's own people picker calls, so it resolves anyone assignable rather than only
+  one configured team's members. It is pinned to `5.0-preview.1` (that endpoint never graduated out
+  of preview) rather than the shared `ADO_API_VERSION`. Answered queries are cached for the
+  directory's lifetime so backspacing over a name is free.
+- `ChildItemsBadge` no longer builds assignee controls: like the ETA slot, the owning view passes a
+  prebuilt `assignee` element. A control that renders a write affordance must not also own which
+  item, field and queue that write goes to.
+- The reconcile after a pick now runs even when the person was already on the roster. It is the
+  reconcile that hands back their crew tag, and without it a reassignment left the chip wearing the
+  neutral "??" pill; nothing is written when nothing changed.

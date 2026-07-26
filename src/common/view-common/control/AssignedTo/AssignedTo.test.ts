@@ -1,23 +1,25 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import type { DirectoryUser, IUserDirectory } from "../../../ado/IUserDirectory";
 import type { TrackedUser } from "../../../ado/TrackedWorkItem";
 
-import { renderAssignedTo } from "./AssignedTo";
+import { renderAssignedTo, type AssignedToHandle } from "./AssignedTo";
 
 /**
  * A fake user directory for testing: returns controlled search results via a promise.
  */
 class FakeUserDirectory implements IUserDirectory {
   private searchResults: DirectoryUser[] = [];
+  /** Every query the control asked the directory about, in order. */
+  readonly queries: string[] = [];
 
   /** Configure the next search result. */
   setSearchResults(users: DirectoryUser[]): void {
     this.searchResults = users;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  search(_query: string): Promise<DirectoryUser[]> {
+  search(query: string): Promise<DirectoryUser[]> {
+    this.queries.push(query);
     return Promise.resolve(this.searchResults);
   }
 
@@ -26,6 +28,10 @@ class FakeUserDirectory implements IUserDirectory {
     return Promise.resolve(null);
   }
 }
+
+afterEach(() => {
+  document.body.innerHTML = "";
+});
 
 describe("renderAssignedTo", () => {
   it("shows the user's display name when assigned", () => {
@@ -86,6 +92,303 @@ describe("renderAssignedTo", () => {
   });
 });
 
+describe("renderAssignedTo - suggestions", () => {
+  const crew: DirectoryUser[] = [
+    { displayName: "Ada Lovelace", uniqueName: "ada@example.com", imageUrl: null },
+    { displayName: "Grace Hopper", uniqueName: "grace@example.com", imageUrl: null },
+  ];
+
+  const openPicker = (directory: FakeUserDirectory): HTMLElement => {
+    const control = renderAssignedTo(document, {
+      user: null,
+      userDirectory: directory,
+      suggestions: () => crew,
+    });
+    document.body.append(control);
+    control.querySelector<HTMLButtonElement>(".awesomeado-assigned__name")?.click();
+    return control;
+  };
+
+  it("lists the caller's suggestions the moment the picker opens, with no search", () => {
+    const directory = new FakeUserDirectory();
+
+    const control = openPicker(directory);
+
+    const results = control.querySelectorAll(".awesomeado-assigned__result button");
+    expect(
+      [...results].map((r) => r.querySelector(".awesomeado-assigned__result-name")?.textContent),
+    ).toEqual(["Ada Lovelace", "Grace Hopper"]);
+    expect(directory.queries).toEqual([]);
+  });
+
+  it("filters the suggestions locally without asking the directory below the search minimum", () => {
+    const directory = new FakeUserDirectory();
+    const control = openPicker(directory);
+
+    const searchInput = control.querySelector<HTMLInputElement>(".awesomeado-assigned__search")!;
+    searchInput.value = "a";
+    searchInput.dispatchEvent(new Event("input"));
+
+    const results = control.querySelectorAll(".awesomeado-assigned__result button");
+    expect(results).toHaveLength(2);
+    expect(directory.queries).toEqual([]);
+    expect(control.querySelector(".awesomeado-assigned__status")?.textContent).toBe(
+      "Keep typing to search Azure DevOps…",
+    );
+  });
+
+  it("keeps a matching suggestion first and appends the directory's other matches", async () => {
+    const directory = new FakeUserDirectory();
+    directory.setSearchResults([
+      // The same person the suggestions already offer must not be listed twice.
+      { displayName: "Grace Hopper", uniqueName: "grace@example.com", imageUrl: null },
+      { displayName: "Gracie Fields", uniqueName: "gracie@example.com", imageUrl: null },
+    ]);
+    const control = openPicker(directory);
+
+    const searchInput = control.querySelector<HTMLInputElement>(".awesomeado-assigned__search")!;
+    searchInput.value = "grace";
+    searchInput.dispatchEvent(new Event("input"));
+    await Promise.resolve();
+
+    const names = [...control.querySelectorAll(".awesomeado-assigned__result-name")].map(
+      (n) => n.textContent,
+    );
+    expect(names).toEqual(["Grace Hopper", "Gracie Fields"]);
+    expect(directory.queries).toEqual(["grace"]);
+  });
+
+  it("says so when the directory found nobody", async () => {
+    const directory = new FakeUserDirectory();
+    const control = openPicker(directory);
+
+    const searchInput = control.querySelector<HTMLInputElement>(".awesomeado-assigned__search")!;
+    searchInput.value = "zzz";
+    searchInput.dispatchEvent(new Event("input"));
+    await Promise.resolve();
+
+    expect(control.querySelector(".awesomeado-assigned__status")?.textContent).toBe(
+      "No people found.",
+    );
+  });
+
+  it("invites a search when it has no suggestions to offer", () => {
+    const control = renderAssignedTo(document, {
+      user: null,
+      userDirectory: new FakeUserDirectory(),
+    });
+    document.body.append(control);
+    control.querySelector<HTMLButtonElement>(".awesomeado-assigned__name")?.click();
+
+    expect(control.querySelector(".awesomeado-assigned__status")?.textContent).toBe(
+      "Type a name to search Azure DevOps.",
+    );
+  });
+});
+
+describe("renderAssignedTo - search progress", () => {
+  /** Open a picker whose directory answers only when the returned `release` is called. */
+  const openWithPendingSearch = (): {
+    control: AssignedToHandle;
+    search: HTMLInputElement;
+    release: (users: DirectoryUser[]) => void;
+  } => {
+    let release: (users: DirectoryUser[]) => void = () => {};
+    const directory: IUserDirectory = {
+      search: () =>
+        new Promise<DirectoryUser[]>((resolve) => {
+          release = resolve;
+        }),
+      resolve: () => Promise.resolve(null),
+    };
+    const control = renderAssignedTo(document, { user: null, userDirectory: directory });
+    document.body.append(control);
+    control.querySelector<HTMLButtonElement>(".awesomeado-assigned__name")?.click();
+    return {
+      control,
+      search: control.querySelector<HTMLInputElement>(".awesomeado-assigned__search")!,
+      release: (users) => release(users),
+    };
+  };
+
+  it("shows nothing spinning until a search actually starts", () => {
+    const { control } = openWithPendingSearch();
+
+    expect(control.querySelector<HTMLElement>(".awesomeado-assigned__spinner")?.style.display).toBe(
+      "none",
+    );
+  });
+
+  it("spins while the directory round-trip is pending and stops when it answers", async () => {
+    const { control, search, release } = openWithPendingSearch();
+    const spinner = control.querySelector<HTMLElement>(".awesomeado-assigned__spinner")!;
+
+    search.value = "ada";
+    search.dispatchEvent(new Event("input"));
+
+    expect(spinner.style.display).toBe("inline-block");
+    expect(control.querySelector(".awesomeado-assigned__status")?.textContent).toBe(
+      "Searching Azure DevOps…",
+    );
+
+    release([{ displayName: "Ada", uniqueName: "ada@example.com", imageUrl: null }]);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(spinner.style.display).toBe("none");
+    expect(control.querySelectorAll(".awesomeado-assigned__result button")).toHaveLength(1);
+  });
+});
+
+/** The project crew the picker offers before anything is typed; Grace deliberately has no tag. */
+const taggedCrew: TrackedUser[] = [
+  { displayName: "Ada Lovelace", uniqueName: "ada@example.com", imageUrl: null, tag: "Platform" },
+  { displayName: "Grace Hopper", uniqueName: "grace@example.com", imageUrl: null, tag: null },
+  { displayName: "Alan Turing", uniqueName: "alan@example.com", imageUrl: null, tag: "Compiler" },
+];
+
+/** Render a tagging picker over `taggedCrew`, open it, and hand back its root and search box. */
+const openTaggedPicker = (
+  onChange?: (user: DirectoryUser) => void,
+): { control: AssignedToHandle; search: HTMLInputElement } => {
+  const control = renderAssignedTo(document, {
+    user: null,
+    userDirectory: new FakeUserDirectory(),
+    suggestions: () => taggedCrew,
+    onChange,
+  });
+  document.body.append(control);
+  control.querySelector<HTMLButtonElement>(".awesomeado-assigned__name")?.click();
+  return {
+    control,
+    search: control.querySelector<HTMLInputElement>(".awesomeado-assigned__search")!,
+  };
+};
+
+const pressKey = (search: HTMLInputElement, key: string): void => {
+  search.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+};
+
+/** The one result row wearing the highlight fill — what Enter would commit. */
+const highlightedName = (control: HTMLElement): string | undefined =>
+  [...control.querySelectorAll<HTMLButtonElement>(".awesomeado-assigned__result button")]
+    .find((row) => row.style.background !== "transparent")
+    ?.querySelector(".awesomeado-assigned__result-name")?.textContent ?? undefined;
+
+describe("renderAssignedTo - picker tags", () => {
+  it("puts the caret in the search box as soon as the picker opens", () => {
+    const { search } = openTaggedPicker();
+
+    expect(document.activeElement).toBe(search);
+  });
+
+  it("shows each offered person's crew tag, and '??' for anyone without one", () => {
+    // The chip itself is tagless here, proving the picker tags its rows off the offered people.
+    const { control } = openTaggedPicker();
+
+    const pills = [
+      ...control.querySelectorAll(".awesomeado-assigned__result .awesomeado-tag-pill"),
+    ];
+    expect(pills.map((pill) => pill.textContent)).toEqual(["Platform", "??", "Compiler"]);
+  });
+
+  it("leaves the results untagged when the offered people carry no tags at all", () => {
+    const control = renderAssignedTo(document, {
+      user: null,
+      userDirectory: new FakeUserDirectory(),
+      suggestions: () => [
+        { displayName: "Ada Lovelace", uniqueName: "ada@example.com", imageUrl: null },
+      ],
+    });
+    document.body.append(control);
+    control.querySelector<HTMLButtonElement>(".awesomeado-assigned__name")?.click();
+
+    expect(
+      control.querySelectorAll(".awesomeado-assigned__result .awesomeado-tag-pill"),
+    ).toHaveLength(0);
+  });
+});
+
+describe("renderAssignedTo - picker keyboard", () => {
+  it("highlights the first person so Enter alone accepts the top match", () => {
+    let picked: DirectoryUser | null = null;
+    const { control, search } = openTaggedPicker((user) => (picked = user));
+
+    expect(highlightedName(control)).toBe("Ada Lovelace");
+
+    pressKey(search, "Enter");
+
+    expect(picked).toEqual(taggedCrew[0]);
+    expect(control.querySelector(".awesomeado-assigned__popup")).toBeNull();
+  });
+
+  it("walks the list with the arrow keys and commits the highlighted person on Enter", () => {
+    let picked: DirectoryUser | null = null;
+    const { control, search } = openTaggedPicker((user) => (picked = user));
+
+    pressKey(search, "ArrowDown");
+    pressKey(search, "ArrowDown");
+    expect(highlightedName(control)).toBe("Alan Turing");
+
+    pressKey(search, "ArrowUp");
+    expect(highlightedName(control)).toBe("Grace Hopper");
+
+    pressKey(search, "Enter");
+    expect(picked).toEqual(taggedCrew[1]);
+  });
+
+  it("wraps the highlight around both ends of the list", () => {
+    const { control, search } = openTaggedPicker();
+
+    pressKey(search, "ArrowUp");
+    expect(highlightedName(control)).toBe("Alan Turing");
+
+    pressKey(search, "ArrowDown");
+    expect(highlightedName(control)).toBe("Ada Lovelace");
+  });
+
+  it("paints the highlight with a self-contained grey so it reads under 'Follow ADO'", () => {
+    const { control } = openTaggedPicker();
+
+    // A --palette-neutral-* token resolves to ADO's own surface color on that theme, which is what
+    // the popup is already painted with, leaving the highlighted row invisible.
+    const highlighted = control.querySelector<HTMLButtonElement>(
+      ".awesomeado-assigned__result button",
+    )!;
+    expect(highlighted.style.background).toContain("rgba(128, 128, 128");
+    expect(highlighted.style.background).not.toContain("palette-neutral");
+  });
+
+  it("re-highlights the top row after the list is filtered", () => {
+    let picked: DirectoryUser | null = null;
+    const { control, search } = openTaggedPicker((user) => (picked = user));
+
+    pressKey(search, "ArrowDown");
+    // Matches everyone, so a stale index would survive; only an explicit reset lands back on top.
+    search.value = "a";
+    search.dispatchEvent(new Event("input"));
+
+    expect(highlightedName(control)).toBe("Ada Lovelace");
+
+    pressKey(search, "Enter");
+    expect(picked).toEqual(taggedCrew[0]);
+  });
+
+  it("does nothing on Enter when nobody matches the query", () => {
+    let picked: DirectoryUser | null = null;
+    const { control, search } = openTaggedPicker((user) => (picked = user));
+
+    search.value = "zz";
+    search.dispatchEvent(new Event("input"));
+    pressKey(search, "ArrowDown");
+    pressKey(search, "Enter");
+
+    expect(picked).toBeNull();
+    // A dead Enter must not dismiss the picker: the query is still there to be corrected.
+    expect(control.querySelector(".awesomeado-assigned__popup")).not.toBeNull();
+  });
+});
+
 describe("renderAssignedTo - search results and selection", () => {
   it("triggers a search and renders results when typing in the search input", async () => {
     const directory = new FakeUserDirectory();
@@ -99,7 +402,7 @@ describe("renderAssignedTo - search results and selection", () => {
     nameButton?.click();
 
     const searchInput = control.querySelector<HTMLInputElement>(".awesomeado-assigned__search");
-    searchInput!.value = "e";
+    searchInput!.value = "ev";
     searchInput!.dispatchEvent(new Event("input"));
 
     // Flush microtasks to resolve the search promise.
@@ -107,8 +410,8 @@ describe("renderAssignedTo - search results and selection", () => {
 
     const results = control.querySelectorAll(".awesomeado-assigned__result button");
     expect(results).toHaveLength(2);
-    expect(results[0]?.textContent).toBe("Eve");
-    expect(results[1]?.textContent).toBe("Frank");
+    expect(results[0]?.textContent).toContain("Eve");
+    expect(results[1]?.textContent).toContain("Frank");
   });
 
   it("calls onChange with the selected user and closes the popup", async () => {
@@ -127,7 +430,7 @@ describe("renderAssignedTo - search results and selection", () => {
     nameButton?.click();
 
     const searchInput = control.querySelector<HTMLInputElement>(".awesomeado-assigned__search");
-    searchInput!.value = "g";
+    searchInput!.value = "gr";
     searchInput!.dispatchEvent(new Event("input"));
 
     await Promise.resolve();
@@ -145,7 +448,7 @@ describe("renderAssignedTo - search results and selection", () => {
     expect(control.querySelector(".awesomeado-assigned__popup")).toBeNull();
   });
 
-  it("updates the name button label after selecting a user", async () => {
+  it("leaves the label untouched on pick and only repaints it through setUser", async () => {
     const directory = new FakeUserDirectory();
     directory.setSearchResults([
       { displayName: "Henry", uniqueName: "henry@example.com", imageUrl: null },
@@ -156,7 +459,7 @@ describe("renderAssignedTo - search results and selection", () => {
     nameButton?.click();
 
     const searchInput = control.querySelector<HTMLInputElement>(".awesomeado-assigned__search");
-    searchInput!.value = "h";
+    searchInput!.value = "he";
     searchInput!.dispatchEvent(new Event("input"));
 
     await Promise.resolve();
@@ -166,6 +469,10 @@ describe("renderAssignedTo - search results and selection", () => {
     );
     resultButton?.click();
 
+    // Persist-then-reflect: nothing is painted until the owner confirms ADO accepted the write.
+    expect(nameButton?.textContent).toBe("Unassigned");
+
+    control.setUser({ displayName: "Henry", uniqueName: "henry@example.com", imageUrl: null });
     expect(nameButton?.textContent).toBe("Henry");
   });
 });
@@ -186,17 +493,51 @@ describe("renderAssignedTo - popup dismissal", () => {
     expect(control.querySelector(".awesomeado-assigned__popup")).toBeNull();
   });
 
-  it("closes the popup when pressing Escape in the search input", () => {
+  it("closes the popup when pressing Escape", () => {
     const directory = new FakeUserDirectory();
 
     const control = renderAssignedTo(document, { user: null, userDirectory: directory });
+    // The shared popup host dismisses from document-level capture listeners, so the control has to
+    // be in the document for the event to reach them.
+    document.body.append(control);
     const nameButton = control.querySelector<HTMLButtonElement>(".awesomeado-assigned__name");
     nameButton?.click();
 
     const searchInput = control.querySelector<HTMLInputElement>(".awesomeado-assigned__search");
-    searchInput?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    searchInput?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
 
     expect(control.querySelector(".awesomeado-assigned__popup")).toBeNull();
+  });
+
+  it("closes the popup on a pointerdown outside the control", () => {
+    const outside = document.createElement("div");
+    document.body.append(outside);
+    const control = renderAssignedTo(document, {
+      user: null,
+      userDirectory: new FakeUserDirectory(),
+    });
+    document.body.append(control);
+    control.querySelector<HTMLButtonElement>(".awesomeado-assigned__name")?.click();
+    expect(control.querySelector(".awesomeado-assigned__popup")).not.toBeNull();
+
+    outside.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+
+    expect(control.querySelector(".awesomeado-assigned__popup")).toBeNull();
+  });
+
+  it("keeps the popup open when a pointerdown lands inside it", () => {
+    const control = renderAssignedTo(document, {
+      user: null,
+      userDirectory: new FakeUserDirectory(),
+    });
+    document.body.append(control);
+    control.querySelector<HTMLButtonElement>(".awesomeado-assigned__name")?.click();
+
+    control
+      .querySelector(".awesomeado-assigned__popup")
+      ?.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+
+    expect(control.querySelector(".awesomeado-assigned__popup")).not.toBeNull();
   });
 });
 
@@ -232,10 +573,10 @@ describe("renderAssignedTo - concurrency and injection safety", () => {
     const searchInput = control.querySelector<HTMLInputElement>(".awesomeado-assigned__search");
 
     // Trigger two searches.
-    searchInput!.value = "a";
+    searchInput!.value = "aa";
     searchInput!.dispatchEvent(new Event("input"));
 
-    searchInput!.value = "b";
+    searchInput!.value = "bb";
     searchInput!.dispatchEvent(new Event("input"));
 
     // Resolve the second search first (newer).
@@ -251,7 +592,6 @@ describe("renderAssignedTo - concurrency and injection safety", () => {
     expect(results).toHaveLength(1);
     expect(results[0]?.textContent).toBe("NewUser");
   });
-
   it("inserts result displayName as text so a name containing HTML tags does not inject markup", async () => {
     const directory = new FakeUserDirectory();
     directory.setSearchResults([
@@ -263,7 +603,7 @@ describe("renderAssignedTo - concurrency and injection safety", () => {
     nameButton?.click();
 
     const searchInput = control.querySelector<HTMLInputElement>(".awesomeado-assigned__search");
-    searchInput!.value = "x";
+    searchInput!.value = "xx";
     searchInput!.dispatchEvent(new Event("input"));
 
     await Promise.resolve();
@@ -322,7 +662,7 @@ describe("renderAssignedTo - tag pill display", () => {
     expect(control.querySelector(".awesomeado-tag-pill")).toBeNull();
   });
 
-  it("renders no tag pill for an unassigned slot even with showTag on", () => {
+  it("hides the tag pill for an unassigned slot even with showTag on", () => {
     const directory = new FakeUserDirectory();
 
     const control = renderAssignedTo(document, {
@@ -331,7 +671,13 @@ describe("renderAssignedTo - tag pill display", () => {
       showTag: true,
     });
 
-    expect(control.querySelector(".awesomeado-tag-pill")).toBeNull();
+    // The pill is built but hidden, so a later reassignment reveals it without rebuilding the chip.
+    const pill = control.querySelector<HTMLElement>(".awesomeado-tag-pill");
+    expect(pill?.style.display).toBe("none");
+
+    control.setUser({ displayName: "Dana", uniqueName: null, imageUrl: null, tag: "Core" });
+    expect(pill?.style.display).toBe("");
+    expect(pill?.textContent).toBe("Core");
   });
 });
 

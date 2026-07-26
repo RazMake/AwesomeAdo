@@ -87,6 +87,24 @@ response-parsing logic, kept pure so they are unit-testable without a browser.
 - `IUserDirectory` — `{ search(query), resolve(nameOrUnique) }`; queries the user directory for
   assignee-pickers and identity resolution.
 
+### `fetchAdoIdentities.ts`
+
+- `buildAdoIdentitySearchRequest(href, query)` — parses the org from the tab URL and returns the
+  `{ url, body }` for the org-scoped Identity Picker search (the same endpoint ADO's own people
+  picker calls, so it resolves anyone the signed-in user could assign work to). The body is kept to
+  the shape a known-good client uses; nothing speculative is added to it, because this is a preview
+  API and every extra field is one more thing it can reject. Returns `null` for a non-project URL or
+  a query shorter than `MIN_IDENTITY_SEARCH_LENGTH`.
+- `parseAdoIdentities(body)` — turns the raw picker body into `DirectoryUser[]` in ADO's ranked
+  order, de-duplicating the same person across operation scopes; **best-effort** (a missing/malformed
+  body yields `[]`). The identity groups are read from a `results` envelope, a `value` envelope, or a
+  bare array. Identities flagged `active:false` are **kept**: that flag means "not a member of this
+  organization (yet)", which describes every hit from the backing directory — the people the search
+  exists to find.
+- `MIN_IDENTITY_SEARCH_LENGTH` — the shortest query worth a directory round-trip (a picker filters
+  its in-memory suggestions below it).
+- `IDENTITY_SEARCH_MAX_RESULTS` — how many identities one search asks for.
+
 ### `fetchAdoMetadata.ts`
 
 - `buildAdoMetadataUrls(href)` — parses the org/project from the tab URL and returns the
@@ -160,6 +178,18 @@ response-parsing logic, kept pure so they are unit-testable without a browser.
 - `collectAssignedTags(roots)` — the distinct tags worn by assigned people across the tree, first-seen
   order, with `null` (the "??" bucket) appended last when any assignee has no tag. Unassigned items
   contribute nothing.
+- `collectAssignedDirectoryUsers(roots)` — the distinct assignees across the tree as `TrackedUser`s
+  (first-seen order), each keeping the crew tag `applyFeatureCrewTags` projected onto them — the crew
+  an assignee picker offers, and tags, before anything is typed. Read from the tree rather than the
+  persisted roster because only the tree carries each person's unique name.
+
+### `adoApi.ts`
+
+- `ADO_API_VERSION` — the REST API version every request in the extension targets.
+- `ASSIGNED_TO_FIELD` — the assignee field's reference name, named once because it is both requested
+  with the tree and patched back when a view reassigns an item.
+- `identityFieldValue(user)` — the string an identity field is patched with for a picked person: the
+  unique name when known (ADO resolves identities from it), otherwise the display name.
 
 ### `IFeatureCrewWriter.ts`
 

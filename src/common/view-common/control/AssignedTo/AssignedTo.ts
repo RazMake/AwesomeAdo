@@ -1,5 +1,6 @@
 import type { DirectoryUser, IUserDirectory } from "../../../ado/IUserDirectory";
 import type { TrackedUser } from "../../../ado/TrackedWorkItem";
+import { MIN_IDENTITY_SEARCH_LENGTH } from "../../../ado/fetchAdoIdentities";
 import { renderTagPill, tagPillBackground, UNTAGGED_LABEL } from "../TagPill/TagPill";
 import { createPopupHost } from "../popupHost/popupHost";
 
@@ -14,12 +15,22 @@ export interface AssignedToOptions {
   user: TrackedUser | null;
   /** The user directory for searching and resolving users. */
   userDirectory: IUserDirectory;
+  /**
+   * The people offered the moment the picker opens, before anything is typed — normally the
+   * project's Feature Crew, which is who an assignment changes to almost every time. Read fresh on
+   * each open so someone assigned a moment ago is already on the list. Defaults to nobody, in which
+   * case the picker offers only what the directory search returns. Each suggestion may carry the
+   * person's crew `tag`, which the picker shows alongside their name when `showTag` is on.
+   */
+  suggestions?: () => TrackedUser[];
   /** Called when a new user is picked from the directory. */
   onChange?: (user: DirectoryUser) => void;
   /**
    * When true, render the assigned person's Feature Crew tag as a colored pill after their name (and
    * the neutral "??" pill when they have no tag yet). Off by default so views that do not use tags
-   * stay uncluttered; the tag is read from `user.tag`.
+   * stay uncluttered; the tag is read from `user.tag`. This governs the CHIP only — the picker tags
+   * the people it offers whenever `suggestions` carry tags, since a tagless chip (the Tech Lead, a
+   * dense list) still benefits from seeing which crew a candidate belongs to.
    */
   showTag?: boolean;
   /**
@@ -33,6 +44,17 @@ export interface AssignedToOptions {
    * assignee. Providing it turns the tag pill into a clickable editor; omit it for a read-only pill.
    */
   onTagChange?: (tag: string) => void;
+}
+
+/**
+ * The rendered control plus the hook its owner uses to reflect a committed assignment.
+ *
+ * Mirrors `StatusBadgeHandle` and `EtaBadgeHandle`: the control never repaints itself when a value
+ * is picked, so the owner can write to Azure DevOps first and only show what ADO actually accepted.
+ */
+export interface AssignedToHandle extends HTMLElement {
+  /** Show `user` as the current assignee (and their tag); `null` renders "Unassigned". */
+  setUser(user: TrackedUser | null): void;
 }
 
 /**
@@ -85,14 +107,47 @@ function buildAssignedRoot(
   return { root, nameButton };
 }
 
+/** The class the spinner's keyframes are bound to, shared by the rule and the element. */
+const SPINNER_CLASS = "awesomeado-assigned__spinner";
+
 /**
- * Build the picker popup shell: the floating container, its search input, and the (empty) results
- * list, with the input and list already mounted. Wiring the search + result behavior is the caller's.
+ * Build the spinning ring that says a directory round-trip is still running, plus the stylesheet its
+ * animation needs.
+ *
+ * The rule lives INSIDE the popup (not in `document.head`) so it is created and discarded with the
+ * popup it belongs to, and so it still applies if this control is ever mounted inside a shadow root.
+ * Its colors are fixed low-alpha greys rather than palette tokens: under "Follow ADO" those tokens
+ * resolve to the surface the popup is already painted with, which is how the old text-only status
+ * could be there and still be missed.
+ */
+function buildSearchSpinner(doc: Document): { spinner: HTMLElement; style: HTMLStyleElement } {
+  const style = doc.createElement("style");
+  style.textContent = `@keyframes awesomeado-assigned-spin{to{transform:rotate(360deg)}}.${SPINNER_CLASS}{animation:awesomeado-assigned-spin 0.7s linear infinite}`;
+
+  const spinner = doc.createElement("span");
+  spinner.className = SPINNER_CLASS;
+  spinner.style.cssText = [
+    "display:none",
+    "flex:0 0 auto",
+    "width:10px",
+    "height:10px",
+    "border:2px solid rgba(128,128,128,0.35)",
+    "border-top-color:rgba(128,128,128,0.95)",
+    "border-radius:50%",
+  ].join(";");
+  return { spinner, style };
+}
+
+/**
+ * Build the picker popup shell: the floating container, its search input, the status line, and the
+ * (empty) results list, already mounted. Wiring the search + result behavior is the caller's.
  */
 function buildPickerPopup(doc: Document): {
   popup: HTMLElement;
   searchInput: HTMLInputElement;
   resultsList: HTMLUListElement;
+  statusText: HTMLElement;
+  spinner: HTMLElement;
 } {
   const popup = doc.createElement("div");
   popup.className = "awesomeado-assigned__popup";
@@ -136,142 +191,412 @@ function buildPickerPopup(doc: Document): {
     "overflow-y:auto",
   ].join(";");
 
-  popup.append(searchInput, resultsList);
-  return { popup, searchInput, resultsList };
+  // The picker used to render an empty box while it had nothing to offer, which is indistinguishable
+  // from a broken directory. This row always says which of the two it is — and while a search is
+  // running it spins, so a slow round-trip reads as "wait" rather than as "nobody matched".
+  const statusLine = doc.createElement("div");
+  statusLine.className = "awesomeado-assigned__status";
+  statusLine.style.cssText = [
+    "display:flex",
+    "align-items:center",
+    "gap:6px",
+    "font-size:11px",
+    "padding:4px 8px",
+    // Muted with opacity over the INHERITED color rather than a secondary-color token: those tokens
+    // collapse into the surrounding text (or the surface) under "Follow ADO", which is how the
+    // status could be present and invisible at the same time.
+    "color:inherit",
+    "opacity:0.75",
+  ].join(";");
+
+  const { spinner, style } = buildSearchSpinner(doc);
+  const statusText = doc.createElement("span");
+  statusText.className = "awesomeado-assigned__status-text";
+  statusLine.append(spinner, statusText);
+
+  popup.append(style, searchInput, resultsList, statusLine);
+  return { popup, searchInput, resultsList, statusText, spinner };
 }
 
 /**
- * Replace the results list with one selectable button per directory user. Each button reports the
- * picked user through `onPick`; a themed hover highlight makes the focused row obvious.
+ * The fill worn by the one result row that Enter would commit.
+ *
+ * A fixed low-alpha grey, not `--palette-neutral-4`: under "Follow ADO" that token resolves to ADO's
+ * own surface color, which is what the popup is already painted with — so the highlighted row was
+ * indistinguishable from the rest of the list on exactly the theme most people run. Grey at this
+ * alpha darkens a light popup and lightens a dark one, so the highlight reads on every theme (the
+ * same self-contained fix the ETA picker's chrome uses).
  */
-function renderUserResults(
+const HIGHLIGHT_BACKGROUND = "rgba(128,128,128,0.28)";
+
+/**
+ * Build one selectable result row. The unique name is shown underneath because a directory search
+ * routinely returns two people who share a display name, and the address is the only thing that
+ * tells them apart; the crew tag (or the neutral "??" pill for anyone without one) sits at the end
+ * so the crew a name belongs to is visible while choosing, not only after the pick.
+ */
+function buildResultRow(doc: Document, user: TrackedUser, showTags: boolean): HTMLButtonElement {
+  const button = doc.createElement("button");
+  button.type = "button";
+  button.style.cssText = [
+    "cursor:pointer",
+    "border:none",
+    "background:transparent",
+    "padding:4px 8px",
+    "width:100%",
+    "text-align:left",
+    "font:inherit",
+    "color:inherit",
+    "display:flex",
+    "align-items:center",
+    "gap:6px",
+  ].join(";");
+
+  const identity = doc.createElement("span");
+  identity.className = "awesomeado-assigned__result-identity";
+  // Takes the slack so the tag pill is pushed to the row's trailing edge and every pill lines up.
+  identity.style.cssText = "flex:1 1 auto;min-width:0";
+
+  const name = doc.createElement("span");
+  name.className = "awesomeado-assigned__result-name";
+  name.style.cssText = "display:block";
+  name.textContent = user.displayName;
+  identity.append(name);
+
+  if (user.uniqueName !== null && user.uniqueName.length > 0) {
+    const unique = doc.createElement("span");
+    unique.className = "awesomeado-assigned__result-unique";
+    unique.style.cssText = [
+      "display:block",
+      "font-size:10px",
+      "color:var(--text-secondary-color, #8a8886)",
+    ].join(";");
+    unique.textContent = user.uniqueName;
+    identity.append(unique);
+  }
+  button.append(identity);
+
+  if (showTags) {
+    // A person the directory returned who has never worked on this project carries no tag at all,
+    // which reads the same as a known-but-untagged person: the neutral "??" pill.
+    const pill = renderTagPill(doc, { tag: user.tag ?? null });
+    compactTagPill(pill);
+    pill.style.flex = "0 0 auto";
+    button.append(pill);
+  }
+  return button;
+}
+
+/** The result list, plus the keyboard-driven highlight that decides what Enter commits. */
+interface ResultRows {
+  /** Repaint the list for `users`; the first row is highlighted so Enter commits the top match. */
+  setUsers(users: TrackedUser[]): void;
+  /** Move the highlight by `delta` rows, wrapping around both ends like a native dropdown. */
+  move(delta: number): void;
+  /** Commit the highlighted row; a no-op when the list is empty. */
+  commitHighlighted(): void;
+}
+
+/**
+ * Own the results list and its highlight.
+ *
+ * The highlight is a single index rather than DOM focus so typing never leaves the search box: a
+ * native dropdown lets you keep refining the query while the arrows walk the list, and moving focus
+ * onto a row would swallow the next keystroke. Hovering a row moves the same highlight, so the mouse
+ * and the arrow keys can never disagree about what Enter would pick.
+ */
+function createResultRows(
   doc: Document,
   resultsList: HTMLElement,
-  users: DirectoryUser[],
-  onPick: (user: DirectoryUser) => void,
-): void {
-  // Clear and repopulate the results list.
-  resultsList.innerHTML = "";
-  users.forEach((directoryUser) => {
-    const li = doc.createElement("li");
-    li.className = "awesomeado-assigned__result";
+  showTags: boolean,
+  onPick: (user: TrackedUser) => void,
+): ResultRows {
+  let offered: TrackedUser[] = [];
+  let rows: HTMLButtonElement[] = [];
+  let highlighted = -1;
 
-    const button = doc.createElement("button");
-    button.type = "button";
-    button.textContent = directoryUser.displayName;
-    button.style.cssText = [
-      "cursor:pointer",
-      "border:none",
-      "background:transparent",
-      "padding:4px 8px",
-      "width:100%",
-      "text-align:left",
-      "font:inherit",
-      "color:inherit",
-    ].join(";");
-
-    button.addEventListener("click", () => onPick(directoryUser));
-
-    // Hover highlight uses ADO theme token.
-    button.addEventListener("mouseenter", () => {
-      button.style.background = "var(--palette-neutral-4, #f3f2f1)";
+  const paintHighlight = (): void => {
+    rows.forEach((row, index) => {
+      row.style.background = index === highlighted ? HIGHLIGHT_BACKGROUND : "transparent";
     });
-    button.addEventListener("mouseleave", () => {
-      button.style.background = "transparent";
-    });
+    // Keep the highlight visible while arrowing through a list taller than its scroll box. Guarded
+    // because layout-free environments (jsdom) do not implement scrollIntoView.
+    rows[highlighted]?.scrollIntoView?.({ block: "nearest" });
+  };
 
-    li.append(button);
-    resultsList.append(li);
+  return {
+    setUsers: (users) => {
+      offered = users;
+      resultsList.innerHTML = "";
+      rows = users.map((user, index) => {
+        const row = buildResultRow(doc, user, showTags);
+        row.addEventListener("click", () => onPick(user));
+        row.addEventListener("mouseenter", () => {
+          highlighted = index;
+          paintHighlight();
+        });
+        const li = doc.createElement("li");
+        li.className = "awesomeado-assigned__result";
+        li.append(row);
+        resultsList.append(li);
+        return row;
+      });
+      // Pre-highlighting the top row makes Enter alone accept the most likely choice, which is what
+      // a native dropdown does; a fresh list must never keep a stale index from the previous query.
+      highlighted = rows.length > 0 ? 0 : -1;
+      paintHighlight();
+    },
+    move: (delta) => {
+      if (rows.length === 0) {
+        return;
+      }
+      highlighted = (highlighted + delta + rows.length) % rows.length;
+      paintHighlight();
+    },
+    commitHighlighted: () => {
+      const user = offered[highlighted];
+      if (user) {
+        onPick(user);
+      }
+    },
+  };
+}
+
+/** Whether `user` matches the typed text on either the display name or the unique name. */
+function matchesQuery(user: TrackedUser, lowerQuery: string): boolean {
+  return (
+    user.displayName.toLowerCase().includes(lowerQuery) ||
+    (user.uniqueName?.toLowerCase().includes(lowerQuery) ?? false)
+  );
+}
+
+/**
+ * Append the directory's answer to the locally-matched suggestions, dropping anyone already offered.
+ * Suggestions stay first on purpose: they are the people working on this very project, so the person
+ * being looked for is almost always among them, and pushing the organization-wide matches below keeps
+ * the common case a single glance.
+ */
+function mergeDirectoryResults(suggested: TrackedUser[], found: DirectoryUser[]): TrackedUser[] {
+  const keyOf = (user: DirectoryUser): string =>
+    (user.uniqueName ?? user.displayName).toLowerCase();
+  const seen = new Set(suggested.map(keyOf));
+  return [...suggested, ...found.filter((user) => !seen.has(keyOf(user)))];
+}
+
+/** What the picker's status line says about the current query and result set. */
+function pickerStatus(query: string, resultCount: number, searching: boolean): string {
+  if (searching) {
+    return "Searching Azure DevOps…";
+  }
+  if (query.length > 0 && query.length < MIN_IDENTITY_SEARCH_LENGTH) {
+    return "Keep typing to search Azure DevOps…";
+  }
+  if (resultCount === 0) {
+    return query.length === 0 ? "Type a name to search Azure DevOps." : "No people found.";
+  }
+  return "";
+}
+
+/** Everything the picker popup needs to offer people and report the one that was picked. */
+interface PickerOptions {
+  doc: Document;
+  root: HTMLElement;
+  nameButton: HTMLButtonElement;
+  userDirectory: IUserDirectory;
+  /** Read fresh on every open, so a person assigned a moment ago is already offered. */
+  suggestions: () => TrackedUser[];
+  onChange: ((user: DirectoryUser) => void) | undefined;
+}
+
+/**
+ * Wire the name button to the people picker.
+ *
+ * The popup lifecycle (outside-click and Escape dismissal, staying inside the viewport) is delegated
+ * to the shared popup host: this control previously rolled its own and only closed when the trigger
+ * itself was clicked again, which left the list stranded over the board.
+ *
+ * Suggestions are painted the instant the popup opens and are filtered locally as the user types, so
+ * the common case — reassigning to someone already on this project — never waits on the network. A
+ * query long enough to be meaningful additionally asks the directory, and those matches are appended
+ * when they arrive; a sequence guard drops the answer to a query the user has already typed past.
+ *
+ * The picker behaves like a native dropdown: it opens with the caret already in the search box, the
+ * arrow keys walk the list, and Enter commits the highlighted person.
+ *
+ * Rows wear a crew tag pill whenever the suggestions carry tag data — read from the offered people
+ * rather than from the chip's own `showTag`, because a chip can have good reason to stay tagless (the
+ * Tech Lead, the dense rolled-up children list) while the roomy picker still benefits from showing
+ * which crew each candidate belongs to. A view whose people carry no tags gets no pills at all.
+ */
+function createPicker(options: PickerOptions): void {
+  const { doc, root, nameButton, userDirectory, suggestions, onChange } = options;
+  // Rebuilt on each open (the popup is discarded on close), so focus always lands on the live input.
+  let searchBox: HTMLInputElement | null = null;
+
+  createPopupHost({
+    doc,
+    trigger: nameButton,
+    mountInto: root,
+    buildPopup: (close) => {
+      const { popup, searchInput, resultsList, statusText, spinner } = buildPickerPopup(doc);
+      searchBox = searchInput;
+      const offered = suggestions();
+      const showTags = offered.some((person) => person.tag !== undefined);
+      // A stale directory answer must never overwrite a newer one; the counter is per-open because
+      // the popup (and every in-flight search it owns) is discarded on close.
+      let requestSeq = 0;
+
+      const rows = createResultRows(doc, resultsList, showTags, (picked) => {
+        // Persist-then-reflect (matching the status and ETA controls): the caller writes the
+        // change and calls `setUser` once ADO accepts it, so a rejected write never leaves a name
+        // on screen that was never saved.
+        onChange?.(picked);
+        close();
+      });
+
+      const show = (users: TrackedUser[], query: string, searching: boolean): void => {
+        rows.setUsers(users);
+        statusText.textContent = pickerStatus(query, users.length, searching);
+        // The spinner is the only signal that survives a glance: a round-trip can outlast the
+        // reader's patience, and a still list plus one line of small text reads as "nothing found".
+        spinner.style.display = searching ? "inline-block" : "none";
+      };
+
+      searchInput.addEventListener("input", () => {
+        const query = searchInput.value.trim();
+        const mySeq = ++requestSeq;
+        const lower = query.toLowerCase();
+        const matched =
+          query.length === 0 ? offered : offered.filter((user) => matchesQuery(user, lower));
+        const willSearch = query.length >= MIN_IDENTITY_SEARCH_LENGTH;
+        show(matched, query, willSearch);
+        if (!willSearch) {
+          return;
+        }
+        void userDirectory.search(query).then((found) => {
+          if (mySeq !== requestSeq) return;
+          show(mergeDirectoryResults(matched, found), query, false);
+        });
+      });
+
+      // Bound to the popup, not the input, so the keys keep working wherever focus wandered inside
+      // it. Escape is deliberately left alone — the popup host already closes on it.
+      popup.addEventListener("keydown", (event) => handlePickerKey(event, rows));
+
+      show(offered, "", false);
+      return popup;
+    },
+    // Focusing has to wait until the popup is mounted: an element that is still detached cannot
+    // take focus, so the picker used to open with the caret left behind on the page.
+    onOpened: () => searchBox?.focus(),
   });
+}
+
+/** Drive the picker from the keyboard the way a native dropdown does: arrows walk, Enter commits. */
+function handlePickerKey(event: KeyboardEvent, rows: ResultRows): void {
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    // Stop the arrows from jumping the caret to either end of the typed query.
+    event.preventDefault();
+    rows.move(event.key === "ArrowDown" ? 1 : -1);
+    return;
+  }
+  if (event.key === "Enter") {
+    // The picker lives inside ADO's own page; an un-prevented Enter can submit a surrounding form.
+    event.preventDefault();
+    rows.commitHighlighted();
+  }
+}
+
+/**
+ * Mount the assignee's tag pill on the chip when the caller asked for one, or return null when this
+ * view does not use crew tags at all. The pill exists for an unassigned slot too — just hidden — so
+ * a later reassignment can reveal it without rebuilding the chip.
+ */
+function mountTagSlot(
+  doc: Document,
+  root: HTMLElement,
+  user: TrackedUser | null,
+  options: AssignedToOptions,
+): TagPillSlot | null {
+  if (options.showTag !== true) {
+    return null;
+  }
+  const slot = renderAssigneeTagPill(
+    doc,
+    root,
+    user?.tag ?? null,
+    options.assignableTags ?? [],
+    options.onTagChange,
+  );
+  root.append(slot.pill);
+  return slot;
+}
+
+/** Paint the chip for `assigned`: their name (or "Unassigned") and, when present, their tag pill. */
+function showAssignee(
+  nameButton: HTMLButtonElement,
+  tagSlot: TagPillSlot | null,
+  assigned: TrackedUser | null,
+): void {
+  nameButton.textContent = assigned?.displayName ?? "Unassigned";
+  if (tagSlot === null) {
+    return;
+  }
+  // An unassigned slot wears no tag, so the pill is hidden rather than removed.
+  tagSlot.pill.style.display = assigned === null ? "none" : "";
+  tagSlot.applyTag(assigned?.tag ?? "");
 }
 
 /**
  * An assignee control showing the current user's name as clickable text that opens a picker popup.
  *
- * Displays "Unassigned" when no user is set. Clicking the name opens a search popup; typing
- * triggers directory searches and displays results. Selecting a result calls onChange and closes
- * the popup. Escape also closes. Theme-aware via ADO CSS custom properties.
+ * Displays "Unassigned" when no user is set. Clicking the name opens a people picker that lists the
+ * caller's suggestions (the project's Feature Crew) straight away, filters them as you type, and
+ * searches Azure DevOps' directory for anything longer than a couple of characters. Picking someone
+ * calls `onChange` and closes the popup; an outside click or Escape closes it without changing the
+ * assignment. Theme-aware via ADO CSS custom properties.
+ *
+ * The control does NOT repaint itself when someone is picked. Like the status and ETA controls it is
+ * persist-then-reflect: the caller writes to Azure DevOps and calls `setUser` on the returned handle
+ * once the write is accepted, so a rejected write can never leave an unsaved name on the board.
  *
  * The popup is positioned absolutely within a relatively-positioned root so it floats under the name.
  */
-export function renderAssignedTo(doc: Document, options: AssignedToOptions): HTMLElement {
-  const {
-    user,
-    userDirectory,
-    onChange,
-    showTag = false,
-    assignableTags = [],
-    onTagChange,
-  } = options;
+export function renderAssignedTo(doc: Document, options: AssignedToOptions): AssignedToHandle {
+  const { user, userDirectory, suggestions = () => [], onChange } = options;
 
-  const { root, nameButton } = buildAssignedRoot(doc, user?.displayName ?? "Unassigned");
+  const { root, nameButton } = buildAssignedRoot(doc, "Unassigned");
+  const tagSlot = mountTagSlot(doc, root, user, options);
+  showAssignee(nameButton, tagSlot, user);
 
-  // Show the person's Feature Crew tag as a colored pill beside their name (the neutral "??" pill
-  // when they have no tag yet). Only for a real assignee — an unassigned slot wears no tag. With an
-  // `onTagChange` handler the pill becomes a clickable editor for choosing/adding a tag.
-  if (showTag && user !== null) {
-    root.append(renderAssigneeTagPill(doc, root, user.tag ?? null, assignableTags, onTagChange));
-  }
+  createPicker({ doc, root, nameButton, userDirectory, suggestions, onChange });
 
-  // Track popup state and out-of-order response guard.
-  let popup: HTMLElement | null = null;
-  let requestSeq = 0;
-
-  // Open the picker popup.
-  const openPopup = () => {
-    if (popup) return; // Already open.
-
-    const built = buildPickerPopup(doc);
-    popup = built.popup;
-    const { searchInput, resultsList } = built;
-    root.append(popup);
-
-    // Search on every input event (no debounce; must be deterministic).
-    searchInput.addEventListener("input", () => {
-      const query = searchInput.value.trim();
-      const mySeq = ++requestSeq;
-
-      userDirectory.search(query).then((users) => {
-        // Guard against out-of-order responses: ignore stale results.
-        if (mySeq !== requestSeq) return;
-
-        renderUserResults(doc, resultsList, users, (directoryUser) => {
-          onChange?.(directoryUser);
-          // Update the name button label.
-          nameButton.textContent = directoryUser.displayName;
-          closePopup();
-        });
-      });
-    });
-
-    // Escape closes the popup.
-    searchInput.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") {
-        closePopup();
-      }
-    });
-
-    searchInput.focus();
+  const handle = root as AssignedToHandle;
+  handle.setUser = (assigned) => {
+    showAssignee(nameButton, tagSlot, assigned);
   };
+  return handle;
+}
 
-  // Close the picker popup.
-  const closePopup = () => {
-    if (!popup) return;
-    popup.remove();
-    popup = null;
-    requestSeq++; // Invalidate any in-flight searches.
-  };
+/** The assignee's tag pill plus the hook that repaints it when the tag (or the assignee) changes. */
+interface TagPillSlot {
+  pill: HTMLElement;
+  /** Repaint the pill for `tag`; an empty string means "assigned but untagged" (the "??" pill). */
+  applyTag: (tag: string) => void;
+}
 
-  // Toggle popup on name button click.
-  nameButton.addEventListener("click", () => {
-    if (popup) {
-      closePopup();
-    } else {
-      openPopup();
-    }
-  });
-
-  return root;
+/**
+ * Collapse the shared pill's tall line-height and trim its box so it nearly fills the short chip
+ * instead of stretching it past the status badge's height. The shared pill is already an inline-flex
+ * with align-items:center; add justify-content:center so the label sits dead-centre both ways once
+ * the taller line-height is removed. Shared with the picker's rows so a person's tag looks identical
+ * wherever it is shown.
+ */
+function compactTagPill(pill: HTMLElement): void {
+  pill.style.lineHeight = "1";
+  pill.style.padding = "2px 7px";
+  pill.style.justifyContent = "center";
+  pill.style.textAlign = "center";
 }
 
 /**
@@ -286,22 +611,9 @@ function renderAssigneeTagPill(
   currentTag: string | null,
   assignableTags: string[],
   onTagChange: ((tag: string) => void) | undefined,
-): HTMLElement {
+): TagPillSlot {
   const pill = renderTagPill(doc, { tag: currentTag });
-  // Collapse the shared pill's tall line-height and trim its box so it nearly fills the short chip
-  // instead of stretching it past the status badge's height. The shared pill is already an
-  // inline-flex with align-items:center; add justify-content:center so the label sits dead-centre
-  // both ways once the taller line-height is removed.
-  pill.style.lineHeight = "1";
-  pill.style.padding = "2px 7px";
-  pill.style.justifyContent = "center";
-  pill.style.textAlign = "center";
-
-  if (onTagChange === undefined) {
-    return pill;
-  }
-
-  pill.style.cursor = "pointer";
+  compactTagPill(pill);
 
   // Reflect a committed choice on the pill immediately. The owner typically re-renders the tree too,
   // but painting here keeps the chip correct in the gap before that refresh lands. Tracked so a
@@ -315,6 +627,12 @@ function renderAssigneeTagPill(
     pill.classList.toggle("awesomeado-tag-pill--untagged", normalized === null);
   };
 
+  if (onTagChange === undefined) {
+    return { pill, applyTag };
+  }
+
+  pill.style.cursor = "pointer";
+
   createPopupHost({
     doc,
     trigger: pill,
@@ -327,7 +645,7 @@ function renderAssigneeTagPill(
       }),
   });
 
-  return pill;
+  return { pill, applyTag };
 }
 
 /**

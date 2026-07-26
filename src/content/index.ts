@@ -8,6 +8,10 @@ import {
 import type { ActiveView } from "../common/bindings/QueryBinding";
 import { createQueryBindingStore } from "../common/bindings/createQueryBindingStore";
 import {
+  type SearchAdoIdentitiesMessage,
+  type SearchAdoIdentitiesResponse,
+} from "../common/browser/AdoIdentityRequest";
+import {
   type LoadTeamIterationsMessage,
   type LoadTeamIterationsResponse,
 } from "../common/browser/AdoIterationsRequest";
@@ -27,6 +31,10 @@ import {
   MessagingTeamIterationsLoader,
   type SendIterationsRequest,
 } from "../common/browser/MessagingTeamIterationsLoader";
+import {
+  MessagingUserDirectory,
+  type SendIdentitySearchRequest,
+} from "../common/browser/MessagingUserDirectory";
 import {
   MessagingWorkItemFieldWriter,
   type SendUpdateFieldRequest,
@@ -83,8 +91,8 @@ const store = createSettingsStore(loggers.forSource("common/settings"));
 // background worker (which runs the MAIN-world fetch) and parses the raw bodies it returns — see
 // common/browser/MessagingWorkItemTreeLoader. The type catalog and the tree's ETA fields are read
 // from the latest synced settings (captured below); the sprint window is fetched live from the
-// configured team's iterations; the user directory is empty (a follow-up); the clock is live; the
-// logger is shared.
+// configured team's iterations; the user directory searches ADO's identity picker the same way; the
+// clock is live; the logger is shared.
 let latestSettings: ExtensionSettings | undefined;
 
 // Rebuilt per load from the latest settings so a type's configured ETA date field is both requested
@@ -142,13 +150,22 @@ const workItemFieldWriter = new MessagingWorkItemFieldWriter(
   loggers.forSource("content/views"),
 );
 
+// The people picker resolves names against ADO's own identity directory the same way: the isolated
+// content world cannot reach the credentialed REST API, so the directory messages the background
+// worker (which runs the MAIN-world search with the user's session cookies).
+const sendIdentitySearchRequest: SendIdentitySearchRequest = (message) =>
+  chrome.runtime.sendMessage<SearchAdoIdentitiesMessage, SearchAdoIdentitiesResponse | undefined>(
+    message,
+  );
+const userDirectory = new MessagingUserDirectory(
+  sendIdentitySearchRequest,
+  loggers.forSource("content/views"),
+);
+
 const trackingServices: EnhancedViewServices = {
   loadTree: (queryId) => treeLoader.loadTree(queryId),
   featureCrew: featureCrewWriter,
-  userDirectory: {
-    search: () => Promise.resolve([]),
-    resolve: () => Promise.resolve(null),
-  },
+  userDirectory,
   getTypes: () =>
     (latestSettings?.workItemTypes ?? []).map((t) => ({
       name: t.name,

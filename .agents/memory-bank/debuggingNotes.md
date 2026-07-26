@@ -350,6 +350,88 @@ iterationPath.includes("\\")`. sprintName = leaf of iterationPath (`sprintLeaf` 
 - `expect.arrayContaining(TRACKING_FIELDS)` fails TS (readonly[] not assignable) → spread
   `[...TRACKING_FIELDS]`.
 
+## AssignedTo picker — empty dropdown, popup that would not close, missing write (ADR-038)
+
+- THREE independent bugs looked like one: (1) the control hand-rolled its own open/close instead of
+  `createPopupHost`, so ONLY a second trigger click dismissed it (no outside-click, no Escape unless
+  focus was in the input, no viewport clamp); (2) the results list was populated ONLY from the
+  `input` handler, and `content/index.ts` wired a stub `userDirectory` returning `[]` — so it was
+  always empty; (3) `onChange` went to `crewSync.onAssigneeChange` ONLY, which appends to the Feature
+  Crew roster — the work item's `System.AssignedTo` was NEVER written.
+- FIX = `createPopupHost` + `suggestions: () => DirectoryUser[]` rendered on OPEN (Project Tracking
+  passes `collectAssignedDirectoryUsers([root])`, walking the LIVE tree so no cache can drift) +
+  `MessagingUserDirectory` for real search + an ordinary `FieldWriteQueue` write of
+  `ASSIGNED_TO_FIELD` with `identityFieldValue(picked)` (unique name; ADO resolves identities from
+  it, display name only as fallback).
+- `renderAssignedTo` now returns `AssignedToHandle extends HTMLElement { setUser }` and NO LONGER
+  repaints its own label on pick (persist-then-reflect, matching StatusBadge/EtaBadge). Tests that
+  asserted "label updates after selecting" had to flip.
+- Identity search endpoint = `{collectionBase}/_apis/IdentityPicker/Identities` POST, pinned to
+  `5.0-preview.1` (NOT `ADO_API_VERSION` — the endpoint never left preview; asking for 7.1 errors).
+  Body `{query, identityTypes:["user"], operationScopes:["ims","source"], properties, options}`;
+  response `results[].identities[]` → `signInAddress ?? mail` for uniqueName, dedupe across scopes
+  (the same person comes back once per scope), drop `active:false`. Header
+  `X-TFS-FedAuthRedirect: Suppress` is REQUIRED or an expired session answers 200 + an HTML login
+  page, which parses as "no people found".
+- `MIN_IDENTITY_SEARCH_LENGTH` (2) is enforced in THREE places on purpose: the control (filters
+  suggestions only), `MessagingUserDirectory` (no round-trip), and
+  `buildAdoIdentitySearchRequest` (returns null). Tests typing a single character will see NO search.
+- jsdom gotcha: `popupHost` dismisses from DOCUMENT-level capture listeners, so a dismissal test must
+  `document.body.append(control)` first — an event dispatched on a DETACHED node never reaches them.
+- The post-pick Feature Crew reconcile now runs even when the person was ALREADY on the roster: the
+  reconcile is what returns their tag, so skipping it left the chip on the neutral "??" pill. It
+  writes nothing when nothing changed.
+- `ChildItemsBadge` lost `userDirectory` / `ChildItemDescriptor.assignedTo` / `onAssigneeChange`;
+  the row now takes a prebuilt `assignee: HTMLElement`, exactly like the existing `eta` slot.
+
+## AssignedTo picker — dropdown ergonomics (focus, tags, keyboard)
+
+- `searchInput.focus()` inside `buildPopup` was a NO-OP: `popupHost` appends the popup only AFTER
+  `buildPopup` returns, and a DETACHED element cannot take focus. Fix = `PopupHostOptions.onOpened`
+  (fires after mount AND after `keepPopupInView`, so focus never fights the repositioning). Any
+  future control that wants focus in its popup must use `onOpened`, never `buildPopup`.
+- The picker rows tag off the OFFERED PEOPLE (`suggestions()[].tag !== undefined`), NOT the chip's
+  `showTag`: two chips deliberately pass `showTag: false` (Tech Lead, rolled-up children list) but
+  still want a tag-bearing picker. `collectAssignedDirectoryUsers` therefore returns `TrackedUser[]`
+  (tag included, `null` when untagged) instead of `DirectoryUser[]`.
+- Keyboard nav keeps the highlight as an INDEX and leaves DOM focus in the search box — focusing a
+  row would swallow the next keystroke and stop the query from being refined. Arrow keys wrap; the
+  list re-highlights row 0 on every repaint (so Enter takes the top match and a stale index from the
+  previous query can never commit the wrong person); `mouseenter` moves the same index so the mouse
+  and keyboard cannot disagree. `preventDefault` on the arrows (caret jump) and on Enter (ADO's own
+  surrounding form).
+- jsdom does NOT implement `Element.scrollIntoView`; call it as `row?.scrollIntoView?.(…)` or the
+  keyboard tests throw.
+- The row highlight must NOT use `var(--palette-neutral-4, …)`: under "Follow ADO" that token
+  resolves to ADO's own surface color — the very color the popup is painted with — so the
+  highlighted row vanished on that theme. Fixed grey `rgba(128,128,128,0.28)` instead (darkens a
+  light popup, lightens a dark one). Same class of bug as the EtaBadge popup borders.
+
+## Identity search found nobody outside the Feature Crew
+
+- ROOT CAUSE: `parseAdoIdentities` dropped every identity the endpoint flagged `active:false`.
+  `active` means "already a member of THIS organization", so every hit that came from the backing
+  directory (`source` scope) — precisely the people the search exists to find, and the ones ADO's own
+  picker offers — was thrown away. The filter is gone and `Active` is no longer even requested; an
+  identity ADO will not accept is rejected at WRITE time, where the board's save indicator reports it.
+- The request body is now kept to the shape of a known-good client (`.tools/ADO/Common/AdoClient.psm1`,
+  `Search-AdoIdentities`): `query`, `identityTypes:["user"]`, `operationScopes:["ims","source"]`,
+  `properties`, `options:{MinResults:1,MaxResults:n}`. Do NOT re-add speculative fields
+  (`queryTypeHint`, `filterBy*`, a larger `MinResults`) — that client proves they are unnecessary,
+  and this preview endpoint rejects what it does not expect.
+- `fetchAdoIdentitiesInPage` used to collapse EVERY failure to `null`, so a rejected request, an
+  expired session and a real "nobody matched" were the same thing to the picker ("No people found.")
+  and to the log. It now returns `AdoIdentitySearchOutcome { status, body, failure }` and the worker
+  logs `Identity search failed (<failure>, HTTP <status>)`. NEVER log ADO's error text here — it
+  quotes the query, which is a person's name (AGENTS.md §9). Diagnostics is the FIRST place to look
+  when the picker finds nobody.
+- `parseAdoIdentities` reads the identity groups from `results`, `value`, or a bare array, so an
+  envelope difference degrades to the same parse instead of to an empty directory.
+- A network round-trip needs a MOVING signal: one line of small text is missed, so the picker's
+  status row carries a CSS-animated spinner (keyframes in a `<style>` inside the popup, so it lives
+  and dies with the popup and would still work inside a shadow root). The status row is muted with
+  `color:inherit` + `opacity`, never a secondary-color token.
+
 ## Options Work item types table — UI refinements (AutocompleteInput + WorkItemTypesController)
 
 - `AutocompleteInput.enableFloating()`: switches the suggestion list to position:fixed computed from
@@ -387,6 +469,29 @@ iterationPath.includes("\\")`. sprintName = leaf of iterationPath (`sprintLeaf` 
   before/after index logic as dropRow so preview matches landing. CSS draws the line on `> td`
   (box-shadow inset ±2px var(--accent)) — a border on `<tr>` is unreliable. Hovering the dragged row
   itself shows no line.
+
+## popupHost — a popup opened inside a SHORT scroll box was clipped away (ETA picker in the rollup)
+
+- SYMPTOM: clicking the ETA in the ChildItemsBadge ("done / total") popup showed no date picker at
+  all — just stray scrollbar arrows at the popup's right edge. ROOT CAUSE: that popup is
+  `max-height:320px; overflow-y:auto`, and with one child it is ONE ROW TALL. The ETA picker anchors
+  at `top:100%` (below the row) = outside the scroll box's content box → clipped to nothing.
+  `keepPopupInView`'s shift/flip could not help: no amount of nudging fits a 34px popup into a 34px
+  box, and `bottom:100%` would still be inside the same clip.
+- FIX (shared, in `popupHost.keepPopupInView`): if the popup does NOT fit inside `visibleBounds`
+  (window narrowed by clipping ancestors) but DOES fit inside `windowBounds`, `anchorToViewport()`
+  switches it to `position:fixed` at the trigger's `getBoundingClientRect()` (left, bottom+4) and the
+  shift/flip then runs against the window. Every popupHost control gets this for free.
+- The escaped box is DERIVED from the trigger rect, never re-measured — the browser has not re-laid
+  out yet, and jsdom performs no layout at all (tests stub `getBoundingClientRect` on trigger+popup).
+- FLIP differs per mode: absolute → `top:auto; bottom:100%`; fixed → `top = triggerTop - height - 4`
+  in px (`bottom:100%` on a fixed popup resolves against the VIEWPORT, not the trigger).
+- Guards that must stay: escape only when the WINDOW has room (else a too-big popup just moves
+  somewhere equally unusable — protects the existing "never shifts past the left edge" behaviour);
+  and a fixed popup no longer travels with its trigger, so `open()` arms a capture-phase document
+  `scroll` listener (scroll does NOT bubble) that closes it, ignoring scrolls inside the popup itself.
+- Fixed escapes overflow ONLY because no ancestor has transform/filter/will-change/contain (same
+  caveat as `AutocompleteInput.enableFloating`). Verify before adding any such style to the overlay.
 
 ## Memory bank / changelog state (deep-review)
 

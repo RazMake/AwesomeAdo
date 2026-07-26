@@ -30,6 +30,9 @@ const host = createPopupHost({
 - **`mountInto: HTMLElement`** — Where the popup is appended when it opens.
 - **`buildPopup: (close: () => void) => HTMLElement`** — Builds the popup element on each open;
   receives the host's `close` so an in-popup action can dismiss it.
+- **`onOpened?: (popup: HTMLElement) => void`** — Called with the popup once it is mounted and
+  repositioned. Move focus from here, not from `buildPopup`: an element that is still detached
+  cannot take focus, so focusing during the build silently does nothing.
 - **`interactive?: boolean`** — When `false`, the trigger click is not wired (read-only control).
   Defaults to `true`.
 
@@ -54,6 +57,22 @@ The visible area is the window's client box narrowed by every ancestor that clip
 content. That is deliberately **not** `window.innerWidth`: enhanced views live in a scrolling overlay
 whose scrollbars cover the last ~15px of the window, which is exactly where a popup anchored to a
 right-most control would land.
+
+## Escaping a scroll box that is too small
+
+Some scroll boxes can never show a popup opened from inside them — the rolled-up children popup is
+only as tall as its rows, so an ETA picker opening under a row was clipped away to nothing. When the
+popup does not fit inside its clipping ancestors but **would** fit in the window, the host re-anchors
+it to the viewport (`position:fixed` at the trigger's rect) so no ancestor's `overflow` can cut it
+off, then applies the same shift/flip corrections against the window. A popup too big for the window
+itself is left where the control put it.
+
+A viewport-anchored popup no longer travels with its trigger, so while one is open the host also
+closes it on any scroll raised outside it (capture phase, since `scroll` does not bubble). Scrolling
+the popup's own contents does not dismiss it.
+
+> This relies on no ancestor establishing a containing block for fixed positioning
+> (`transform`, `filter`, `will-change`, `contain`). Verify that still holds before adding one.
 
 Controls get this for free; they only supply the popup's contents.
 

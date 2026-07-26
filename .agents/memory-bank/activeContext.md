@@ -48,7 +48,13 @@ The extension is feature-complete for its current scope:
   sprint-filtering view) centers a window on the current sprint and labels each entry by its offset
   (Current / Next / Previous / N sprints ahead / N sprints ago) plus a past/current/future `relation`
   the picker styles by (past amber, future theme accent, current bold), bounded by the past/future
-  sprint-count settings. `userDirectory` remains minimal (empty directory) as a follow-up.
+  sprint-count settings. `userDirectory` is **live** too (ADR-038): `MessagingUserDirectory`
+  (`common/browser`) searches ADO's org-scoped Identity Picker over the same background/MAIN-world
+  bridge (`AdoIdentityRequest` + `fetchAdoIdentitiesInPage`, URL/body from
+  `common/ado/fetchAdoIdentities`). The `AssignedTo` control opens on the project's crew
+  (`collectAssignedDirectoryUsers` over the live tree), filters locally, and searches ADO from two
+  characters up; picking someone writes `System.AssignedTo` through the board's `FieldWriteQueue` and
+  repaints only on success (`AssignedToHandle.setUser`).
 - Configuration import/export: `src/common/settings-transfer` serializes the whole configuration
   (all settings + every binding) to/from an `AwesomeADO.config` file; `src/options/settings-transfer`
   wires it to the Appearance tab's Import/Export controls. Import replaces bindings wholesale via

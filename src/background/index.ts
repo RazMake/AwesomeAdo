@@ -5,6 +5,7 @@ import {
   FEATURE_CREW_TITLE,
 } from "../common/ado/FeatureCrew";
 import { buildAdoIterationsUrl } from "../common/ado/TeamIteration";
+import { buildAdoIdentitySearchRequest } from "../common/ado/fetchAdoIdentities";
 import {
   buildAdoTreeUrls,
   buildWorkItemUpdateUrl,
@@ -25,6 +26,11 @@ import {
   type RevealBindingSettingsMessage,
   type RevealOptionsSectionMessage,
 } from "../common/bindings/BindingRequest";
+import {
+  isSearchAdoIdentitiesMessage,
+  type SearchAdoIdentitiesMessage,
+  type SearchAdoIdentitiesResponse,
+} from "../common/browser/AdoIdentityRequest";
 import {
   isLoadTeamIterationsMessage,
   type LoadTeamIterationsMessage,
@@ -49,6 +55,10 @@ import {
   applyFeatureCrewInPage,
   type FeatureCrewApplyResult,
 } from "../common/browser/applyFeatureCrewInPage";
+import {
+  fetchAdoIdentitiesInPage,
+  type AdoIdentitySearchOutcome,
+} from "../common/browser/fetchAdoIdentitiesInPage";
 import { fetchAdoIterationsInPage } from "../common/browser/fetchAdoIterationsInPage";
 import { fetchAdoTreeInPage } from "../common/browser/fetchAdoTreeInPage";
 import { findFeatureCrewInPage } from "../common/browser/findFeatureCrewInPage";
@@ -263,6 +273,67 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
     return undefined;
   }
   void loadTeamIterations(message, tabId, tabUrl).then(sendResponse);
+  // Keep the message channel open for the async fetch reply above.
+  return true;
+});
+
+// An assignee picker resolves people against Azure DevOps' own identity directory, which — like
+// every other ADO read here — is only reachable from a credentialed MAIN-world fetch. The content
+// side supplies just the typed text; the endpoint is derived from the SENDER's own trusted tab URL,
+// so a content script can influence WHO is searched for but never WHERE the request goes.
+const searchAdoIdentities = async (
+  message: SearchAdoIdentitiesMessage,
+  tabId: number,
+  tabUrl: string,
+): Promise<SearchAdoIdentitiesResponse> => {
+  const request = buildAdoIdentitySearchRequest(tabUrl, message.query);
+  if (request === null) {
+    // Either the tab is not project-scoped or the query is too short to ask a directory about; the
+    // picker keeps showing the suggestions it already holds. The typed text is NEVER logged — it is
+    // a person's name, and the diagnostics log is exported into bug reports (AGENTS.md §9).
+    logger.info(
+      "Identity search skipped: tab is not a project-scoped ADO URL or query is too short.",
+    );
+    return { raw: null };
+  }
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: "MAIN",
+      func: fetchAdoIdentitiesInPage,
+      args: [request.url, request.body],
+    });
+    const outcome = firstScriptResult(results) as AdoIdentitySearchOutcome | null;
+    if (outcome === null || outcome.failure !== "none") {
+      // A rejected request, an expired session and a dead network all used to arrive here as a bare
+      // null, which the picker showed as "No people found." — indistinguishable from a real empty
+      // result. The status plus the classification names which one it was; the typed text is still
+      // never logged (it is a person's name, and the log is exported into bug reports).
+      logger.error(
+        `Identity search failed (${outcome?.failure ?? "no-result"}, HTTP ${outcome?.status ?? 0}).`,
+      );
+      return { raw: null };
+    }
+    return { raw: outcome.body };
+  } catch (error) {
+    // Injection fails on a closed/navigated/restricted tab; report "no data" so the picker degrades.
+    logger.error("Could not search Azure DevOps identities", error);
+    return { raw: null };
+  }
+};
+
+chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
+  if (!isSearchAdoIdentitiesMessage(message)) {
+    // Not ours — leave it for the other listeners to handle.
+    return undefined;
+  }
+  const { id: tabId, url: tabUrl } = sender.tab ?? {};
+  if (tabId === undefined || tabUrl === undefined) {
+    logger.error("Cannot search identities: message has no sender tab.");
+    sendResponse({ raw: null } satisfies SearchAdoIdentitiesResponse);
+    return undefined;
+  }
+  void searchAdoIdentities(message, tabId, tabUrl).then(sendResponse);
   // Keep the message channel open for the async fetch reply above.
   return true;
 });

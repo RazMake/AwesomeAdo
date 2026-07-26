@@ -1,38 +1,24 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-
-import type { DirectoryUser, IUserDirectory } from "../../../ado/IUserDirectory";
-import type { TrackedUser } from "../../../ado/TrackedWorkItem";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { renderChildItemsBadge, type ChildItemDescriptor } from "./ChildItemsBadge";
 
-/** A fake user directory: returns controlled search results via a resolved promise. */
-class FakeUserDirectory implements IUserDirectory {
-  private searchResults: DirectoryUser[] = [];
-
-  setSearchResults(users: DirectoryUser[]): void {
-    this.searchResults = users;
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  search(_query: string): Promise<DirectoryUser[]> {
-    return Promise.resolve(this.searchResults);
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  resolve(_nameOrUnique: string): Promise<DirectoryUser | null> {
-    return Promise.resolve(null);
-  }
-}
-
-const alice: TrackedUser = {
-  displayName: "Alice",
-  uniqueName: "alice@example.com",
-  imageUrl: null,
+/**
+ * A stand-in for the assignee control the owning view builds per row. The badge only slots the
+ * element in, so the tests do not need the real picker (and its directory) to prove that.
+ */
+const assigneeOf = (name = "Alice"): HTMLElement => {
+  const chip = document.createElement("span");
+  chip.className = "awesomeado-assigned";
+  const label = document.createElement("span");
+  label.className = "awesomeado-assigned__name";
+  label.textContent = name;
+  chip.append(label);
+  return chip;
 };
 
 /** Build a child descriptor with sensible defaults, overridable per test. */
 const childOf = (overrides: Partial<ChildItemDescriptor> = {}): ChildItemDescriptor => ({
-  assignedTo: alice,
+  assignee: assigneeOf(),
   title: "Do the thing",
   titleColor: "#CC293D",
   eta: null,
@@ -60,7 +46,6 @@ describe("renderChildItemsBadge - badge and popup rendering", () => {
     const root = renderChildItemsBadge(document, {
       children: [childOf(), childOf(), childOf()],
       completedCount: 2,
-      userDirectory: new FakeUserDirectory(),
     });
 
     expect(badgeOf(root).textContent).toBe("2 / 3");
@@ -70,7 +55,6 @@ describe("renderChildItemsBadge - badge and popup rendering", () => {
     const root = renderChildItemsBadge(document, {
       children: [childOf()],
       completedCount: 0,
-      userDirectory: new FakeUserDirectory(),
       color: "#4FC3F7",
     });
 
@@ -82,12 +66,10 @@ describe("renderChildItemsBadge - badge and popup rendering", () => {
     const withoutColor = renderChildItemsBadge(document, {
       children: [childOf()],
       completedCount: 0,
-      userDirectory: new FakeUserDirectory(),
     });
     const withGarbage = renderChildItemsBadge(document, {
       children: [childOf()],
       completedCount: 0,
-      userDirectory: new FakeUserDirectory(),
       color: "not-a-color",
     });
 
@@ -99,7 +81,6 @@ describe("renderChildItemsBadge - badge and popup rendering", () => {
     const root = renderChildItemsBadge(document, {
       children: [childOf()],
       completedCount: 1,
-      userDirectory: new FakeUserDirectory(),
     });
 
     expect(popupOf(root)).toBeNull();
@@ -110,7 +91,6 @@ describe("renderChildItemsBadge - badge and popup rendering", () => {
     const root = renderChildItemsBadge(document, {
       children: [childOf({ title: "First" }), childOf({ title: "Second" })],
       completedCount: 1,
-      userDirectory: new FakeUserDirectory(),
     });
     document.body.append(root);
 
@@ -122,11 +102,10 @@ describe("renderChildItemsBadge - badge and popup rendering", () => {
 });
 
 describe("renderChildItemsBadge - row content", () => {
-  it("renders each child's assignee via the shared AssignedTo control", () => {
+  it("slots in the assignee control the caller built for each child", () => {
     const root = renderChildItemsBadge(document, {
       children: [childOf()],
       completedCount: 0,
-      userDirectory: new FakeUserDirectory(),
     });
     document.body.append(root);
 
@@ -136,11 +115,22 @@ describe("renderChildItemsBadge - row content", () => {
     expect(assignee?.textContent).toBe("Alice");
   });
 
+  it("omits the assignee slot for a child with no assignee control", () => {
+    const root = renderChildItemsBadge(document, {
+      children: [childOf({ assignee: null })],
+      completedCount: 0,
+    });
+    document.body.append(root);
+
+    badgeOf(root).click();
+
+    expect(popupOf(root)!.querySelector(".awesomeado-assigned")).toBeNull();
+  });
+
   it("colors the child title with its type color", () => {
     const root = renderChildItemsBadge(document, {
       children: [childOf({ titleColor: "#CC293D" })],
       completedCount: 0,
-      userDirectory: new FakeUserDirectory(),
     });
     document.body.append(root);
 
@@ -159,7 +149,6 @@ describe("renderChildItemsBadge - row ETA slot", () => {
     const root = renderChildItemsBadge(document, {
       children: [childOf({ eta })],
       completedCount: 0,
-      userDirectory: new FakeUserDirectory(),
     });
     document.body.append(root);
 
@@ -180,7 +169,6 @@ describe("renderChildItemsBadge - row ETA slot", () => {
     const root = renderChildItemsBadge(document, {
       children: [childOf({ eta: null })],
       completedCount: 0,
-      userDirectory: new FakeUserDirectory(),
     });
     document.body.append(root);
 
@@ -195,7 +183,6 @@ describe("renderChildItemsBadge - row open affordance", () => {
     const root = renderChildItemsBadge(document, {
       children: [childOf({ url: "https://dev.azure.com/contoso/web/_workitems/edit/42" })],
       completedCount: 0,
-      userDirectory: new FakeUserDirectory(),
     });
     document.body.append(root);
 
@@ -212,7 +199,6 @@ describe("renderChildItemsBadge - row open affordance", () => {
     const root = renderChildItemsBadge(document, {
       children: [childOf({ url: null, iconUrl: null })],
       completedCount: 0,
-      userDirectory: new FakeUserDirectory(),
     });
     document.body.append(root);
 
@@ -227,42 +213,10 @@ describe("renderChildItemsBadge - row open affordance", () => {
 });
 
 describe("renderChildItemsBadge - interaction and dismissal", () => {
-  it("forwards a picked assignee to the child's onAssigneeChange", async () => {
-    const directory = new FakeUserDirectory();
-    directory.setSearchResults([
-      { displayName: "Bob", uniqueName: "bob@example.com", imageUrl: null },
-    ]);
-    const onAssigneeChange = vi.fn();
-    const root = renderChildItemsBadge(document, {
-      children: [childOf({ onAssigneeChange })],
-      completedCount: 0,
-      userDirectory: directory,
-    });
-    document.body.append(root);
-
-    badgeOf(root).click();
-    const assigneeName = popupOf(root)!.querySelector<HTMLElement>(".awesomeado-assigned__name")!;
-    assigneeName.click();
-    const searchInput = popupOf(root)!.querySelector<HTMLInputElement>(
-      ".awesomeado-assigned__search",
-    )!;
-    searchInput.value = "Bob";
-    searchInput.dispatchEvent(new Event("input"));
-    await Promise.resolve();
-
-    const result = popupOf(root)!.querySelector<HTMLButtonElement>(
-      ".awesomeado-assigned__result button",
-    )!;
-    result.click();
-
-    expect(onAssigneeChange).toHaveBeenCalledWith(expect.objectContaining({ displayName: "Bob" }));
-  });
-
   it("toggles the popup closed on a second badge click", () => {
     const root = renderChildItemsBadge(document, {
       children: [childOf()],
       completedCount: 0,
-      userDirectory: new FakeUserDirectory(),
     });
     document.body.append(root);
 
@@ -277,7 +231,6 @@ describe("renderChildItemsBadge - interaction and dismissal", () => {
     const root = renderChildItemsBadge(document, {
       children: [childOf()],
       completedCount: 0,
-      userDirectory: new FakeUserDirectory(),
     });
     document.body.append(root);
 
@@ -293,7 +246,6 @@ describe("renderChildItemsBadge - interaction and dismissal", () => {
     const root = renderChildItemsBadge(document, {
       children: [childOf()],
       completedCount: 0,
-      userDirectory: new FakeUserDirectory(),
     });
     document.body.append(root);
 
@@ -307,7 +259,6 @@ describe("renderChildItemsBadge - interaction and dismissal", () => {
     const root = renderChildItemsBadge(document, {
       children: [childOf()],
       completedCount: 0,
-      userDirectory: new FakeUserDirectory(),
     });
     document.body.append(root);
 

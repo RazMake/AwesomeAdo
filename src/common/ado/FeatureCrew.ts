@@ -94,6 +94,45 @@ function addAssignee(
 }
 
 /**
+ * Walk the tree and collect the distinct people currently assigned to any item, in first-seen order
+ * — the crew an assignee picker offers before anything is typed.
+ *
+ * Read from the TREE rather than from the persisted roster on purpose: a roster line stores only an
+ * alias and a full name, which is not enough to identify anyone in Azure DevOps, whereas the tree
+ * carries each assignee's real unique name. Because it walks live data, a person assigned a moment
+ * ago is already offered on the next open, with no cache to keep in sync.
+ *
+ * Each person keeps the crew tag `applyFeatureCrewTags` projected onto them, so the picker can show
+ * who belongs to which crew while choosing instead of only after the pick.
+ */
+export function collectAssignedDirectoryUsers(roots: TrackedWorkItem[]): TrackedUser[] {
+  const seen = new Set<string>();
+  const users: TrackedUser[] = [];
+  const visit = (item: TrackedWorkItem): void => {
+    const user = item.assignedTo;
+    if (user !== null) {
+      const key = deriveAlias(user.uniqueName, user.displayName).toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        users.push({
+          displayName: user.displayName,
+          uniqueName: user.uniqueName,
+          imageUrl: user.imageUrl,
+          tag: user.tag ?? null,
+        });
+      }
+    }
+    for (const child of item.children) {
+      visit(child);
+    }
+  };
+  for (const root of roots) {
+    visit(root);
+  }
+  return users;
+}
+
+/**
  * Enrich every assigned person in the tree with their Feature Crew tag, in place. The roster is the
  * one source of a person's tag, so this projects each member's tag onto the matching `assignedTo`
  * (matched by alias, case-insensitively). A person present in the tree but not (yet) in the roster —

@@ -1,5 +1,6 @@
 import {
   applyFeatureCrewTags,
+  collectAssignedDirectoryUsers,
   collectAssignedTags,
   collectFeatureCrewAssignees,
   deriveAlias,
@@ -15,6 +16,7 @@ import type {
   TrackedWorkItem,
   TypeCatalogEntry,
 } from "../../../common/ado/TrackedWorkItem";
+import { ASSIGNED_TO_FIELD, identityFieldValue } from "../../../common/ado/adoApi";
 import { buildQueryFolderUrl, buildWorkItemUrl } from "../../../common/ado/fetchAdoTree";
 import type { SprintWindow } from "../../../common/ado/sprintWindow";
 import type {
@@ -23,7 +25,10 @@ import type {
   EnhancedViewContext,
   EnhancedViewServices,
 } from "../../../common/view-common/EnhancedView";
-import { renderAssignedTo } from "../../../common/view-common/control/AssignedTo/AssignedTo";
+import {
+  renderAssignedTo,
+  type AssignedToHandle,
+} from "../../../common/view-common/control/AssignedTo/AssignedTo";
 import {
   renderChildItemsBadge,
   type ChildItemDescriptor,
@@ -256,6 +261,93 @@ interface AssigneeTagEditor {
 }
 
 /**
+ * Everything an assignee chip needs to offer people and to persist the pick, bundled so the tree
+ * rows, the rolled-up children and the header's Tech Lead all build the chip exactly the same way.
+ */
+interface AssigneeChipContext {
+  doc: Document;
+  services: EnhancedViewServices;
+  /** The board's single serialized field-write queue, shared with the status and ETA edits. */
+  queue: FieldWriteQueue;
+  /**
+   * The people offered before anything is typed — everyone already assigned across this project,
+   * each carrying the crew tag the picker shows beside their name.
+   */
+  crew(): TrackedUser[];
+  /** Records a picked person on the Feature Crew roster (a no-op when they are already on it). */
+  onPicked(user: DirectoryUser): void;
+  /** Tag editing for the chip's pill; null leaves the pill read-only. */
+  tagEditor: AssigneeTagEditor | null;
+}
+
+/**
+ * Builds an item's assignee chip, wired to persist a pick back to Azure DevOps.
+ *
+ * Persist-then-reflect, exactly like the status and ETA controls: picking someone enqueues a
+ * serialized write of `System.AssignedTo` and the chip only shows the new name once ADO accepts it,
+ * so a rejected write never leaves a name on the board that was never saved. The board's shared
+ * write-status indicator reports the loss, so there is nothing to roll back here.
+ *
+ * The rev is read at WRITE time (not at pick time), so a second edit queued behind this one still
+ * carries a current rev. The picked person is also handed to the Feature Crew roster, which adds
+ * anyone new so their tag pill can be edited straight away.
+ */
+function createItemAssignee(
+  item: TrackedWorkItem,
+  chipContext: AssigneeChipContext,
+  showTag: boolean,
+): AssignedToHandle {
+  const { doc, services, queue, crew, onPicked, tagEditor } = chipContext;
+  // The onChange closure needs the handle to reflect a committed change, but the handle only exists
+  // after renderAssignedTo returns. A ref cell breaks that cycle with a single const binding: the
+  // closure runs only on a later user pick, by which point `chip.handle` is set.
+  const chip: { handle?: AssignedToHandle } = {};
+  const control = renderAssignedTo(doc, {
+    user: item.assignedTo,
+    userDirectory: services.userDirectory,
+    suggestions: crew,
+    onChange: (picked) => {
+      queue
+        .enqueue({
+          id: item.id,
+          currentRev: () => item.rev,
+          field: ASSIGNED_TO_FIELD,
+          value: identityFieldValue(picked),
+        })
+        .then((result) => {
+          if (!result.ok || result.rev === undefined) {
+            return;
+          }
+          // A freshly assigned person has no known crew tag until the roster reconcile answers, so
+          // the chip shows the neutral "??" pill in the meantime rather than the previous person's.
+          item.assignedTo = {
+            displayName: picked.displayName,
+            uniqueName: picked.uniqueName,
+            imageUrl: picked.imageUrl,
+            tag: null,
+          };
+          item.rev = result.rev;
+          chip.handle?.setUser(item.assignedTo);
+          onPicked(picked);
+        });
+    },
+    showTag,
+    assignableTags: tagEditor ? tagEditor.tagsInUse() : undefined,
+    // Bound to the ITEM, not to the person assigned when the chip was built: after a reassignment
+    // the same chip must tag whoever is on the item NOW, not the person it replaced.
+    onTagChange: tagEditor
+      ? (tag) => {
+          if (item.assignedTo !== null) {
+            tagEditor.assign(item.assignedTo, tag);
+          }
+        }
+      : undefined,
+  });
+  chip.handle = control;
+  return control;
+}
+
+/**
  * Everything the tree renderer holds constant for one pass over the tree, bundled so the recursive
  * render functions take a depth and an item rather than a dozen positional arguments that every
  * intermediate function would otherwise have to forward verbatim.
@@ -275,8 +367,8 @@ interface TreeRenderOptions {
   /** The active Feature Crew tag filter (empty = everyone); `null` is the untagged "??" bucket. */
   selectedTags: Set<string | null>;
   showSprintPills: boolean;
-  onAssigneeChange: (user: DirectoryUser) => void;
-  tagEditor: AssigneeTagEditor | null;
+  /** How every assignee chip on this pass offers people and persists a pick. */
+  chip: AssigneeChipContext;
   /** Collects every twisty rendered in this pass so expand-all/collapse-all can drive them. */
   allTwisties: HTMLButtonElement[];
   /** The color the rolled-up child badge tints from; null leaves it a neutral chip. */
@@ -296,6 +388,41 @@ const MAX_ROW_DEPTH = 1;
  * an abandoned child is not work that got finished.
  */
 const COMPLETED_COLUMN_FROM_END = 2;
+
+/** Marks the span that owns the triangle, so its own (small) font size survives every state flip. */
+const TWISTY_GLYPH_CLASS = "awesomeado-tracking__twisty-glyph";
+/** Text-presentation selector (U+FE0E) keeps the triangles monochrome glyphs instead of emoji. */
+const TWISTY_GLYPH_EXPANDED = "\u25BC\uFE0E";
+const TWISTY_GLYPH_COLLAPSED = "\u25B6\uFE0E";
+
+/**
+ * Applies one twisty's expanded/collapsed state to the button and its children container.
+ *
+ * The triangle is written THROUGH the inner glyph span, never onto the button itself: assigning the
+ * button's own textContent replaces that span, and the triangle then inherits the button's much
+ * larger font size for the rest of the session.
+ */
+function setTwistyExpanded(
+  twisty: HTMLElement,
+  childrenContainer: HTMLElement | null,
+  expanded: boolean,
+): void {
+  twisty.setAttribute("aria-expanded", expanded ? "true" : "false");
+  const glyph = twisty.querySelector<HTMLElement>(`.${TWISTY_GLYPH_CLASS}`);
+  if (glyph) {
+    glyph.textContent = expanded ? TWISTY_GLYPH_EXPANDED : TWISTY_GLYPH_COLLAPSED;
+  }
+  if (childrenContainer) {
+    childrenContainer.style.display = expanded ? "block" : "none";
+  }
+}
+
+/** Locates the children container of the row a twisty belongs to (null when the row has none). */
+function childrenContainerOf(twisty: HTMLElement): HTMLElement | null {
+  const rowWrapper = twisty.closest(".awesomeado-tracking__row")?.parentElement;
+  const container = rowWrapper?.querySelector(".awesomeado-tracking__children");
+  return container instanceof HTMLElement ? container : null;
+}
 
 /**
  * Creates the row controls: the fixed tree gutter (twisty or spacer) and the editable status badge.
@@ -340,8 +467,8 @@ function createRowControls(
     // The glyph is deliberately small; it lives in its own span so the button box can stay a full
     // line tall (for centering) without enlarging the triangle.
     const twistyGlyph = doc.createElement("span");
-    twistyGlyph.className = "awesomeado-tracking__twisty-glyph";
-    twistyGlyph.textContent = "\u25BC\uFE0E";
+    twistyGlyph.className = TWISTY_GLYPH_CLASS;
+    twistyGlyph.textContent = TWISTY_GLYPH_EXPANDED;
     twistyGlyph.style.cssText = "font-size:8px;line-height:1";
     twisty.append(twistyGlyph);
     gutter = twisty;
@@ -485,19 +612,21 @@ function createItemEtaBadge(
 }
 
 /**
- * Describes one rolled-up child for the badge's popup: its assignee, type-colored title, its own
- * editable ETA badge, and the type icon that deep-links the item in ADO. The ETA badge is built with
- * the SAME helper the tree rows use, so a rolled-up child's ETA is edited and persisted exactly like
- * a row's rather than being a read-only echo.
+ * Describes one rolled-up child for the badge's popup: its assignee chip, type-colored title, its own
+ * editable ETA badge, and the type icon that deep-links the item in ADO. The assignee and ETA controls
+ * are built with the SAME helpers the tree rows use, so a rolled-up child is reassigned and re-dated
+ * exactly like a row rather than being a read-only echo.
  */
 function describeMinorChild(
   child: TrackedWorkItem,
   options: TreeRenderOptions,
 ): ChildItemDescriptor {
-  const { doc, typeMap, queue, context, onAssigneeChange } = options;
+  const { doc, typeMap, queue, context } = options;
   const icon = typeMap.get(child.type)?.icon ?? "";
   return {
-    assignedTo: child.assignedTo,
+    // The rollup popup is a dense one-line-per-child list, so the crew tag pill is left off here —
+    // the tag is edited from the tree row that owns the person.
+    assignee: createItemAssignee(child, options.chip, false),
     title: child.title,
     titleColor: typeColorOf(child.type, typeMap),
     eta: createItemEtaBadge(doc, child, typeMap, queue, context.services.now()),
@@ -505,7 +634,6 @@ function describeMinorChild(
     // The view runs on the ADO query page, so the page's own URL supplies the org/project the item
     // link resolves against; an unrecognizable location leaves the affordance inert.
     url: buildWorkItemUrl(doc.location?.href ?? "", child.id),
-    onAssigneeChange,
   };
 }
 
@@ -518,7 +646,7 @@ function createMinorChildrenBadge(
   item: TrackedWorkItem,
   options: TreeRenderOptions,
 ): HTMLElement | null {
-  const { context, typeMap, boardColumns, filterSprint, selectedTags } = options;
+  const { typeMap, boardColumns, filterSprint, selectedTags } = options;
 
   const visible = item.children.filter((child) =>
     isVisibleUnderFilter(child, filterSprint, selectedTags),
@@ -535,7 +663,6 @@ function createMinorChildrenBadge(
   const badge = renderChildItemsBadge(options.doc, {
     children: visible.map((child) => describeMinorChild(child, options)),
     completedCount,
-    userDirectory: context.services.userDirectory,
     color: options.minorChildColor,
   });
   badge.classList.add("awesomeado-tracking__minor-children");
@@ -547,21 +674,8 @@ function createMinorChildrenBadge(
 /**
  * Creates the inline assignee control for a row, styled for this board's dense layout.
  */
-function createRowAssignee(
-  item: TrackedWorkItem,
-  services: EnhancedViewServices,
-  options: TreeRenderOptions,
-): HTMLElement {
-  const { doc, onAssigneeChange, tagEditor } = options;
-  const assignee = item.assignedTo;
-  const assignedEl = renderAssignedTo(doc, {
-    user: item.assignedTo,
-    userDirectory: services.userDirectory,
-    onChange: onAssigneeChange,
-    showTag: true,
-    assignableTags: tagEditor ? tagEditor.tagsInUse() : undefined,
-    onTagChange: tagEditor && assignee ? (tag) => tagEditor.assign(assignee, tag) : undefined,
-  });
+function createRowAssignee(item: TrackedWorkItem, options: TreeRenderOptions): HTMLElement {
+  const assignedEl = createItemAssignee(item, options.chip, true);
   // Flows inline right behind the ? disc so it hugs the title; middle-aligned to the text line.
   assignedEl.style.verticalAlign = "middle";
   assignedEl.style.whiteSpace = "nowrap";
@@ -588,7 +702,7 @@ function createRowRightControls(
   const { doc, context, typeMap, queue, showSprintPills } = options;
   const inline: HTMLElement[] = [];
 
-  inline.push(createRowAssignee(item, context.services, options));
+  inline.push(createRowAssignee(item, options));
 
   if (showSprintPills && isLeafSprint(item)) {
     const pill = doc.createElement("span");
@@ -702,15 +816,9 @@ function renderRow(
 
   // Wire twisty toggle.
   if (twisty) {
-    const twistyGlyph = twisty.querySelector<HTMLElement>(".awesomeado-tracking__twisty-glyph");
     twisty.addEventListener("click", () => {
       const isExpanded = twisty.getAttribute("aria-expanded") === "true";
-      twisty.setAttribute("aria-expanded", isExpanded ? "false" : "true");
-      // Update the inner glyph (not the button's textContent) so the centering box stays intact.
-      if (twistyGlyph) {
-        twistyGlyph.textContent = isExpanded ? "\u25B6\uFE0E" : "\u25BC\uFE0E";
-      }
-      childrenContainer.style.display = isExpanded ? "none" : "block";
+      setTwistyExpanded(twisty, childrenContainer, !isExpanded);
     });
   }
 
@@ -762,12 +870,11 @@ function renderSprintControls(doc: Document, sprintWindow: SprintWindow): Sprint
  * the group can be rebuilt in place from the header, which is not part of the tree re-render.
  */
 function populateTechLead(
-  doc: Document,
   group: HTMLElement,
   root: TrackedWorkItem,
-  context: DataDrivenViewContext,
-  onAssigneeChange: (user: DirectoryUser) => void,
+  chipContext: AssigneeChipContext,
 ): void {
+  const { doc } = chipContext;
   group.innerHTML = "";
 
   const label = doc.createElement("span");
@@ -775,13 +882,8 @@ function populateTechLead(
   label.style.cssText = "font-weight:500";
   group.append(label);
 
-  const assignedEl = renderAssignedTo(doc, {
-    user: root.assignedTo,
-    userDirectory: context.services.userDirectory,
-    onChange: onAssigneeChange,
-    // The Tech Lead is a single named owner, not a Feature Crew member, so its chip never shows a tag.
-    showTag: false,
-  });
+  // The Tech Lead is a single named owner, not a Feature Crew member, so its chip never shows a tag.
+  const assignedEl = createItemAssignee(root, chipContext, false);
   // Nudge the chip 1px down so it reads as optically centered against the "TechLead:" label.
   assignedEl.style.position = "relative";
   assignedEl.style.top = "1px";
@@ -792,16 +894,14 @@ function populateTechLead(
  * Creates the tech lead group (label + assigned-to control).
  */
 function createTechLeadGroup(
-  doc: Document,
   root: TrackedWorkItem,
-  context: DataDrivenViewContext,
-  onAssigneeChange: (user: DirectoryUser) => void,
+  chipContext: AssigneeChipContext,
 ): HTMLElement | null {
-  const techLeadGroup = doc.createElement("div");
+  const techLeadGroup = chipContext.doc.createElement("div");
   techLeadGroup.className = "awesomeado-tracking__techlead";
   techLeadGroup.style.cssText = ["display:flex", "align-items:center", "gap:8px"].join(";");
 
-  populateTechLead(doc, techLeadGroup, root, context, onAssigneeChange);
+  populateTechLead(techLeadGroup, root, chipContext);
 
   return techLeadGroup;
 }
@@ -817,7 +917,7 @@ function renderHeader(
   context: DataDrivenViewContext,
   typeMap: Map<string, TypeCatalogEntry>,
   sprintWindow: SprintWindow,
-  onAssigneeChange: (user: DirectoryUser) => void,
+  chipContext: AssigneeChipContext,
   writeQueueStatus: HTMLElement,
   folderPath: QueryFolderCrumb[],
   queue: FieldWriteQueue,
@@ -829,7 +929,7 @@ function renderHeader(
   techLead: HTMLElement | null;
 } {
   const sprintPickerHandle = renderSprintControls(doc, sprintWindow);
-  const techLead = createTechLeadGroup(doc, root, context, onAssigneeChange);
+  const techLead = createTechLeadGroup(root, chipContext);
 
   // The view runs on the ADO query page, so the page's own URL supplies the org/project the folder
   // links resolve against; when it is not a recognizable ADO location the segment stays plain text
@@ -866,29 +966,12 @@ function wireExpandCollapseButtons(
   collapseAll: HTMLButtonElement,
   allTwisties: HTMLButtonElement[],
 ): void {
-  expandAll.onclick = () => {
-    allTwisties.forEach((tw) => {
-      tw.setAttribute("aria-expanded", "true");
-      tw.textContent = "\u25BC\uFE0E";
-      const rowWrapper = tw.closest(".awesomeado-tracking__row")?.parentElement;
-      const childrenContainer = rowWrapper?.querySelector(".awesomeado-tracking__children");
-      if (childrenContainer instanceof HTMLElement) {
-        childrenContainer.style.display = "block";
-      }
-    });
+  const setAllExpanded = (expanded: boolean) => () => {
+    allTwisties.forEach((tw) => setTwistyExpanded(tw, childrenContainerOf(tw), expanded));
   };
 
-  collapseAll.onclick = () => {
-    allTwisties.forEach((tw) => {
-      tw.setAttribute("aria-expanded", "false");
-      tw.textContent = "\u25B6\uFE0E";
-      const rowWrapper = tw.closest(".awesomeado-tracking__row")?.parentElement;
-      const childrenContainer = rowWrapper?.querySelector(".awesomeado-tracking__children");
-      if (childrenContainer instanceof HTMLElement) {
-        childrenContainer.style.display = "none";
-      }
-    });
-  };
+  expandAll.onclick = setAllExpanded(true);
+  collapseAll.onclick = setAllExpanded(false);
 }
 
 /**
@@ -1002,8 +1085,7 @@ interface BoardTreeRendererParams {
   treeContainer: HTMLElement;
   tagPanelContainer: HTMLElement;
   sprintPickerHandle: SprintPickerHandle;
-  onAssigneeChange: (user: DirectoryUser) => void;
-  tagEditor: AssigneeTagEditor | null;
+  chipContext: AssigneeChipContext;
   fieldWrites: FieldWriteQueue;
   statusWidthCh: number;
   boardColumns: string[];
@@ -1046,8 +1128,7 @@ function createBoardTreeRenderer(params: BoardTreeRendererParams): {
       selectedTags,
       // Sprint pills only earn their space when the sprint filter is not already narrowing the board.
       showSprintPills: !filterOn,
-      onAssigneeChange: params.onAssigneeChange,
-      tagEditor: params.tagEditor,
+      chip: params.chipContext,
       allTwisties,
       minorChildColor: params.minorChildColor,
     };
@@ -1118,13 +1199,25 @@ function renderBoard(
   const minorChildColor = lastTypeColor(services.getTypes());
   const tagEditor = createTagEditor(root, onTagAssign);
 
+  // Built once and shared by every assignee chip on the board (rows, rolled-up children, Tech Lead).
+  // `crew` walks the live tree on each popup open rather than caching a list, so a person assigned a
+  // moment ago is already offered and there is no second copy of "who is on this project" to drift.
+  const chipContext: AssigneeChipContext = {
+    doc,
+    services,
+    queue: fieldWrites,
+    crew: () => collectAssignedDirectoryUsers([root]),
+    onPicked: onAssigneeChange,
+    tagEditor,
+  };
+
   const { header, sprintPickerHandle, expandAll, collapseAll, techLead } = renderHeader(
     doc,
     root,
     context,
     typeMap,
     sprintWindow,
-    onAssigneeChange,
+    chipContext,
     writeStatus.element,
     folderPath,
     fieldWrites,
@@ -1154,8 +1247,7 @@ function renderBoard(
     treeContainer,
     tagPanelContainer,
     sprintPickerHandle,
-    onAssigneeChange,
-    tagEditor,
+    chipContext,
     fieldWrites,
     statusWidthCh,
     boardColumns,
@@ -1172,7 +1264,7 @@ function renderBoard(
     applyCrewMembers: (members) => {
       applyFeatureCrewTags([root], members);
       // The header is not part of the tree re-render, so refresh the epic's TechLead in place.
-      if (techLead) populateTechLead(doc, techLead, root, context, onAssigneeChange);
+      if (techLead) populateTechLead(techLead, root, chipContext);
       refreshTagPanel();
       renderTreeContent();
     },
@@ -1357,13 +1449,15 @@ function createFeatureCrewSync(
       reconcile();
     },
     onAssigneeChange(user) {
-      const added = add({
+      add({
         alias: deriveAlias(user.uniqueName, user.displayName),
         fullName: user.displayName,
       });
-      if (added) {
-        reconcile(undefined, true);
-      }
+      // Reconcile even when the person was already on the roster: the reconcile is what hands back
+      // their crew tag, and without it a reassignment would leave the chip wearing the neutral "??"
+      // pill (and the tag filter stale) until something else happened to refresh the board. Nothing
+      // is written when nothing changed — the roster lookup alone answers with the current members.
+      reconcile(undefined, true);
     },
     setTag(user, tag) {
       // The person is already assigned somewhere, so they are on the roster; record their chosen tag

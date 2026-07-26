@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildFeatureCrewUrls,
+  collectAssignedDirectoryUsers,
   collectAssignedTags,
   collectFeatureCrewAssignees,
   applyFeatureCrewTags,
@@ -93,6 +94,44 @@ describe("collectFeatureCrewAssignees", () => {
 
   it("returns an empty list when nobody is assigned", () => {
     expect(collectFeatureCrewAssignees([item(1, null)])).toEqual([]);
+  });
+});
+
+describe("collectAssignedDirectoryUsers", () => {
+  it("collects distinct assignees as directory users in first-seen order", () => {
+    const tree = item(1, user("Alice", "alice@contoso.com"), [
+      item(2, user("Bob", "bob@contoso.com")),
+      item(3, null),
+      item(4, user("Alice", "alice@contoso.com")),
+    ]);
+
+    expect(collectAssignedDirectoryUsers([tree])).toEqual([
+      { displayName: "Alice", uniqueName: "alice@contoso.com", imageUrl: null, tag: null },
+      { displayName: "Bob", uniqueName: "bob@contoso.com", imageUrl: null, tag: null },
+    ]);
+  });
+
+  it("carries each person's crew tag so the picker can show it beside their name", () => {
+    const tagged = user("Alice", "alice@contoso.com");
+    tagged.tag = "Platform";
+    const tree = item(1, tagged, [item(2, user("Bob", "bob@contoso.com"))]);
+
+    expect(collectAssignedDirectoryUsers([tree]).map((person) => person.tag)).toEqual([
+      "Platform",
+      null,
+    ]);
+  });
+
+  it("keeps the person's unique name so a pick can be written back to ADO", () => {
+    const tree = item(1, user("Carol", null));
+
+    expect(collectAssignedDirectoryUsers([tree])).toEqual([
+      { displayName: "Carol", uniqueName: null, imageUrl: null, tag: null },
+    ]);
+  });
+
+  it("returns an empty list when nobody is assigned", () => {
+    expect(collectAssignedDirectoryUsers([item(1, null)])).toEqual([]);
   });
 });
 

@@ -1,18 +1,19 @@
-import type { DirectoryUser, IUserDirectory } from "../../../ado/IUserDirectory";
-import type { TrackedUser } from "../../../ado/TrackedWorkItem";
-import { renderAssignedTo } from "../AssignedTo/AssignedTo";
 import { createPopupHost } from "../popupHost/popupHost";
 
 /**
  * One child work item summarized by the badge and rendered as a popup row.
  *
  * The badge stays domain-agnostic: the caller resolves each child's type color, type icon, ADO deep
- * link, and ETA control, so the control never has to know how a work item maps to a URL, a theme, or
- * a persisted date field.
+ * link, and the assignee and ETA controls, so the control never has to know how a work item maps to
+ * a URL, a theme, or a persisted field.
  */
 export interface ChildItemDescriptor {
-  /** The child's assignee; null means unassigned. Fed to the shared AssignedTo control. */
-  assignedTo: TrackedUser | null;
+  /**
+   * The child's assignee control, built by the caller (typically the shared `AssignedTo`) so the
+   * write path — which item to reassign, and the queue that serializes it — stays with the owning
+   * view; null renders no assignee for that row.
+   */
+  assignee: HTMLElement | null;
   /** The child's title. */
   title: string;
   /** The child's type color (hex, WITH a leading `#`); null uses the theme's primary text color. */
@@ -27,8 +28,6 @@ export interface ChildItemDescriptor {
   iconUrl: string | null;
   /** The ADO web URL that opens this item; null renders the affordance inert. */
   url: string | null;
-  /** Called when this child's assignee is changed from its picker. */
-  onAssigneeChange?: (user: DirectoryUser) => void;
 }
 
 /** Options for rendering a child-items badge. */
@@ -40,8 +39,6 @@ export interface ChildItemsBadgeOptions {
    * board-column decision the caller owns, so it is passed in rather than derived here.
    */
   completedCount: number;
-  /** The user directory forwarded to each child row's AssignedTo picker. */
-  userDirectory: IUserDirectory;
   /**
    * The color the badge's discrete tint derives from (hex, with or without a leading `#`) — normally
    * the work item type of the children it summarizes. Omitted, null, or unparseable falls back to a
@@ -94,7 +91,7 @@ function tintFromColor(color: string | null | undefined): {
  * meaningful when there are no children (the caller decides whether to show it at all).
  */
 export function renderChildItemsBadge(doc: Document, options: ChildItemsBadgeOptions): HTMLElement {
-  const { children, completedCount, userDirectory, color } = options;
+  const { children, completedCount, color } = options;
 
   // Root container: position:relative so the popup anchors to it.
   const root = doc.createElement("span");
@@ -129,7 +126,7 @@ export function renderChildItemsBadge(doc: Document, options: ChildItemsBadgeOpt
     doc,
     trigger: badge,
     mountInto: root,
-    buildPopup: () => buildPopup(doc, children, userDirectory),
+    buildPopup: () => buildPopup(doc, children),
   });
 
   return root;
@@ -139,11 +136,7 @@ export function renderChildItemsBadge(doc: Document, options: ChildItemsBadgeOpt
  * Builds the popup shell and fills it with one row per child. Extracted so the render function stays
  * focused on the badge itself and its open/close lifecycle.
  */
-function buildPopup(
-  doc: Document,
-  children: ChildItemDescriptor[],
-  userDirectory: IUserDirectory,
-): HTMLElement {
+function buildPopup(doc: Document, children: ChildItemDescriptor[]): HTMLElement {
   const popup = doc.createElement("div");
   popup.className = "awesomeado-child-items__popup";
   // Theme-aware colors: ADO custom properties with fallbacks.
@@ -165,21 +158,17 @@ function buildPopup(
   ].join(";");
 
   children.forEach((child) => {
-    popup.append(renderChildRow(doc, child, userDirectory));
+    popup.append(renderChildRow(doc, child));
   });
 
   return popup;
 }
 
 /**
- * Renders one child row: the shared AssignedTo picker, the title in its type color, the caller's ETA
+ * Renders one child row: the caller's assignee picker, the title in its type color, the caller's ETA
  * control, and a type-icon link that opens the item in ADO.
  */
-function renderChildRow(
-  doc: Document,
-  child: ChildItemDescriptor,
-  userDirectory: IUserDirectory,
-): HTMLElement {
+function renderChildRow(doc: Document, child: ChildItemDescriptor): HTMLElement {
   const row = doc.createElement("div");
   row.className = "awesomeado-child-items__row";
   row.style.cssText = [
@@ -190,13 +179,10 @@ function renderChildRow(
     "white-space:nowrap",
   ].join(";");
 
-  // Reuse the SAME assignee control the main tree uses so the two behave identically.
-  const assignedEl = renderAssignedTo(doc, {
-    user: child.assignedTo,
-    userDirectory,
-    onChange: child.onAssigneeChange,
-  });
-  assignedEl.style.flex = "0 0 auto";
+  if (child.assignee) {
+    child.assignee.style.flex = "0 0 auto";
+    row.append(child.assignee);
+  }
 
   const title = doc.createElement("span");
   title.className = "awesomeado-child-items__title";
@@ -212,7 +198,7 @@ function renderChildRow(
     title.style.color = child.titleColor;
   }
 
-  row.append(assignedEl, title);
+  row.append(title);
 
   if (child.eta) {
     // The title grows, so the ETA lands hard against the open affordance at the row's right edge —

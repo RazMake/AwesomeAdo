@@ -1,6 +1,6 @@
 import type { QueryFolderCrumb, WorkItemTreeResult } from "./IWorkItemTreeLoader";
 import type { TrackedUser, TrackedWorkItem } from "./TrackedWorkItem";
-import { ADO_API_VERSION } from "./adoApi";
+import { ADO_API_VERSION, ASSIGNED_TO_FIELD } from "./adoApi";
 import { resolveAdoProjectContext } from "./fetchAdoMetadata";
 
 const API_VERSION = ADO_API_VERSION;
@@ -17,7 +17,7 @@ export const TRACKING_FIELDS: readonly string[] = [
   "System.WorkItemType",
   "System.Title",
   "System.State",
-  "System.AssignedTo",
+  ASSIGNED_TO_FIELD,
   "System.IterationPath",
   "System.CreatedDate",
   "System.CreatedBy",
@@ -365,7 +365,7 @@ function hydrateTrackedWorkItem(
     type,
     title: readString("System.Title"),
     state: readString("System.State"),
-    assignedTo: parseIdentity(field("System.AssignedTo")),
+    assignedTo: parseIdentity(field(ASSIGNED_TO_FIELD)),
     iterationPath: iterationPathStr,
     sprintName: sprintLeaf(iterationPathStr),
     createdDate: readString("System.CreatedDate"),

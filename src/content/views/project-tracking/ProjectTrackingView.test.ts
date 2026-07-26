@@ -578,6 +578,11 @@ describe("ProjectTrackingView — expand & collapse", () => {
     twisties.forEach((tw) => {
       expect(tw.getAttribute("aria-expanded")).toBe("true");
       expect(tw.textContent).toBe("▼\uFE0E");
+      // The glyph must stay inside its own small-font span: writing the button's textContent would
+      // drop the span and leave the triangle at the button's much larger inherited size.
+      const glyph = tw.querySelector<HTMLElement>(".awesomeado-tracking__twisty-glyph");
+      expect(glyph?.textContent).toBe("▼\uFE0E");
+      expect(glyph?.style.fontSize).toBe("8px");
     });
   });
 });
@@ -617,6 +622,9 @@ describe("ProjectTrackingView — collapse all & description", () => {
     twisties.forEach((tw) => {
       expect(tw.getAttribute("aria-expanded")).toBe("false");
       expect(tw.textContent).toBe("▶\uFE0E");
+      const glyph = tw.querySelector<HTMLElement>(".awesomeado-tracking__twisty-glyph");
+      expect(glyph?.textContent).toBe("▶\uFE0E");
+      expect(glyph?.style.fontSize).toBe("8px");
     });
   });
 
@@ -984,6 +992,126 @@ describe("ProjectTrackingView — status badge", () => {
     // enqueues the same edit twice. The first badge is the Feature (id 2, rev 2, ADO State
     // "Active"); its only alternative Status is "Done", whose primary ADO State is "Closed".
     expect(writeFieldCalls).toEqual([{ id: 2, rev: 2, field: "System.State", value: "Closed" }]);
+  });
+});
+
+// Shared by the two assignee-write groups below (module scope so each describe stays within
+// max-lines-per-function without duplicating the fixture helpers).
+
+/** A directory that only ever knows Dana, so a search result is deterministic. */
+const danaDirectory: EnhancedViewServices["userDirectory"] = {
+  search: async () => [
+    { displayName: "Dana Scott", uniqueName: "dana@example.com", imageUrl: null },
+  ],
+  resolve: async () => null,
+};
+
+/** Renders the board and returns it plus the write requests the queue sent. */
+async function renderBoardWithWrites(
+  overrides?: Partial<EnhancedViewServices>,
+): Promise<{ root: HTMLElement; writes: WorkItemFieldWriteRequest[] }> {
+  const writes: WorkItemFieldWriteRequest[] = [];
+  const services = createFakeServices({
+    loadTree: async () => ({ isTreeQuery: true, roots: [createFixtureTree()], error: null }),
+    writeField: async (request) => {
+      writes.push(request);
+      return { ok: true, rev: request.rev + 1 };
+    },
+    ...overrides,
+  });
+  const root = projectTrackingView.render({
+    doc: document,
+    queryId: "q1",
+    properties: {},
+    services,
+  });
+  await Promise.resolve();
+  await Promise.resolve();
+  return { root, writes };
+}
+
+/** Opens the first tree row's assignee picker and returns its chip, label and search field. */
+function openRowPicker(root: HTMLElement): {
+  chip: HTMLElement;
+  label: HTMLElement;
+  search: HTMLInputElement;
+} {
+  const chip = root.querySelector<HTMLElement>(".awesomeado-tracking__row .awesomeado-assigned")!;
+  const label = chip.querySelector<HTMLButtonElement>(".awesomeado-assigned__name")!;
+  label.click();
+  return {
+    chip,
+    label,
+    search: chip.querySelector<HTMLInputElement>(".awesomeado-assigned__search")!,
+  };
+}
+
+/** Types `query` into an open picker and clicks the result naming `displayName`. */
+async function pickFromPicker(
+  chip: HTMLElement,
+  search: HTMLInputElement,
+  query: string,
+  displayName: string,
+): Promise<void> {
+  search.value = query;
+  search.dispatchEvent(new Event("input"));
+  await Promise.resolve();
+  const match = [
+    ...chip.querySelectorAll<HTMLButtonElement>(".awesomeado-assigned__result button"),
+  ].find((button) => button.textContent?.includes(displayName))!;
+  match.click();
+  // Let the queued write and the roster reconcile that follows it settle.
+  for (let i = 0; i < 6; i++) await Promise.resolve();
+}
+
+describe("ProjectTrackingView — assignee suggestions", () => {
+  it("offers everyone already assigned across the tree the moment the picker opens", async () => {
+    const { root } = await renderBoardWithWrites();
+
+    const { chip } = openRowPicker(root);
+
+    const offered = [...chip.querySelectorAll(".awesomeado-assigned__result-name")].map(
+      (name) => name.textContent,
+    );
+    expect(offered).toContain("Alice Smith");
+    expect(offered).toContain("Bob Jones");
+  });
+});
+
+describe("ProjectTrackingView — assignee writes", () => {
+  it("persists a picked assignee to System.AssignedTo and only then repaints the chip", async () => {
+    const { root, writes } = await renderBoardWithWrites({ userDirectory: danaDirectory });
+
+    const { chip, label, search } = openRowPicker(root);
+    search.value = "dana";
+    search.dispatchEvent(new Event("input"));
+    await Promise.resolve();
+    chip.querySelector<HTMLButtonElement>(".awesomeado-assigned__result button")!.click();
+
+    // The pick alone must not move the label — the write has not been accepted yet.
+    expect(label.textContent).toBe("Bob Jones");
+
+    for (let i = 0; i < 6; i++) await Promise.resolve();
+
+    // The first row is the Feature (id 2, rev 2); ADO resolves an identity from its unique name.
+    expect(writes).toEqual([
+      { id: 2, rev: 2, field: "System.AssignedTo", value: "dana@example.com" },
+    ]);
+    expect(label.textContent).toBe("Dana Scott");
+  });
+
+  it("leaves the chip untouched when Azure DevOps rejects the write", async () => {
+    const { root } = await renderBoardWithWrites({
+      writeField: async () => ({ ok: false, error: "rejected" }),
+      userDirectory: danaDirectory,
+    });
+
+    const { chip, label, search } = openRowPicker(root);
+    const before = label.textContent;
+
+    await pickFromPicker(chip, search, "dana", "Dana Scott");
+
+    expect(label.textContent).toBe(before);
   });
 });
 

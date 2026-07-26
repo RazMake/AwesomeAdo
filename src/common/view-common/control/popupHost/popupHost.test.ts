@@ -63,6 +63,35 @@ describe("createPopupHost - open and toggle", () => {
 
     expect(host.isOpen).toBe(false);
   });
+
+  it("reports each open with the mounted popup, so it can be focused", () => {
+    const trigger = document.createElement("button");
+    const mountInto = document.createElement("div");
+    mountInto.append(trigger);
+    document.body.append(mountInto);
+    const input = document.createElement("input");
+    const onOpened = vi.fn((popup: HTMLElement) => {
+      // Focus only takes when the popup is already in the document, which is exactly the guarantee
+      // this hook exists to give.
+      popup.querySelector("input")?.focus();
+    });
+    createPopupHost({
+      doc: document,
+      trigger,
+      mountInto,
+      buildPopup: () => {
+        const el = document.createElement("div");
+        el.append(input);
+        return el;
+      },
+      onOpened,
+    });
+
+    trigger.click();
+
+    expect(onOpened).toHaveBeenCalledTimes(1);
+    expect(document.activeElement).toBe(input);
+  });
 });
 
 describe("createPopupHost - dismissal and lifecycle", () => {
@@ -208,5 +237,162 @@ describe("createPopupHost - keeping the popup on screen", () => {
 
     // Spilled 50px past the container's 300px client edge plus the 8px margin.
     expect(popup.style.left).toBe("-58px");
+  });
+});
+
+interface Box {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+const rectOf = (box: Box): DOMRect =>
+  ({
+    ...box,
+    right: box.left + box.width,
+    bottom: box.top + box.height,
+  }) as DOMRect;
+
+/**
+ * Open a popup inside a scroll box of a given visible size, with both the trigger and the popup
+ * reporting fixed boxes so the escape maths is deterministic (jsdom performs no layout).
+ */
+const openInScroller = (boxes: { scroller: Box; trigger: Box; popup: Box }) => {
+  const scroller = document.createElement("div");
+  // The overflow longhands are set individually because jsdom's computed style does not expand the
+  // shorthand.
+  scroller.style.overflowX = "auto";
+  scroller.style.overflowY = "auto";
+  scroller.getBoundingClientRect = () => rectOf(boxes.scroller);
+  Object.defineProperty(scroller, "clientWidth", { value: boxes.scroller.width });
+  Object.defineProperty(scroller, "clientHeight", { value: boxes.scroller.height });
+  document.body.append(scroller);
+
+  const trigger = document.createElement("button");
+  trigger.getBoundingClientRect = () => rectOf(boxes.trigger);
+  const mountInto = document.createElement("div");
+  mountInto.append(trigger);
+  scroller.append(mountInto);
+
+  const host = createPopupHost({
+    doc: document,
+    trigger,
+    mountInto,
+    buildPopup: () => {
+      const element = document.createElement("div");
+      element.className = "popup";
+      element.style.position = "absolute";
+      element.getBoundingClientRect = () => rectOf(boxes.popup);
+      return element;
+    },
+  });
+  trigger.click();
+  return { host, popup: mountInto.querySelector<HTMLElement>(".popup")! };
+};
+
+/** A one-row-tall scroll box (the rolled-up children popup) that can never show a picker. */
+const tooShort = { left: 100, top: 200, width: 420, height: 34 };
+const rowTrigger = { left: 300, top: 204, width: 60, height: 20 };
+const pickerPopup = { left: 300, top: 228, width: 200, height: 34 };
+
+describe("createPopupHost - escaping a scroll box too small to show the popup", () => {
+  it("anchors the popup to the viewport under its trigger", () => {
+    const { popup } = openInScroller({
+      scroller: tooShort,
+      trigger: rowTrigger,
+      popup: pickerPopup,
+    });
+
+    expect(popup.style.position).toBe("fixed");
+    // Anchored to the trigger's own viewport rect: its left edge, 4px below its bottom edge.
+    expect(popup.style.left).toBe("300px");
+    expect(popup.style.top).toBe("228px");
+  });
+
+  it("leaves the popup anchored to its trigger when the scroll box has room", () => {
+    const { popup } = openInScroller({
+      scroller: { ...tooShort, height: 320 },
+      trigger: rowTrigger,
+      popup: pickerPopup,
+    });
+
+    expect(popup.style.position).toBe("absolute");
+    expect(popup.style.top).toBe("");
+  });
+
+  it("still shifts an escaped popup that spills past the right edge", () => {
+    const { popup } = openInScroller({
+      scroller: tooShort,
+      trigger: { ...rowTrigger, left: window.innerWidth - 100 },
+      popup: pickerPopup,
+    });
+
+    // Anchored at the trigger's 924px left edge and 200px wide → 108px past the window's right edge
+    // once the 8px margin is honoured, so it slides back by exactly that.
+    expect(popup.style.left).toBe(`${window.innerWidth - 100 - 108}px`);
+  });
+
+  it("flips an escaped popup above its trigger in pixels, not with bottom:100%", () => {
+    const { popup } = openInScroller({
+      scroller: { ...tooShort, top: 600 },
+      trigger: { ...rowTrigger, top: 604 },
+      popup: { ...pickerPopup, top: 628, height: 200 },
+    });
+
+    // The trigger's top edge (604) less the popup height (200) and the same 4px gap.
+    expect(popup.style.top).toBe("400px");
+    expect(popup.style.bottom).toBe("");
+  });
+
+  it("leaves a popup too big for the window where the control put it", () => {
+    const { popup } = openInScroller({
+      scroller: tooShort,
+      trigger: rowTrigger,
+      popup: { ...pickerPopup, height: window.innerHeight + 100 },
+    });
+
+    expect(popup.style.position).toBe("absolute");
+  });
+});
+
+describe("createPopupHost - dismissing a viewport-anchored popup", () => {
+  it("closes an escaped popup when the page scrolls out from under it", () => {
+    const { host } = openInScroller({
+      scroller: tooShort,
+      trigger: rowTrigger,
+      popup: pickerPopup,
+    });
+
+    document.dispatchEvent(new Event("scroll"));
+
+    expect(host.isOpen).toBe(false);
+  });
+
+  it("keeps an escaped popup open while its own contents scroll", () => {
+    const { host, popup } = openInScroller({
+      scroller: tooShort,
+      trigger: rowTrigger,
+      popup: pickerPopup,
+    });
+
+    popup.dispatchEvent(new Event("scroll"));
+
+    expect(host.isOpen).toBe(true);
+  });
+
+  it("stops listening for scroll once the popup is closed", () => {
+    const { host } = openInScroller({
+      scroller: { ...tooShort, height: 320 },
+      trigger: rowTrigger,
+      popup: pickerPopup,
+    });
+
+    host.close();
+    // A stray scroll after close must not throw or reopen; a popup that never escaped never armed
+    // the listener in the first place.
+    document.dispatchEvent(new Event("scroll"));
+
+    expect(host.isOpen).toBe(false);
   });
 });
