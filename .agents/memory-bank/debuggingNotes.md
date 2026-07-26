@@ -9,6 +9,28 @@ we hit, why they happened, and the exact fix so nobody re-derives them.
 agent-tool-local memory (it does not clone or transfer between machines/agents). Record new findings
 here so every agent, teammate, and clone sees them.
 
+## Ordering + resolved-window on the Project Tracking board
+
+- Sort keys must be FETCHED. `orderItems` needs `importance`, so `TRACKING_FIELDS` now asks ADO for
+  `Microsoft.VSTS.Common.StackRank` (hydrated to `TrackedWorkItem.importance`) and
+  `Microsoft.VSTS.Common.StateChangeDate` (hydrated to `stateChangeDate`). Only request stock
+  process-template fields: `workitemsbatch` fails the whole page for a field the org does not define.
+- "Missing rank" sentinel is `UNRANKED_IMPORTANCE = Number.MAX_SAFE_INTEGER`, deliberately FINITE.
+  The importance comparator subtracts, and `Infinity - Infinity` is `NaN` — a `NaN` comparator result
+  silently scrambles the sort instead of leaving the tied pair alone.
+- "Resolved" is a POSITION, not a state name: `completedColumnOrdinal(boardColumns)` =
+  `length - 2`, i.e. the column before the abandoned bucket (Removed). Reject a negative ordinal —
+  `boardColumnOrdinal` also answers `-1` for an unmapped status, so a short board would otherwise
+  read every unmapped item as finished.
+- The hide-after-N-days age is measured from `stateChangeDate`, NOT `changedDate`: a comment or a
+  re-tag must not put finished work back on the board. An item with no state-change date is never
+  aged out, and an ancestor survives while any descendant is still visible (`isVisibleUnderFilter`
+  already recurses), which is what keeps a done parent over unfinished children.
+- The filter and the ordering are applied in BOTH `renderTree` and `createMinorChildrenBadge`, so the
+  rollup's `completed / total` chip can never disagree with the rows the board is showing.
+- Adding a required field to `TrackedWorkItem` breaks every object-literal fixture. Run `pnpm typecheck`
+  first and fix exactly the files it lists.
+
 ## Terminology (per developer, use consistently)
 
 - "Status" / "State" (of an item) = the APPLICATION board-column label (In Queue/In Progress/Waiting/

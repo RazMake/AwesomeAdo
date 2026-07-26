@@ -106,6 +106,73 @@ function createUser(name: string): TrackedUser {
 }
 
 /**
+ * The two Features under the fixture epic: an Active one on the current sprint carrying a Story, and
+ * a New one on the next sprint. Split from `createFixtureTree` so neither builder outgrows a screen.
+ */
+function createFixtureFeatures(bob: TrackedUser, carol: TrackedUser, alice: TrackedUser) {
+  return [
+    {
+      id: 2,
+      rev: 2,
+      type: "Feature",
+      title: "User Authentication",
+      state: "Active",
+      assignedTo: bob,
+      iterationPath: "Project\\Sprint 1",
+      sprintName: "Sprint 1",
+      createdDate: "2026-01-15T09:00:00Z",
+      createdBy: bob,
+      changedDate: "2026-07-22T10:15:00Z",
+      changedBy: carol,
+      stateChangeDate: "2026-07-22T10:15:00Z",
+      description: "Implement OAuth2 authentication.",
+      importance: 100,
+      eta: "2026-08-15T00:00:00Z",
+      children: [
+        {
+          id: 3,
+          rev: 1,
+          type: "Story",
+          title: "Login UI",
+          state: "New",
+          assignedTo: carol,
+          iterationPath: "Project\\Sprint 2",
+          sprintName: "Sprint 2",
+          createdDate: "2026-01-20T10:00:00Z",
+          createdBy: carol,
+          changedDate: "2026-01-20T10:00:00Z",
+          changedBy: carol,
+          stateChangeDate: "2026-01-20T10:00:00Z",
+          description: "Design and implement the login screen.",
+          importance: 100,
+          eta: null,
+          children: [],
+        },
+      ],
+    },
+    {
+      id: 4,
+      rev: 1,
+      type: "Feature",
+      title: "Data Migration",
+      state: "New",
+      assignedTo: null,
+      iterationPath: "Project\\Sprint 2",
+      sprintName: "Sprint 2",
+      createdDate: "2026-01-18T11:00:00Z",
+      createdBy: alice,
+      changedDate: "2026-01-18T11:00:00Z",
+      changedBy: alice,
+      stateChangeDate: "2026-01-18T11:00:00Z",
+      description: "Migrate legacy data to new schema.",
+      importance: 200,
+      eta: null,
+      children: [],
+    },
+  ] satisfies TrackedWorkItem[];
+}
+
+/**
  * Creates a fake TrackedWorkItem tree.
  */
 function createFixtureTree(): TrackedWorkItem {
@@ -126,62 +193,11 @@ function createFixtureTree(): TrackedWorkItem {
     createdBy: alice,
     changedDate: "2026-07-20T14:30:00Z",
     changedBy: bob,
+    stateChangeDate: "2026-07-20T14:30:00Z",
     description: "Modernize the platform infrastructure.",
+    importance: 100,
     eta: "2026-12-31T00:00:00Z",
-    children: [
-      {
-        id: 2,
-        rev: 2,
-        type: "Feature",
-        title: "User Authentication",
-        state: "Active",
-        assignedTo: bob,
-        iterationPath: "Project\\Sprint 1",
-        sprintName: "Sprint 1",
-        createdDate: "2026-01-15T09:00:00Z",
-        createdBy: bob,
-        changedDate: "2026-07-22T10:15:00Z",
-        changedBy: carol,
-        description: "Implement OAuth2 authentication.",
-        eta: "2026-08-15T00:00:00Z",
-        children: [
-          {
-            id: 3,
-            rev: 1,
-            type: "Story",
-            title: "Login UI",
-            state: "New",
-            assignedTo: carol,
-            iterationPath: "Project\\Sprint 2",
-            sprintName: "Sprint 2",
-            createdDate: "2026-01-20T10:00:00Z",
-            createdBy: carol,
-            changedDate: "2026-01-20T10:00:00Z",
-            changedBy: carol,
-            description: "Design and implement the login screen.",
-            eta: null,
-            children: [],
-          },
-        ],
-      },
-      {
-        id: 4,
-        rev: 1,
-        type: "Feature",
-        title: "Data Migration",
-        state: "New",
-        assignedTo: null,
-        iterationPath: "Project\\Sprint 2",
-        sprintName: "Sprint 2",
-        createdDate: "2026-01-18T11:00:00Z",
-        createdBy: alice,
-        changedDate: "2026-01-18T11:00:00Z",
-        changedBy: alice,
-        description: "Migrate legacy data to new schema.",
-        eta: null,
-        children: [],
-      },
-    ],
+    children: createFixtureFeatures(bob, carol, alice),
   };
 
   return epic;
@@ -2312,7 +2328,11 @@ function createItem(overrides: Partial<TrackedWorkItem> & { id: number }): Track
     createdBy: null,
     changedDate: "2026-01-10T08:00:00Z",
     changedBy: null,
+    // Recent by default (the fixture clock is 2026-07-24) so a Done item is not aged off the board
+    // unless the test says so.
+    stateChangeDate: "2026-07-24T08:00:00Z",
     description: "",
+    importance: overrides.id,
     eta: null,
     children: [],
     ...overrides,
@@ -2515,5 +2535,339 @@ describe("ProjectTrackingView — rollup popup rows", () => {
     expect(writes).toEqual([
       { id: 4, rev: 1, field: "Custom.TaskETA", value: "2026-10-05T12:00:00Z" },
     ]);
+  });
+});
+
+/** Renders a board over `tree` with the given binding properties, and waits for its async load. */
+async function renderBoardForTree(
+  tree: TrackedWorkItem,
+  properties: Record<string, string> = {},
+  serviceOverrides: Partial<EnhancedViewServices> = {},
+): Promise<HTMLElement> {
+  const services = createFakeServices({
+    loadTree: async () => ({ isTreeQuery: true, roots: [tree], error: null }),
+    ...serviceOverrides,
+  });
+  const root = projectTrackingView.render({ doc: document, queryId: "q1", properties, services });
+  await Promise.resolve();
+  await Promise.resolve();
+  return root;
+}
+
+/** The titles of the rendered tree rows, in the order the board painted them. */
+function renderedRowTitles(root: HTMLElement): string[] {
+  return [...root.querySelectorAll(".awesomeado-tracking__item-title")].map(
+    (title) => title.textContent ?? "",
+  );
+}
+
+/** An Epic over the given children, so the board's depth-0 rows are exactly those children. */
+function epicOver(children: TrackedWorkItem[]): TrackedWorkItem {
+  return createItem({ id: 1, type: "Epic", title: "Platform Modernization", children });
+}
+
+// Every fixture below leans on the fake clock (2026-07-24T12:00Z) and the fake board columns
+// (…Done, Removed), so "Closed" maps to Done — the column before Removed — and the default 4-day
+// window cuts at 2026-07-20T12:00Z.
+const LONG_AGO = "2026-07-01T00:00:00Z";
+const YESTERDAY = "2026-07-23T00:00:00Z";
+
+/** A Feature sitting in the resolved column since `stateChangeDate`. */
+function resolvedFeature(
+  id: number,
+  title: string,
+  stateChangeDate: string,
+  extra: Partial<TrackedWorkItem> = {},
+): TrackedWorkItem {
+  return createItem({ id, type: "Feature", title, state: "Closed", stateChangeDate, ...extra });
+}
+
+/** A Task sitting in the resolved column since `stateChangeDate`, for the rollup fixtures. */
+function resolvedTask(id: number, title: string, stateChangeDate: string): TrackedWorkItem {
+  return createItem({ id, title, state: "Closed", stateChangeDate });
+}
+
+/** An Epic whose deepest row rolls the given Tasks up into its badge. */
+function epicOverRolledUpTasks(tasks: TrackedWorkItem[]): TrackedWorkItem {
+  return epicOver([
+    createItem({
+      id: 20,
+      type: "Feature",
+      title: "User Authentication",
+      children: [createItem({ id: 30, type: "Story", title: "Login UI", children: tasks })],
+    }),
+  ]);
+}
+
+describe("ProjectTrackingView — resolved item window", () => {
+  it("hides an item resolved longer ago than the configured window", async () => {
+    const root = await renderBoardForTree(
+      epicOver([
+        resolvedFeature(2, "Long done", LONG_AGO),
+        createItem({ id: 3, type: "Feature", title: "Still active", state: "Active" }),
+      ]),
+    );
+
+    expect(renderedRowTitles(root)).toEqual(["Still active"]);
+  });
+
+  it("keeps an item resolved inside the window", async () => {
+    const root = await renderBoardForTree(
+      epicOver([
+        resolvedFeature(2, "Just done", YESTERDAY),
+        createItem({ id: 3, type: "Feature", title: "Still active", state: "Active" }),
+      ]),
+    );
+
+    expect(renderedRowTitles(root)).toEqual(["Just done", "Still active"]);
+  });
+
+  it("measures the window from the state change, not from the last edit", async () => {
+    // Touched today (a comment, a re-tag) without moving the state: that must not put a finished
+    // item back on the board for another four days.
+    const tree = epicOver([
+      resolvedFeature(2, "Long done", LONG_AGO, { changedDate: "2026-07-24T11:00:00Z" }),
+    ]);
+
+    expect(renderedRowTitles(await renderBoardForTree(tree))).toEqual([]);
+  });
+
+  it("keeps a long-resolved item while unresolved work still sits beneath it", async () => {
+    const tree = epicOver([
+      resolvedFeature(2, "Long done", LONG_AGO, {
+        children: [createItem({ id: 3, type: "Story", title: "Still open", state: "Active" })],
+      }),
+    ]);
+
+    expect(renderedRowTitles(await renderBoardForTree(tree))).toEqual(["Long done", "Still open"]);
+  });
+
+  it("keeps a resolved item ADO returned no state-change date for", async () => {
+    const tree = epicOver([resolvedFeature(2, "Done, undated", "")]);
+
+    expect(renderedRowTitles(await renderBoardForTree(tree))).toEqual(["Done, undated"]);
+  });
+
+  it("leaves an abandoned item alone: only the column before Removed ages out", async () => {
+    // No column routes "Removed" for this type, so its status is the raw state — which is the LAST
+    // board column, not the resolved one before it.
+    const tree = epicOver([
+      createItem({ id: 2, type: "Feature", title: "Abandoned", state: "Removed" }),
+    ]);
+
+    expect(renderedRowTitles(await renderBoardForTree(tree))).toEqual(["Abandoned"]);
+  });
+
+  it("hides a resolved item immediately when the window is zero days", async () => {
+    const root = await renderBoardForTree(
+      epicOver([
+        resolvedFeature(2, "Done a minute ago", "2026-07-24T11:59:00Z"),
+        createItem({ id: 3, type: "Feature", title: "Still active", state: "Active" }),
+      ]),
+      { days: "0" },
+    );
+
+    expect(renderedRowTitles(root)).toEqual(["Still active"]);
+  });
+
+  it("drops a long-resolved child from the rollup summary as well as the outline", async () => {
+    const root = await renderBoardForTree(
+      epicOverRolledUpTasks([
+        resolvedTask(4, "Long done", LONG_AGO),
+        resolvedTask(5, "Just done", YESTERDAY),
+        createItem({ id: 6, title: "Still active", state: "Active" }),
+      ]),
+      {},
+      { getTypes: () => DEEP_TYPES },
+    );
+
+    // 3 Tasks, but the long-resolved one is off the board entirely: 1 of the 2 left is completed.
+    expect(rollupBadgeOf(root).textContent).toBe("1 / 2");
+  });
+});
+
+describe("ProjectTrackingView — item ordering", () => {
+  /** Three Features whose rank, title and ETA orders are all different, so each policy is visible. */
+  function unorderedFeatures(): TrackedWorkItem {
+    return epicOver([
+      createItem({
+        id: 2,
+        type: "Feature",
+        title: "Charlie",
+        importance: 10,
+        eta: "2026-09-01T00:00:00Z",
+      }),
+      createItem({ id: 3, type: "Feature", title: "Alpha", importance: 30, eta: null }),
+      createItem({
+        id: 4,
+        type: "Feature",
+        title: "Bravo",
+        importance: 20,
+        eta: "2026-08-01T00:00:00Z",
+      }),
+    ]);
+  }
+
+  it("orders rows by backlog rank when the binding stores no policy", async () => {
+    const root = await renderBoardForTree(unorderedFeatures());
+
+    expect(renderedRowTitles(root)).toEqual(["Charlie", "Bravo", "Alpha"]);
+  });
+
+  it("orders rows a-z under the title policy", async () => {
+    const root = await renderBoardForTree(unorderedFeatures(), { orderingPolicy: "title" });
+
+    expect(renderedRowTitles(root)).toEqual(["Alpha", "Bravo", "Charlie"]);
+  });
+
+  it("orders rows by ETA under the eta policy, with undated items last", async () => {
+    const root = await renderBoardForTree(unorderedFeatures(), { orderingPolicy: "eta" });
+
+    expect(renderedRowTitles(root)).toEqual(["Bravo", "Charlie", "Alpha"]);
+  });
+
+  it("orders nested rows by the same policy as their parents", async () => {
+    const root = await renderBoardForTree(
+      epicOver([
+        createItem({
+          id: 2,
+          type: "Feature",
+          title: "User Authentication",
+          children: [
+            createItem({ id: 3, type: "Story", title: "Zebra", importance: 20 }),
+            createItem({ id: 4, type: "Story", title: "Aardvark", importance: 10 }),
+          ],
+        }),
+      ]),
+    );
+
+    expect(renderedRowTitles(root)).toEqual(["User Authentication", "Aardvark", "Zebra"]);
+  });
+
+  it("orders the rolled-up children by the binding's policy too", async () => {
+    const root = await renderBoardForTree(
+      epicOverRolledUpTasks([
+        createItem({ id: 4, title: "Zebra" }),
+        createItem({ id: 5, title: "Aardvark" }),
+      ]),
+      { orderingPolicy: "title" },
+      { getTypes: () => DEEP_TYPES },
+    );
+
+    rollupBadgeOf(root).click();
+    const titles = [...root.querySelectorAll(".awesomeado-child-items__title")].map(
+      (title) => title.textContent,
+    );
+    expect(titles).toEqual(["Aardvark", "Zebra"]);
+  });
+});
+
+/** Opens the header's ordering menu and picks `policy`; returns false when that row is absent. */
+function pickOrderingPolicy(root: HTMLElement, policy: string): boolean {
+  root.querySelector<HTMLButtonElement>(".awesomeado-ordering__trigger")!.click();
+  const row = root.querySelector<HTMLButtonElement>(
+    `.awesomeado-ordering__option[data-policy="${policy}"]`,
+  );
+  row?.click();
+  return row !== null;
+}
+
+describe("ProjectTrackingView — ordering picker", () => {
+  /** Three Features whose rank and title orders disagree, so a re-sort is visible in the rows. */
+  function unorderedFeatures(): TrackedWorkItem {
+    return epicOver([
+      createItem({ id: 2, type: "Feature", title: "Charlie", importance: 10 }),
+      createItem({ id: 3, type: "Feature", title: "Alpha", importance: 30 }),
+      createItem({ id: 4, type: "Feature", title: "Bravo", importance: 20 }),
+    ]);
+  }
+
+  it("labels the header indicator with the binding's policy", async () => {
+    const root = await renderBoardForTree(unorderedFeatures(), { orderingPolicy: "eta" });
+
+    const trigger = root.querySelector<HTMLButtonElement>(".awesomeado-ordering__trigger")!;
+    expect(trigger.title).toBe("Ordering: By ETA (past/recent - future) (click to change)");
+  });
+
+  it("re-sorts the rows on the spot when a new policy is picked", async () => {
+    const root = await renderBoardForTree(unorderedFeatures());
+    expect(renderedRowTitles(root)).toEqual(["Charlie", "Bravo", "Alpha"]);
+
+    expect(pickOrderingPolicy(root, "title")).toBe(true);
+
+    expect(renderedRowTitles(root)).toEqual(["Alpha", "Bravo", "Charlie"]);
+  });
+
+  it("re-sorts without re-reading the query from Azure DevOps", async () => {
+    let treeReads = 0;
+    const root = await renderBoardForTree(
+      unorderedFeatures(),
+      {},
+      {
+        loadTree: async () => {
+          treeReads++;
+          return { isTreeQuery: true, roots: [unorderedFeatures()], error: null };
+        },
+      },
+    );
+
+    pickOrderingPolicy(root, "title");
+
+    expect(treeReads).toBe(1);
+  });
+
+  it("re-sorts every level of the tree, not just the top one", async () => {
+    const root = await renderBoardForTree(
+      epicOver([
+        createItem({
+          id: 2,
+          type: "Feature",
+          title: "User Authentication",
+          children: [
+            createItem({ id: 3, type: "Story", title: "Aardvark", importance: 10 }),
+            createItem({ id: 4, type: "Story", title: "Zebra", importance: 20 }),
+          ],
+        }),
+      ]),
+    );
+    expect(renderedRowTitles(root)).toEqual(["User Authentication", "Aardvark", "Zebra"]);
+
+    pickOrderingPolicy(root, "eta");
+
+    // Neither Story has an ETA, so the stable sort keeps them in the order the query returned.
+    expect(renderedRowTitles(root)).toEqual(["User Authentication", "Aardvark", "Zebra"]);
+  });
+
+  it("keeps the picked order across a later re-render (a resolved roster)", async () => {
+    const root = await renderBoardForTree(unorderedFeatures());
+    pickOrderingPolicy(root, "title");
+
+    // The Feature Crew reconcile resolves after load and repaints the tree; the session's pick must
+    // survive it rather than snapping back to the binding's policy.
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(renderedRowTitles(root)).toEqual(["Alpha", "Bravo", "Charlie"]);
+  });
+
+  it("records the ordering flip, with the policy it moved from and the binding's own", async () => {
+    const lines: string[] = [];
+    const root = await renderBoardForTree(
+      unorderedFeatures(),
+      { orderingPolicy: "importance" },
+      { logger: { info: (message) => lines.push(message), error: () => undefined } },
+    );
+
+    pickOrderingPolicy(root, "title");
+
+    expect(
+      lines.some(
+        (line) =>
+          line.includes("Project Tracking ordering changed") &&
+          line.includes("from=importance") &&
+          line.includes("to=title") &&
+          line.includes("bindingPolicy=importance"),
+      ),
+    ).toBe(true);
   });
 });

@@ -38,7 +38,9 @@ function item(
     createdBy: null,
     changedDate: "2024-01-01T00:00:00Z",
     changedBy: null,
+    stateChangeDate: "2024-01-01T00:00:00Z",
     description: "",
+    importance: 1,
     eta: null,
     children,
   };

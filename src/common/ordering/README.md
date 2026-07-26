@@ -24,3 +24,8 @@ sort, so "most important first", "a–z", and "by ETA" mean the same thing every
 
 Read the policy from a binding's `orderingPolicy` property and pass it to `orderItems` with the
 items to display; never re-implement a comparison inline so the rules stay in one place.
+
+Items that do not already match `OrderableItem` are adapted at the call site rather than by widening
+this contract — e.g. Project Tracking wraps each `TrackedWorkItem` in `{ item, importance, title, eta }`
+with its ISO ETA converted to epoch milliseconds, sorts the wrappers, then unwraps. `orderItems` is
+generic over the wrapper, so the caller still gets its own objects back.

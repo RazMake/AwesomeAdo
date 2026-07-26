@@ -79,6 +79,18 @@ abstractions here is ordinary DIP, not a §6 exception. Its scope is **common vi
 view contracts today, plus reusable cross-view UX building blocks (menus, shared components) as they
 arrive. It must **never** hold ADO data shapes or field definitions; those live in `src/common/ado`.
 
+### `src/common/ordering`
+
+`ItemOrdering` — the single definition of what "most important first" / "a–z" / "by ETA" mean:
+the `OrderingPolicy` union, the `ORDERING_POLICIES` picker list (first entry =
+`DEFAULT_ORDERING_POLICY`), the minimal `OrderableItem` sort-key contract, and `orderItems` (a
+non-mutating stable sort). Pure and domain-free on purpose — it holds no ADO shape, so callers adapt
+their own items to `OrderableItem` (Project Tracking wraps each `TrackedWorkItem`, converting the ISO
+ETA to epoch ms) instead of the contract growing a field per consumer. A view reads the policy from
+its binding through the view-config reader (`orderingPolicyOf`), never straight out of `properties`,
+so a policy a build no longer offers falls back rather than reaching a comparator. See the
+`add-ordering-policy` skill.
+
 ### `src/common/settings-transfer`
 
 `AwesomeAdoConfig` — `exportConfig`/`importConfig` (+ `CONFIG_FILE_NAME`) serialize the whole

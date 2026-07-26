@@ -6,13 +6,20 @@ halves of the view — its configuration and its renderer.
 
 ## Public API
 
-- `projectTrackingViewType.ts` → `projectTrackingViewType: ViewType` — the view's config. Id
-  `"projectTracking"`, label `"Project Tracking"`, with these per-query properties:
+- `projectTrackingViewType.ts` → the view's config plus the readers the renderer resolves it with.
+  `projectTrackingViewType: ViewType` has id `"projectTracking"`, label `"Project Tracking"`, and
+  these per-query properties:
   - `orderingPolicy` (select) — how items are ordered within each group; choices and the default
     come from [`common/ordering`](../../../common/ordering), which also resolves the raw sort key.
   - `weeks` (number) — how far back per-item Updates reach.
   - `days` (number) — hide resolved items once resolved more than this many days ago.
   - `hours` (number) — rolling window behind the "newly created / updated / new notes" pills.
+
+  `orderingPolicyOf(properties)` and `hideResolvedAfterDays(properties)` turn a binding's stored
+  strings into the typed values the renderer uses — defaulted, clamped, and validated against the
+  offered choices. Use them instead of reading `properties["…"]` directly, so a key or a default can
+  never drift between the binding form and the board.
+
 - `ProjectTrackingView.ts` → `projectTrackingView: EnhancedView` — the renderer. Renders a live
   tree board with the following features:
   - **Single-root requirement**: the query must return exactly one root item of the first configured
@@ -21,8 +28,9 @@ halves of the view — its configuration and its renderer.
   - **Header panel**: rendered by the view-specific
     [`header`](./header/README.md) control — a themed tile (subtle background, card-like) with three
     bands:
-    1. Breadcrumbs: the query's clickable parent-folder trail (hidden until a folder-path source is
-       wired).
+    1. Breadcrumbs + ordering: the query's clickable parent-folder trail on the left, and the
+       discrete [`OrderingPicker`](../../../common/view-common/control/OrderingPicker/README.md)
+       glyph pinned to the tile's top-right corner.
     2. Write-queue status: a right-aligned row above the sprint picker showing the shared
        [`WriteQueueStatus`](../../../common/view-common/control/WriteQueueStatus/README.md)
        indicator, driven live by the board's `FieldWriteQueue`. It stays hidden until a field write
@@ -32,6 +40,22 @@ halves of the view — its configuration and its renderer.
        (`+`/`−`) buttons beside it and the sprint picker pinned to the right edge of the same band.
     4. Tech Lead + ETA: "TechLead:" label + root's Assigned To, followed by the root's editable ETA
        badge (click to pick a date or clear it, when the root type has an ETA field configured).
+  - **Item ordering**: every level of the tree (and the rolled-up children popup) is sorted by the
+    binding's `orderingPolicy` through [`common/ordering`](../../../common/ordering) — the board
+    never compares items itself. `importance` uses ADO's manual backlog rank (lowest first; an item
+    ADO gave no rank falls to the bottom), `title` is a–z, `eta` is earliest first with undated items
+    last.
+  - **Ordering picker**: the header's sort glyph names the policy in force in its tooltip and opens
+    the same list of policies the binding form offers. Picking one re-sorts every level of the tree
+    (and the rolled-up children popup) **immediately**, from the items already loaded — no ADO read.
+    The pick lasts for the life of the board only; it is deliberately not written back to the
+    binding, because a synced write would rebuild the whole board to show items nobody re-fetched.
+    The binding's `orderingPolicy` remains the order every board opens on.
+  - **Resolved-item window**: an item whose Status maps to the board column _before_ Removed (the
+    resolved/Done column) drops off the board once its **state** last changed more than `days` days
+    ago — so re-reading or re-tagging finished work does not bring it back. It stays visible while an
+    unresolved item still sits beneath it, and an item ADO returned no state-change date for is never
+    aged out. The rollup badge applies the same rule, so a hidden child is not still counted there.
   - **Sprint filter**: uses the reusable `SprintPicker` control, populated from the shared sprint
     window (`services.loadSprintWindow()` → the configured team's iterations around the current one,
     each labelled by its offset such as `Current - Sprint 5` or `2 sprints ago`). Filter ON by

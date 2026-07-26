@@ -10,15 +10,17 @@ under [`common/view-common/control`](../../../../common/view-common/control).
 
 Renders a single subtle-filled tile with these bands:
 
-1. **Breadcrumbs** — the query's parent-folder trail (`options.breadcrumbs`, ordered outermost →
-   nearest), rendered with the shared
+1. **Breadcrumbs + ordering** — the query's parent-folder trail (`options.breadcrumbs`, ordered
+   outermost → nearest), rendered with the shared
    [`renderBreadcrumbs`](../../../../common/view-common/control/Breadcrumbs/README.md) using a
    forward-slash separator to match ADO's path style. The trail is derived from the query metadata
    `path` returned by Azure DevOps (the query's folder ancestry, excluding the built-in root and the
    query's own name), trimmed to the **two nearest folders** (the query's parent and its parent's
-   parent); an empty array hides the row. Each segment links to that folder's contents in ADO's query
-   hub (`_queries/folder/?path=…`); a segment whose folder URL cannot be resolved falls back to plain
-   text.
+   parent); an empty array hides the trail. Each segment links to that folder's contents in ADO's
+   query hub (`_queries/folder/?path=…`); a segment whose folder URL cannot be resolved falls back to
+   plain text. The caller-supplied ordering picker (`options.orderingPicker`) is pinned to the
+   **right** of this band — the tile's top-right corner — so the discrete sort indicator stays clear
+   of the board's controls. The band is rendered even when there are no breadcrumbs.
 2. **Write-queue status** — the caller-supplied write-queue status indicator
    (`options.writeQueueStatus`) on its own right-aligned row directly above the sprint picker.
    Omitted/`null` hides the row; the indicator itself stays hidden while no save is in flight.
@@ -37,6 +39,7 @@ The `+`/`−` buttons are vertically centered against the two-line title/tech-le
 | Field              | Meaning                                                                                                  |
 | ------------------ | -------------------------------------------------------------------------------------------------------- |
 | `breadcrumbs`      | Parent-folder segments (`{ label, url? }`), outermost first, trimmed to the two nearest folders.         |
+| `orderingPicker`   | The board's item-ordering indicator/picker, pinned to the tile's top-right corner.                       |
 | `title`            | The project (root item) title.                                                                           |
 | `titleColor`       | Hex color for the title, or `null` for the themed default.                                               |
 | `techLead`         | The Tech Lead control element, or `null` when view services are unavailable.                             |
@@ -49,6 +52,7 @@ The `+`/`−` buttons are vertically centered against the two-line title/tech-le
 `renderProjectTrackingHeader` returns `{ element, expandAllButton, collapseAllButton }`. The view
 mounts `element` and wires the two buttons to the tree's twisties.
 
-The control composes the controls it is handed (Tech Lead, sprint picker) plus the shared ETA badge
-and [`Breadcrumbs`](../../../../common/view-common/control/Breadcrumbs/README.md) controls; it never
+The control composes the controls it is handed (Tech Lead, sprint picker, ordering picker) plus the
+shared ETA badge and
+[`Breadcrumbs`](../../../../common/view-common/control/Breadcrumbs/README.md) controls; it never
 reaches for ADO data itself.

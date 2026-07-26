@@ -537,3 +537,20 @@
 - The reconcile after a pick now runs even when the person was already on the roster. It is the
   reconcile that hands back their crew tag, and without it a reassignment left the chip wearing the
   neutral "??" pill; nothing is written when nothing changed.
+
+## ADR-039: The in-view ordering pick is board-local; the binding stays the default
+
+- Decision: the Project Tracking header carries a discrete `OrderingPicker` (a sort glyph in the
+  tile's top-right corner, `common/view-common/control/OrderingPicker`) offering the same
+  `ORDERING_POLICIES` the binding form offers. The board owns the live policy (`createOrderingControl`)
+  and `renderTreeContent` reads it through a getter, so a pick re-sorts the loaded items on the spot.
+  The pick is **not** written back to the binding.
+- Rationale: persisting it would write to synced storage, come back through the bindings observer,
+  change `EnhancedViewSurface`'s request signature and rebuild the whole view — a fresh ADO tree read
+  and every expanded item collapsed, to re-show items nobody re-fetched. That is the opposite of an
+  instant re-sort. The same reasoning already keeps the sprint filter, the tag filter, and the active
+  view (ADR-031) in-session; the binding's `orderingPolicy` keeps deciding the order every board
+  opens on, and remains the single persisted source of truth.
+- Consequence: a view that renders items must read its ordering from live board state, never
+  re-derive it from `context.properties` inside a render pass, or a picked order silently reverts on
+  the next repaint (a roster reconcile, a tag change, a sprint toggle).

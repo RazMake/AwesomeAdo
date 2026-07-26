@@ -37,6 +37,10 @@ The extension is feature-complete for its current scope:
   inline by the shared `ChildItemsBadge` control as a `completed / total` chip (completed = the last board
   column before Removed) tinted from the last configured type's color, whose popup lists each child as
   `{AssignedTo} {title} {ETA} {type icon → ADO}` and honors the active sprint/tag filters (ADR-035).
+  Two of the binding's per-query properties are now honored: `orderingPolicy` sorts every level of the
+  tree (and the rollup popup) through `common/ordering`, and `days` drops an item once its Status has
+  sat in the resolved column (the one before Removed) longer than that window, aged from
+  `stateChangeDate`; `weeks` and `hours` are still declared but unused.
   `loadTree` now fetches
   **live** from Azure DevOps (ADR-033): the content-side `MessagingWorkItemTreeLoader` (`common/browser`)
   asks the background worker — over the `AdoTreeRequest` message contract — to run a credentialed

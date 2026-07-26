@@ -21,6 +21,9 @@ function baseOptions(
   const sprintPicker = document.createElement("div");
   sprintPicker.className = "awesomeado-sprint-picker";
 
+  const orderingPicker = document.createElement("span");
+  orderingPicker.className = "awesomeado-ordering";
+
   return {
     breadcrumbs: [],
     title: "Platform Modernization",
@@ -28,6 +31,7 @@ function baseOptions(
     techLead,
     eta: renderEtaBadge(document, { eta: null, now }),
     sprintPicker,
+    orderingPicker,
     ...overrides,
   };
 }
@@ -117,6 +121,29 @@ describe("renderProjectTrackingHeader - breadcrumbs", () => {
 
     // One separator sits between the two segments.
     expect(separators?.length).toBe(1);
+  });
+});
+
+describe("renderProjectTrackingHeader - ordering picker", () => {
+  it("pins the ordering picker to the top-right corner, above every other band", () => {
+    const orderingPicker = document.createElement("span");
+    orderingPicker.className = "awesomeado-ordering";
+
+    const { element } = renderProjectTrackingHeader(document, baseOptions({ orderingPicker }));
+
+    const topRow = element.querySelector(".awesomeado-tracking__header-top");
+    expect(topRow?.contains(orderingPicker)).toBe(true);
+    // `margin-left:auto` is what pushes it to the right edge of that band.
+    expect(orderingPicker.style.marginLeft).toBe("auto");
+    // The band it sits in is the tile's FIRST row, so "top-right corner" is literal.
+    expect(element.children[0]).toBe(topRow);
+  });
+
+  it("keeps the ordering picker in the corner when the query sits in no folder", () => {
+    const { element } = renderProjectTrackingHeader(document, baseOptions({ breadcrumbs: [] }));
+
+    const topRow = element.querySelector(".awesomeado-tracking__header-top");
+    expect(topRow?.querySelector(".awesomeado-ordering")).toBeTruthy();
   });
 });
 

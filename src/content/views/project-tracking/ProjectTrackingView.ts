@@ -19,6 +19,7 @@ import type {
 import { ASSIGNED_TO_FIELD, identityFieldValue } from "../../../common/ado/adoApi";
 import { buildQueryFolderUrl, buildWorkItemUrl } from "../../../common/ado/fetchAdoTree";
 import type { SprintWindow } from "../../../common/ado/sprintWindow";
+import { orderItems, type OrderingPolicy } from "../../../common/ordering/ItemOrdering";
 import type {
   DataDrivenViewContext,
   EnhancedView,
@@ -38,6 +39,7 @@ import {
   type EtaBadgeHandle,
 } from "../../../common/view-common/control/EtaBadge/EtaBadge";
 import { renderItemLifecycleInfo } from "../../../common/view-common/control/ItemLifecycleInfo/ItemLifecycleInfo";
+import { renderOrderingPicker } from "../../../common/view-common/control/OrderingPicker/OrderingPicker";
 import {
   renderSprintPicker,
   type SprintPickerHandle,
@@ -47,7 +49,11 @@ import { renderViewScaffold } from "../../../common/view-common/control/ViewScaf
 import { renderWriteQueueStatus } from "../../../common/view-common/control/WriteQueueStatus/WriteQueueStatus";
 
 import { renderProjectTrackingHeader } from "./header/ProjectTrackingHeader";
-import { projectTrackingViewType } from "./projectTrackingViewType";
+import {
+  hideResolvedAfterDays,
+  orderingPolicyOf,
+  projectTrackingViewType,
+} from "./projectTrackingViewType";
 import { renderTagFilterPanel } from "./tag-filter/TagFilterPanel";
 
 /**
@@ -100,21 +106,57 @@ function itemTagKey(item: TrackedWorkItem): string | null | undefined {
 }
 
 /**
- * Predicate: is this item (or any of its descendants) visible under the active sprint and tag
- * filters? An item self-matches when it passes BOTH filters (an empty selection passes that filter);
- * multiple selected tags form an OR. An ancestor stays visible when any descendant self-matches, so
- * a matching item is never orphaned from its path.
+ * Everything one render pass narrows the tree by, bundled so the recursive visibility test and the
+ * rollup badge apply exactly the same rules and can never fall out of step.
  */
-function isVisibleUnderFilter(
-  item: TrackedWorkItem,
-  filterSprint: string | null,
-  selectedTags: Set<string | null>,
-): boolean {
-  const matchesSprint = !filterSprint || item.sprintName === filterSprint;
+interface TreeFilter {
+  /** The sprint the board is filtered to, or null when the sprint filter is off. */
+  sprint: string | null;
+  /** The active Feature Crew tag filter (empty = everyone); `null` is the untagged "??" bucket. */
+  tags: Set<string | null>;
+  /** True once an item has sat in the resolved column longer than the binding's window allows. */
+  isResolvedPastWindow(item: TrackedWorkItem): boolean;
+}
+
+/**
+ * Predicate: is this item (or any of its descendants) visible under the active filters? An item
+ * self-matches when it passes the sprint filter, the tag filter (an empty selection passes; multiple
+ * selected tags form an OR) AND has not been resolved for longer than the binding allows. An ancestor
+ * stays visible when any descendant self-matches, so a matching item is never orphaned from its path
+ * — which is also what keeps a long-resolved parent on the board while unresolved work sits beneath it.
+ */
+function isVisibleUnderFilter(item: TrackedWorkItem, filter: TreeFilter): boolean {
+  const matchesSprint = !filter.sprint || item.sprintName === filter.sprint;
   const key = itemTagKey(item);
-  const matchesTag = selectedTags.size === 0 || (key !== undefined && selectedTags.has(key));
-  if (matchesSprint && matchesTag) return true;
-  return item.children.some((child) => isVisibleUnderFilter(child, filterSprint, selectedTags));
+  const matchesTag = filter.tags.size === 0 || (key !== undefined && filter.tags.has(key));
+  if (matchesSprint && matchesTag && !filter.isResolvedPastWindow(item)) return true;
+  return item.children.some((child) => isVisibleUnderFilter(child, filter));
+}
+
+/**
+ * Orders one level of the tree by the binding's policy.
+ *
+ * `common/ordering` owns what each policy means, so this only adapts a tracked item to what it asks
+ * for: an item stores its ETA as an ISO string, but the policy compares epoch milliseconds. The
+ * ordered wrappers are unwrapped back to the items, so the caller still renders the real nodes.
+ */
+function orderTrackedItems(items: TrackedWorkItem[], policy: OrderingPolicy): TrackedWorkItem[] {
+  const orderable = items.map((item) => ({
+    item,
+    importance: item.importance,
+    title: item.title,
+    eta: epochOf(item.eta),
+  }));
+  return orderItems(orderable, policy).map((entry) => entry.item);
+}
+
+/** An ISO timestamp as epoch milliseconds; null when absent or unparseable. */
+function epochOf(iso: string | null): number | null {
+  if (iso === null) {
+    return null;
+  }
+  const parsed = Date.parse(iso);
+  return Number.isNaN(parsed) ? null : parsed;
 }
 
 /**
@@ -362,10 +404,10 @@ interface TreeRenderOptions {
   statusWidthCh: number;
   /** The team's global board columns in order; a status colors by its position in this list. */
   boardColumns: string[];
-  /** The sprint the board is filtered to, or null when the sprint filter is off. */
-  filterSprint: string | null;
-  /** The active Feature Crew tag filter (empty = everyone); `null` is the untagged "??" bucket. */
-  selectedTags: Set<string | null>;
+  /** What narrows the tree on this pass: the sprint, the tags, and the resolved-age window. */
+  filter: TreeFilter;
+  /** How the items within each level are ordered, straight from the binding. */
+  orderingPolicy: OrderingPolicy;
   showSprintPills: boolean;
   /** How every assignee chip on this pass offers people and persists a pick. */
   chip: AssigneeChipContext;
@@ -388,6 +430,51 @@ const MAX_ROW_DEPTH = 1;
  * an abandoned child is not work that got finished.
  */
 const COMPLETED_COLUMN_FROM_END = 2;
+
+/** Milliseconds in a day, the unit the "hide resolved after" window is configured in. */
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/**
+ * The board-column position that means "this item is finished": the column before the abandoned
+ * bucket. Returns -1 when the board declares too few columns for that position to exist, which is
+ * also what `boardColumnOrdinal` answers for an unmapped status — so callers must reject a negative
+ * ordinal rather than let every unmapped item read as finished.
+ */
+function completedColumnOrdinal(boardColumns: string[]): number {
+  return boardColumns.length - COMPLETED_COLUMN_FROM_END;
+}
+
+/**
+ * Builds the "resolved long enough to drop off the board" test for one render pass.
+ *
+ * "Resolved" is a position, not a state name: whatever the team routed onto the column before the
+ * abandoned bucket. The age is measured from the item's last STATE change, so re-reading or
+ * re-tagging a finished item does not put it back on the board for another few days.
+ */
+function createResolvedWindowFilter(
+  typeMap: Map<string, TypeCatalogEntry>,
+  boardColumns: string[],
+  hideAfterDays: number,
+  now: Date,
+): (item: TrackedWorkItem) => boolean {
+  const resolvedOrdinal = completedColumnOrdinal(boardColumns);
+  if (resolvedOrdinal < 0) {
+    // Too few columns to name a resolved one; hiding on a position that does not exist would blank
+    // every item whose status maps nowhere.
+    return () => false;
+  }
+  const cutoff = now.getTime() - hideAfterDays * MS_PER_DAY;
+  return (item) => {
+    const status = statusLabelOf(item, typeMap.get(item.type));
+    if (boardColumnOrdinal(status, boardColumns) !== resolvedOrdinal) {
+      return false;
+    }
+    const resolvedAt = epochOf(item.stateChangeDate);
+    // An item ADO returned no state-change date for cannot be aged out: keep showing it rather than
+    // hiding finished work on a date this build does not actually have.
+    return resolvedAt !== null && resolvedAt < cutoff;
+  };
+}
 
 /** Marks the span that owns the triangle, so its own (small) font size survives every state flip. */
 const TWISTY_GLYPH_CLASS = "awesomeado-tracking__twisty-glyph";
@@ -639,21 +726,23 @@ function describeMinorChild(
 
 /**
  * Rolls a row's children up into a single "completed / total" badge, or null when there is nothing
- * to summarize. Only children that survive the active sprint and tag filters are counted or listed,
- * so the rollup always agrees with what those filters claim the board is showing.
+ * to summarize. Only children that survive the active filters are counted or listed, so the rollup
+ * always agrees with what the board claims to be showing — including the resolved-age window, so a
+ * child hidden from the outline is not still counted here.
  */
 function createMinorChildrenBadge(
   item: TrackedWorkItem,
   options: TreeRenderOptions,
 ): HTMLElement | null {
-  const { typeMap, boardColumns, filterSprint, selectedTags } = options;
+  const { typeMap, boardColumns, filter } = options;
 
-  const visible = item.children.filter((child) =>
-    isVisibleUnderFilter(child, filterSprint, selectedTags),
+  const visible = orderTrackedItems(
+    item.children.filter((child) => isVisibleUnderFilter(child, filter)),
+    options.orderingPolicy,
   );
   if (visible.length === 0) return null;
 
-  const completedOrdinal = boardColumns.length - COMPLETED_COLUMN_FROM_END;
+  const completedOrdinal = completedColumnOrdinal(boardColumns);
   const completedCount = visible.filter(
     (child) =>
       boardColumnOrdinal(statusLabelOf(child, typeMap.get(child.type)), boardColumns) ===
@@ -826,8 +915,9 @@ function renderRow(
 }
 
 /**
- * Recursively renders the tree of work items, respecting the sprint and tag filters.
- * Returns an array of row wrappers (each contains row + description + children container).
+ * Recursively renders the tree of work items: each level is narrowed by the active filters, then
+ * ordered by the binding's ordering policy. Returns an array of row wrappers (each contains row +
+ * description + children container).
  *
  * Recursion stops at `MAX_ROW_DEPTH`: deeper items are summarized by the deepest row's rollup badge
  * (see `createMinorChildrenBadge`) instead of extending the outline.
@@ -837,18 +927,20 @@ function renderTree(
   options: TreeRenderOptions,
   depth: number,
 ): HTMLElement[] {
-  return items
-    .filter((item) => isVisibleUnderFilter(item, options.filterSprint, options.selectedTags))
-    .map((item) => {
-      const { row, childrenContainer, twisty } = renderRow(item, options, depth);
-      if (twisty) options.allTwisties.push(twisty);
+  const visible = orderTrackedItems(
+    items.filter((item) => isVisibleUnderFilter(item, options.filter)),
+    options.orderingPolicy,
+  );
+  return visible.map((item) => {
+    const { row, childrenContainer, twisty } = renderRow(item, options, depth);
+    if (twisty) options.allTwisties.push(twisty);
 
-      if (depth < MAX_ROW_DEPTH) {
-        childrenContainer.append(...renderTree(item.children, options, depth + 1));
-      }
+    if (depth < MAX_ROW_DEPTH) {
+      childrenContainer.append(...renderTree(item.children, options, depth + 1));
+    }
 
-      return row;
-    });
+    return row;
+  });
 }
 
 /**
@@ -907,9 +999,20 @@ function createTechLeadGroup(
 }
 
 /**
+ * The controls the BOARD builds and the header only lays out. Bundled rather than passed one by one
+ * so the header's signature does not grow an extra positional argument per indicator.
+ */
+interface HeaderBoardControls {
+  /** The shared "Saving…" indicator, mounted on its own row above the sprint picker. */
+  writeQueueStatus: HTMLElement;
+  /** The discrete ordering indicator/picker, pinned to the tile's top-right corner. */
+  orderingPicker: HTMLElement;
+}
+
+/**
  * Renders the header tile by delegating layout to the view's own header control, feeding it the
- * pieces the control does not build itself (the Tech Lead picker, the sprint picker, and the
- * write-queue status indicator) plus the root's title, type color, and ETA.
+ * pieces the control does not build itself (the Tech Lead picker, the sprint picker, the ordering
+ * picker, and the write-queue status indicator) plus the root's title, type color, and ETA.
  */
 function renderHeader(
   doc: Document,
@@ -918,7 +1021,7 @@ function renderHeader(
   typeMap: Map<string, TypeCatalogEntry>,
   sprintWindow: SprintWindow,
   chipContext: AssigneeChipContext,
-  writeQueueStatus: HTMLElement,
+  boardControls: HeaderBoardControls,
   folderPath: QueryFolderCrumb[],
   queue: FieldWriteQueue,
 ): {
@@ -952,7 +1055,8 @@ function renderHeader(
     techLead,
     eta: createItemEtaBadge(doc, root, typeMap, queue, context.services.now()),
     sprintPicker: sprintPickerHandle.element,
-    writeQueueStatus,
+    orderingPicker: boardControls.orderingPicker,
+    writeQueueStatus: boardControls.writeQueueStatus,
   });
 
   return { header, sprintPickerHandle, expandAll, collapseAll, techLead };
@@ -1092,6 +1196,11 @@ interface BoardTreeRendererParams {
   minorChildColor: string | null;
   expandAll: HTMLButtonElement;
   collapseAll: HTMLButtonElement;
+  /**
+   * The ordering policy to sort by, read at render time rather than captured: the header's picker
+   * changes it between passes, and a captured value would keep re-painting the original order.
+   */
+  currentOrderingPolicy: () => OrderingPolicy;
 }
 
 /**
@@ -1117,6 +1226,7 @@ function createBoardTreeRenderer(params: BoardTreeRendererParams): {
   const renderTreeContent = (): void => {
     const filterOn = sprintPickerHandle.isFilterActive();
     const allTwisties: HTMLButtonElement[] = [];
+    const properties = params.context.properties;
     const options: TreeRenderOptions = {
       doc,
       context: params.context,
@@ -1124,8 +1234,19 @@ function createBoardTreeRenderer(params: BoardTreeRendererParams): {
       queue: params.fieldWrites,
       statusWidthCh: params.statusWidthCh,
       boardColumns: params.boardColumns,
-      filterSprint: filterOn ? sprintPickerHandle.selectedSprint() : null,
-      selectedTags,
+      filter: {
+        sprint: filterOn ? sprintPickerHandle.selectedSprint() : null,
+        tags: selectedTags,
+        // Rebuilt on every pass rather than once per board: "now" moves, so a board left open long
+        // enough ages an item out the next time anything repaints it.
+        isResolvedPastWindow: createResolvedWindowFilter(
+          params.typeMap,
+          params.boardColumns,
+          hideResolvedAfterDays(properties),
+          params.context.services.now(),
+        ),
+      },
+      orderingPolicy: params.currentOrderingPolicy(),
       // Sprint pills only earn their space when the sprint filter is not already narrowing the board.
       showSprintPills: !filterOn,
       chip: params.chipContext,
@@ -1167,6 +1288,36 @@ function createBoardTreeRenderer(params: BoardTreeRendererParams): {
 }
 
 /**
+ * The board's ordering control: the header's picker element plus the live policy it drives.
+ *
+ * Seeded from the binding's stored setting and then owned here, so a pick re-sorts the items already
+ * on screen. The pick is deliberately NOT written back to the binding: persisting it would round-trip
+ * through synced storage and rebuild the whole board (a fresh ADO read, every expanded item
+ * collapsed) to re-show items nobody re-fetched — the same reason the sprint and tag filters stay
+ * in-session. The binding keeps deciding the order every board opens on.
+ */
+function createOrderingControl(
+  context: DataDrivenViewContext,
+  resort: () => void,
+): { element: HTMLElement; policy: () => OrderingPolicy } {
+  let policy = orderingPolicyOf(context.properties);
+  const element = renderOrderingPicker(context.doc, {
+    policy,
+    onChange: (picked) => {
+      // A rare, user-driven flip that changes what the whole board shows, so record the policies it
+      // moved between — "why is this sorted like that?" is then answerable from the log alone.
+      context.services.logger.info(
+        `Project Tracking ordering changed for this session: from=${policy}, to=${picked}, ` +
+          `bindingPolicy=${orderingPolicyOf(context.properties)}`,
+      );
+      policy = picked;
+      resort();
+    },
+  });
+  return { element, policy: () => policy };
+}
+
+/**
  * Renders the complete board: header + tree, wired with expand/collapse and sprint-picker filter controls.
  */
 function renderBoard(
@@ -1199,6 +1350,11 @@ function renderBoard(
   const minorChildColor = lastTypeColor(services.getTypes());
   const tagEditor = createTagEditor(root, onTagAssign);
 
+  // Points at the tree renderer built further below, so the ordering picker can re-sort in place. A
+  // pick can only arrive from a click, which cannot happen before this synchronous setup finishes.
+  let resortTree: () => void = () => {};
+  const ordering = createOrderingControl(context, () => resortTree());
+
   // Built once and shared by every assignee chip on the board (rows, rolled-up children, Tech Lead).
   // `crew` walks the live tree on each popup open rather than caching a list, so a person assigned a
   // moment ago is already offered and there is no second copy of "who is on this project" to drift.
@@ -1218,7 +1374,7 @@ function renderBoard(
     typeMap,
     sprintWindow,
     chipContext,
-    writeStatus.element,
+    { writeQueueStatus: writeStatus.element, orderingPicker: ordering.element },
     folderPath,
     fieldWrites,
   );
@@ -1254,9 +1410,11 @@ function renderBoard(
     minorChildColor,
     expandAll,
     collapseAll,
+    currentOrderingPolicy: ordering.policy,
   });
 
   renderTreeContent();
+  resortTree = renderTreeContent;
   wireSprintPickerRerender(sprintPickerHandle, renderTreeContent);
 
   return {

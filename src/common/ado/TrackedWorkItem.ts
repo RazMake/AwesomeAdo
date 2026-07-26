@@ -35,7 +35,18 @@ export interface TrackedWorkItem {
   /** ISO 8601 timestamp when the item was last changed. */
   changedDate: string;
   changedBy: TrackedUser | null;
+  /**
+   * ISO 8601 timestamp of the last `System.State` transition, or `""` when ADO returned none.
+   * Distinct from `changedDate` on purpose: "how long has this been done?" must not be reset by an
+   * unrelated edit (a comment, a re-tag) that leaves the state exactly where it was.
+   */
+  stateChangeDate: string;
   description: string;
+  /**
+   * The manual backlog rank (ADO's stack rank); a LOWER number means more important. Items ADO
+   * returned no rank for sort after every ranked one rather than jumping to the top.
+   */
+  importance: number;
   /** ISO 8601 timestamp of the configured ETA field; null when unset or the type has no ETA field. */
   eta: string | null;
   children: TrackedWorkItem[];

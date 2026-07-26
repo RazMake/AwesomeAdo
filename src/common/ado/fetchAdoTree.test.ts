@@ -8,6 +8,7 @@ import {
   parseQueryFolderPath,
   parseTrackedTree,
   TRACKING_FIELDS,
+  UNRANKED_IMPORTANCE,
   type AdoRawTree,
 } from "./fetchAdoTree";
 
@@ -26,6 +27,11 @@ describe("TRACKING_FIELDS", () => {
     expect(TRACKING_FIELDS).toContain("System.Description");
     expect(TRACKING_FIELDS).toContain("System.Rev");
     expect(TRACKING_FIELDS).toContain("System.Parent");
+  });
+
+  it("includes the backlog rank and state-change date the board orders and ages items by", () => {
+    expect(TRACKING_FIELDS).toContain("Microsoft.VSTS.Common.StackRank");
+    expect(TRACKING_FIELDS).toContain("Microsoft.VSTS.Common.StateChangeDate");
   });
 });
 
@@ -144,7 +150,9 @@ function buildNestedEpicTree(): { raw: AdoRawTree; etaFieldByType: Map<string, s
           "System.CreatedBy": { displayName: "Bob", uniqueName: "bob@contoso.com" },
           "System.ChangedDate": "2024-01-15T14:30:00Z",
           "System.ChangedBy": { displayName: "Charlie" },
+          "Microsoft.VSTS.Common.StateChangeDate": "2024-01-12T09:00:00Z",
           "System.Description": "<p>Epic <b>description</b> with &amp; entities.</p>",
+          "Microsoft.VSTS.Common.StackRank": 1999.5,
           "Microsoft.VSTS.Scheduling.TargetDate": "2024-03-31T00:00:00Z",
         },
       },
@@ -218,6 +226,8 @@ describe("parseTrackedTree - nested tree", () => {
     });
     expect(epic.changedDate).toBe("2024-01-15T14:30:00Z");
     expect(epic.changedBy).toEqual({ displayName: "Charlie", uniqueName: null, imageUrl: null });
+    expect(epic.stateChangeDate).toBe("2024-01-12T09:00:00Z");
+    expect(epic.importance).toBe(1999.5);
     expect(epic.description).toBe("Epic description with & entities.");
     expect(epic.eta).toBe("2024-03-31T00:00:00Z");
     expect(epic.children).toHaveLength(1);
@@ -248,6 +258,25 @@ describe("parseTrackedTree - nested tree", () => {
     expect(story.description).toBe("Story notes");
     expect(story.eta).toBeNull();
     expect(story.children).toHaveLength(0);
+  });
+
+  it("ranks an item ADO returned no backlog rank for below every ranked one", () => {
+    const { raw, etaFieldByType } = buildNestedEpicTree();
+
+    const result = parseTrackedTree(raw, etaFieldByType);
+
+    // The Story fixture carries no StackRank, so it must sort after the ranked Epic, not before it.
+    const story = result.roots[0]?.children[0]?.children[0];
+    expect(story?.importance).toBe(UNRANKED_IMPORTANCE);
+    expect(UNRANKED_IMPORTANCE).toBeGreaterThan(result.roots[0]!.importance);
+  });
+
+  it("leaves the state-change date empty when ADO returned none", () => {
+    const { raw, etaFieldByType } = buildNestedEpicTree();
+
+    const result = parseTrackedTree(raw, etaFieldByType);
+
+    expect(result.roots[0]?.children[0]?.stateChangeDate).toBe("");
   });
 });
 

@@ -8,6 +8,28 @@ const API_VERSION = ADO_API_VERSION;
 const MAX_TREE_DEPTH = 50;
 
 /**
+ * ADO's manual backlog rank. Read so a view can order items "most important first" the same way the
+ * backlog does; it is a process-template field present in every stock process, and an item that
+ * carries no rank simply hydrates as unranked rather than failing the load.
+ */
+const IMPORTANCE_FIELD = "Microsoft.VSTS.Common.StackRank";
+
+/**
+ * When the item's `System.State` last changed. Read instead of leaning on `System.ChangedDate` so
+ * "how long has this been done?" survives edits that never touched the state.
+ */
+const STATE_CHANGE_DATE_FIELD = "Microsoft.VSTS.Common.StateChangeDate";
+
+/**
+ * The rank given to an item ADO returned no backlog rank for. A LOWER rank means more important, so
+ * an unranked item has to fall to the bottom of its group rather than jump to the top of a backlog
+ * it was never placed in. Deliberately a finite number, not `Infinity`: the ordering comparator
+ * subtracts two ranks, and `Infinity - Infinity` is `NaN` — a comparator result that silently
+ * scrambles the sort instead of leaving two unranked items in their original order.
+ */
+export const UNRANKED_IMPORTANCE = Number.MAX_SAFE_INTEGER;
+
+/**
  * The Azure DevOps work-item fields the tree loader fetches. System.Parent is included to let the
  * tree parser verify each relation, but it is not exposed on TrackedWorkItem — the parent link is
  * implicit from tree placement.
@@ -23,7 +45,9 @@ export const TRACKING_FIELDS: readonly string[] = [
   "System.CreatedBy",
   "System.ChangedDate",
   "System.ChangedBy",
+  STATE_CHANGE_DATE_FIELD,
   "System.Description",
+  IMPORTANCE_FIELD,
   "System.Rev",
   "System.Parent",
 ];
@@ -359,6 +383,8 @@ function hydrateTrackedWorkItem(
   const etaValue = etaFieldRef ? field(etaFieldRef) : null;
   const eta = typeof etaValue === "string" && etaValue.length > 0 ? etaValue : null;
 
+  const rank = field(IMPORTANCE_FIELD);
+
   return {
     id,
     rev: typeof rev === "number" ? rev : 0,
@@ -372,7 +398,9 @@ function hydrateTrackedWorkItem(
     createdBy: parseIdentity(field("System.CreatedBy")),
     changedDate: readString("System.ChangedDate"),
     changedBy: parseIdentity(field("System.ChangedBy")),
+    stateChangeDate: readString(STATE_CHANGE_DATE_FIELD),
     description: htmlToText(readString("System.Description")),
+    importance: typeof rank === "number" ? rank : UNRANKED_IMPORTANCE,
     eta,
     children: [],
   };

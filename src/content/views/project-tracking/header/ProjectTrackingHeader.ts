@@ -8,13 +8,15 @@
  *
  * Layout (a single subtle-filled tile so it reads as a card):
  *
- *   Folder / Folder / …                                             (clickable breadcrumbs)
+ *   Folder / Folder / …                                                                          ⇅
  *                                                    Saving N changes… (write-queue status, right)
  *   Title                         + −                               Sprint Picker
  *   TechLead  ETA
  *
  * The `+`/`−` expand-all / collapse-all buttons are vertically centred against the two-line
- * title/tech-lead block; the sprint picker sits on that same band but pinned to the right edge.
+ * title/tech-lead block; the sprint picker sits on that same band but pinned to the right edge. The
+ * ordering indicator is deliberately parked in the top-right corner, away from those controls: it is
+ * a quiet "this is how the items are sorted" readout that only occasionally gets clicked.
  */
 
 import {
@@ -29,6 +31,11 @@ export interface ProjectTrackingHeaderOptions {
    * an empty array hides the breadcrumb row entirely.
    */
   breadcrumbs: BreadcrumbSegment[];
+  /**
+   * The board's item-ordering indicator/picker, pinned to the tile's top-right corner. Built by the
+   * view so the ordering policy stays owned by whoever renders the items.
+   */
+  orderingPicker: HTMLElement;
   /** The project (root item) title. */
   title: string;
   /** Hex color for the title (the root type's color), or null to keep the themed default. */
@@ -150,13 +157,23 @@ export function renderProjectTrackingHeader(
     "z-index:2",
   ].join(";");
 
+  // The top band carries the folder trail on the left and the ordering indicator pinned to the
+  // right corner. It is rendered even with no breadcrumbs, because the indicator belongs in that
+  // corner whether or not the query sits in a folder.
+  const topRow = doc.createElement("div");
+  topRow.className = "awesomeado-tracking__header-top";
+  topRow.style.cssText = ["display:flex", "align-items:center", "gap:16px"].join(";");
+
   const breadcrumbs = renderBreadcrumbs(doc, {
     segments: options.breadcrumbs,
     ariaLabel: "Query folder",
   });
   if (breadcrumbs) {
-    header.append(breadcrumbs);
+    topRow.append(breadcrumbs);
   }
+  options.orderingPicker.style.marginLeft = "auto";
+  topRow.append(options.orderingPicker);
+  header.append(topRow);
 
   // A dedicated row directly above the controls band so the "Saving…" indicator appears over the
   // sprint picker without reflowing the title/tech-lead layout. Right-aligned to line up with the
