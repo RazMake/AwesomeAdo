@@ -54,8 +54,11 @@ response-parsing logic, kept pure so they are unit-testable without a browser.
 
 ### `sprintWindow.ts`
 
-- `SprintWindowEntry` — `{ path, name, label }` for one decorated sprint option; `label` is the
-  relative caption (e.g. `Current - Sprint 5`), `name` stays the raw sprint name used for filtering.
+- `SprintRelation` — `"past" | "current" | "future"`, where a windowed sprint sits relative to the
+  current one; matches `SprintOption.relation` on the shared `SprintPicker` control.
+- `SprintWindowEntry` — `{ path, name, label, relation }` for one decorated sprint option; `label` is
+  the relative caption (e.g. `Current - Sprint 5`), `name` stays the raw sprint name used for
+  filtering, and `relation` lets the picker style past/current/future entries.
 - `SprintWindow` — `{ entries, currentName }`; the windowed sprints plus the name to select by default.
 - `SprintWindowBounds` — `{ pastCount, futureCount }`.
 - `buildSprintWindow(iterations, bounds)` — centres a window on the current sprint (falling back to

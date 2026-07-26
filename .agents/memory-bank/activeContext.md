@@ -41,7 +41,8 @@ The extension is feature-complete for its current scope:
   same background/MAIN-world pattern over the `AdoIterationsRequest` contract +
   `fetchAdoIterationsInPage`), then `buildSprintWindow` (`common/ado/sprintWindow`, reusable across any
   sprint-filtering view) centers a window on the current sprint and labels each entry by its offset
-  (Current / Next sprint / Previous / N sprints ahead / N sprints ago), bounded by the past/future
+  (Current / Next / Previous / N sprints ahead / N sprints ago) plus a past/current/future `relation`
+  the picker styles by (past amber, future theme accent, current bold), bounded by the past/future
   sprint-count settings. `userDirectory` remains minimal (empty directory) as a follow-up.
 - Configuration import/export: `src/common/settings-transfer` serializes the whole configuration
   (all settings + every binding) to/from an `AwesomeADO.config` file; `src/options/settings-transfer`

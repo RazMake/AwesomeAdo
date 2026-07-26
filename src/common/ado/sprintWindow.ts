@@ -1,5 +1,12 @@
 import type { TeamIteration } from "./TeamIteration";
 
+/**
+ * Where a sprint sits relative to the current one. Kept as a bare literal union (rather than a type
+ * imported from the picker) so this data module stays independent of the view controls; it matches
+ * `SprintOption.relation` structurally, which is how the whole entry is already consumed.
+ */
+export type SprintRelation = "past" | "current" | "future";
+
 /** One decorated sprint option in the picker, structurally usable as a `SprintPicker` option. */
 export interface SprintWindowEntry {
   /** The iteration path (stable id / option value). */
@@ -8,6 +15,8 @@ export interface SprintWindowEntry {
   name: string;
   /** The display label, e.g. `Current - Sprint 5` or `2 sprints ahead - Sprint 7`. */
   label: string;
+  /** Where this sprint sits relative to the current one, so the picker can style it. */
+  relation: SprintRelation;
 }
 
 /** The sprint picker's data: the decorated window plus the name to select by default. */
@@ -33,9 +42,9 @@ const EMPTY_WINDOW: SprintWindow = { entries: [], currentName: null };
  *
  * The window is centred on the current sprint (ADO's `timeFrame === "current"`) and reaches
  * `pastCount` sprints back and `futureCount` sprints forward, clamped to whatever the team actually
- * has. Each entry is labelled by its offset from the current sprint ("Current", "Next sprint",
- * "Previous", "N sprints ahead", "N sprints ago") so the reader never has to know the raw sprint
- * names to orient themselves.
+ * has. Each entry is labelled by its offset from the current sprint ("Current", "Next", "Previous",
+ * "N sprints ahead", "N sprints ago") so the reader never has to know the raw sprint names to orient
+ * themselves, and carries the matching `relation` so the picker can color past/future entries.
  *
  * When no iteration is marked `current` (e.g. a gap between sprints, or a team that has not started
  * its cadence), the window anchors on the nearest upcoming sprint — the first `future`, else the
@@ -63,6 +72,7 @@ export function buildSprintWindow(
       path: iteration.path,
       name: iteration.name,
       label: labelFor(iteration.name, index - anchor),
+      relation: relationFor(index - anchor),
     });
   }
 
@@ -88,7 +98,7 @@ function labelFor(name: string, offset: number): string {
     return `Current - ${name}`;
   }
   if (offset === 1) {
-    return `Next sprint - ${name}`;
+    return `Next - ${name}`;
   }
   if (offset === -1) {
     return `Previous - ${name}`;
@@ -97,4 +107,12 @@ function labelFor(name: string, offset: number): string {
     return `${offset} sprints ahead - ${name}`;
   }
   return `${-offset} sprints ago - ${name}`;
+}
+
+/** Bucket a sprint's offset into the past/current/future relation the picker styles by. */
+function relationFor(offset: number): SprintRelation {
+  if (offset === 0) {
+    return "current";
+  }
+  return offset > 0 ? "future" : "past";
 }

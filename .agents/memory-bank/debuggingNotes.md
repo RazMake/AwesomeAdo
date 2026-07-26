@@ -314,11 +314,15 @@ settings.defaultView==="enhanced")`; unbound → not enhanced. `content/index.ts
   returns the full bounded list; self-contained `.then()`) → `parseTeamIterations` → `buildSprintWindow`.
 - `buildSprintWindow(iterations, {pastCount,futureCount})` (common/ado/sprintWindow, PURE/DOM-free,
   REUSABLE by any sprint-filtering view): anchors on `timeFrame==="current"` (else first "future", else
-  last), slices [anchor-pastCount .. anchor+futureCount], labels by offset (0 Current, 1 Next sprint,
+  last), slices [anchor-pastCount .. anchor+futureCount], labels by offset (0 Current, 1 Next,
   -1 Previous, >1 "{n} sprints ahead", <-1 "{n} sprints ago"). Returns
-  {entries:SprintWindowEntry[] {path,name,label}, currentName}.
+  {entries:SprintWindowEntry[] {path,name,label,relation}, currentName}, where relation is
+  past/current/future (offset sign) purely so the picker can style the option.
 - `SprintPicker` keeps option.value=name (raw) and callbacks return raw name — only added optional
-  `SprintOption.label` for DISPLAY text, so filtering by sprintName still works.
+  `SprintOption.label` for DISPLAY text (and `SprintOption.relation` for option COLOR/WEIGHT: past
+  amber #c26c1d, future `var(--communication-foreground)`, current bold; also mirrored to
+  `data-relation`), so filtering by sprintName still works. Option styles are written via
+  `style.cssText` because jsdom's CSSOM drops `var(...)` assigned through typed style properties.
 - `content/index.ts` `loadSprintWindow` reads `latestSettings.currentTeam` (a TeamRef {id,name}, NOT a
   string) → uses `team.id` (GUID-safe) for the URL; blank/no team → {entries:[],currentName:null}.
   bounds from past/futureSprintsCount ?? DEFAULT_SETTINGS.

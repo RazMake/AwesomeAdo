@@ -35,6 +35,7 @@ A sprint choice in the dropdown.
 - **`path: string`** — The iteration path (stable id).
 - **`name: string`** — The sprint display name. This is the value the picker reports back on selection and in its callbacks.
 - **`label?: string`** — Optional display text shown in the dropdown (e.g. `Current - Sprint 5`); defaults to `name`. Purely cosmetic — selection and callbacks still carry the raw `name`, so filtering by sprint name keeps working.
+- **`relation?: "past" | "current" | "future"`** — Optional position relative to the current sprint. Purely cosmetic: past options render amber, future options render in the theme accent (`var(--communication-foreground, #0078d4)`), and the current option renders bold in the inherited color. The value is also mirrored onto the option's `data-relation` attribute. Omit it for an unstyled option.
 
 ### `SprintPickerOptions`
 
@@ -70,4 +71,5 @@ Renders a sprint filter control = an **icon filter toggle button** (in front) + 
 - **Active state signaling:** The button uses `aria-pressed` to reflect its active state (`"true"` or `"false"`). When active, the button shows a subtle themed background (`var(--palette-neutral-8, rgba(128,128,128,0.12))`); when inactive, the background is `transparent`.
 - **Filter-gated dropdown:** The dropdown is disabled while the filter is inactive and enabled once the filter is toggled on, so choosing a sprint only becomes possible when it actually filters.
 - **Theme-aware:** Both the button and select use ADO CSS custom properties (`--background-color`, `--text-primary-color`, `--palette-neutral-20`, `--palette-neutral-8`) with fallbacks, so they adapt to light/dark themes.
+- **Time-direction styling:** Options carrying a `relation` are tinted by where their sprint sits in time — past amber, future in the theme accent, current bold — so the list's direction is obvious at a glance.
 - **Empty sprints handling:** When `sprints` is empty, both controls are disabled, and `selectedSprint()` returns `null`.

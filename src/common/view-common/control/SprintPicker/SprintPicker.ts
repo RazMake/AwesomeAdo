@@ -1,3 +1,6 @@
+/** Where a sprint sits relative to the current one; drives the option's emphasis in the dropdown. */
+export type SprintRelation = "past" | "current" | "future";
+
 /** A sprint option in the dropdown. */
 export interface SprintOption {
   /** The iteration path (stable id). */
@@ -10,6 +13,12 @@ export interface SprintOption {
    * so a caller filtering by sprint name keeps working regardless of what the option shows.
    */
   label?: string;
+  /**
+   * Optional position relative to the current sprint. Purely cosmetic: past options read orange,
+   * future options read in the theme accent, and the current one is bold, so the list's time
+   * direction is obvious at a glance. Omit it for an unstyled option.
+   */
+  relation?: SprintRelation;
 }
 
 /** Options for rendering a sprint picker. */
@@ -71,6 +80,7 @@ function populateSprintSelect(
     const option = doc.createElement("option");
     option.value = sprint.name;
     option.textContent = sprint.label ?? sprint.name;
+    applyRelationStyle(option, sprint.relation);
     select.append(option);
   }
 
@@ -78,6 +88,34 @@ function populateSprintSelect(
     select.value = selectedName;
   } else if (sprints.length > 0) {
     select.value = sprints[0]!.name;
+  }
+}
+
+// Past sprints read in a warm amber that stays legible on both the light and dark ADO themes (the
+// theme variables carry no "past/history" color, so this is a fixed tuned tone). Future sprints
+// borrow the theme's own accent foreground so they match whatever palette ADO is rendering.
+const PAST_SPRINT_COLOR = "#c26c1d";
+const FUTURE_SPRINT_COLOR = "var(--communication-foreground, #0078d4)";
+
+/**
+ * Tint an option by where its sprint sits in time: past = amber, future = theme accent, current =
+ * bold in the inherited color (emphasis without competing with the two colored directions). The
+ * relation is also mirrored onto `data-relation` so callers and tests can assert it without parsing
+ * styles.
+ */
+function applyRelationStyle(option: HTMLOptionElement, relation: SprintRelation | undefined): void {
+  if (!relation) {
+    return;
+  }
+  option.dataset.relation = relation;
+  if (relation === "past") {
+    option.style.cssText = `color:${PAST_SPRINT_COLOR}`;
+  } else if (relation === "future") {
+    option.style.cssText = `color:${FUTURE_SPRINT_COLOR}`;
+  } else {
+    // The current sprint keeps the inherited color so it does not compete with the two colored
+    // directions; weight alone marks "you are here".
+    option.style.cssText = "font-weight:bold";
   }
 }
 
