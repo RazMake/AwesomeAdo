@@ -31,7 +31,7 @@ const MARKER_KEYS = new Set<string>(WORK_ITEM_MARKERS.map(({ key }) => key));
 
 /**
  * Drives the "Marker tags" section on the Azure DevOps tab: for each recognized condition (blocked,
- * blocked by another team, interrupt, waiting) it binds the team's Azure DevOps *tag* and the
+ * blocked by another team, interrupt) it binds the team's Azure DevOps *tag* and the
  * *comment* token to the synced settings store.
  *
  * It owns only this section's DOM and its persistence; the parent `AzureDevOpsController` performs

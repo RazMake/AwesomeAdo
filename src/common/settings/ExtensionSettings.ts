@@ -57,9 +57,9 @@ export interface ExtensionSettings {
 
   /**
    * The Azure DevOps *tag* and *comment* token the team uses to signal each recognized condition
-   * (blocked internally, blocked by another team, an interrupt, or waiting). Every team keeps its
-   * own tag/comment vocabulary, so both tokens are configurable per condition; a blank token means
-   * the team does not use that signal for that condition.
+   * (blocked internally, blocked by another team, or an interrupt). Every team keeps its own
+   * tag/comment vocabulary, so both tokens are configurable per condition; a blank token means the
+   * team does not use that signal for that condition.
    */
   markerTags: WorkItemMarkerTags;
 }
@@ -128,7 +128,7 @@ export interface WorkItemType {
  * Azure DevOps *tag* and echoed in the item's *comments* by a configurable token, so a team can keep
  * using whatever tag/comment vocabulary it already has.
  */
-export type WorkItemMarker = "blocked" | "blockedByOtherTeam" | "interrupt" | "waiting";
+export type WorkItemMarker = "blocked" | "blockedByOtherTeam" | "interrupt";
 
 /** The Azure DevOps tag and the comment token configured for one {@link WorkItemMarker}. */
 export interface MarkerTags {
@@ -153,19 +153,17 @@ export const WORK_ITEM_MARKERS: readonly {
   { key: "blocked", label: "Blocked (internal)" },
   { key: "blockedByOtherTeam", label: "Blocked by another team" },
   { key: "interrupt", label: "Interrupt" },
-  { key: "waiting", label: "Waiting" },
 ];
 
 /**
  * The tag/comment tokens a fresh install starts from — the vocabulary most teams already use — so
- * the options page opens with sensible values instead of eight empty boxes. Interrupt has no
- * conventional comment token, so it seeds blank.
+ * the options page opens with sensible values instead of empty boxes. Interrupt has no conventional
+ * comment token, so it seeds blank.
  */
 export const DEFAULT_MARKER_TAGS: WorkItemMarkerTags = {
   blocked: { tag: "Blocked", commentTag: "[BLOCKED]" },
   blockedByOtherTeam: { tag: "Blocked by another team", commentTag: "[ACCEPTED]" },
   interrupt: { tag: "Interrupt", commentTag: "" },
-  waiting: { tag: "Waiting", commentTag: "[WAITING]" },
 };
 
 /** Allowed theme values, in the order they are offered to the user. */

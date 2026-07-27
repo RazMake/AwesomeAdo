@@ -104,7 +104,6 @@ describe("MarkerTagsController rendering", () => {
     expect(inputFor(elements, "blocked", "comment").value).toBe("[BLOCKED]");
     expect(inputFor(elements, "blockedByOtherTeam", "comment").value).toBe("[ACCEPTED]");
     expect(inputFor(elements, "interrupt", "comment").value).toBe("");
-    expect(inputFor(elements, "waiting", "comment").value).toBe("[WAITING]");
   });
 });
 
@@ -119,7 +118,7 @@ describe("MarkerTagsController persistence", () => {
     const written = store.writeCalls[0]?.markerTags as WorkItemMarkerTags;
     expect(written.blocked).toEqual({ tag: "Impediment", commentTag: "[BLOCKED]" });
     // The other markers are written through unchanged, so the slice always holds every marker.
-    expect(written.waiting).toEqual({ tag: "Waiting", commentTag: "[WAITING]" });
+    expect(written.interrupt).toEqual(DEFAULT_MARKER_TAGS.interrupt);
     expect(errors).toHaveLength(0);
   });
 
@@ -146,7 +145,6 @@ describe("MarkerTagsController targeted writes", () => {
     // The neighbouring markers keep the last accepted values; only the edited field moves.
     expect(written.blockedByOtherTeam).toEqual(DEFAULT_MARKER_TAGS.blockedByOtherTeam);
     expect(written.blocked).toEqual(DEFAULT_MARKER_TAGS.blocked);
-    expect(written.waiting).toEqual(DEFAULT_MARKER_TAGS.waiting);
   });
 
   it("carries the last accepted values over rather than re-reading the other rows", async () => {
@@ -196,12 +194,12 @@ describe("MarkerTagsController failure handling", () => {
     controller.render(DEFAULT_MARKER_TAGS);
     store.setWriteError(new Error("sync offline"));
 
-    setValue(inputFor(elements, "waiting", "tag"), "Parked");
+    setValue(inputFor(elements, "interrupt", "tag"), "Parked");
     await flush();
 
     expect(errors).toHaveLength(1);
     // The rejected value must not linger in the field; the row is re-rendered from the last snapshot.
-    expect(inputFor(elements, "waiting", "tag").value).toBe("Waiting");
+    expect(inputFor(elements, "interrupt", "tag").value).toBe("Interrupt");
   });
 
   it("ignores changes after dispose so a late event cannot persist", async () => {

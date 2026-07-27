@@ -235,17 +235,17 @@ describe("normalizeMarkerTags", () => {
     const result = normalizeMarkerTags({ blocked: { tag: "Impediment", commentTag: "[I]" } });
     expect(result.blocked).toEqual({ tag: "Impediment", commentTag: "[I]" });
     // A marker absent from the stored object still falls back to its default.
-    expect(result.waiting).toEqual(DEFAULT_MARKER_TAGS.waiting);
+    expect(result.blockedByOtherTeam).toEqual(DEFAULT_MARKER_TAGS.blockedByOtherTeam);
   });
 
   it("trims each token and honors a deliberately blanked present entry", () => {
     const result = normalizeMarkerTags({
       interrupt: { tag: "  ", commentTag: "" },
-      waiting: { tag: "  Parked  ", commentTag: "  [W]  " },
+      blockedByOtherTeam: { tag: "  Parked  ", commentTag: "  [W]  " },
     });
     // A present-but-blank entry stays blank rather than being reset to the default.
     expect(result.interrupt).toEqual({ tag: "", commentTag: "" });
-    expect(result.waiting).toEqual({ tag: "Parked", commentTag: "[W]" });
+    expect(result.blockedByOtherTeam).toEqual({ tag: "Parked", commentTag: "[W]" });
   });
 
   it("ignores non-string token fields", () => {

@@ -29,7 +29,7 @@ This component does not log; it surfaces failures through the options page's sha
 
 - **`MarkerTagsController`** — nested controller (owned by `AzureDevOpsController`) for the
   **Marker tags** section. It renders one row per recognized condition (blocked, blocked by another
-  team, interrupt, waiting) from the shared `WORK_ITEM_MARKERS` list, binding each condition's Azure
+  team, interrupt) from the shared `WORK_ITEM_MARKERS` list, binding each condition's Azure
   DevOps **tag** and **comment tag** to the `markerTags` setting it owns. An edit is persisted as a
   **targeted patch**: the edited control names its own marker (its row) and field (its role), and
   every other marker is carried over from the last accepted state rather than re-read from the DOM,

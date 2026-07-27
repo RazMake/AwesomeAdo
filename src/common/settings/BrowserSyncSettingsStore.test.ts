@@ -166,7 +166,7 @@ describe("BrowserSyncSettingsStore - read (columns, types, and markers)", () => 
       const settings = await store.read();
       expect(settings.markerTags.blocked).toEqual({ tag: "Impediment", commentTag: "[I]" });
       // Markers the stored value never mentioned still seed their defaults.
-      expect(settings.markerTags.waiting).toEqual(DEFAULT_SETTINGS.markerTags.waiting);
+      expect(settings.markerTags.interrupt).toEqual(DEFAULT_SETTINGS.markerTags.interrupt);
     });
   });
 });
