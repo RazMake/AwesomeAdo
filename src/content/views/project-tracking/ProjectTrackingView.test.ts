@@ -791,6 +791,54 @@ describe("ProjectTrackingView — collapse all & description", () => {
   });
 });
 
+describe("ProjectTrackingView — the row's leading controls", () => {
+  it("leads with the ? disc, then the type icon, then the title", async () => {
+    const root = await renderBoardForTree(
+      epicOver([createItem({ id: 2, type: "Feature", title: "User Authentication" })]),
+    );
+
+    const content = root.querySelector(".awesomeado-tracking__content")!;
+    const order = [...content.children].map((child) => child.className.split(" ")[0]);
+    // Leading-edge controls, so every row's ? sits in the same column instead of at whatever point
+    // the title happens to end on.
+    expect(order.slice(0, 5)).toEqual([
+      "awesomeado-status",
+      "awesomeado-tracking__describe",
+      "awesomeado-tracking__notes-toggle",
+      "awesomeado-tracking__item-title",
+      "awesomeado-assigned",
+    ]);
+  });
+
+  it("gives the assignee twice the air the ? disc keeps from the type icon", async () => {
+    const root = await renderBoardForTree(
+      epicOver([createItem({ id: 2, type: "Feature", title: "User Authentication" })]),
+    );
+
+    // Asserted as a RATIO against the leading gap, not as a second hard-coded number: the assignee
+    // is meant to move with that rhythm, so retuning one must not silently desynchronize the pair.
+    const disc = root.querySelector<HTMLElement>(".awesomeado-tracking__describe")!;
+    const assignee = root.querySelector<HTMLElement>(
+      ".awesomeado-tracking__content .awesomeado-assigned",
+    )!;
+    const leadingGap = Number.parseFloat(disc.style.marginRight);
+    expect(Number.parseFloat(assignee.style.marginLeft)).toBe(leadingGap * 2);
+  });
+
+  it("centers the title against the controls it shares a line with", async () => {
+    const root = await renderBoardForTree(
+      epicOver([createItem({ id: 2, type: "Feature", title: "User Authentication" })]),
+    );
+
+    // The disc, the type icon and the assignee are atomic inline boxes centred on the text line; a
+    // baseline-aligned title sat visibly low against all three.
+    const title = root.querySelector<HTMLElement>(".awesomeado-tracking__item-title")!;
+    const disc = root.querySelector<HTMLElement>(".awesomeado-tracking__describe")!;
+    expect(title.style.verticalAlign).toBe("middle");
+    expect(title.style.verticalAlign).toBe(disc.style.verticalAlign);
+  });
+});
+
 describe("ProjectTrackingView — meta line", () => {
   it("should render meta line with Created and Last Modified", async () => {
     const doc = document;

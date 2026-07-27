@@ -40,8 +40,12 @@ notes.setExpanded(true); // triggers the first fetch
 - **"+ Add note"** sits above the list; the list is newest-first, so a new note lands right under it.
 - An expanded list shows the notes from the **two most recent days that have notes** — all of them,
   so a busy afternoon is never cut in half.
-- A note reads `{author} {date} {text}`. The author's name is clickable **only on your own notes**
-  (Azure DevOps rejects anyone else's edit); clicking it opens the note for correction in place.
+- A note reads `{author} {date} {text}` — all on **one line**. The author/date block floats left, so
+  the note starts beside the name instead of spending a line of its own on the header, and anything
+  that wraps past it hangs in by 12px so a multi-line note still reads as a single entry. The
+  author's name is clickable **only on your own notes**
+  (Azure DevOps rejects anyone else's edit); it is drawn with a hand cursor and a **dashed**
+  underline, and clicking it opens the note for correction in place.
 - Note text and the item description both render through the shared
   [`MarkdownText`](../../../../common/view-common/control/MarkdownText/README.md) control.
 - `@`-mentions in the fetched notes are resolved in **one** bulk call before the rows are built, so a

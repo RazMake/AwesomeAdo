@@ -361,7 +361,9 @@ The normalized model for a work item **note** — one entry in its Azure DevOps 
 
 - `buildWorkItemNotesUrls(href, workItemId)` — the comments URL (newest first, `$expand=renderedText`
   so mentions resolve to names) plus the org's `ConnectionData` URL; `null` when `href` is not
-  project-scoped.
+  project-scoped. `ConnectionData` is pinned to `ADO_CONNECTION_DATA_API_VERSION`, a **preview**
+  version: it is served under no other kind, and a released one answers `400` with an error envelope
+  that parses as "nobody is signed in".
 - `buildAddNoteUrl(href, workItemId)` / `buildEditNoteUrl(href, workItemId, noteId)` — the Markdown
   (`format=0`) write endpoints; `null` when `href` is not project-scoped.
 - `parseCurrentUser(rawConnection)` — the signed-in `NoteAuthor`, or `null` when neither handle is

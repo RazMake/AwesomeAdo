@@ -85,6 +85,10 @@ export function fetchWorkItemNotesInPage(
         connection: null,
         status: result.status,
         failure: failure,
+        // Placeholders only: both are overwritten below once the identity read settles. They cannot
+        // be filled in here because that read runs alongside this walk, not inside it.
+        connectionStatus: 0,
+        connectionFailure: "none",
       });
       if (result.failure !== "none") {
         // A LATER page that fails leaves the pages already read intact and reports success: a
@@ -102,9 +106,14 @@ export function fetchWorkItemNotesInPage(
 
   return Promise.all([walk(commentsUrl, maxPages, []), read(connectionUrl)]).then((results) => {
     const notes = results[0];
+    const connection = results[1];
     // A failed identity read is NOT a failed notes read: the panel still shows every note, it just
-    // cannot offer to edit any of them.
-    notes.connection = results[1].body;
+    // cannot offer to edit any of them. Its outcome therefore travels ALONGSIDE the notes rather
+    // than replacing theirs — reported so the log can say "nothing is editable because this call
+    // failed" instead of leaving a body of `null` that reads as "nobody is signed in".
+    notes.connection = connection.body;
+    notes.connectionStatus = connection.status;
+    notes.connectionFailure = connection.failure;
     return notes;
   });
 }

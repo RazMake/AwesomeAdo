@@ -628,10 +628,13 @@ from the **sender's own trusted tab URL**.
 
 - `LOAD_WORK_ITEM_NOTES_MESSAGE` / `LoadWorkItemNotesMessage` (`{ type, workItemId, sinceIso }`) —
   read one item's discussion, no further back than the view's Updates window.
-- `RawWorkItemNotes` (`{ pages, connection, status, failure }`) — the raw bodies the read produced:
-  each comments page, the org's `ConnectionData` (for the signed-in identity), and a **classified**
-  outcome. `failure` is `none` / `http` / `sign-in` / `network`, because an expired session and an
-  item with no notes would otherwise both arrive as an empty list and be equally silent in the log.
+- `RawWorkItemNotes` (`{ pages, connection, status, failure, connectionStatus, connectionFailure }`)
+  — the raw bodies the read produced: each comments page, the org's `ConnectionData` (for the
+  signed-in identity), and a **classified** outcome for each of the two reads. `failure` is
+  `none` / `http` / `sign-in` / `network`, because an expired session and an item with no notes would
+  otherwise both arrive as an empty list and be equally silent in the log. The identity read is
+  classified **separately** because the two fail independently and mean different things: failed
+  notes are an empty panel, a failed identity is a full panel in which nothing is editable.
 - `LoadWorkItemNotesResponse` (`{ raw, error? }`).
 - `WRITE_WORK_ITEM_NOTE_MESSAGE` / `WriteWorkItemNoteMessage`
   (`{ type, workItemId, noteId, text }`) — post a note (`noteId: null`) or rewrite one.

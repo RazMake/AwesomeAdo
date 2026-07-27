@@ -104,8 +104,9 @@ halves of the view — its configuration and its renderer.
     sprint + ancestor paths, pills hidden); OFF shows all rows with sprint pills. Empty sprints →
     forced OFF, toggle disabled.
   - **Tree rows**: the tree renders only **two levels below the root** — the root's children and
-    their children. Each row shows twisty (when it has child rows), editable Status badge, title
-    (type-colored), description toggle ("?" button), Assigned To control (with the assignee's Feature
+    their children. Each row shows twisty (when it has child rows), editable Status badge,
+    description toggle ("?" button), type icon (the notes toggle), title
+    (type-colored), Assigned To control (with the assignee's Feature
     Crew **tag pill**), sprint pill (when filter
     OFF — shown only for items on a real, leaf iteration; an item parked on the iteration root shows
     no pill), and ETA badge (right-aligned; editable — click to pick a date or clear it when the

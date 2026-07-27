@@ -42,6 +42,18 @@ export interface RawWorkItemNotes {
    * would otherwise be the same empty list on screen and the same silence in the log.
    */
   failure: "none" | "http" | "sign-in" | "network";
+  /** The HTTP status of the identity read, or 0 when that request never completed. */
+  connectionStatus: number;
+  /**
+   * How the identity read ended, classified the same way as `failure`.
+   *
+   * Reported SEPARATELY from the notes read because the two fail independently and mean different
+   * things: notes that failed to load are an empty panel, while an identity that failed to load is a
+   * full panel in which nothing is editable. Carrying only the body made the second case invisible
+   * — a rejected identity read looked exactly like "nobody is signed in" and left no trace at all
+   * in the diagnostics log.
+   */
+  connectionFailure: "none" | "http" | "sign-in" | "network";
 }
 
 export interface LoadWorkItemNotesResponse {

@@ -9,6 +9,33 @@ we hit, why they happened, and the exact fix so nobody re-derives them.
 agent-tool-local memory (it does not clone or transfer between machines/agents). Record new findings
 here so every agent, teammate, and clone sees them.
 
+## `ConnectionData` is PREVIEW-ONLY — a released api-version made every note read-only
+
+- SYMPTOM: on the Project Tracking board, the author's name on your OWN note was never clickable, so
+  no note could be corrected. Nothing in Diagnostics said why.
+- ROOT CAUSE: `buildWorkItemNotesUrls` pinned `_apis/ConnectionData` to `ADO_API_VERSION` (`7.1`).
+  ADO serves that resource under **preview versions only** and answers a released one with
+  `400 VssInvalidPreviewVersionException` ("use a preview version for such requests"). Verified live
+  against `o365exchange.visualstudio.com`: `5.0`, `6.0`, `7.0`, `7.1` all 400; **no** api-version,
+  `1.0`, `6.0-preview`, `7.1-preview`, `7.1-preview.1` and `7.2-preview` all 200. Now pinned to
+  `ADO_CONNECTION_DATA_API_VERSION` (`7.1-preview.1`).
+- WHY IT WAS INVISIBLE: the 400 body is ADO's error envelope (`$id, innerException, message,
+typeName, typeKey, errorCode, eventId`) — valid JSON with no `authenticatedUser`, so
+  `parseCurrentUser` returned `null`, which is the SAME result as "nobody is signed in". Worse,
+  `fetchWorkItemNotesInPage` kept only the connection BODY and threw the status away, so the failing
+  call left no trace. `RawWorkItemNotes` now carries `connectionStatus` / `connectionFailure` and the
+  loader logs an error when the identity read fails. **A read whose failure is degraded rather than
+  surfaced must still report its own outcome** (AGENTS.md §9).
+- The identity MATCHING was never the problem: a live probe showed `createdBy.id ===
+authenticatedUser.id`, `uniqueName === properties.Account.$value`, and `authenticatedUser.id ===
+authorizedUser.id`. `isOwnNote` is correct as written — do not "fix" it.
+- `createdBy` on a comment carries `displayName,url,_links,id,uniqueName,imageUrl,descriptor`.
+- PROBE: `ado-probe/note-identity-probe.js` — paste into the console of an ADO tab; it prints every
+  identity source's status/error verbatim and a per-author table of which handles match. Two traps
+  when writing such a probe: path segments arrive **already URL-encoded** (`O365%20Core`), so decode
+  before re-encoding or the request 404s; and never discard a non-2xx body — ADO's `message` names
+  the versions it will accept, which is the whole answer.
+
 ## A new setting needs THREE edits in `BrowserSyncSettingsStore`, or it silently never saves
 
 - `markerTags` shipped as a real `ExtensionSettings` field with a normalizer, a UI, and a

@@ -98,6 +98,22 @@ describe("renderNoteRow — what one note shows", () => {
     // what keeps it legible on light and dark alike rather than only wherever it was eyeballed.
     expect(row.getAttribute("style")).toContain("--text-primary-color");
   });
+
+  it("reads on one line, with wrapped lines hanging in under the name", () => {
+    const { row } = renderRow(createNote(SOMEONE_ELSE), READER);
+
+    // The author/date block floats, so the note's FIRST line runs beside it instead of starting a
+    // line of its own; everything that wraps past it falls back to a small indent, which is what
+    // makes a two-line note read as one entry rather than as two.
+    const header = row.querySelector<HTMLElement>(".awesomeado-note__header")!;
+    expect(header.style.float).toBe("left");
+    expect(header.style.marginRight).toBe("8px");
+    expect(row.querySelector<HTMLElement>(".awesomeado-note__text")!.style.paddingLeft).toBe(
+      "12px",
+    );
+    // Without a containment context the float would spill onto the next note in the panel.
+    expect(row.style.display).toBe("flow-root");
+  });
 });
 
 describe("renderNoteRow — who may correct a note", () => {
@@ -118,6 +134,25 @@ describe("renderNoteRow — who may correct a note", () => {
 
     expect(authorOf(row).tagName).toBe("BUTTON");
     expect(authorOf(row).title).toBe("Edit this note");
+  });
+
+  it("marks the reader's own name as clickable with a hand and a broken underline", () => {
+    const { row } = renderRow(createNote(READER), READER);
+
+    // The affordance has to be visible BEFORE the pointer is over the name, so the underline carries
+    // it; broken rather than solid, because this opens the note in place instead of navigating.
+    const author = authorOf(row);
+    expect(author.style.cursor).toBe("pointer");
+    expect(author.style.textDecorationLine).toBe("underline");
+    expect(author.style.textDecorationStyle).toBe("dashed");
+  });
+
+  it("leaves someone else's name without any clickable styling", () => {
+    const { row } = renderRow(createNote(SOMEONE_ELSE), READER);
+
+    const author = authorOf(row);
+    expect(author.style.cursor).toBe("");
+    expect(author.getAttribute("style")).not.toContain("underline");
   });
 });
 

@@ -705,16 +705,18 @@ function createTitleControls(
   titleSpan.className = "awesomeado-tracking__item-title";
   titleSpan.textContent = item.title;
   // Break long, unspaced tokens so an over-long title wraps instead of forcing a horizontal scroll.
-  titleSpan.style.cssText = "font-weight:500;overflow-wrap:anywhere";
+  // Middle-aligned like every other control on the line: left on the baseline it sat low against the
+  // ? disc, the type icon and the assignee, which are all atomic inline boxes centred on the text.
+  titleSpan.style.cssText = "font-weight:500;overflow-wrap:anywhere;vertical-align:middle";
   const itemColor = typeColorOf(item.type, typeMap);
   if (itemColor) {
     titleSpan.style.color = itemColor;
   }
 
   const { panel: descPanel, toggleButton: descButton } = renderDescription(doc, item, mentionNames);
-  // The ? disc flows inline immediately after the title text (with the assignee right behind it), so
-  // it always hugs the end of the title — even when the title wraps — instead of sitting at the far
-  // right edge of a stretched flex box. vertical-align:middle keeps it centered on the text line.
+  // The ? disc leads the row's controls, ahead of the type icon and the title, so every row's disc
+  // sits in the same column instead of at whatever point that row's title happens to end on.
+  // vertical-align:middle keeps it centered on the text line.
   descButton.style.display = "inline-flex";
   descButton.style.verticalAlign = "middle";
   descButton.style.margin = "0 4px";
@@ -951,9 +953,12 @@ function createMinorChildrenBadge(
  */
 function createRowAssignee(item: TrackedWorkItem, options: TreeRenderOptions): HTMLElement {
   const assignedEl = createItemAssignee(item, options.chip, true);
-  // Flows inline right behind the ? disc so it hugs the title; middle-aligned to the text line.
+  // Flows inline right behind the title; middle-aligned to the text line. It is held off the title
+  // because it is a separate fact about the item, not another control attached to the title, so
+  // butted up close it read as part of the title itself.
   assignedEl.style.verticalAlign = "middle";
   assignedEl.style.whiteSpace = "nowrap";
+  assignedEl.style.marginLeft = "8px";
   // Project-Tracking-only tweak: dim the assignee name a touch so it recedes behind the title on
   // this dense board. Applied here (not in the shared control) so other views keep the brighter
   // default; opacity keeps it theme-agnostic across light/dark/Follow-ADO.
@@ -1066,9 +1071,9 @@ function renderRow(
   const notes = createItemNotes(item, options);
   const { inline, eta } = createRowRightControls(item, options, showsChildRows);
 
-  // Status badge, title, ? disc and assignee share ONE inline-flow block so they read as a single
-  // line. Because they flow as inline content (not rigid flex items) they pack tightly and wrap
-  // together, so the ? and assignee always hug the end of the wrapped title instead of drifting to a
+  // Status badge, ? disc, type icon, title and assignee share ONE inline-flow block so they read as
+  // a single line. Because they flow as inline content (not rigid flex items) they pack tightly and
+  // wrap together, so the assignee always hugs the end of the wrapped title instead of drifting to a
   // stretched box's right edge. The block grows and shrinks (flex:1 1 auto) and wraps the title
   // INTERNALLY; the row itself never wraps, so the ETA stays to the right. The status badge is the
   // first inline child (vertical-align:middle) so it sits at the center of the first line. A <span>
@@ -1077,7 +1082,7 @@ function renderRow(
   const contentBlock = doc.createElement("span");
   contentBlock.className = "awesomeado-tracking__content";
   contentBlock.style.cssText = "flex:1 1 auto;min-width:0;line-height:1.8";
-  contentBlock.append(stateBadge, notes.toggle, titleSpan, descButton, ...inline);
+  contentBlock.append(stateBadge, descButton, notes.toggle, titleSpan, ...inline);
   row.append(contentBlock);
 
   if (eta) {

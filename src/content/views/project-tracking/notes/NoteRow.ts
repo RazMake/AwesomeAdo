@@ -37,7 +37,17 @@ export interface NoteRowOptions {
 const NOTE_TEXT_COLOR = "color-mix(in srgb, var(--text-primary-color, #323130) 72%, #b5892c)";
 
 /**
- * One note, read as "{author} {date} {text}".
+ * How far a wrapped note line sits in from the note's own left edge, in pixels.
+ *
+ * Small on purpose: enough that a continuation line reads as belonging to the note above it rather
+ * than as a new entry, but not so far that a multi-line note loses the left edge the eye scans down
+ * a panel by.
+ */
+const NOTE_WRAP_INDENT_PX = 12;
+
+/**
+ * One note, read as "{author} {date} {text}" — all on ONE line, with wrapped lines hanging slightly
+ * indented under the name.
  *
  * The author's name doubles as the edit affordance, but ONLY for the person who wrote the note:
  * Azure DevOps rejects an edit from anyone else, so offering it to everyone would be a button whose
@@ -54,11 +64,23 @@ export function renderNoteRow(doc: Document, options: NoteRowOptions): HTMLEleme
     "padding:2px 0",
     "line-height:1.5",
     `color:${NOTE_TEXT_COLOR}`,
+    // Contains the floated header below, so it can never spill onto the next note's row.
+    "display:flow-root",
   ].join(";");
 
   const header = doc.createElement("span");
   header.className = "awesomeado-note__header";
-  header.style.cssText = ["display:inline-flex", "align-items:baseline", "gap:6px"].join(";");
+  header.style.cssText = [
+    "display:inline-flex",
+    "align-items:baseline",
+    "gap:6px",
+    // Floated rather than stacked or left inline. Stacked, every note spent a whole line on its own
+    // header before saying anything. Inline, a wrapped line would restart at the TEXT's column,
+    // pushing a two-line note far to the right of the name it belongs to. Floating puts the first
+    // line of the note beside the name and lets the rest fall back to the note's own edge.
+    "float:left",
+    "margin-right:8px",
+  ].join(";");
   header.append(createAuthor(doc, options));
 
   const date = renderDateLabel(doc, note.createdDate);
@@ -67,6 +89,10 @@ export function renderNoteRow(doc: Document, options: NoteRowOptions): HTMLEleme
 
   const body = doc.createElement("div");
   body.className = "awesomeado-note__text";
+  // Wrapped lines — and any further paragraph — land here, a little in from the note's edge, so they
+  // read as a continuation of the name they sit under. The first line is pushed past the floated
+  // header instead, which is what puts the note on the author's own line.
+  body.style.paddingLeft = `${NOTE_WRAP_INDENT_PX}px`;
   body.append(
     renderMarkdownText(doc, {
       text: note.text,
@@ -104,13 +130,22 @@ function createAuthor(doc: Document, options: NoteRowOptions): HTMLElement {
   trigger.textContent = name;
   trigger.title = "Edit this note";
   trigger.style.cssText = [
+    // The hand cursor plus a BROKEN underline: a solid underline reads as a link that navigates
+    // somewhere, which this does not — it opens the note in place. Written as longhands because the
+    // `text-decoration` shorthand's style component is the part older Chromium drops first, and
+    // losing the whole declaration would leave the only affordance the cursor, which nobody sees
+    // until they are already over it.
     "cursor:pointer",
     "border:none",
     "background:none",
     "padding:0",
     "font:inherit",
     "font-weight:600",
-    "text-decoration:underline",
+    "text-decoration-line:underline",
+    "text-decoration-style:dashed",
+    // Clear of the descenders, so the dashes stay legible as dashes rather than merging into the g's
+    // and y's a display name is full of.
+    "text-underline-offset:2px",
     "color:var(--communication-foreground, #6b9fff)",
   ].join(";");
   trigger.addEventListener("click", () => openEditor(doc, trigger, options));

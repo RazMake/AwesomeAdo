@@ -68,6 +68,16 @@ export class MessagingWorkItemNoteLoader implements IWorkItemNoteLoader {
 
       const notes = parseWorkItemNotes(response.raw.pages, request.workItemId, request.sinceIso);
       const currentUser = parseCurrentUser(response.raw.connection);
+      if (response.raw.connectionFailure !== "none") {
+        // Logged as an ERROR even though the notes themselves arrived: this is the difference
+        // between "you have written no notes here" and "the extension could not find out who you
+        // are", and without it a board where nothing is editable leaves no trace to follow at all.
+        this.logger.error(
+          `Could not read the signed-in identity while loading notes for work item ` +
+            `${request.workItemId}: ${response.raw.connectionFailure} ` +
+            `(HTTP ${response.raw.connectionStatus}). Every note stays read-only until it succeeds.`,
+        );
+      }
       // Counts and the window only — never a note's text or an author's name. The diagnostics log is
       // exported into bug reports (AGENTS.md §9), and a discussion routinely names people and
       // customers.

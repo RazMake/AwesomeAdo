@@ -28,6 +28,18 @@ export const ADO_COMMENTS_API_VERSION = "7.1-preview.4";
 export const ADO_COMMENTS_WRITE_API_VERSION = "7.2-preview.4";
 
 /**
+ * The API version the org's `ConnectionData` (the signed-in identity) is read through.
+ *
+ * Deliberately NOT `ADO_API_VERSION`: `ConnectionData` is served ONLY under a preview version.
+ * Asking for a released one answers `400 VssInvalidPreviewVersionException` ("use a preview version
+ * for such requests") — verified against a live org for 5.0, 6.0, 7.0 and 7.1 alike. That 400 used
+ * to reach `parseCurrentUser` as an error envelope with no `authenticatedUser`, which reads exactly
+ * like "nobody is signed in" and quietly made EVERY note read-only. Pinned beside the released
+ * version so the exception is visible instead of buried in a URL builder.
+ */
+export const ADO_CONNECTION_DATA_API_VERSION = "7.1-preview.1";
+
+/**
  * The reference name of the Azure DevOps assignee field. Named once because it is both requested
  * with the tree and patched back when a view reassigns an item; a literal repeated at each end is
  * exactly the kind of drift that shows up as a silently ignored write.

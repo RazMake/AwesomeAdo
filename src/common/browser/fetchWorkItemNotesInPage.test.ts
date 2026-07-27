@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fetchWorkItemNotesInPage } from "./fetchWorkItemNotesInPage";
 
 const COMMENTS_URL = "https://ado.example/proj/_apis/wit/workItems/42/comments?order=desc";
-const CONNECTION_URL = "https://ado.example/_apis/ConnectionData?api-version=7.1";
+const CONNECTION_URL = "https://ado.example/_apis/ConnectionData?api-version=7.1-preview.1";
 const SINCE = "2026-07-10T00:00:00Z";
 const CONNECTION = { authenticatedUser: { id: "guid-one" } };
 
@@ -76,6 +76,8 @@ describe("fetchWorkItemNotesInPage — reading one page", () => {
     expect(fetchMock).toHaveBeenCalledWith(CONNECTION_URL, GET_INIT);
     expect(raw.pages).toEqual([page(["2026-07-20T00:00:00Z"])]);
     expect(raw.connection).toEqual(CONNECTION);
+    expect(raw.connectionFailure).toBe("none");
+    expect(raw.connectionStatus).toBe(200);
   });
 
   it("stops after one page when ADO offered no continuation token", async () => {
@@ -153,7 +155,14 @@ describe("fetchWorkItemNotesInPage — failure handling", () => {
 
     const raw = await fetchWorkItemNotesInPage(COMMENTS_URL, CONNECTION_URL, SINCE, 5);
 
-    expect(raw).toEqual({ pages: [], connection: null, status: 403, failure: "http" });
+    expect(raw).toEqual({
+      pages: [],
+      connection: null,
+      status: 403,
+      failure: "http",
+      connectionStatus: 403,
+      connectionFailure: "http",
+    });
   });
 
   it("names an expired session, which ADO answers with a 200 and its sign-in page", async () => {
@@ -172,7 +181,35 @@ describe("fetchWorkItemNotesInPage — failure handling", () => {
 
     const raw = await fetchWorkItemNotesInPage(COMMENTS_URL, CONNECTION_URL, SINCE, 5);
 
-    expect(raw).toEqual({ pages: [], connection: null, status: 0, failure: "network" });
+    expect(raw).toEqual({
+      pages: [],
+      connection: null,
+      status: 0,
+      failure: "network",
+      connectionStatus: 0,
+      connectionFailure: "network",
+    });
+  });
+
+  it("reports a rejected IDENTITY read without failing the notes it did read", async () => {
+    // The exact shape of the live bug this pair of fields exists for: ADO rejected ConnectionData
+    // while serving the discussion happily. Without a reported outcome the caller saw only a null
+    // body, which is indistinguishable from "nobody is signed in".
+    globalThis.fetch = vi.fn((url: string) =>
+      Promise.resolve(
+        url === CONNECTION_URL
+          ? jsonResponse({ typeKey: "VssInvalidPreviewVersionException" }, false, 400)
+          : jsonResponse(page(["2026-07-20T00:00:00Z"])),
+      ),
+    ) as unknown as typeof fetch;
+
+    const raw = await fetchWorkItemNotesInPage(COMMENTS_URL, CONNECTION_URL, SINCE, 5);
+
+    expect(raw.failure).toBe("none");
+    expect(raw.pages).toHaveLength(1);
+    expect(raw.connection).toBeNull();
+    expect(raw.connectionFailure).toBe("http");
+    expect(raw.connectionStatus).toBe(400);
   });
 
   it("keeps the pages it already read when a LATER page fails, since a partial discussion beats none", async () => {

@@ -1,8 +1,8 @@
 import type { NoteAuthor, WorkItemNote } from "./WorkItemNote";
 import {
-  ADO_API_VERSION,
   ADO_COMMENTS_API_VERSION,
   ADO_COMMENTS_WRITE_API_VERSION,
+  ADO_CONNECTION_DATA_API_VERSION,
 } from "./adoApi";
 import { resolveAdoProjectContext } from "./fetchAdoMetadata";
 
@@ -41,7 +41,7 @@ export function buildWorkItemNotesUrls(href: string, workItemId: number): WorkIt
     commentsUrl:
       `${base}/${project}/_apis/wit/workItems/${workItemId}/comments` +
       `?api-version=${ADO_COMMENTS_API_VERSION}&$top=${NOTES_PAGE_SIZE}&order=desc&$expand=renderedText`,
-    connectionUrl: `${base}/_apis/ConnectionData?api-version=${ADO_API_VERSION}`,
+    connectionUrl: `${base}/_apis/ConnectionData?api-version=${ADO_CONNECTION_DATA_API_VERSION}`,
   };
 }
 

@@ -50,7 +50,23 @@ function loggedLines(recorded: { info: Mock; error: Mock }): string[] {
 
 /** A successfully-read raw payload, so each test names only the bodies it cares about. */
 function rawRead(pages: unknown[], connection: unknown): RawWorkItemNotes {
-  return { pages, connection, status: 200, failure: "none" };
+  return {
+    pages,
+    connection,
+    status: 200,
+    failure: "none",
+    connectionStatus: 200,
+    connectionFailure: "none",
+  };
+}
+
+/** A raw payload whose notes arrived but whose identity read did not. */
+function rawReadWithoutIdentity(failure: RawWorkItemNotes["connectionFailure"], status: number) {
+  return {
+    ...rawRead([{ comments: [RAW_COMMENT] }], null),
+    connectionFailure: failure,
+    connectionStatus: status,
+  };
 }
 
 /** A loader whose `send` resolves `response`, plus the logger it wrote through. */
@@ -150,7 +166,7 @@ describe("MessagingWorkItemNoteLoader — failures", () => {
 
   it("tells an expired session apart from an item that simply has no notes", async () => {
     const { loader, error } = createLoader({
-      raw: { pages: [], connection: null, status: 200, failure: "sign-in" },
+      raw: { ...rawRead([], null), status: 200, failure: "sign-in" },
     });
 
     const result = await loader.loadNotes({ workItemId: WORK_ITEM_ID, sinceIso: SINCE });
@@ -162,12 +178,37 @@ describe("MessagingWorkItemNoteLoader — failures", () => {
 
   it("reports a rejected read with the status Azure DevOps answered", async () => {
     const { loader } = createLoader({
-      raw: { pages: [], connection: null, status: 403, failure: "http" },
+      raw: { ...rawRead([], null), status: 403, failure: "http" },
     });
 
     const result = await loader.loadNotes({ workItemId: WORK_ITEM_ID, sinceIso: SINCE });
 
     expect(result.error).toContain("403");
+  });
+
+  it("records a rejected IDENTITY read, which leaves a full panel with nothing editable", async () => {
+    // The notes themselves arrived, so nothing on screen looks wrong — which is exactly why this
+    // has to reach the log: it is the only trace of why no note offers an edit.
+    const { loader, error } = createLoader({ raw: rawReadWithoutIdentity("http", 400) });
+
+    const result = await loader.loadNotes({ workItemId: WORK_ITEM_ID, sinceIso: SINCE });
+
+    expect(result.error).toBeNull();
+    expect(result.notes).toHaveLength(1);
+    expect(result.currentUser).toBeNull();
+    const line = String(error.mock.calls[0]?.[0]);
+    expect(line).toContain("signed-in identity");
+    expect(line).toContain("HTTP 400");
+  });
+
+  it("stays silent about the identity read when it succeeded", async () => {
+    const { loader, error } = createLoader({
+      raw: rawRead([{ comments: [RAW_COMMENT] }], RAW_CONNECTION),
+    });
+
+    await loader.loadNotes({ workItemId: WORK_ITEM_ID, sinceIso: SINCE });
+
+    expect(error).not.toHaveBeenCalled();
   });
 });
 

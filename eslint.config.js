@@ -6,7 +6,19 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   {
-    ignores: ["dist/**", "coverage/**", "artifacts/**", ".debug-profiles/**", "node_modules/**"],
+    // Generated output and scratch areas — nothing here is bundled, imported, or shipped.
+    // `ado-probe/` holds live-diagnostic snippets that are PASTED INTO A BROWSER CONSOLE, so they
+    // are standalone IIFEs whose whole output is `console` and whose globals come from the ADO page,
+    // not from this project's module graph. Linting them as project source would only measure them
+    // against rules they are not written under; the shipped code's zero-warning budget is untouched.
+    ignores: [
+      "dist/**",
+      "coverage/**",
+      "artifacts/**",
+      ".debug-profiles/**",
+      "ado-probe/**",
+      "node_modules/**",
+    ],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,

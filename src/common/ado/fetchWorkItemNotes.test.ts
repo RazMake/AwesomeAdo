@@ -32,7 +32,16 @@ describe("buildWorkItemNotesUrls", () => {
 
   it("reads the signed-in identity from the ORG, not from the project", () => {
     expect(buildWorkItemNotesUrls(HREF, WORK_ITEM_ID)?.connectionUrl).toBe(
-      "https://dev.azure.com/myorg/_apis/ConnectionData?api-version=7.1",
+      "https://dev.azure.com/myorg/_apis/ConnectionData?api-version=7.1-preview.1",
+    );
+  });
+
+  it("asks ConnectionData for a PREVIEW version, the only kind it is served under", () => {
+    // A released version answers 400 there, which reaches the parser as an error envelope with no
+    // authenticatedUser — indistinguishable from "nobody is signed in", and it silently made every
+    // note read-only. Asserted separately from the exact URL so the requirement survives a re-pin.
+    expect(buildWorkItemNotesUrls(HREF, WORK_ITEM_ID)?.connectionUrl).toMatch(
+      /api-version=\d+\.\d+-preview(\.\d+)?$/,
     );
   });
 
