@@ -279,6 +279,84 @@ describe("WorkItemWriteQueue - pending count", () => {
   });
 });
 
+describe("WorkItemWriteQueue - waiting for the queue to drain", () => {
+  /** A writer blocked on a gate the test releases, so "in flight" is observable without timers. */
+  function gatedWriter(): { writeField: WriteField; release: () => void } {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return {
+      writeField: vi.fn(async (): Promise<WorkItemFieldWriteResult> => {
+        await gate;
+        return { ok: true, rev: 3 };
+      }),
+      release,
+    };
+  }
+
+  it("resolves immediately when nothing is queued", async () => {
+    const { logger } = createRecordingLogger();
+    const queue = new WorkItemWriteQueue(acceptsWrite(), logger);
+
+    await expect(queue.whenIdle()).resolves.toBeUndefined();
+  });
+
+  it("waits for an in-flight write and resolves only once the queue has drained", async () => {
+    const { logger } = createRecordingLogger();
+    const { writeField, release } = gatedWriter();
+    const queue = new WorkItemWriteQueue(writeField, logger);
+
+    const write = queue.enqueue(req(1, 2, "Active"));
+    let drained = false;
+    const idle = queue.whenIdle().then(() => {
+      drained = true;
+    });
+
+    // Still blocked on the gate: a refresh that fetched now could be answered with the pre-write
+    // value and would paint the user's edit as if it had been lost.
+    expect(queue.pendingCount).toBe(1);
+    expect(drained).toBe(false);
+
+    release();
+    await write;
+    await idle;
+
+    expect(drained).toBe(true);
+    expect(queue.pendingCount).toBe(0);
+  });
+
+  it("resolves after a rejected write too, since the caller is asking whether the queue is done", async () => {
+    const { logger } = createRecordingLogger();
+    const queue = new WorkItemWriteQueue(rejectsWith("boom"), logger);
+
+    const write = queue.enqueue(req(1, 2, "Active"));
+    const idle = queue.whenIdle();
+    await write;
+
+    await expect(idle).resolves.toBeUndefined();
+    expect(queue.failedCount).toBe(1);
+  });
+
+  it("stops listening once it has resolved, so waiting never leaks a subscription", async () => {
+    const { logger } = createRecordingLogger();
+    const { writeField, release } = gatedWriter();
+    const queue = new WorkItemWriteQueue(writeField, logger);
+
+    const first = queue.enqueue(req(1, 2, "Active"));
+    const idle = queue.whenIdle();
+    release();
+    await first;
+    await idle;
+
+    // A second write must not find a stale listener still hanging off the queue; the count of live
+    // subscribers is not observable, so assert the queue still behaves and settles cleanly.
+    await queue.enqueue(req(1, 3, "Closed"));
+    await expect(queue.whenIdle()).resolves.toBeUndefined();
+    expect(queue.pendingCount).toBe(0);
+  });
+});
+
 describe("WorkItemWriteQueue - listener resilience", () => {
   it("returns the pending count to 0 even when a write fails", async () => {
     const { logger } = createRecordingLogger();

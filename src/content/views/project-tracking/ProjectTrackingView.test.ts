@@ -3213,3 +3213,251 @@ describe("ProjectTrackingView — @-mentions in descriptions", () => {
     expect(text).not.toContain(ADA);
   });
 });
+
+/** The header's refresh button on the currently rendered board. */
+const refreshButtonOf = (root: HTMLElement): HTMLButtonElement =>
+  root.querySelector<HTMLButtonElement>(".awesomeado-tracking__refresh")!;
+
+/** Presses refresh and lets the (awaited queue + re-read + repaint) microtask chain settle. */
+async function pressRefresh(root: HTMLElement): Promise<void> {
+  refreshButtonOf(root).click();
+  await new Promise((resolve) => setTimeout(resolve, 10));
+}
+
+/**
+ * A board whose successive re-reads answer with `trees` in order (the last one repeats), so a test
+ * can show the reader something new arriving without reaching into the view's internals.
+ */
+async function renderRefreshableBoard(
+  trees: TrackedWorkItem[],
+  overrides: Partial<EnhancedViewServices> = {},
+): Promise<{ root: HTMLElement; treeReads: () => number }> {
+  let reads = 0;
+  const root = await renderBoardForTree(trees[0]!, {}, {
+    loadTree: async () => {
+      const tree = trees[Math.min(reads, trees.length - 1)]!;
+      reads++;
+      return { isTreeQuery: true, roots: [tree], error: null };
+    },
+    ...overrides,
+  } as Partial<EnhancedViewServices>);
+  return { root, treeReads: () => reads };
+}
+
+/** The same epic twice, the second time carrying a Feature that was not there before. */
+function grownProject(): TrackedWorkItem[] {
+  return [
+    epicOver([createItem({ id: 2, type: "Feature", title: "User Authentication" })]),
+    epicOver([
+      createItem({ id: 2, type: "Feature", title: "User Authentication" }),
+      createItem({ id: 3, type: "Feature", title: "Data Migration" }),
+    ]),
+  ];
+}
+
+describe("ProjectTrackingView — refreshing the board in place", () => {
+  it("re-reads the query and paints what came back, without touching the rest of the page", async () => {
+    const { root, treeReads } = await renderRefreshableBoard(grownProject());
+    expect(renderedRowTitles(root)).toEqual(["User Authentication"]);
+
+    await pressRefresh(root);
+
+    expect(treeReads()).toBe(2);
+    // The view's own root element survives: only its contents were replaced, so nothing above the
+    // board (ADO's chrome, the surface overlay) is disturbed by a refresh.
+    expect(renderedRowTitles(root)).toEqual(["User Authentication", "Data Migration"]);
+  });
+
+  it("re-reads the sprint window too, so the picker cannot outlive the sprint it opened on", async () => {
+    let sprintReads = 0;
+    const { root } = await renderRefreshableBoard(grownProject(), {
+      loadSprintWindow: async () => {
+        sprintReads++;
+        return {
+          entries: [...FIXTURE_SPRINT_WINDOW.entries],
+          currentName: FIXTURE_SPRINT_WINDOW.currentName,
+        };
+      },
+    });
+
+    await pressRefresh(root);
+
+    expect(sprintReads).toBe(2);
+  });
+
+  it("waits for queued writes before re-reading, so a saved edit cannot read back stale", async () => {
+    const order: string[] = [];
+    let releaseWrite!: () => void;
+    const writeGate = new Promise<void>((resolve) => {
+      releaseWrite = resolve;
+    });
+    const { root } = await renderRefreshableBoard(grownProject(), {
+      writeField: async () => {
+        await writeGate;
+        order.push("write");
+        return { ok: true, rev: 2 };
+      },
+      loadTree: async () => {
+        order.push("read");
+        return { isTreeQuery: true, roots: [grownProject()[1]!], error: null };
+      },
+    });
+    order.length = 0;
+
+    // An ETA edit on the first row is in flight when the reader presses refresh.
+    const row = root.querySelector<HTMLElement>(".awesomeado-tracking__row")!;
+    row.querySelector<HTMLElement>(".awesomeado-eta__label")!.click();
+    const picked = row.querySelector<HTMLInputElement>(".awesomeado-eta__date")!;
+    picked.value = "2026-10-05";
+    picked.dispatchEvent(new Event("change"));
+    refreshButtonOf(root).click();
+    releaseWrite();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(order).toEqual(["write", "read"]);
+  });
+
+  it("ignores a second press while a re-read is already running", async () => {
+    const { root, treeReads } = await renderRefreshableBoard(grownProject());
+
+    refreshButtonOf(root).click();
+    refreshButtonOf(root).click();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(treeReads()).toBe(2);
+  });
+});
+
+describe("ProjectTrackingView — a refresh keeps the reader's place", () => {
+  it("keeps the outline the reader collapsed", async () => {
+    const { root } = await renderRefreshableBoard([
+      epicOver([
+        createItem({
+          id: 2,
+          type: "Feature",
+          title: "User Authentication",
+          children: [createItem({ id: 3, type: "Story", title: "Login UI" })],
+        }),
+      ]),
+    ]);
+    await turnSprintFilterOff(root);
+    root.querySelector<HTMLButtonElement>(".awesomeado-tracking__twisty")!.click();
+
+    await pressRefresh(root);
+
+    // A refresh replaces every row, so the reader's outline only survives if it is remembered
+    // outside the board — otherwise "show me the latest" silently reopens everything they closed.
+    const twisty = root.querySelector<HTMLButtonElement>(".awesomeado-tracking__twisty")!;
+    expect(twisty.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("keeps the sprint filter as the reader left it", async () => {
+    const { root } = await renderRefreshableBoard(grownProject());
+    await turnSprintFilterOff(root);
+
+    await pressRefresh(root);
+
+    const button = root.querySelector<HTMLButtonElement>(".awesomeado-sprint-picker__button")!;
+    expect(button.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("keeps the ordering the reader picked for this session", async () => {
+    const { root } = await renderRefreshableBoard([
+      epicOver([
+        createItem({ id: 2, type: "Feature", title: "Charlie", importance: 10 }),
+        createItem({ id: 3, type: "Feature", title: "Alpha", importance: 30 }),
+      ]),
+    ]);
+    expect(pickOrderingPolicy(root, "title")).toBe(true);
+    expect(renderedRowTitles(root)).toEqual(["Alpha", "Charlie"]);
+
+    await pressRefresh(root);
+
+    // The pick is never written back to the binding, so only the session can carry it across the
+    // re-read; without that, refreshing would quietly re-sort the board back under the reader.
+    expect(renderedRowTitles(root)).toEqual(["Alpha", "Charlie"]);
+  });
+});
+
+describe("ProjectTrackingView — a refresh that fails", () => {
+  /** A board whose first read succeeds and whose every later read rejects. */
+  async function renderThenFail(
+    overrides: Partial<EnhancedViewServices> = {},
+  ): Promise<HTMLElement> {
+    let reads = 0;
+    const tree = epicOver([createItem({ id: 2, type: "Feature", title: "User Authentication" })]);
+    return renderBoardForTree(
+      tree,
+      {},
+      {
+        loadTree: async () => {
+          reads++;
+          if (reads > 1) {
+            throw new Error("ADO said no");
+          }
+          return { isTreeQuery: true, roots: [tree], error: null };
+        },
+        ...overrides,
+      },
+    );
+  }
+
+  it("keeps the board on screen rather than trading it for a load-failure message", async () => {
+    const root = await renderThenFail();
+
+    await pressRefresh(root);
+
+    // The board is still a truthful, if older, picture. Replacing it with "Could not load this
+    // query." because one fetch failed would cost the reader everything they had open, for nothing.
+    expect(renderedRowTitles(root)).toEqual(["User Authentication"]);
+    expect(root.textContent).not.toContain("Could not load this query");
+  });
+
+  it("records the cause and says on the button that the board is now stale", async () => {
+    const errors: string[] = [];
+    const root = await renderThenFail({
+      logger: { info: () => undefined, error: (message) => errors.push(message) },
+    });
+
+    await pressRefresh(root);
+
+    expect(errors.some((message) => message.includes("could not refresh"))).toBe(true);
+    // Persist-then-reflect: nothing on screen changed, so without this the reader cannot tell a
+    // failed refresh from a query that genuinely has not moved.
+    expect(refreshButtonOf(root).title).toContain("older data");
+  });
+
+  it("hands the reader the recorded cause on the next press, then refreshes again on the one after", async () => {
+    let opened = 0;
+    let reads = 0;
+    const tree = epicOver([createItem({ id: 2, type: "Feature", title: "User Authentication" })]);
+    const root = await renderBoardForTree(
+      tree,
+      {},
+      {
+        openDiagnosticsLog: () => {
+          opened++;
+        },
+        loadTree: async () => {
+          reads++;
+          if (reads === 2) {
+            throw new Error("ADO said no");
+          }
+          return { isTreeQuery: true, roots: [tree], error: null };
+        },
+      },
+    );
+
+    await pressRefresh(root);
+    expect(refreshButtonOf(root).title).toContain("older data");
+
+    await pressRefresh(root);
+    expect(opened).toBe(1);
+    // The report is cleared by that press, so the button is a refresh button again — a failed
+    // re-read must not be a dead end the reader can only escape by reloading the page.
+    expect(refreshButtonOf(root).title).toContain("Refresh");
+
+    await pressRefresh(root);
+    expect(reads).toBe(3);
+  });
+});

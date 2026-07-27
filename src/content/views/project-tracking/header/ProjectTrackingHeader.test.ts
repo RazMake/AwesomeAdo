@@ -256,3 +256,58 @@ describe("renderProjectTrackingHeader - top band layout", () => {
     expect(element.querySelector(".awesomeado-tracking__write-status-row")).toBeNull();
   });
 });
+
+describe("renderProjectTrackingHeader - refresh button", () => {
+  it("puts refresh on the same band as the expand/collapse pair, but spaced apart from them", () => {
+    const { element, expandAllButton, collapseAllButton, refreshButton } =
+      renderProjectTrackingHeader(document, baseOptions());
+
+    expect(refreshButton.element.className).toBe("awesomeado-tracking__refresh");
+    // Same parent = same line as `+`/`−`; a wide left margin (vs. the container's 8px gap) is what
+    // says "this one does something else entirely".
+    expect(refreshButton.element.parentElement).toBe(expandAllButton.parentElement);
+    expect(refreshButton.element.parentElement).toBe(collapseAllButton.parentElement);
+    expect(refreshButton.element.previousElementSibling).toBe(collapseAllButton);
+    expect(refreshButton.element.style.marginLeft).toBe("24px");
+    expect(element.querySelector(".awesomeado-tracking__refresh")).toBe(refreshButton.element);
+  });
+
+  it("starts idle, describing itself so the glyph is not the only explanation", () => {
+    const { refreshButton } = renderProjectTrackingHeader(document, baseOptions());
+
+    expect(refreshButton.element.textContent).toBe("\u27F3");
+    expect(refreshButton.element.disabled).toBe(false);
+    expect(refreshButton.element.title).toContain("Refresh");
+    expect(refreshButton.element.getAttribute("aria-label")).toContain("Refresh");
+    expect(refreshButton.element.getAttribute("aria-busy")).toBe("false");
+  });
+
+  it("blocks a second press while a re-read is running, then re-enables", () => {
+    const { refreshButton } = renderProjectTrackingHeader(document, baseOptions());
+
+    refreshButton.setBusy(true);
+    expect(refreshButton.element.disabled).toBe(true);
+    expect(refreshButton.element.getAttribute("aria-busy")).toBe("true");
+    expect(refreshButton.element.title).toBe("Refreshing…");
+
+    refreshButton.setBusy(false);
+    expect(refreshButton.element.disabled).toBe(false);
+    expect(refreshButton.element.getAttribute("aria-busy")).toBe("false");
+  });
+
+  it("reports a failed re-read on the button itself, and clears it again", () => {
+    const { refreshButton } = renderProjectTrackingHeader(document, baseOptions());
+    const idleColor = refreshButton.element.style.color;
+
+    refreshButton.setFailed(true);
+    // Reported in place rather than by adding a chip: the band's height is pinned, so growing one
+    // would shove the whole board down at the worst possible moment.
+    expect(refreshButton.element.title).toContain("older data");
+    expect(refreshButton.element.style.color).not.toBe(idleColor);
+    expect(refreshButton.element.disabled).toBe(false);
+
+    refreshButton.setFailed(false);
+    expect(refreshButton.element.title).toContain("Refresh");
+    expect(refreshButton.element.style.color).toBe(idleColor);
+  });
+});

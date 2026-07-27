@@ -41,9 +41,25 @@ halves of the view — its configuration and its renderer.
        That band's height is **reserved**, so the indicator appearing and disappearing never resizes
        the sticky header — which would otherwise shove the whole board down and back on every edit.
     3. Title + controls: the root item's title (colored by type) with the expand-all/collapse-all
-       (`+`/`−`) buttons beside it and the sprint picker pinned to the right edge of the same band.
+       (`+`/`−`) buttons beside it, the refresh (`⟳`) button spaced apart from that pair, and the
+       sprint picker pinned to the right edge of the same band.
     4. Tech Lead + ETA: "TechLead:" label + root's Assigned To, followed by the root's editable ETA
        badge (click to pick a date or clear it, when the root type has an ETA field configured).
+  - **Refresh**: `⟳` re-reads the whole board — the tree and the sprint window — from Azure DevOps
+    and repaints in place. It never reloads the page, and it does **not** touch ADO's own (hidden)
+    query grid: the two run in different JS worlds and share no state, so ADO's grid stays as stale
+    as it was (see ADR-029). What a refresh does:
+    - **Waits for queued writes first.** A read that overtakes an in-flight write is answered with
+      the value the user just replaced, which would paint their edit as though it had been lost.
+    - **Keeps the reader's place**: the outline they collapsed, the discussions they opened, the tag
+      and sprint filters, this session's ordering pick, and the scroll position all survive. An
+      **untouched** sprint picker re-seeds from the freshly loaded window instead, so a board left
+      open across a sprint boundary follows the new current sprint.
+    - **Keeps the board on failure.** A failed re-read is recorded in the log and reported on the
+      button itself (which turns red and says the board is showing older data) rather than replacing
+      a truthful-if-older board with "Could not load this query.". Pressing the button in that state
+      opens the Diagnostics log on the cause and clears the report; the press after that refreshes
+      again.
   - **Item ordering**: every level of the tree (and the rolled-up children popup) is sorted by the
     binding's `orderingPolicy` through [`common/ordering`](../../../common/ordering) — the board
     never compares items itself. `importance` uses ADO's manual backlog rank (lowest first; an item

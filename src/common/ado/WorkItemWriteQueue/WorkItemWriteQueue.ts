@@ -142,6 +142,31 @@ export class WorkItemWriteQueue {
   }
 
   /**
+   * Resolves once every queued write has settled (immediately when nothing is queued).
+   *
+   * Exists for the re-read side, not the UI: a board that refetches while a write is still in flight
+   * can be answered with the value the user just replaced, and would then paint the edit as if it
+   * had been lost. Waiting for the queue is what makes a refresh read strictly after the writes the
+   * user has already asked for. Never rejects — a failed write still settles, and the caller is
+   * asking "is the queue done?", not "did the writes succeed?" (that is `onWriteFailed`).
+   */
+  whenIdle(): Promise<void> {
+    if (this.pending === 0) {
+      return Promise.resolve();
+    }
+    return new Promise<void>((resolve) => {
+      // Assigned before the listener can fire again: `onPendingChange` notifies synchronously on
+      // subscribe, but the guard above means that first call always carries a non-zero count.
+      const unsubscribe = this.onPendingChange((count) => {
+        if (count === 0) {
+          unsubscribe();
+          resolve();
+        }
+      });
+    });
+  }
+
+  /**
    * Appends a field write to the serial queue and resolves with its result. The returned promise
    * always resolves (never rejects) so an optimistic caller can reconcile on both success and
    * failure without a `catch`.

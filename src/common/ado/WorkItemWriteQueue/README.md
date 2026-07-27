@@ -77,6 +77,11 @@ to supply a writer it would never call.
   success or failure — decrements). Returns an unsubscribe function; call it to stop receiving
   updates. A listener that throws is isolated (its error is logged) so a UI bug can never wedge the
   queue.
+- **`whenIdle(): Promise<void>`** — resolves once every queued write has settled (immediately when
+  nothing is queued). Meant for the **re-read** side rather than a UI: a view that refetches while a
+  write is in flight can be answered with the value the user just replaced, which then paints as if
+  the edit had been lost. It never rejects — a failed write still settles, and the question is "is
+  the queue done?", not "did the writes succeed?" (that is `onWriteFailed`).
 
 ```typescript
 // Reflect in-flight writes in a UI control, then stop listening on teardown.
@@ -85,4 +90,10 @@ const stop = queue.onPendingChange((count) => {
 });
 // ...later
 stop();
+```
+
+```typescript
+// Refetch strictly after the writes the user already asked for.
+await queue.whenIdle();
+const fresh = await loadTree(queryId);
 ```

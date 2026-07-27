@@ -36,7 +36,12 @@ The extension is feature-complete for its current scope:
   single-root tree (validates: tree query, exactly one root, root is the first configured type), titles
   the page with the epic (in its type color), shows the epic's assignee as TechLead, a sprint dropdown +
   on/off filter toggle (pills when off), per-item expand/collapse, a `?` description panel with
-  Created/Last-Modified metadata, inline assignee change, and a right-aligned ETA. The tree is capped at
+  Created/Last-Modified metadata, inline assignee change, and a right-aligned ETA. A header **`⟳`
+  refresh** button re-reads the tree + sprint window and repaints in place (ADR-047): the reader's
+  transient state lives in a view-owned `BoardSession` (collapsed ids, opened note ids, tag
+  selection, sprint pick, session ordering pick) plus a captured scroll offset, so a refresh keeps
+  their place; it awaits `WorkItemWriteQueue.whenIdle()` first, keeps the board and reports on the
+  button when the re-read fails, and never touches ADO's own hidden grid (ADR-029). The tree is capped at
   **two levels below the root** (`MAX_ROW_DEPTH = 1`); the level under the last rendered row is rolled up
   inline by the shared `ChildItemsBadge` control as a `completed / total` chip (completed = the last board
   column before Removed) tinted from the last configured type's color, whose popup lists each child as

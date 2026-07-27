@@ -25,14 +25,17 @@ Renders a single subtle-filled tile with these bands:
    (`options.writeQueueStatus`) on its own right-aligned row directly above the sprint picker.
    Omitted/`null` hides the row; the indicator itself stays hidden while no save is in flight.
 3. **Title + controls** — the project title (`options.title`, colored by `options.titleColor`) with
-   the expand-all (`+`) and collapse-all (`−`) buttons beside it, and the sprint picker
+   the expand-all (`+`), collapse-all (`−`) and refresh (`⟳`) buttons beside it, and the sprint picker
    (`options.sprintPicker`) pinned to the right edge of the same band.
 4. **Tech Lead + ETA** — the caller-supplied Tech Lead control (`options.techLead`) followed by the
    caller-supplied ETA badge (`options.eta`, built with the shared
    [`renderEtaBadge`](../../../../common/view-common/control/EtaBadge/README.md) so the view owns its
    read/write wiring).
 
-The `+`/`−` buttons are vertically centered against the two-line title/tech-lead block.
+The `+`/`−` buttons are vertically centered against the two-line title/tech-lead block. Refresh shares
+that band and that styling but carries a wider left margin: `+`/`−` only rearrange what is already on
+screen, while refresh discards the board's data and re-reads it, so sitting them flush would read as
+one three-button group and invite the mis-click.
 
 ### Options
 
@@ -49,8 +52,23 @@ The `+`/`−` buttons are vertically centered against the two-line title/tech-le
 
 ### Handle
 
-`renderProjectTrackingHeader` returns `{ element, expandAllButton, collapseAllButton }`. The view
-mounts `element` and wires the two buttons to the tree's twisties.
+`renderProjectTrackingHeader` returns `{ element, expandAllButton, collapseAllButton, refreshButton }`.
+The view mounts `element`, wires the two band buttons to the tree's twisties, and wires
+`refreshButton.element` to its own re-read.
+
+`refreshButton` is a `RefreshButtonHandle` — `{ element, setBusy(busy), setFailed(failed) }` — because
+a re-read is neither instant nor guaranteed, and the glyph alone cannot tell "still fetching" from
+"nothing happened" from "it failed and you are looking at stale data":
+
+- **`setBusy(true)`** disables the button, dims it, and sets `aria-busy`, so a second press cannot
+  start a second read.
+- **`setFailed(true)`** re-tints the button and rewrites its tooltip to say the board is showing older
+  data. It is reported **in place** rather than by adding a chip: the top band's height is pinned, so
+  growing one on failure would shove the whole board down at the exact moment the reader is trying to
+  work out what changed. The button stays enabled — the view decides what a press means in that
+  state.
+
+The caller owns both states: only it knows when the fetch settled.
 
 The control composes the controls it is handed (Tech Lead, sprint picker, ordering picker) plus the
 shared ETA badge and

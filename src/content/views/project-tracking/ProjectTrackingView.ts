@@ -61,7 +61,10 @@ import { renderWriteQueueStatus } from "../../../common/view-common/control/Writ
 
 import { DragReorderController, type PlannedMove } from "./drag-reorder/DragReorderController";
 import { applyMoveToTree, applyRanksToTree } from "./drag-reorder/applyMoveToTree";
-import { renderProjectTrackingHeader } from "./header/ProjectTrackingHeader";
+import {
+  renderProjectTrackingHeader,
+  type RefreshButtonHandle,
+} from "./header/ProjectTrackingHeader";
 import { renderNotesPanel } from "./notes/NotesPanel";
 import {
   hideResolvedAfterDays,
@@ -1180,17 +1183,61 @@ function renderTree(
 }
 
 /**
+ * The board state that belongs to the READER rather than to the data, so a refresh must not throw
+ * it away.
+ *
+ * Every one of these is the answer to "what was I looking at?": the outline someone collapsed down
+ * to, the discussions they opened, the people and sprint they narrowed to, the order they chose.
+ * Re-reading the tree replaces the whole board, and without somewhere outside it to keep these,
+ * pressing Refresh would silently undo all of that — which is exactly why refreshing today means
+ * reloading the page. It is deliberately session-scoped (never persisted), for the same reason the
+ * ordering pick is not written back to the binding: it is a transient reading position, not a
+ * setting.
+ */
+interface BoardSession {
+  /** Nodes the reader collapsed; everything absent renders expanded. */
+  collapsedIds: Set<number>;
+  /** Rows whose notes panel the reader opened; everything absent renders closed. */
+  expandedNoteIds: Set<number>;
+  /** The active tag filter (OR across the entries; empty = everyone). `null` is the untagged bucket. */
+  selectedTags: Set<string | null>;
+  /** The sprint filter as the reader last left it, or null while they have not touched the picker. */
+  sprint: { selectedName: string | null; filterActive: boolean } | null;
+  /** The order the reader picked this session, or null while the binding's configured order applies. */
+  orderingPolicy: OrderingPolicy | null;
+}
+
+/** A fresh session: nothing collapsed, nothing filtered, no pick that overrides the binding. */
+function createBoardSession(): BoardSession {
+  return {
+    collapsedIds: new Set<number>(),
+    expandedNoteIds: new Set<number>(),
+    selectedTags: new Set<string | null>(),
+    sprint: null,
+    orderingPolicy: null,
+  };
+}
+
+/**
  * Renders the sprint picker control using the reusable SprintPicker component, fed the shared sprint
  * window (the iterations around the current one, each already labelled by its offset). The filter
  * defaults ON and pre-selects the current sprint, so the board opens focused on the current sprint.
+ *
+ * A reader who has already chosen keeps that choice across a refresh; an UNTOUCHED picker re-seeds
+ * from the freshly loaded window instead, so a board left open across a sprint boundary follows the
+ * new current sprint rather than pinning itself to the one it opened on.
  */
-function renderSprintControls(doc: Document, sprintWindow: SprintWindow): SprintPickerHandle {
-  const handle = renderSprintPicker(doc, {
+function renderSprintControls(
+  doc: Document,
+  sprintWindow: SprintWindow,
+  session: BoardSession,
+): SprintPickerHandle {
+  const chosen = session.sprint;
+  return renderSprintPicker(doc, {
     sprints: sprintWindow.entries,
-    selectedName: sprintWindow.currentName,
-    filterActive: sprintWindow.entries.length > 0,
+    selectedName: chosen?.selectedName ?? sprintWindow.currentName,
+    filterActive: chosen?.filterActive ?? sprintWindow.entries.length > 0,
   });
-  return handle;
 }
 
 /**
@@ -1256,6 +1303,7 @@ function renderHeader(
   context: DataDrivenViewContext,
   typeMap: Map<string, TypeCatalogEntry>,
   sprintWindow: SprintWindow,
+  session: BoardSession,
   chipContext: AssigneeChipContext,
   boardControls: HeaderBoardControls,
   folderPath: QueryFolderCrumb[],
@@ -1265,9 +1313,10 @@ function renderHeader(
   sprintPickerHandle: SprintPickerHandle;
   expandAll: HTMLButtonElement;
   collapseAll: HTMLButtonElement;
+  refresh: RefreshButtonHandle;
   techLead: HTMLElement | null;
 } {
-  const sprintPickerHandle = renderSprintControls(doc, sprintWindow);
+  const sprintPickerHandle = renderSprintControls(doc, sprintWindow, session);
   const techLead = createTechLeadGroup(root, chipContext);
 
   // The view runs on the ADO query page, so the page's own URL supplies the org/project the folder
@@ -1279,6 +1328,7 @@ function renderHeader(
     element: header,
     expandAllButton: expandAll,
     collapseAllButton: collapseAll,
+    refreshButton: refresh,
   } = renderProjectTrackingHeader(doc, {
     // The query's ancestor folders, read from ADO's query metadata (its `path`) alongside the tree.
     // Each folder links to its contents in ADO's query hub (`_queries/folder/…`).
@@ -1295,7 +1345,7 @@ function renderHeader(
     writeQueueStatus: boardControls.writeQueueStatus,
   });
 
-  return { header, sprintPickerHandle, expandAll, collapseAll, techLead };
+  return { header, sprintPickerHandle, expandAll, collapseAll, refresh, techLead };
 }
 
 /**
@@ -1320,7 +1370,7 @@ function wireExpandCollapseButtons(
 }
 
 /**
- * A rendered board plus the hook the view uses to feed it the Feature Crew roster once it resolves.
+ * A rendered board plus the hooks the view uses to drive it after it is on screen.
  */
 interface BoardHandle {
   element: HTMLElement;
@@ -1343,6 +1393,17 @@ interface BoardHandle {
    * reaches the reader on the next pass.
    */
   repaint(): void;
+  /**
+   * Resolves once this board's queued writes have settled.
+   *
+   * A re-read that overtakes an in-flight write is answered with the value the user just replaced,
+   * and the board then paints their edit as if it had been lost — so a refresh waits on this first.
+   */
+  whenWritesSettled(): Promise<void>;
+  /** Show the refresh button as busy (a re-read is running) or idle. */
+  setRefreshBusy(busy: boolean): void;
+  /** Show the refresh button as failed (this board is stale) or clear that state. */
+  setRefreshFailed(failed: boolean): void;
 }
 
 /**
@@ -1401,12 +1462,14 @@ function createTagEditor(
 }
 
 /**
- * Wire the sprint picker so toggling the funnel or changing the sprint re-renders the tree. The
- * click is deferred a tick because the picker toggles its OWN internal state on the same click; the
- * re-render must read the state after that flip, not before.
+ * Wire the sprint picker so toggling the funnel or changing the sprint re-renders the tree, and
+ * record the reader's choice in the session so a refresh reopens on the same sprint. The click is
+ * deferred a tick because the picker toggles its OWN internal state on the same click; both the
+ * recording and the re-render must read the state after that flip, not before.
  */
 function wireSprintPickerRerender(
   sprintPickerHandle: SprintPickerHandle,
+  session: BoardSession,
   renderTreeContent: () => void,
 ): void {
   const pickerElement = sprintPickerHandle.element;
@@ -1417,14 +1480,25 @@ function wireSprintPickerRerender(
     ".awesomeado-sprint-picker__select",
   ) as HTMLSelectElement;
 
+  const remember = (): void => {
+    session.sprint = {
+      selectedName: sprintPickerHandle.selectedSprint(),
+      filterActive: sprintPickerHandle.isFilterActive(),
+    };
+  };
+
   if (button) {
     button.addEventListener("click", () => {
-      setTimeout(() => renderTreeContent(), 0);
+      setTimeout(() => {
+        remember();
+        renderTreeContent();
+      }, 0);
     });
   }
 
   if (select) {
     select.addEventListener("change", () => {
+      remember();
       renderTreeContent();
     });
   }
@@ -1436,7 +1510,11 @@ interface BoardTreeRendererParams {
   root: TrackedWorkItem;
   context: DataDrivenViewContext;
   typeMap: Map<string, TypeCatalogEntry>;
-  selectedTags: Set<string | null>;
+  /**
+   * The reader's own state (collapsed nodes, opened discussions, tag filter). Owned OUTSIDE the
+   * renderer so it survives both a repaint and a refresh — see `BoardSession`.
+   */
+  session: BoardSession;
   treeContainer: HTMLElement;
   tagPanelContainer: HTMLElement;
   sprintPickerHandle: SprintPickerHandle;
@@ -1470,7 +1548,6 @@ function createBoardTreeRenderer(params: BoardTreeRendererParams): {
   const {
     doc,
     root,
-    selectedTags,
     treeContainer,
     tagPanelContainer,
     sprintPickerHandle,
@@ -1478,15 +1555,13 @@ function createBoardTreeRenderer(params: BoardTreeRendererParams): {
     collapseAll,
   } = params;
 
-  // Survives every repaint, which is the whole point: the elements a reader collapsed are thrown
-  // away on each pass (a drag-reorder, a re-sort, a filter change), so the outline they were looking
-  // at only comes back if the state is remembered outside the DOM.
-  const collapsedIds = new Set<number>();
-
-  // Same reason, opposite default: a notes panel fetches when it opens, so the rows that were opened
-  // are what has to survive a repaint — recording the closed ones would make every newly-rendered
-  // row start by loading a discussion nobody asked to see.
-  const expandedNoteIds = new Set<number>();
+  // Survives every repaint AND every refresh, which is the whole point: the elements a reader
+  // collapsed are thrown away on each pass (a drag-reorder, a re-sort, a filter change, a re-read),
+  // so the outline they were looking at only comes back if the state is remembered outside the DOM.
+  // Same reason, opposite default, for the opened discussions: a notes panel fetches when it opens,
+  // so the rows that were OPENED are what has to survive — recording the closed ones would make every
+  // newly-rendered row start by loading a discussion nobody asked to see.
+  const { collapsedIds, expandedNoteIds, selectedTags } = params.session;
 
   const renderTreeContent = (): void => {
     const filterOn = sprintPickerHandle.isFilterActive();
@@ -1568,18 +1643,19 @@ function createBoardTreeRenderer(params: BoardTreeRendererParams): {
 /**
  * The board's ordering control: the header's picker element plus the live policy it drives.
  *
- * Seeded from the binding's stored setting and then owned here, so a pick re-sorts the items already
- * on screen. The pick is deliberately NOT written back to the binding: persisting it would round-trip
- * through synced storage and rebuild the whole board (a fresh ADO read, every expanded item
- * collapsed) to re-show items nobody re-fetched — the same reason the sprint and tag filters stay
- * in-session. The binding keeps deciding the order every board opens on.
+ * Seeded from the binding's stored setting and then owned by the SESSION, so a pick re-sorts the
+ * items already on screen and survives a refresh. The pick is deliberately NOT written back to the
+ * binding: persisting it would round-trip through synced storage and rebuild the whole board to
+ * re-show items nobody re-fetched — the same reason the sprint and tag filters stay in-session. The
+ * binding keeps deciding the order every board opens on.
  */
 function createOrderingControl(
   context: DataDrivenViewContext,
+  session: BoardSession,
   resort: () => void,
   dragReorderUnavailable: (policy: OrderingPolicy) => string | null,
 ): { element: HTMLElement; policy: () => OrderingPolicy } {
-  let policy = orderingPolicyOf(context.properties);
+  let policy = session.orderingPolicy ?? orderingPolicyOf(context.properties);
   const element = renderOrderingPicker(context.doc, {
     policy,
     dragReorderUnavailable,
@@ -1591,6 +1667,7 @@ function createOrderingControl(
           `bindingPolicy=${orderingPolicyOf(context.properties)}`,
       );
       policy = picked;
+      session.orderingPolicy = picked;
       resort();
     },
   });
@@ -1801,6 +1878,7 @@ function createBoardCore(params: {
   root: TrackedWorkItem;
   context: DataDrivenViewContext;
   typeMap: Map<string, TypeCatalogEntry>;
+  session: BoardSession;
   onAssigneeChange: (user: DirectoryUser) => void;
   onTagAssign: ((user: TrackedUser, tag: string) => void) | null;
 }): BoardCore {
@@ -1837,7 +1915,12 @@ function createBoardCore(params: {
       params.onAssigneeChange,
       createTagEditor(root, params.onTagAssign),
     ),
-    ordering: createOrderingControl(context, () => repaint(), reordering.dragReorderUnavailable),
+    ordering: createOrderingControl(
+      context,
+      params.session,
+      () => repaint(),
+      reordering.dragReorderUnavailable,
+    ),
     dragReorder: reordering.controller,
     setRepaint: (next) => {
       repaint = next;
@@ -1845,41 +1928,58 @@ function createBoardCore(params: {
   };
 }
 
-function renderBoard(
-  doc: Document,
-  root: TrackedWorkItem,
-  context: DataDrivenViewContext,
-  typeMap: Map<string, TypeCatalogEntry>,
-  sprintWindow: SprintWindow,
-  onAssigneeChange: (user: DirectoryUser) => void,
-  onTagAssign: ((user: TrackedUser, tag: string) => void) | null,
-  folderPath: QueryFolderCrumb[],
-): BoardHandle {
+/** Everything one board render needs. A bag rather than a positional list: it is nine values deep. */
+interface RenderBoardParams {
+  doc: Document;
+  root: TrackedWorkItem;
+  context: DataDrivenViewContext;
+  typeMap: Map<string, TypeCatalogEntry>;
+  sprintWindow: SprintWindow;
+  /** The reader's own state, owned by the view so it outlives this board (see `BoardSession`). */
+  session: BoardSession;
+  onAssigneeChange: (user: DirectoryUser) => void;
+  onTagAssign: ((user: TrackedUser, tag: string) => void) | null;
+  folderPath: QueryFolderCrumb[];
+  /**
+   * Asked to re-read the board from Azure DevOps. Owned by the VIEW, not the board: a refresh
+   * replaces this board with the next one, so a board cannot be the thing that survives it.
+   */
+  onRefresh: () => void;
+}
+
+function renderBoard(params: RenderBoardParams): BoardHandle {
+  const { doc, root, context, typeMap, sprintWindow, session, folderPath } = params;
   const board = doc.createElement("div");
   // Trim the top padding to 2px so the header card sits close to the top of the view; the sides and
   // bottom keep the board's shared edge padding.
   board.style.cssText = `padding:2px ${BOARD_EDGE_PADDING_PX}px ${BOARD_EDGE_PADDING_PX}px`;
 
-  const core = createBoardCore({ doc, root, context, typeMap, onAssigneeChange, onTagAssign });
+  const core = createBoardCore({
+    doc,
+    root,
+    context,
+    typeMap,
+    session,
+    onAssigneeChange: params.onAssigneeChange,
+    onTagAssign: params.onTagAssign,
+  });
   const { chipContext, writeStatus } = core;
 
-  const { header, sprintPickerHandle, expandAll, collapseAll, techLead } = renderHeader(
+  const { header, sprintPickerHandle, expandAll, collapseAll, refresh, techLead } = renderHeader(
     doc,
     root,
     context,
     typeMap,
     sprintWindow,
+    session,
     chipContext,
     { writeQueueStatus: writeStatus.element, orderingPicker: core.ordering.element },
     folderPath,
     core.writes,
   );
+  refresh.element.onclick = () => params.onRefresh();
   board.append(header);
 
-  // The active tag filter (OR across the selected tags; empty = show everyone). `null` is the "??"
-  // bucket for assigned-but-untagged people. Owned here as the single source of truth so the panel
-  // pills and the tree filter never drift.
-  const selectedTags = new Set<string | null>();
   const { tagPanelContainer, treeContainer } = createBoardPanels(doc, board);
 
   const { renderTreeContent, refreshTagPanel } = createBoardTreeRenderer({
@@ -1887,7 +1987,7 @@ function renderBoard(
     root,
     context,
     typeMap,
-    selectedTags,
+    session,
     treeContainer,
     tagPanelContainer,
     sprintPickerHandle,
@@ -1902,7 +2002,7 @@ function renderBoard(
 
   renderTreeContent();
   core.setRepaint(renderTreeContent);
-  wireSprintPickerRerender(sprintPickerHandle, renderTreeContent);
+  wireSprintPickerRerender(sprintPickerHandle, session, renderTreeContent);
 
   return {
     element: board,
@@ -1915,6 +2015,9 @@ function renderBoard(
     },
     setReconcilePending: writeStatus.setReconcilePending,
     repaint: renderTreeContent,
+    whenWritesSettled: () => core.writes.whenIdle(),
+    setRefreshBusy: refresh.setBusy,
+    setRefreshFailed: refresh.setFailed,
   };
 }
 
@@ -2114,6 +2217,20 @@ function createFeatureCrewSync(
   };
 }
 
+/** Everything one load-and-render pass needs; shared by the first paint and by every refresh. */
+interface RenderLoadedBoardParams {
+  context: DataDrivenViewContext;
+  /** The view's root element, whose content is replaced with the board (or with an error scaffold). */
+  root: HTMLElement;
+  services: EnhancedViewServices;
+  result: WorkItemTreeResult;
+  sprintWindow: SprintWindow;
+  /** The reader's own state, carried across a refresh (see `BoardSession`). */
+  session: BoardSession;
+  /** Asked to re-read the board; wired onto the header's refresh button. */
+  onRefresh: () => void;
+}
+
 /**
  * Renders the board once the tree and sprint window have loaded: validates the result, wires the
  * Feature Crew roster sync, builds the board, and kicks off the initial reconcile. Split out of the
@@ -2123,13 +2240,8 @@ function createFeatureCrewSync(
  * with no types configured there is nowhere to store it, so the sync is skipped. When the reconcile
  * resolves it hands back the roster's tags, which the board projects onto every assignee.
  */
-function renderLoadedBoard(
-  context: DataDrivenViewContext,
-  root: HTMLElement,
-  services: EnhancedViewServices,
-  result: WorkItemTreeResult,
-  sprintWindow: SprintWindow,
-): BoardHandle | null {
+function renderLoadedBoard(params: RenderLoadedBoardParams): BoardHandle | null {
+  const { context, root, services, result, sprintWindow, session } = params;
   // Remove title and loading, render error or board.
   root.innerHTML = "";
 
@@ -2169,16 +2281,18 @@ function renderLoadedBoard(
     ? (user: TrackedUser, tag: string): void => crewSync.setTag(user, tag)
     : null;
 
-  const board = renderBoard(
-    context.doc,
-    treeRoot,
+  const board = renderBoard({
+    doc: context.doc,
+    root: treeRoot,
     context,
     typeMap,
     sprintWindow,
+    session,
     onAssigneeChange,
     onTagAssign,
-    result.folderPath ?? [],
-  );
+    folderPath: result.folderPath ?? [],
+    onRefresh: params.onRefresh,
+  });
   applyCrewMembers = board.applyCrewMembers;
   reportReconcilePending = board.setReconcilePending;
   root.append(board.element);
@@ -2204,6 +2318,127 @@ function renderTreeLoadFailure(
       message: "Could not load this query.",
     }),
   );
+}
+
+/**
+ * The nearest ancestor that scrolls, or null when nothing above this element does.
+ *
+ * The view is mounted inside the enhanced surface's scrolling overlay rather than in the document's
+ * own scroller, so "where the reader is" lives on an ancestor, not on the window. Walking up to find
+ * it keeps this independent of how that host happens to be built.
+ */
+function scrollableAncestorOf(element: HTMLElement): HTMLElement | null {
+  const view = element.ownerDocument.defaultView;
+  if (view === null) {
+    return null;
+  }
+  let current = element.parentElement;
+  while (current !== null) {
+    const overflowY = view.getComputedStyle(current).overflowY;
+    if (overflowY === "auto" || overflowY === "scroll") {
+      return current;
+    }
+    current = current.parentElement;
+  }
+  return null;
+}
+
+/**
+ * Remembers where the reader is scrolled to so that replacing the board's DOM does not also move
+ * them: without it, a refresh would answer "show me the latest" by silently jumping the reader back
+ * to the top of a board they were reading half-way down.
+ */
+function captureScroll(element: HTMLElement): () => void {
+  const scroller = scrollableAncestorOf(element);
+  const top = scroller?.scrollTop ?? 0;
+  return () => {
+    if (scroller !== null) {
+      scroller.scrollTop = top;
+    }
+  };
+}
+
+/**
+ * Drives one query's board for the life of the page: the first read, and every refresh after it.
+ *
+ * The refresh loop lives here rather than inside a board because a refresh REPLACES the board — the
+ * thing that has to outlive it (the reader's session state, and the hook the next board's button is
+ * wired to) cannot be owned by the thing being thrown away.
+ */
+function startProjectTrackingBoard(context: DataDrivenViewContext, root: HTMLElement): void {
+  const services = context.services;
+  const session = createBoardSession();
+  let board: BoardHandle | null = null;
+  let refreshing = false;
+  // Set when a re-read failed: the board on screen is still truthful, just older than the reader
+  // asked for, and the button is the only place that can say so.
+  let showingStaleBoard = false;
+
+  // The tree and the sprint window are independent reads, so fire both together and render once
+  // both resolve; the picker opens populated. A sprint-window failure resolves to an empty window
+  // (the filter is simply left disabled) and never blocks the board.
+  const load = (): Promise<[WorkItemTreeResult, SprintWindow]> =>
+    Promise.all([services.loadTree(context.queryId), services.loadSprintWindow()]);
+
+  const paint = ([result, sprintWindow]: [WorkItemTreeResult, SprintWindow]): void => {
+    board = renderLoadedBoard({
+      context,
+      root,
+      services,
+      result,
+      sprintWindow,
+      session,
+      onRefresh: () => requestRefresh(),
+    });
+    if (board !== null) {
+      resolveBoardMentions(services, result.roots, board.repaint);
+    }
+  };
+
+  const reportRefreshFailure = (error: unknown): void => {
+    // Deliberately NOT swapped for the load-failure scaffold: the board on screen is still a
+    // truthful, if older, picture, and trading it for "Could not load this query." because one fetch
+    // failed would cost the reader everything they had open for no gain.
+    services.logger.error("Project Tracking could not refresh its board", error);
+    showingStaleBoard = true;
+    board?.setRefreshFailed(true);
+  };
+
+  const requestRefresh = (): void => {
+    if (refreshing) {
+      return;
+    }
+    if (showingStaleBoard) {
+      // The button is reporting a failed re-read, so this press is the reader asking WHY, not asking
+      // again. Hand them the recorded cause and clear the report; the next press refreshes.
+      showingStaleBoard = false;
+      board?.setRefreshFailed(false);
+      services.logger.info("Project Tracking refresh failure: opening the diagnostics log");
+      services.openDiagnosticsLog();
+      return;
+    }
+    refreshing = true;
+    board?.setRefreshBusy(true);
+    services.logger.info(`Project Tracking refresh requested for query ${context.queryId}`);
+    // Queued writes are awaited FIRST: a re-read that overtakes one is answered with the value the
+    // user just replaced, which paints their edit as though it had been lost.
+    void (board?.whenWritesSettled() ?? Promise.resolve())
+      .then(load)
+      .then((loaded) => {
+        const restoreScroll = captureScroll(root);
+        paint(loaded);
+        restoreScroll();
+      })
+      .catch(reportRefreshFailure)
+      .finally(() => {
+        refreshing = false;
+        board?.setRefreshBusy(false);
+      });
+  };
+
+  load()
+    .then(paint)
+    .catch((err: unknown) => renderTreeLoadFailure(context, root, services, err));
 }
 
 /**
@@ -2259,17 +2494,7 @@ export const projectTrackingView: EnhancedView = {
     ].join(";");
     root.append(loading);
 
-    // The tree and the sprint window are independent reads, so fire both together and render once
-    // both resolve; the picker opens populated. A sprint-window failure resolves to an empty window
-    // (the filter is simply left disabled) and never blocks the board.
-    Promise.all([services.loadTree(context.queryId), services.loadSprintWindow()])
-      .then(([result, sprintWindow]) => {
-        const board = renderLoadedBoard(dataContext, root, services, result, sprintWindow);
-        if (board !== null) {
-          resolveBoardMentions(services, result.roots, board.repaint);
-        }
-      })
-      .catch((err: unknown) => renderTreeLoadFailure(dataContext, root, services, err));
+    startProjectTrackingBoard(dataContext, root);
 
     return root;
   },

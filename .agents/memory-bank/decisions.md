@@ -759,3 +759,29 @@
   "why is this mention anonymous?" answerable from Diagnostics alone.
 - Consequence: reasons carry **lengths, never content**. An over-long note is reported by its
   character count; the diagnostics log is exported into bug reports (AGENTS.md §9).
+
+## ADR-047: A manual refresh re-reads AwesomeADO only, and the reader's place outlives the board
+
+- Decision: The Project Tracking board's `⟳` re-reads the tree and the sprint window and repaints in
+  place. It **does not** reload the page and **does not** touch ADO's own (hidden) query grid. The
+  reader's transient state — collapsed ids, opened note ids, tag selection, sprint selection + filter
+  toggle, this session's ordering pick — is lifted into a `BoardSession` owned by the VIEW, not by a
+  board, and seeded into each rebuild; scroll is captured and restored around the swap. A refresh
+  awaits `WorkItemWriteQueue.whenIdle()` before fetching. A failed re-read keeps the board and is
+  reported on the button; pressing it in that state opens Diagnostics and clears the report.
+- Rationale: ADR-029 already settled that the two sides share no in-page state, so there is no lever
+  on ADO's grid except its own DOM — an undocumented contract that would silently rot. Leaving it
+  alone is also not a regression: that grid has been stale since page load. Systempatterns #3 already
+  called for refresh "on mount, on manual request"; this is the manual half.
+- Consequence: state that survives a refresh cannot live in a per-render closure. `collapsedIds`,
+  `expandedNoteIds` and `selectedTags` moved out of `createBoardTreeRenderer`/`renderBoard` into
+  `BoardSession`; the sprint picker and ordering picker now record the reader's pick there. An
+  UNTOUCHED sprint picker deliberately re-seeds from the fresh window, so a board left open across a
+  sprint boundary follows the new current sprint rather than pinning itself.
+- Consequence: `whenIdle()` is a queue member, not view code — "is the queue done?" is the queue's
+  invariant. It never rejects: a failed write still settles, and the caller is not asking whether the
+  writes succeeded (that is `onWriteFailed`).
+- Consequence: a refresh that resolves to an invalid tree (no roots, wrong root type) still renders
+  the validation scaffold and loses the refresh button. Accepted: the message is truthful, it matches
+  first-load behaviour, and flipping to ADO's view and back through the top-bar menu re-renders the
+  view from scratch.
