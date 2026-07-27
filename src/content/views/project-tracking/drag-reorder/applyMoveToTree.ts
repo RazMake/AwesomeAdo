@@ -93,3 +93,24 @@ function findParentOf(root: TrackedWorkItem, id: number): TrackedWorkItem | null
   }
   return null;
 }
+
+/**
+ * Copy ranks Azure DevOps has already stored onto the matching items in this tree.
+ *
+ * Placing one item can renumber its whole level, so a move reports every rank it wrote rather than
+ * only the moved item's: refreshing just the one would leave the rest of the level holding the ranks
+ * they had before the renumber, and the next re-sort would order them by numbers ADO no longer has.
+ * Ids this tree does not hold are ignored, since a rank for an item nobody is showing changes
+ * nothing on screen.
+ */
+export function applyRanksToTree(
+  root: TrackedWorkItem,
+  ranks: readonly { id: number; rank: number }[],
+): void {
+  for (const { id, rank } of ranks) {
+    const item = findItem(root, id);
+    if (item !== null) {
+      item.importance = rank;
+    }
+  }
+}

@@ -1,6 +1,8 @@
 import {
   isRevealBindingSettingsMessage,
   isRevealOptionsSectionMessage,
+  type OptionsSection,
+  readErrorsOnlyFromSearch,
   readOptionsSectionFromSearch,
   readQueryIdFromSearch,
   readQueryNameFromSearch,
@@ -70,19 +72,26 @@ const defaultViewSelect = document.querySelector<HTMLSelectElement>("#default-vi
 const tabs = new TabsController(document);
 tabs.init();
 
-// Deep-link from the top-bar "View Log" menu: open straight on the Diagnostics tab. The query-bind
-// deep-link (queryId in the URL) activates the Bindings tab from inside its own block below.
-const requestedSection = readOptionsSectionFromSearch(location.search);
-if (requestedSection !== null) {
-  tabs.activate(sectionTabId(requestedSection));
-}
+// Assigned when the Diagnostics tab is wired below, so a deep link that asks for "errors only" can
+// switch its filter on. Null only when the page is missing the log view entirely (already reported).
+let diagnostics: DiagnosticsController | null = null;
 
-// When this tab is already open and the user clicks "View Log" again, the service worker focuses it
-// and sends this message instead of spawning a duplicate — so switch to the requested section in
-// place rather than relying on a fresh page load to read it from the URL.
+// Reveal a deep-linked section: the top-bar "View Log" menu asks for the Diagnostics tab, and the
+// board's "Couldn't save…" chip additionally asks for its errors-only filter so the user lands on
+// the failure they clicked instead of on the newest informational lines.
+const revealSection = (section: OptionsSection, errorsOnly: boolean): void => {
+  tabs.activate(sectionTabId(section));
+  if (errorsOnly) {
+    diagnostics?.showErrorsOnly();
+  }
+};
+
+// When this tab is already open and the user clicks "View Log" (or the failure chip) again, the
+// service worker focuses it and sends this message instead of spawning a duplicate — so switch to
+// the requested section in place rather than relying on a fresh page load to read it from the URL.
 chrome.runtime.onMessage.addListener((message: unknown) => {
   if (isRevealOptionsSectionMessage(message)) {
-    tabs.activate(sectionTabId(message.section));
+    revealSection(message.section, message.errorsOnly === true);
   }
 });
 
@@ -96,6 +105,13 @@ const bindingStore = createQueryBindingStore(loggers.forSource("common/bindings"
 // One tab reader shared by the controllers that read from the active ADO tab: the Appearance panel
 // resolves "auto" from its theme, and the Query Bindings picker asks it which query that tab is on.
 const adoTabReader = new ChromeAdoTabReader();
+
+// An import replaces the stored configuration wholesale. The Appearance panel and the configuration
+// banner subscribe to their stores and follow it on their own, but the Azure DevOps tab and the
+// query-binding form each read once at load and then treat their own state as the working copy — so
+// they are registered here and re-read on demand. Without that the page keeps showing (and the next
+// edit re-saves) the configuration the file just replaced.
+const reloadAfterImport: (() => void)[] = [];
 
 if (themeSelect && defaultViewSelect) {
   const elements: OptionsElements = {
@@ -131,6 +147,11 @@ if (settingsExportButton && settingsImportButton && settingsImportFile && settin
     bindingStore,
     transferElements,
     report,
+    () => {
+      for (const reload of reloadAfterImport) {
+        reload();
+      }
+    },
   );
   transfer.init();
 } else {
@@ -151,6 +172,8 @@ const adoWorkItemTypesEmpty = document.querySelector<HTMLElement>("#ado-work-ite
 const adoWorkItemTypeAdd = document.querySelector<HTMLButtonElement>("#ado-work-item-type-add");
 const adoWitEta = document.querySelector<HTMLElement>("#ado-wit-eta");
 const adoWitEtaEmpty = document.querySelector<HTMLElement>("#ado-wit-eta-empty");
+const adoWitHierarchy = document.querySelector<HTMLElement>("#ado-wit-hierarchy");
+const adoWitHierarchyEmpty = document.querySelector<HTMLElement>("#ado-wit-hierarchy-empty");
 const adoMarkerTags = document.querySelector<HTMLElement>("#ado-marker-tags");
 
 if (
@@ -168,6 +191,8 @@ if (
   adoWorkItemTypeAdd &&
   adoWitEta &&
   adoWitEtaEmpty &&
+  adoWitHierarchy &&
+  adoWitHierarchyEmpty &&
   adoMarkerTags
 ) {
   const adoElements: AzureDevOpsElements = {
@@ -186,6 +211,10 @@ if (
       addTypeButton: adoWorkItemTypeAdd,
       etaBody: adoWitEta,
       etaEmpty: adoWitEtaEmpty,
+      hierarchy: {
+        body: adoWitHierarchy,
+        empty: adoWitHierarchyEmpty,
+      },
     },
     markerTags: {
       list: adoMarkerTags,
@@ -201,6 +230,7 @@ if (
     adoController.dispose();
     report(error);
   });
+  reloadAfterImport.push(() => void adoController.reload().catch(report));
 } else {
   report(new Error("The options page is missing the Azure DevOps controls and cannot load them."));
 }
@@ -262,6 +292,7 @@ if (
     bindings.dispose();
     report(error);
   });
+  reloadAfterImport.push(() => void bindings.reload().catch(report));
 
   // When this tab is already open and the user clicks a query's "Enable Enhanced View" again, the
   // service worker focuses it and sends this message instead of spawning a duplicate — so jump to
@@ -306,11 +337,21 @@ if (logList && logEmpty && logErrorsOnly && logSources && logExport && logClear)
     exportButton: logExport,
     clearButton: logClear,
   };
-  const diagnostics = new DiagnosticsController(logStore, diagnosticsElements, report);
-  void diagnostics.init().catch((error: unknown) => {
-    diagnostics.dispose();
+  const diagnosticsController = new DiagnosticsController(logStore, diagnosticsElements, report);
+  diagnostics = diagnosticsController;
+  void diagnosticsController.init().catch((error: unknown) => {
+    diagnosticsController.dispose();
     report(error);
   });
 } else {
   report(new Error("The options page is missing the diagnostics log view and cannot show it."));
+}
+
+// Deep-link from the top-bar "View Log" menu (and from the board's failure chip): open straight on
+// the Diagnostics tab. Applied last so the log view exists by the time an "errors only" link asks it
+// to filter. The query-bind deep-link (queryId in the URL) activates the Bindings tab from inside
+// its own block above.
+const requestedSection = readOptionsSectionFromSearch(location.search);
+if (requestedSection !== null) {
+  revealSection(requestedSection, readErrorsOnlyFromSearch(location.search));
 }

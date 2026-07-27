@@ -5,12 +5,14 @@ import {
   FEATURE_CREW_TITLE,
 } from "../common/ado/FeatureCrew";
 import { buildAdoIterationsUrl } from "../common/ado/TeamIteration";
+import { IMPORTANCE_FIELD } from "../common/ado/adoApi";
 import { buildAdoIdentitySearchRequest } from "../common/ado/fetchAdoIdentities";
 import {
   buildAdoTreeUrls,
   buildWorkItemUpdateUrl,
   type AdoRawTree,
 } from "../common/ado/fetchAdoTree";
+import { applyRankFallback, buildWorkItemsBatchUrl } from "../common/ado/rankFallback";
 import {
   buildFeatureCrewApplyConfig,
   parseFeatureCrewLookup,
@@ -59,6 +61,7 @@ import {
 } from "../common/browser/WorkItemFieldRequest";
 import {
   describeReorderFailure,
+  explainReorderRefusal,
   REORDER_WORK_ITEM_MESSAGE,
   reorderMessageProblem,
   type ReorderWorkItemMessage,
@@ -75,11 +78,13 @@ import {
 import { fetchAdoIterationsInPage } from "../common/browser/fetchAdoIterationsInPage";
 import { fetchAdoTreeInPage } from "../common/browser/fetchAdoTreeInPage";
 import { findFeatureCrewInPage } from "../common/browser/findFeatureCrewInPage";
+import { readWorkItemRanksInPage } from "../common/browser/readWorkItemRanksInPage";
 import {
   reorderWorkItemInPage,
   type ReorderWorkItemConfig,
 } from "../common/browser/reorderWorkItemInPage";
 import { updateWorkItemFieldInPage } from "../common/browser/updateWorkItemFieldInPage";
+import { writeWorkItemRanksInPage } from "../common/browser/writeWorkItemRanksInPage";
 import { createLoggerFactory } from "../common/logging/createLogger";
 import { notifyNavigation } from "../common/navigation/NavigationNotifier";
 
@@ -181,12 +186,18 @@ chrome.runtime.onMessage.addListener((message: unknown) => {
     return;
   }
   if (isOpenOptionsMessage(message)) {
-    // Forward the requested section (e.g. "diagnostics" for "View Log") so the page deep-links there.
+    // Forward the requested section (e.g. "diagnostics" for "View Log") so the page deep-links there,
+    // along with the "errors only" request the board's failure chip sends so the log lands on the
+    // failure the user clicked rather than on the newest informational lines.
     const reveal: RevealMessage | undefined =
       message.section !== undefined
-        ? { type: REVEAL_OPTIONS_SECTION_MESSAGE, section: message.section }
+        ? {
+            type: REVEAL_OPTIONS_SECTION_MESSAGE,
+            section: message.section,
+            errorsOnly: message.errorsOnly,
+          }
         : undefined;
-    openOptionsTab(optionsPath(message.section), reveal);
+    openOptionsTab(optionsPath(message.section, message.errorsOnly), reveal);
   }
 });
 
@@ -575,7 +586,7 @@ const reorderWorkItem = async (
         `Work item ${message.id} reorder failed (parent ${message.currentParentId}\u2192${message.parentId}, ` +
           `between ${message.previousId} and ${message.nextId}, base rev ${message.rev}): ${reason}`,
       );
-      return { ok: false, error: reason };
+      return rankByHand(message, tabId, tabUrl, result, reason);
     }
     logger.info(
       `Work item ${message.id} reordered under parent ${message.parentId} ` +
@@ -588,6 +599,132 @@ const reorderWorkItem = async (
     return { ok: false, error: "exception" };
   }
 };
+
+// Rank the level by writing the rank field directly, for the moves ADO's backlog-order endpoint
+// refuses outright (see `explainReorderRefusal`). Only a refusal to RANK is worth retrying this way:
+// when the re-parent itself failed the item is not among the siblings it would be ranked against, so
+// there is nothing to write. Everything decided here beyond the two page-world calls lives in
+// `common/ado/rankFallback`, which is ordinary unit-tested module code.
+const rankByHand = async (
+  message: ReorderWorkItemMessage,
+  tabId: number,
+  tabUrl: string,
+  refusal: ReorderWorkItemResponse,
+  reason: string,
+): Promise<ReorderWorkItemResponse> => {
+  // Carried onto every outcome below: a re-parent ADO already applied, and the rev it produced, are
+  // true whether or not the ranking that followed worked.
+  const refused: ReorderWorkItemResponse = {
+    ok: false,
+    error: reason,
+    reparented: refusal.reparented,
+    rev: refusal.rev,
+  };
+  const batchUrl = buildWorkItemsBatchUrl(tabUrl);
+  if (refusal.stage !== "order" || batchUrl === null) {
+    return refused;
+  }
+  const explanation = explainReorderRefusal(reason);
+  if (explanation !== null) {
+    // Logged beside ADO's own words, not instead of them: TF400486 reads as a concurrency complaint
+    // and sends the next reader hunting for a race that is not there.
+    logger.error(`Work item ${message.id} reorder refusal explained: ${explanation}`);
+  }
+
+  try {
+    const fallback = await applyRankFallback({
+      siblingIds: message.siblingIds,
+      movedId: message.id,
+      readRanks: (ids) => readRanksInTab(tabId, batchUrl, ids),
+      writeRanks: (writes) => writeRanksInTab(tabId, tabUrl, writes),
+    });
+    if (!fallback.ok) {
+      logger.error(
+        `Work item ${message.id} rank write failed after ADO refused to order it: ` +
+          `${fallback.error ?? "unknown error"}.`,
+      );
+      return refused;
+    }
+    logger.info(rankedByHandLine(message, fallback));
+    return { ...refused, ok: true, error: undefined, order: fallback.order, ranks: fallback.ranks };
+  } catch (error) {
+    logger.error(`Could not write ranks for work item ${message.id}`, error);
+    return refused;
+  }
+};
+
+// The signals behind a hand-written ranking plus its outcome: which items were touched and whether
+// the level had to be renumbered, so "why did that row land there?" is answerable from the log.
+function rankedByHandLine(
+  message: ReorderWorkItemMessage,
+  fallback: { order?: number; ranks?: readonly unknown[]; reseeded?: boolean },
+): string {
+  const placement = fallback.reseeded === true ? "renumbered" : "placed between neighbours";
+  return (
+    `Work item ${message.id} ranked directly under parent ${message.parentId} ` +
+    `(ADO refused to order it): order=${fallback.order ?? "unchanged"}, ${placement}, ` +
+    `${fallback.ranks?.length ?? 0} item(s) written.`
+  );
+}
+
+/** Injects a page-world function into `tabId` and hands back its result, or undefined. */
+function runInTab<TConfig, TResult>(
+  tabId: number,
+  func: (config: TConfig) => Promise<TResult>,
+  config: TConfig,
+): Promise<TResult | undefined> {
+  return chrome.scripting
+    .executeScript({ target: { tabId }, world: "MAIN", func, args: [config] })
+    .then((results) => results[0]?.result as TResult | undefined);
+}
+
+/** One page of the level's current ranks, or null when the read did not come back. */
+async function readRanksInTab(
+  tabId: number,
+  batchUrl: string,
+  ids: readonly number[],
+): Promise<unknown> {
+  const read = await runInTab(tabId, readWorkItemRanksInPage, {
+    batchUrl,
+    ids: [...ids],
+    field: IMPORTANCE_FIELD,
+  });
+  return read?.ok === true ? read.body : null;
+}
+
+/** Applies the planned ranks in the tab, addressing each item from the worker's own trusted URL. */
+async function writeRanksInTab(
+  tabId: number,
+  tabUrl: string,
+  writes: readonly { id: number; rank: number }[],
+): Promise<{ ok: boolean; error?: string }> {
+  const targets = buildRankTargets(writes, tabUrl);
+  if (targets === null) {
+    return { ok: false, error: "could not build the work item URL for a rank write" };
+  }
+  const written = await runInTab(tabId, writeWorkItemRanksInPage, {
+    field: IMPORTANCE_FIELD,
+    writes: targets,
+  });
+  return written ?? { ok: false, error: "no result" };
+}
+
+// Address each rank write from the SENDER's own trusted tab URL, never a content-supplied one, so a
+// rank write can only ever reach a work item the sender's page could already reach itself.
+function buildRankTargets(
+  writes: readonly { id: number; rank: number }[],
+  tabUrl: string,
+): { id: number; url: string; rank: number }[] | null {
+  const targets: { id: number; url: string; rank: number }[] = [];
+  for (const write of writes) {
+    const url = buildWorkItemUpdateUrl(tabUrl, write.id);
+    if (url === null) {
+      return null;
+    }
+    targets.push({ id: write.id, url, rank: write.rank });
+  }
+  return targets;
+}
 
 // Resolve every URL the in-page move needs from the sender's own tab. Returns a REASON string when
 // any of them is unresolvable, so a partially-addressable move is never attempted — a re-parent that

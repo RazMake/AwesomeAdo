@@ -71,6 +71,12 @@ The extension is feature-complete for its current scope:
   against the level's **unfiltered** sibling list, and persist-then-reflect on the board's single
   `WorkItemWriteQueue` — which now serializes field writes and moves together (`enqueueReorder`)
   because a re-parent tests the same `/rev` a field write does.
+  When ADO **refuses** to rank an item (`TF400486` — an item with no backlog position, or a
+  same-category parent/child; permanent, never a concurrency problem), the worker falls back to
+  writing `IMPORTANCE_FIELD` itself via `common/ado/rankFallback` +
+  `read/writeWorkItemRanksInPage` (ADR-042). The move therefore also carries `siblingIds` (the
+  destination level in post-drop order) and reports back `ranks` and `reparented`, which the board
+  copies onto its tree.
 - Configuration import/export: `src/common/settings-transfer` serializes the whole configuration
   (all settings + every binding) to/from an `AwesomeADO.config` file; `src/options/settings-transfer`
   wires it to the Appearance tab's Import/Export controls. Import replaces bindings wholesale via

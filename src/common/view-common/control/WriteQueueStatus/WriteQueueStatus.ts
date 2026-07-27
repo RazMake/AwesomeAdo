@@ -2,6 +2,13 @@
 export interface WriteQueueStatusOptions {
   /** Initial number of pending writes. Default 0 (idle → the indicator is hidden). */
   count?: number;
+  /**
+   * Invoked when the user activates the failure chip (click, or Enter/Space while it is focused), so
+   * the surface that owns the control can take them to the details of what was lost — in this
+   * extension, the Diagnostics log filtered to errors. Injected because the control is purely
+   * presentational and must not know that extension pages exist. Omit it and the chip only dismisses.
+   */
+  onOpenLog?: () => void;
 }
 
 /** A mounted write-queue status indicator plus the handle its owner uses to update the count. */
@@ -61,11 +68,19 @@ function failedRowStyle(): string {
   );
 }
 
-/** What the failed chip's tooltip says: the cause when one is known, and always how to get rid of it. */
-function failureTooltip(reason: string | undefined): string {
+/**
+ * What the failed chip's tooltip says: the cause when one is known, and what activating it does.
+ *
+ * The two endings differ because the promise has to match what the chip will actually do — telling a
+ * user to "click for details" when no handler is wired would make the chip lie about itself.
+ */
+function failureTooltip(reason: string | undefined, opensLog: boolean): string {
   const cause =
     reason !== undefined && reason.trim().length > 0 ? `Couldn't save: ${reason}. ` : "";
-  return `${cause}See the AwesomeADO Diagnostics log for details. Click to dismiss.`;
+  const action = opensLog
+    ? "Click to see the details in the AwesomeADO Diagnostics log."
+    : "See the AwesomeADO Diagnostics log for details. Click to dismiss.";
+  return `${cause}${action}`;
 }
 
 /**
@@ -167,7 +182,12 @@ interface StatusParts {
  * Failed wins over busy: a lost edit is the more urgent thing to report, and the spinner would
  * otherwise imply the write is still on its way.
  */
-function paintFailure(parts: StatusParts, failed: number, reason: string | undefined): void {
+function paintFailure(
+  parts: StatusParts,
+  failed: number,
+  reason: string | undefined,
+  opensLog: boolean,
+): void {
   const { root } = parts;
   parts.spinner.style.display = "none";
   parts.warning.style.display = "block";
@@ -177,9 +197,9 @@ function paintFailure(parts: StatusParts, failed: number, reason: string | undef
   // they are actively editing can mean the announcement never lands.
   root.setAttribute("role", "alert");
   root.setAttribute("aria-live", "assertive");
-  // Focusable so the chip can be dismissed from the keyboard as well as the mouse.
+  // Focusable so the chip can be activated from the keyboard as well as the mouse.
   root.tabIndex = 0;
-  root.title = failureTooltip(reason);
+  root.title = failureTooltip(reason, opensLog);
 }
 
 /** Paint the saving row, or hide the control entirely when the queue is empty. */
@@ -231,10 +251,11 @@ export function renderWriteQueueStatus(
   let pendingCount = 0;
   let failedCount = 0;
   let failureReason: string | undefined;
-  // Whether the user has clicked the current failure away. Reset the moment a NEW write fails, so
-  // dismissing one lost edit can never hide the next one — the chip is the only on-screen evidence
+  // Whether the user has activated the current failure away. Reset the moment a NEW write fails, so
+  // acknowledging one lost edit can never hide the next one — the chip is the only on-screen evidence
   // that anything was lost, and a dismissal that outlived its own failure would suppress the truth.
   let dismissed = false;
+  const openLog = options.onOpenLog;
 
   const svg = createSpinnerIcon(doc);
   const { element: warning, pulse } = createWarningIcon(doc);
@@ -252,27 +273,30 @@ export function renderWriteQueueStatus(
   // their setters, so this only decides which state to paint.
   const apply = (): void => {
     if (failedCount > 0 && !dismissed) {
-      paintFailure(parts, failedCount, failureReason);
+      paintFailure(parts, failedCount, failureReason, openLog !== undefined);
       return;
     }
     paintQuiet(parts, pendingCount);
   };
 
-  // Dismissing acknowledges the report; it does NOT clear the queue's failure count, which the owner
-  // still holds. A later failure therefore brings the chip straight back with the new total.
-  const dismiss = (): void => {
-    if (failedCount > 0 && !dismissed) {
-      dismissed = true;
-      apply();
+  // Activating the chip takes the user to the details of what was lost (when the owner wired that
+  // up) and acknowledges the report. It does NOT clear the queue's failure count, which the owner
+  // still holds, so a later failure brings the chip straight back with the new total.
+  const activate = (): void => {
+    if (failedCount === 0 || dismissed) {
+      return;
     }
+    openLog?.();
+    dismissed = true;
+    apply();
   };
 
-  root.addEventListener("click", dismiss);
+  root.addEventListener("click", activate);
   root.addEventListener("keydown", (event: KeyboardEvent) => {
     if (event.key === "Enter" || event.key === " ") {
       // Space would otherwise scroll the page out from under the board.
       event.preventDefault();
-      dismiss();
+      activate();
     }
   });
 

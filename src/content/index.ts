@@ -180,6 +180,16 @@ const userDirectory = new MessagingUserDirectory(
   loggers.forSource("content/views"),
 );
 
+// A content script cannot open extension pages itself, so the general options page, the per-query
+// binding form, and the Diagnostics log are all requested from the background service worker.
+// Rejections are surfaced (rather than silently swallowed) so a broken round-trip is diagnosable
+// instead of "nothing happens" — e.g. after the extension is reloaded but this page's script was not.
+const openExtensionPage = (message: OpenOptionsMessage | OpenBindingSettingsMessage): void => {
+  void chrome.runtime.sendMessage(message).catch((error: unknown) => {
+    logger.error("Could not open its extension page", error);
+  });
+};
+
 const trackingServices: EnhancedViewServices = {
   loadTree: (queryId) => treeLoader.loadTree(queryId),
   featureCrew: featureCrewWriter,
@@ -217,6 +227,13 @@ const trackingServices: EnhancedViewServices = {
     const team = latestSettings?.currentTeam ?? null;
     return team !== null && team.id.trim().length > 0 ? team.id : null;
   },
+  // The board's "Couldn't save…" chip has room for a count, not a cause, so activating it hands the
+  // user the recorded detail. Errors-only because they arrived from a specific failure: an unfiltered
+  // log would open on whatever informational line happens to be newest.
+  openDiagnosticsLog: () => {
+    logger.info("Board failure chip: view the errors in the diagnostics log");
+    openExtensionPage({ type: OPEN_OPTIONS_MESSAGE, section: "diagnostics", errorsOnly: true });
+  },
 };
 
 // The in-session view choice lives here, in memory only: switching a query between its enhanced view
@@ -232,16 +249,6 @@ const controller = new QueryPageController(
 );
 
 const bindingStore = createQueryBindingStore(loggers.forSource("common/bindings"));
-
-// A content script cannot open extension pages itself, so the general options page, the per-query
-// binding form, and the Diagnostics log are all requested from the background service worker.
-// Rejections are surfaced (rather than silently swallowed) so a broken round-trip is diagnosable
-// instead of "nothing happens" — e.g. after the extension is reloaded but this page's script was not.
-const openExtensionPage = (message: OpenOptionsMessage | OpenBindingSettingsMessage): void => {
-  void chrome.runtime.sendMessage(message).catch((error: unknown) => {
-    logger.error("Could not open its extension page", error);
-  });
-};
 
 const actions: QueryMenuActions = {
   openOptions() {

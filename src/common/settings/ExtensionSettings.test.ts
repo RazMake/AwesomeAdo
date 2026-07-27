@@ -497,3 +497,78 @@ describe("normalizeWorkItemTypes - name dedup and column normalization", () => {
     ]);
   });
 });
+
+describe("normalizeWorkItemTypes - child types", () => {
+  /** Build a bare type carrying only the child links under test. */
+  const type = (name: string, children?: unknown): Record<string, unknown> => ({
+    name,
+    columns: [],
+    ...(children === undefined ? {} : { children }),
+  });
+
+  const childrenOf = (raw: unknown[]): (string[] | undefined)[] =>
+    normalizeWorkItemTypes(raw).map((entry) => entry.children);
+
+  it("keeps the stored order, since the first child is the default one a view creates", () => {
+    expect(childrenOf([type("Epic", ["Feature", "Task"]), type("Feature"), type("Task")])).toEqual([
+      ["Feature", "Task"],
+      undefined,
+      undefined,
+    ]);
+  });
+
+  it("drops blanks, non-strings, repeats, and a self-reference", () => {
+    expect(
+      childrenOf([type("Epic", ["Feature", "  ", 7, "feature", "Epic"]), type("Feature")]),
+    ).toEqual([["Feature"], undefined]);
+  });
+
+  it("resolves a link to the referenced type's own casing", () => {
+    expect(childrenOf([type("Epic", ["feature"]), type("Feature")])).toEqual([
+      ["Feature"],
+      undefined,
+    ]);
+  });
+
+  it("drops a link to a type the list does not contain", () => {
+    expect(childrenOf([type("Epic", ["Ghost", "Feature"]), type("Feature")])).toEqual([
+      ["Feature"],
+      undefined,
+    ]);
+  });
+
+  it("omits children entirely when every link is dropped", () => {
+    expect(normalizeWorkItemTypes([type("Epic", ["Ghost"])])).toEqual([
+      { name: "Epic", color: "", icon: "", columns: [] },
+    ]);
+    expect(normalizeWorkItemTypes([type("Epic", "not-an-array")])).toEqual([
+      { name: "Epic", color: "", icon: "", columns: [] },
+    ]);
+  });
+
+  it("breaks a direct cycle, keeping the first link seen", () => {
+    expect(childrenOf([type("Epic", ["Feature"]), type("Feature", ["Epic"])])).toEqual([
+      ["Feature"],
+      undefined,
+    ]);
+  });
+
+  it("breaks an indirect cycle so a recursive walk always terminates", () => {
+    expect(
+      childrenOf([
+        type("Epic", ["Feature"]),
+        type("Feature", ["User Story"]),
+        type("User Story", ["Epic", "Task"]),
+        type("Task"),
+      ]),
+    ).toEqual([["Feature"], ["User Story"], ["Task"], undefined]);
+  });
+
+  it("keeps two parents sharing one child, which is a diamond and not a cycle", () => {
+    expect(childrenOf([type("Epic", ["Task"]), type("Feature", ["Task"]), type("Task")])).toEqual([
+      ["Task"],
+      ["Task"],
+      undefined,
+    ]);
+  });
+});

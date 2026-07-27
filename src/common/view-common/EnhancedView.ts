@@ -83,6 +83,15 @@ export interface EnhancedViewServices {
    * ranked against the wrong team's backlog silently reorders someone else's board.
    */
   currentTeam(): string | null;
+  /**
+   * Opens the extension's Diagnostics log filtered to errors.
+   *
+   * A view can only summarize a failure in the space it has (the board's "Couldn't save…" chip shows
+   * a count, not a cause), so it needs a way to hand the user the recorded detail. A view cannot open
+   * an extension page itself — the content world has to ask the service worker — so the round-trip is
+   * injected here rather than reached for.
+   */
+  openDiagnosticsLog(): void;
 }
 
 /** Everything a view needs to render, injected so a view never reaches for a global (Dependency Inversion). */

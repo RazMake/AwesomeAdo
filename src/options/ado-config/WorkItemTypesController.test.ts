@@ -3,6 +3,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { AdoWorkItemType } from "../../common/ado/AdoMetadata";
 import type { StorageObservation } from "../../common/browser/observeStorageKeys";
 import {
+  BOARD_COLUMN_MEANINGS,
+  DEFAULT_BOARD_COLUMNS,
   DEFAULT_SETTINGS,
   type ExtensionSettings,
   type WorkItemType,
@@ -75,8 +77,28 @@ function makeElements(): WorkItemTypesElements {
   const addTypeButton = document.createElement("button");
   const etaBody = document.createElement("div");
   const etaEmpty = document.createElement("p");
-  document.body.append(table, empty, addTypeButton, etaBody, etaEmpty);
-  return { columnsRow, body, empty, addTypeButton, etaBody, etaEmpty };
+  const hierarchyBody = document.createElement("tbody");
+  const hierarchyEmpty = document.createElement("p");
+  const hierarchyTable = document.createElement("table");
+  hierarchyTable.append(hierarchyBody);
+  document.body.append(
+    table,
+    empty,
+    addTypeButton,
+    etaBody,
+    etaEmpty,
+    hierarchyTable,
+    hierarchyEmpty,
+  );
+  return {
+    columnsRow,
+    body,
+    empty,
+    addTypeButton,
+    etaBody,
+    etaEmpty,
+    hierarchy: { body: hierarchyBody, empty: hierarchyEmpty },
+  };
 }
 
 function rows(elements: WorkItemTypesElements): HTMLElement[] {
@@ -124,9 +146,22 @@ function primaryChips(scope: HTMLElement): string[] {
   );
 }
 
-/** The add-state field wrapper for a cell (hidden when the row has nothing left to place). */
+/** The add-state field wrapper for a cell (hidden until the cell's "+" is clicked). */
 function stateComboboxRoot(cell: HTMLElement): HTMLElement {
   return stateInput(cell).closest<HTMLElement>(".combobox")!;
+}
+
+/** Whether the cell still offers the "+" that unfolds its state picker. */
+function canAddState(cell: HTMLElement): boolean {
+  return !cell.querySelector<HTMLButtonElement>('[data-role="state-add"]')!.hidden;
+}
+
+/** Click the cell's "+" to unfold its picker, and hand back the now-focused input. */
+function openStatePicker(cell: HTMLElement): HTMLInputElement {
+  cell
+    .querySelector<HTMLButtonElement>('[data-role="state-add"]')!
+    .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  return stateInput(cell);
 }
 
 function chipEl(cell: HTMLElement, state: string): HTMLElement {
@@ -301,6 +336,20 @@ describe("WorkItemTypesController — header", () => {
     expect(columnNames(elements)).toEqual(["Queue", "Active", "Done"]);
     expect(columnHeaderAt(elements, 0).classList.contains("wit-col--fallback")).toBe(true);
     expect(columnHeaderAt(elements, 1).classList.contains("wit-col--fallback")).toBe(false);
+  });
+
+  it("labels each column with the meaning its position carries, and repeats it as a tooltip", () => {
+    const { elements } = setup({ boardColumns: [...DEFAULT_BOARD_COLUMNS] });
+
+    const meanings = columnHeaders(elements).map(
+      (header) => header.querySelector<HTMLElement>(".wit-col__meaning")?.textContent,
+    );
+    expect(meanings).toEqual([...BOARD_COLUMN_MEANINGS]);
+    // Renaming a column loses the only other hint about what it drives, so the editable title
+    // carries the meaning as its tooltip and accessible name too.
+    const input = columnNameInput(columnHeaderAt(elements, 1));
+    expect(input.title).toBe(BOARD_COLUMN_MEANINGS[1]);
+    expect(input.getAttribute("aria-label")).toContain(BOARD_COLUMN_MEANINGS[1]);
   });
 });
 
@@ -573,8 +622,7 @@ describe("WorkItemTypesController — states", () => {
   it("reopens the state dropdown after a placed state while the field keeps focus", () => {
     const { elements } = setup({ boardColumns: ["Active"] });
     const row = addTypeRow(elements, "Bug");
-    const input = stateInput(cellAt(row, 0));
-    input.focus();
+    const input = openStatePicker(cellAt(row, 0));
 
     commit(input, "New");
 
@@ -583,24 +631,50 @@ describe("WorkItemTypesController — states", () => {
   });
 });
 
-describe("WorkItemTypesController — add-state field visibility", () => {
-  it("shows no add-state field until a type is chosen for the row", () => {
+describe("WorkItemTypesController — add-state control visibility", () => {
+  it("shows no add-state control until a type is chosen for the row", () => {
     const { elements } = setup({ boardColumns: ["Active", "Resolved"] });
     elements.addTypeButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     const row = rowAt(elements, 0);
 
     for (const cell of cells(row)) {
+      expect(canAddState(cell)).toBe(false);
       expect(stateComboboxRoot(cell).hidden).toBe(true);
     }
 
     commit(typeInput(row), "Bug");
 
     for (const cell of cells(row)) {
-      expect(stateComboboxRoot(cell).hidden).toBe(false);
+      expect(canAddState(cell)).toBe(true);
     }
   });
 
-  it("hides every add-state field once all of the type's states are mapped", () => {
+  it("keeps the picker folded away until the add button is clicked", () => {
+    const { elements } = setup({ boardColumns: ["Active"] });
+    const cell = cellAt(addTypeRow(elements, "Bug"), 0);
+
+    expect(stateComboboxRoot(cell).hidden).toBe(true);
+
+    openStatePicker(cell);
+
+    expect(stateComboboxRoot(cell).hidden).toBe(false);
+    expect(canAddState(cell)).toBe(false);
+  });
+
+  it("folds the picker back to the add button when it loses focus", () => {
+    const { elements } = setup({ boardColumns: ["Active"] });
+    const cell = cellAt(addTypeRow(elements, "Bug"), 0);
+    const input = openStatePicker(cell);
+    input.value = "Ne";
+
+    input.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+
+    expect(stateComboboxRoot(cell).hidden).toBe(true);
+    expect(canAddState(cell)).toBe(true);
+    expect(input.value).toBe("");
+  });
+
+  it("hides every add-state control once all of the type's states are mapped", () => {
     const { elements } = setup({ boardColumns: ["Active", "Resolved"] });
     const row = addTypeRow(elements, "Bug");
 
@@ -609,6 +683,7 @@ describe("WorkItemTypesController — add-state field visibility", () => {
     commit(stateInput(cellAt(row, 1)), "Resolved");
 
     for (const cell of cells(row)) {
+      expect(canAddState(cell)).toBe(false);
       expect(stateComboboxRoot(cell).hidden).toBe(true);
     }
   });
@@ -1006,5 +1081,79 @@ describe("WorkItemTypesController — ETA field", () => {
     const select = etaSelect(etaRowFor(elements, "Bug"));
     expect(select.value).toBe("Microsoft.VSTS.Scheduling.TargetDate");
     expect(etaOptionValues(select)).toEqual(["", "Microsoft.VSTS.Scheduling.TargetDate"]);
+  });
+});
+
+// Hierarchy-section helpers, kept at module scope so the group's callback stays under the
+// executable-line ceiling without dropping any assertion.
+const hierarchyRows = (elements: WorkItemTypesElements): HTMLElement[] => [
+  ...elements.hierarchy.body.querySelectorAll<HTMLElement>(".wit-child-row"),
+];
+
+const hierarchyRowFor = (elements: WorkItemTypesElements, typeName: string): HTMLElement => {
+  const row = hierarchyRows(elements).find((candidate) => candidate.dataset.typeName === typeName);
+  if (row === undefined) {
+    throw new Error(`no hierarchy row for ${typeName}`);
+  }
+  return row;
+};
+
+const addChild = (row: HTMLElement, name: string): void => {
+  commit(row.querySelector<HTMLInputElement>('[data-role="child"]')!, name);
+};
+
+describe("WorkItemTypesController hierarchy section", () => {
+  it("mirrors the table's types and order", () => {
+    const { elements } = setup({ boardColumns: ["Active"] });
+    addTypeRow(elements, "Bug");
+    addTypeRow(elements, "Task");
+
+    expect(hierarchyRows(elements).map((row) => row.dataset.typeName)).toEqual(["Bug", "Task"]);
+    expect(elements.hierarchy.empty.hidden).toBe(true);
+  });
+
+  it("renders stored children, first one highlighted as the default", () => {
+    const { elements } = setup({
+      boardColumns: ["Active"],
+      entries: [
+        { name: "Bug", color: "CC293D", icon: "", columns: [], children: ["Task"] },
+        { name: "Task", color: "F2CB1D", icon: "", columns: [] },
+      ],
+    });
+
+    const row = hierarchyRowFor(elements, "Bug");
+    expect(row.querySelector<HTMLElement>(".wit-child--default")?.dataset.child).toBe("Task");
+    expect(hierarchyRowFor(elements, "Task").querySelector(".wit-child--leaf")).not.toBeNull();
+  });
+
+  it("persists a child added in the hierarchy section onto its type", () => {
+    const { store, elements } = setup({ boardColumns: ["Active"] });
+    addTypeRow(elements, "Bug");
+    addTypeRow(elements, "Task");
+
+    addChild(hierarchyRowFor(elements, "Bug"), "Task");
+
+    expect(store.writeCalls.at(-1)).toEqual({
+      workItemTypes: [
+        { name: "Bug", color: "CC293D", icon: "https://ado/bug", columns: [], children: ["Task"] },
+        { name: "Task", color: "F2CB1D", icon: "", columns: [] },
+      ],
+    });
+  });
+
+  it("drops a removed type's links from the next save", () => {
+    const { store, elements } = setup({
+      boardColumns: ["Active"],
+      entries: [
+        { name: "Bug", color: "CC293D", icon: "", columns: [], children: ["Task"] },
+        { name: "Task", color: "F2CB1D", icon: "", columns: [] },
+      ],
+    });
+
+    clickRole(rowAt(elements, 1), "type-delete");
+
+    expect(store.writeCalls.at(-1)).toEqual({
+      workItemTypes: [{ name: "Bug", color: "CC293D", icon: "", columns: [] }],
+    });
   });
 });

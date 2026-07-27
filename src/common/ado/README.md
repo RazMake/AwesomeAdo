@@ -197,6 +197,9 @@ response-parsing logic, kept pure so they are unit-testable without a browser.
 - `ADO_API_VERSION` — the REST API version every request in the extension targets.
 - `ASSIGNED_TO_FIELD` — the assignee field's reference name, named once because it is both requested
   with the tree and patched back when a view reassigns an item.
+- `IMPORTANCE_FIELD` — ADO's manual backlog rank (`Microsoft.VSTS.Common.StackRank`), named once for
+  the same reason: the tree **reads** it to order a level and `rankFallback` **writes** it when ADO
+  refuses to order an item itself.
 - `identityFieldValue(user)` — the string an identity field is patched with for a picked person: the
   unique name when known (ADO resolves identities from it), otherwise the display name.
 
@@ -231,13 +234,17 @@ response-parsing logic, kept pure so they are unit-testable without a browser.
 
 ### `IWorkItemReorderWriter.ts`
 
-- `WorkItemReorderRequest` — `{ id, rev, parentId, currentParentId, previousId, nextId, team }`; the
-  request to move an item. Position is named as the two siblings it lands **between** (`0` = start /
-  end / no parent) rather than as a rank, because ADO owns the rank arithmetic — and naming
-  neighbours survives a stale board, where two independently-computed ranks would collide.
-- `WorkItemReorderResult` — `{ ok, order?, rev?, error? }`; `order` is the rank ADO assigned (so a
-  caller can refresh its model without re-reading the tree) and `rev` the item's new rev when the
-  re-parent patch ran.
+- `WorkItemReorderRequest` —
+  `{ id, rev, parentId, currentParentId, previousId, nextId, siblingIds, team }`; the request to move
+  an item. Position is named as the two siblings it lands **between** (`0` = start / end / no parent)
+  rather than as a rank, because ADO owns the rank arithmetic — and naming neighbours survives a stale
+  board, where two independently-computed ranks would collide. `siblingIds` is the destination level
+  in its **post-drop** order, which the rank fallback needs when ADO declines to rank the item.
+- `WorkItemReorderResult` — `{ ok, order?, rev?, reparented?, ranks?, error? }`; `order` is the rank
+  ADO assigned (so a caller can refresh its model without re-reading the tree), `rev` the item's new
+  rev when the re-parent patch ran, `reparented` whether the hierarchy link actually changed (reported
+  on failure too, so a caller never keeps showing a parent ADO has already moved the item away from),
+  and `ranks` every rank written directly when ADO refused to order the item.
 - `IWorkItemReorderWriter` — moves a work item within or between parents. Kept separate from
   `IWorkItemFieldWriter` (Interface Segregation): a re-parent changes the item's **links** and its
   rank lives behind a team-scoped backlog endpoint, so neither is a field patch, and a consumer that
@@ -257,6 +264,27 @@ response-parsing logic, kept pure so they are unit-testable without a browser.
 - `PARENT_LINK_TYPE` — ADO's child→parent link type (`System.LinkTypes.Hierarchy-Reverse`).
 - `parseReorderedRank(body, id)` — the new rank from a `ReorderResult[]` body (bare array or
   `{ value: [...] }`), or `null` when absent/unusable so a caller never trusts a fabricated rank.
+
+### `rankFallback.ts`
+
+Ranks a level by writing `IMPORTANCE_FIELD` directly, for the moves ADO's backlog-order endpoint
+refuses. That endpoint only ranks items that already hold a position on the team's backlog: an item
+with no rank yet — or one nested under a parent of its own category, which Azure Boards does not order
+at all — gets `TF400486` every single time, so retrying is pointless and writing the rank is the only
+way the drop can stick.
+
+- `applyRankFallback({ siblingIds, movedId, readRanks, writeRanks })` — the whole operation: read the
+  level's current ranks, work out what to write, write it, and report `{ ok, order?, ranks?,
+reseeded?, error? }`. The two IO steps are **injected** because the real calls must run in the ADO
+  tab's MAIN world; that keeps every decision here unit-testable.
+- `planRankWrites(siblingIds, rankById, movedId)` — the arithmetic on its own: the midpoint of the
+  neighbours' gap when there is one, a full `RANK_SPACING` step past the only neighbour at either end,
+  or a whole-level renumber (anchored to the level's lowest existing rank) when nothing fits. `null`
+  when the moved item is not in the level, which means the caller's view is stale.
+- `RANK_SPACING` — the gap left between consecutive ranks when this module assigns them.
+- `buildWorkItemsBatchUrl(href)` / `pageWorkItemIds(ids)` / `parseWorkItemRanks(body, field)` — the
+  batch read's URL, its 200-id paging, and the ranks read out of its body. An item with **no** rank is
+  deliberately absent from the map rather than present as `0`.
 
 ### `WorkItemWriteQueue/`
 

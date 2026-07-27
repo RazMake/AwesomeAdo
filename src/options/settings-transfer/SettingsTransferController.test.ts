@@ -61,6 +61,8 @@ interface Harness {
   elements: SettingsTransferElements;
   downloaded: { name: string; blobs: Blob[] };
   errors: unknown[];
+  /** How many times the controller told the page its stored configuration was replaced. */
+  imported: () => number;
 }
 
 function setup(overrides?: { settings?: ExtensionSettings; bindings?: QueryBindings }): Harness {
@@ -83,14 +85,26 @@ function setup(overrides?: { settings?: ExtensionSettings; bindings?: QueryBindi
     downloaded.name = this.download;
   });
 
+  let imported = 0;
   const controller = new SettingsTransferController(
     settingsStore,
     bindingStore,
     elements,
     (error) => errors.push(error),
+    () => {
+      imported += 1;
+    },
   );
   controller.init();
-  return { controller, settingsStore, bindingStore, elements, downloaded, errors };
+  return {
+    controller,
+    settingsStore,
+    bindingStore,
+    elements,
+    downloaded,
+    errors,
+    imported: () => imported,
+  };
 }
 
 // Let queued microtasks (the async export/import handlers) settle before asserting.
@@ -160,8 +174,36 @@ describe("SettingsTransferController import", () => {
     expect(h.bindingStore.replaceAll).toHaveBeenCalledTimes(1);
     expect(h.bindingStore.replaced).toEqual({ q: { view: "sprint", properties: {} } });
     expect(h.elements.status.textContent).toContain("Imported");
+    expect(h.elements.status.classList.contains("card__hint--error")).toBe(false);
+    // The page is told to re-read, so the sections that load once still show the imported values.
+    expect(h.imported()).toBe(1);
     // Input is reset so re-selecting the same file re-fires change.
     expect(h.elements.fileInput.value).toBe("");
+  });
+
+  it("imports what it can and reports in red what the file got wrong", async () => {
+    const h = setup();
+
+    chooseFile(
+      h.elements.fileInput,
+      JSON.stringify({
+        awesomeAdoConfigVersion: 1,
+        settings: { theme: "chartreuse", defaultView: "enhanced" },
+        enhancedQueries: { good: { view: "sprint", properties: {} }, bad: {} },
+      }),
+    );
+    await flush();
+
+    // The usable half still lands in both stores.
+    expect(h.settingsStore.written).toEqual({ defaultView: "enhanced" });
+    expect(h.bindingStore.replaced).toEqual({ good: { view: "sprint", properties: {} } });
+    // ...and the skipped half is logged and shown as a failure, not as a clean load.
+    expect(h.errors).toHaveLength(1);
+    expect((h.errors[0] as Error).message).toContain('"theme" was skipped');
+    expect(h.elements.status.textContent).toContain("skipped 2 problems");
+    expect(h.elements.status.classList.contains("card__hint--error")).toBe(true);
+    // A partly-applied file still replaced part of the configuration, so the page must re-read.
+    expect(h.imported()).toBe(1);
   });
 
   it("does nothing when the picker is dismissed without a file", async () => {
@@ -184,6 +226,21 @@ describe("SettingsTransferController import", () => {
     expect(h.bindingStore.replaceAll).not.toHaveBeenCalled();
     expect(h.errors).toHaveLength(1);
     expect(h.elements.status.textContent).toContain("Could not import");
+    expect(h.elements.status.classList.contains("card__hint--error")).toBe(true);
+    // Nothing was replaced, so the page has nothing to re-read.
+    expect(h.imported()).toBe(0);
+  });
+
+  it("clears the error styling once a later transfer succeeds", async () => {
+    const h = setup();
+
+    chooseFile(h.elements.fileInput, "not a config");
+    await flush();
+    h.elements.exportButton.dispatchEvent(new Event("click"));
+    await flush();
+
+    expect(h.elements.status.textContent).toContain("Exported");
+    expect(h.elements.status.classList.contains("card__hint--error")).toBe(false);
   });
 });
 

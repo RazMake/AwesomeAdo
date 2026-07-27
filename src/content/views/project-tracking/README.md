@@ -93,6 +93,9 @@ halves of the view — its configuration and its renderer.
     OFF — shown only for items on a real, leaf iteration; an item parked on the iteration root shows
     no pill), and ETA badge (right-aligned; editable — click to pick a date or clear it when the
     item's type has an ETA field configured). Clicking the twisty expands/collapses that node's children.
+    Rows open expanded, and a row you collapse **stays** collapsed across every repaint — a
+    drag-reorder, a re-sort, a sprint or tag filter change — because each pass builds new elements
+    and the closed rows are remembered by work item id outside the DOM.
     The Status badge uses [`renderStatusBadge`](../../../common/view-common/control/StatusBadge/README.md)
     and displays the **Status** (the board-column label the item's ADO State maps to), never the raw
     ADO State. Choosing a new Status optimistically updates the row and enqueues a serialized write of

@@ -125,6 +125,17 @@ export class QueryBindingsController {
     await this.show(queryId, queryName);
   }
 
+  /**
+   * Re-read the stored bindings and re-populate the form, used when they were replaced from outside
+   * (a configuration file import). The in-memory `bindings` map is this form's working copy and is
+   * what a save writes back, so leaving it stale would re-save the bindings the file just replaced.
+   */
+  async reload(): Promise<void> {
+    this.bindings = await this.readBindings();
+    this.syncQueryNames();
+    await this.show(null, null);
+  }
+
   dispose(): void {
     this.elements.viewSelect.removeEventListener("change", this.handleViewChange);
     this.elements.querySelect.removeEventListener("change", this.handleQueryChange);

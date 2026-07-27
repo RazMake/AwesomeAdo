@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   describeReorderFailure,
+  explainReorderRefusal,
   isReorderWorkItemMessage,
   reorderMessageProblem,
   REORDER_WORK_ITEM_MESSAGE,
@@ -17,6 +18,7 @@ const message = (overrides: Record<string, unknown> = {}): unknown => ({
   currentParentId: 11,
   previousId: 3,
   nextId: 4,
+  siblingIds: [3, 123, 4],
   team: "Web",
   ...overrides,
 });
@@ -117,6 +119,20 @@ describe("isReorderWorkItemMessage - rev and team", () => {
     expect(isReorderWorkItemMessage(message({ team: undefined }))).toBe(false);
     expect(isReorderWorkItemMessage(message({ team: 7 }))).toBe(false);
   });
+
+  it("rejects sibling ids that are not all real work item ids", () => {
+    // Every entry becomes a URL the worker calls with the user's session, so `0` — fine as a
+    // "no parent" sentinel elsewhere — cannot name a sibling to rank.
+    expect(isReorderWorkItemMessage(message({ siblingIds: undefined }))).toBe(false);
+    expect(isReorderWorkItemMessage(message({ siblingIds: "3,4" }))).toBe(false);
+    expect(isReorderWorkItemMessage(message({ siblingIds: [3, 0] }))).toBe(false);
+    expect(isReorderWorkItemMessage(message({ siblingIds: [3, -1] }))).toBe(false);
+    expect(isReorderWorkItemMessage(message({ siblingIds: [3, "4"] }))).toBe(false);
+  });
+
+  it("accepts an empty sibling list, which simply leaves nothing to rank by hand", () => {
+    expect(isReorderWorkItemMessage(message({ siblingIds: [] }))).toBe(true);
+  });
 });
 
 describe("isReorderWorkItemMessage - agreement with reorderMessageProblem", () => {
@@ -131,6 +147,7 @@ describe("isReorderWorkItemMessage - agreement with reorderMessageProblem", () =
       message({ nextId: -1 }),
       message({ rev: -1 }),
       message({ team: "  " }),
+      message({ siblingIds: [0] }),
       null,
       42,
     ];
@@ -277,5 +294,28 @@ describe("describeReorderFailure", () => {
   it("falls back to a generic prefix when the response names no status", () => {
     expect(describeReorderFailure({ ok: false })).toBe("reorder failed (no response body)");
     expect(describeReorderFailure({ ok: false, detail: "boom" })).toBe("reorder failed: boom");
+  });
+});
+
+describe("explainReorderRefusal", () => {
+  it("explains TF400486 as a backlog-position problem rather than a concurrency one", () => {
+    const explanation = explainReorderRefusal(
+      "order HTTP 400: TF400486: Unable to complete the operation because you or another user has " +
+        "modified, removed, or re-parented items, or you are trying to reorder an item outside of " +
+        "its immediate parent.",
+    );
+
+    // ADO's own wording blames a concurrent edit, which is exactly the wrong place to look: the
+    // item simply has no backlog position, so the log has to say that and that retrying is futile.
+    expect(explanation).toContain("no backlog position");
+    expect(explanation).toContain("under a parent of its own category");
+    expect(explanation).toContain("retrying cannot clear it");
+    expect(explanation).toContain("resolve-backlog-reorder-issues");
+  });
+
+  it("adds nothing to a failure Azure DevOps already stated plainly", () => {
+    expect(explainReorderRefusal("order HTTP 401")).toBeNull();
+    expect(explainReorderRefusal("TF401232: work item 10 does not exist")).toBeNull();
+    expect(explainReorderRefusal("")).toBeNull();
   });
 });

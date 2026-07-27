@@ -20,6 +20,18 @@ export interface MovePlacement {
 export type DropSide = "before" | "after";
 
 /**
+ * A drop that has been worked out: where the item lands, plus the level it lands in.
+ *
+ * `siblingIds` is the destination level in its POST-drop order and exists because Azure DevOps
+ * refuses to rank items that hold no backlog position of their own; the extension then writes the
+ * rank field itself, and that arithmetic needs the level the user actually ended up with rather than
+ * just the two neighbours.
+ */
+export interface ResolvedMove extends MovePlacement {
+  siblingIds: number[];
+}
+
+/**
  * The placement `id` already occupies within `siblingIds`.
  *
  * Used to recognize a drop that changes nothing (the item was dragged back onto its own slot) so it
@@ -64,7 +76,7 @@ export function resolveMove(options: {
   side: DropSide;
   targetParentId: number;
   targetSiblingIds: readonly number[];
-}): MovePlacement | null {
+}): ResolvedMove | null {
   const { movedId, targetId, side, targetParentId } = options;
   if (movedId === targetId) {
     return null;
@@ -75,10 +87,13 @@ export function resolveMove(options: {
     return null;
   }
   const insertAt = side === "before" ? targetIndex : targetIndex + 1;
-  const placement: MovePlacement = {
+  const siblingIds = [...remaining];
+  siblingIds.splice(insertAt, 0, movedId);
+  const placement: ResolvedMove = {
     parentId: targetParentId,
     previousId: remaining[insertAt - 1] ?? 0,
     nextId: remaining[insertAt] ?? 0,
+    siblingIds,
   };
 
   const current = placementOf(movedId, options.currentSiblingIds, options.currentParentId);

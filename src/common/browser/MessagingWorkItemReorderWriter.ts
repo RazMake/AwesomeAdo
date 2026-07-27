@@ -6,6 +6,7 @@ import type {
 import type { ILogger } from "../logging/ILogger";
 
 import {
+  explainReorderRefusal,
   REORDER_WORK_ITEM_MESSAGE,
   type ReorderWorkItemMessage,
   type ReorderWorkItemResponse,
@@ -40,6 +41,7 @@ export class MessagingWorkItemReorderWriter implements IWorkItemReorderWriter {
       currentParentId: request.currentParentId,
       previousId: request.previousId,
       nextId: request.nextId,
+      siblingIds: [...request.siblingIds],
       team: request.team,
     };
 
@@ -62,11 +64,15 @@ export class MessagingWorkItemReorderWriter implements IWorkItemReorderWriter {
       }
 
       if (!response.ok) {
-        this.logger.error(
-          `Work item ${request.id} reorder failed: ${response.error ?? "unknown error"}.`,
-          response.error,
-        );
-        return { ok: false, error: response.error };
+        const reason = response.error ?? "unknown error";
+        this.logger.error(`Work item ${request.id} reorder failed: ${reason}.`, response.error);
+        const explanation = explainReorderRefusal(reason);
+        if (explanation !== null) {
+          // Beside ADO's own words, never instead of them: TF400486 names a concurrency problem that
+          // is not the actual cause, so a reader given only the raw code chases the wrong theory.
+          this.logger.error(`Work item ${request.id} reorder: ${explanation}`);
+        }
+        return { ok: false, error: response.error, reparented: response.reparented };
       }
 
       // The signals behind the move plus its outcome, so "why did that item end up there?" is
@@ -75,7 +81,13 @@ export class MessagingWorkItemReorderWriter implements IWorkItemReorderWriter {
         `Work item ${request.id} moved: parent ${request.currentParentId}→${request.parentId}, ` +
           `between ${request.previousId} and ${request.nextId}, order=${response.order ?? "unchanged"}.`,
       );
-      return { ok: true, order: response.order, rev: response.rev };
+      return {
+        ok: true,
+        order: response.order,
+        rev: response.rev,
+        ranks: response.ranks,
+        reparented: response.reparented,
+      };
     } catch (error) {
       this.logger.error(`Could not reorder work item ${request.id}`, error);
       return { ok: false, error: "reorder request threw" };

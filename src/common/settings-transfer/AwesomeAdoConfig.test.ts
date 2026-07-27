@@ -61,17 +61,7 @@ describe("exportConfig", () => {
   });
 });
 
-describe("importConfig", () => {
-  it("round-trips an exported file back into settings and enhanced queries", () => {
-    const text = exportConfig(sampleSettings, sampleBindings);
-
-    const imported = importConfig(text);
-
-    expect(imported.settings.theme).toBe("dark");
-    expect(imported.settings.currentTeam).toEqual({ id: "team-1", name: "Contoso Team" });
-    expect(imported.enhancedQueries).toEqual(sampleBindings);
-  });
-
+describe("importConfig - files it cannot use at all", () => {
   it("rejects a file that carries a version marker but no payload", () => {
     // An import replaces BOTH stores wholesale, so normalizing an absent payload into defaults
     // would destroy the user's real configuration and report success.
@@ -101,25 +91,6 @@ describe("importConfig", () => {
     );
   });
 
-  it("normalizes both sections of a complete but sparse file", () => {
-    const imported = importConfig(JSON.stringify({ settings: {}, enhancedQueries: {} }));
-
-    expect(imported.settings).toEqual(DEFAULT_SETTINGS);
-    expect(imported.enhancedQueries).toEqual({});
-  });
-
-  it("drops malformed bindings while keeping valid ones", () => {
-    const imported = importConfig(
-      JSON.stringify({
-        settings: {},
-        enhancedQueries: { good: { view: "sprint", properties: {} }, bad: { view: 42 } },
-      }),
-    );
-
-    expect(imported.enhancedQueries.good).toBeDefined();
-    expect(imported.enhancedQueries.bad).toBeUndefined();
-  });
-
   it("rejects text that is not valid JSON", () => {
     expect(() => importConfig("not json")).toThrow(/not valid JSON/);
   });
@@ -137,13 +108,124 @@ describe("importConfig", () => {
       /not a complete AwesomeADO configuration/,
     );
   });
+});
+
+describe("importConfig - salvaging what a file does offer", () => {
+  it("round-trips an exported file back into settings and enhanced queries", () => {
+    const text = exportConfig(sampleSettings, sampleBindings);
+
+    const imported = importConfig(text);
+
+    expect(imported.settings.theme).toBe("dark");
+    expect(imported.settings.currentTeam).toEqual({ id: "team-1", name: "Contoso Team" });
+    expect(imported.enhancedQueries).toEqual(sampleBindings);
+    expect(imported.problems).toEqual([]);
+  });
+
+  it("applies only the settings a sparse file actually carries", () => {
+    // A partial keeps every setting the file omitted at whatever the user has configured today,
+    // instead of resetting it to a default the file never asked for.
+    const imported = importConfig(
+      JSON.stringify({
+        awesomeAdoConfigVersion: 1,
+        settings: { theme: "blue" },
+        enhancedQueries: {},
+      }),
+    );
+
+    expect(imported.settings).toEqual({ theme: "blue" });
+    expect(imported.enhancedQueries).toEqual({});
+    expect(imported.problems).toEqual([]);
+  });
+
+  it("imports the valid settings and reports the ones it skipped", () => {
+    const imported = importConfig(
+      JSON.stringify({
+        awesomeAdoConfigVersion: 1,
+        settings: { theme: "chartreuse", defaultView: "enhanced", futureSprintsCount: "lots" },
+        enhancedQueries: {},
+      }),
+    );
+
+    expect(imported.settings).toEqual({ defaultView: "enhanced" });
+    expect(imported.problems).toEqual([
+      expect.stringContaining('"theme" was skipped'),
+      expect.stringContaining('"futureSprintsCount" was skipped'),
+    ]);
+  });
+
+  it("normalizes the settings it accepts so an imported value is never stored raw", () => {
+    const imported = importConfig(
+      JSON.stringify({
+        awesomeAdoConfigVersion: 1,
+        settings: { futureSprintsCount: 999 },
+        enhancedQueries: {},
+      }),
+    );
+
+    expect(imported.settings.futureSprintsCount).toBeLessThan(999);
+    expect(imported.problems).toEqual([]);
+  });
+
+  it("reports a file that is not stamped by AwesomeADO but still imports what it holds", () => {
+    const imported = importConfig(
+      JSON.stringify({ settings: { theme: "blue" }, enhancedQueries: {} }),
+    );
+
+    expect(imported.settings).toEqual({ theme: "blue" });
+    expect(imported.problems).toEqual([expect.stringContaining("awesomeAdoConfigVersion")]);
+  });
+
+  it("reports a file written by a newer build but still imports what it recognizes", () => {
+    const imported = importConfig(
+      JSON.stringify({
+        awesomeAdoConfigVersion: CONFIG_FORMAT_VERSION + 1,
+        settings: { theme: "blue" },
+        enhancedQueries: {},
+      }),
+    );
+
+    expect(imported.settings).toEqual({ theme: "blue" });
+    expect(imported.problems).toEqual([expect.stringContaining("newer than this version")]);
+  });
+});
+
+describe("importConfig - salvaging enhanced queries", () => {
+  it("keeps valid bindings, drops malformed ones, and reports each one it dropped", () => {
+    const imported = importConfig(
+      JSON.stringify({
+        awesomeAdoConfigVersion: 1,
+        settings: {},
+        enhancedQueries: { good: { view: "sprint", properties: {} }, bad: { view: 42 } },
+      }),
+    );
+
+    expect(imported.enhancedQueries.good).toBeDefined();
+    expect(imported.enhancedQueries.bad).toBeUndefined();
+    expect(imported.problems).toEqual([expect.stringContaining('"bad" was skipped')]);
+  });
+
+  it("keeps a binding whose view settings are not all text, and reports the ones dropped", () => {
+    const imported = importConfig(
+      JSON.stringify({
+        awesomeAdoConfigVersion: 1,
+        settings: {},
+        enhancedQueries: { q: { view: "sprint", properties: { weeks: 4, order: "title" } } },
+      }),
+    );
+
+    expect(imported.enhancedQueries.q).toEqual({ view: "sprint", properties: { order: "title" } });
+    expect(imported.problems).toEqual([
+      expect.stringContaining('view settings of the enhanced query "q"'),
+    ]);
+  });
 
   it("keeps a __proto__ key from silently discarding the binding it names", () => {
     // Written as raw JSON: a `__proto__` key in an object LITERAL sets the prototype instead of
     // adding an entry, so the fixture has to come from the parser, exactly as a real file would.
     const imported = importConfig(
-      '{"settings":{},"enhancedQueries":{"__proto__":{"view":"sprint","properties":{}},' +
-        '"good":{"view":"sprint","properties":{}}}}',
+      '{"awesomeAdoConfigVersion":1,"settings":{},"enhancedQueries":' +
+        '{"__proto__":{"view":"sprint","properties":{}},"good":{"view":"sprint","properties":{}}}}',
     );
 
     expect(Object.keys(imported.enhancedQueries).sort()).toEqual(["__proto__", "good"]);

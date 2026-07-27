@@ -63,6 +63,7 @@ const move = (id: number, currentRev: () => number): QueuedReorder => ({
   currentParentId: 10,
   previousId: 3,
   nextId: 4,
+  siblingIds: [3, 4],
   team: "Web",
 });
 
@@ -74,6 +75,7 @@ const moveSent = (id: number, rev: number): WorkItemReorderRequest => ({
   currentParentId: 10,
   previousId: 3,
   nextId: 4,
+  siblingIds: [3, 4],
   team: "Web",
 });
 

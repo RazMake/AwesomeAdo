@@ -130,6 +130,27 @@ describe("DiagnosticsController — rendering & filtering", () => {
     const detail = elements.list.querySelector(".log-row__detail");
     expect(detail?.textContent).toBe("Error: boom\n    at here");
   });
+
+  it("narrows to errors and shows the toggle as checked when a deep link asks for it", async () => {
+    await controller.init();
+    store.emit([info(10, "info line"), error(20, "error line")]);
+
+    controller.showErrorsOnly();
+
+    // The toggle has to move with the filter, or the log silently hides lines the UI claims to show.
+    expect(elements.errorsOnlyToggle.checked).toBe(true);
+    expect(messagesShown(elements)).toEqual(["error line"]);
+  });
+
+  it("keeps a deep-linked errors-only filter over entries that arrive afterwards", async () => {
+    await controller.init();
+
+    // The deep link lands before the first batch of entries does, so the filter has to survive it.
+    controller.showErrorsOnly();
+    store.emit([info(10, "info line"), error(20, "error line")]);
+
+    expect(messagesShown(elements)).toEqual(["error line"]);
+  });
 });
 
 describe("DiagnosticsController — actions & lifecycle", () => {

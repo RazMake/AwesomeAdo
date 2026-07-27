@@ -73,6 +73,7 @@ const PAST_SPRINTS_KEY = "settings.pastSprintsCount";
 const AREA_PATHS_KEY = "settings.areaPaths";
 const BOARD_COLUMNS_KEY = "settings.boardColumns";
 const WORK_ITEM_TYPES_KEY = "settings.workItemTypes";
+const MARKER_TAGS_KEY = "settings.markerTags";
 
 describe("BrowserSyncSettingsStore - read", () => {
   describe("read", () => {
@@ -115,6 +116,17 @@ describe("BrowserSyncSettingsStore - read", () => {
       expect(settings.areaPaths).toEqual([{ path: "Web\\Api", label: "Api" }]);
     });
 
+    it("does not write any key during a read", async () => {
+      const fake = new FakeBrowserSyncStorage();
+      const store = new BrowserSyncSettingsStore(fake);
+      await store.read();
+      expect(fake.getStoredKeys()).toEqual([]);
+    });
+  });
+});
+
+describe("BrowserSyncSettingsStore - read (columns, types, and markers)", () => {
+  describe("read", () => {
     it("reads and normalizes the board-columns key", async () => {
       const fake = new FakeBrowserSyncStorage();
       await fake.set(BOARD_COLUMNS_KEY, [" My Queue ", "Building"]);
@@ -147,11 +159,14 @@ describe("BrowserSyncSettingsStore - read", () => {
       ]);
     });
 
-    it("does not write any key during a read", async () => {
+    it("reads and normalizes the marker-tags key", async () => {
       const fake = new FakeBrowserSyncStorage();
+      await fake.set(MARKER_TAGS_KEY, { blocked: { tag: " Impediment ", commentTag: "[I]" } });
       const store = new BrowserSyncSettingsStore(fake);
-      await store.read();
-      expect(fake.getStoredKeys()).toEqual([]);
+      const settings = await store.read();
+      expect(settings.markerTags.blocked).toEqual({ tag: "Impediment", commentTag: "[I]" });
+      // Markers the stored value never mentioned still seed their defaults.
+      expect(settings.markerTags.waiting).toEqual(DEFAULT_SETTINGS.markerTags.waiting);
     });
   });
 });
@@ -247,6 +262,18 @@ describe("BrowserSyncSettingsStore - write (sprints, columns, and types)", () =>
       await store.write({ workItemTypes });
       expect(fake.getStoredKeys()).toEqual([WORK_ITEM_TYPES_KEY]);
       expect(await fake.get(WORK_ITEM_TYPES_KEY)).toEqual(workItemTypes);
+    });
+
+    it("persists the marker-tags key when supplied", async () => {
+      const fake = new FakeBrowserSyncStorage();
+      const store = new BrowserSyncSettingsStore(fake);
+      const markerTags = {
+        ...DEFAULT_SETTINGS.markerTags,
+        blocked: { tag: "Impediment", commentTag: "[I]" },
+      };
+      await store.write({ markerTags });
+      expect(fake.getStoredKeys()).toEqual([MARKER_TAGS_KEY]);
+      expect(await fake.get(MARKER_TAGS_KEY)).toEqual(markerTags);
     });
   });
 });

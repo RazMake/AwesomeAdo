@@ -9,6 +9,7 @@ import {
   OPEN_BINDING_SETTINGS_MESSAGE,
   OPEN_OPTIONS_MESSAGE,
   optionsPath,
+  readErrorsOnlyFromSearch,
   readOptionsSectionFromSearch,
   readQueryIdFromSearch,
   readQueryNameFromSearch,
@@ -74,6 +75,26 @@ describe("isOpenOptionsMessage", () => {
     expect(isOpenOptionsMessage({ type: OPEN_OPTIONS_MESSAGE, section: "nope" })).toBe(false);
   });
 
+  it("accepts the errors-only request the failure chip sends", () => {
+    expect(
+      isOpenOptionsMessage({
+        type: OPEN_OPTIONS_MESSAGE,
+        section: "diagnostics",
+        errorsOnly: true,
+      }),
+    ).toBe(true);
+  });
+
+  it("rejects a non-boolean errorsOnly", () => {
+    expect(
+      isOpenOptionsMessage({
+        type: OPEN_OPTIONS_MESSAGE,
+        section: "diagnostics",
+        errorsOnly: "yes",
+      }),
+    ).toBe(false);
+  });
+
   it("rejects a non-object", () => {
     expect(isOpenOptionsMessage(null)).toBe(false);
     expect(isOpenOptionsMessage("abc")).toBe(false);
@@ -105,6 +126,23 @@ describe("isRevealOptionsSectionMessage", () => {
     expect(isRevealOptionsSectionMessage(null)).toBe(false);
     expect(
       isRevealOptionsSectionMessage({ type: OPEN_OPTIONS_MESSAGE, section: "diagnostics" }),
+    ).toBe(false);
+  });
+
+  it("carries the errors-only request, and rejects one that is not a boolean", () => {
+    expect(
+      isRevealOptionsSectionMessage({
+        type: REVEAL_OPTIONS_SECTION_MESSAGE,
+        section: "diagnostics",
+        errorsOnly: true,
+      }),
+    ).toBe(true);
+    expect(
+      isRevealOptionsSectionMessage({
+        type: REVEAL_OPTIONS_SECTION_MESSAGE,
+        section: "diagnostics",
+        errorsOnly: 1,
+      }),
     ).toBe(false);
   });
 });
@@ -155,6 +193,16 @@ describe("optionsPath", () => {
   it("appends the section when one is given", () => {
     expect(optionsPath("diagnostics")).toBe("options/options.html?section=diagnostics");
   });
+
+  it("appends the errors-only request alongside the section", () => {
+    expect(optionsPath("diagnostics", true)).toBe(
+      "options/options.html?section=diagnostics&errorsOnly=true",
+    );
+  });
+
+  it("leaves the errors-only request off when it was not asked for", () => {
+    expect(optionsPath("diagnostics", false)).toBe("options/options.html?section=diagnostics");
+  });
 });
 
 describe("optionsPath / readOptionsSectionFromSearch round-trip", () => {
@@ -170,6 +218,17 @@ describe("optionsPath / readOptionsSectionFromSearch round-trip", () => {
 
   it("returns null for an unrecognized section", () => {
     expect(readOptionsSectionFromSearch("?section=nope")).toBeNull();
+  });
+
+  it("reads back the errors-only request", () => {
+    const path = optionsPath("diagnostics", true);
+    const search = path.slice(path.indexOf("?"));
+    expect(readErrorsOnlyFromSearch(search)).toBe(true);
+  });
+
+  it("reports no errors-only request when it is absent or not the encoded value", () => {
+    expect(readErrorsOnlyFromSearch("?section=diagnostics")).toBe(false);
+    expect(readErrorsOnlyFromSearch("?section=diagnostics&errorsOnly=1")).toBe(false);
   });
 });
 

@@ -24,15 +24,43 @@ export interface ReorderWorkItemMessage {
   previousId: number;
   /** The sibling the item lands before; `0` places it last. */
   nextId: number;
+  /**
+   * The destination level in its POST-drop order — every sibling, including rows a filter hides.
+   *
+   * Sent because ADO's backlog-order endpoint refuses to rank items that hold no backlog position at
+   * all, and the fallback that ranks them by hand has to see the level the user ended up with. The
+   * worker cannot derive it: only the board knows the tree.
+   */
+  siblingIds: number[];
   /** The team whose backlog order is being changed (ADO ranks per team). */
   team: string;
 }
+
+/** Which call of the move was in flight when it failed; absent on success. */
+export type ReorderStage = "relations" | "reparent" | "order";
 
 export interface ReorderWorkItemResponse {
   ok: boolean;
   order?: number;
   rev?: number;
   error?: string;
+  /**
+   * Which call failed, so the caller can tell a refusal to RANK the item apart from a failure to
+   * re-link it. Only the first is worth falling back from: a move whose re-parent never landed has
+   * nothing to rank, because the item is not among the siblings it was ranked against.
+   */
+  stage?: ReorderStage;
+  /**
+   * Whether the hierarchy link was actually changed. Reported even on failure so a move that
+   * re-parented the item and then failed to rank it is not mistaken for one that changed nothing —
+   * a board that keeps showing the old parent would send the same doomed request forever.
+   */
+  reparented?: boolean;
+  /**
+   * Every rank the worker wrote directly, when Azure DevOps refused to order the item itself.
+   * Placing one item can renumber its whole level, so this names each item whose rank changed.
+   */
+  ranks?: readonly { id: number; rank: number }[];
   /**
    * The raw body Azure DevOps returned with a rejected request, truncated.
    *
@@ -72,6 +100,35 @@ export function describeReorderFailure(response: ReorderWorkItemResponse): strin
 }
 
 /**
+ * The Azure DevOps error code for "I will not rank this item", and the plain-English reason for it.
+ *
+ * `TF400486` reads as a concurrency complaint ("you or another user has modified… items"), which
+ * sends a reader hunting for a race that is not there. It is in fact what ADO answers whenever the
+ * item has no position on the team's backlog to rank against — items that carry no rank at all, and
+ * same-category nestings (a User Story under a User Story), which Azure Boards documents as not
+ * orderable at all. Retrying can never clear it, so the log has to say so or the next reader spends
+ * the afternoon on the wrong theory.
+ */
+const SAME_LEVEL_REFUSAL = "TF400486";
+
+/**
+ * A plain-English explanation of a refusal the log should carry beside ADO's own words, or null when
+ * there is nothing to add beyond what Azure DevOps already said.
+ */
+export function explainReorderRefusal(reason: string): string | null {
+  if (!reason.includes(SAME_LEVEL_REFUSAL)) {
+    return null;
+  }
+  return (
+    "Azure DevOps will not rank this item on the team backlog: it has no backlog position to rank " +
+    "against, which happens when the item carries no rank yet or sits under a parent of its own " +
+    "category (a User Story under a User Story). This is not a concurrency problem and retrying " +
+    "cannot clear it \u2014 the rank is written directly instead. " +
+    "See https://learn.microsoft.com/azure/devops/boards/backlogs/resolve-backlog-reorder-issues"
+  );
+}
+
+/**
  * A work item id: a positive integer, since it is interpolated into REST URLs and JSON Patch bodies.
  */
 function isWorkItemId(value: unknown): value is number {
@@ -105,6 +162,28 @@ function idProblem(candidate: Partial<ReorderWorkItemMessage>): string | null {
 }
 
 /**
+ * Why the message's non-id fields are unusable, or null when they are all fine. Split from
+ * `reorderMessageProblem` for the same reason `idProblem` is: neither should grow into one long
+ * chain where a dropped clause hides among the others.
+ */
+function detailProblem(candidate: Partial<ReorderWorkItemMessage>): string | null {
+  // A rev is a monotonically increasing revision count, so a negative one cannot describe any real
+  // item; rejecting it here keeps a nonsense `test /rev` operation from ever reaching ADO.
+  if (typeof candidate.rev !== "number" || !Number.isInteger(candidate.rev) || candidate.rev < 0) {
+    return `rev ${describeValue(candidate.rev)} is not a non-negative integer`;
+  }
+  if (typeof candidate.team !== "string" || candidate.team.trim().length === 0) {
+    return "team is missing or blank (no team is configured in AwesomeADO options)";
+  }
+  // The sibling order is what the hand-written ranking falls back to, and every entry becomes a URL
+  // the worker then calls with the user's session, so it is validated as strictly as the ids above.
+  if (!Array.isArray(candidate.siblingIds) || !candidate.siblingIds.every(isWorkItemId)) {
+    return "siblingIds is not an array of positive integer work item ids";
+  }
+  return null;
+}
+
+/**
  * Why `value` is not a usable reorder request, or null when it is one.
  *
  * A *reason* rather than a bare boolean because the worker's listeners are type-guarded: a message
@@ -120,19 +199,7 @@ export function reorderMessageProblem(value: unknown): string | null {
   if (candidate.type !== REORDER_WORK_ITEM_MESSAGE) {
     return `type is "${String(candidate.type)}", expected "${REORDER_WORK_ITEM_MESSAGE}"`;
   }
-  const ids = idProblem(candidate);
-  if (ids !== null) {
-    return ids;
-  }
-  // A rev is a monotonically increasing revision count, so a negative one cannot describe any real
-  // item; rejecting it here keeps a nonsense `test /rev` operation from ever reaching ADO.
-  if (typeof candidate.rev !== "number" || !Number.isInteger(candidate.rev) || candidate.rev < 0) {
-    return `rev ${describeValue(candidate.rev)} is not a non-negative integer`;
-  }
-  if (typeof candidate.team !== "string" || candidate.team.trim().length === 0) {
-    return "team is missing or blank (no team is configured in AwesomeADO options)";
-  }
-  return null;
+  return idProblem(candidate) ?? detailProblem(candidate);
 }
 
 /** A value rendered for a log line: quoted when a string, so an empty one is not invisible. */

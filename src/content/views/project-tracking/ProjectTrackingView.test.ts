@@ -94,6 +94,7 @@ function createFakeServices(overrides?: Partial<EnhancedViewServices>): Enhanced
     // A configured team by default, so drag-to-reorder is available in the fixtures that exercise it.
     // Tests covering the "no team" degradation override this with null.
     currentTeam: () => "team-guid",
+    openDiagnosticsLog: () => undefined,
     ...overrides,
   };
 }
@@ -517,29 +518,32 @@ describe("ProjectTrackingView — tree rows", () => {
   });
 });
 
+/** Renders a board over `tree` and waits for its two settle ticks. Shared by the outline tests. */
+async function renderOutlineBoard(tree: TrackedWorkItem): Promise<HTMLElement> {
+  const services = createFakeServices({
+    loadTree: async () => ({ isTreeQuery: true, roots: [tree], error: null }),
+  });
+  const context: EnhancedViewContext = {
+    doc: document,
+    queryId: "q1",
+    properties: {},
+    services,
+  };
+  const root = projectTrackingView.render(context);
+  await Promise.resolve();
+  await Promise.resolve();
+  return root;
+}
+
+/** The children container belonging to a twisty's own row. */
+const childrenOf = (twisty: HTMLElement): HTMLElement =>
+  twisty
+    .closest(".awesomeado-tracking__row")
+    ?.parentElement?.querySelector(".awesomeado-tracking__children") as HTMLElement;
+
 describe("ProjectTrackingView — expand & collapse", () => {
   it("should toggle twisty to collapse and expand children", async () => {
-    const doc = document;
-
-    const epic = createFixtureTree();
-    const services = createFakeServices({
-      loadTree: async () => ({
-        isTreeQuery: true,
-        roots: [epic],
-        error: null,
-      }),
-    });
-
-    const context: EnhancedViewContext = {
-      doc,
-      queryId: "q1",
-      properties: {},
-      services,
-    };
-
-    const root = projectTrackingView.render(context);
-    await Promise.resolve();
-    await Promise.resolve();
+    const root = await renderOutlineBoard(createFixtureTree());
 
     const twisty = root.querySelector(".awesomeado-tracking__twisty") as HTMLButtonElement;
     expect(twisty).toBeTruthy();
@@ -549,15 +553,11 @@ describe("ProjectTrackingView — expand & collapse", () => {
     twisty.click();
     expect(twisty.getAttribute("aria-expanded")).toBe("false");
     expect(twisty.textContent).toBe("▶\uFE0E");
-
-    const childrenContainer = twisty
-      .closest(".awesomeado-tracking__row")
-      ?.parentElement?.querySelector(".awesomeado-tracking__children") as HTMLElement;
-    expect(childrenContainer.style.display).toBe("none");
+    expect(childrenOf(twisty).style.display).toBe("none");
 
     twisty.click();
     expect(twisty.getAttribute("aria-expanded")).toBe("true");
-    expect(childrenContainer.style.display).toBe("block");
+    expect(childrenOf(twisty).style.display).toBe("block");
   });
 
   it("should expand all nodes when expand-all clicked", async () => {
@@ -604,6 +604,75 @@ describe("ProjectTrackingView — expand & collapse", () => {
       expect(glyph?.textContent).toBe("▼\uFE0E");
       expect(glyph?.style.fontSize).toBe("8px");
     });
+  });
+});
+
+describe("ProjectTrackingView — the outline survives a repaint", () => {
+  it("keeps a collapsed row collapsed when the board repaints", async () => {
+    const root = await renderOutlineBoard(createFixtureTree());
+
+    const collapsed = root.querySelector(".awesomeado-tracking__twisty") as HTMLButtonElement;
+    collapsed.click();
+    expect(collapsed.getAttribute("aria-expanded")).toBe("false");
+
+    await turnSprintFilterOff(root);
+
+    // A repaint (here the sprint filter; a drag-reorder and a re-sort take the same path) throws the
+    // old rows away, so the outline only survives if the collapsed state is remembered outside the
+    // DOM — otherwise every branch the reader closed springs back open under them.
+    const repainted = root.querySelector(".awesomeado-tracking__twisty") as HTMLButtonElement;
+    expect(repainted).not.toBe(collapsed);
+    expect(repainted.getAttribute("aria-expanded")).toBe("false");
+    expect(repainted.textContent).toBe("▶\uFE0E");
+    expect(childrenOf(repainted).style.display).toBe("none");
+  });
+
+  it("keeps every other row expanded when one is collapsed", async () => {
+    // Two expandable branches, which the shared fixtures do not have: the point of the test is that
+    // the memory is per row, not a single board-wide flag.
+    const root = await renderOutlineBoard(
+      createItem({
+        id: 1,
+        type: "Epic",
+        title: "Epic",
+        children: [
+          createItem({
+            id: 2,
+            type: "Feature",
+            title: "First",
+            children: [createItem({ id: 3, title: "First child" })],
+          }),
+          createItem({
+            id: 4,
+            type: "Feature",
+            title: "Second",
+            children: [createItem({ id: 5, title: "Second child" })],
+          }),
+        ],
+      }),
+    );
+    await turnSprintFilterOff(root);
+
+    const before = [...root.querySelectorAll<HTMLButtonElement>(".awesomeado-tracking__twisty")];
+    expect(before).toHaveLength(2);
+    before[0]!.click();
+
+    await turnSprintFilterOff(root);
+
+    // Only the row the reader closed is remembered as collapsed; the rest keep the default.
+    const after = [...root.querySelectorAll<HTMLButtonElement>(".awesomeado-tracking__twisty")];
+    expect(after.map((twisty) => twisty.getAttribute("aria-expanded"))).toEqual(["false", "true"]);
+  });
+
+  it("keeps a row collapsed by collapse-all collapsed across a repaint", async () => {
+    const root = await renderOutlineBoard(createFixtureTree());
+
+    (root.querySelector(".awesomeado-tracking__collapse-all") as HTMLButtonElement).click();
+    await turnSprintFilterOff(root);
+
+    // collapse-all has to record what it did for the same reason a single toggle does.
+    const repainted = root.querySelector(".awesomeado-tracking__twisty") as HTMLButtonElement;
+    expect(repainted.getAttribute("aria-expanded")).toBe("false");
   });
 });
 
@@ -1263,6 +1332,43 @@ describe("ProjectTrackingView — write-queue indicator", () => {
       await Promise.resolve();
     }
     expect(indicator.style.display).toBe("none");
+  });
+
+  it("takes the user to the diagnostics log when the failure chip is clicked", async () => {
+    const doc = document;
+
+    const epic = createFixtureTree();
+    let openedLog = 0;
+    const services = createFakeServices({
+      loadTree: async () => ({ isTreeQuery: true, roots: [epic], error: null }),
+      // A rejected write leaves this persist-then-reflect board looking unchanged, so the chip is the
+      // only evidence of the loss — and it has room for a count, not the cause.
+      writeField: async () => ({ ok: false, error: "TF401232: work item does not exist" }),
+      openDiagnosticsLog: () => {
+        openedLog += 1;
+      },
+    });
+
+    const context: EnhancedViewContext = { doc, queryId: "q1", properties: {}, services };
+    const root = projectTrackingView.render(context);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const firstBadge = root.querySelector(".awesomeado-status__badge") as HTMLElement;
+    firstBadge.click();
+    await Promise.resolve();
+    const doneRow = root.querySelector(".awesomeado-status__row") as HTMLButtonElement;
+    doneRow.click();
+    for (let tick = 0; tick < 6; tick += 1) {
+      await Promise.resolve();
+    }
+
+    const indicator = root.querySelector(".awesomeado-write-queue-status") as HTMLElement;
+    expect(indicator.textContent).toContain("Couldn't save 1 change");
+
+    indicator.click();
+
+    expect(openedLog).toBe(1);
   });
 });
 

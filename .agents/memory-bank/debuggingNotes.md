@@ -9,6 +9,53 @@ we hit, why they happened, and the exact fix so nobody re-derives them.
 agent-tool-local memory (it does not clone or transfer between machines/agents). Record new findings
 here so every agent, teammate, and clone sees them.
 
+## A new setting needs THREE edits in `BrowserSyncSettingsStore`, or it silently never saves
+
+- `markerTags` shipped as a real `ExtensionSettings` field with a normalizer, a UI, and a
+  `store.write({ markerTags })` call — but it was never added to `SETTING_KEYS`,
+  `SETTING_WRITE_MAP`, or `projectSettings`. `write` skips a name it has no key for, so the promise
+  RESOLVED, the UI reported success, and the value was gone on the next read. Nothing logged,
+  because `write` only logs the settings it actually wrote.
+- Adding a setting therefore means all four of: the `ExtensionSettings` field + normalizer, a
+  `settings.<name>` key in `SETTING_KEYS`, a `SETTING_WRITE_MAP` row, and a line in
+  `projectSettings`. Miss any of the last three and the setting is write-only fiction.
+- Watch for this shape generally: a table-driven writer that silently ignores unknown keys turns a
+  missing registration into a success-reporting no-op.
+
+## Never persist a whole section by re-scraping its DOM on every edit
+
+- `MarkerTagsController` used to answer every `change` by re-reading all eight inputs and writing the
+  full `markerTags` map. That makes each save only as trustworthy as the ENTIRE form's current DOM:
+  one perturbed control (a value the browser restored into the wrong input on session restore, a row
+  still showing pre-import values because nothing re-rendered after an import) is written under a
+  NEIGHBOURING key and silently replaces a value the user never touched. The failure is invisible —
+  the write succeeds and the status line says "saved".
+- Fix pattern: persist a **targeted patch**. The edited control names its own record (its row's
+  `data-marker`) and its own field (its `data-role`); every other record is carried over from the
+  last accepted snapshot, never re-read. A stray DOM value can then only ever affect its own field.
+- Reproduction technique worth reusing: copy `dist/options/*` to a scratch folder, insert a small
+  `chrome.*` shim script (in-memory `storage.sync`/`local` backed by `localStorage` so a reload
+  survives) before `options.js`, serve it over `http://127.0.0.1`, and drive it with the browser
+  tools. `file://` is blocked by the browser tool. That runs the REAL built page end to end without
+  packaging or signing anything.
+- Still open (reproduced, not yet fixed): after an **import**, the options page's Azure DevOps tab is
+  not re-rendered — storage holds the imported values while the fields still show the old ones, so
+  the next edit in that tab writes stale values back over the import.
+
+## A page section that "loads once" must be told when its store is replaced from outside
+
+- Options-page controllers split into two kinds: those that SUBSCRIBE (`OptionsController`,
+  `ConfigurationBannerController`, `DiagnosticsController` — they call `store.observe`) and those
+  that READ ONCE at load and then treat their own DOM / in-memory map as the working copy
+  (`AzureDevOpsController`, `QueryBindingsController`). Only the first kind follows a configuration
+  file **import**; the second kept showing the configuration the file had just replaced until the tab
+  was closed and re-opened, and its next save wrote those stale values back over the import.
+- Fix: `SettingsTransferController` takes an `onImported` callback and fires it after both stores are
+  written; `src/options/index.ts` collects a `reloadAfterImport` list that each read-once controller
+  registers with, calling its new `reload()`. Any future read-once section must register there too.
+- The reverse trap also exists: do not "fix" this by making every section subscribe. A form that
+  re-renders under the user's fingers on every synced change would discard half-typed input.
+
 ## Ordering + resolved-window on the Project Tracking board
 
 - Sort keys must be FETCHED. `orderItems` needs `importance`, so `TRACKING_FIELDS` now asks ADO for
@@ -30,6 +77,29 @@ here so every agent, teammate, and clone sees them.
   rollup's `completed / total` chip can never disagree with the rows the board is showing.
 - Adding a required field to `TrackedWorkItem` breaks every object-literal fixture. Run `pnpm typecheck`
   first and fix exactly the files it lists.
+
+## TF400486 on a drag-reorder is NOT a concurrency problem (ADR-042)
+
+- SYMPTOM: dropping a row logs `order HTTP 400: TF400486: Unable to complete the operation because you
+or another user has modified, removed, or re-parented items, or you are trying to reorder an item
+outside of its immediate parent.` — every single time, for the same item, with an unchanged `rev`.
+- DO NOT chase a stale `rev`. The failing call is `_apis/work/workitemsorder`, and the order request
+  carries **no rev at all** (only `{ ids, parentId, previousId, nextId }`). If the log says
+  `stage: "order"`, revisions are irrelevant. A rev problem would fail at the `reparent` stage instead.
+- ROOT CAUSE: that endpoint only ranks items that already hold a position on the **team's backlog**.
+  Two things put an item outside it, both permanent: an empty `Microsoft.VSTS.Common.StackRank` (never
+  ranked — common for Features here), and a parent of the item's own category (story→story,
+  feature→feature), which Azure Boards
+  [documents as not orderable](https://learn.microsoft.com/azure/devops/boards/backlogs/resolve-backlog-reorder-issues).
+- FIX (ADR-042): `common/ado/rankFallback` writes `IMPORTANCE_FIELD` directly when the order stage is
+  refused. Same approach as the team's PowerShell tracker at
+  `…/ESP-MiddleTier-Team/.tools/ADO/View-ProjectTracking` (`Set-ProjectTrackingOrderByRank`), which hit
+  and solved this first — check it when an ADO write behaves oddly, it is a working reference.
+- Reading the log: the content side logs the raw ADO sentence and then `explainReorderRefusal`'s
+  plain-English line; the background logs which items were re-ranked and whether the level was
+  renumbered. If a drop "worked" but the row jumped somewhere odd, look for `renumbered` there.
+- Reordering DOES bump `System.Rev` (the rank is a field on the item) but the order API never reports
+  the new rev — so never treat a post-move cached rev as authoritative.
 
 ## Terminology (per developer, use consistently)
 

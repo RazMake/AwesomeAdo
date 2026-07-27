@@ -576,6 +576,72 @@ describe("renderWriteQueueStatus - dismissing the failed chip from the keyboard"
   });
 });
 
+describe("renderWriteQueueStatus - opening the log from the failed chip", () => {
+  it("hands the user off to the log when the chip is clicked", () => {
+    let opened = 0;
+    const handle = renderWriteQueueStatus(document, { onOpenLog: () => (opened += 1) });
+    handle.setFailedCount(1, "order HTTP 409");
+
+    handle.element.click();
+
+    // The chip reports a count; the cause only exists in the log, so activating it must go there.
+    expect(opened).toBe(1);
+  });
+
+  it("hands the user off to the log from the keyboard too", () => {
+    let opened = 0;
+    const handle = renderWriteQueueStatus(document, { onOpenLog: () => (opened += 1) });
+    handle.setFailedCount(1);
+
+    pressChipKey(handle.element, "Enter");
+    handle.setFailedCount(2);
+    pressChipKey(handle.element, " ");
+
+    expect(opened).toBe(2);
+  });
+
+  it("promises the log in the tooltip only when it can actually open one", () => {
+    const linked = renderWriteQueueStatus(document, { onOpenLog: () => {} });
+    const unlinked = renderWriteQueueStatus(document);
+
+    linked.setFailedCount(1);
+    unlinked.setFailedCount(1);
+
+    // A chip that says "click for details" while nothing is wired up would be lying about itself.
+    expect(linked.element.title).toBe(
+      "Click to see the details in the AwesomeADO Diagnostics log.",
+    );
+    expect(unlinked.element.title).toBe(
+      "See the AwesomeADO Diagnostics log for details. Click to dismiss.",
+    );
+  });
+
+  it("still dismisses the chip it opened the log for", () => {
+    const handle = renderWriteQueueStatus(document, { onOpenLog: () => {} });
+    handle.setFailedCount(1);
+
+    handle.element.click();
+
+    // Reading the failure in the log IS the acknowledgement, so the corner goes quiet again.
+    expect(handle.element.style.display).toBe("none");
+    expect(labelOf(handle.element)).toBe("");
+  });
+
+  it("does not open the log for a click on a chip that is not reporting a failure", () => {
+    let opened = 0;
+    const handle = renderWriteQueueStatus(document, { count: 2, onOpenLog: () => (opened += 1) });
+
+    // Saving, then dismissed: neither is a failure the user asked for details about, so a stray
+    // click on the corner must not steal focus with a new log tab.
+    handle.element.click();
+    handle.setFailedCount(1);
+    handle.element.click();
+    handle.element.click();
+
+    expect(opened).toBe(1);
+  });
+});
+
 describe("renderWriteQueueStatus - the dismiss affordance", () => {
   it("becomes clickable and focusable only once a write has been lost", () => {
     const handle = renderWriteQueueStatus(document, { count: 2 });

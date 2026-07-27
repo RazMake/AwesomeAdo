@@ -24,6 +24,13 @@ export interface WorkItemReorderRequest {
   previousId: number;
   /** The sibling the item lands before; `0` places it last in the level. */
   nextId: number;
+  /**
+   * The destination level in its POST-drop order — every sibling, including rows a filter hides.
+   *
+   * Needed because Azure DevOps refuses to rank items that hold no backlog position, and the rank
+   * written by hand in that case is derived from the level the user ended up with.
+   */
+  siblingIds: readonly number[];
   /** The team whose backlog order is being changed (ADO ranks per team). */
   team: string;
 }
@@ -39,6 +46,18 @@ export interface WorkItemReorderResult {
   order?: number;
   /** The item's new `System.Rev` when the re-parent patch ran; undefined when the parent was kept. */
   rev?: number;
+  /**
+   * Whether the hierarchy link was changed, reported even when the move then failed to rank the
+   * item. A caller that leaves its tree untouched after a failed move would otherwise keep showing
+   * the old parent and resend a request Azure DevOps has already applied.
+   */
+  reparented?: boolean;
+  /**
+   * Every rank written directly, when Azure DevOps refused to rank the item itself. Placing an item
+   * can renumber its whole level, so this names each item whose rank changed — not just the moved
+   * one — and the caller refreshes all of them or its next re-sort scrambles the level.
+   */
+  ranks?: readonly { id: number; rank: number }[];
   /** A short error description when ok is false. */
   error?: string;
 }

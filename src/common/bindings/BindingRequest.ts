@@ -56,6 +56,16 @@ function isOptionsSection(value: unknown): value is OptionsSection {
   return typeof value === "string" && (OPTIONS_SECTIONS as readonly string[]).includes(value);
 }
 
+/**
+ * Whether a request that reveals the Diagnostics log also asks for its "errors only" filter. Sent by
+ * callers pointing the user at a specific failure (the board's "Couldn't save…" chip), so the log
+ * opens on the failure instead of on whatever informational lines happen to be newest. Validated in
+ * one place because both the open and the reveal message carry it.
+ */
+function hasValidErrorsOnly(candidate: { errorsOnly?: unknown }): boolean {
+  return candidate.errorsOnly === undefined || typeof candidate.errorsOnly === "boolean";
+}
+
 export interface OpenOptionsMessage {
   type: typeof OPEN_OPTIONS_MESSAGE;
   /**
@@ -63,6 +73,8 @@ export interface OpenOptionsMessage {
    * the general options page should open on its default tab.
    */
   section?: OptionsSection;
+  /** Turn the revealed Diagnostics log's "errors only" filter on. Ignored for any other section. */
+  errorsOnly?: boolean;
 }
 
 export function isOpenOptionsMessage(value: unknown): value is OpenOptionsMessage {
@@ -72,7 +84,8 @@ export function isOpenOptionsMessage(value: unknown): value is OpenOptionsMessag
   const candidate = value as Partial<OpenOptionsMessage>;
   return (
     candidate.type === OPEN_OPTIONS_MESSAGE &&
-    (candidate.section === undefined || isOptionsSection(candidate.section))
+    (candidate.section === undefined || isOptionsSection(candidate.section)) &&
+    hasValidErrorsOnly(candidate)
   );
 }
 
@@ -87,6 +100,8 @@ export const REVEAL_OPTIONS_SECTION_MESSAGE = "awesomeado:reveal-options-section
 export interface RevealOptionsSectionMessage {
   type: typeof REVEAL_OPTIONS_SECTION_MESSAGE;
   section: OptionsSection;
+  /** Turn the revealed Diagnostics log's "errors only" filter on. Ignored for any other section. */
+  errorsOnly?: boolean;
 }
 
 export function isRevealOptionsSectionMessage(
@@ -96,7 +111,11 @@ export function isRevealOptionsSectionMessage(
     return false;
   }
   const candidate = value as Partial<RevealOptionsSectionMessage>;
-  return candidate.type === REVEAL_OPTIONS_SECTION_MESSAGE && isOptionsSection(candidate.section);
+  return (
+    candidate.type === REVEAL_OPTIONS_SECTION_MESSAGE &&
+    isOptionsSection(candidate.section) &&
+    hasValidErrorsOnly(candidate)
+  );
 }
 
 /**
@@ -128,6 +147,8 @@ export function isRevealBindingSettingsMessage(
 const QUERY_ID_PARAM = "queryId";
 const QUERY_NAME_PARAM = "queryName";
 const SECTION_PARAM = "section";
+const ERRORS_ONLY_PARAM = "errorsOnly";
+const ERRORS_ONLY_VALUE = "true";
 const OPTIONS_PAGE = "options/options.html";
 
 /**
@@ -145,14 +166,18 @@ export function bindingSettingsPath(queryId: string, queryName?: string): string
 
 /**
  * The extension-relative options-page URL. Passing a `section` deep-links into that tab (e.g.
- * "diagnostics" for "View Log"); with no section the page opens on its default tab. Pass the result
- * to `chrome.runtime.getURL`.
+ * "diagnostics" for "View Log"); with no section the page opens on its default tab. `errorsOnly`
+ * additionally asks the Diagnostics log to open filtered to errors. Pass the result to
+ * `chrome.runtime.getURL`.
  */
-export function optionsPath(section?: OptionsSection): string {
+export function optionsPath(section?: OptionsSection, errorsOnly = false): string {
   if (section === undefined) {
     return OPTIONS_PAGE;
   }
   const params = new URLSearchParams({ [SECTION_PARAM]: section });
+  if (errorsOnly) {
+    params.set(ERRORS_ONLY_PARAM, ERRORS_ONLY_VALUE);
+  }
   return `${OPTIONS_PAGE}?${params.toString()}`;
 }
 
@@ -172,6 +197,11 @@ export function readQueryNameFromSearch(search: string): string | null {
 export function readOptionsSectionFromSearch(search: string): OptionsSection | null {
   const value = new URLSearchParams(search).get(SECTION_PARAM);
   return isOptionsSection(value) ? value : null;
+}
+
+/** Whether the options-page URL asks the Diagnostics log to open with "errors only" turned on. */
+export function readErrorsOnlyFromSearch(search: string): boolean {
+  return new URLSearchParams(search).get(ERRORS_ONLY_PARAM) === ERRORS_ONLY_VALUE;
 }
 
 // One place maps a deep-linkable section to the options-page tab element that presents it, so the

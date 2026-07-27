@@ -222,6 +222,7 @@ describe("EnhancedViewSurface - keep-alive", () => {
       writeField: () => Promise.resolve({ ok: true }),
       reorderItem: () => Promise.resolve({ ok: true }),
       currentTeam: () => null,
+      openDiagnosticsLog: () => {},
     };
     const surfaceWithServices = new EnhancedViewSurface(document, fakeServices);
 

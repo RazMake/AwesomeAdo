@@ -139,6 +139,12 @@
         color: var(--text-muted);
         font-size: 13px;
       }
+      /* A failed (or only partly applied) import differs from a clean one by wording alone, on a
+         line the reader has already learned to skim as "done" — so the colour is what makes it
+         land. Same red as the page-level .status and .banner--error. */
+      .card__hint--error {
+        color: #e06c75;
+      }
       .field {
         display: flex;
         flex-direction: column;
@@ -312,6 +318,14 @@
       .marker-tags-row input {
         min-width: 0;
       }
+      /* Both lists stack bordered controls whose focus outline sits just outside the box, so the
+         rows need a sliver of breathing room or the next row clips that outline. */
+      .marker-tags__list,
+      .work-item-eta__list {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+      }
       .button--subtle {
         align-self: flex-start;
         background: transparent;
@@ -347,6 +361,12 @@
         vertical-align: top;
         text-align: left;
       }
+      /* Each column header stacks a variable-length "meaning" above its title box, so top-aligning
+         the cells would leave the five title boxes stepping up and down across the header. Bottom
+         alignment lands every box on the same line no matter how far its description wraps. */
+      .wit-table thead th {
+        vertical-align: bottom;
+      }
       .wit-corner {
         background: var(--surface);
         font-size: 13px;
@@ -364,6 +384,17 @@
       .wit-col__name {
         width: 100%;
         font-weight: 600;
+      }
+      /* What each fixed column MEANS to the views, shown above its (renameable) title, because the
+         views read a column by position and the title alone no longer says which one it is. */
+      .wit-col__meaning {
+        display: block;
+        margin-bottom: 6px;
+        color: var(--text-muted);
+        font-size: 11px;
+        font-weight: 400;
+        line-height: 1.3;
+        white-space: normal;
       }
       .wit-col__delete {
         appearance: none;
@@ -421,6 +452,22 @@
       .wit-type__icon {
         flex: 0 0 auto;
       }
+      /* The shared type label (ADO's icon + colored name) every list mirroring the table renders. */
+      .wit-type-label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+        font-weight: 600;
+      }
+      .wit-type-label__icon {
+        flex: 0 0 auto;
+      }
+      .wit-type-label__name {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
       /* ETA fields: a read-only list mirroring the committed types, each with a date-field picker. */
       .work-item-eta {
         display: flex;
@@ -437,26 +484,62 @@
         align-items: center;
         gap: 12px;
       }
-      .wit-eta-row__type {
-        display: flex;
-        align-items: center;
-        gap: 8px;
+      .wit-eta-row .wit-type-label {
         flex: 0 0 200px;
-        min-width: 0;
-        font-weight: 600;
-      }
-      .wit-eta-row__name {
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-      .wit-eta-row__icon {
-        flex: 0 0 auto;
       }
       .wit-eta-row__field {
         flex: 1 1 auto;
         min-width: 0;
         max-width: 384px;
+      }
+      /* Hierarchy: one row per committed type listing the types it can parent, first = default. */
+      .work-item-hierarchy {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      .work-item-hierarchy__empty {
+        margin: 0;
+        color: var(--text-muted);
+        font-size: 13px;
+      }
+      .wit-child-row__parent {
+        background: var(--bg);
+        min-width: 176px;
+      }
+      .wit-child-row__children .combobox {
+        flex: 1 1 140px;
+        min-width: 110px;
+      }
+      /* Shared by every chip list (mapping-table cells and hierarchy rows): the searchable picker
+         stays folded behind this "+" so a cell reads as its chips alone, and the button itself
+         disappears once there is nothing left to add. */
+      .wit-chip-add {
+        appearance: none;
+        flex: 0 0 auto;
+        width: 22px;
+        height: 22px;
+        padding: 0;
+        border: 1px dashed var(--border);
+        border-radius: 999px;
+        background: transparent;
+        color: var(--text-muted);
+        font-size: 14px;
+        line-height: 1;
+        cursor: pointer;
+      }
+      .wit-chip-add:hover {
+        color: var(--accent);
+        border-color: var(--accent);
+      }
+      .wit-chip-add:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 1px;
+      }
+      /* The "Leaf Item" marker reads as muted, non-interactive text rather than a real type. */
+      .combobox__option.wit-child-option--leaf {
+        color: var(--text-muted);
+        font-style: italic;
       }
       /* Match the column header's X control so removing a row and a column look the same. */
       .wit-row__delete {
@@ -478,7 +561,8 @@
         outline: 2px solid var(--accent);
         outline-offset: 1px;
       }
-      .wit-cell__states {
+      .wit-cell__states,
+      .wit-child-row__children {
         display: flex;
         flex-wrap: wrap;
         align-items: center;
@@ -488,7 +572,8 @@
         flex: 1 1 120px;
         min-width: 90px;
       }
-      .wit-state {
+      .wit-state,
+      .wit-child {
         display: inline-flex;
         align-items: center;
         gap: 4px;
@@ -499,8 +584,20 @@
         font-size: 12px;
         cursor: grab;
       }
-      /* Feedback while a chip is being dragged to a new position within its column. */
-      .wit-state--dragging {
+      /* The "Leaf Item" marker is UX only — it says the row is deliberately empty, so it is muted,
+         carries no remove control, and cannot be dragged. Its padding is symmetric because there is
+         no remove button to leave room for on the right. Must follow the rule above: same
+         specificity, so only source order lets it win. */
+      .wit-child--leaf {
+        padding: 2px 10px;
+        border-style: dashed;
+        color: var(--text-muted);
+        font-style: italic;
+        cursor: default;
+      }
+      /* Feedback while a chip is being dragged to a new position within its column or row. */
+      .wit-state--dragging,
+      .wit-child--dragging {
         opacity: 0.5;
         cursor: grabbing;
       }
@@ -516,14 +613,17 @@
       .wit-row--drop-before > td {
         box-shadow: inset 0 2px 0 0 var(--accent);
       }
-      /* The primary chip is the value AwesomeADO writes back to ADO for this application state. */
-      .wit-state--primary {
+      /* The primary chip is the value AwesomeADO writes back to ADO for this application state; the
+         default child is the type a view creates when the user adds a child. Both lead their list. */
+      .wit-state--primary,
+      .wit-child--default {
         border-color: var(--accent);
         background: var(--surface-hover);
         color: var(--accent);
         font-weight: 600;
       }
-      .wit-state__remove {
+      .wit-state__remove,
+      .wit-child__remove {
         appearance: none;
         border: none;
         background: transparent;
@@ -534,13 +634,16 @@
         padding: 0 4px;
         border-radius: 999px;
       }
-      .wit-state--primary .wit-state__remove {
+      .wit-state--primary .wit-state__remove,
+      .wit-child--default .wit-child__remove {
         color: var(--accent);
       }
-      .wit-state__remove:hover {
+      .wit-state__remove:hover,
+      .wit-child__remove:hover {
         color: var(--accent);
       }
-      .wit-state__remove:focus-visible {
+      .wit-state__remove:focus-visible,
+      .wit-child__remove:focus-visible {
         outline: 2px solid var(--accent);
         outline-offset: 1px;
       }
@@ -1123,6 +1226,37 @@
                 Add work item type
               </button>
             </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2 class="card__title">Work item type hierarchy</h2>
+          <p class="card__hint">
+            For each work item type, list the types that can be created underneath it. The rows
+            follow the work item types configured above. Use <strong>+</strong> to pick a child —
+            only types listed <em>below</em> this one are offered, so the hierarchy always runs
+            downwards and the last type is always a <strong>Leaf Item</strong>. Types that already
+            sit under the <em>same</em> parent are <strong>siblings</strong> and are not offered to
+            each other, so one alternative can never become part of another. The
+            <strong>first</strong> type in a row is highlighted — it is the one created when you add
+            a child in a view; drag the types to change that order.
+          </p>
+
+          <div class="work-item-hierarchy">
+            <div class="wit-table-wrap">
+              <table class="wit-table">
+                <thead>
+                  <tr>
+                    <th class="wit-corner" scope="col">Work item type</th>
+                    <th class="wit-col" scope="col">Child work item types</th>
+                  </tr>
+                </thead>
+                <tbody id="ado-wit-hierarchy"></tbody>
+              </table>
+            </div>
+            <p class="work-item-hierarchy__empty" id="ado-wit-hierarchy-empty" hidden>
+              Add a work item type above to configure its children.
+            </p>
           </div>
         </div>
 

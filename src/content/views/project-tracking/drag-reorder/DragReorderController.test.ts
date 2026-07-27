@@ -280,7 +280,7 @@ describe("DragReorderController - completing a drop", () => {
     const event = drop(board, 3, 55);
 
     expect(board.moves).toEqual([
-      { id: 1, currentParentId: 10, parentId: 10, previousId: 3, nextId: 0 },
+      { id: 1, currentParentId: 10, parentId: 10, previousId: 3, nextId: 0, siblingIds: [2, 3, 1] },
     ]);
     expect(event.defaultPrevented).toBe(true);
   });
@@ -292,7 +292,7 @@ describe("DragReorderController - completing a drop", () => {
     drop(board, 4, 105);
 
     expect(board.moves).toEqual([
-      { id: 1, currentParentId: 10, parentId: 20, previousId: 0, nextId: 4 },
+      { id: 1, currentParentId: 10, parentId: 20, previousId: 0, nextId: 4, siblingIds: [1, 4, 5] },
     ]);
   });
 

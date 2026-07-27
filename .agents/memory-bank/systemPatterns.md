@@ -61,7 +61,10 @@ work; it is pure file movement and was deliberately not bundled with correctness
 
 `ExtensionSettings` (`theme`, `defaultView`) + `normalizeSettings`; `ISettingsStore` implemented by
 `BrowserSyncSettingsStore` (one synced key per setting); `createSettingsStore()` composition
-factory.
+factory. `workItemTypes` carries the type→child links; `normalizeSettings` is the **only** place the
+acyclic invariant is enforced (via `workItemHierarchy.reachesWorkItemType`, shared with the options
+picker), because both storage reads and config import funnel through it — so no consumer walking the
+hierarchy recursively has to defend against a loop.
 
 ### `src/common/bindings`
 
@@ -96,6 +99,17 @@ so a policy a build no longer offers falls back rather than reaching a comparato
 `AwesomeAdoConfig` — `exportConfig`/`importConfig` (+ `CONFIG_FILE_NAME`) serialize the whole
 configuration (all settings + every binding) to/from an `AwesomeADO.config` file, normalizing on the
 way in and out. Pure data plumbing; the options-side wiring lives in `src/options/settings-transfer`.
+
+An import is **salvaging, not all-or-nothing**: `importConfig` returns
+`{ settings: Partial<ExtensionSettings>, enhancedQueries, problems }`, applying every value the file
+supplies usably and describing each one it does not in `problems`. The partial is the point — a
+setting the file omits (older export) or gets wrong keeps the user's current value instead of being
+reset to a default the file never asked for. `ConfigImportError` is thrown only when the file yields
+nothing at all (unparseable / missing a whole section), because an import replaces both stores
+wholesale. A non-empty `problems` list is treated by the caller as a **failure**: logged and shown in
+red, never a footnote under a success message. This is the one place normalization is deliberately
+NOT silent — the normalizers repair storage so a running extension is never stopped by a stale
+value, but an import is the user's own file, which they can fix.
 
 ### `src/common/navigation`
 
@@ -133,7 +147,10 @@ Split into component subfolders (each with its own `README.md`):
 Split into component subfolders (each with its own `README.md`):
 
 - `appearance/` — `OptionsController` + the `theme` resolver (the Appearance panel).
-- `ado-config/` — `AzureDevOpsController` + `WorkItemTypesController` + the reusable `AutocompleteInput`.
+- `ado-config/` — `AzureDevOpsController` + `WorkItemTypesController` (which owns the ETA and
+  `WorkItemHierarchyController` sections, because all three are stored on the one `workItemTypes`
+  setting and a single writer keeps them in sync) + the reusable `AutocompleteInput` and
+  `createTypeLabel`.
 - `query-bindings/` — `QueryBindingsController` (bind/edit/delete query mappings).
 - `settings-transfer/` — `SettingsTransferController` (Appearance-tab import/export of the whole
   configuration, spanning both stores).

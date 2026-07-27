@@ -22,7 +22,7 @@ interface ExtensionSettings {
   pastSprintsCount: number; // sprints offered before the current one, 0..6 (default: 0)
   areaPaths: AreaPath[]; // pinned area paths, each { path, label }  (default: [])
   boardColumns: string[]; // mapping-table columns, fixed set of 5 (default: In Queue/In Progress/Waiting/Done/Removed)
-  workItemTypes: WorkItemType[]; // per-type board-column mapping           (default: [])
+  workItemTypes: WorkItemType[]; // per-type board-column mapping + children (default: [])
   markerTags: WorkItemMarkerTags; // per-condition ADO tag + comment token   (default: DEFAULT_MARKER_TAGS)
 }
 ```
@@ -41,8 +41,9 @@ value is missing or unrecognized. The focused helpers `normalizeFutureSprintsCou
 (the path's last `\`-separated segment), `normalizeBoardColumns(raw)` (coerces to the fixed
 `BOARD_COLUMN_COUNT` positions, keeping each stored title by position and filling blanks/collisions
 from `DEFAULT_BOARD_COLUMNS`), and `normalizeWorkItemTypes(raw)` (drops
-nameless/duplicate types and empty-state/duplicate columns, routes each state to a single column, and
-keeps a trimmed per-type `etaField` only when set) are exported for the options UI so a stored value
+nameless/duplicate types and empty-state/duplicate columns, routes each state to a single column,
+keeps a trimmed per-type `etaField` only when set, and prunes every `children` link that names an
+unknown type or would close a cycle) are exported for the options UI so a stored value
 and a freshly typed one derive the same default.
 `normalizeMarkerTags(raw)` (seeds the full `DEFAULT_MARKER_TAGS` for a never-set value, seeds only the
 missing markers from a partial object, and trims both tokens while honoring a deliberately blanked
@@ -112,7 +113,9 @@ unsubscribe();
   shared by every work item type; only each column's _title_ is user-editable (rename — columns
   cannot be added or removed). A fresh install seeds `DEFAULT_BOARD_COLUMNS` (`In Queue`,
   `In Progress`, `Waiting`, `Done`, `Removed`); the first column is the fallback bucket for any ADO
-  state a type does not explicitly map.
+  state a type does not explicitly map. `BOARD_COLUMN_MEANINGS` states what each **position** means
+  to the views (work on the item has not started yet, someone is working on the item, …); the options UI shows it above each
+  renameable title, since behaviour follows the position and never the title.
 - **`workItemTypes`** is the list of work item types the team uses. Each entry stores the type's ADO
   `name`, `color`, and `icon` URL (so a row renders even with no ADO tab open) plus its `columns`:
   an ordered list of `{ column, states }` that maps the type's ADO states onto the user's
@@ -120,7 +123,15 @@ unsubscribe();
   column's _primary_ state (the value written back to ADO). Each entry may also carry an optional
   `etaField` — the ADO date field surfaced as that type's "ETA" (e.g.
   `Microsoft.VSTS.Scheduling.TargetDate`). It is per-type with no global default, and is omitted
-  from storage when left blank.
+  from storage when left blank. An entry may finally carry `children`: the types that can be created
+  underneath it, in priority order, where the **first** is the one a view creates when the user adds
+  a child. It is omitted for a leaf, and the stored graph is always acyclic.
+
+### `workItemHierarchy.ts`
+
+`reachesWorkItemType(links, start, target)` answers "would adding this parent→child link close a
+loop?". The normalizer uses it to prune stored and imported links; the options picker uses it to
+refuse to offer one — so both apply exactly the same rule. Names are compared lowercased.
 
 All values sync across all of the user's devices via `chrome.storage.sync`.
 
@@ -128,7 +139,7 @@ All values sync across all of the user's devices via `chrome.storage.sync`.
 
 Each setting maps to its own storage key (e.g., `settings.theme`, `settings.defaultView`,
 `settings.currentTeam`, `settings.futureSprintsCount`, `settings.pastSprintsCount`,
-`settings.areaPaths`, `settings.boardColumns`,
-`settings.workItemTypes`). This means adding a new setting in a future version does not risk a
+`settings.areaPaths`, `settings.boardColumns`, `settings.workItemTypes`,
+`settings.markerTags`). This means adding a new setting in a future version does not risk a
 read-modify-write race overwriting the new key with `undefined` on older installs still using a
 full-settings-object key.

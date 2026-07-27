@@ -53,7 +53,7 @@ import { renderViewScaffold } from "../../../common/view-common/control/ViewScaf
 import { renderWriteQueueStatus } from "../../../common/view-common/control/WriteQueueStatus/WriteQueueStatus";
 
 import { DragReorderController, type PlannedMove } from "./drag-reorder/DragReorderController";
-import { applyMoveToTree } from "./drag-reorder/applyMoveToTree";
+import { applyMoveToTree, applyRanksToTree } from "./drag-reorder/applyMoveToTree";
 import { renderProjectTrackingHeader } from "./header/ProjectTrackingHeader";
 import {
   hideResolvedAfterDays,
@@ -417,8 +417,17 @@ interface TreeRenderOptions {
   showSprintPills: boolean;
   /** How every assignee chip on this pass offers people and persists a pick. */
   chip: AssigneeChipContext;
-  /** Collects every twisty rendered in this pass so expand-all/collapse-all can drive them. */
-  allTwisties: HTMLButtonElement[];
+  /** Collects every expandable row rendered in this pass so expand-all/collapse-all can drive them. */
+  expandableRows: ExpandableRow[];
+  /**
+   * The rows the user has collapsed, by work item id.
+   *
+   * The board repaints on far more than a reload — a drag-reorder, a re-sort, a filter change — and
+   * each pass builds brand-new elements, so without this every one of those would spring the whole
+   * outline back open under the reader. Collapsed ids (rather than expanded ones) are remembered
+   * because expanded is the default: a row that appears later is then open like every other new row.
+   */
+  collapsedIds: Set<number>;
   /** The color the rolled-up child badge tints from; null leaves it a neutral chip. */
   minorChildColor: string | null;
   /**
@@ -428,6 +437,17 @@ interface TreeRenderOptions {
    * refuses every drop.
    */
   dragReorder: DragReorderController | null;
+}
+
+/**
+ * One expandable row from a render pass: the twisty plus the item it belongs to.
+ *
+ * The id travels with the button because expand-all/collapse-all must record what it did, and a
+ * button alone cannot say which work item it opened or closed.
+ */
+interface ExpandableRow {
+  id: number;
+  twisty: HTMLButtonElement;
 }
 
 /**
@@ -934,15 +954,40 @@ function renderRow(
   const rowWrapper = doc.createElement("div");
   rowWrapper.append(row, descPanel, childrenContainer);
 
-  // Wire twisty toggle.
   if (twisty) {
-    twisty.addEventListener("click", () => {
-      const isExpanded = twisty.getAttribute("aria-expanded") === "true";
-      setTwistyExpanded(twisty, childrenContainer, !isExpanded);
-    });
+    wireTwisty(twisty, childrenContainer, item.id, options.collapsedIds);
   }
 
   return { row: rowWrapper, childrenContainer, twisty, line: row, title: titleSpan };
+}
+
+/**
+ * Restores a row to the state the reader left it in, and remembers every toggle from then on.
+ *
+ * The restore happens on EVERY pass, not just the first: a repaint discards the elements the reader
+ * was looking at, so a branch they closed would otherwise reopen behind their back.
+ */
+function wireTwisty(
+  twisty: HTMLButtonElement,
+  childrenContainer: HTMLElement,
+  id: number,
+  collapsedIds: Set<number>,
+): void {
+  setTwistyExpanded(twisty, childrenContainer, !collapsedIds.has(id));
+  twisty.addEventListener("click", () => {
+    const expanded = twisty.getAttribute("aria-expanded") !== "true";
+    rememberExpanded(collapsedIds, id, expanded);
+    setTwistyExpanded(twisty, childrenContainer, expanded);
+  });
+}
+
+/** Records one row's expanded/collapsed state so the next render pass can reproduce it. */
+function rememberExpanded(collapsedIds: Set<number>, id: number, expanded: boolean): void {
+  if (expanded) {
+    collapsedIds.delete(id);
+  } else {
+    collapsedIds.add(id);
+  }
 }
 
 /**
@@ -968,7 +1013,7 @@ function renderTree(
   const visible = ordered.filter((item) => isVisibleUnderFilter(item, options.filter));
   return visible.map((item) => {
     const { row, childrenContainer, twisty, line, title } = renderRow(item, options, depth);
-    if (twisty) options.allTwisties.push(twisty);
+    if (twisty) options.expandableRows.push({ id: item.id, twisty });
 
     options.dragReorder?.register({
       id: item.id,
@@ -1113,10 +1158,15 @@ function renderHeader(
 function wireExpandCollapseButtons(
   expandAll: HTMLButtonElement,
   collapseAll: HTMLButtonElement,
-  allTwisties: HTMLButtonElement[],
+  rows: ExpandableRow[],
+  collapsedIds: Set<number>,
 ): void {
   const setAllExpanded = (expanded: boolean) => () => {
-    allTwisties.forEach((tw) => setTwistyExpanded(tw, childrenContainerOf(tw), expanded));
+    for (const { id, twisty } of rows) {
+      // Recorded as well as applied: a repaint right after the click would otherwise undo it.
+      rememberExpanded(collapsedIds, id, expanded);
+      setTwistyExpanded(twisty, childrenContainerOf(twisty), expanded);
+    }
   };
 
   expandAll.onclick = setAllExpanded(true);
@@ -1148,7 +1198,8 @@ interface BoardHandle {
  *
  * It also subscribes to the queue's FAILED count, because every editable control on this board is
  * persist-then-reflect: a rejected write leaves the screen unchanged, so without this the user
- * cannot tell a lost edit from a slow one.
+ * cannot tell a lost edit from a slow one. The failure chip only has room for a count, so activating
+ * it opens the Diagnostics log on the errors, where the cause was recorded.
  *
  * No explicit unsubscribe is needed — the control and the queue share the board's lifetime (one
  * render per tab), so their lifetimes match.
@@ -1156,8 +1207,9 @@ interface BoardHandle {
 function createBoardWriteStatus(
   doc: Document,
   fieldWrites: WorkItemWriteQueue,
+  onOpenLog: () => void,
 ): { element: HTMLElement; setReconcilePending: (count: number) => void } {
-  const writeStatus = renderWriteQueueStatus(doc);
+  const writeStatus = renderWriteQueueStatus(doc, { onOpenLog });
   let statePending = 0;
   let reconcilePending = 0;
   const refresh = (): void => writeStatus.setCount(statePending + reconcilePending);
@@ -1272,9 +1324,14 @@ function createBoardTreeRenderer(params: BoardTreeRendererParams): {
     collapseAll,
   } = params;
 
+  // Survives every repaint, which is the whole point: the elements a reader collapsed are thrown
+  // away on each pass (a drag-reorder, a re-sort, a filter change), so the outline they were looking
+  // at only comes back if the state is remembered outside the DOM.
+  const collapsedIds = new Set<number>();
+
   const renderTreeContent = (): void => {
     const filterOn = sprintPickerHandle.isFilterActive();
-    const allTwisties: HTMLButtonElement[] = [];
+    const expandableRows: ExpandableRow[] = [];
     const properties = params.context.properties;
     const orderingPolicy = params.currentOrderingPolicy();
     // Every element from the previous pass is about to be discarded, so the controller's row map is
@@ -1303,7 +1360,8 @@ function createBoardTreeRenderer(params: BoardTreeRendererParams): {
       // Sprint pills only earn their space when the sprint filter is not already narrowing the board.
       showSprintPills: !filterOn,
       chip: params.chipContext,
-      allTwisties,
+      expandableRows,
+      collapsedIds,
       minorChildColor: params.metrics.minorChildColor,
       // Manual drag order only means anything while the board is showing the manual rank; under any
       // other policy a dropped row would be re-sorted straight back out of the slot it landed in.
@@ -1315,7 +1373,7 @@ function createBoardTreeRenderer(params: BoardTreeRendererParams): {
     // children downward rather than repeating the epic as the top row.
     treeContainer.append(...renderTree(root, options, 0));
 
-    wireExpandCollapseButtons(expandAll, collapseAll, allTwisties);
+    wireExpandCollapseButtons(expandAll, collapseAll, expandableRows, collapsedIds);
   };
 
   // Rebuild the tag filter panel from the tags currently worn across the tree. Dropping any selected
@@ -1411,14 +1469,23 @@ function persistMove(params: {
       currentParentId: move.currentParentId,
       previousId: move.previousId,
       nextId: move.nextId,
+      siblingIds: move.siblingIds,
       team: params.team,
     })
     .then((result) => {
-      if (!result.ok) {
-        return;
-      }
       if (result.rev !== undefined) {
         moved.rev = result.rev;
+      }
+      if (result.ranks !== undefined) {
+        // Placing one item can renumber its whole level, so every reported rank is copied back or
+        // the next re-sort would order the level by numbers ADO no longer holds.
+        applyRanksToTree(root, result.ranks);
+      }
+      // A move whose re-parent landed but whose ranking did not is still a change ADO has applied:
+      // leaving the item under its old parent on screen would show a tree that no longer exists and
+      // send the same rejected request again on the next drag.
+      if (!result.ok && result.reparented !== true) {
+        return;
       }
       if (applyMoveToTree(root, move, result.order ?? null)) {
         repaint();
@@ -1589,7 +1656,7 @@ function createBoardCore(params: {
   return {
     services,
     writes,
-    writeStatus: createBoardWriteStatus(doc, writes),
+    writeStatus: createBoardWriteStatus(doc, writes, () => services.openDiagnosticsLog()),
     metrics: {
       statusWidthCh: widestStatusLabelLength(root, typeMap),
       boardColumns: services.getBoardColumns(),

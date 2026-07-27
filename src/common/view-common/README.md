@@ -44,7 +44,8 @@ renderer.
   for placeholder views.
 - `EnhancedViewServices` — the cross-view data/service singletons injected at the composition root:
   `loadTree`, `featureCrew`, `writeField`, `reorderItem`, `currentTeam`, `userDirectory`, `getTypes`,
-  `getBoardColumns`, `loadSprintWindow`, `now`, `logger`. `writeField` persists a single work item
+  `getBoardColumns`, `loadSprintWindow`, `now`, `logger`, `openDiagnosticsLog`. `writeField` persists
+  a single work item
   field change (e.g.
   `System.State` or a type's ETA date field) back to Azure DevOps, using the item's last-known rev as
   an optimistic-concurrency guard; a `null` value clears the field.
@@ -61,6 +62,9 @@ renderer.
   its offset, plus the name to select by default.
   `getBoardColumns` returns the team's global board columns in order so a status's color can be keyed
   off its board-column position (identical for every work-item type).
+  `openDiagnosticsLog` opens the extension's Diagnostics log filtered to errors, so a view can hand
+  the user the recorded cause behind a failure it can only summarize on screen (the board's
+  "Couldn't save…" chip); a view cannot open an extension page itself, so the round-trip is injected.
 
 Only the content surface implements and resolves `EnhancedView`s (see
 [`src/content/views`](../../content/views/README.md)).

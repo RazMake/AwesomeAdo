@@ -1,4 +1,4 @@
-import type { ReorderWorkItemResponse } from "./WorkItemReorderRequest";
+import type { ReorderStage, ReorderWorkItemResponse } from "./WorkItemReorderRequest";
 
 /**
  * Everything the in-page reorder needs, bundled into one serializable object.
@@ -53,34 +53,49 @@ export function reorderWorkItemInPage(
 ): Promise<ReorderWorkItemResponse> {
   const { id, parentId, previousId, nextId, parentLinkType, parentLinkUrl } = config;
 
+  // Whether the hierarchy link was actually rewritten. Reported with every outcome, success or not:
+  // a caller that discarded a landed re-parent because the ranking afterwards failed would keep
+  // showing the old parent and resend a move Azure DevOps has already applied.
+  let reparented = false;
+
   // Hand back WHAT the server said, not just that it said no. Azure DevOps explains its refusals in
   // the body ("TF401232: work item does not exist", a rule violation, a stale rev), and reporting a
   // bare "HTTP 400" throws away the only thing that makes such a failure diagnosable without a
   // repro. Interpreting the body is deliberately left to the worker: this function is serialized
   // into the page, so every line here is a line that cannot be unit-tested.
-  const failResponse = (stage: string, response: Response): Promise<ReorderWorkItemResponse> => {
-    const error = stage + " HTTP " + String(response.status);
+  const failResponse = (
+    stage: ReorderStage,
+    response: Response,
+  ): Promise<ReorderWorkItemResponse> => {
+    const fail = (detail?: string): ReorderWorkItemResponse => ({
+      ok: false,
+      error: stage + " HTTP " + String(response.status),
+      detail: detail,
+      stage: stage,
+      reparented: reparented,
+    });
     return response.text().then(
-      (body) => ({ ok: false, error: error, detail: body.slice(0, 600) }),
-      () => ({ ok: false, error: error }),
+      (body) => fail(body.slice(0, 600)),
+      () => fail(),
     );
   };
+
+  // The one shape every write here takes: a credentialed PATCH carrying a JSON body. ADO's session
+  // cookies are SameSite, so `credentials` is what makes the call authenticated at all.
+  const patch = (url: string, contentType: string, body: unknown): Promise<Response> =>
+    fetch(url, {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "Content-Type": contentType, Accept: "application/json" },
+      body: JSON.stringify(body),
+    });
 
   // Rank the item among its new siblings. `rev` is deliberately absent: backlog order is team state,
   // not a field on the item, so ADO does not version it and a rev test here would reject harmlessly
   // concurrent moves of unrelated items.
   function applyOrder(newRev: number | undefined): Promise<ReorderWorkItemResponse> {
-    return fetch(config.orderUrl, {
-      method: "PATCH",
-      credentials: "include",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({
-        ids: [id],
-        parentId: parentId,
-        previousId: previousId,
-        nextId: nextId,
-      }),
-    }).then((response) => {
+    const move = { ids: [id], parentId, previousId, nextId };
+    return patch(config.orderUrl, "application/json", move).then((response) => {
       if (!response.ok) {
         return failResponse("order", response);
       }
@@ -88,7 +103,8 @@ export function reorderWorkItemInPage(
         const body = Array.isArray(json) ? json : (json as { value?: unknown }).value;
         const entries = (Array.isArray(body) ? body : []) as { id?: number; order?: number }[];
         const order = entries.filter((entry) => entry && entry.id === id)[0]?.order;
-        return { ok: true, rev: newRev, order: typeof order === "number" ? order : undefined };
+        const ranked = typeof order === "number" ? order : undefined;
+        return { ok: true, rev: newRev, order: ranked, reparented: reparented };
       });
     });
   }
@@ -97,41 +113,35 @@ export function reorderWorkItemInPage(
   // remove a link by value), which is the only reason the item has to be read first.
   function applyReparent(): Promise<ReorderWorkItemResponse> {
     return fetch(config.relationsUrl, { credentials: "include" })
-      .then((response) => {
-        if (!response.ok) {
-          return failResponse("relations", response);
-        }
-        return response.json().then((json) => {
-          const links = ((json as { relations?: unknown }).relations ?? []) as { rel?: string }[];
-          const operations: unknown[] = [{ op: "test", path: "/rev", value: config.rev }];
-          // A work item carries at most one parent link, so the first match is the only one, and
-          // JSON Patch can only remove a link by its INDEX — which is the sole reason for the read.
-          const existing = links.findIndex((link) => link && link.rel === parentLinkType);
-          if (existing >= 0) {
-            operations.push({ op: "remove", path: "/relations/" + String(existing) });
-          }
-          if (parentLinkUrl !== null) {
-            const value = { rel: parentLinkType, url: parentLinkUrl };
-            operations.push({ op: "add", path: "/relations/-", value: value });
-          }
-          return patchItem(operations);
-        });
-      })
+      .then((response) =>
+        response.ok
+          ? response.json().then((json) => patchItem(parentLinkOps(json)))
+          : failResponse("relations", response),
+      )
       .then((outcome) => (outcome.ok ? applyOrder(outcome.rev) : outcome));
   }
 
+  // A work item carries at most one parent link, so the first match is the only one, and JSON Patch
+  // can only remove a link by its INDEX — which is the sole reason the item has to be read at all.
+  function parentLinkOps(json: unknown): unknown[] {
+    const links = ((json as { relations?: unknown }).relations ?? []) as { rel?: string }[];
+    const existing = links.findIndex((link) => link && link.rel === parentLinkType);
+    const newLink = { rel: parentLinkType, url: parentLinkUrl };
+    return [
+      { op: "test", path: "/rev", value: config.rev },
+      ...(existing >= 0 ? [{ op: "remove", path: "/relations/" + String(existing) }] : []),
+      ...(parentLinkUrl !== null ? [{ op: "add", path: "/relations/-", value: newLink }] : []),
+    ];
+  }
+
   function patchItem(operations: unknown[]): Promise<ReorderWorkItemResponse> {
-    return fetch(config.itemUrl, {
-      method: "PATCH",
-      credentials: "include",
-      headers: { "Content-Type": "application/json-patch+json", Accept: "application/json" },
-      body: JSON.stringify(operations),
-    }).then((response) => {
+    return patch(config.itemUrl, "application/json-patch+json", operations).then((response) => {
       if (!response.ok) {
         return failResponse("reparent", response);
       }
       return response.json().then((json) => {
         const newRev = (json as { rev?: unknown }).rev;
+        reparented = true;
         return { ok: true, rev: typeof newRev === "number" ? newRev : undefined };
       });
     });
@@ -140,5 +150,6 @@ export function reorderWorkItemInPage(
   return (config.reparent ? applyReparent() : applyOrder(undefined)).catch((err) => ({
     ok: false,
     error: String(err),
+    reparented: reparented,
   }));
 }

@@ -1,18 +1,11 @@
 import type { QueryFolderCrumb, WorkItemTreeResult } from "./IWorkItemTreeLoader";
 import type { TrackedUser, TrackedWorkItem } from "./TrackedWorkItem";
-import { ADO_API_VERSION, ASSIGNED_TO_FIELD } from "./adoApi";
+import { ADO_API_VERSION, ASSIGNED_TO_FIELD, IMPORTANCE_FIELD } from "./adoApi";
 import { resolveAdoProjectContext } from "./fetchAdoMetadata";
 
 const API_VERSION = ADO_API_VERSION;
 // Cap tree depth to prevent runaway recursion if the ADO data contains cycles or deeply nested chains.
 const MAX_TREE_DEPTH = 50;
-
-/**
- * ADO's manual backlog rank. Read so a view can order items "most important first" the same way the
- * backlog does; it is a process-template field present in every stock process, and an item that
- * carries no rank simply hydrates as unranked rather than failing the load.
- */
-const IMPORTANCE_FIELD = "Microsoft.VSTS.Common.StackRank";
 
 /**
  * When the item's `System.State` last changed. Read instead of leaning on `System.ChangedDate` so

@@ -1,5 +1,6 @@
 import {
   WORK_ITEM_MARKERS,
+  type MarkerTags,
   type WorkItemMarker,
   type WorkItemMarkerTags,
 } from "../../common/settings/ExtensionSettings";
@@ -19,6 +20,14 @@ const MARKER_ATTRIBUTE = "data-marker";
 const TAG_ROLE = "tag";
 const COMMENT_ROLE = "comment";
 const ROW_SELECTOR = ".marker-tags-row";
+
+/** Which field of a marker's entry each input role edits; any other role is not a marker field. */
+const FIELD_BY_ROLE: Readonly<Record<string, keyof MarkerTags>> = {
+  [TAG_ROLE]: "tag",
+  [COMMENT_ROLE]: "commentTag",
+};
+
+const MARKER_KEYS = new Set<string>(WORK_ITEM_MARKERS.map(({ key }) => key));
 
 /**
  * Drives the "Marker tags" section on the Azure DevOps tab: for each recognized condition (blocked,
@@ -85,42 +94,44 @@ export class MarkerTagsController {
     return row;
   }
 
-  private readonly handleChange = (): void => {
-    this.persist();
+  /**
+   * Persist the single field the user edited.
+   *
+   * The edited control names its own marker (its row) and its own field (its role), so an edit can
+   * only ever be stored under the row it was typed into. Re-reading the whole section instead would
+   * make every save only as trustworthy as the entire form's current DOM: one perturbed input — a
+   * value the browser restored into the wrong control on session restore, a row left over from an
+   * import that did not re-render — would be written under a neighbouring marker and silently
+   * overwrite it. Every other marker is carried over from the last accepted state, never re-scraped.
+   */
+  private readonly handleChange = (event: Event): void => {
+    const input = event.target as HTMLElement;
+    const field = FIELD_BY_ROLE[input.getAttribute(ROLE_ATTRIBUTE) ?? ""];
+    const marker = input.closest<HTMLElement>(ROW_SELECTOR)?.getAttribute(MARKER_ATTRIBUTE) ?? "";
+    // Anything that is not one of this section's own inputs — or an edit that somehow arrives before
+    // the rows are seeded — has no marker to attribute the value to, so it is not persistable.
+    if (field === undefined || !MARKER_KEYS.has(marker) || this.confirmed === null) {
+      return;
+    }
+    this.persist(marker as WorkItemMarker, field, (input as HTMLInputElement).value.trim());
   };
 
-  private persist(): void {
+  private persist(marker: WorkItemMarker, field: keyof MarkerTags, value: string): void {
     const previous = this.confirmed;
-    const markerTags = this.collect();
+    if (previous === null) {
+      return;
+    }
+    const markerTags: WorkItemMarkerTags = {
+      ...previous,
+      [marker]: { ...previous[marker], [field]: value },
+    };
     this.confirmed = markerTags;
     void this.store.write({ markerTags }).catch((error: unknown) => {
       // The store rejected the write, so restore the last accepted values rather than leave the
       // fields showing something that was never persisted.
       this.confirmed = previous;
-      if (previous !== null) {
-        this.render(previous);
-      }
+      this.render(previous);
       this.reportError(error);
     });
-  }
-
-  private collect(): WorkItemMarkerTags {
-    const result = {} as WorkItemMarkerTags;
-    for (const { key } of WORK_ITEM_MARKERS) {
-      const row = this.elements.list.querySelector<HTMLElement>(
-        `${ROW_SELECTOR}[${MARKER_ATTRIBUTE}="${key}"]`,
-      );
-      result[key] = {
-        tag: this.readValue(row, TAG_ROLE),
-        commentTag: this.readValue(row, COMMENT_ROLE),
-      };
-    }
-    return result;
-  }
-
-  private readValue(row: HTMLElement | null, role: string): string {
-    return (
-      row?.querySelector<HTMLInputElement>(`[${ROLE_ATTRIBUTE}="${role}"]`)?.value.trim() ?? ""
-    );
   }
 }

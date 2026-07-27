@@ -13,7 +13,11 @@ import {
   type WriteQueueStatusOptions,
 } from "common/view-common/control/WriteQueueStatus/WriteQueueStatus";
 
-const status = renderWriteQueueStatus(document, { count: 0 });
+const status = renderWriteQueueStatus(document, {
+  count: 0,
+  // Where activating the failure chip should take the user for the cause it cannot show.
+  onOpenLog: () => services.openDiagnosticsLog(),
+});
 toolbar.appendChild(status.element);
 
 // Later, as the queue depth changes:
@@ -32,6 +36,10 @@ Configuration for the initial render.
 
 - **`count?: number`** — Initial number of pending writes. Default `0` (idle → the indicator is
   hidden).
+- **`onOpenLog?: () => void`** — Invoked when the user activates the failure chip (click, or
+  Enter/Space while it is focused), so the owning surface can take them to the details of what was
+  lost. Injected because the control is presentational and must not know that extension pages exist;
+  omit it and the chip only dismisses.
 
 ### `WriteQueueStatusHandle`
 
@@ -70,11 +78,13 @@ Renders the indicator.
   `beginElement` API, guarded so non-browser DOMs (jsdom) are unaffected.
 - **The reason is on the chip:** `setFailedCount`'s `reason` becomes the chip's `title`, so hovering
   explains the failure and points at the Diagnostics log. The chip has room for a count, not a cause.
-- **Dismissible:** clicking the chip (or pressing Enter/Space while it is focused — it takes a tab
-  stop only while failed) hides it. Dismissing acknowledges the report; it does **not** clear the
-  owner's failure count. A dismissal is deliberately scoped to the failures the user actually SAW: a
-  growing count un-dismisses the chip so a later lost edit is never hidden by an earlier
-  acknowledgement, and clearing the count to `0` resets it entirely.
+- **Activating it opens the details:** clicking the chip (or pressing Enter/Space while it is focused
+  — it takes a tab stop only while failed) calls `onOpenLog` and then hides the chip. Reading the
+  failure where it was recorded IS the acknowledgement, so the corner goes quiet; dismissing does
+  **not** clear the owner's failure count. A dismissal is deliberately scoped to the failures the
+  user actually SAW: a growing count un-dismisses the chip so a later lost edit is never hidden by an
+  earlier acknowledgement, and clearing the count to `0` resets it entirely. With no `onOpenLog`
+  wired, activation only dismisses — and the tooltip says so rather than promising details.
 
 - **Hidden when idle:** No visual noise when there is nothing to save; the indicator only appears
   while writes are in flight.

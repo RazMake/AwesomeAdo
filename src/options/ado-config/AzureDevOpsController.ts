@@ -114,6 +114,19 @@ export class AzureDevOpsController {
     await Promise.all([this.loadSettings(), this.loadMetadata()]);
   }
 
+  /**
+   * Re-read the stored settings into this tab's controls, without re-wiring anything.
+   *
+   * This tab loads its values once and then treats its own DOM as the working copy, so an outside
+   * replacement of the stored configuration (a configuration file import) would otherwise leave it
+   * showing — and, on the next edit, re-saving — the configuration the file just replaced. The ADO
+   * metadata is deliberately not re-read: it describes the organization, which an import cannot
+   * change.
+   */
+  async reload(): Promise<void> {
+    await this.loadSettings();
+  }
+
   dispose(): void {
     this.disposed = true;
     this.teamCombobox.dispose();

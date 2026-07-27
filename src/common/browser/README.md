@@ -513,6 +513,7 @@ const result = await writer.reorder({
   currentParentId,
   previousId,
   nextId,
+  siblingIds,
   team,
 });
 ```
@@ -539,3 +540,19 @@ re-rank carries no rev because backlog order is team state, not a field on the i
 there would reject harmlessly concurrent moves of unrelated items. Every URL in `config` is built by
 the worker from the sender's own trusted tab URL (see `common/ado/reorderWorkItems`). Serialized with
 `Function.prototype.toString`, so it references only its parameter and page globals.
+
+### `readWorkItemRanksInPage(config)` / `writeWorkItemRanksInPage(config)`
+
+The pair the worker injects when ADO **refuses** to rank an item (`TF400486`) and the rank has to be
+written directly instead — see `common/ado/rankFallback` for when and why.
+
+- `readWorkItemRanksInPage({ batchUrl, ids, field })` POSTs `_apis/wit/workitemsbatch` for one page of
+  ids and hands the body back **unparsed**; reading ranks out of it is module code that can be tested.
+  The caller pages the ids (the endpoint caps a request at 200).
+- `writeWorkItemRanksInPage({ field, writes })` PATCHes `{ id, url, rank }` one item after another and
+  reports which ids landed. It sends **no `test /rev`** guard, unlike every other patch here: a rank
+  is a position the operation just computed rather than a value a person authored, and guarding it
+  would leave a renumbered level half-written whenever anyone had touched an unrelated field.
+
+Both are serialized with `Function.prototype.toString` and reference only their parameter and page
+globals. Every URL is built by the worker from the sender's own trusted tab URL.

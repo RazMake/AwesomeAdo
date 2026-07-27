@@ -30,7 +30,9 @@ This component does not log; it surfaces failures through the options page's sha
   mode it saves a new binding from the view picker; in edit mode it switches the selected query and
   view, renders one input per property of the selected view — text or a range-bounded whole-number
   field, seeded from the binding or the property's default with numbers forced back into range as you
-  leave the field — and saves or deletes the binding.
+  leave the field — and saves or deletes the binding. Its in-memory binding map is the form's working
+  copy and is what a save writes back, so **`reload()`** re-reads the store and re-populates the form;
+  call it when the bindings are replaced from outside the tab (a configuration file import).
 - **`QueryBindingsElements`** — the tab's elements the controller drives (the empty state, the add
   card's read-only query line, view picker and Save; the edit card's query picker and Delete; the view
   config card's view picker, property container and Save; and the shared status line), passed in so it

@@ -615,6 +615,37 @@ describe("revealFixedQuery (options tab already open)", () => {
   });
 });
 
+describe("reload (bindings replaced from outside the page)", () => {
+  it("re-reads the bindings and re-populates the picker", async () => {
+    const store = makeStore({ [GUID_A]: { view: "sprint", properties: {}, name: "Alpha" } });
+    const controller = controllerFor(store);
+    await controller.init(null, null);
+    expect(elements.querySelect.value).toBe(GUID_A);
+
+    // Stands in for a configuration file import, which replaces the bindings wholesale.
+    store.read.mockResolvedValue({
+      [GUID_B]: { view: "tracking", properties: { team: "Red" }, name: "Imported" },
+    });
+    await controller.reload();
+
+    expect([...elements.querySelect.options].map((o) => o.value)).toEqual([GUID_B]);
+    expect(elements.querySelect.value).toBe(GUID_B);
+    expect(elements.viewSelect.value).toBe("tracking");
+  });
+
+  it("shows the guidance again when the imported file bound nothing", async () => {
+    const store = makeStore({ [GUID_A]: { view: "sprint", properties: {}, name: "Alpha" } });
+    const controller = controllerFor(store);
+    await controller.init(null, null);
+
+    store.read.mockResolvedValue({});
+    await controller.reload();
+
+    expect(elements.emptyState.hidden).toBe(false);
+    expect(elements.editCard.hidden).toBe(true);
+  });
+});
+
 describe("edge cases (empty catalog, dispose)", () => {
   it("disables add Save for an empty view catalog without crashing", async () => {
     const store = makeStore();

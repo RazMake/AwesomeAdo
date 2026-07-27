@@ -97,6 +97,19 @@ export class DiagnosticsController {
     this.unsubscribe = undefined;
   }
 
+  /**
+   * Turn the "errors only" filter on and repaint.
+   *
+   * Exists for the deep link that arrives from the board's "Couldn't save…" chip: that user clicked
+   * a specific failure, so the log has to land on the errors rather than on whatever informational
+   * lines happen to be newest. Safe to call before `init` has resolved — the entries that arrive
+   * afterwards render through the same filter.
+   */
+  showErrorsOnly(): void {
+    this.elements.errorsOnlyToggle.checked = true;
+    this.render();
+  }
+
   private readonly handleEntries = (entries: LogEntry[]): void => {
     if (this.disposed) {
       return;

@@ -43,6 +43,8 @@ const REQUIRED_ELEMENT_IDS: readonly string[] = [
   "ado-work-item-type-add",
   "ado-wit-eta",
   "ado-wit-eta-empty",
+  "ado-wit-hierarchy",
+  "ado-wit-hierarchy-empty",
   "ado-marker-tags",
   // Query bindings
   "binding-empty",

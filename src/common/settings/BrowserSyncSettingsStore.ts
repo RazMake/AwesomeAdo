@@ -13,6 +13,7 @@ const PAST_SPRINTS_KEY = "settings.pastSprintsCount";
 const AREA_PATHS_KEY = "settings.areaPaths";
 const BOARD_COLUMNS_KEY = "settings.boardColumns";
 const WORK_ITEM_TYPES_KEY = "settings.workItemTypes";
+const MARKER_TAGS_KEY = "settings.markerTags";
 
 const SETTING_KEYS = [
   THEME_KEY,
@@ -23,6 +24,7 @@ const SETTING_KEYS = [
   AREA_PATHS_KEY,
   BOARD_COLUMNS_KEY,
   WORK_ITEM_TYPES_KEY,
+  MARKER_TAGS_KEY,
 ] as const;
 
 // Pairs each writable setting with its own synced storage key. Driving the write from one table
@@ -36,6 +38,7 @@ const SETTING_WRITE_MAP: readonly { name: keyof ExtensionSettings; key: string }
   { name: "areaPaths", key: AREA_PATHS_KEY },
   { name: "boardColumns", key: BOARD_COLUMNS_KEY },
   { name: "workItemTypes", key: WORK_ITEM_TYPES_KEY },
+  { name: "markerTags", key: MARKER_TAGS_KEY },
 ];
 
 /** Project a raw key→value record from storage into the shape `normalizeSettings` expects. */
@@ -49,6 +52,7 @@ function projectSettings(raw: Record<string, unknown>): ExtensionSettings {
     areaPaths: raw[AREA_PATHS_KEY],
     boardColumns: raw[BOARD_COLUMNS_KEY],
     workItemTypes: raw[WORK_ITEM_TYPES_KEY],
+    markerTags: raw[MARKER_TAGS_KEY],
   });
 }
 

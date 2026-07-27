@@ -38,6 +38,7 @@ const REQUEST: WorkItemReorderRequest = {
   currentParentId: 10,
   previousId: 3,
   nextId: 4,
+  siblingIds: [3, 123, 4],
   team: "Web",
 };
 
@@ -72,6 +73,7 @@ describe("MessagingWorkItemReorderWriter - success", () => {
         currentParentId: 10,
         previousId: 3,
         nextId: 4,
+        siblingIds: [3, 123, 4],
         team: "Web",
       },
     ]);
@@ -82,14 +84,40 @@ describe("MessagingWorkItemReorderWriter - success", () => {
 
     const result = await writer.reorder(REQUEST);
 
-    expect(result).toEqual({ ok: true, order: 1500, rev: 6 });
+    expect(result).toEqual({
+      ok: true,
+      order: 1500,
+      rev: 6,
+      ranks: undefined,
+      reparented: undefined,
+    });
     expect(errors).toEqual([]);
+  });
+
+  it("forwards the ranks the worker wrote when ADO refused to order the item itself", async () => {
+    const ranks = [
+      { id: 3, rank: 100000 },
+      { id: 123, rank: 200000 },
+    ];
+    const { writer } = makeWriter(() => Promise.resolve({ ok: true, order: 200000, ranks }));
+
+    const result = await writer.reorder(REQUEST);
+
+    // The whole level's ranks travel, not just the moved item's: a renumber changes siblings the
+    // user never dragged, and a board that refreshed only one would re-sort against stale numbers.
+    expect(result.ranks).toEqual(ranks);
   });
 
   it("reports success even when the background reported no new order or rev", async () => {
     const { writer } = makeWriter(() => Promise.resolve({ ok: true }));
 
-    expect(await writer.reorder(REQUEST)).toEqual({ ok: true, order: undefined, rev: undefined });
+    expect(await writer.reorder(REQUEST)).toEqual({
+      ok: true,
+      order: undefined,
+      rev: undefined,
+      ranks: undefined,
+      reparented: undefined,
+    });
   });
 
   it("logs the move's signals and outcome using ids alone, never a work item title", async () => {
@@ -117,7 +145,7 @@ describe("MessagingWorkItemReorderWriter - failure", () => {
 
     const result = await writer.reorder(REQUEST);
 
-    expect(result).toEqual({ ok: false, error: "order HTTP 409" });
+    expect(result).toEqual({ ok: false, error: "order HTTP 409", reparented: undefined });
     // The reason is passed as the log's detail as well as inlined in the message, so the Diagnostics
     // view shows it on its own line rather than only inside a sentence.
     expect(errors).toEqual([
@@ -126,12 +154,46 @@ describe("MessagingWorkItemReorderWriter - failure", () => {
     expect(infos).toEqual([]);
   });
 
+  it("explains a TF400486 refusal beside ADO's own words instead of replacing them", async () => {
+    const { writer, errors } = makeWriter(() =>
+      Promise.resolve({ ok: false, error: "order HTTP 400: TF400486: Unable to complete…" }),
+    );
+
+    await writer.reorder(REQUEST);
+
+    // TF400486 reads as a concurrency complaint, which it is not; the raw code stays first so the
+    // log is still searchable, and the explanation follows so nobody chases a race that is not there.
+    expect(errors[0]?.message).toContain("TF400486");
+    expect(errors[1]?.message).toContain("no backlog position");
+    expect(errors[1]?.message).toContain("retrying cannot clear it");
+  });
+
+  it("adds no explanation to a failure Azure DevOps already stated plainly", async () => {
+    const { writer, errors } = makeWriter(() =>
+      Promise.resolve({ ok: false, error: "order HTTP 401" }),
+    );
+
+    await writer.reorder(REQUEST);
+
+    expect(errors).toHaveLength(1);
+  });
+
+  it("reports a landed re-parent even when the move then failed to rank the item", async () => {
+    const { writer } = makeWriter(() =>
+      Promise.resolve({ ok: false, error: "order HTTP 400", reparented: true }),
+    );
+
+    // ADO has already re-linked the item, so a caller that left its tree untouched would keep
+    // showing a parent that no longer holds it and resend the same rejected move.
+    expect((await writer.reorder(REQUEST)).reparented).toBe(true);
+  });
+
   it("logs 'unknown error' when the failed response carries no description", async () => {
     const { writer, errors } = makeWriter(() => Promise.resolve({ ok: false }));
 
     const result = await writer.reorder(REQUEST);
 
-    expect(result).toEqual({ ok: false, error: undefined });
+    expect(result).toEqual({ ok: false, error: undefined, reparented: undefined });
     expect(errors[0]?.message).toBe("Work item 123 reorder failed: unknown error.");
   });
 

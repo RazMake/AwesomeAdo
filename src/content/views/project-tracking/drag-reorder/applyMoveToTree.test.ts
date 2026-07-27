@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { TrackedWorkItem } from "../../../../common/ado/TrackedWorkItem";
 
-import { applyMoveToTree } from "./applyMoveToTree";
+import { applyMoveToTree, applyRanksToTree } from "./applyMoveToTree";
 
 /** A tracked item with only the fields this module reads; the rest are inert defaults. */
 function item(id: number, importance: number, children: TrackedWorkItem[] = []): TrackedWorkItem {
@@ -182,5 +182,31 @@ describe("applyMoveToTree - estimating a rank ADO did not report", () => {
     applyMoveToTree(root, { id: 2, parentId: 20, previousId: 77, nextId: 88 }, null);
 
     expect(importanceOf(root, 2)).toBe(2000);
+  });
+});
+
+describe("applyRanksToTree", () => {
+  it("copies every reported rank onto the matching item, at any depth", () => {
+    const root = buildTree();
+
+    // Placing one item can renumber its whole level, so refreshing only the moved item would leave
+    // its siblings holding ranks Azure DevOps no longer has and scramble the next re-sort.
+    applyRanksToTree(root, [
+      { id: 3, rank: 100000 },
+      { id: 4, rank: 200000 },
+      { id: 20, rank: 5 },
+    ]);
+
+    expect(importanceOf(root, 3)).toBe(100000);
+    expect(importanceOf(root, 4)).toBe(200000);
+    expect(importanceOf(root, 20)).toBe(5);
+  });
+
+  it("ignores a rank for an item this tree does not hold", () => {
+    const root = buildTree();
+
+    applyRanksToTree(root, [{ id: 99, rank: 1 }]);
+
+    expect(importanceOf(root, 1)).toBe(1000);
   });
 });

@@ -88,7 +88,7 @@ describe("reorderWorkItemInPage - ranking only", () => {
       previousId: 3,
       nextId: 4,
     });
-    expect(result).toEqual({ ok: true, rev: undefined, order: 1500 });
+    expect(result).toEqual({ ok: true, rev: undefined, order: 1500, reparented: false });
   });
 
   it("reads the new rank out of a { value: [...] } envelope too", async () => {
@@ -105,6 +105,7 @@ describe("reorderWorkItemInPage - ranking only", () => {
       ok: true,
       rev: undefined,
       order: 2500,
+      reparented: false,
     });
   });
 
@@ -115,6 +116,7 @@ describe("reorderWorkItemInPage - ranking only", () => {
       ok: true,
       rev: undefined,
       order: undefined,
+      reparented: false,
     });
   });
 
@@ -131,6 +133,7 @@ describe("reorderWorkItemInPage - ranking only", () => {
       ok: true,
       rev: undefined,
       order: undefined,
+      reparented: false,
     });
   });
 });
@@ -163,7 +166,7 @@ describe("reorderWorkItemInPage - re-parenting", () => {
       },
     ]);
     expect(calls[1]?.[1]?.method).toBe("PATCH");
-    expect(result).toEqual({ ok: true, rev: 6, order: 1500 });
+    expect(result).toEqual({ ok: true, rev: 6, order: 1500, reparented: true });
   });
 
   it("sends the item patch as a JSON Patch document with credentials", async () => {
@@ -222,7 +225,7 @@ describe("reorderWorkItemInPage - the link patch it builds", () => {
     const result = await reorderWorkItemInPage(config({ reparent: true }));
 
     expect(patchOps(calls)).toHaveLength(2);
-    expect(result).toEqual({ ok: true, rev: 6, order: 1500 });
+    expect(result).toEqual({ ok: true, rev: 6, order: 1500, reparented: true });
   });
 
   it("forwards no rev when the patched item reported a non-numeric one", async () => {
@@ -236,6 +239,7 @@ describe("reorderWorkItemInPage - the link patch it builds", () => {
       ok: true,
       rev: undefined,
       order: 1500,
+      reparented: true,
     });
   });
 });
@@ -252,6 +256,8 @@ describe("reorderWorkItemInPage - failures", () => {
       // The body is handed back raw; the worker turns it into the sentence a human reads, because
       // every line spent parsing it in the page world is a line that cannot be unit-tested.
       detail: '{"message":"TF401232: work item 10 does not exist"}',
+      stage: "order",
+      reparented: false,
     });
   });
 
@@ -272,7 +278,12 @@ describe("reorderWorkItemInPage - failures", () => {
       } as unknown as Response,
     });
 
-    expect(await reorderWorkItemInPage(config())).toEqual({ ok: false, error: "order HTTP 503" });
+    expect(await reorderWorkItemInPage(config())).toEqual({
+      ok: false,
+      error: "order HTTP 503",
+      stage: "order",
+      reparented: false,
+    });
   });
 
   it("stops before touching the item when the relations read fails", async () => {
@@ -280,10 +291,18 @@ describe("reorderWorkItemInPage - failures", () => {
 
     const result = await reorderWorkItemInPage(config({ reparent: true }));
 
-    expect(result).toEqual({ ok: false, error: "relations HTTP 404", detail: "not found" });
+    expect(result).toEqual({
+      ok: false,
+      error: "relations HTTP 404",
+      detail: "not found",
+      stage: "relations",
+      reparented: false,
+    });
     expect(calls).toHaveLength(1);
   });
+});
 
+describe("reorderWorkItemInPage - what a partly-applied move reports", () => {
   it("leaves the rank untouched when the re-parent patch is rejected", async () => {
     const { calls } = stubFetch({
       [RELATIONS_URL]: reply({ relations: [] }),
@@ -292,7 +311,13 @@ describe("reorderWorkItemInPage - failures", () => {
 
     const result = await reorderWorkItemInPage(config({ reparent: true }));
 
-    expect(result).toEqual({ ok: false, error: "reparent HTTP 409", detail: "rev mismatch" });
+    expect(result).toEqual({
+      ok: false,
+      error: "reparent HTTP 409",
+      detail: "rev mismatch",
+      stage: "reparent",
+      reparented: false,
+    });
     // Both the tree and the order are left as they were, rather than half-applied.
     expect(calls.map(([url]) => url)).toEqual([RELATIONS_URL, ITEM_URL]);
   });
@@ -304,10 +329,15 @@ describe("reorderWorkItemInPage - failures", () => {
       [ORDER_URL]: reply({}, false, 500, "boom"),
     });
 
+    // The stage and the landed re-parent both travel: the worker falls back to ranking the item by
+    // hand only when ADO refused to RANK it, and the board has to re-home an item ADO has already
+    // re-linked even though the move as a whole failed.
     expect(await reorderWorkItemInPage(config({ reparent: true }))).toEqual({
       ok: false,
       error: "order HTTP 500",
       detail: "boom",
+      stage: "order",
+      reparented: true,
     });
   });
 

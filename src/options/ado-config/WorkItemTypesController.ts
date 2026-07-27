@@ -1,5 +1,6 @@
 import type { AdoWorkItemType } from "../../common/ado/AdoMetadata";
 import {
+  BOARD_COLUMN_MEANINGS,
   DEFAULT_BOARD_COLUMNS,
   type WorkItemColumn,
   type WorkItemType,
@@ -7,6 +8,11 @@ import {
 import type { ISettingsStore } from "../../common/settings/ISettingsStore";
 
 import { AutocompleteInput } from "./AutocompleteInput";
+import {
+  WorkItemHierarchyController,
+  type WorkItemHierarchyElements,
+} from "./WorkItemHierarchyController";
+import { createTypeLabel, type LabeledType } from "./typeLabel";
 
 /** The mapping-table elements, injected so the controller stays DOM-agnostic and testable. */
 export interface WorkItemTypesElements {
@@ -22,6 +28,8 @@ export interface WorkItemTypesElements {
   etaBody: HTMLElement;
   /** Notice shown in the ETA section only while no type is committed. */
   etaEmpty: HTMLElement;
+  /** The hierarchy section's elements; driven by this controller's committed rows. */
+  hierarchy: WorkItemHierarchyElements;
 }
 
 type ReportError = (error: unknown) => void;
@@ -32,13 +40,6 @@ interface ColumnModel {
   name: string;
 }
 
-/** A committed work item type surfaced in the read-only ETA list: its rendered name/color/icon. */
-interface CommittedType {
-  name: string;
-  color: string;
-  icon: string;
-}
-
 const ROLE_ATTRIBUTE = "data-role";
 const TYPE_ROLE = "type";
 const TYPE_DELETE_ROLE = "type-delete";
@@ -46,11 +47,15 @@ const TYPE_DRAG_ROLE = "type-drag";
 const COLUMN_NAME_ROLE = "column-name";
 const STATE_ROLE = "state";
 const STATE_REMOVE_ROLE = "state-remove";
+const STATE_ADD_ROLE = "state-add";
 const ETA_ROLE = "eta";
 
 const ROW_SELECTOR = ".wit-row";
 const CELL_SELECTOR = ".wit-cell";
 const STATE_SELECTOR = ".wit-state";
+const STATES_SELECTOR = ".wit-cell__states";
+const STATE_ADD_SELECTOR = ".wit-chip-add";
+const COMBOBOX_SELECTOR = ".combobox";
 const ROW_DRAG_SELECTOR = `[${ROLE_ATTRIBUTE}="${TYPE_DRAG_ROLE}"]`;
 const TYPE_INPUT_SELECTOR = `[${ROLE_ATTRIBUTE}="${TYPE_ROLE}"]`;
 const STATE_INPUT_SELECTOR = `[${ROLE_ATTRIBUTE}="${STATE_ROLE}"]`;
@@ -75,10 +80,11 @@ const ETA_NONE_LABEL = "— None —";
  * the two share one credentialed fetch. Both the store and the available-types metadata are provided
  * by the caller (Dependency Inversion), so this controller is fully testable without a browser.
  *
- * It also owns a second, read-only section that maps each committed type to its ETA date field. That
- * section lives here (not in a separate controller) because the ETA is stored on the same
- * `workItemTypes` setting this controller already writes — a single writer keeps the two in sync and
- * avoids two controllers clobbering each other's slice of the same setting.
+ * It also owns two read-only sections driven by this table: the ETA date field per committed type,
+ * and the {@link WorkItemHierarchyController} hierarchy (which types can be created under which).
+ * Both live here rather than beside the table because both are stored on the same `workItemTypes`
+ * setting this controller already writes — a single writer keeps all three in sync and avoids two
+ * controllers clobbering each other's slice of the same setting.
  */
 export class WorkItemTypesController {
   private availableTypes: readonly AdoWorkItemType[] = [];
@@ -101,6 +107,9 @@ export class WorkItemTypesController {
   // The row currently showing the "drop here" insertion line during a row drag; null when none is
   // marked. Tracked so the indicator can be moved and cleared without re-querying every dragover.
   private dropIndicatorRow: HTMLElement | null = null;
+  // The hierarchy section is driven by this table's committed rows and stored on the same setting,
+  // so it is owned here and reports its edits back through the same persistence path.
+  private readonly hierarchy: WorkItemHierarchyController;
 
   constructor(
     private readonly store: ISettingsStore,
@@ -108,6 +117,7 @@ export class WorkItemTypesController {
     private readonly reportError: ReportError,
   ) {
     elements.addTypeButton.disabled = true;
+    this.hierarchy = new WorkItemHierarchyController(elements.hierarchy, () => this.persistTypes());
   }
 
   /** Wire the delegated events; the parent drives data in through `render`/`setAvailableTypes`. */
@@ -116,6 +126,7 @@ export class WorkItemTypesController {
     // Delegated on the containers so dynamically added rows/columns need no per-node bookkeeping.
     this.elements.body.addEventListener("change", this.handleBodyChange);
     this.elements.body.addEventListener("click", this.handleBodyClick);
+    this.elements.body.addEventListener("focusout", this.handleBodyFocusOut);
     this.elements.body.addEventListener("dragstart", this.handleDragStart);
     this.elements.body.addEventListener("dragover", this.handleDragOver);
     this.elements.body.addEventListener("drop", this.handleDrop);
@@ -123,6 +134,7 @@ export class WorkItemTypesController {
     this.elements.columnsRow.addEventListener("change", this.handleColumnChange);
     // The ETA section's date-field pickers are delegated the same way its list is rebuilt in place.
     this.elements.etaBody.addEventListener("change", this.handleEtaChange);
+    this.hierarchy.init();
   }
 
   dispose(): void {
@@ -130,12 +142,14 @@ export class WorkItemTypesController {
     this.elements.addTypeButton.removeEventListener("click", this.handleAddType);
     this.elements.body.removeEventListener("change", this.handleBodyChange);
     this.elements.body.removeEventListener("click", this.handleBodyClick);
+    this.elements.body.removeEventListener("focusout", this.handleBodyFocusOut);
     this.elements.body.removeEventListener("dragstart", this.handleDragStart);
     this.elements.body.removeEventListener("dragover", this.handleDragOver);
     this.elements.body.removeEventListener("drop", this.handleDrop);
     this.elements.body.removeEventListener("dragend", this.handleDragEnd);
     this.elements.columnsRow.removeEventListener("change", this.handleColumnChange);
     this.elements.etaBody.removeEventListener("change", this.handleEtaChange);
+    this.hierarchy.dispose();
   }
 
   /** Seed the table header and rows from stored settings. Rows render even without live metadata. */
@@ -144,8 +158,10 @@ export class WorkItemTypesController {
     this.columns = boardColumns.map((name) => ({ id: `c${this.nextColumnId++}`, name }));
     this.renderHeader();
     this.elements.body.replaceChildren();
-    // The store is the source of truth for the ETA picks, so reset the map before re-seeding it.
+    // The store is the source of truth for the ETA picks and the hierarchy, so reset both before
+    // re-seeding them.
     this.etaByType.clear();
+    this.hierarchy.reset();
     for (const entry of entries) {
       const row = this.createTypeRow();
       this.elements.body.append(row);
@@ -153,11 +169,14 @@ export class WorkItemTypesController {
       if (entry.etaField) {
         this.etaByType.set(entry.name.toLowerCase(), entry.etaField);
       }
+      if (entry.children) {
+        this.hierarchy.setChildren(entry.name, entry.children);
+      }
       this.fillCellsFromEntry(row, entry.columns);
       this.refreshRow(row);
     }
     this.updateEmpty();
-    this.renderEtaSection();
+    this.renderDerivedSections();
   }
 
   /** Provide the org/project's work item types; refreshes every row's picker and state pools. */
@@ -173,7 +192,7 @@ export class WorkItemTypesController {
     }
     this.refreshTypeOptions();
     // Live metadata carries each type's date fields, so the ETA pickers can only fill in now.
-    this.renderEtaSection();
+    this.renderDerivedSections();
   }
 
   enable(): void {
@@ -246,10 +265,45 @@ export class WorkItemTypesController {
       case STATE_REMOVE_ROLE:
         this.removeState(target);
         break;
+      case STATE_ADD_ROLE:
+        this.openStatePicker(target.closest<HTMLElement>(CELL_SELECTOR));
+        break;
       default:
         break;
     }
   };
+
+  /** Collapse a state picker back to its "+" as soon as it loses focus. */
+  private readonly handleBodyFocusOut = (event: Event): void => {
+    const target = event.target as HTMLElement;
+    if (target.getAttribute(ROLE_ATTRIBUTE) !== STATE_ROLE) {
+      return;
+    }
+    (target as HTMLInputElement).value = "";
+    this.showStatePicker(target.closest<HTMLElement>(CELL_SELECTOR), false);
+  };
+
+  /** Reveal a cell's picker in place of its "+" and open its list by focusing it. */
+  private openStatePicker(cell: HTMLElement | null): void {
+    this.showStatePicker(cell, true);
+    cell?.querySelector<HTMLInputElement>(STATE_INPUT_SELECTOR)?.focus();
+  }
+
+  /**
+   * Show either the "+" or the open picker — and neither once the row has no unplaced state left,
+   * which is also the state a row sits in before its work item type is chosen.
+   */
+  private showStatePicker(cell: HTMLElement | null, picking: boolean): void {
+    const row = cell?.closest<HTMLElement>(ROW_SELECTOR);
+    const add = cell?.querySelector<HTMLElement>(STATE_ADD_SELECTOR);
+    const combobox = cell?.querySelector<HTMLElement>(COMBOBOX_SELECTOR);
+    if (!row || !add || !combobox) {
+      return;
+    }
+    const offered = this.rowPool(row).length > 0;
+    combobox.hidden = !(picking && offered);
+    add.hidden = !offered || !combobox.hidden;
+  }
 
   private commitType(input: HTMLInputElement): void {
     const row = input.closest<HTMLElement>(ROW_SELECTOR);
@@ -261,7 +315,7 @@ export class WorkItemTypesController {
       this.clearRowType(row);
       this.refreshRow(row);
       this.refreshTypeOptions();
-      this.renderEtaSection();
+      this.renderDerivedSections();
       this.persistTypes();
       return;
     }
@@ -275,7 +329,7 @@ export class WorkItemTypesController {
     this.applyType(row, match.name, match.color, match.icon);
     this.refreshRow(row);
     this.refreshTypeOptions();
-    this.renderEtaSection();
+    this.renderDerivedSections();
     this.persistTypes();
   }
 
@@ -296,8 +350,11 @@ export class WorkItemTypesController {
     this.refreshRow(row);
     this.persistTypes();
     // The field keeps focus after a pick, so no `focus` event fires to reveal the remaining states;
-    // reopen the list explicitly so the next state is immediately selectable.
-    this.stateComboboxes.get(input)?.reopen();
+    // reopen the list explicitly so the next state is immediately selectable — unless that was the
+    // last unplaced state, in which case `refreshRow` has already folded the picker away.
+    if (cell.querySelector<HTMLElement>(COMBOBOX_SELECTOR)?.hidden === false) {
+      this.stateComboboxes.get(input)?.reopen();
+    }
   }
 
   private deleteRow(target: HTMLElement): void {
@@ -309,8 +366,8 @@ export class WorkItemTypesController {
     this.updateEmpty();
     // The removed row's type is free again, so offer it back to the remaining pickers.
     this.refreshTypeOptions();
-    // The removed type drops out of the read-only ETA list too.
-    this.renderEtaSection();
+    // The removed type drops out of the read-only ETA list and the hierarchy too.
+    this.renderDerivedSections();
     this.persistTypes();
   }
 
@@ -413,9 +470,9 @@ export class WorkItemTypesController {
     }
     event.preventDefault();
     if (overChip === null) {
-      // Dropped past the last chip: move it to the end, just before the add-state field.
-      const container = this.querySelector<HTMLElement>(cell, ".wit-cell__states");
-      container.insertBefore(dragged, this.querySelector(container, ".combobox"));
+      // Dropped past the last chip: move it to the end, just before the add control.
+      const container = this.querySelector<HTMLElement>(cell, STATES_SELECTOR);
+      container.insertBefore(dragged, this.querySelector(container, STATE_ADD_SELECTOR));
     } else {
       const order = [...cell.querySelectorAll<HTMLElement>(STATE_SELECTOR)];
       if (order.indexOf(dragged) < order.indexOf(overChip)) {
@@ -448,7 +505,7 @@ export class WorkItemTypesController {
     }
     // The ETA list mirrors the table's order, so re-render it to keep both lists in sync, then
     // persist the new parent→child order.
-    this.renderEtaSection();
+    this.renderDerivedSections();
     this.persistTypes();
     this.endDrag();
   }
@@ -511,13 +568,14 @@ export class WorkItemTypesController {
     corner.textContent = "Work item type";
     this.elements.columnsRow.append(corner);
     this.columns.forEach((column, index) => {
-      this.elements.columnsRow.append(this.createColumnHeader(doc, column, index === 0));
+      this.elements.columnsRow.append(this.createColumnHeader(doc, column, index));
     });
   }
 
-  private createColumnHeader(doc: Document, column: ColumnModel, isFallback: boolean): HTMLElement {
+  private createColumnHeader(doc: Document, column: ColumnModel, index: number): HTMLElement {
     const cell = doc.createElement("th");
     cell.scope = "col";
+    const isFallback = index === 0;
     cell.className = isFallback ? "wit-col wit-col--fallback" : "wit-col";
     cell.setAttribute(COLUMN_ID_ATTRIBUTE, column.id);
     if (isFallback) {
@@ -525,13 +583,19 @@ export class WorkItemTypesController {
       cell.title =
         "States you don't place fall back to this first column (considered not picked up).";
     }
+    // The views read a column by its POSITION, never by its title, so each column announces the
+    // meaning it carries — otherwise a renamed column gives no hint which behaviour it drives.
+    const meaning = BOARD_COLUMN_MEANINGS[index] ?? "";
+    const hint = this.createElement(doc, "span", "wit-col__meaning");
+    hint.textContent = meaning;
     const input = doc.createElement("input");
     input.type = "text";
     input.className = "wit-col__name";
-    input.setAttribute("aria-label", "Board column name");
+    input.setAttribute("aria-label", `Board column name — ${meaning}`);
+    input.title = meaning;
     input.setAttribute(ROLE_ATTRIBUTE, COLUMN_NAME_ROLE);
     input.value = column.name;
-    cell.append(input);
+    cell.append(hint, input);
     return cell;
   }
 
@@ -618,16 +682,27 @@ export class WorkItemTypesController {
     cell.className = "wit-cell";
     cell.setAttribute(COLUMN_ID_ATTRIBUTE, columnId);
     const states = this.createElement(doc, "div", "wit-cell__states");
+    const add = this.createButton(
+      doc,
+      STATE_ADD_ROLE,
+      "Add a state to this column",
+      "+",
+      "wit-chip-add",
+    );
+    add.title = "Add a state to this column";
     const input = doc.createElement("input");
     input.type = "text";
     input.setAttribute("aria-label", "Add a state to this column");
     input.setAttribute(ROLE_ATTRIBUTE, STATE_ROLE);
-    input.placeholder = "Add state…";
+    input.placeholder = "State…";
     const combobox = new AutocompleteInput(input);
     combobox.enableFloating();
     this.stateComboboxes.set(input, combobox);
-    // The picker field is the last child; chips are inserted before it so the input stays at the end.
-    states.append(combobox.root);
+    // A cell idles as its chips plus the "+"; the picker only unfolds once that button is pressed.
+    combobox.root.hidden = true;
+    // The add control is the last chip-free element; chips are inserted before it so both the button
+    // and the picker it reveals stay at the end of the cell.
+    states.append(add, combobox.root);
     cell.append(states);
     return cell;
   }
@@ -654,7 +729,7 @@ export class WorkItemTypesController {
 
   private insertStateChip(cell: HTMLElement, state: string): void {
     const doc = cell.ownerDocument;
-    const statesContainer = this.querySelector<HTMLElement>(cell, ".wit-cell__states");
+    const statesContainer = this.querySelector<HTMLElement>(cell, STATES_SELECTOR);
     const chip = this.createElement(doc, "span", "wit-state");
     chip.dataset.state = state;
     // Chips are drag-reorderable within their column; the first is the column's primary/default.
@@ -669,7 +744,7 @@ export class WorkItemTypesController {
       "wit-state__remove",
     );
     chip.append(label, remove);
-    statesContainer.insertBefore(chip, this.querySelector(statesContainer, ".combobox"));
+    statesContainer.insertBefore(chip, this.querySelector(statesContainer, STATE_ADD_SELECTOR));
     this.markPrimary(cell);
   }
 
@@ -779,13 +854,15 @@ export class WorkItemTypesController {
   private refreshRow(row: HTMLElement): void {
     const pool = this.rowPool(row);
     for (const input of row.querySelectorAll<HTMLInputElement>(STATE_INPUT_SELECTOR)) {
-      const combobox = this.stateComboboxes.get(input);
-      combobox?.setOptions(pool);
-      // Nothing left to place — no type chosen yet, or every state is already mapped — so hide the
-      // add-state field; the cell then shows only its chips.
-      if (combobox !== undefined) {
-        combobox.root.hidden = pool.length === 0;
-      }
+      this.stateComboboxes.get(input)?.setOptions(pool);
+      // Keep an already-unfolded picker unfolded, but let it collapse the moment its last option is
+      // taken — and hide the "+" too, since there is then nothing left to place (which is also the
+      // state a row sits in before its work item type is chosen).
+      const cell = input.closest<HTMLElement>(CELL_SELECTOR);
+      this.showStatePicker(
+        cell,
+        cell?.querySelector<HTMLElement>(COMBOBOX_SELECTOR)?.hidden === false,
+      );
     }
   }
 
@@ -868,6 +945,11 @@ export class WorkItemTypesController {
       if (etaField) {
         type.etaField = etaField;
       }
+      // A type with no children is a leaf, and a leaf stores nothing.
+      const children = this.hierarchy.childrenFor(name);
+      if (children.length > 0) {
+        type.children = children;
+      }
       result.push(type);
     }
     return result;
@@ -931,48 +1013,36 @@ export class WorkItemTypesController {
     return this.querySelector<HTMLElement>(row, ".wit-type__label");
   }
 
-  // ── ETA date-field section ──────────────────────────────────────────────────
+  // ── Table-driven sections (ETA + hierarchy) ─────────────────────────────────
+
+  /** Re-render both sections the table drives, so all three always show the same set and order. */
+  private renderDerivedSections(): void {
+    const committed = this.committedTypes();
+    this.renderEtaSection(committed);
+    this.hierarchy.render(committed);
+  }
 
   /**
    * Rebuild the read-only ETA list: one row per committed type (in table order), each offering that
    * type's date fields. The list is driven by the table, so a type only appears here once committed
    * above, and picking a field just records it — there is nothing to add or remove in this section.
    */
-  private renderEtaSection(): void {
+  private renderEtaSection(committed: readonly LabeledType[]): void {
     const doc = this.elements.etaBody.ownerDocument;
     this.elements.etaBody.replaceChildren();
-    const committed = this.committedTypes();
     for (const type of committed) {
       this.elements.etaBody.append(this.createEtaRow(doc, type));
     }
     this.elements.etaEmpty.hidden = committed.length > 0;
   }
 
-  private createEtaRow(doc: Document, type: CommittedType): HTMLElement {
+  private createEtaRow(doc: Document, type: LabeledType): HTMLElement {
     const row = this.createElement(doc, "div", "wit-eta-row");
-    const label = this.createElement(doc, "span", "wit-eta-row__type");
-    if (type.icon) {
-      const icon = doc.createElement("img");
-      icon.className = "wit-eta-row__icon";
-      icon.width = 18;
-      icon.height = 18;
-      icon.alt = "";
-      // The icon host is whatever the tenant configured, so do not tell it which page is showing.
-      icon.referrerPolicy = "no-referrer";
-      icon.src = type.icon;
-      // An ADO icon URL may not load from the extension origin; degrade to the colored name alone.
-      icon.addEventListener("error", () => icon.remove());
-      label.append(icon);
-    }
-    const name = this.createElement(doc, "span", "wit-eta-row__name");
-    name.textContent = type.name;
-    name.style.color = type.color ? `#${type.color}` : "";
-    label.append(name);
-    row.append(label, this.createEtaSelect(doc, type));
+    row.append(createTypeLabel(doc, type), this.createEtaSelect(doc, type));
     return row;
   }
 
-  private createEtaSelect(doc: Document, type: CommittedType): HTMLSelectElement {
+  private createEtaSelect(doc: Document, type: LabeledType): HTMLSelectElement {
     const select = doc.createElement("select");
     select.className = "wit-eta-row__field";
     select.setAttribute(ROLE_ATTRIBUTE, ETA_ROLE);
@@ -1023,8 +1093,8 @@ export class WorkItemTypesController {
     this.persistTypes();
   };
 
-  /** The committed types in table order, deduped by name (the ETA section mirrors the table). */
-  private committedTypes(): CommittedType[] {
+  /** The committed types in table order, deduped by name (both derived sections mirror the table). */
+  private committedTypes(): LabeledType[] {
     return this.committedRows().map((row) => ({
       name: row.dataset.typeName ?? "",
       color: row.dataset.typeColor ?? "",

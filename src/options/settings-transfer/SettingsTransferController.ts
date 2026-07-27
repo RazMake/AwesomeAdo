@@ -2,6 +2,7 @@ import type { IQueryBindingStore } from "../../common/bindings/IQueryBindingStor
 import type { ISettingsStore } from "../../common/settings/ISettingsStore";
 import {
   CONFIG_FILE_NAME,
+  ConfigImportError,
   exportConfig,
   importConfig,
 } from "../../common/settings-transfer/AwesomeAdoConfig";
@@ -18,8 +19,22 @@ export interface SettingsTransferElements {
 
 type ReportError = (error: unknown) => void;
 
+/**
+ * Told that the stored configuration has just been replaced from a file, so the sections that read
+ * their values once at load can re-read them. Kept as a callback rather than a reference to those
+ * controllers so this one stays unaware of the rest of the page.
+ */
+type OnImported = () => void;
+
 const defaultReportError: ReportError = (error) =>
   console.error("AwesomeADO could not transfer settings", error);
+
+/**
+ * Marks the status line as a failure. A failed import otherwise differs from a successful one by
+ * wording alone, on a line the user has already learned to read as "done" — so the colour, not the
+ * sentence, is what makes a rejected file impossible to mistake for a loaded one.
+ */
+const STATUS_ERROR_CLASS = "card__hint--error";
 
 /**
  * Binds the Appearance panel's Import/Export controls to BOTH the settings store and the query
@@ -39,6 +54,7 @@ export class SettingsTransferController {
     private readonly bindingStore: IQueryBindingStore,
     private readonly elements: SettingsTransferElements,
     private readonly reportError: ReportError = defaultReportError,
+    private readonly onImported: OnImported = () => {},
   ) {}
 
   init(): void {
@@ -88,19 +104,43 @@ export class SettingsTransferController {
       return;
     }
     try {
-      const { settings, enhancedQueries } = importConfig(await file.text());
-      // Persist to both stores. Bindings are replaced wholesale so the file is authoritative.
+      const { settings, enhancedQueries, problems } = importConfig(await file.text());
+      // Persist whatever the file offered. Settings arrive as a partial, so a value the file omitted
+      // or got wrong keeps what the user has today; bindings are replaced wholesale so the file is
+      // authoritative about which queries are enhanced.
       await Promise.all([
         this.settingsStore.write(settings),
         this.bindingStore.replaceAll(enhancedQueries),
       ]);
-      this.setStatus("Imported your configuration.");
+      // The page is showing the configuration the file just replaced, so tell it to re-read before
+      // reporting success: leaving it stale would both hide the import and let the next edit save
+      // the old values back over it.
+      this.onImported();
+      this.reportImported(problems);
     } catch (error: unknown) {
       this.fail("import the selected file", error);
     } finally {
       // Reset so selecting the same file again still fires a `change` event.
       this.elements.fileInput.value = "";
     }
+  }
+
+  /**
+   * Announce what the import actually did. A partly-applied file is reported as a failure — logged
+   * in full and shown in red — because the parts that were skipped are exactly the ones the user
+   * would otherwise go looking for later, long after "Imported your configuration." scrolled by.
+   */
+  private reportImported(problems: readonly string[]): void {
+    if (problems.length === 0) {
+      this.setStatus("Imported your configuration.");
+      return;
+    }
+    this.reportError(new ConfigImportError(problems));
+    const count = `${problems.length} problem${problems.length === 1 ? "" : "s"}`;
+    this.setStatus(
+      `Imported your configuration, but skipped ${count}: ${problems.join(" ")}`,
+      true,
+    );
   }
 
   private download(filename: string, contents: string): void {
@@ -118,16 +158,20 @@ export class SettingsTransferController {
     }
   }
 
-  private setStatus(message: string): void {
+  private setStatus(message: string, failed = false): void {
     if (this.disposed) {
       return;
     }
     this.elements.status.textContent = message;
+    this.elements.status.classList.toggle(STATUS_ERROR_CLASS, failed);
   }
 
   private fail(action: string, error: unknown): void {
+    // Record first: the log is the only place the full detail (and stack) survives once the user
+    // navigates away, and it must be written even if updating the status line is suppressed by a
+    // dispose that raced this failure.
     this.reportError(error);
     const detail = error instanceof Error ? error.message : String(error);
-    this.setStatus(`Could not ${action}: ${detail}`);
+    this.setStatus(`Could not ${action}: ${detail}`, true);
   }
 }

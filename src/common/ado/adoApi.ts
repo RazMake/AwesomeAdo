@@ -15,6 +15,16 @@ export const ADO_API_VERSION = "7.1";
 export const ASSIGNED_TO_FIELD = "System.AssignedTo";
 
 /**
+ * The reference name of Azure DevOps' manual backlog rank (a LOWER number is more important).
+ *
+ * Named here rather than inside the tree loader because both ends of "order by importance" now use
+ * it: the tree READS it to sort a level, and the drag-reorder fallback WRITES it when ADO's own
+ * backlog-order endpoint refuses to rank an item. Two literals would let the board sort on one field
+ * while a move wrote another, which reads as a drop that silently snapped back.
+ */
+export const IMPORTANCE_FIELD = "Microsoft.VSTS.Common.StackRank";
+
+/**
  * The string an identity field is patched with for a picked person.
  *
  * Azure DevOps resolves an identity field from a unique name (the sign-in address), so that is used

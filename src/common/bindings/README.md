@@ -79,16 +79,26 @@ so the top-bar menu sends a typed message to the background service worker, whic
   — the typed message (and its guard) that opens the options page pre-selected to bind one query.
   The message optionally carries the query's `queryName` scraped from the page it was triggered on.
 - `OPEN_OPTIONS_MESSAGE`, `OpenOptionsMessage`, `isOpenOptionsMessage(value)` — the typed message
-  (and its guard) that opens the general options page with no query pre-selected.
+  (and its guard) that opens the general options page with no query pre-selected. It optionally
+  carries a `section` to deep-link into (`"diagnostics"`) and `errorsOnly`, which additionally asks
+  the Diagnostics log to open filtered to errors.
+- `REVEAL_OPTIONS_SECTION_MESSAGE`, `RevealOptionsSectionMessage`,
+  `isRevealOptionsSectionMessage(value)` — sent by the service worker to an options page that is
+  already open, telling it to switch to `section` (honouring `errorsOnly`) in place, since a reused
+  tab won't re-read the target from a URL.
 - `REVEAL_BINDING_SETTINGS_MESSAGE`, `RevealBindingSettingsMessage`,
   `isRevealBindingSettingsMessage(value)` — sent by the service worker to an options page that is
   already open, telling it to jump to the Bindings tab and populate the form for one query in place
   (a reused tab won't re-read the query from a URL). Carries the same `queryId`/`queryName` payload.
 - `bindingSettingsPath(queryId, queryName?)` — extension-relative options URL carrying the query id
   (and its name when known); pass it to `chrome.runtime.getURL`.
-- `optionsPath()` — extension-relative options URL with no query pre-selected.
+- `optionsPath(section?, errorsOnly?)` — extension-relative options URL with no query pre-selected;
+  a `section` deep-links into that tab and `errorsOnly` opens the Diagnostics log filtered to errors.
+- `sectionTabId(section)` — the options-page tab element id that presents a deep-linkable section.
 - `readQueryIdFromSearch(search)` — read the query id back on the options page, or `null`.
 - `readQueryNameFromSearch(search)` — read the query name back on the options page, or `null`.
+- `readOptionsSectionFromSearch(search)` — read the section to reveal, or `null`.
+- `readErrorsOnlyFromSearch(search)` — whether the URL asks for the log's errors-only filter.
 
 ## Storage layout
 

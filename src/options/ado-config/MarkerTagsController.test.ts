@@ -73,25 +73,27 @@ function setValue(input: HTMLInputElement, value: string): void {
   input.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
-describe("MarkerTagsController", () => {
-  let store: FakeSettingsStore;
-  let elements: MarkerTagsElements;
-  let errors: unknown[];
-  let controller: MarkerTagsController;
+// One harness shared by every group below, so each `describe` stays a cohesive slice of behaviour
+// rather than a long list held together only by its setup.
+let store: FakeSettingsStore;
+let elements: MarkerTagsElements;
+let errors: unknown[];
+let controller: MarkerTagsController;
 
-  beforeEach(() => {
-    store = new FakeSettingsStore();
-    elements = makeElements();
-    errors = [];
-    controller = new MarkerTagsController(store, elements, (error) => errors.push(error));
-    controller.init();
-  });
+beforeEach(() => {
+  store = new FakeSettingsStore();
+  elements = makeElements();
+  errors = [];
+  controller = new MarkerTagsController(store, elements, (error) => errors.push(error));
+  controller.init();
+});
 
-  afterEach(() => {
-    controller.dispose();
-    document.body.replaceChildren();
-  });
+afterEach(() => {
+  controller.dispose();
+  document.body.replaceChildren();
+});
 
+describe("MarkerTagsController rendering", () => {
   it("renders one row per marker, seeded with the provided values", () => {
     controller.render(DEFAULT_MARKER_TAGS);
 
@@ -104,7 +106,9 @@ describe("MarkerTagsController", () => {
     expect(inputFor(elements, "interrupt", "comment").value).toBe("");
     expect(inputFor(elements, "waiting", "comment").value).toBe("[WAITING]");
   });
+});
 
+describe("MarkerTagsController persistence", () => {
   it("persists all markers on a change, trimming the edited value", async () => {
     controller.render(DEFAULT_MARKER_TAGS);
 
@@ -128,7 +132,66 @@ describe("MarkerTagsController", () => {
     const written = store.writeCalls.at(-1)?.markerTags as WorkItemMarkerTags;
     expect(written.interrupt).toEqual({ tag: "", commentTag: "" });
   });
+});
 
+describe("MarkerTagsController targeted writes", () => {
+  it("stores an edit under the row it was typed into, leaving its neighbours untouched", async () => {
+    controller.render(DEFAULT_MARKER_TAGS);
+
+    setValue(inputFor(elements, "interrupt", "comment"), "[INTERRUPT]");
+    await flush();
+
+    const written = store.writeCalls.at(-1)?.markerTags as WorkItemMarkerTags;
+    expect(written.interrupt).toEqual({ tag: "Interrupt", commentTag: "[INTERRUPT]" });
+    // The neighbouring markers keep the last accepted values; only the edited field moves.
+    expect(written.blockedByOtherTeam).toEqual(DEFAULT_MARKER_TAGS.blockedByOtherTeam);
+    expect(written.blocked).toEqual(DEFAULT_MARKER_TAGS.blocked);
+    expect(written.waiting).toEqual(DEFAULT_MARKER_TAGS.waiting);
+  });
+
+  it("carries the last accepted values over rather than re-reading the other rows", async () => {
+    controller.render(DEFAULT_MARKER_TAGS);
+    // Simulate the section's DOM drifting away from what was accepted (an outside write the page
+    // never re-rendered, or a value the browser restored into the wrong control): the edit must
+    // still be attributed to its own row, and the untouched markers must not be re-scraped.
+    inputFor(elements, "blockedByOtherTeam", "tag").value = "Stale";
+
+    setValue(inputFor(elements, "interrupt", "tag"), "Interruption");
+    await flush();
+
+    const written = store.writeCalls.at(-1)?.markerTags as WorkItemMarkerTags;
+    expect(written.interrupt.tag).toBe("Interruption");
+    expect(written.blockedByOtherTeam).toEqual(DEFAULT_MARKER_TAGS.blockedByOtherTeam);
+  });
+
+  it("ignores a change from a control that is not one of its marker inputs", async () => {
+    controller.render(DEFAULT_MARKER_TAGS);
+    const stray = document.createElement("input");
+    elements.list.append(stray);
+
+    setValue(stray, "Nonsense");
+    await flush();
+
+    expect(store.writeCalls).toHaveLength(0);
+  });
+
+  it("ignores an edit that arrives before the rows are seeded", async () => {
+    const orphan = document.createElement("div");
+    orphan.className = "marker-tags-row";
+    orphan.setAttribute("data-marker", "interrupt");
+    const input = document.createElement("input");
+    input.setAttribute("data-role", "tag");
+    orphan.append(input);
+    elements.list.append(orphan);
+
+    setValue(input, "Too early");
+    await flush();
+
+    expect(store.writeCalls).toHaveLength(0);
+  });
+});
+
+describe("MarkerTagsController failure handling", () => {
   it("restores the last accepted values and reports the error when a write fails", async () => {
     controller.render(DEFAULT_MARKER_TAGS);
     store.setWriteError(new Error("sync offline"));

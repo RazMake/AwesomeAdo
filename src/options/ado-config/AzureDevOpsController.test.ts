@@ -33,6 +33,11 @@ class FakeSettingsStore implements ISettingsStore {
     this.readError = error;
   }
 
+  /** Replace what a later read returns, standing in for an outside write (a config file import). */
+  setSettings(update: Partial<ExtensionSettings>): void {
+    this.readValue = { ...this.readValue, ...update };
+  }
+
   setWriteError(error: unknown): void {
     this.writeError = error;
   }
@@ -98,6 +103,10 @@ function makeElements(): AzureDevOpsElements {
   const workItemTypeAddButton = document.createElement("button");
   const witEtaBody = document.createElement("div");
   const witEtaEmpty = document.createElement("p");
+  const witHierarchyTable = document.createElement("table");
+  const witHierarchyBody = document.createElement("tbody");
+  witHierarchyTable.append(witHierarchyBody);
+  const witHierarchyEmpty = document.createElement("p");
   const markerTagsList = document.createElement("div");
   document.body.append(
     organization,
@@ -113,6 +122,8 @@ function makeElements(): AzureDevOpsElements {
     workItemTypeAddButton,
     witEtaBody,
     witEtaEmpty,
+    witHierarchyTable,
+    witHierarchyEmpty,
     markerTagsList,
   );
   return {
@@ -131,6 +142,7 @@ function makeElements(): AzureDevOpsElements {
       addTypeButton: workItemTypeAddButton,
       etaBody: witEtaBody,
       etaEmpty: witEtaEmpty,
+      hierarchy: { body: witHierarchyBody, empty: witHierarchyEmpty },
     },
     markerTags: {
       list: markerTagsList,
@@ -611,5 +623,42 @@ describe("AzureDevOpsController — disposal", () => {
     controller.dispose();
     await init;
     expect(elements.teamInput.value).toBe("");
+  });
+});
+
+describe("AzureDevOpsController — reload", () => {
+  it("shows settings that were replaced from outside the page", async () => {
+    const fixture = makeFixture();
+    const controller = await bootController(fixture);
+    expect(fixture.elements.teamInput.value).toBe("");
+
+    fixture.store.setSettings({
+      currentTeam: { id: "9", name: "Imported" },
+      futureSprintsCount: 4,
+      areaPaths: [{ path: "Imported\\Area", label: "Imported" }],
+    });
+    await controller.reload();
+
+    expect(fixture.elements.teamInput.value).toBe("Imported");
+    expect(fixture.elements.futureSprintsInput.value).toBe("4");
+    expect(pathRows(fixture.elements)).toHaveLength(1);
+    expect(input(rowAt(fixture.elements, 0), "path").value).toBe("Imported\\Area");
+  });
+
+  it("reports a failed re-read instead of leaving the page silently stale", async () => {
+    const fixture = makeFixture();
+    const errors: unknown[] = [];
+    const controller = new AzureDevOpsController(
+      fixture.store,
+      fixture.reader,
+      fixture.elements,
+      (error) => errors.push(error),
+    );
+    await controller.init();
+
+    fixture.store.setReadError(new Error("storage offline"));
+    await controller.reload();
+
+    expect(errors).toHaveLength(1);
   });
 });

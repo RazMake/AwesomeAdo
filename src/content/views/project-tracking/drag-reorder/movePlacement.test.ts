@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { placementOf, resolveMove, type MovePlacement } from "./movePlacement";
+import { placementOf, resolveMove, type ResolvedMove } from "./movePlacement";
 
 /** The level the moved item starts in for the same-parent cases: 2, 3, 4 under parent 10. */
 const LEVEL = [2, 3, 4] as const;
@@ -10,7 +10,7 @@ const sameParentMove = (
   movedId: number,
   targetId: number,
   side: "before" | "after",
-): MovePlacement | null =>
+): ResolvedMove | null =>
   resolveMove({
     movedId,
     currentParentId: 10,
@@ -45,25 +45,52 @@ describe("placementOf", () => {
 
 describe("resolveMove - within one parent", () => {
   it("lands the item above the target when dropped before it", () => {
-    expect(sameParentMove(4, 3, "before")).toEqual({ parentId: 10, previousId: 2, nextId: 3 });
+    expect(sameParentMove(4, 3, "before")).toEqual({
+      parentId: 10,
+      previousId: 2,
+      nextId: 3,
+      siblingIds: [2, 4, 3],
+    });
   });
 
   it("lands the item below the target when dropped after it", () => {
-    expect(sameParentMove(2, 3, "after")).toEqual({ parentId: 10, previousId: 3, nextId: 4 });
+    expect(sameParentMove(2, 3, "after")).toEqual({
+      parentId: 10,
+      previousId: 3,
+      nextId: 4,
+      siblingIds: [3, 2, 4],
+    });
   });
 
   it("uses the 0 sentinel when the item lands first in the level", () => {
-    expect(sameParentMove(4, 2, "before")).toEqual({ parentId: 10, previousId: 0, nextId: 2 });
+    expect(sameParentMove(4, 2, "before")).toEqual({
+      parentId: 10,
+      previousId: 0,
+      nextId: 2,
+      siblingIds: [4, 2, 3],
+    });
   });
 
   it("uses the 0 sentinel when the item lands last in the level", () => {
-    expect(sameParentMove(2, 4, "after")).toEqual({ parentId: 10, previousId: 4, nextId: 0 });
+    expect(sameParentMove(2, 4, "after")).toEqual({
+      parentId: 10,
+      previousId: 4,
+      nextId: 0,
+      siblingIds: [3, 4, 2],
+    });
   });
 
   it("excludes the moved item from the level before naming its new neighbours", () => {
     // Item 2 is vacating its own slot, so dropping it after 3 must read the level as [3, 4] —
     // leaving it in would name 2 itself as the item's own previous sibling.
-    expect(sameParentMove(2, 3, "after")).toEqual({ parentId: 10, previousId: 3, nextId: 4 });
+    expect(sameParentMove(2, 3, "after")?.previousId).toBe(3);
+    expect(sameParentMove(2, 3, "after")?.nextId).toBe(4);
+  });
+
+  it("reports the level in its post-drop order, with the item present exactly once", () => {
+    // The rank fallback ranks against this list, so an item left in its old slot as well as its new
+    // one would have it ranked twice and land somewhere the user never dropped it.
+    expect(sameParentMove(2, 4, "after")?.siblingIds).toEqual([3, 4, 2]);
   });
 });
 
@@ -79,7 +106,7 @@ describe("resolveMove - into another parent", () => {
       targetSiblingIds: [5, 6, 7],
     });
 
-    expect(move).toEqual({ parentId: 20, previousId: 6, nextId: 7 });
+    expect(move).toEqual({ parentId: 20, previousId: 6, nextId: 7, siblingIds: [5, 6, 2, 7] });
   });
 
   it("is a real move even when the neighbours happen to match the item's current ones", () => {
@@ -95,7 +122,7 @@ describe("resolveMove - into another parent", () => {
       targetSiblingIds: [1, 3],
     });
 
-    expect(move).toEqual({ parentId: 20, previousId: 1, nextId: 3 });
+    expect(move).toEqual({ parentId: 20, previousId: 1, nextId: 3, siblingIds: [1, 2, 3] });
   });
 });
 
@@ -136,6 +163,6 @@ describe("resolveMove - drops that are not moves", () => {
       targetSiblingIds: LEVEL,
     });
 
-    expect(move).toEqual({ parentId: 10, previousId: 0, nextId: 3 });
+    expect(move).toEqual({ parentId: 10, previousId: 0, nextId: 3, siblingIds: [2, 3, 4] });
   });
 });

@@ -18,6 +18,11 @@ This component does not log; it surfaces failures through the options page's sha
 
 - **`AzureDevOpsController`** — controls the Azure DevOps tab end to end, coordinating the team
   combobox, area paths, sprint count, and the nested work-item-types and marker-tags sub-controllers.
+  It reads the stored settings once at `init()` and then treats its own controls as the working copy,
+  so **`reload()`** re-reads them without re-wiring anything — call it when the stored configuration
+  is replaced from outside the tab (a configuration file import), or the tab keeps showing, and on
+  the next edit re-saves, the configuration that was replaced. It deliberately does not re-read the
+  ADO metadata, which describes the organization and no import can change.
 - **`AzureDevOpsElements`** — the DOM elements the controller drives, passed in so it stays testable.
 
 ### `MarkerTagsController.ts`
@@ -25,24 +30,57 @@ This component does not log; it surfaces failures through the options page's sha
 - **`MarkerTagsController`** — nested controller (owned by `AzureDevOpsController`) for the
   **Marker tags** section. It renders one row per recognized condition (blocked, blocked by another
   team, interrupt, waiting) from the shared `WORK_ITEM_MARKERS` list, binding each condition's Azure
-  DevOps **tag** and **comment tag** to the `markerTags` setting it owns. A failed write restores the
-  last accepted values so the fields never show a value the store rejected.
+  DevOps **tag** and **comment tag** to the `markerTags` setting it owns. An edit is persisted as a
+  **targeted patch**: the edited control names its own marker (its row) and field (its role), and
+  every other marker is carried over from the last accepted state rather than re-read from the DOM,
+  so a value can never be stored under a neighbouring marker. A failed write restores the last
+  accepted values so the fields never show a value the store rejected.
 - **`MarkerTagsElements`** — the container element it fills with the marker rows.
 
 ### `WorkItemTypesController.ts`
 
 - **`WorkItemTypesController`** — nested controller (owned by `AzureDevOpsController`) for the
-  work-item-type-to-board-column mapping table. It also owns a second, **read-only ETA section** that
-  lists each committed type with a dropdown of that type's date fields (from ADO metadata) chosen as
-  its ETA. The ETA lives on the same `workItemTypes` setting this controller already writes, so a
-  single writer keeps the table and the ETA section in sync. The ETA list is driven by the table:
-  types appear once committed above and cannot be added or removed from the ETA section itself.
+  work-item-type-to-board-column mapping table. It also owns two **read-only sections driven by that
+  table**: an **ETA section** listing each committed type with a dropdown of that type's date fields
+  (from ADO metadata), and the **hierarchy section** (`WorkItemHierarchyController`). Both are stored
+  on the same `workItemTypes` setting this controller already writes, so a single writer keeps all
+  three in sync. Both lists are driven by the table: types appear once committed above and cannot be
+  added or removed from either section itself.
+  - Each board column header shows the **meaning** its position carries to the views
+    (`BOARD_COLUMN_MEANINGS`), above the editable title and repeated as the title's tooltip, because
+    the views read a column by position and a renamed title otherwise says nothing about what it
+    drives.
+  - Every mapping cell keeps its state picker folded behind a **`+`** button (the same control the
+    hierarchy section uses); the `+` disappears entirely once the row has no unplaced state left, or
+    before its work item type is chosen.
   - **Row order is meaningful.** Types are added from parent to child, top-most parent first (Epic →
     Feature → User Story → Task). Each row has a grip handle (drag it) that reorders the row; the
     table's top-to-bottom order defines the hierarchy. The order flows straight through: the ETA list
     re-renders to match, `collect()` reads rows in table order, and both save and config import
     preserve it (the `workItemTypes` array keeps its order end to end).
-- **`WorkItemTypesElements`** — the mapping-table and ETA-section elements it drives.
+- **`WorkItemTypesElements`** — the mapping-table, ETA-section, and hierarchy-section elements it
+  drives.
+
+### `WorkItemHierarchyController.ts`
+
+- **`WorkItemHierarchyController`** — nested controller (owned by `WorkItemTypesController`) for the
+  **Work item type hierarchy** section. It renders one row per committed type, listing the types that
+  may be created underneath it as removable, drag-reorderable chips; the **first** chip is the type a
+  view creates when the user adds a child. Each row's picker stays folded behind a **`+`** button and
+  only unfolds when it is clicked. Because the table above is ordered parent-to-child, a row is only
+  offered the types listed **below** it, minus any that would still loop back and minus its
+  **siblings** (types already listed under the same parent), so the hierarchy stays acyclic and the
+  last type has no `+` at all. A type with no children shows the UX-only
+  **`Leaf Item`** marker, which is never stored. The controller never writes settings — it reports
+  every edit through its `onChange` callback so `WorkItemTypesController` remains the single writer of
+  `workItemTypes`.
+- **`WorkItemHierarchyElements`** — the table body and empty-state notice it fills.
+
+### `typeLabel.ts`
+
+- **`createTypeLabel`** — builds the shared work-item-type label (ADO's own icon beside the type name
+  in ADO's own color) used by every read-only list that mirrors the work-item-types table.
+- **`LabeledType`** — the name/color/icon subset the label needs.
 
 ### `AutocompleteInput.ts`
 

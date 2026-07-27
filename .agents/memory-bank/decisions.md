@@ -597,3 +597,33 @@
   needs and a list alone cannot supply.
 - Consequence: the move is persist-then-reflect like every other control on the board — the tree is
   not touched until ADO accepts it — so there is no rollback path to get wrong.
+
+## ADR-042: When ADO refuses to rank an item, the extension writes the rank field itself
+
+- Context: `_apis/work/workitemsorder` only ranks items that already hold a position on the **team's
+  backlog**. An item with an empty `Microsoft.VSTS.Common.StackRank`, or one nested under a parent of
+  its own category (story→story, feature→feature — which
+  [Azure Boards documents as not orderable](https://learn.microsoft.com/azure/devops/boards/backlogs/resolve-backlog-reorder-issues)),
+  is answered with `TF400486` **every time**. Its wording ("you or another user has modified, removed,
+  or re-parented items") blames a concurrent edit, which is the wrong place to look entirely: nothing
+  is racing, and no retry, reload or fresher `rev` can ever clear it.
+- Decision: try the backlog endpoint first; when it refuses at the **order** stage, fall back to
+  writing `IMPORTANCE_FIELD` directly — the midpoint of the neighbours' gap, a full `RANK_SPACING`
+  step past the only neighbour at either end, or a whole-level renumber anchored to the level's lowest
+  existing rank when nothing fits. The refusal is logged with ADO's exact words **and** a plain-English
+  explanation beside them.
+- Rationale: the same approach the team's existing PowerShell project tracker already proved in this
+  org. `IMPORTANCE_FIELD` is the very field the board sorts "by importance" on, so writing it is the
+  same outcome the backlog endpoint would have produced, minus its refusal. The alternative — failing
+  the drop forever — makes drag-reorder unusable on exactly the boards this extension exists for.
+- Consequence: the reorder request carries `siblingIds`, the destination level in **post-drop** order.
+  The worker cannot derive it (it has no tree), and the two neighbours alone are not enough to
+  renumber a level.
+- Consequence: the rank writes send **no `test /rev`** guard. A rank is a position the operation just
+  computed from a read taken moments earlier, not a value a person authored; guarding it would reject
+  the write whenever anyone had touched an unrelated field, and in a renumber that would leave the
+  level half-ranked.
+- Consequence: a move now reports `reparented` and `ranks` even when it fails. ADR-041's
+  persist-then-reflect rule stands for the parts ADO rejected, but a re-parent ADO **applied** must be
+  reflected or the board keeps showing a tree that no longer exists and resends a doomed request; and
+  a renumber changes siblings the user never dragged, so every written rank is copied back.

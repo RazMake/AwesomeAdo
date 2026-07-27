@@ -1,3 +1,5 @@
+import { reachesWorkItemType } from "./workItemHierarchy";
+
 /**
  * The complete set of user-configurable options for the extension.
  *
@@ -110,6 +112,15 @@ export interface WorkItemType {
    * team that tracks ETA in different fields per type is honored.
    */
   etaField?: string;
+  /**
+   * The types that may be created underneath this one, in priority order: the **first** entry is the
+   * type a view creates when the user adds a child. Absent (or empty) means the type is a leaf.
+   *
+   * Entries name other configured types. The stored graph is kept **acyclic** by the normalizer
+   * because consumers walk it recursively, so a loop imported from a hand-edited config file would
+   * never terminate.
+   */
+  children?: string[];
 }
 
 /**
@@ -174,6 +185,20 @@ export const DEFAULT_BOARD_COLUMNS: readonly string[] = [
   "Waiting",
   "Done",
   "Removed",
+];
+
+/**
+ * What each fixed board column *means* to the enhanced views, in the same order as
+ * {@link DEFAULT_BOARD_COLUMNS}. Behaviour is tied to a column's **position**, never to its title —
+ * the title is the user's own word for it — so the options UI shows these to say which behaviour a
+ * column drives. Single source of truth, so a wording change lands in one place.
+ */
+export const BOARD_COLUMN_MEANINGS: readonly string[] = [
+  "Work on the item has not started yet",
+  "Someone is working on the item, progress is being made",
+  "Item not completed but the developer is not actively spending time on it (waiting for something before they can continue)",
+  "Item is completed (resolved)",
+  "Item has been abandoned (removed)",
 ];
 
 /** The fixed number of board columns; every normalized `boardColumns` array has exactly this length. */
@@ -401,6 +426,7 @@ function normalizeWorkItemType(raw: unknown): WorkItemType | null {
     icon?: unknown;
     columns?: unknown;
     etaField?: unknown;
+    children?: unknown;
   };
   const name = typeof candidate.name === "string" ? candidate.name.trim() : "";
   if (name.length === 0) {
@@ -416,7 +442,38 @@ function normalizeWorkItemType(raw: unknown): WorkItemType | null {
   if (etaField.length > 0) {
     type.etaField = etaField;
   }
+  // An empty child list and an absent one both mean "leaf", so only a populated list is stored.
+  const children = collectChildTypes(candidate.children, name);
+  if (children.length > 0) {
+    type.children = children;
+  }
   return type;
+}
+
+/**
+ * Collect a type's child types: trimmed, de-duplicated case-insensitively, and never the type itself.
+ * Order is preserved because it is meaningful — the first child is the one a view creates by default.
+ */
+function collectChildTypes(raw: unknown, ownName: string): string[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  // Seeding with the owning type rejects a self-reference with the same test that rejects a repeat.
+  const seen = new Set<string>([ownName.toLowerCase()]);
+  const children: string[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== "string") {
+      continue;
+    }
+    const trimmed = entry.trim();
+    const key = trimmed.toLowerCase();
+    if (trimmed.length === 0 || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    children.push(trimmed);
+  }
+  return children;
 }
 
 /** Drop unusable entries so a corrupt array can never surface a nameless or duplicated type. */
@@ -438,7 +495,55 @@ export function normalizeWorkItemTypes(raw: unknown): WorkItemType[] {
     seen.add(key);
     result.push(type);
   }
+  // Child links can only be judged against the whole list, so they are settled once it is complete.
+  pruneChildReferences(result);
   return result;
+}
+
+/**
+ * Drop every child link that names a type the list does not contain or that would close a cycle.
+ *
+ * Consumers walk the hierarchy recursively (a view expands a type's children, then theirs), so a
+ * loop would never terminate. This runs at the single entry point every stored *and* imported value
+ * passes through, which is why no consumer has to defend against one.
+ */
+function pruneChildReferences(types: WorkItemType[]): void {
+  // Canonical casing per known type, so a link stored as "user story" resolves to the type's own name.
+  const canonical = new Map(types.map((type) => [type.name.toLowerCase(), type.name]));
+  // The links accepted so far. Judging each candidate against this (rather than against the raw
+  // input) means every accepted edge is provably safe, so the finished graph cannot contain a cycle.
+  const accepted = new Map<string, string[]>(types.map((type) => [type.name.toLowerCase(), []]));
+  for (const type of types) {
+    acceptChildLinks(type, canonical, accepted);
+  }
+}
+
+/** Keep only `type`'s child links that resolve to a known type and cannot reach `type` already. */
+function acceptChildLinks(
+  type: WorkItemType,
+  canonical: ReadonlyMap<string, string>,
+  accepted: Map<string, string[]>,
+): void {
+  if (type.children === undefined) {
+    return;
+  }
+  const parentKey = type.name.toLowerCase();
+  const edges = accepted.get(parentKey) ?? [];
+  const kept: string[] = [];
+  for (const child of type.children) {
+    const childKey = child.toLowerCase();
+    const resolved = canonical.get(childKey);
+    if (resolved === undefined || reachesWorkItemType(accepted, childKey, parentKey)) {
+      continue;
+    }
+    kept.push(resolved);
+    edges.push(childKey);
+  }
+  if (kept.length > 0) {
+    type.children = kept;
+  } else {
+    delete type.children;
+  }
 }
 
 /**

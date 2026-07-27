@@ -17,6 +17,9 @@ would feed the store it is observing and loop.
 - **`DiagnosticsController`** — drives the log view: renders entries, applies the errors-only and
   per-source filters, exports the shown lines, and clears the log. Depends only on `ILogStore`
   (Dependency Inversion) so it never touches `chrome.*` and is fully testable with a fake store.
+  `showErrorsOnly()` turns the errors-only filter on from outside — the deep link the board's
+  "Couldn't save…" chip sends, so the log lands on the failure the user clicked. It is safe to call
+  before `init()` resolves; entries arriving later render through the same filter.
 - **`DiagnosticsElements`** — the log-view elements it drives, passed in so it stays DOM-agnostic.
 
 ### `MultiSelectFilter.ts`

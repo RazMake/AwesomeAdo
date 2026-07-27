@@ -1,7 +1,7 @@
 import type { ILogger } from "../../../../common/logging/ILogger";
 
 import { DropIndicator } from "./DropIndicator";
-import { resolveMove, type DropSide, type MovePlacement } from "./movePlacement";
+import { resolveMove, type DropSide, type ResolvedMove } from "./movePlacement";
 
 /** One row the user may grab, as the tree renderer describes it for a single render pass. */
 export interface DraggableRow {
@@ -26,7 +26,7 @@ export interface DraggableRow {
 }
 
 /** A resolved drop, ready to be persisted. */
-export interface PlannedMove extends MovePlacement {
+export interface PlannedMove extends ResolvedMove {
   /** The work item that moved. */
   id: number;
   /** The parent it came from, so the persistence layer can skip an unnecessary link patch. */
