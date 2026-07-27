@@ -52,6 +52,19 @@ describe("renderItemTypeIcon — the image", () => {
     // The alt is empty on purpose: the title already names the type, so a reader is not told twice.
     expect(imageOf(element)?.alt).toBe("");
   });
+
+  it("carries no tooltip at all when the caller's own control owns it", () => {
+    const { element } = renderItemTypeIcon(document, {
+      iconUrl: ICON_URL,
+      color: "#6bcf7f",
+      typeName: "Feature",
+      title: "",
+    });
+
+    // An EMPTY title attribute would still shadow the container's, leaving the reader with no
+    // tooltip; the attribute has to be absent for the container's own to show through.
+    expect(element.hasAttribute("title")).toBe(false);
+  });
 });
 
 describe("renderItemTypeIcon — the fallback dot", () => {
@@ -101,7 +114,12 @@ describe("renderItemTypeIcon — the fallback dot", () => {
 });
 
 describe("renderItemTypeIcon — emphasis", () => {
-  it("starts at full strength when the caller asked for no particular emphasis", () => {
+  /** The pair a reader actually sees, as one comparable string. */
+  function lookOf(element: HTMLElement): string {
+    return `${element.style.opacity}/${element.style.filter}`;
+  }
+
+  it("starts colored and at full strength when the caller asked for no particular emphasis", () => {
     const { element } = renderItemTypeIcon(document, {
       iconUrl: ICON_URL,
       color: null,
@@ -117,55 +135,73 @@ describe("renderItemTypeIcon — emphasis", () => {
       iconUrl: ICON_URL,
       color: null,
       typeName: "Feature",
-      emphasis: "muted",
+      emphasis: { colored: true, loud: false },
     });
 
     expect(element.style.opacity).toBe("0.55");
   });
 
-  it("drains the color at the quiet level, so 'nothing here' is not just a dimmer shade", () => {
+  it("drains the color when asked, so 'nothing here' is not just a dimmer shade", () => {
     const { element } = renderItemTypeIcon(document, {
       iconUrl: ICON_URL,
       color: null,
       typeName: "Feature",
-      emphasis: "quiet",
+      emphasis: { colored: false, loud: false },
     });
 
     expect(element.style.filter).toBe("grayscale(1)");
+    // A drained icon recedes further than a dimmed colored one, so the two differ in two ways at
+    // once rather than in one brightness judgement the reader has nothing to compare against.
+    expect(element.style.opacity).toBe("0.35");
   });
 
-  it("keeps the three levels visually distinct from one another", () => {
+  it("keeps the four combinations visually distinct from one another", () => {
     const handle = renderItemTypeIcon(document, {
       iconUrl: ICON_URL,
       color: null,
       typeName: "Feature",
     });
 
-    handle.setEmphasis("quiet");
-    const quiet = `${handle.element.style.opacity}/${handle.element.style.filter}`;
+    const looks = new Set<string>();
+    for (const colored of [false, true]) {
+      for (const loud of [false, true]) {
+        handle.setEmphasis({ colored, loud });
+        looks.add(lookOf(handle.element));
+      }
+    }
 
-    handle.setEmphasis("muted");
-    const muted = `${handle.element.style.opacity}/${handle.element.style.filter}`;
-
-    handle.setEmphasis("full");
-    const full = `${handle.element.style.opacity}/${handle.element.style.filter}`;
-
-    expect(new Set([quiet, muted, full]).size).toBe(3);
+    expect(looks.size).toBe(4);
   });
 
-  it("moves between levels on request, so one glyph can show all three states", () => {
+  it("comes to full strength while staying grey, so an open item can still say it holds nothing", () => {
     const handle = renderItemTypeIcon(document, {
       iconUrl: ICON_URL,
       color: null,
       typeName: "Feature",
-      emphasis: "quiet",
+      emphasis: { colored: false, loud: false },
+    });
+    const closed = handle.element.style.opacity;
+
+    handle.setEmphasis({ colored: false, loud: true });
+
+    // Brighter, but still drained: the type color is a claim about content, not about attention.
+    expect(handle.element.style.filter).toBe("grayscale(1)");
+    expect(Number(handle.element.style.opacity)).toBeGreaterThan(Number(closed));
+  });
+
+  it("moves between emphases on request, so one glyph can show every state", () => {
+    const handle = renderItemTypeIcon(document, {
+      iconUrl: ICON_URL,
+      color: null,
+      typeName: "Feature",
+      emphasis: { colored: false, loud: false },
     });
 
-    handle.setEmphasis("full");
+    handle.setEmphasis({ colored: true, loud: true });
     expect(handle.element.style.opacity).toBe("1");
     expect(handle.element.style.filter).toBe("none");
 
-    handle.setEmphasis("quiet");
+    handle.setEmphasis({ colored: false, loud: false });
     expect(handle.element.style.opacity).toBe("0.35");
     expect(handle.element.style.filter).toBe("grayscale(1)");
   });

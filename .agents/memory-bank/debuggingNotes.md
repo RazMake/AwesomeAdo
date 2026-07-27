@@ -208,6 +208,21 @@ outside of its immediate parent.` — every single time, for the same item, with
   org-level page has no project. KEEP `fileName` — it is what makes ADO answer with an image
   content type instead of an opaque download.
 - The scheme check must run on the RESULT of resolution, otherwise `javascript:` sneaks back in.
+- FOLLOW-UP (notes only): descriptions were fixed by the above but **notes still showed an empty
+  box**. A comment is rendered from ADO's own `renderedText`, and ADO there hands back the bare
+  reference ALREADY JOINED TO THE ORIGIN —
+  `<img src="https://{org}.visualstudio.com/{guid}?fileName=image.png">`. That is the same dead
+  `{origin}/{guid}` URL wearing a host name, so `buildAdoAttachmentUrl` (which only matched a BARE
+  id) declined it and the sanitizer passed it through untouched. A description carries the bare id
+  because it arrives unrendered — which is exactly why the two behaved differently.
+- `buildAdoAttachmentUrl` now also accepts a resolved URL whose LAST PATH SEGMENT is an attachment
+  GUID, rebuilding it as the REST request. Guarded two ways so a correct URL is never rewritten: a
+  path containing an ADO area token (`/_apis`, `/_queries/query/{guid}`, …) is refused, and so is a
+  host that is not a supported ADO host.
+- DIAGNOSING THIS: read the rendered `<img src>` off the page. `{origin}/{guid}` (no `_apis`) means
+  the reference was never recognized; `{origin}/{path}/{guid}` means it was resolved relatively
+  against the page; `_apis/wit/attachments/…` means the URL is right and the problem is the response
+  (a missing `fileName` returns an opaque download rather than an image).
 - The old PowerShell tool needed an `/api/attachment` bearer-token proxy for the same images ONLY
   because it rendered on `http://localhost` — cross-origin, no ADO session. This extension renders
   inside the ADO page, so once the URL is right the browser sends the session itself.

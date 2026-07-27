@@ -186,10 +186,25 @@ describe("sanitizeRichText \u2014 where an image is loaded from", () => {
     );
   });
 
+  it("rebuilds the attachment URL ADO's comment rendering joins to the org root", () => {
+    // A NOTE arrives as ADO's own `renderedText`, which has already glued the bare reference onto
+    // the origin — a URL that addresses nothing and rendered as an empty box in every note.
+    const html = onAdoPage("https://contoso.visualstudio.com/proj/_queries/query/q1", () =>
+      sanitizedHtml(
+        '<img src="https://contoso.visualstudio.com/4f76001f-8f25-4e7e-80a1-b3a3f54e9a73' +
+          '?fileName=image.png" alt="Image">',
+      ),
+    );
+
+    expect(html).toContain(
+      'src="https://contoso.visualstudio.com/_apis/wit/attachments/' +
+        '4f76001f-8f25-4e7e-80a1-b3a3f54e9a73?fileName=image.png&amp;api-version=7.1"',
+    );
+  });
+
   it("refuses a javascript: image source even though it is written relatively", () => {
     expect(sanitizedHtml('<img src="javascript:alert(1)" alt="x">')).not.toContain("src=");
   });
-
   it("refuses an image with no source at all", () => {
     expect(sanitizedHtml('<img alt="x">')).not.toContain("src=");
   });
@@ -244,6 +259,24 @@ describe("renderMarkdownText", () => {
     const mention = element.querySelector(`.${MENTION_CLASS}`);
     expect(mention?.textContent).toBe("@mention");
     expect(element.textContent).not.toContain("11111111");
+  });
+
+  it("writes a mention in purple and bold, in none of the ways a link is written", () => {
+    const element = renderMarkdownText(document, {
+      text: "ping @<11111111-2222-3333-4444-555555555555> and see [the docs](https://example.com)",
+      mentionNames: new Map([["11111111-2222-3333-4444-555555555555", "Ada Lovelace"]]),
+    });
+
+    const mention = element.querySelector<HTMLElement>(`.${MENTION_CLASS}`)!;
+    const link = element.querySelector<HTMLElement>("a")!;
+    // A mention names a person, not a destination: it must not be a link, nor be dressed as one.
+    expect(mention.tagName).toBe("SPAN");
+    expect(mention.style.fontWeight).toBe("700");
+    expect(mention.style.textDecoration).toBe("none");
+    expect(mention.style.color).not.toBe(link.style.color);
+    // Whichever of the two color declarations the browser kept, both are built on the same purple,
+    // so a mention is never left wearing the surrounding prose's color.
+    expect(mention.style.color.toLowerCase()).toContain("8a63d2");
   });
 
   it("escapes a display name that itself contains markup", () => {

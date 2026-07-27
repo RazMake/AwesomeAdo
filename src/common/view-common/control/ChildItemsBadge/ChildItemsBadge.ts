@@ -1,11 +1,12 @@
 import { createPopupHost } from "../popupHost/popupHost";
+import { createSvgCanvas } from "../svgIcon/svgIcon";
 
 /**
  * One child work item summarized by the badge and rendered as a popup row.
  *
- * The badge stays domain-agnostic: the caller resolves each child's type color, type icon, ADO deep
- * link, and the assignee and ETA controls, so the control never has to know how a work item maps to
- * a URL, a theme, or a persisted field.
+ * The badge stays domain-agnostic: the caller resolves each child's type color, ADO deep link, and
+ * the assignee and ETA controls, so the control never has to know how a work item maps to a URL, a
+ * theme, or a persisted field.
  */
 export interface ChildItemDescriptor {
   /**
@@ -24,8 +25,6 @@ export interface ChildItemDescriptor {
    * null renders no ETA for that row.
    */
   eta: HTMLElement | null;
-  /** The child's type icon URL, shown as the open-in-ADO affordance; null falls back to a glyph. */
-  iconUrl: string | null;
   /** The ADO web URL that opens this item; null renders the affordance inert. */
   url: string | null;
 }
@@ -50,6 +49,15 @@ export interface ChildItemsBadgeOptions {
 /** The alpha the badge fill and border use so any source hue stays discrete on every ADO theme. */
 const TINT_FILL_ALPHA = 0.12;
 const TINT_BORDER_ALPHA = 0.35;
+
+/**
+ * The height of a single title line in a popup row.
+ *
+ * Titles wrap, so the assignee, ETA, and open affordance are centered inside a box exactly one line
+ * tall and pinned to the top of the row. Left to the flex default they would center against the
+ * whole wrapped block and drift away from the title line they annotate.
+ */
+const TITLE_LINE_HEIGHT_PX = 20;
 
 /** The neutral themed chip used when no usable color is supplied. */
 const NEUTRAL_TINT = {
@@ -85,10 +93,10 @@ function tintFromColor(color: string | null | undefined): {
  * A "completed / total" badge for an item's direct children, tinted from their work item type.
  *
  * Shows e.g. `2 / 3` (2 of 3 children completed). Clicking toggles a popup listing every child as a
- * row — the shared AssignedTo picker, the child's title in its type color, its ETA, and a type-icon
- * link that opens the item in Azure DevOps in a new tab. The popup closes on an outside click, a
- * second badge click, or Escape. Theme-aware via ADO CSS custom properties; renders nothing
- * meaningful when there are no children (the caller decides whether to show it at all).
+ * row — the shared AssignedTo picker, the child's title in its type color, its ETA, and a link glyph
+ * that opens the item in Azure DevOps in a new tab. The popup closes on an outside click, a second
+ * badge click, or Escape. Theme-aware via ADO CSS custom properties; renders nothing meaningful when
+ * there are no children (the caller decides whether to show it at all).
  */
 export function renderChildItemsBadge(doc: Document, options: ChildItemsBadgeOptions): HTMLElement {
   const { children, completedCount, color } = options;
@@ -150,8 +158,11 @@ function buildPopup(doc: Document, children: ChildItemDescriptor[]): HTMLElement
     "border-radius:3px",
     "box-shadow:0 2px 8px rgba(0,0,0,0.15)",
     "min-width:240px",
-    "max-width:420px",
-    "max-height:320px",
+    // Titles wrap rather than truncate, so the popup is given a materially bigger envelope than the
+    // one-line-per-child layout needed: more width means fewer wrapped lines, more height means more
+    // children stay visible before the list has to scroll.
+    "max-width:588px",
+    "max-height:448px",
     "overflow-y:auto",
     "padding:4px 0",
     "z-index:1000",
@@ -165,23 +176,40 @@ function buildPopup(doc: Document, children: ChildItemDescriptor[]): HTMLElement
 }
 
 /**
+ * Wraps a row's side control in a box one title line tall so it stays optically centered on the
+ * FIRST line of a title that wraps, instead of on the middle of the wrapped block.
+ */
+function firstLineSlot(doc: Document, content: HTMLElement): HTMLElement {
+  const slot = doc.createElement("span");
+  slot.className = "awesomeado-child-items__slot";
+  slot.style.cssText = [
+    "flex:0 0 auto",
+    "display:inline-flex",
+    "align-items:center",
+    `min-height:${TITLE_LINE_HEIGHT_PX}px`,
+    "white-space:nowrap",
+  ].join(";");
+  slot.append(content);
+  return slot;
+}
+
+/**
  * Renders one child row: the caller's assignee picker, the title in its type color, the caller's ETA
- * control, and a type-icon link that opens the item in ADO.
+ * control, and a link glyph that opens the item in ADO.
  */
 function renderChildRow(doc: Document, child: ChildItemDescriptor): HTMLElement {
   const row = doc.createElement("div");
   row.className = "awesomeado-child-items__row";
   row.style.cssText = [
     "display:flex",
-    "align-items:center",
+    // Top-aligned so the side controls keep their line-one anchoring under a wrapped title.
+    "align-items:flex-start",
     "gap:8px",
     "padding:4px 8px",
-    "white-space:nowrap",
   ].join(";");
 
   if (child.assignee) {
-    child.assignee.style.flex = "0 0 auto";
-    row.append(child.assignee);
+    row.append(firstLineSlot(doc, child.assignee));
   }
 
   const title = doc.createElement("span");
@@ -190,8 +218,12 @@ function renderChildRow(doc: Document, child: ChildItemDescriptor): HTMLElement 
   title.style.cssText = [
     "flex:1 1 auto",
     "min-width:0",
-    "overflow:hidden",
-    "text-overflow:ellipsis",
+    // The popup is the only place a rolled-up child's title is readable, and truncation hides exactly
+    // the trailing words that distinguish sibling children — so wrap instead of clipping, breaking
+    // mid-token only when a single unbroken word would otherwise overflow.
+    "white-space:normal",
+    "overflow-wrap:anywhere",
+    `line-height:${TITLE_LINE_HEIGHT_PX}px`,
     "font-weight:500",
   ].join(";");
   if (child.titleColor) {
@@ -204,40 +236,52 @@ function renderChildRow(doc: Document, child: ChildItemDescriptor): HTMLElement 
     // The title grows, so the ETA lands hard against the open affordance at the row's right edge —
     // the same right-aligned reading order the tree rows use.
     child.eta.classList.add("awesomeado-child-items__eta");
-    child.eta.style.flex = "0 0 auto";
-    child.eta.style.whiteSpace = "nowrap";
-    row.append(child.eta);
+    row.append(firstLineSlot(doc, child.eta));
   }
 
-  row.append(renderOpenAffordance(doc, child));
+  row.append(firstLineSlot(doc, renderOpenAffordance(doc, child)));
   return row;
 }
 
 /**
- * Renders the open-in-ADO affordance: the type icon (or a fallback glyph) inside a link that opens
- * the item in a new tab. When the child has no URL the affordance is a plain, inert glyph so the row
- * still lines up.
+ * Builds the chain-link glyph that marks the open-in-ADO affordance.
+ *
+ * A link glyph — not the child's type icon — because the affordance's job is "this opens the item
+ * elsewhere"; the type is already carried by the title's color, so repeating it here said nothing
+ * about what clicking would do. Drawn inline in `currentColor` so it inherits the row's text color
+ * on every ADO theme without a second style pass or a network fetch.
+ */
+function buildLinkIcon(doc: Document): SVGSVGElement {
+  const svg = createSvgCanvas(doc, "display:block");
+
+  const path = doc.createElementNS("http://www.w3.org/2000/svg", "path");
+  // Two half-links joined by a diagonal bar: the upper-right half hooks out of the bar's top end and
+  // the lower-left half out of its bottom end.
+  path.setAttribute(
+    "d",
+    "M6.3 9.7 L9.7 6.3 M9.3 4.5 L10.7 3.1 a2.7 2.7 0 0 1 3.8 3.8 L13.1 8.3 M6.7 11.5 L5.3 12.9 a2.7 2.7 0 0 1-3.8-3.8 L2.9 7.7",
+  );
+  path.setAttribute("fill", "none");
+  path.setAttribute("stroke", "currentColor");
+  path.setAttribute("stroke-width", "1.5");
+  path.setAttribute("stroke-linecap", "round");
+  path.setAttribute("stroke-linejoin", "round");
+
+  svg.append(path);
+  return svg;
+}
+
+/**
+ * Renders the open-in-ADO affordance: a link glyph inside an anchor that opens the item in a new
+ * tab. When the child has no URL the affordance is a plain, inert glyph so the row still lines up.
  */
 function renderOpenAffordance(doc: Document, child: ChildItemDescriptor): HTMLElement {
   const glyph = (): HTMLElement => {
-    if (child.iconUrl) {
-      const icon = doc.createElement("img");
-      icon.className = "awesomeado-child-items__icon";
-      icon.src = child.iconUrl;
-      // The icon host is whatever the tenant configured, so do not tell it which page is showing.
-      icon.referrerPolicy = "no-referrer";
-      icon.alt = "";
-      icon.width = 14;
-      icon.height = 14;
-      icon.style.cssText = ["display:block", "width:14px", "height:14px"].join(";");
-      return icon;
-    }
-    // No type icon supplied → a neutral "open" glyph so the affordance is still present.
-    const fallback = doc.createElement("span");
-    fallback.className = "awesomeado-child-items__icon";
-    fallback.textContent = "\u2197"; // ↗
-    fallback.style.cssText = "font-size:12px;line-height:1";
-    return fallback;
+    const icon = doc.createElement("span");
+    icon.className = "awesomeado-child-items__icon";
+    icon.style.cssText = ["display:inline-flex", "align-items:center"].join(";");
+    icon.append(buildLinkIcon(doc));
+    return icon;
   };
 
   if (!child.url) {

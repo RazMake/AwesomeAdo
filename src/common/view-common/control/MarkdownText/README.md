@@ -43,10 +43,14 @@ Returns a `<div class="awesomeado-markdown">` containing the rendered content.
   allowlist, so existing items render as they do in ADO.
 - **Images**: ADO attachment images load directly. The view runs inside the ADO page, so an
   attachment URL is same-origin and the browser sends the signed-in session with it. ADO refers to a
-  pasted screenshot by its bare attachment id, which is turned into the same REST attachment request
-  ADO's own UI makes; any other source is resolved against the page the note renders in.
+  pasted screenshot by its bare attachment id — and, in a comment's own rendering, by that id already
+  glued to the origin — and both are turned into the same REST attachment request ADO's own UI
+  makes; any other source is resolved against the page the note renders in.
 - **`@`-mentions**: ADO's mention anchors (`data-vss-mention`) and Markdown `@<guid>` tokens both
-  render as a highlighted `@Name`.
+  render as a **purple, bold** `@Name` — a `<span>`, never a link, and never wearing the link color:
+  a mention names a person, not a destination, and dressing it as a link makes it read as one that
+  refuses to open. The purple is nudged toward the surrounding theme's own polarity so it stays
+  legible on every ADO theme, with a flat purple behind it for browsers without `color-mix`.
 
 ## What it will not render
 

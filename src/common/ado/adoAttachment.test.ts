@@ -34,6 +34,54 @@ describe("buildAdoAttachmentUrl — what ADO's own rich text points at", () => {
   });
 });
 
+describe("buildAdoAttachmentUrl — a reference something already joined to the origin", () => {
+  // This is the shape a work item COMMENT arrives in: ADO's own `renderedText` hands back the bare
+  // reference already glued to the collection root, which addresses nothing and renders as an empty
+  // box. Descriptions, which arrive unrendered, carry the bare id instead — hence both shapes.
+  it("rebuilds an attachment URL ADO resolved against the org root", () => {
+    expect(
+      buildAdoAttachmentUrl(
+        LEGACY_PAGE,
+        `https://contoso.visualstudio.com/${ATTACHMENT}?fileName=image.png`,
+      ),
+    ).toBe(
+      `https://contoso.visualstudio.com/_apis/wit/attachments/${ATTACHMENT}` +
+        "?fileName=image.png&api-version=7.1",
+    );
+  });
+
+  it("rebuilds the same shape written root-relative, keeping the page's organization", () => {
+    expect(buildAdoAttachmentUrl(HOSTED_PAGE, `/contoso/${ATTACHMENT}?fileName=image.png`)).toBe(
+      `https://dev.azure.com/contoso/_apis/wit/attachments/${ATTACHMENT}` +
+        "?fileName=image.png&api-version=7.1",
+    );
+  });
+
+  it("leaves a request that is already addressed to the attachments API alone", () => {
+    // Already correct, so rewriting it could only break it.
+    expect(
+      buildAdoAttachmentUrl(
+        HOSTED_PAGE,
+        `https://dev.azure.com/contoso/_apis/wit/attachments/${ATTACHMENT}?fileName=image.png`,
+      ),
+    ).toBeNull();
+  });
+
+  it("leaves a GUID that addresses an ADO area, not an attachment, alone", () => {
+    // `_queries/query/{guid}` is a saved query: a real URL whose id means something else entirely.
+    expect(
+      buildAdoAttachmentUrl(
+        HOSTED_PAGE,
+        `https://dev.azure.com/contoso/_queries/query/${ATTACHMENT}`,
+      ),
+    ).toBeNull();
+  });
+
+  it("leaves an image hosted anywhere but Azure DevOps alone", () => {
+    expect(buildAdoAttachmentUrl(HOSTED_PAGE, `https://example.com/${ATTACHMENT}`)).toBeNull();
+  });
+});
+
 describe("buildAdoAttachmentUrl — what it refuses to treat as an attachment", () => {
   it("refuses anything that is not a bare attachment id", () => {
     expect(buildAdoAttachmentUrl(HOSTED_PAGE, "https://example.com/image.png")).toBeNull();

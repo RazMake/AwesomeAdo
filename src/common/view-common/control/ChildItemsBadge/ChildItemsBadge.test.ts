@@ -22,7 +22,6 @@ const childOf = (overrides: Partial<ChildItemDescriptor> = {}): ChildItemDescrip
   title: "Do the thing",
   titleColor: "#CC293D",
   eta: null,
-  iconUrl: "https://example.com/story.png",
   url: "https://dev.azure.com/contoso/web/_workitems/edit/42",
   ...overrides,
 });
@@ -139,6 +138,45 @@ describe("renderChildItemsBadge - row content", () => {
     const title = popupOf(root)!.querySelector<HTMLElement>(".awesomeado-child-items__title")!;
     expect(title.style.color).toBe("rgb(204, 41, 61)");
   });
+
+  it("wraps a long title instead of truncating it, and keeps the row top-aligned", () => {
+    const root = renderChildItemsBadge(document, {
+      children: [childOf()],
+      completedCount: 0,
+    });
+    document.body.append(root);
+
+    badgeOf(root).click();
+
+    const row = popupOf(root)!.querySelector<HTMLElement>(".awesomeado-child-items__row")!;
+    const title = popupOf(root)!.querySelector<HTMLElement>(".awesomeado-child-items__title")!;
+    expect(row.style.alignItems).toBe("flex-start");
+    expect(title.style.whiteSpace).toBe("normal");
+    expect(title.style.overflowWrap).toBe("anywhere");
+    expect(title.style.textOverflow).toBe("");
+  });
+
+  it("centers each side control on the first title line", () => {
+    const eta = document.createElement("span");
+    eta.className = "fake-eta";
+    const root = renderChildItemsBadge(document, {
+      children: [childOf({ eta })],
+      completedCount: 0,
+    });
+    document.body.append(root);
+
+    badgeOf(root).click();
+
+    const title = popupOf(root)!.querySelector<HTMLElement>(".awesomeado-child-items__title")!;
+    const slots = [
+      ...popupOf(root)!.querySelectorAll<HTMLElement>(".awesomeado-child-items__slot"),
+    ];
+    expect(slots).toHaveLength(3);
+    for (const slot of slots) {
+      expect(slot.style.alignItems).toBe("center");
+      expect(slot.style.minHeight).toBe(title.style.lineHeight);
+    }
+  });
 });
 
 describe("renderChildItemsBadge - row ETA slot", () => {
@@ -155,7 +193,8 @@ describe("renderChildItemsBadge - row ETA slot", () => {
     badgeOf(root).click();
 
     const row = popupOf(root)!.querySelector<HTMLElement>(".awesomeado-child-items__row")!;
-    const classes = [...row.children].map((child) => child.className);
+    // The side controls sit inside a one-line-tall slot, so compare the slotted content.
+    const classes = [...row.children].map((child) => (child.firstElementChild ?? child).className);
     expect(classes).toEqual([
       "awesomeado-assigned",
       "awesomeado-child-items__title",
@@ -179,7 +218,7 @@ describe("renderChildItemsBadge - row ETA slot", () => {
 });
 
 describe("renderChildItemsBadge - row open affordance", () => {
-  it("links the child's icon to its ADO url in a new tab", () => {
+  it("links a chain-link glyph to the child's ADO url in a new tab", () => {
     const root = renderChildItemsBadge(document, {
       children: [childOf({ url: "https://dev.azure.com/contoso/web/_workitems/edit/42" })],
       completedCount: 0,
@@ -192,12 +231,16 @@ describe("renderChildItemsBadge - row open affordance", () => {
     expect(link.href).toBe("https://dev.azure.com/contoso/web/_workitems/edit/42");
     expect(link.target).toBe("_blank");
     expect(link.rel).toBe("noopener noreferrer");
-    expect(link.querySelector("img")?.getAttribute("src")).toBe("https://example.com/story.png");
+    // The affordance no longer echoes the work item type icon: it is an inline link glyph that
+    // inherits the row's text color, so no image is fetched at all.
+    expect(link.querySelector("img")).toBeNull();
+    const glyph = link.querySelector<SVGSVGElement>(".awesomeado-child-items__icon svg")!;
+    expect(glyph.querySelector("path")?.getAttribute("stroke")).toBe("currentColor");
   });
 
   it("renders an inert affordance when the child has no url", () => {
     const root = renderChildItemsBadge(document, {
-      children: [childOf({ url: null, iconUrl: null })],
+      children: [childOf({ url: null })],
       completedCount: 0,
     });
     document.body.append(root);
@@ -205,10 +248,8 @@ describe("renderChildItemsBadge - row open affordance", () => {
     badgeOf(root).click();
 
     expect(popupOf(root)!.querySelector(".awesomeado-child-items__open")).toBeNull();
-    // The fallback glyph is still present so the row lines up.
-    expect(popupOf(root)!.querySelector(".awesomeado-child-items__icon")?.textContent).toBe(
-      "\u2197",
-    );
+    // The link glyph is still present so the row lines up.
+    expect(popupOf(root)!.querySelector(".awesomeado-child-items__icon svg")).not.toBeNull();
   });
 });
 

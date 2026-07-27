@@ -15,11 +15,11 @@ halves of the view — its configuration and its renderer.
   - `days` (number) — hide resolved items once resolved more than this many days ago.
   - `hours` (number) — rolling window behind the "newly created / updated / new notes" pills.
 
-  `orderingPolicyOf(properties)`, `hideResolvedAfterDays(properties)` and
-  `updatesWindowWeeks(properties)` turn a binding's stored strings into the typed values the renderer
-  uses — defaulted, clamped, and validated against the offered choices. Use them instead of reading
-  `properties["…"]` directly, so a key or a default can never drift between the binding form and the
-  board.
+  `orderingPolicyOf(properties)`, `hideResolvedAfterDays(properties)`, `updatesWindowWeeks(properties)`
+  and `recentChangesWindowHours(properties)` turn a binding's stored strings into the typed values the
+  renderer uses — defaulted, clamped, and validated against the offered choices. Use them instead of
+  reading `properties["…"]` directly, so a key or a default can never drift between the binding form
+  and the board.
 
 - `ProjectTrackingView.ts` → `projectTrackingView: EnhancedView` — the renderer. Renders a live
   tree board with the following features:
@@ -139,13 +139,28 @@ halves of the view — its configuration and its renderer.
     [`DateLabel`](../../../common/view-common/control/DateLabel/README.md) (never innerHTML). The
     description itself renders through
     [`MarkdownText`](../../../common/view-common/control/MarkdownText/README.md), so Markdown, ADO
-    rich text, embedded attachment images and `@`-mentions all show as they do in ADO.
+    rich text, embedded attachment images and `@`-mentions all show as they do in ADO. The **"?"
+    disc** that toggles it follows the type icon's emphasis, with two deliberate differences: it wears
+    the item's **type color darkened** when there is a description and **brighter** while the panel is
+    open, but an item with **no** description stays a neutral **grey** in both states — opening it
+    only brightens the same grey, because the type color is the board's "there is something written
+    here" signal and an empty panel has nothing to spend it on. Every colored step is pulled back
+    further than the icon's matching one: the icon is a thin outline glyph while the disc is a solid
+    filled circle, so at equal brightness the disc reads as a second, louder version of the same type
+    color sitting right beside the first. The disc darkens rather than fading (the icon fades) because
+    it carries a white "?" that a lower opacity would wash out. The disc's `title` names only the
+    ACTION ("Show description" / "Hide description"), never whether there is one: the panel still
+    carries the created/modified line either way, so the disc is worth pressing on every row and a
+    "nothing here" label would talk the reader out of it. The shade answers that question instead.
   - **Type icon + notes**: each row's title is preceded by its work item type icon
     ([`ItemTypeIcon`](../../../common/view-common/control/ItemTypeIcon/README.md)), sized to the
-    title and tinted by ADO in the type's own color. The icon **is** the item's notes toggle, and it
-    carries three states so the board can be read without clicking anything: **grey** when the item
-    has no discussion, the type's **color dimmed** when there is something to read, and **full color**
-    while it is open. The grey state is seeded from the item's `System.CommentCount` (which arrives
+    title and tinted by ADO in the type's own color. The icon **is** the item's notes toggle, and its
+    emphasis is read on two axes so the board can be read without clicking anything: it keeps the
+    type's **color** only when the item HAS a discussion, and comes to **full strength** only while
+    the panel is open. An item with no discussion therefore stays **grey** even while it is open —
+    opening it only brings the same grey forward, because the type color is the "there is something
+    to read here" signal and an empty item has nothing to spend it on. The grey state is seeded from
+    the item's `System.CommentCount` (which arrives
     with the tree, so it costs nothing) and corrected once a panel has actually read its window — a
     total counts comments the window excludes, so an item can start out promising notes and settle to
     grey. A failed read never greys an icon: the count is then unknown, not zero. Opening the icon
@@ -164,11 +179,25 @@ halves of the view — its configuration and its renderer.
     skipped when no work item types are configured. When the reconcile resolves it hands back the
     roster's tags, which the board projects onto every assignee (`applyFeatureCrewTags`) so each
     Assigned To pill shows its color.
-  - **Tag filter panel**: once the roster resolves, a [`tag-filter`](./tag-filter/README.md) panel of
-    clickable tag pills appears above the tree. Clicking pills narrows the tree to items assigned to
-    people wearing any of the selected tags (an **OR** across the selection; empty = show everyone),
-    combined with the sprint filter. The neutral **"??"** pill narrows to assigned-but-untagged
-    people. Ancestors of a matching item stay visible so a match is never orphaned from its path.
+  - **Filter row**: one wrapping row sits between the header and the tree, introduced by a single
+    **`Filters:`** label (vertically centred against the pills it shares a line with). It holds the
+    [`tag-filter`](./tag-filter/README.md) pills first, then the
+    [`activity-filter`](./activity-filter/README.md) pills that close it; every pill is a direct
+    child of that one flex row, so a narrow window reflows them all as a single continuous line. The
+    board re-renders the row whole on any change.
+    - **Tag pills**: once the Feature Crew roster resolves, one clickable pill per tag worn across
+      the tree. Clicking pills narrows to items assigned to people wearing any of the selected tags
+      (an **OR** across the selection; empty = show everyone), combined with the sprint filter. The
+      neutral **"??"** pill narrows to assigned-but-untagged people. Ancestors of a matching item
+      stay visible so a match is never orphaned from its path.
+    - **Recent-activity pills**: three slightly larger pills — **Newly created**, **Newly updated**
+      and **New notes** — each narrowing the board to items that moved inside the binding's `hours`
+      window (named in each pill's tooltip). Lit pills **OR** together and combine with the sprint
+      and tag filters; the window is re-measured on every repaint. "New notes" is the only one whose
+      answer is not already in the loaded tree (ADO reports a comment TOTAL, never a comment date),
+      so lighting it reads the discussions of the items ADO says have one — on demand, bounded, and
+      at most once per board. Until those reads land the pill reads `New notes…` and the board stays
+      wide, so it narrows once rather than emptying and repopulating.
 
 Because every property is stored on the binding, the same view bound to two queries can use
 different windows. Both halves are registered centrally: the config in `../viewCatalog.ts`, the

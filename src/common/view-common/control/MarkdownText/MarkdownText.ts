@@ -32,6 +32,24 @@ const MENTION_TOKEN = new RegExp(MENTION_TOKEN_PATTERN, "g");
 const UNRESOLVED_MENTION = "mention";
 
 /**
+ * The purple a mention is written in when `color-mix` is unavailable.
+ *
+ * Deliberately NOT the communication accent every link in this control uses: a mention names a
+ * person, not a destination, and wearing the link color made it read as a link that refused to open.
+ */
+const MENTION_COLOR_FALLBACK = "#8a63d2";
+
+/**
+ * The purple a mention is written in, nudged toward the surrounding theme's own polarity so it stays
+ * legible on the light, dark, blue and "Follow ADO" themes rather than reading well on only one.
+ *
+ * Paired with the plain purple above as a classic CSS fallback: Chromium below 111 (the manifest
+ * still admits 106) drops this declaration as invalid and keeps the flat purple, which is a slightly
+ * worse match for the theme rather than no color at all.
+ */
+const MENTION_COLOR = `color-mix(in srgb, var(--text-primary-color, #323130) 25%, ${MENTION_COLOR_FALLBACK})`;
+
+/**
  * Renders Markdown / ADO rich text as safe, theme-aware DOM.
  *
  * The shared control for every place this extension shows author-written content — a work item's
@@ -81,11 +99,13 @@ function expandMentions(text: string, names: ReadonlyMap<string, string> | undef
  */
 function styleRenderedContent(root: HTMLElement): void {
   for (const mention of root.querySelectorAll<HTMLElement>(`.${MENTION_CLASS}`)) {
-    // A communication-accent tint from ADO's palette, so a mention stands out on light and dark
-    // themes alike without hard-coding a color that fights either one.
+    // Purple and bold, and never underlined: a mention is a person the text is talking about, so it
+    // must stand out from the prose without borrowing any of the signals that mean "click me".
     mention.style.cssText = [
-      "color:var(--communication-foreground, #6b9fff)",
-      "font-weight:600",
+      `color:${MENTION_COLOR_FALLBACK}`,
+      `color:${MENTION_COLOR}`,
+      "font-weight:700",
+      "text-decoration:none",
     ].join(";");
   }
   for (const link of root.querySelectorAll<HTMLElement>("a")) {

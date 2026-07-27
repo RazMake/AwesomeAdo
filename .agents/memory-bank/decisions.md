@@ -785,3 +785,29 @@
   the validation scaffold and loses the refresh button. Accepted: the message is truthful, it matches
   first-load behaviour, and flipping to ADO's view and back through the top-bar menu re-renders the
   view from scratch.
+
+## ADR-048: The "New notes" pill reads discussions on demand, and narrows only once it can
+
+- Decision: The Project Tracking board offers three recent-activity pills (`content/views/
+project-tracking/activity-filter`) that narrow the tree to items created, changed, or commented on
+  inside the binding's `hours` window. Created/updated are answered from `System.CreatedDate` /
+  `System.ChangedDate`, already in the tree. "New notes" is answered by `RecentNotesIndex`, which
+  reads each item's ADO Discussion through the existing `IWorkItemNoteLoader` — but **only when the
+  pill is lit**, only for items ADO reports a positive `System.CommentCount` for, at most six reads
+  in flight, and at most once per board. While those reads are outstanding the criterion is dropped
+  from the filter in force (`activityFilterInForce`) and the pill renders `New notes…`.
+- Rationale: ADO exposes a comment **count** on the work item but never a comment **date**, so
+  "commented recently" is unanswerable from the tree read (ADR-043 established the count is a TOTAL).
+  The only source is the discussions themselves. Reading them with the board would fire dozens of
+  requests for a filter nobody asked for — the same argument that made note panels fetch on first
+  open. Applying the criterion before the answer exists would empty the board and then repopulate it:
+  two visible jumps for a question nobody has answered.
+- Consequence: the notes answer is pinned to the window of the FIRST probe, not re-measured per
+  repaint like the created/updated halves. Re-measuring would re-read every discussion each time the
+  clock moved a second. `⟳ Refresh` builds a new board and therefore a new index, which is how the
+  question is re-asked.
+- Consequence: an item whose discussion could not be read is never claimed to be newly commented. The
+  failure is logged (per AGENTS.md §9) rather than guessed at in either direction.
+- Consequence: the pill selection lives in `BoardSession` (ADR-047), so it survives a repaint and a
+  refresh and is never written back to the binding — the same rule the sprint, tag and ordering picks
+  follow.

@@ -50,6 +50,17 @@ const updatesWindowWeeksProperty: ViewTypeProperty = {
   hint: "How far back per-item Updates reach, in weeks. Only newer updates are shown; same-day entries are collapsed together.",
 };
 
+/** What counts as "newly" for the recent-activity pills; shared with its reader, as above. */
+const recentChangesWindowHoursProperty: ViewTypeProperty = {
+  key: "hours",
+  label: "Recent changes window (hours)",
+  required: false,
+  kind: "number",
+  defaultValue: "24",
+  min: 1,
+  hint: "Rolling window behind the Newly Created, Newly Updated, and New Notes pills. Respected exactly, not rounded to whole days.",
+};
+
 /**
  * The Project Tracking view's configuration: presents a query's items grouped for status tracking,
  * with per-query control over ordering and the various "recent activity" windows.
@@ -64,15 +75,7 @@ export const projectTrackingViewType: ViewType = {
     orderingPolicyProperty,
     updatesWindowWeeksProperty,
     hideResolvedAfterDaysProperty,
-    {
-      key: "hours",
-      label: "Recent changes window (hours)",
-      required: false,
-      kind: "number",
-      defaultValue: "24",
-      min: 1,
-      hint: "Rolling window behind the Newly Created, Newly Updated, and New Notes pills. Respected exactly, not rounded to whole days.",
-    },
+    recentChangesWindowHoursProperty,
   ],
 };
 
@@ -117,6 +120,21 @@ export function updatesWindowWeeks(properties: Record<string, string>): number {
     resolveViewTypePropertyValue(
       updatesWindowWeeksProperty,
       properties[updatesWindowWeeksProperty.key],
+    ),
+  );
+}
+
+/**
+ * How many hours back the recent-activity pills call a change "new", from the binding's stored
+ * properties. Routed through the shared resolver for the same reason as the other windows: the pills
+ * must narrow by exactly the defaulted, clamped number the binding form showed, or the board would
+ * quietly disagree with its own configuration.
+ */
+export function recentChangesWindowHours(properties: Record<string, string>): number {
+  return Number(
+    resolveViewTypePropertyValue(
+      recentChangesWindowHoursProperty,
+      properties[recentChangesWindowHoursProperty.key],
     ),
   );
 }

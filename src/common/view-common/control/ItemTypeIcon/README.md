@@ -10,16 +10,21 @@ recognizable icon.
 
 ## Emphasis
 
-| Level   | Looks like               | Reads as                  |
-| ------- | ------------------------ | ------------------------- |
-| `quiet` | drained of color, dimmed | "nothing here"            |
-| `muted` | the type's color, dimmed | "there is something here" |
-| `full`  | the type's color, full   | "you are looking at it"   |
+Emphasis is two **independent** axes, not one scale:
 
-The control does **not** know what the levels mean — the caller decides. `quiet` desaturates rather
-than simply dimming further, because two dim states separated only by opacity are a brightness
-judgement a reader has to make against a row they have nothing to compare to; grey-vs-colored is
-visible in one pass down a column.
+| `colored` | `loud`  | Looks like                | Reads as                       |
+| --------- | ------- | ------------------------- | ------------------------------ |
+| `false`   | `false` | drained of color, receded | "nothing here"                 |
+| `false`   | `true`  | drained of color, full    | "nothing here, but it is open" |
+| `true`    | `false` | the type's color, dimmed  | "there is something here"      |
+| `true`    | `true`  | the type's color, full    | "you are looking at it"        |
+
+The control does **not** know what either axis means — the caller decides. They are kept independent
+because a caller needs all four: an item can be open while holding nothing, and no single quiet→loud
+progression can say that without claiming there is something to see. A drained icon also recedes
+further than a dimmed colored one, because two pulled-back states separated only by opacity are a
+brightness judgement a reader has to make against a row they have nothing to compare to;
+grey-vs-colored is visible in one pass down a column.
 
 ## Usage
 
@@ -30,11 +35,11 @@ const icon = renderItemTypeIcon(doc, {
   iconUrl: type.icon,
   color: "#773b93",
   typeName: "Feature",
-  emphasis: "quiet",
+  emphasis: { colored: false, loud: false },
 });
 
 titleLine.prepend(icon.element);
-icon.setEmphasis("full"); // e.g. once the item's notes are expanded
+icon.setEmphasis({ colored: hasNotes, loud: true }); // e.g. once the item's notes are expanded
 ```
 
 ## Options
@@ -44,7 +49,13 @@ icon.setEmphasis("full"); // e.g. once the item's notes are expanded
 | `iconUrl`  | `string \| null`       | ADO's type icon URL; `null` renders the colored fallback dot. |
 | `color`    | `string \| null`       | The type color (`#rrggbb`) the fallback dot is filled with.   |
 | `typeName` | `string`               | The type name, used as the icon's tooltip.                    |
-| `emphasis` | `ItemTypeIconEmphasis` | How loudly the icon starts. Defaults to `full`.               |
+| `title`    | `string` (optional)    | Overrides the tooltip; `""` leaves the icon with none at all. |
+| `emphasis` | `ItemTypeIconEmphasis` | How loudly the icon starts. Defaults to colored and loud.     |
+
+Pass `title: ""` when the icon sits inside a control that carries its own tooltip. A `title` on the
+icon **shadows** the one on its container, so the reader would hover the thing they are about to
+click and be told the work item type instead of what clicking it does. It has to be absent rather
+than empty: an empty `title` shadows the container's just as effectively.
 
 Returns `{ element, setEmphasis }`.
 

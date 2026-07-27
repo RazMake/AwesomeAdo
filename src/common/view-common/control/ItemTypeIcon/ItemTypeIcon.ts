@@ -1,14 +1,19 @@
 /**
- * How loudly the icon renders.
+ * How loudly the icon renders, on two INDEPENDENT axes.
  *
- * The control deliberately does NOT know what the levels mean — a caller decides that. It only
- * guarantees they are distinguishable at a glance, and that they read as a progression:
+ * The control deliberately does NOT know what either axis means — a caller decides that. It only
+ * guarantees the four combinations are distinguishable at a glance.
  *
- * - `quiet` — drained of color and dimmed. Reads as "nothing here", without hiding the icon.
- * - `muted` — the type's own color, dimmed. Reads as "there is something here".
- * - `full` — the type's own color at full strength. Reads as "you are looking at it".
+ * They are two axes rather than one ordered scale because a caller needs all four: an icon can be
+ * "there is nothing here, but you are looking at it anyway", which no single quiet→loud progression
+ * can express without claiming there is something to see.
  */
-export type ItemTypeIconEmphasis = "quiet" | "muted" | "full";
+export interface ItemTypeIconEmphasis {
+  /** Keep the type's own color (`true`), or drain the icon to grey (`false`). */
+  colored: boolean;
+  /** Render at full strength (`true`), or pulled back (`false`). */
+  loud: boolean;
+}
 
 /** What the icon shows and how loudly. */
 export interface ItemTypeIconOptions {
@@ -18,7 +23,15 @@ export interface ItemTypeIconOptions {
   color: string | null;
   /** The work item type name, so the icon is announced rather than being a decorative blank. */
   typeName: string;
-  /** How loudly the icon starts. Defaults to `full`. */
+  /**
+   * The icon's tooltip. Defaults to `typeName`.
+   *
+   * Pass `""` when the icon sits inside a control that carries its own tooltip: a `title` on the
+   * icon SHADOWS the one on its container, so the reader would hover the thing they are about to
+   * click and be told the work item type instead of what clicking it does.
+   */
+  title?: string;
+  /** How loudly the icon starts. Defaults to colored and loud. */
   emphasis?: ItemTypeIconEmphasis;
 }
 
@@ -29,19 +42,26 @@ export interface ItemTypeIconHandle {
   setEmphasis(emphasis: ItemTypeIconEmphasis): void;
 }
 
+/** Where a pulled-back but still colored icon sits. */
+const DIMMED_OPACITY = "0.55";
+
 /**
- * The look of each level: opacity plus how much color is drained.
+ * Where a pulled-back, drained icon sits — further back than a dimmed colored one.
  *
- * `quiet` desaturates rather than just dimming further. Two dim states separated only by opacity are
- * a brightness judgement the reader has to make against a row they have nothing to compare it to;
- * grey-vs-colored is a difference they can see in one pass down the column.
+ * Two pulled-back states separated only by opacity are a brightness judgement the reader has to make
+ * against a row they have nothing to compare to. Letting the drained one recede further as well means
+ * "nothing here" and "something here" differ in two ways at once, visible in one pass down a column.
  */
-const EMPHASIS_STYLES: Readonly<Record<ItemTypeIconEmphasis, { opacity: string; filter: string }>> =
-  {
-    quiet: { opacity: "0.35", filter: "grayscale(1)" },
-    muted: { opacity: "0.55", filter: "none" },
-    full: { opacity: "1", filter: "none" },
-  };
+const DRAINED_OPACITY = "0.35";
+
+/** The opacity and filter one emphasis renders at. */
+function emphasisStyle(emphasis: ItemTypeIconEmphasis): { opacity: string; filter: string } {
+  const filter = emphasis.colored ? "none" : "grayscale(1)";
+  if (emphasis.loud) {
+    return { opacity: "1", filter };
+  }
+  return { opacity: emphasis.colored ? DIMMED_OPACITY : DRAINED_OPACITY, filter };
+}
 
 /**
  * The work item type icon that sits in front of an item's title.
@@ -60,7 +80,12 @@ export function renderItemTypeIcon(
 ): ItemTypeIconHandle {
   const element = doc.createElement("span");
   element.className = "awesomeado-type-icon";
-  element.title = options.typeName;
+  const title = options.title ?? options.typeName;
+  // Left unset rather than set empty: an empty `title` still shadows the container's, so the reader
+  // would get no tooltip at all instead of the container's own.
+  if (title.length > 0) {
+    element.title = title;
+  }
   element.style.cssText = [
     "display:inline-flex",
     "align-items:center",
@@ -79,12 +104,12 @@ export function renderItemTypeIcon(
   const handle: ItemTypeIconHandle = {
     element,
     setEmphasis: (emphasis) => {
-      const style = EMPHASIS_STYLES[emphasis];
+      const style = emphasisStyle(emphasis);
       element.style.opacity = style.opacity;
       element.style.filter = style.filter;
     },
   };
-  handle.setEmphasis(options.emphasis ?? "full");
+  handle.setEmphasis(options.emphasis ?? { colored: true, loud: true });
   return handle;
 }
 

@@ -49,8 +49,15 @@ The extension is feature-complete for its current scope:
   Three of the binding's per-query properties are now honored: `orderingPolicy` sorts every level of the
   tree (and the rollup popup) through `common/ordering`, `days` drops an item once its Status has
   sat in the resolved column (the one before Removed) longer than that window, aged from
-  `stateChangeDate`, and `weeks` now bounds how far back each item's **notes** are fetched; `hours` is
-  still declared but unused.
+  `stateChangeDate`, and `weeks` now bounds how far back each item's **notes** are fetched. `hours`
+  is honored by the **recent-activity pills** (`content/views/project-tracking/activity-filter`,
+  ADR-048): _Newly created_ / _Newly updated_ / _New notes_ close the board's single wrapping
+  `Filters:` row (tag pills first, activity pills last — every pill a direct child of one flex row so
+  it reflows as one line), OR together, and combine with the sprint and tag filters. The first two
+  read `createdDate` / `changedDate` off
+  the tree; the third is answered by `RecentNotesIndex`, which reads discussions on demand (only when
+  the pill is lit, only where `noteCount > 0`, ≤6 in flight, once per board) and leaves the board
+  unnarrowed — pill showing `New notes…` — until the reads settle.
   Each row's title is preceded by its work item **type icon** (`ItemTypeIcon`), which doubles as the
   item's notes toggle — muted closed, bright open. Opening it mounts
   `content/views/project-tracking/notes` (`NotesPanel` + `NoteRow` + `NoteComposer` + `NoteEditor`):

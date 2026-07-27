@@ -154,6 +154,16 @@ const REFRESH_FAILED_LABEL =
   "Couldn't refresh — this board is showing older data. Click for details.";
 
 /**
+ * The refresh glyph's colour while all is well.
+ *
+ * A fixed green rather than a theme token: ADO ships no success colour every pinned theme defines,
+ * and this is the same shade the board's "done" status text already uses — chosen to read on light
+ * and dark alike. Green also separates refresh from the `+`/`−` pair beside it at a glance, and
+ * leaves the failed state's error red as the only tint that means "look at me".
+ */
+const REFRESH_IDLE_COLOR = "rgb(30,140,45)";
+
+/**
  * Builds the refresh button and the two state commands the view drives it through.
  *
  * The failed state re-tints the button rather than adding a second element beside it: the header
@@ -168,9 +178,8 @@ function renderRefreshButton(doc: Document): RefreshButtonHandle {
     "\u27F3",
     REFRESH_IDLE_LABEL,
   );
-  // Bold reads as heavy on this glyph (it is a stroke, not a letterform) and the wider box keeps it
-  // optically the same size as the `+`/`−` pair beside it.
-  element.style.fontWeight = "normal";
+  // Keeps the band's bold weight so the glyph reads at the same strength as the `+`/`−` pair; the
+  // wider box keeps it optically the same size as them too.
   element.style.fontSize = "15px";
   element.style.marginLeft = `${REFRESH_BUTTON_GAP_PX}px`;
 
@@ -183,9 +192,7 @@ function renderRefreshButton(doc: Document): RefreshButtonHandle {
     element.style.cursor = busy ? "default" : "pointer";
     // A failure is reported in the theme's error color rather than by swapping the glyph, so the
     // button still reads as the same control the reader just pressed.
-    element.style.color = failed
-      ? "var(--palette-error-text, #a4262c)"
-      : "var(--text-primary-color, #323130)";
+    element.style.color = failed ? "var(--palette-error-text, #a4262c)" : REFRESH_IDLE_COLOR;
     element.style.borderColor = failed
       ? "var(--palette-error-text, #a4262c)"
       : "rgba(128,128,128,0.5)";

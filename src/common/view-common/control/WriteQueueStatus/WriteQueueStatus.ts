@@ -1,3 +1,5 @@
+import { createSvgCanvas } from "../svgIcon/svgIcon";
+
 /** Options for rendering the write-queue status indicator. */
 export interface WriteQueueStatusOptions {
   /** Initial number of pending writes. Default 0 (idle → the indicator is hidden). */
@@ -98,13 +100,7 @@ function normalizeCount(count: number): number {
 
 /** A 14px inline SVG canvas both icons share, hidden until its state is the visible one. */
 function createIconCanvas(doc: Document, display: string): SVGSVGElement {
-  const svg = doc.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("viewBox", "0 0 16 16");
-  svg.setAttribute("width", "14");
-  svg.setAttribute("height", "14");
-  svg.setAttribute("aria-hidden", "true");
-  svg.style.cssText = `display:${display};flex:none`;
-  return svg;
+  return createSvgCanvas(doc, `display:${display};flex:none`);
 }
 
 /**

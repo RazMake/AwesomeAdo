@@ -59,6 +59,14 @@ import { renderStatusBadge } from "../../../common/view-common/control/StatusBad
 import { renderViewScaffold } from "../../../common/view-common/control/ViewScaffold/ViewScaffold";
 import { renderWriteQueueStatus } from "../../../common/view-common/control/WriteQueueStatus/WriteQueueStatus";
 
+import { renderActivityFilterPills } from "./activity-filter/ActivityFilterPanel";
+import { RecentNotesIndex } from "./activity-filter/RecentNotesIndex";
+import {
+  activityFilterInForce,
+  matchesRecentActivity,
+  recentWindowStart,
+  type RecentActivityKind,
+} from "./activity-filter/recentActivity";
 import { DragReorderController, type PlannedMove } from "./drag-reorder/DragReorderController";
 import { applyMoveToTree, applyRanksToTree } from "./drag-reorder/applyMoveToTree";
 import {
@@ -70,9 +78,10 @@ import {
   hideResolvedAfterDays,
   orderingPolicyOf,
   projectTrackingViewType,
+  recentChangesWindowHours,
   updatesWindowWeeks,
 } from "./projectTrackingViewType";
-import { renderTagFilterPanel } from "./tag-filter/TagFilterPanel";
+import { renderTagFilterPills } from "./tag-filter/TagFilterPanel";
 
 /**
  * Returns the hex color for a given work item type name, or null when not found.
@@ -134,20 +143,28 @@ interface TreeFilter {
   tags: Set<string | null>;
   /** True once an item has sat in the resolved column longer than the binding's window allows. */
   isResolvedPastWindow(item: TrackedWorkItem): boolean;
+  /** True when the item passes the recent-activity pills (no pill lit passes everything). */
+  matchesRecentActivity(item: TrackedWorkItem): boolean;
 }
 
 /**
  * Predicate: is this item (or any of its descendants) visible under the active filters? An item
  * self-matches when it passes the sprint filter, the tag filter (an empty selection passes; multiple
- * selected tags form an OR) AND has not been resolved for longer than the binding allows. An ancestor
- * stays visible when any descendant self-matches, so a matching item is never orphaned from its path
- * — which is also what keeps a long-resolved parent on the board while unresolved work sits beneath it.
+ * selected tags form an OR), the recent-activity pills (same OR rule) AND has not been resolved for
+ * longer than the binding allows. An ancestor stays visible when any descendant self-matches, so a
+ * matching item is never orphaned from its path — which is also what keeps a long-resolved parent on
+ * the board while unresolved work sits beneath it.
  */
 function isVisibleUnderFilter(item: TrackedWorkItem, filter: TreeFilter): boolean {
   const matchesSprint = !filter.sprint || item.sprintName === filter.sprint;
   const key = itemTagKey(item);
   const matchesTag = filter.tags.size === 0 || (key !== undefined && filter.tags.has(key));
-  if (matchesSprint && matchesTag && !filter.isResolvedPastWindow(item)) return true;
+  const selfMatches =
+    matchesSprint &&
+    matchesTag &&
+    filter.matchesRecentActivity(item) &&
+    !filter.isResolvedPastWindow(item);
+  if (selfMatches) return true;
   return item.children.some((child) => isVisibleUnderFilter(child, filter));
 }
 
@@ -215,35 +232,85 @@ function buildMetaLine(
 }
 
 /**
+ * The disc's fill when it has nothing to promise: a fixed mid-grey (not a theme surface token) so it
+ * is always distinct from the page background — identical on every theme, including Follow ADO where
+ * surface tokens can collapse into the page color and hide both the disc and its margin.
+ */
+const DESCRIBE_DISC_NEUTRAL = "rgba(128,128,128,0.55)";
+
+/**
+ * How bright the description disc renders, mirroring the type icon beside it so both controls answer
+ * "is there anything here?" in the same visual language.
+ *
+ * The pulled-back step DARKENS where the icon fades: the disc carries a white "?" on a filled circle,
+ * and lowering its opacity would bleed the page through both instead of reading as a quieter state.
+ * `brightness` scales the glyph and its fill together, so the "?" keeps its contrast at every level.
+ *
+ * Every COLORED step is pulled back further than the icon's matching one, and further than the
+ * disc's own grey steps. ADO's type icon is a thin outline glyph on transparent, while this is a
+ * solid filled circle: at equal brightness the disc lays down several times the ink and reads as a
+ * second, louder version of the type's color sitting right next to the first. A drained disc has no
+ * such twin to clash with, so it keeps the brighter grey.
+ */
+function describeDiscFilter(emphasis: ItemTypeIconEmphasis): string {
+  if (emphasis.loud) {
+    return emphasis.colored ? "brightness(0.8)" : "none";
+  }
+  return emphasis.colored ? "brightness(0.5)" : "brightness(0.45)";
+}
+
+/**
+ * The disc's fill: the item's own type color, but only once there is a description to promise.
+ *
+ * A row with no description stays grey even while its panel is open — the type color is the board's
+ * "there is something written here" signal, and lending it to an empty panel would spend it on
+ * nothing. Opening such a row only brightens the same grey.
+ */
+function describeDiscColor(emphasis: ItemTypeIconEmphasis, typeColor: string | null): string {
+  return emphasis.colored && typeColor !== null ? typeColor : DESCRIBE_DISC_NEUTRAL;
+}
+
+/**
+ * The disc's tooltip: what pressing it does, nothing more. It deliberately does NOT report whether
+ * there is a description — the panel still carries the created/modified line either way, so the disc
+ * is worth pressing on every row and a "nothing here" label would talk the reader out of it. The
+ * disc's shade is what answers that question.
+ */
+function describeToggleTitle(expanded: boolean): string {
+  return expanded ? "Hide description" : "Show description";
+}
+
+/**
  * Renders the description panel (initially hidden) for a work item row.
  * Returns the panel element plus the toggle button that controls its visibility.
  */
 function renderDescription(
   doc: Document,
   item: TrackedWorkItem,
+  typeColor: string | null,
   mentionNames: ReadonlyMap<string, string>,
 ): { panel: HTMLElement; toggleButton: HTMLButtonElement } {
+  const hasDescription = item.description.trim().length > 0;
   const toggleButton = doc.createElement("button");
   toggleButton.className = "awesomeado-tracking__describe";
   toggleButton.type = "button";
   toggleButton.textContent = "?";
-  toggleButton.setAttribute("aria-expanded", "false");
-  // Small, muted disc: a fixed mid-grey (not a theme surface token) so it is always distinct from
-  // the page background yet never bright enough to pull attention from the title — identical on every
-  // theme, including Follow ADO where surface tokens can collapse into the page color and hide both
-  // the disc and its margin.
+  // Everything except the fill is fixed, so the fill is the one thing a reader has to compare down
+  // the column.
   toggleButton.style.cssText = [
     "cursor:pointer",
     "border:1px solid var(--palette-neutral-20, rgba(255,255,255,0.6))",
     "border-radius:50%",
     "width:16px",
     "height:16px",
-    "background:rgba(128,128,128,0.55)",
     "font-size:10px",
     "font-weight:bold",
     "color:var(--text-on-communication-background, #fff)",
     "padding:2",
     "margin:1px",
+    // Instant enough to feel like a direct response, slow enough to be seen as a change of state —
+    // the same timing the type icon uses, so the pair moves together.
+    "transition:background 120ms ease, filter 120ms ease",
   ].join(";");
 
   const panel = doc.createElement("div");
@@ -260,10 +327,18 @@ function renderDescription(
   descText.style.color = "var(--text-primary-color, #323130)";
   panel.append(descText);
 
+  const apply = (expanded: boolean): void => {
+    const emphasis = contentEmphasis(expanded, hasDescription);
+    toggleButton.setAttribute("aria-expanded", expanded ? "true" : "false");
+    toggleButton.title = describeToggleTitle(expanded);
+    toggleButton.style.background = describeDiscColor(emphasis, typeColor);
+    toggleButton.style.filter = describeDiscFilter(emphasis);
+    panel.style.display = expanded ? "block" : "none";
+  };
+  apply(false);
+
   toggleButton.addEventListener("click", () => {
-    const isOpen = toggleButton.getAttribute("aria-expanded") === "true";
-    toggleButton.setAttribute("aria-expanded", isOpen ? "false" : "true");
-    panel.style.display = isOpen ? "none" : "block";
+    apply(toggleButton.getAttribute("aria-expanded") !== "true");
   });
 
   return { panel, toggleButton };
@@ -519,6 +594,28 @@ function completedColumnOrdinal(boardColumns: string[]): number {
 }
 
 /**
+ * Builds the "matches the recent-activity pills" test for one render pass.
+ *
+ * Rebuilt per pass for the same reason the resolved-age test is: the window is rolling, so a board
+ * left open must age items out of "newly" on its next repaint rather than keep answering against the
+ * hour it loaded on. The notes half is delegated to the index, which is the only thing that knows
+ * whether the discussions have actually been read yet.
+ */
+function createRecentActivityFilter(
+  properties: Record<string, string>,
+  now: Date,
+  selected: ReadonlySet<RecentActivityKind>,
+  recentNotes: RecentNotesIndex,
+): (item: TrackedWorkItem) => boolean {
+  const criteria = {
+    selected: activityFilterInForce(selected, recentNotes.isPending()),
+    sinceMs: recentWindowStart(now, recentChangesWindowHours(properties)),
+    hasRecentNote: (item: TrackedWorkItem) => recentNotes.hasRecentNote(item),
+  };
+  return (item) => matchesRecentActivity(item, criteria);
+}
+
+/**
  * Builds the "resolved long enough to drop off the board" test for one render pass.
  *
  * "Resolved" is a position, not a state name: whatever the team routed onto the column before the
@@ -713,7 +810,12 @@ function createTitleControls(
     titleSpan.style.color = itemColor;
   }
 
-  const { panel: descPanel, toggleButton: descButton } = renderDescription(doc, item, mentionNames);
+  const { panel: descPanel, toggleButton: descButton } = renderDescription(
+    doc,
+    item,
+    itemColor,
+    mentionNames,
+  );
   // The ? disc leads the row's controls, ahead of the type icon and the title, so every row's disc
   // sits in the same column instead of at whatever point that row's title happens to end on.
   // vertical-align:middle keeps it centered on the text line.
@@ -757,7 +859,10 @@ function createItemNotes(
     iconUrl: typeMap.get(item.type)?.icon ?? null,
     color: typeColorOf(item.type, typeMap),
     typeName: item.type,
-    emphasis: noteEmphasis(startsExpanded, hasNotes),
+    // The toggle below owns the tooltip: the icon IS the notes affordance here, so hovering it must
+    // say what clicking does, not repeat the work item type.
+    title: "",
+    emphasis: contentEmphasis(startsExpanded, hasNotes),
   });
 
   const toggle = doc.createElement("button");
@@ -791,14 +896,14 @@ function createItemNotes(
       // total again — otherwise an item whose notes all fall outside the window would flick back to
       // "has notes" on every re-sort.
       item.noteCount = count;
-      icon.setEmphasis(noteEmphasis(toggle.getAttribute("aria-expanded") === "true", hasNotes));
+      icon.setEmphasis(contentEmphasis(toggle.getAttribute("aria-expanded") === "true", hasNotes));
     },
   });
 
   const apply = (expanded: boolean): void => {
     toggle.setAttribute("aria-expanded", expanded ? "true" : "false");
-    toggle.title = notesToggleTitle(expanded, hasNotes, item.type);
-    icon.setEmphasis(noteEmphasis(expanded, hasNotes));
+    toggle.title = notesToggleTitle(expanded);
+    icon.setEmphasis(contentEmphasis(expanded, hasNotes));
     notes.setExpanded(expanded);
   };
   apply(startsExpanded);
@@ -816,23 +921,25 @@ function createItemNotes(
   return { toggle, panel: notes.element };
 }
 
-/** How loudly a row's type icon renders: open beats "has something", which beats "nothing here". */
-function noteEmphasis(expanded: boolean, hasNotes: boolean): ItemTypeIconEmphasis {
-  if (expanded) {
-    return "full";
-  }
-  return hasNotes ? "muted" : "quiet";
+/**
+ * How loudly a row's leading control renders: it carries the type's color only when there is
+ * something behind it, and comes to full strength only while the reader has it open.
+ *
+ * Shared by the type icon (notes) and the description disc so the two can never drift apart on what
+ * a given shade means. Keeping "is there anything here?" separate from "are you looking at it?" is
+ * what lets an empty item open without borrowing a color that would promise content it does not have.
+ */
+function contentEmphasis(expanded: boolean, hasContent: boolean): ItemTypeIconEmphasis {
+  return { colored: hasContent, loud: expanded };
 }
 
 /**
- * The toggle's tooltip. It names what the icon's shade already says, because a colour difference is
- * a hint rather than a statement — and it is the only form of it available to a screen reader.
+ * The toggle's tooltip: what pressing it does, nothing more. The icon is the row's only affordance
+ * for its notes, so the tooltip is spent naming the action rather than repeating the work item type
+ * (which the icon itself shows) or the shade's "has notes" answer.
  */
-function notesToggleTitle(expanded: boolean, hasNotes: boolean, typeName: string): string {
-  if (expanded) {
-    return `Hide notes — ${typeName}`;
-  }
-  return hasNotes ? `Show notes — ${typeName}` : `No notes — ${typeName}`;
+function notesToggleTitle(expanded: boolean): string {
+  return expanded ? "Hide notes" : "Show notes";
 }
 
 /**
@@ -888,16 +995,15 @@ function createItemEtaBadge(
 
 /**
  * Describes one rolled-up child for the badge's popup: its assignee chip, type-colored title, its own
- * editable ETA badge, and the type icon that deep-links the item in ADO. The assignee and ETA controls
- * are built with the SAME helpers the tree rows use, so a rolled-up child is reassigned and re-dated
- * exactly like a row rather than being a read-only echo.
+ * editable ETA badge, and the ADO deep link. The assignee and ETA controls are built with the SAME
+ * helpers the tree rows use, so a rolled-up child is reassigned and re-dated exactly like a row
+ * rather than being a read-only echo.
  */
 function describeMinorChild(
   child: TrackedWorkItem,
   options: TreeRenderOptions,
 ): ChildItemDescriptor {
   const { doc, typeMap, queue, context } = options;
-  const icon = typeMap.get(child.type)?.icon ?? "";
   return {
     // The rollup popup is a dense one-line-per-child list, so the crew tag pill is left off here —
     // the tag is edited from the tree row that owns the person.
@@ -905,7 +1011,6 @@ function describeMinorChild(
     title: child.title,
     titleColor: typeColorOf(child.type, typeMap),
     eta: createItemEtaBadge(doc, child, typeMap, queue, context.services.now()),
-    iconUrl: icon.length > 0 ? icon : null,
     // The view runs on the ADO query page, so the page's own URL supplies the org/project the item
     // link resolves against; an unrecognizable location leaves the affordance inert.
     url: buildWorkItemUrl(doc.location?.href ?? "", child.id),
@@ -1206,6 +1311,8 @@ interface BoardSession {
   expandedNoteIds: Set<number>;
   /** The active tag filter (OR across the entries; empty = everyone). `null` is the untagged bucket. */
   selectedTags: Set<string | null>;
+  /** The recent-activity pills the reader lit (OR across them; empty = no activity filter). */
+  selectedActivity: Set<RecentActivityKind>;
   /** The sprint filter as the reader last left it, or null while they have not touched the picker. */
   sprint: { selectedName: string | null; filterActive: boolean } | null;
   /** The order the reader picked this session, or null while the binding's configured order applies. */
@@ -1218,6 +1325,7 @@ function createBoardSession(): BoardSession {
     collapsedIds: new Set<number>(),
     expandedNoteIds: new Set<number>(),
     selectedTags: new Set<string | null>(),
+    selectedActivity: new Set<RecentActivityKind>(),
     sprint: null,
     orderingPolicy: null,
   };
@@ -1509,19 +1617,24 @@ function wireSprintPickerRerender(
   }
 }
 
-/** Everything the board's tree + tag-filter renderer needs to (re)build both from current state. */
+/** Everything the board's tree renderer needs to rebuild it from current state. */
 interface BoardTreeRendererParams {
   doc: Document;
   root: TrackedWorkItem;
   context: DataDrivenViewContext;
   typeMap: Map<string, TypeCatalogEntry>;
   /**
-   * The reader's own state (collapsed nodes, opened discussions, tag filter). Owned OUTSIDE the
+   * The reader's own state (collapsed nodes, opened discussions, filter pills). Owned OUTSIDE the
    * renderer so it survives both a repaint and a refresh — see `BoardSession`.
    */
   session: BoardSession;
   treeContainer: HTMLElement;
-  tagPanelContainer: HTMLElement;
+  /**
+   * Answers the "New notes" pill. Read at render time (never captured) because the answer arrives
+   * asynchronously: the pass that lights the pill sees it pending, the pass after the discussions
+   * land sees the result.
+   */
+  recentNotes: RecentNotesIndex;
   sprintPickerHandle: SprintPickerHandle;
   chipContext: AssigneeChipContext;
   fieldWrites: WorkItemWriteQueue;
@@ -1542,23 +1655,11 @@ interface BoardTreeRendererParams {
 }
 
 /**
- * The board's two mutually-referencing renderers: `renderTreeContent` rebuilds the tree under the
- * current sprint + tag filters, and `refreshTagPanel` rebuilds the filter panel from the tags worn
- * across the tree. They are paired here because the panel's onChange re-runs both.
+ * Rebuilds the tree under the current sprint, tag and recent-activity filters. Returned as a single
+ * command because that is all a caller ever wants from it: a repaint.
  */
-function createBoardTreeRenderer(params: BoardTreeRendererParams): {
-  renderTreeContent: () => void;
-  refreshTagPanel: () => void;
-} {
-  const {
-    doc,
-    root,
-    treeContainer,
-    tagPanelContainer,
-    sprintPickerHandle,
-    expandAll,
-    collapseAll,
-  } = params;
+function createBoardTreeRenderer(params: BoardTreeRendererParams): () => void {
+  const { doc, root, treeContainer, sprintPickerHandle, expandAll, collapseAll } = params;
 
   // Survives every repaint AND every refresh, which is the whole point: the elements a reader
   // collapsed are thrown away on each pass (a drag-reorder, a re-sort, a filter change, a re-read),
@@ -1566,7 +1667,7 @@ function createBoardTreeRenderer(params: BoardTreeRendererParams): {
   // Same reason, opposite default, for the opened discussions: a notes panel fetches when it opens,
   // so the rows that were OPENED are what has to survive — recording the closed ones would make every
   // newly-rendered row start by loading a discussion nobody asked to see.
-  const { collapsedIds, expandedNoteIds, selectedTags } = params.session;
+  const { collapsedIds, expandedNoteIds, selectedTags, selectedActivity } = params.session;
 
   const renderTreeContent = (): void => {
     const filterOn = sprintPickerHandle.isFilterActive();
@@ -1594,6 +1695,14 @@ function createBoardTreeRenderer(params: BoardTreeRendererParams): {
           hideResolvedAfterDays(properties),
           params.context.services.now(),
         ),
+        // Same rolling-window reasoning, from the other end: an item stops being "newly" anything
+        // once the configured hours have passed under it.
+        matchesRecentActivity: createRecentActivityFilter(
+          properties,
+          params.context.services.now(),
+          selectedActivity,
+          params.recentNotes,
+        ),
       },
       orderingPolicy,
       // Sprint pills only earn their space when the sprint filter is not already narrowing the board.
@@ -1620,29 +1729,99 @@ function createBoardTreeRenderer(params: BoardTreeRendererParams): {
     wireExpandCollapseButtons(expandAll, collapseAll, expandableRows, collapsedIds);
   };
 
-  // Rebuild the tag filter panel from the tags currently worn across the tree. Dropping any selected
-  // tag that no longer exists keeps the filter from getting stuck on a vanished tag. The panel hides
-  // entirely when nobody in the tree is assigned (nothing to filter by).
-  const refreshTagPanel = (): void => {
+  return renderTreeContent;
+}
+
+/** The one word that introduces the filter row, sized and colored to sit quietly beside the pills. */
+function renderFiltersLabel(doc: Document): HTMLElement {
+  const label = doc.createElement("span");
+  label.className = "awesomeado-tracking__filters-label";
+  label.textContent = "Filters:";
+  label.style.cssText = [
+    "font-size:11px",
+    "font-weight:600",
+    "color:var(--text-secondary-color, #8a8886)",
+    "margin-right:2px",
+  ].join(";");
+  return label;
+}
+
+/**
+ * The board's single filter row: the "Filters:" label, the Feature Crew tag pills, and the
+ * recent-activity pills that close it.
+ *
+ * Rebuilt WHOLE on every change rather than kept as two independently-refreshed halves. Every pill
+ * is a direct child of one wrapping flex row, so a narrow window reflows them as a single continuous
+ * line; per-group wrappers would make each group wrap on its own and leave ragged gaps between them.
+ * Rebuilding a handful of elements costs nothing, and it removes any chance of the two halves
+ * disagreeing about the row they share.
+ */
+function createFilterRowRenderer(params: {
+  doc: Document;
+  root: TrackedWorkItem;
+  context: DataDrivenViewContext;
+  container: HTMLElement;
+  session: BoardSession;
+  recentNotes: RecentNotesIndex;
+  /** Re-narrow the tree after any pill toggles. */
+  onChange: () => void;
+}): () => void {
+  const { doc, root, context, container, recentNotes } = params;
+  const { selectedTags, selectedActivity } = params.session;
+  const windowHours = recentChangesWindowHours(context.properties);
+
+  const render = (): void => {
+    // Dropping a selected tag nobody in the tree wears any more is what keeps the filter from
+    // getting stuck on a tag that has no pill left to unclick.
     const tags = collectAssignedTags([root]);
     for (const selected of [...selectedTags]) {
       if (!tags.includes(selected)) selectedTags.delete(selected);
     }
-    tagPanelContainer.innerHTML = "";
-    if (tags.length === 0) return;
-    tagPanelContainer.append(
-      renderTagFilterPanel(doc, {
-        tags,
-        selected: selectedTags,
+    if (selectedActivity.has("notes")) {
+      // Idempotent: the index only reads a discussion it has not read yet, so calling this on every
+      // repaint costs nothing once the board has been covered.
+      recentNotes.ensureProbed(
+        root,
+        new Date(recentWindowStart(context.services.now(), windowHours)).toISOString(),
+      );
+    }
+
+    const repaint = (): void => {
+      render();
+      params.onChange();
+    };
+    container.replaceChildren(
+      renderFiltersLabel(doc),
+      ...renderTagFilterPills(doc, { tags, selected: selectedTags, onChange: repaint }),
+      ...renderActivityFilterPills(doc, {
+        selected: selectedActivity,
+        windowHours,
+        notesPending: recentNotes.isPending(),
         onChange: () => {
-          refreshTagPanel();
-          renderTreeContent();
+          logActivityFilterFlip(context, selectedActivity, windowHours);
+          repaint();
         },
       }),
     );
   };
 
-  return { renderTreeContent, refreshTagPanel };
+  return render;
+}
+
+/**
+ * Records a recent-activity flip: a rare, user-driven change to what the WHOLE board shows, the same
+ * reason the ordering pick is logged. Both the resulting selection and the window are recorded, so
+ * "why is this item missing?" is answerable from the log alone.
+ */
+function logActivityFilterFlip(
+  context: DataDrivenViewContext,
+  selected: ReadonlySet<RecentActivityKind>,
+  windowHours: number,
+): void {
+  context.services.logger.info(
+    `Project Tracking recent-activity filter: selected=[${[...selected].join(", ")}], ` +
+      `windowHours=${windowHours}.`,
+  );
 }
 
 /**
@@ -1756,20 +1935,31 @@ function findTrackedItem(root: TrackedWorkItem, id: number): TrackedWorkItem | n
 /**
  * The two containers the board repaints into, appended in reading order.
  *
- * The tag filter panel stays empty until the Feature Crew roster resolves (a person's tag is only
- * known once it loads), so it is created up front rather than inserted later — appearing between the
- * header and the tree would otherwise shove the whole board down mid-read.
+ * The filter row is created up front rather than inserted once it has something to show: its tag
+ * pills only appear when the Feature Crew roster resolves, and a row appearing between the header
+ * and the tree would otherwise shove the whole board down mid-read.
  */
 function createBoardPanels(
   doc: Document,
   board: HTMLElement,
-): { tagPanelContainer: HTMLElement; treeContainer: HTMLElement } {
-  const tagPanelContainer = doc.createElement("div");
-  tagPanelContainer.className = "awesomeado-tracking__tag-filter";
+): { filterRow: HTMLElement; treeContainer: HTMLElement } {
+  const filterRow = doc.createElement("div");
+  filterRow.className = "awesomeado-tracking__filters";
+  // ONE wrapping line for every pill on the board. `flex-wrap` lets a narrow window reflow them as a
+  // single continuous flow, and `align-items:center` centres the label against the pills it shares a
+  // line with — the pills are taller than the label's text box, so without it the word would sit on
+  // their top edge.
+  filterRow.style.cssText = [
+    "display:flex",
+    "flex-wrap:wrap",
+    "align-items:center",
+    "gap:6px",
+    "margin:8px 0",
+  ].join(";");
   const treeContainer = doc.createElement("div");
   treeContainer.className = "awesomeado-tracking__tree";
-  board.append(tagPanelContainer, treeContainer);
-  return { tagPanelContainer, treeContainer };
+  board.append(filterRow, treeContainer);
+  return { filterRow, treeContainer };
 }
 
 /**
@@ -1952,6 +2142,78 @@ interface RenderBoardParams {
   onRefresh: () => void;
 }
 
+/**
+ * Mounts everything below the header — the filter row and the tree — and hands back the two
+ * renderers the board drives them with.
+ *
+ * Split out of `renderBoard` because these pieces only make sense together: the tree reads the
+ * recent-notes index, the activity pills are what fill it, and the index repaints both once its
+ * reads land. That circle is the reason for the late-bound settle hook, and it is far easier to see
+ * on its own than buried among the header's wiring.
+ */
+function mountBoardBody(params: {
+  doc: Document;
+  root: TrackedWorkItem;
+  context: DataDrivenViewContext;
+  typeMap: Map<string, TypeCatalogEntry>;
+  session: BoardSession;
+  board: HTMLElement;
+  sprintPickerHandle: SprintPickerHandle;
+  chipContext: AssigneeChipContext;
+  core: BoardCore;
+  expandAll: HTMLButtonElement;
+  collapseAll: HTMLButtonElement;
+}): { renderTreeContent: () => void; refreshFilters: () => void } {
+  const { doc, root, context, session, core } = params;
+  const { filterRow, treeContainer } = createBoardPanels(doc, params.board);
+
+  // Late-bound for the same reason the drag repaint is: the index has to exist before the renderers
+  // that read it, but only those renderers know how to show the answer once the discussions land.
+  let onRecentNotesSettled: () => void = () => {};
+  const recentNotes = new RecentNotesIndex(
+    context.services.noteLoader,
+    context.services.logger,
+    () => onRecentNotesSettled(),
+  );
+
+  const renderTreeContent = createBoardTreeRenderer({
+    doc,
+    root,
+    context,
+    typeMap: params.typeMap,
+    session,
+    treeContainer,
+    recentNotes,
+    sprintPickerHandle: params.sprintPickerHandle,
+    chipContext: params.chipContext,
+    fieldWrites: core.writes,
+    metrics: core.metrics,
+    expandAll: params.expandAll,
+    collapseAll: params.collapseAll,
+    currentOrderingPolicy: core.ordering.policy,
+    dragReorder: core.dragReorder,
+  });
+
+  const refreshFilters = createFilterRowRenderer({
+    doc,
+    root,
+    context,
+    container: filterRow,
+    session,
+    recentNotes,
+    onChange: renderTreeContent,
+  });
+  onRecentNotesSettled = () => {
+    refreshFilters();
+    renderTreeContent();
+  };
+  // Painted before the first tree pass so the pills are on screen from the board's first frame; a
+  // selection carried across a refresh also re-starts its discussion reads here.
+  refreshFilters();
+
+  return { renderTreeContent, refreshFilters };
+}
+
 function renderBoard(params: RenderBoardParams): BoardHandle {
   const { doc, root, context, typeMap, sprintWindow, session, folderPath } = params;
   const board = doc.createElement("div");
@@ -1985,24 +2247,18 @@ function renderBoard(params: RenderBoardParams): BoardHandle {
   refresh.element.onclick = () => params.onRefresh();
   board.append(header);
 
-  const { tagPanelContainer, treeContainer } = createBoardPanels(doc, board);
-
-  const { renderTreeContent, refreshTagPanel } = createBoardTreeRenderer({
+  const { renderTreeContent, refreshFilters } = mountBoardBody({
     doc,
     root,
     context,
     typeMap,
     session,
-    treeContainer,
-    tagPanelContainer,
+    board,
     sprintPickerHandle,
     chipContext,
-    fieldWrites: core.writes,
-    metrics: core.metrics,
+    core,
     expandAll,
     collapseAll,
-    currentOrderingPolicy: core.ordering.policy,
-    dragReorder: core.dragReorder,
   });
 
   renderTreeContent();
@@ -2015,7 +2271,7 @@ function renderBoard(params: RenderBoardParams): BoardHandle {
       applyFeatureCrewTags([root], members);
       // The header is not part of the tree re-render, so refresh the epic's TechLead in place.
       if (techLead) populateTechLead(techLead, root, chipContext);
-      refreshTagPanel();
+      refreshFilters();
       renderTreeContent();
     },
     setReconcilePending: writeStatus.setReconcilePending,

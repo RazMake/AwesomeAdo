@@ -839,6 +839,80 @@ describe("ProjectTrackingView — the row's leading controls", () => {
   });
 });
 
+describe("ProjectTrackingView — the description disc's shade", () => {
+  /** The board's first ? disc, over a single Feature with (or without) a description. */
+  async function discOver(description: string): Promise<HTMLButtonElement> {
+    const root = await renderBoardForTree(
+      epicOver([createItem({ id: 2, type: "Feature", title: "User Authentication", description })]),
+    );
+    return root.querySelector<HTMLButtonElement>(".awesomeado-tracking__describe")!;
+  }
+
+  /** How much of the disc's own color survives its filter; 1 is the brightest state. */
+  function brightnessOf(disc: HTMLButtonElement): number {
+    const filter = disc.style.filter;
+    return filter === "none" ? 1 : Number.parseFloat(/brightness\(([\d.]+)\)/.exec(filter)![1]!);
+  }
+
+  // The Feature type's configured color (6bcf7f), which is what the disc must borrow.
+  const FEATURE_COLOR = "rgb(107, 207, 127)";
+
+  it("stays grey when the item has no description to show", async () => {
+    const disc = await discOver("   ");
+
+    // Whitespace is not a description: a disc promising text that turns out to be blank is worse
+    // than one that never promised any.
+    expect(disc.style.background.replace(/\s/g, "")).toBe("rgba(128,128,128,0.55)");
+    // The tooltip names the ACTION, not the state: the panel still carries the created/modified
+    // line, so the disc is worth pressing on this row too.
+    expect(disc.title).toBe("Show description");
+  });
+
+  it("wears the work item type's color once there is a description", async () => {
+    const disc = await discOver("Implement OAuth2 authentication.");
+
+    expect(disc.style.background).toBe(FEATURE_COLOR);
+    expect(disc.title).toBe("Show description");
+  });
+
+  it("brightens on expand and darkens again on collapse, keeping the type's color", async () => {
+    const disc = await discOver("Implement OAuth2 authentication.");
+    const collapsed = brightnessOf(disc);
+
+    disc.click();
+    expect(disc.style.background).toBe(FEATURE_COLOR);
+    expect(disc.title).toBe("Hide description");
+    expect(brightnessOf(disc)).toBeGreaterThan(collapsed);
+
+    disc.click();
+    expect(brightnessOf(disc)).toBe(collapsed);
+  });
+
+  it("reads quieter with no description than with one, at every step", async () => {
+    const empty = await discOver("");
+    const described = await discOver("Implement OAuth2 authentication.");
+    const collapsed = brightnessOf(described);
+
+    // The states must be a progression, exactly like the type icon's: nothing here < there is
+    // something here < you are looking at it.
+    expect(brightnessOf(empty)).toBeLessThan(collapsed);
+    described.click();
+    expect(brightnessOf(described)).toBeGreaterThan(collapsed);
+  });
+
+  it("only brightens the same grey when an item with no description is expanded", async () => {
+    const disc = await discOver("");
+    const collapsed = brightnessOf(disc);
+
+    disc.click();
+
+    // The type color is the board's "there is something written here" signal; an open but empty
+    // panel must not spend it on nothing.
+    expect(disc.style.background.replace(/\s/g, "")).toBe("rgba(128,128,128,0.55)");
+    expect(brightnessOf(disc)).toBeGreaterThan(collapsed);
+  });
+});
+
 describe("ProjectTrackingView — meta line", () => {
   it("should render meta line with Created and Last Modified", async () => {
     const doc = document;
@@ -2099,7 +2173,7 @@ describe("ProjectTrackingView — tag filter pills", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     await Promise.resolve();
 
-    const panel = root.querySelector(".awesomeado-tag-filter");
+    const panel = root.querySelector(".awesomeado-tracking__filters");
     expect(panel).toBeTruthy();
     const pills = [...(panel?.querySelectorAll(".awesomeado-tag-pill") ?? [])].map(
       (p) => p.textContent,
@@ -2365,6 +2439,14 @@ describe("ProjectTrackingView — tag saving indicator", () => {
   });
 });
 
+/** The tag pill wearing `label` in the board's one filter row. */
+const tagFilterPillOf = (root: HTMLElement, label: string): HTMLButtonElement | undefined =>
+  [
+    ...root.querySelectorAll<HTMLButtonElement>(
+      ".awesomeado-tracking__filters .awesomeado-tag-pill",
+    ),
+  ].find((pill) => pill.textContent === label);
+
 describe("ProjectTrackingView — tag filtering", () => {
   it("filters the tree to people wearing a selected tag when its pill is clicked", async () => {
     const doc = document;
@@ -2401,9 +2483,7 @@ describe("ProjectTrackingView — tag filtering", () => {
 
     // Click the "Platform" filter pill: only Bob's feature (Platform) survives; the untagged story
     // and the unassigned feature drop out.
-    const platformPill = [
-      ...root.querySelectorAll<HTMLButtonElement>(".awesomeado-tag-filter .awesomeado-tag-pill"),
-    ].find((p) => p.textContent === "Platform");
+    const platformPill = tagFilterPillOf(root, "Platform");
     expect(platformPill).toBeTruthy();
     platformPill?.click();
     await Promise.resolve();
@@ -2445,9 +2525,7 @@ describe("ProjectTrackingView — tag filtering", () => {
 
     // The "??" bucket catches assigned-but-untagged people (Carol on the Login UI story). Her
     // ancestor feature stays so she is not orphaned; the unassigned Data Migration feature drops out.
-    const untaggedPill = [
-      ...root.querySelectorAll<HTMLButtonElement>(".awesomeado-tag-filter .awesomeado-tag-pill"),
-    ].find((p) => p.textContent === "??");
+    const untaggedPill = tagFilterPillOf(root, "??");
     expect(untaggedPill).toBeTruthy();
     untaggedPill?.click();
     await Promise.resolve();
@@ -2692,9 +2770,9 @@ describe("ProjectTrackingView — rollup popup rows", () => {
     expect(styleTheForm.querySelector(".awesomeado-child-items__eta")?.textContent).toContain(
       "ETA ",
     );
-    expect(styleTheForm.querySelector<HTMLImageElement>(".awesomeado-child-items__icon")?.src).toBe(
-      "https://ado/task.svg",
-    );
+    // The open affordance is a type-agnostic link glyph, not the work item type's icon.
+    expect(styleTheForm.querySelector(".awesomeado-child-items__icon svg")).not.toBeNull();
+    expect(styleTheForm.querySelector(".awesomeado-child-items__icon img")).toBeNull();
   });
 
   it("shows No ETA for a rolled-up child with no ETA set", async () => {
@@ -3090,7 +3168,10 @@ describe("ProjectTrackingView - notes toggle", () => {
     const image = toggle.querySelector<HTMLImageElement>(".awesomeado-type-icon img");
     // The fixture row is a Feature, so it must carry the Feature type's configured icon.
     expect(image?.getAttribute("src")).toBe("feature.svg");
-    expect(toggle.querySelector(".awesomeado-type-icon")?.getAttribute("title")).toBe("Feature");
+    // The icon carries no tooltip of its own: it IS the notes affordance, so hovering it must say
+    // what clicking does rather than shadowing that with the work item type.
+    expect(toggle.querySelector(".awesomeado-type-icon")?.hasAttribute("title")).toBe(false);
+    expect(toggle.title).toBe("Show notes");
   });
 
   it("starts closed, with the icon dimmed and the panel out of the way", async () => {
@@ -3114,7 +3195,9 @@ describe("ProjectTrackingView - notes toggle", () => {
     const toggle = notesToggleOf(root);
     const icon = toggle.querySelector<HTMLElement>(".awesomeado-type-icon");
     expect(icon?.style.filter).toBe("grayscale(1)");
-    expect(toggle.title).toContain("No notes");
+    // "Has notes?" is the icon's shade to answer; the tooltip only ever names the action, so an
+    // empty item is not talked out of being opened.
+    expect(toggle.title).toBe("Show notes");
   });
 });
 
@@ -3172,6 +3255,22 @@ describe("ProjectTrackingView - notes toggle, once a panel has been opened", () 
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
     expect(toggle.querySelector<HTMLElement>(".awesomeado-type-icon")?.style.opacity).toBe("1");
     expect(root.querySelector<HTMLElement>(".awesomeado-notes")?.style.display).toBe("block");
+  });
+
+  it("keeps an opened empty item's icon grey, only brighter, rather than lending it the type color", async () => {
+    const tree = createFixtureTree();
+    tree.children[0]!.noteCount = 0;
+    const root = await renderNotesBoard({}, {}, tree);
+    const closed = notesToggleOf(root).querySelector<HTMLElement>(".awesomeado-type-icon")!;
+    const closedOpacity = Number(closed.style.opacity);
+
+    notesToggleOf(root).click();
+
+    // The type color says "there is something written here"; an open but empty item has nothing to
+    // spend it on, so opening only brings the same grey forward.
+    const opened = notesToggleOf(root).querySelector<HTMLElement>(".awesomeado-type-icon")!;
+    expect(opened.style.filter).toBe("grayscale(1)");
+    expect(Number(opened.style.opacity)).toBeGreaterThan(closedOpacity);
   });
 
   it("reads the discussion over the binding's own Updates window", async () => {
@@ -3507,5 +3606,266 @@ describe("ProjectTrackingView — a refresh that fails", () => {
 
     await pressRefresh(root);
     expect(reads).toBe(3);
+  });
+});
+
+// The fake clock is 2026-07-24T12:00Z, so the binding's default 24-hour window opens at
+// 2026-07-23T12:00Z. Every fixture below is placed clearly on one side of that line.
+const AN_HOUR_AGO = "2026-07-24T11:00:00Z";
+const FIVE_HOURS_AGO = "2026-07-24T07:00:00Z";
+const MONTHS_AGO = "2026-06-01T00:00:00Z";
+
+/**
+ * Four Features, one per answer the pills can give: freshly created (and therefore also freshly
+ * changed), only re-touched, untouched, and untouched but talked about.
+ */
+function epicOverRecentActivity(): TrackedWorkItem {
+  return epicOver([
+    createItem({
+      id: 2,
+      type: "Feature",
+      title: "Fresh feature",
+      createdDate: AN_HOUR_AGO,
+      changedDate: AN_HOUR_AGO,
+    }),
+    createItem({
+      id: 3,
+      type: "Feature",
+      title: "Touched feature",
+      createdDate: MONTHS_AGO,
+      changedDate: AN_HOUR_AGO,
+    }),
+    createItem({
+      id: 4,
+      type: "Feature",
+      title: "Quiet feature",
+      createdDate: MONTHS_AGO,
+      changedDate: MONTHS_AGO,
+    }),
+    createItem({
+      id: 5,
+      type: "Feature",
+      title: "Discussed feature",
+      createdDate: MONTHS_AGO,
+      changedDate: MONTHS_AGO,
+      noteCount: 3,
+    }),
+  ]);
+}
+
+const activityPillOf = (root: HTMLElement, kind: string): HTMLButtonElement =>
+  root.querySelector<HTMLButtonElement>(`.awesomeado-activity-pill[data-activity="${kind}"]`)!;
+
+/** Drains the microtasks the discussion reads and the repaint they trigger resolve on. */
+async function settleActivityReads(): Promise<void> {
+  for (let tick = 0; tick < 30; tick++) {
+    await Promise.resolve();
+  }
+}
+
+describe("ProjectTrackingView — recent-activity pills", () => {
+  it("puts every pill on one wrapping row introduced by a single 'Filters:' label", async () => {
+    const root = await renderBoardForTree(epicOverRecentActivity());
+
+    const row = root.querySelector<HTMLElement>(".awesomeado-tracking__filters")!;
+    expect(row.querySelector(".awesomeado-tracking__filters-label")?.textContent).toBe("Filters:");
+    expect(row.querySelectorAll(".awesomeado-activity-pill")).toHaveLength(3);
+    // One continuous line that reflows when the board is narrow, with the label centred against the
+    // taller pills it shares a line with.
+    expect(row.style.flexWrap).toBe("wrap");
+    expect(row.style.alignItems).toBe("center");
+  });
+
+  it("closes that row with the activity pills, after the tag pills", async () => {
+    const services = createFakeServices({
+      loadTree: async () => ({ isTreeQuery: true, roots: [createFixtureTree()], error: null }),
+      featureCrew: {
+        reconcile: async () => ({
+          ok: true,
+          changed: false,
+          members: [{ alias: "bob.jones", fullName: "Bob Jones", tag: "Platform" }],
+        }),
+      },
+    });
+    const root = projectTrackingView.render({
+      doc: document,
+      queryId: "q1",
+      properties: {},
+      services,
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await Promise.resolve();
+
+    const row = root.querySelector(".awesomeado-tracking__filters")!;
+    const classes = [...row.children].map((child) => child.className);
+    expect(classes[0]).toBe("awesomeado-tracking__filters-label");
+    // "Whose is it?" reads before "what changed?", and the activity pills close the row.
+    expect(classes.findIndex((name) => name.startsWith("awesomeado-tag-pill"))).toBeLessThan(
+      classes.indexOf("awesomeado-activity-pill"),
+    );
+    expect(classes.slice(-3)).toEqual([
+      "awesomeado-activity-pill",
+      "awesomeado-activity-pill",
+      "awesomeado-activity-pill",
+    ]);
+  });
+});
+
+describe("ProjectTrackingView — what the recent-activity pills narrow to", () => {
+  it("shows every item while no pill is lit", async () => {
+    const root = await renderBoardForTree(epicOverRecentActivity());
+
+    expect(renderedRowTitles(root)).toEqual([
+      "Fresh feature",
+      "Touched feature",
+      "Quiet feature",
+      "Discussed feature",
+    ]);
+  });
+
+  it("narrows to items created inside the window", async () => {
+    const root = await renderBoardForTree(epicOverRecentActivity());
+
+    activityPillOf(root, "created").click();
+
+    expect(renderedRowTitles(root)).toEqual(["Fresh feature"]);
+  });
+
+  it("narrows to items changed inside the window", async () => {
+    const root = await renderBoardForTree(epicOverRecentActivity());
+
+    activityPillOf(root, "updated").click();
+
+    expect(renderedRowTitles(root)).toEqual(["Fresh feature", "Touched feature"]);
+  });
+
+  it("ORs two lit pills rather than intersecting them", async () => {
+    const root = await renderBoardForTree(epicOverRecentActivity());
+
+    activityPillOf(root, "created").click();
+    activityPillOf(root, "updated").click();
+
+    expect(renderedRowTitles(root)).toEqual(["Fresh feature", "Touched feature"]);
+  });
+
+  it("measures 'newly' against the binding's own window, not a fixed day", async () => {
+    const tree = epicOver([
+      createItem({
+        id: 2,
+        type: "Feature",
+        title: "Touched five hours ago",
+        createdDate: MONTHS_AGO,
+        changedDate: FIVE_HOURS_AGO,
+      }),
+    ]);
+    const root = await renderBoardForTree(tree, { hours: "2" });
+
+    // The window is no longer on the row's label (one label now introduces every filter), so each
+    // pill's tooltip is what has to name it.
+    expect(activityPillOf(root, "updated").title).toBe("Items changed in the last 2 hours.");
+    activityPillOf(root, "updated").click();
+    expect(renderedRowTitles(root)).toEqual([]);
+  });
+
+  it("puts a lit pill out again, restoring the whole board", async () => {
+    const root = await renderBoardForTree(epicOverRecentActivity());
+
+    activityPillOf(root, "created").click();
+    activityPillOf(root, "created").click();
+
+    expect(renderedRowTitles(root)).toHaveLength(4);
+  });
+
+  it("records the flip, so a missing item is explainable from the log alone", async () => {
+    const infos: string[] = [];
+    const root = await renderBoardForTree(
+      epicOverRecentActivity(),
+      {},
+      { logger: { info: (message) => infos.push(message), error: () => undefined } },
+    );
+
+    activityPillOf(root, "created").click();
+
+    expect(
+      infos.some(
+        (message) =>
+          message.includes("recent-activity filter") &&
+          message.includes("selected=[created]") &&
+          message.includes("windowHours=24"),
+      ),
+    ).toBe(true);
+  });
+});
+
+describe("ProjectTrackingView — the New notes pill", () => {
+  /** Answers with a note for the one fixture item that was discussed. */
+  const discussedItemLoader = (requests: number[]) => ({
+    loadNotes: async (request: { workItemId: number }) => {
+      requests.push(request.workItemId);
+      return {
+        notes:
+          request.workItemId === 5
+            ? [
+                {
+                  id: 1,
+                  workItemId: 5,
+                  author: { displayName: "Bob Jones", id: null, uniqueName: null },
+                  createdDate: AN_HOUR_AGO,
+                  text: "Looked at this.",
+                  renderedHtml: null,
+                },
+              ]
+            : [],
+        currentUser: null,
+        error: null,
+      };
+    },
+  });
+
+  it("leaves the board wide, and says it is still reading, until the discussions land", async () => {
+    const requests: number[] = [];
+    const root = await renderBoardForTree(
+      epicOverRecentActivity(),
+      {},
+      { noteLoader: discussedItemLoader(requests) },
+    );
+
+    activityPillOf(root, "notes").click();
+
+    // One visible jump, not two: narrowing on an answer nobody has yet would empty the board and
+    // then repopulate it.
+    expect(renderedRowTitles(root)).toHaveLength(4);
+    expect(activityPillOf(root, "notes").getAttribute("aria-busy")).toBe("true");
+  });
+
+  it("narrows to the items that gained a note once the reads settle", async () => {
+    const requests: number[] = [];
+    const root = await renderBoardForTree(
+      epicOverRecentActivity(),
+      {},
+      { noteLoader: discussedItemLoader(requests) },
+    );
+
+    activityPillOf(root, "notes").click();
+    await settleActivityReads();
+
+    expect(renderedRowTitles(root)).toEqual(["Discussed feature"]);
+    expect(activityPillOf(root, "notes").getAttribute("aria-busy")).toBe("false");
+    // Only the item ADO reports a discussion on is read; the other three cost nothing.
+    expect(requests).toEqual([5]);
+  });
+
+  it("reads no discussion at all until the pill is lit", async () => {
+    const requests: number[] = [];
+    await renderBoardForTree(
+      epicOverRecentActivity(),
+      {},
+      { noteLoader: discussedItemLoader(requests) },
+    );
+    await settleActivityReads();
+
+    expect(requests).toEqual([]);
   });
 });
