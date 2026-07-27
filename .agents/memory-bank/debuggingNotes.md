@@ -163,6 +163,28 @@ outside of its immediate parent.` — every single time, for the same item, with
   type, title, state, assignedTo, iteration, rank/importance, eta, parent/child ids; per-view extra
   fields grow as views are implemented. Recorded in `.agents/memory-bank/systemPatterns.md`.
 
+## Pasted images missing from notes / descriptions
+
+- SYMPTOM: an expanded note showed an empty box where a screenshot should be; the rendered DOM was
+  `<img alt="Image" style="max-width:100%;height:auto">` — the element survived, the `src` did not.
+- CAUSE: Azure DevOps' rendered rich text (`renderedText`, and HTML descriptions) refers to an
+  embedded attachment by its **bare GUID** — `src="4f76001f-…-b3a3f54e9a73?fileName=image.png"`, with
+  no host, no collection and no `_apis` path. `sanitizeRichText` accepted a source only if it already
+  matched `^(https?:|data:image/)`, so every pasted image failed and the attribute was dropped
+  silently (the sanitizer has no logger).
+- TRAP: resolving that reference as an ordinary relative URL is NOT enough. ADO's SPA pins
+  `<base href="/">`, so `doc.baseURI` is the bare origin — you get `{origin}/{guid}` (404), and on
+  `dev.azure.com` you also lose the organization path segment. Resolve against
+  `doc.defaultView.location.href`, and turn a bare GUID into the REST request ADO itself makes:
+  `{collectionBase}/_apis/wit/attachments/{guid}?fileName=…&api-version=7.1` (`buildAdoAttachmentUrl`,
+  `src/common/ado/adoAttachment.ts`). Org-scoped, because attachment ids are org-unique and an
+  org-level page has no project. KEEP `fileName` — it is what makes ADO answer with an image
+  content type instead of an opaque download.
+- The scheme check must run on the RESULT of resolution, otherwise `javascript:` sneaks back in.
+- The old PowerShell tool needed an `/api/attachment` bearer-token proxy for the same images ONLY
+  because it rendered on `http://localhost` — cross-origin, no ADO session. This extension renders
+  inside the ADO page, so once the URL is right the browser sends the session itself.
+
 ## Extension icon / injected button image
 
 - Canonical icon source: `src/icons/icon.svg` (blue circle + work-item card + green check + gold sparkle).
@@ -438,9 +460,74 @@ iterationPath.includes("\\")`. sprintName = leaf of iterationPath (`sprintLeaf` 
   `parseTrackedTree` checked queryType!=="tree" BEFORE the null check, so wiql:null returned
   error:null — must null-check FIRST (null/non-object → load error) then queryType (flat → error:null).
   (2) `htmlToText` stripped tags THEN decoded, so entity-encoded markup (&lt;p&gt;) survived — must
-  DECODE entities first, THEN strip.
+  DECODE entities first, THEN strip. **`htmlToText` is GONE (ADR-044):** `description` is now handed
+  on exactly as ADO stored it, because stripping the tags destroyed embedded screenshots and
+  `@`-mentions before `MarkdownText` could render them. Rendering + sanitizing is the control's job.
 - `expect.arrayContaining(TRACKING_FIELDS)` fails TS (readonly[] not assignable) → spread
   `[...TRACKING_FIELDS]`.
+
+## `@`-mentions rendered as an anonymous "@mention" (ADR-046)
+
+- ROOT CAUSE (first pass): `MarkdownText` had accepted `mentionNames` since ADR-044, but **no
+  production caller ever passed it**. Grep for a rendering option before assuming it is wired — an
+  optional option with zero callers is a feature that does not exist.
+- ROOT CAUSE (second pass — _some_ mentions anonymous while others resolved): the directory's dedupe
+  set claimed ids BEFORE the round-trip and returned early for a caller whose ids were all claimed.
+  So the board's description read and a notes panel's read overlapping meant the **second** caller
+  got `knownNames()` before the answer landed, rendered the placeholder, and the id was then marked
+  asked forever. **An in-flight read must be SHARED (awaited), never skipped.** Symptom is
+  order-dependent and looks random — the same person resolves in one place and not another.
+- A batch failure used to settle every id in that batch as "has no name" permanently. The endpoint
+  OMITS ids it cannot resolve, so a short answer is indistinguishable from a failed batch without an
+  explicit `complete` flag on the response. Only settle a miss when the read completed.
+- Notes LOOKED fine because ADO's `renderedText` carries names; descriptions never do, and a note ADO
+  returned no `renderedText` for falls back to the raw source. A note the extension **just wrote** is
+  handed back with NO rendering at all, so `submitNote` has to re-resolve before repainting.
+- Mentions arrive in TWO encodings and a board carries both: Markdown `@<guid>` tokens and ADO
+  rich-text `<a data-vss-mention="version:2.0,<guid>">` anchors. Collecting only one leaves half the
+  board anonymous. Accept EITHER quote style on the attribute — it is re-serialized by whichever
+  editor last touched the item.
+- Bulk endpoint = `{identityBase}/_apis/identities?identityIds=<comma-separated>&queryMembership=None&api-version=7.1`.
+  It is NOT paged — it returns exactly the identities it resolved and silently omits the rest, so
+  "are we paging?" is the wrong question; "did we notice the shortfall?" is the right one.
+  `queryMembership=None` matters: the default expands every group each person belongs to.
+  `identityBase` is **`https://vssps.dev.azure.com/{org}`** (or `{org}.vssps.visualstudio.com`) — NOT
+  the collection base every other read here uses. Sending it to `dev.azure.com/{org}/_apis/identities`
+  answers 404.
+- `MAX_MENTION_IDS` silently DROPPED ids above the ceiling; the worker now logs that truncation and
+  reports the read as incomplete so the remainder are retried rather than blacklisted.
+- This is the extension's ONLY cross-origin ADO read, so `failure: "network"` here can mean CORS, not
+  just a dead network. If mentions are anonymous, look for that line in Diagnostics first.
+- DIAGNOSING ONE ANONYMOUS MENTION: Diagnostics now logs `Mention resolution named N of M identity
+id(s); … (guid, guid)` with the unresolved ids. If the id IS listed as "did not recognize", ADO's
+  IMS genuinely has no identity for that storage key — a different problem from ours.
+- Name preference is `customDisplayName` → `providerDisplayName` → `properties.Account.$value`; the
+  custom name is what ADO's own mention chips show.
+- `MENTION_TOKEN_PATTERN` is exported as a pattern **source**, not a `RegExp`: a shared global regex
+  carries a mutable `lastIndex`, so two callers using one instance interfere. (`String.replace` resets
+  it, `matchAll`/`exec` do not.)
+- TEST TIMING: the notes panel gained one more `await` in its load chain (the mention resolve), so
+  the long-standing "2 × `await Promise.resolve()`" flush for a panel open is now THREE. The board
+  did NOT gain one — the resolve deliberately runs after the first paint — which is why only one
+  existing test needed a new tick.
+
+## "no response from background" is THREE different faults (ADR-045)
+
+- `chrome.runtime.sendMessage` resolves **`undefined`** when NO listener returned `true`. That single
+  symptom covers: (a) the message was malformed, so every listener's `if (!isXMessage(m)) return`
+  skipped it; (b) the worker is running OLDER code than the page (extension reloaded/updated while
+  the ADO tab stayed open); (c) the worker failed to start. A rejected `sendMessage` (port closed,
+  context invalidated) is a DIFFERENT path — it throws, so it lands in the caller's `catch`.
+- Do NOT filter a listener on the strict type guard. Claim on `type` first (`claimsMessageType`),
+  validate second, and `sendResponse` the offending field. Guard-filtering makes case (a) silent and
+  indistinguishable from (b)/(c).
+- A worker handler that logs nothing on success makes "never arrived" and "arrived and worked" the
+  same silence. Log on ARRIVAL and again with the OUTCOME for anything a user waits on.
+- To tell whether the worker even has the code: `pnpm build`, then grep the bundle for the message
+  constant and count `onMessage.addListener` occurrences —
+  `Select-String dist/background/service-worker.js -Pattern 'awesomeado:load-work-item-notes'`.
+  Present in the bundle but silent at runtime ⇒ the browser is running a stale worker; reload the
+  extension AND the ADO tab.
 
 ## AssignedTo picker — empty dropdown, popup that would not close, missing write (ADR-038)
 

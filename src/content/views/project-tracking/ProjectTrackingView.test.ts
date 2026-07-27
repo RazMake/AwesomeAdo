@@ -16,6 +16,63 @@ import type {
 import { projectTrackingView } from "./ProjectTrackingView";
 
 /**
+ * The fixture's work item type hierarchy (Epic → Feature → Story), with the board columns each type
+ * routes its ADO states onto. Module-scope because it never varies between tests — a test that needs
+ * a different catalog overrides `getTypes` outright.
+ */
+const FIXTURE_TYPES: TypeCatalogEntry[] = [
+  {
+    name: "Epic",
+    color: "ff6b6b",
+    icon: "epic.svg",
+    etaField: "Custom.EpicETA",
+    columns: [
+      { column: "Active", states: ["Active", "New"] },
+      { column: "Done", states: ["Closed"] },
+    ],
+  },
+  {
+    name: "Feature",
+    color: "6bcf7f",
+    icon: "feature.svg",
+    etaField: "Custom.FeatureETA",
+    columns: [
+      { column: "Active", states: ["Active"] },
+      { column: "Done", states: ["Closed"] },
+    ],
+  },
+  {
+    name: "Story",
+    color: "4fc3f7",
+    icon: "story.svg",
+    etaField: null,
+    columns: [
+      { column: "Active", states: ["Active", "New"] },
+      { column: "Done", states: ["Closed"] },
+    ],
+  },
+];
+
+/** The fixture's sprint window: the current sprint and the next one. */
+const FIXTURE_SPRINT_WINDOW = {
+  entries: [
+    {
+      path: "Project\\Sprint 1",
+      name: "Sprint 1",
+      label: "Current - Sprint 1",
+      relation: "current",
+    },
+    {
+      path: "Project\\Sprint 2",
+      name: "Sprint 2",
+      label: "Next - Sprint 2",
+      relation: "future",
+    },
+  ],
+  currentName: "Sprint 1",
+} as const;
+
+/**
  * Creates a fake EnhancedViewServices for testing with controlled return values.
  */
 function createFakeServices(overrides?: Partial<EnhancedViewServices>): EnhancedViewServices {
@@ -28,59 +85,28 @@ function createFakeServices(overrides?: Partial<EnhancedViewServices>): Enhanced
     featureCrew: {
       reconcile: async () => ({ ok: true, changed: false }),
     },
+    noteLoader: {
+      loadNotes: async () => ({ notes: [], currentUser: null, error: null }),
+    },
+    noteWriter: {
+      addNote: async () => ({ ok: true }),
+      editNote: async () => ({ ok: true }),
+    },
     userDirectory: {
       search: async () => [],
       resolve: async () => null,
     },
-    getTypes: () => [
-      {
-        name: "Epic",
-        color: "ff6b6b",
-        icon: "epic.svg",
-        etaField: "Custom.EpicETA",
-        columns: [
-          { column: "Active", states: ["Active", "New"] },
-          { column: "Done", states: ["Closed"] },
-        ],
-      },
-      {
-        name: "Feature",
-        color: "6bcf7f",
-        icon: "feature.svg",
-        etaField: "Custom.FeatureETA",
-        columns: [
-          { column: "Active", states: ["Active"] },
-          { column: "Done", states: ["Closed"] },
-        ],
-      },
-      {
-        name: "Story",
-        color: "4fc3f7",
-        icon: "story.svg",
-        etaField: null,
-        columns: [
-          { column: "Active", states: ["Active", "New"] },
-          { column: "Done", states: ["Closed"] },
-        ],
-      },
-    ],
+    // No mentions in the fixtures by default, so the directory has nothing to name; the tests that
+    // exercise `@`-mention rendering override this with a populated one.
+    mentionDirectory: {
+      resolveNames: async () => new Map<string, string>(),
+      knownNames: () => new Map<string, string>(),
+    },
+    getTypes: () => FIXTURE_TYPES,
     getBoardColumns: () => ["Queue", "Active", "Waiting", "Done", "Removed"],
     loadSprintWindow: async () => ({
-      entries: [
-        {
-          path: "Project\\Sprint 1",
-          name: "Sprint 1",
-          label: "Current - Sprint 1",
-          relation: "current",
-        },
-        {
-          path: "Project\\Sprint 2",
-          name: "Sprint 2",
-          label: "Next - Sprint 2",
-          relation: "future",
-        },
-      ],
-      currentName: "Sprint 1",
+      entries: [...FIXTURE_SPRINT_WINDOW.entries],
+      currentName: FIXTURE_SPRINT_WINDOW.currentName,
     }),
     now: () => new Date("2026-07-24T12:00:00Z"),
     // A no-op logger by default: nothing here could read a recorded call, and a recorder no test can
@@ -132,6 +158,8 @@ function createFixtureFeatures(bob: TrackedUser, carol: TrackedUser, alice: Trac
       stateChangeDate: "2026-07-22T10:15:00Z",
       description: "Implement OAuth2 authentication.",
       importance: 100,
+      // The one fixture item ADO says has a discussion, so the "has notes" icon state is exercised.
+      noteCount: 2,
       eta: "2026-08-15T00:00:00Z",
       children: [
         {
@@ -150,6 +178,7 @@ function createFixtureFeatures(bob: TrackedUser, carol: TrackedUser, alice: Trac
           stateChangeDate: "2026-01-20T10:00:00Z",
           description: "Design and implement the login screen.",
           importance: 100,
+          noteCount: 0,
           eta: null,
           children: [],
         },
@@ -171,6 +200,7 @@ function createFixtureFeatures(bob: TrackedUser, carol: TrackedUser, alice: Trac
       stateChangeDate: "2026-01-18T11:00:00Z",
       description: "Migrate legacy data to new schema.",
       importance: 200,
+      noteCount: 0,
       eta: null,
       children: [],
     },
@@ -201,6 +231,7 @@ function createFixtureTree(): TrackedWorkItem {
     stateChangeDate: "2026-07-20T14:30:00Z",
     description: "Modernize the platform infrastructure.",
     importance: 100,
+    noteCount: 0,
     eta: "2026-12-31T00:00:00Z",
     children: createFixtureFeatures(bob, carol, alice),
   };
@@ -1625,22 +1656,26 @@ describe("ProjectTrackingView — sanitization", () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    const imgs = root.querySelectorAll("img.awesomeado-tracking__item-title, img");
-    // Only avatars should be present, not from the title
+    // The only images the board mints itself are avatars and work item type icons; a title is always
+    // written as text, so markup inside one can never become one of them.
+    const imgs = root.querySelectorAll("img");
     imgs.forEach((img) => {
-      expect(img.className).toContain("awesomeado-assigned__avatar");
+      expect(
+        img.className.includes("awesomeado-assigned__avatar") ||
+          img.className.includes("awesomeado-type-icon__image"),
+      ).toBe(true);
     });
 
     const title = root.querySelector(".awesomeado-tracking__title");
     expect(title?.textContent).toBe('<img src="x" onerror="alert(1)">');
   });
 
-  it("should not create img element when description contains <img>", async () => {
+  it("strips the handler and the unusable source from an <img> in a description", async () => {
     const doc = document;
 
     const epic = createFixtureTree();
     // The epic is no longer a tree row; put the payload on the first visible child instead.
-    epic.children[0]!.description = '<img src="x" onerror="alert(1)">';
+    epic.children[0]!.description = '<img src="javascript:alert(1)" onerror="alert(1)">';
 
     const services = createFakeServices({
       loadTree: async () => ({
@@ -1664,14 +1699,13 @@ describe("ProjectTrackingView — sanitization", () => {
     const descButton = root.querySelector(".awesomeado-tracking__describe") as HTMLButtonElement;
     descButton.click();
 
-    const descText = root.querySelector(".awesomeado-tracking__desc-text");
-    expect(descText?.textContent).toBe('<img src="x" onerror="alert(1)">');
-
-    const imgs = root.querySelectorAll("img");
-    imgs.forEach((img) => {
-      // Ensure no img was created from the description text
-      expect(img.closest(".awesomeado-tracking__desc-text")).toBeFalsy();
-    });
+    // A description now renders as rich text, so an <img> IS rebuilt — but only ever as an inert
+    // one: the event handler is dropped outright, and a source that could not be FETCHED as an image
+    // (here a `javascript:` URL) is refused, so nothing can be executed from what someone typed.
+    const rendered = root.querySelector(".awesomeado-tracking__desc-text img");
+    expect(rendered).toBeTruthy();
+    expect(rendered?.hasAttribute("onerror")).toBe(false);
+    expect(rendered?.hasAttribute("src")).toBe(false);
   });
 });
 
@@ -2443,6 +2477,7 @@ function createItem(overrides: Partial<TrackedWorkItem> & { id: number }): Track
     stateChangeDate: "2026-07-24T08:00:00Z",
     description: "",
     importance: overrides.id,
+    noteCount: 0,
     eta: null,
     children: [],
     ...overrides,
@@ -2979,5 +3014,202 @@ describe("ProjectTrackingView — ordering picker", () => {
           line.includes("bindingPolicy=importance"),
       ),
     ).toBe(true);
+  });
+});
+
+/** Renders the fixture board and lets the roster reconcile's repaint settle before it is inspected. */
+async function renderNotesBoard(
+  properties: Record<string, string> = {},
+  serviceOverrides: Partial<EnhancedViewServices> = {},
+  tree: TrackedWorkItem = createFixtureTree(),
+): Promise<HTMLElement> {
+  const root = await renderBoardForTree(tree, properties, serviceOverrides);
+  // The Feature Crew reconcile repaints the tree; the toggle under test must be the final one.
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  return root;
+}
+
+/** The notes toggle on the board's first (and, with the sprint filter on, only) row. */
+function notesToggleOf(root: HTMLElement): HTMLButtonElement {
+  return root.querySelector<HTMLButtonElement>(".awesomeado-tracking__notes-toggle")!;
+}
+
+describe("ProjectTrackingView - notes toggle", () => {
+  it("puts the item's own type icon in front of every row's title", async () => {
+    const root = await renderNotesBoard();
+
+    const toggle = notesToggleOf(root);
+    const image = toggle.querySelector<HTMLImageElement>(".awesomeado-type-icon img");
+    // The fixture row is a Feature, so it must carry the Feature type's configured icon.
+    expect(image?.getAttribute("src")).toBe("feature.svg");
+    expect(toggle.querySelector(".awesomeado-type-icon")?.getAttribute("title")).toBe("Feature");
+  });
+
+  it("starts closed, with the icon dimmed and the panel out of the way", async () => {
+    const root = await renderNotesBoard();
+
+    const toggle = notesToggleOf(root);
+    const icon = toggle.querySelector<HTMLElement>(".awesomeado-type-icon");
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    // The fixture Feature reports a discussion, so the icon keeps its type color while dimmed.
+    expect(icon?.style.opacity).toBe("0.55");
+    expect(icon?.style.filter).toBe("none");
+    expect(root.querySelector<HTMLElement>(".awesomeado-notes")?.style.display).toBe("none");
+  });
+
+  it("greys the icon of an item with no discussion, so empties are visible without clicking", async () => {
+    const tree = createFixtureTree();
+    // Same row as every other test here, but ADO reports it has never been commented on.
+    tree.children[0]!.noteCount = 0;
+    const root = await renderNotesBoard({}, {}, tree);
+
+    const toggle = notesToggleOf(root);
+    const icon = toggle.querySelector<HTMLElement>(".awesomeado-type-icon");
+    expect(icon?.style.filter).toBe("grayscale(1)");
+    expect(toggle.title).toContain("No notes");
+  });
+});
+
+describe("ProjectTrackingView - notes toggle, once a panel has been opened", () => {
+  it("greys the icon once a read shows the window holds nothing, despite older comments", async () => {
+    // ADO's count is a TOTAL, so an item whose only comments predate the window starts out
+    // promising notes; opening it is what settles the question.
+    const root = await renderNotesBoard();
+
+    notesToggleOf(root).click();
+    await Promise.resolve();
+    await Promise.resolve();
+    // A third tick: the panel also resolves the `@`-mentions in what it just fetched before it
+    // builds its rows, and the note count is only reported once those rows render.
+    await Promise.resolve();
+
+    const icon = notesToggleOf(root).querySelector<HTMLElement>(".awesomeado-type-icon");
+    // Still open, so still full strength — the correction shows once it is closed again.
+    expect(icon?.style.opacity).toBe("1");
+
+    notesToggleOf(root).click();
+    expect(
+      notesToggleOf(root).querySelector<HTMLElement>(".awesomeado-type-icon")?.style.filter,
+    ).toBe("grayscale(1)");
+  });
+
+  it("leaves the icon alone when the read failed, since the count is then unknown", async () => {
+    const root = await renderNotesBoard(
+      {},
+      {
+        noteLoader: {
+          loadNotes: async () => ({ notes: [], currentUser: null, error: "HTTP 500" }),
+        },
+      },
+    );
+
+    notesToggleOf(root).click();
+    await Promise.resolve();
+    await Promise.resolve();
+    notesToggleOf(root).click();
+
+    // Never greyed off a failure: that would claim an item has no discussion because nobody could
+    // read it.
+    expect(
+      notesToggleOf(root).querySelector<HTMLElement>(".awesomeado-type-icon")?.style.filter,
+    ).toBe("none");
+  });
+
+  it("brightens the icon and reveals the notes when the toggle is clicked", async () => {
+    const root = await renderNotesBoard();
+
+    notesToggleOf(root).click();
+
+    const toggle = notesToggleOf(root);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(toggle.querySelector<HTMLElement>(".awesomeado-type-icon")?.style.opacity).toBe("1");
+    expect(root.querySelector<HTMLElement>(".awesomeado-notes")?.style.display).toBe("block");
+  });
+
+  it("reads the discussion over the binding's own Updates window", async () => {
+    const requests: { workItemId: number; sinceIso: string }[] = [];
+    const root = await renderNotesBoard(
+      { weeks: "3" },
+      {
+        noteLoader: {
+          loadNotes: async (request) => {
+            requests.push(request);
+            return { notes: [], currentUser: null, error: null };
+          },
+        },
+      },
+    );
+
+    notesToggleOf(root).click();
+
+    // Three weeks back from the fixture clock (2026-07-24T12:00Z), for the row's own work item.
+    expect(requests[0]).toEqual({ workItemId: 2, sinceIso: "2026-07-03T12:00:00.000Z" });
+  });
+});
+
+describe("ProjectTrackingView — @-mentions in descriptions", () => {
+  const ADA = "11111111-2222-3333-4444-555555555555";
+
+  /** A tree whose first Feature's description mentions Ada, plus the resolve calls it triggers. */
+  function mountMentionBoard(names: Map<string, string>) {
+    const tree = createFixtureTree();
+    tree.children[0]!.description = `Blocked on @<${ADA}>.`;
+    const asked: string[][] = [];
+    const services = createFakeServices({
+      loadTree: async () => ({ isTreeQuery: true, roots: [tree], error: null }),
+      mentionDirectory: {
+        resolveNames: async (ids) => {
+          asked.push([...ids]);
+          return names;
+        },
+        knownNames: () => names,
+      },
+    });
+    const root = projectTrackingView.render({
+      doc: document,
+      queryId: "q1",
+      properties: {},
+      services,
+    });
+    return { root, asked };
+  }
+
+  /** The description text of the first tree row, after opening its `?` panel. */
+  function descriptionTextOf(root: HTMLElement): string {
+    root.querySelector<HTMLButtonElement>(".awesomeado-tracking__describe")!.click();
+    return root.querySelector<HTMLElement>(".awesomeado-tracking__desc-text")!.textContent ?? "";
+  }
+
+  it("asks the directory about every identity its descriptions mention", async () => {
+    const { asked } = mountMentionBoard(new Map());
+
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // One bulk call for the board, not one per description: that is the whole point of the contract.
+    expect(asked).toEqual([[ADA]]);
+  });
+
+  it("repaints the board so a resolved mention reads as the person's name", async () => {
+    const { root } = mountMentionBoard(new Map([[ADA, "Ada Lovelace"]]));
+
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(descriptionTextOf(root)).toContain("@Ada Lovelace");
+  });
+
+  it("shows a neutral placeholder rather than a raw identity id when nobody answered", async () => {
+    const { root } = mountMentionBoard(new Map());
+
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const text = descriptionTextOf(root);
+    expect(text).toContain("@mention");
+    expect(text).not.toContain(ADA);
   });
 });

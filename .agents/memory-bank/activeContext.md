@@ -19,12 +19,16 @@ The extension is feature-complete for its current scope:
   `src/common/view-common`. Options imports only `content/views/viewCatalog` (config) — a scoped,
   lint-enforced §6 exception (ADR-027) so it still never bundles view DOM. Shared per-view building
   blocks live in `common/view-common/control/**`: `renderViewScaffold` (placeholder shell) plus the reusable controls
-  `DateLabel` (PST date + time-on-hover), `EtaBadge` (ETA date + countdown, colored by urgency), and
-  `AssignedTo` (assignee label + inline directory-search picker). `sprint` is still a placeholder shell;
+  `DateLabel` (PST date + time-on-hover), `EtaBadge` (ETA date + countdown, colored by urgency),
+  `AssignedTo` (assignee label + inline directory-search picker), `ItemTypeIcon` (the ADO type icon,
+  sized in `em` to the title it precedes, dimmable), and `MarkdownText` (author-written content —
+  descriptions and notes — rendered as allowlist-rebuilt DOM, with attachment images and
+  `@`-mentions; ADR-044). `sprint` is still a placeholder shell;
   `project-tracking` is now a **data-driven tree board**. Adding a view is a folder plus two
   registrations — see the `add-enhanced-view` skill.
 - Data-driven views depend on an injected `EnhancedViewServices` (optional field on
-  `EnhancedViewContext`): `loadTree`, `userDirectory`, `getTypes`, `loadSprintWindow`, `now`, `logger`
+  `EnhancedViewContext`): `loadTree`, `userDirectory`, `getTypes`, `loadSprintWindow`, `noteLoader`,
+  `noteWriter`, `now`, `logger`
   (ADR-032). The normalized tree model + loader/directory contracts live in `common/ado`
   (`TrackedWorkItem`, `TrackedUser`, `TypeCatalogEntry`, `TeamIteration`, `IWorkItemTreeLoader`,
   `ITeamIterationsLoader`, `IUserDirectory`); PST date/ETA math lives in `common/datetime`. `EnhancedViewSurface` takes the
@@ -37,10 +41,24 @@ The extension is feature-complete for its current scope:
   inline by the shared `ChildItemsBadge` control as a `completed / total` chip (completed = the last board
   column before Removed) tinted from the last configured type's color, whose popup lists each child as
   `{AssignedTo} {title} {ETA} {type icon → ADO}` and honors the active sprint/tag filters (ADR-035).
-  Two of the binding's per-query properties are now honored: `orderingPolicy` sorts every level of the
-  tree (and the rollup popup) through `common/ordering`, and `days` drops an item once its Status has
+  Three of the binding's per-query properties are now honored: `orderingPolicy` sorts every level of the
+  tree (and the rollup popup) through `common/ordering`, `days` drops an item once its Status has
   sat in the resolved column (the one before Removed) longer than that window, aged from
-  `stateChangeDate`; `weeks` and `hours` are still declared but unused.
+  `stateChangeDate`, and `weeks` now bounds how far back each item's **notes** are fetched; `hours` is
+  still declared but unused.
+  Each row's title is preceded by its work item **type icon** (`ItemTypeIcon`), which doubles as the
+  item's notes toggle — muted closed, bright open. Opening it mounts
+  `content/views/project-tracking/notes` (`NotesPanel` + `NoteRow` + `NoteComposer` + `NoteEditor`):
+  the item's ADO Discussion, fetched on FIRST open only (ADR-043), "+ Add note" above a newest-first
+  list, and the two most recent days that have notes shown in full. A note reads
+  `{author} {date} {text}`; the author's name is clickable only on the reader's own notes and opens
+  an inline Markdown editor. Reads/writes go through `EnhancedViewServices.noteLoader` /
+  `noteWriter` → `MessagingWorkItemNoteLoader` / `MessagingWorkItemNoteWriter` → the background
+  worker's MAIN-world `fetchWorkItemNotesInPage` / `writeWorkItemNoteInPage`
+  (`common/browser/WorkItemNoteRequest` contract; URLs from `common/ado/fetchWorkItemNotes`; model
+  and windowing in `common/ado/WorkItemNote`). The read also returns the signed-in identity
+  (`_apis/ConnectionData`) so ownership can be decided, and classifies every failure
+  (`http`/`sign-in`/`network`) rather than reporting an empty discussion.
   `loadTree` now fetches
   **live** from Azure DevOps (ADR-033): the content-side `MessagingWorkItemTreeLoader` (`common/browser`)
   asks the background worker — over the `AdoTreeRequest` message contract — to run a credentialed
@@ -59,6 +77,14 @@ The extension is feature-complete for its current scope:
   (`collectAssignedDirectoryUsers` over the live tree), filters locally, and searches ADO from two
   characters up; picking someone writes `System.AssignedTo` through the board's `WorkItemWriteQueue` and
   repaints only on success (`AssignedToHandle.setUser`).
+  `@`-mentions are named by a directory of their own (ADR-046): `IMentionDirectory` /
+  `MessagingMentionDirectory` (`common/browser`) collects every mention GUID across the board's
+  descriptions (and, per panel, its notes) and resolves them in ONE bulk read over the same
+  background/MAIN-world bridge (`AdoIdentityNamesRequest` + `fetchAdoIdentityNamesInPage`, URLs from
+  `common/ado/mentionIdentities`, base from `resolveAdoIdentityServiceBase`). This is the extension's
+  only genuinely CROSS-origin ADO read — bulk identity reads live on the `vssps` service host. The
+  board paints first and repaints when names arrive (`BoardHandle.repaint`); a notes panel awaits the
+  resolve before building its rows.
   Rows can also be **dragged to reorder** (ADR-040/041): the title is the drag handle, a themed
   insertion line shows the landing spot and a wash names the destination parent when the drop also
   re-parents. `content/views/project-tracking/drag-reorder` decides and previews the move (pure

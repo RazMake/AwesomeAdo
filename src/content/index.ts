@@ -8,6 +8,10 @@ import {
 import type { ActiveView } from "../common/bindings/QueryBinding";
 import { createQueryBindingStore } from "../common/bindings/createQueryBindingStore";
 import {
+  type ResolveAdoIdentityNamesMessage,
+  type ResolveAdoIdentityNamesResponse,
+} from "../common/browser/AdoIdentityNamesRequest";
+import {
   type SearchAdoIdentitiesMessage,
   type SearchAdoIdentitiesResponse,
 } from "../common/browser/AdoIdentityRequest";
@@ -28,6 +32,10 @@ import {
   type SendReconcileRequest,
 } from "../common/browser/MessagingFeatureCrewWriter";
 import {
+  MessagingMentionDirectory,
+  type SendIdentityNamesRequest,
+} from "../common/browser/MessagingMentionDirectory";
+import {
   MessagingTeamIterationsLoader,
   type SendIterationsRequest,
 } from "../common/browser/MessagingTeamIterationsLoader";
@@ -40,6 +48,14 @@ import {
   type SendUpdateFieldRequest,
 } from "../common/browser/MessagingWorkItemFieldWriter";
 import {
+  MessagingWorkItemNoteLoader,
+  type SendNotesRequest,
+} from "../common/browser/MessagingWorkItemNoteLoader";
+import {
+  MessagingWorkItemNoteWriter,
+  type SendNoteWriteRequest,
+} from "../common/browser/MessagingWorkItemNoteWriter";
+import {
   MessagingWorkItemReorderWriter,
   type SendReorderRequest,
 } from "../common/browser/MessagingWorkItemReorderWriter";
@@ -51,6 +67,12 @@ import {
   type UpdateWorkItemFieldMessage,
   type UpdateWorkItemFieldResponse,
 } from "../common/browser/WorkItemFieldRequest";
+import {
+  type LoadWorkItemNotesMessage,
+  type LoadWorkItemNotesResponse,
+  type WriteWorkItemNoteMessage,
+  type WriteWorkItemNoteResponse,
+} from "../common/browser/WorkItemNoteRequest";
 import {
   type ReorderWorkItemMessage,
   type ReorderWorkItemResponse,
@@ -180,6 +202,41 @@ const userDirectory = new MessagingUserDirectory(
   loggers.forSource("content/views"),
 );
 
+// An `@`-mention is stored as a bare identity GUID, so rendering a description or a note needs the
+// same credentialed directory — reached the same way. Asked in BULK (every mention on the board at
+// once) rather than per mention, and memoized for the life of the page, so opening panel after panel
+// never re-asks about the same teammates.
+const sendIdentityNamesRequest: SendIdentityNamesRequest = (message) =>
+  chrome.runtime.sendMessage<
+    ResolveAdoIdentityNamesMessage,
+    ResolveAdoIdentityNamesResponse | undefined
+  >(message);
+const mentionDirectory = new MessagingMentionDirectory(
+  sendIdentityNamesRequest,
+  loggers.forSource("content/views"),
+);
+
+// A work item's Discussion is read and written the same way every other ADO call here is: the
+// isolated content world cannot reach the credentialed REST API, so both the notes read and the
+// note write message the background worker, which runs them in the ADO tab's MAIN world.
+const sendNotesRequest: SendNotesRequest = (message) =>
+  chrome.runtime.sendMessage<LoadWorkItemNotesMessage, LoadWorkItemNotesResponse | undefined>(
+    message,
+  );
+const noteLoader = new MessagingWorkItemNoteLoader(
+  sendNotesRequest,
+  loggers.forSource("content/views"),
+);
+
+const sendNoteWriteRequest: SendNoteWriteRequest = (message) =>
+  chrome.runtime.sendMessage<WriteWorkItemNoteMessage, WriteWorkItemNoteResponse | undefined>(
+    message,
+  );
+const noteWriter = new MessagingWorkItemNoteWriter(
+  sendNoteWriteRequest,
+  loggers.forSource("content/views"),
+);
+
 // A content script cannot open extension pages itself, so the general options page, the per-query
 // binding form, and the Diagnostics log are all requested from the background service worker.
 // Rejections are surfaced (rather than silently swallowed) so a broken round-trip is diagnosable
@@ -193,7 +250,10 @@ const openExtensionPage = (message: OpenOptionsMessage | OpenBindingSettingsMess
 const trackingServices: EnhancedViewServices = {
   loadTree: (queryId) => treeLoader.loadTree(queryId),
   featureCrew: featureCrewWriter,
+  noteLoader,
+  noteWriter,
   userDirectory,
+  mentionDirectory,
   getTypes: () =>
     (latestSettings?.workItemTypes ?? []).map((t) => ({
       name: t.name,

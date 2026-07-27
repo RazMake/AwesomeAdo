@@ -41,7 +41,22 @@ export interface TrackedWorkItem {
    * unrelated edit (a comment, a re-tag) that leaves the state exactly where it was.
    */
   stateChangeDate: string;
+  /**
+   * The item's description exactly as Azure DevOps stored it — rich-text HTML or Markdown, never
+   * flattened. Rendering (and sanitizing) it is the view's job, via the shared MarkdownText control;
+   * stripping the markup here would destroy embedded screenshots and `@`-mentions before anyone saw
+   * them.
+   */
   description: string;
+  /**
+   * How many discussion comments the item has, from `System.CommentCount`. Read with the tree so a
+   * board can tell "nothing to read" from "something to read" without opening every item's
+   * discussion — notes themselves are fetched only when a reader opens one.
+   *
+   * A TOTAL, not a count within any window: an item with only old comments still reports a positive
+   * count, so treat it as "worth opening", not as "has recent notes".
+   */
+  noteCount: number;
   /**
    * The manual backlog rank (ADO's stack rank); a LOWER number means more important. Items ADO
    * returned no rank for sort after every ranked one rather than jumping to the top.

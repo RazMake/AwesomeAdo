@@ -213,7 +213,18 @@ describe("EnhancedViewSurface - keep-alive", () => {
     const fakeServices: EnhancedViewServices = {
       loadTree: () => Promise.resolve({ isTreeQuery: true, roots: [], error: null }),
       featureCrew: { reconcile: () => Promise.resolve({ ok: true, changed: false }) },
+      noteLoader: {
+        loadNotes: () => Promise.resolve({ notes: [], currentUser: null, error: null }),
+      },
+      noteWriter: {
+        addNote: () => Promise.resolve({ ok: true }),
+        editNote: () => Promise.resolve({ ok: true }),
+      },
       userDirectory: { search: () => Promise.resolve([]), resolve: () => Promise.resolve(null) },
+      mentionDirectory: {
+        resolveNames: () => Promise.resolve(new Map<string, string>()),
+        knownNames: () => new Map<string, string>(),
+      },
       getTypes: () => [],
       getBoardColumns: () => [],
       loadSprintWindow: () => Promise.resolve({ entries: [], currentName: null }),

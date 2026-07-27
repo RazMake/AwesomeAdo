@@ -12,6 +12,12 @@ import {
   buildWorkItemUpdateUrl,
   type AdoRawTree,
 } from "../common/ado/fetchAdoTree";
+import {
+  buildAddNoteUrl,
+  buildEditNoteUrl,
+  buildWorkItemNotesUrls,
+} from "../common/ado/fetchWorkItemNotes";
+import { buildAdoIdentityNamesUrls, MAX_MENTION_IDS } from "../common/ado/mentionIdentities";
 import { applyRankFallback, buildWorkItemsBatchUrl } from "../common/ado/rankFallback";
 import {
   buildFeatureCrewApplyConfig,
@@ -34,6 +40,11 @@ import {
   type RevealBindingSettingsMessage,
   type RevealOptionsSectionMessage,
 } from "../common/bindings/BindingRequest";
+import {
+  isResolveAdoIdentityNamesMessage,
+  type ResolveAdoIdentityNamesMessage,
+  type ResolveAdoIdentityNamesResponse,
+} from "../common/browser/AdoIdentityNamesRequest";
 import {
   isSearchAdoIdentitiesMessage,
   type SearchAdoIdentitiesMessage,
@@ -60,6 +71,18 @@ import {
   type UpdateWorkItemFieldResponse,
 } from "../common/browser/WorkItemFieldRequest";
 import {
+  claimsMessageType,
+  LOAD_WORK_ITEM_NOTES_MESSAGE,
+  loadNotesMessageProblem,
+  WRITE_WORK_ITEM_NOTE_MESSAGE,
+  writeNoteMessageProblem,
+  type LoadWorkItemNotesMessage,
+  type LoadWorkItemNotesResponse,
+  type RawWorkItemNotes,
+  type WriteWorkItemNoteMessage,
+  type WriteWorkItemNoteResponse,
+} from "../common/browser/WorkItemNoteRequest";
+import {
   describeReorderFailure,
   explainReorderRefusal,
   REORDER_WORK_ITEM_MESSAGE,
@@ -75,8 +98,13 @@ import {
   fetchAdoIdentitiesInPage,
   type AdoIdentitySearchOutcome,
 } from "../common/browser/fetchAdoIdentitiesInPage";
+import {
+  fetchAdoIdentityNamesInPage,
+  type AdoIdentityNamesOutcome,
+} from "../common/browser/fetchAdoIdentityNamesInPage";
 import { fetchAdoIterationsInPage } from "../common/browser/fetchAdoIterationsInPage";
 import { fetchAdoTreeInPage } from "../common/browser/fetchAdoTreeInPage";
+import { fetchWorkItemNotesInPage } from "../common/browser/fetchWorkItemNotesInPage";
 import { findFeatureCrewInPage } from "../common/browser/findFeatureCrewInPage";
 import { readWorkItemRanksInPage } from "../common/browser/readWorkItemRanksInPage";
 import {
@@ -84,6 +112,7 @@ import {
   type ReorderWorkItemConfig,
 } from "../common/browser/reorderWorkItemInPage";
 import { updateWorkItemFieldInPage } from "../common/browser/updateWorkItemFieldInPage";
+import { writeWorkItemNoteInPage } from "../common/browser/writeWorkItemNoteInPage";
 import { writeWorkItemRanksInPage } from "../common/browser/writeWorkItemRanksInPage";
 import { createLoggerFactory } from "../common/logging/createLogger";
 import { notifyNavigation } from "../common/navigation/NavigationNotifier";
@@ -362,6 +391,84 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
     return undefined;
   }
   void searchAdoIdentities(message, tabId, tabUrl).then(sendResponse);
+  // Keep the message channel open for the async fetch reply above.
+  return true;
+});
+
+// A work item's description and its discussion store an `@`-mention as a bare identity GUID, so a
+// view that renders them has to ask who those people are. The whole board's mentions are collected
+// and resolved TOGETHER — one read per batch of ids, rather than one per mentioned person per item.
+// The ids come from the content side, but the URLs are built here from the SENDER's own trusted tab
+// URL and each id is re-validated as a GUID before it reaches the query string, so a content script
+// can influence WHO is looked up but never WHERE the request goes.
+const resolveAdoIdentityNames = async (
+  message: ResolveAdoIdentityNamesMessage,
+  tabId: number,
+  tabUrl: string,
+): Promise<ResolveAdoIdentityNamesResponse> => {
+  const urls = buildAdoIdentityNamesUrls(tabUrl, message.ids);
+  if (urls.length === 0) {
+    logger.info(
+      "Mention resolution skipped: tab is not a recognized ADO URL, or no valid identity ids " +
+        `were supplied (${message.ids.length} received).`,
+    );
+    return { raw: null, complete: false };
+  }
+  // The ceiling is a safety limit on how many credentialed reads one message may become, so hitting
+  // it silently DROPS people. Say so: the alternative is a handful of mentions that are anonymous
+  // for no visible reason.
+  const truncated = message.ids.length > MAX_MENTION_IDS;
+  if (truncated) {
+    logger.error(
+      `Mention resolution truncated: ${message.ids.length} identity id(s) requested but ` +
+        `${MAX_MENTION_IDS} is the ceiling; the remainder render unresolved.`,
+    );
+  }
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: "MAIN",
+      func: fetchAdoIdentityNamesInPage,
+      args: [urls],
+    });
+    const outcome = firstScriptResult(results) as AdoIdentityNamesOutcome | null;
+    if (outcome === null) {
+      logger.error("Mention resolution failed: the in-page read returned no result.");
+      return { raw: null, complete: false };
+    }
+    if (outcome.failure !== "none") {
+      // Counts and classification only, never ADO's error text: that payload echoes the request,
+      // and the diagnostics log is exported into bug reports (AGENTS.md §9). A partial answer is
+      // still returned below — the names that DID resolve are worth rendering.
+      logger.error(
+        `Mention resolution failed (${outcome.failure}, HTTP ${outcome.status}): ` +
+          `${outcome.bodies.length} of ${urls.length} batch(es) read.`,
+      );
+    }
+    return {
+      raw: outcome.bodies.length > 0 ? outcome.bodies : null,
+      // Only a clean, untruncated read lets the caller treat a missing name as ADO's final answer.
+      complete: outcome.failure === "none" && !truncated,
+    };
+  } catch (error) {
+    // Injection fails on a closed/navigated/restricted tab; report "no data" so mentions degrade.
+    logger.error("Could not resolve Azure DevOps mention identities", error);
+    return { raw: null, complete: false };
+  }
+};
+
+chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
+  if (!isResolveAdoIdentityNamesMessage(message)) {
+    // Not ours — leave it for the other listeners to handle.
+    return undefined;
+  }
+  const { id: tabId, url: tabUrl } = sender.tab ?? {};
+  if (tabId === undefined || tabUrl === undefined) {
+    logger.error("Cannot resolve mention identities: message has no sender tab.");
+    sendResponse({ raw: null, complete: false } satisfies ResolveAdoIdentityNamesResponse);
+    return undefined;
+  }
+  void resolveAdoIdentityNames(message, tabId, tabUrl).then(sendResponse);
   // Keep the message channel open for the async fetch reply above.
   return true;
 });
@@ -765,11 +872,7 @@ function buildReorderConfig(
 }
 
 chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
-  const claimsToBeReorder =
-    typeof message === "object" &&
-    message !== null &&
-    (message as { type?: unknown }).type === REORDER_WORK_ITEM_MESSAGE;
-  if (!claimsToBeReorder) {
+  if (!claimsMessageType(message, REORDER_WORK_ITEM_MESSAGE)) {
     // Not ours — leave it for the other listeners above to handle.
     return undefined;
   }
@@ -793,5 +896,173 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
   }
   void reorderWorkItem(reorder, tabId, tabUrl).then(sendResponse);
   // Keep the message channel open for the async PATCH reply above.
+  return true;
+});
+
+// The Project Tracking board shows each item's Discussion as its "notes". Like every other ADO read
+// here, the comments collection is only reachable from a credentialed MAIN-world fetch, so the
+// content side asks this worker for the raw pages. The URLs are built from the SENDER's own trusted
+// tab URL — never a content-supplied one — so this stays a closed "read this item's discussion"
+// operation. The signed-in identity rides along because the board can only offer "edit" on the notes
+// the reader wrote, and it is served from the same page context.
+const loadWorkItemNotes = async (
+  message: LoadWorkItemNotesMessage,
+  tabId: number,
+  tabUrl: string,
+): Promise<LoadWorkItemNotesResponse> => {
+  // Logged on ARRIVAL, before anything can go wrong. Without it a request that never reached this
+  // worker and one that reached it and then hung in the page world are the same silence — and the
+  // content side reports both as the uninformative "no response from background".
+  logger.info(
+    `Notes load requested for work item ${message.workItemId} since ${message.sinceIso}.`,
+  );
+  const urls = buildWorkItemNotesUrls(tabUrl, message.workItemId);
+  if (urls === null) {
+    logger.info(
+      `Notes load skipped for work item ${message.workItemId}: tab is not a project-scoped ADO URL.`,
+    );
+    return { raw: null, error: "not a project-scoped ADO URL" };
+  }
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: "MAIN",
+      func: fetchWorkItemNotesInPage,
+      args: [urls.commentsUrl, urls.connectionUrl, message.sinceIso, MAX_NOTE_PAGES],
+    });
+    const raw = firstScriptResult(results) as RawWorkItemNotes | null;
+    if (raw === null) {
+      logger.error(`Notes load for work item ${message.workItemId} returned no result.`);
+      return { raw: null, error: "no result" };
+    }
+    // The outcome in the worker's own words: counts and classification only, never a note's text or
+    // an author's name (AGENTS.md §9).
+    logger.info(
+      `Notes load for work item ${message.workItemId} finished: pages=${raw.pages.length}, ` +
+        `status=${raw.status}, failure=${raw.failure}, identity=${raw.connection !== null}.`,
+    );
+    return { raw };
+  } catch (error) {
+    // Injection fails on a closed/navigated/restricted tab; report "no data" so the panel degrades.
+    logger.error(`Could not load notes for work item ${message.workItemId}`, error);
+    return { raw: null, error: "exception" };
+  }
+};
+
+/**
+ * How many comment pages one notes read will walk before giving up.
+ *
+ * The fetcher already stops as soon as a page reaches past the Updates window, so this only guards
+ * against a server that keeps handing back a continuation token — ten pages is far more discussion
+ * than any window this board offers can contain.
+ */
+const MAX_NOTE_PAGES = 10;
+
+chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
+  if (!claimsMessageType(message, LOAD_WORK_ITEM_NOTES_MESSAGE)) {
+    // Not ours — leave it for the other listeners above to handle.
+    return undefined;
+  }
+  const problem = loadNotesMessageProblem(message);
+  if (problem !== null) {
+    // Answered rather than ignored, exactly as a malformed reorder is: an ignored message reaches
+    // the content side as "no response from background", which looks identical to a worker that has
+    // no handler at all. Replying with the offending field turns a dead end into a diagnosis.
+    logger.error(`Rejected a malformed notes read request: ${problem}.`);
+    sendResponse({ raw: null, error: `malformed request: ${problem}` });
+    return undefined;
+  }
+  const notes = message as LoadWorkItemNotesMessage;
+  const tabId = sender.tab?.id;
+  const tabUrl = sender.tab?.url;
+  if (tabId === undefined || tabUrl === undefined) {
+    // Only a real ADO tab can be scripted; a message with no sender tab cannot be served.
+    logger.error(`Cannot load notes for work item ${notes.workItemId}: message has no sender tab.`);
+    sendResponse({ raw: null, error: "no sender tab" } satisfies LoadWorkItemNotesResponse);
+    return undefined;
+  }
+  void loadWorkItemNotes(notes, tabId, tabUrl).then(sendResponse);
+  // Keep the message channel open for the async fetch reply above.
+  return true;
+});
+
+// Adding or correcting a note is the write half of the same conversation, and is closed the same
+// way: the collection comes from the SENDER's own tab, the shape is validated before anything is
+// built (`isWriteWorkItemNoteMessage`), and the only thing this can express is "post/rewrite one
+// comment on one item". Azure DevOps itself rejects an edit from anyone but the note's author, so
+// authorization stays on the server rather than being asserted here.
+const writeWorkItemNote = async (
+  message: WriteWorkItemNoteMessage,
+  tabId: number,
+  tabUrl: string,
+): Promise<WriteWorkItemNoteResponse> => {
+  const isEdit = message.noteId !== null;
+  // Logged on ARRIVAL, before anything can go wrong — same reason as the read above. The note's TEXT
+  // is never logged, only its length (AGENTS.md §9).
+  logger.info(
+    `Note ${isEdit ? `edit ${String(message.noteId)}` : "add"} requested on work item ` +
+      `${message.workItemId} (${message.text.length} characters).`,
+  );
+  const url = isEdit
+    ? buildEditNoteUrl(tabUrl, message.workItemId, message.noteId as number)
+    : buildAddNoteUrl(tabUrl, message.workItemId);
+  if (url === null) {
+    logger.info(
+      `Note write skipped for work item ${message.workItemId}: tab is not a project-scoped ADO URL.`,
+    );
+    return { ok: false, error: "not a project-scoped ADO URL" };
+  }
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: "MAIN",
+      func: writeWorkItemNoteInPage,
+      args: [url, isEdit ? "PATCH" : "POST", message.text],
+    });
+    const result = firstScriptResult(results) as WriteWorkItemNoteResponse | null;
+    if (result === null) {
+      logger.error(`Note write on work item ${message.workItemId} returned no result.`);
+      return { ok: false, error: "no result" };
+    }
+    if (!result.ok) {
+      logger.error(
+        `Note write on work item ${message.workItemId} failed: ${result.error ?? "unknown"}.`,
+      );
+    } else {
+      logger.info(`Note write on work item ${message.workItemId} accepted by Azure DevOps.`);
+    }
+    return result;
+  } catch (error) {
+    // Injection fails on a closed/navigated/restricted tab; report the failure.
+    logger.error(`Could not write a note on work item ${message.workItemId}`, error);
+    return { ok: false, error: "exception" };
+  }
+};
+
+chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
+  if (!claimsMessageType(message, WRITE_WORK_ITEM_NOTE_MESSAGE)) {
+    // Not ours — leave it for the other listeners above to handle.
+    return undefined;
+  }
+  const problem = writeNoteMessageProblem(message);
+  if (problem !== null) {
+    // Answered, not ignored — see the read listener above for why silence is the worst reply here.
+    logger.error(`Rejected a malformed note write request: ${problem}.`);
+    sendResponse({ ok: false, error: `malformed request: ${problem}` });
+    return undefined;
+  }
+  const write = message as WriteWorkItemNoteMessage;
+  const tabId = sender.tab?.id;
+  const tabUrl = sender.tab?.url;
+  if (tabId === undefined || tabUrl === undefined) {
+    // Only a real ADO tab can be scripted; a message with no sender tab cannot be served.
+    logger.error(
+      `Cannot write a note on work item ${write.workItemId}: message has no sender tab.`,
+    );
+    sendResponse({ ok: false, error: "no sender tab" } satisfies WriteWorkItemNoteResponse);
+    return undefined;
+  }
+  void writeWorkItemNote(write, tabId, tabUrl).then(sendResponse);
+  // Keep the message channel open for the async write reply above.
   return true;
 });

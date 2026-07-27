@@ -8,6 +8,26 @@
 export const ADO_API_VERSION = "7.1";
 
 /**
+ * The API version the work-item discussion (comments) endpoints are read through.
+ *
+ * Deliberately NOT `ADO_API_VERSION`: the comments collection is still a preview API, and the
+ * released `7.1` version does not serve it at all — asking for it answers 404, which surfaces as
+ * "this item has no notes" rather than as a version problem. Pinned beside the released version so
+ * the exception is visible instead of buried in a URL builder.
+ */
+export const ADO_COMMENTS_API_VERSION = "7.1-preview.4";
+
+/**
+ * The API version the discussion endpoints are WRITTEN through.
+ *
+ * Higher than the read version on purpose: only `7.2-preview.4` honours the `format` parameter, and
+ * without it Azure DevOps stores every posted note as HTML. Notes are authored (and re-opened for
+ * editing) as Markdown here, so a note written through the read version would come back as escaped
+ * HTML the moment someone edited it.
+ */
+export const ADO_COMMENTS_WRITE_API_VERSION = "7.2-preview.4";
+
+/**
  * The reference name of the Azure DevOps assignee field. Named once because it is both requested
  * with the tree and patched back when a view reassigns an item; a literal repeated at each end is
  * exactly the kind of drift that shows up as a silently ignored write.

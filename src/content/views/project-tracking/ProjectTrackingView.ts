@@ -15,10 +15,12 @@ import type {
   TrackedWorkItem,
   TypeCatalogEntry,
 } from "../../../common/ado/TrackedWorkItem";
+import { noteWindowStart } from "../../../common/ado/WorkItemNote";
 import { WorkItemWriteQueue } from "../../../common/ado/WorkItemWriteQueue/WorkItemWriteQueue";
 import { ASSIGNED_TO_FIELD, identityFieldValue } from "../../../common/ado/adoApi";
 import { buildQueryFolderUrl, buildWorkItemUrl } from "../../../common/ado/fetchAdoTree";
 import type { SprintWindow } from "../../../common/ado/sprintWindow";
+import { resolveMentionsIn } from "../../../common/browser/MessagingMentionDirectory";
 import {
   MANUAL_ORDERING_POLICY,
   orderItems,
@@ -43,6 +45,11 @@ import {
   type EtaBadgeHandle,
 } from "../../../common/view-common/control/EtaBadge/EtaBadge";
 import { renderItemLifecycleInfo } from "../../../common/view-common/control/ItemLifecycleInfo/ItemLifecycleInfo";
+import {
+  renderItemTypeIcon,
+  type ItemTypeIconEmphasis,
+} from "../../../common/view-common/control/ItemTypeIcon/ItemTypeIcon";
+import { renderMarkdownText } from "../../../common/view-common/control/MarkdownText/MarkdownText";
 import { renderOrderingPicker } from "../../../common/view-common/control/OrderingPicker/OrderingPicker";
 import {
   renderSprintPicker,
@@ -55,10 +62,12 @@ import { renderWriteQueueStatus } from "../../../common/view-common/control/Writ
 import { DragReorderController, type PlannedMove } from "./drag-reorder/DragReorderController";
 import { applyMoveToTree, applyRanksToTree } from "./drag-reorder/applyMoveToTree";
 import { renderProjectTrackingHeader } from "./header/ProjectTrackingHeader";
+import { renderNotesPanel } from "./notes/NotesPanel";
 import {
   hideResolvedAfterDays,
   orderingPolicyOf,
   projectTrackingViewType,
+  updatesWindowWeeks,
 } from "./projectTrackingViewType";
 import { renderTagFilterPanel } from "./tag-filter/TagFilterPanel";
 
@@ -209,6 +218,7 @@ function buildMetaLine(
 function renderDescription(
   doc: Document,
   item: TrackedWorkItem,
+  mentionNames: ReadonlyMap<string, string>,
 ): { panel: HTMLElement; toggleButton: HTMLButtonElement } {
   const toggleButton = doc.createElement("button");
   toggleButton.className = "awesomeado-tracking__describe";
@@ -240,15 +250,11 @@ function renderDescription(
   const { container: meta } = buildMetaLine(doc, item);
   panel.append(meta);
 
-  const descText = doc.createElement("div");
-  descText.className = "awesomeado-tracking__desc-text";
-  descText.textContent = item.description;
-  // Themed primary text color for description text.
-  descText.style.cssText = [
-    "font-size:11px",
-    "color:var(--text-primary-color, #323130)",
-    "white-space:pre-wrap",
-  ].join(";");
+  const descText = renderMarkdownText(doc, { text: item.description, mentionNames });
+  descText.classList.add("awesomeado-tracking__desc-text");
+  // Themed primary text color for description text; the control itself owns the rest of the look.
+  descText.style.fontSize = "11px";
+  descText.style.color = "var(--text-primary-color, #323130)";
   panel.append(descText);
 
   toggleButton.addEventListener("click", () => {
@@ -428,6 +434,28 @@ interface TreeRenderOptions {
    * because expanded is the default: a row that appears later is then open like every other new row.
    */
   collapsedIds: Set<number>;
+  /**
+   * The rows whose notes panel the user has opened, by work item id. Remembered (unlike the
+   * collapsed branches, which record the exception) because closed is the default here: a panel
+   * fetches on first open, so a row that appears later must not start by firing a request nobody
+   * asked for.
+   */
+  expandedNoteIds: Set<number>;
+  /**
+   * ISO 8601 start of the binding's Updates window — the oldest note any panel on this pass will
+   * fetch. Computed per pass, not per board, so a board left open overnight moves its window with
+   * the clock instead of re-reading yesterday's fortnight.
+   */
+  notesSinceIso: string;
+  /**
+   * Display names for the `@`-mention GUIDs in the descriptions this pass renders, keyed by
+   * lowercase GUID.
+   *
+   * Read from the directory ONCE per pass rather than per row: rendering is synchronous, so a row
+   * needs a map in hand, and re-reading it per row would let two descriptions in the same pass
+   * disagree about who someone is. A name the directory learns later lands on the next repaint.
+   */
+  mentionNames: ReadonlyMap<string, string>;
   /** The color the rolled-up child badge tints from; null leaves it a neutral chip. */
   minorChildColor: string | null;
   /**
@@ -668,6 +696,7 @@ function createTitleControls(
   doc: Document,
   item: TrackedWorkItem,
   typeMap: Map<string, TypeCatalogEntry>,
+  mentionNames: ReadonlyMap<string, string>,
 ): { titleSpan: HTMLElement; descButton: HTMLButtonElement; descPanel: HTMLElement } {
   const titleSpan = doc.createElement("span");
   titleSpan.className = "awesomeado-tracking__item-title";
@@ -679,7 +708,7 @@ function createTitleControls(
     titleSpan.style.color = itemColor;
   }
 
-  const { panel: descPanel, toggleButton: descButton } = renderDescription(doc, item);
+  const { panel: descPanel, toggleButton: descButton } = renderDescription(doc, item, mentionNames);
   // The ? disc flows inline immediately after the title text (with the assignee right behind it), so
   // it always hugs the end of the title — even when the title wraps — instead of sitting at the far
   // right edge of a stretched flex box. vertical-align:middle keeps it centered on the text line.
@@ -688,6 +717,117 @@ function createTitleControls(
   descButton.style.margin = "0 4px";
 
   return { titleSpan, descButton, descPanel };
+}
+
+/**
+ * Builds the row's type icon and the notes panel it opens.
+ *
+ * The icon IS the affordance: it sits in front of the title showing what kind of item this is, and
+ * doubles as the item's Updates toggle. It carries three states, so the board can be read without
+ * clicking anything: **grey** when the item has no discussion at all, the type's **color dimmed**
+ * when there is something to read, and **full color** while it is open. One glyph doing all three
+ * keeps a dense row from growing yet another control, and makes "where are the notes?" answerable by
+ * scanning the left edge.
+ *
+ * The grey state is seeded from the item's total comment count (which arrives with the tree, so it
+ * costs nothing) and then CORRECTED once a panel has actually read its window — a total counts old
+ * comments the window excludes, so an item can start out promising notes and settle to grey.
+ *
+ * Expanded panels are remembered across repaints for the same reason collapsed branches are: the
+ * board rebuilds its rows on every filter change, drag and re-sort, and a panel the reader opened
+ * must not shut behind them.
+ */
+function createItemNotes(
+  item: TrackedWorkItem,
+  options: TreeRenderOptions,
+): { toggle: HTMLElement; panel: HTMLElement } {
+  const { doc, typeMap, context } = options;
+  const services = context.services;
+  const startsExpanded = options.expandedNoteIds.has(item.id);
+  // Seeded from the tree's comment count, then replaced by what a panel actually read. Held on the
+  // ITEM (not just in this closure) so the answer survives the repaint that discards these elements.
+  let hasNotes = item.noteCount > 0;
+
+  const icon = renderItemTypeIcon(doc, {
+    iconUrl: typeMap.get(item.type)?.icon ?? null,
+    color: typeColorOf(item.type, typeMap),
+    typeName: item.type,
+    emphasis: noteEmphasis(startsExpanded, hasNotes),
+  });
+
+  const toggle = doc.createElement("button");
+  toggle.className = "awesomeado-tracking__notes-toggle";
+  toggle.type = "button";
+  // A bare button: only the icon is visible, so the row still reads as "icon, then title".
+  toggle.style.cssText = [
+    "cursor:pointer",
+    "border:none",
+    "background:none",
+    "padding:0",
+    "display:inline-flex",
+    "align-items:center",
+    "vertical-align:middle",
+    "font:inherit",
+    "color:inherit",
+  ].join(";");
+  toggle.append(icon.element);
+
+  const notes = renderNotesPanel({
+    doc,
+    workItemId: item.id,
+    sinceIso: options.notesSinceIso,
+    loader: services.noteLoader,
+    writer: services.noteWriter,
+    mentionDirectory: services.mentionDirectory,
+    logger: services.logger,
+    onNoteCountKnown: (count) => {
+      hasNotes = count > 0;
+      // Written back to the model so a later repaint seeds from the truth rather than from ADO's
+      // total again — otherwise an item whose notes all fall outside the window would flick back to
+      // "has notes" on every re-sort.
+      item.noteCount = count;
+      icon.setEmphasis(noteEmphasis(toggle.getAttribute("aria-expanded") === "true", hasNotes));
+    },
+  });
+
+  const apply = (expanded: boolean): void => {
+    toggle.setAttribute("aria-expanded", expanded ? "true" : "false");
+    toggle.title = notesToggleTitle(expanded, hasNotes, item.type);
+    icon.setEmphasis(noteEmphasis(expanded, hasNotes));
+    notes.setExpanded(expanded);
+  };
+  apply(startsExpanded);
+
+  toggle.addEventListener("click", () => {
+    const expanded = toggle.getAttribute("aria-expanded") !== "true";
+    if (expanded) {
+      options.expandedNoteIds.add(item.id);
+    } else {
+      options.expandedNoteIds.delete(item.id);
+    }
+    apply(expanded);
+  });
+
+  return { toggle, panel: notes.element };
+}
+
+/** How loudly a row's type icon renders: open beats "has something", which beats "nothing here". */
+function noteEmphasis(expanded: boolean, hasNotes: boolean): ItemTypeIconEmphasis {
+  if (expanded) {
+    return "full";
+  }
+  return hasNotes ? "muted" : "quiet";
+}
+
+/**
+ * The toggle's tooltip. It names what the icon's shade already says, because a colour difference is
+ * a hint rather than a statement — and it is the only form of it available to a screen reader.
+ */
+function notesToggleTitle(expanded: boolean, hasNotes: boolean, typeName: string): string {
+  if (expanded) {
+    return `Hide notes — ${typeName}`;
+  }
+  return hasNotes ? `Show notes — ${typeName}` : `No notes — ${typeName}`;
 }
 
 /**
@@ -914,7 +1054,13 @@ function renderRow(
   const { gutter, stateBadge, twisty } = createRowControls(item, options, showsChildRows);
   row.append(gutter);
 
-  const { titleSpan, descButton, descPanel } = createTitleControls(doc, item, typeMap);
+  const { titleSpan, descButton, descPanel } = createTitleControls(
+    doc,
+    item,
+    typeMap,
+    options.mentionNames,
+  );
+  const notes = createItemNotes(item, options);
   const { inline, eta } = createRowRightControls(item, options, showsChildRows);
 
   // Status badge, title, ? disc and assignee share ONE inline-flow block so they read as a single
@@ -928,7 +1074,7 @@ function renderRow(
   const contentBlock = doc.createElement("span");
   contentBlock.className = "awesomeado-tracking__content";
   contentBlock.style.cssText = "flex:1 1 auto;min-width:0;line-height:1.8";
-  contentBlock.append(stateBadge, titleSpan, descButton, ...inline);
+  contentBlock.append(stateBadge, notes.toggle, titleSpan, descButton, ...inline);
   row.append(contentBlock);
 
   if (eta) {
@@ -952,7 +1098,7 @@ function renderRow(
   childrenContainer.style.cssText = childrenStyles.join(";");
 
   const rowWrapper = doc.createElement("div");
-  rowWrapper.append(row, descPanel, childrenContainer);
+  rowWrapper.append(row, descPanel, notes.panel, childrenContainer);
 
   if (twisty) {
     wireTwisty(twisty, childrenContainer, item.id, options.collapsedIds);
@@ -1189,6 +1335,14 @@ interface BoardHandle {
    * changes) so the shared "Saving…" indicator reflects those saves too, not just state writes.
    */
   setReconcilePending(count: number): void;
+  /**
+   * Rebuild the tree from the model that is already in hand, without refetching anything.
+   *
+   * Exposed because some of what a row shows arrives AFTER the board is on screen — today the
+   * display names behind its `@`-mentions — and rows render synchronously, so a later answer only
+   * reaches the reader on the next pass.
+   */
+  repaint(): void;
 }
 
 /**
@@ -1329,6 +1483,11 @@ function createBoardTreeRenderer(params: BoardTreeRendererParams): {
   // at only comes back if the state is remembered outside the DOM.
   const collapsedIds = new Set<number>();
 
+  // Same reason, opposite default: a notes panel fetches when it opens, so the rows that were opened
+  // are what has to survive a repaint — recording the closed ones would make every newly-rendered
+  // row start by loading a discussion nobody asked to see.
+  const expandedNoteIds = new Set<number>();
+
   const renderTreeContent = (): void => {
     const filterOn = sprintPickerHandle.isFilterActive();
     const expandableRows: ExpandableRow[] = [];
@@ -1362,6 +1521,11 @@ function createBoardTreeRenderer(params: BoardTreeRendererParams): {
       chip: params.chipContext,
       expandableRows,
       collapsedIds,
+      expandedNoteIds,
+      // Rebuilt per pass for the same reason the resolved-age filter is: "the last N weeks" moves
+      // with the clock, so a board left open must not keep fetching against the window it opened on.
+      notesSinceIso: noteWindowStart(params.context.services.now(), updatesWindowWeeks(properties)),
+      mentionNames: params.context.services.mentionDirectory.knownNames(),
       minorChildColor: params.metrics.minorChildColor,
       // Manual drag order only means anything while the board is showing the manual rank; under any
       // other policy a dropped row would be re-sorted straight back out of the slot it landed in.
@@ -1750,6 +1914,7 @@ function renderBoard(
       renderTreeContent();
     },
     setReconcilePending: writeStatus.setReconcilePending,
+    repaint: renderTreeContent,
   };
 }
 
@@ -1964,13 +2129,13 @@ function renderLoadedBoard(
   services: EnhancedViewServices,
   result: WorkItemTreeResult,
   sprintWindow: SprintWindow,
-): void {
+): BoardHandle | null {
   // Remove title and loading, render error or board.
   root.innerHTML = "";
 
   const treeRoot = validateAndRenderErrors(result, root, context.doc, services);
   if (treeRoot === null) {
-    return;
+    return null;
   }
 
   const types = services.getTypes();
@@ -2021,6 +2186,7 @@ function renderLoadedBoard(
   // Reconcile once now the whole tree is known (create-if-missing, append any new assignees); its
   // resolved roster then paints the assignee tags and fills the tag filter panel.
   crewSync?.seed([treeRoot]);
+  return board;
 }
 
 /** Renders the load-failure scaffold when the tree read rejects; the error is logged first. */
@@ -2097,11 +2263,54 @@ export const projectTrackingView: EnhancedView = {
     // both resolve; the picker opens populated. A sprint-window failure resolves to an empty window
     // (the filter is simply left disabled) and never blocks the board.
     Promise.all([services.loadTree(context.queryId), services.loadSprintWindow()])
-      .then(([result, sprintWindow]) =>
-        renderLoadedBoard(dataContext, root, services, result, sprintWindow),
-      )
+      .then(([result, sprintWindow]) => {
+        const board = renderLoadedBoard(dataContext, root, services, result, sprintWindow);
+        if (board !== null) {
+          resolveBoardMentions(services, result.roots, board.repaint);
+        }
+      })
       .catch((err: unknown) => renderTreeLoadFailure(dataContext, root, services, err));
 
     return root;
   },
 };
+
+/**
+ * Resolve the `@`-mentions in the board's descriptions, then repaint so they show as names.
+ *
+ * Deliberately AFTER the first paint rather than before it: the identity ids only exist once the
+ * tree is in hand, so awaiting the lookup first would hold the whole board back on a cosmetic
+ * detail. One bulk read covers every description on the board (see `IMentionDirectory`), and the
+ * repaint only happens when it actually learned something — a repaint that changes nothing is a
+ * flicker the reader paid for.
+ */
+function resolveBoardMentions(
+  services: EnhancedViewServices,
+  roots: readonly TrackedWorkItem[],
+  repaint: () => void,
+): void {
+  const knownBefore = services.mentionDirectory.knownNames().size;
+  resolveMentionsIn(services.mentionDirectory, describedTexts(roots))
+    .then((names) => {
+      if (names.size > knownBefore) {
+        repaint();
+      }
+    })
+    .catch((error: unknown) => {
+      // The directory's contract is that it never rejects, so arriving here means a collaborator
+      // broke it; the board keeps its placeholder mentions rather than losing its repaint.
+      services.logger.error("Could not resolve the board's @-mentions", error);
+    });
+}
+
+/** Every description in the tree, so one bulk read can resolve all their `@`-mentions together. */
+function describedTexts(roots: readonly TrackedWorkItem[]): string[] {
+  const texts: string[] = [];
+  const pending = [...roots];
+  while (pending.length > 0) {
+    const item = pending.pop()!;
+    texts.push(item.description);
+    pending.push(...item.children);
+  }
+  return texts;
+}

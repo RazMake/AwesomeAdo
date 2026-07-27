@@ -8,11 +8,14 @@
  */
 
 import type { IFeatureCrewWriter } from "../ado/IFeatureCrewWriter";
+import type { IMentionDirectory } from "../ado/IMentionDirectory";
 import type { IUserDirectory } from "../ado/IUserDirectory";
 import type {
   WorkItemFieldWriteRequest,
   WorkItemFieldWriteResult,
 } from "../ado/IWorkItemFieldWriter";
+import type { IWorkItemNoteLoader } from "../ado/IWorkItemNoteLoader";
+import type { IWorkItemNoteWriter } from "../ado/IWorkItemNoteWriter";
 import type { WorkItemReorderRequest, WorkItemReorderResult } from "../ado/IWorkItemReorderWriter";
 import type { WorkItemTreeResult } from "../ado/IWorkItemTreeLoader";
 import type { TypeCatalogEntry } from "../ado/TrackedWorkItem";
@@ -31,6 +34,14 @@ export interface EnhancedViewServices {
   loadTree(queryId: string): Promise<WorkItemTreeResult>;
   /** Search and resolve ADO identities (for assignee-pickers and user resolution). */
   userDirectory: IUserDirectory;
+  /**
+   * Resolves the identity GUIDs an `@`-mention is stored as into display names, in bulk.
+   *
+   * Separate from `userDirectory` (Interface Segregation): that one searches for a person a user is
+   * choosing between, this one answers "who are these ids?" for content that is already written.
+   * Without it every mention in a description or a note renders as an anonymous placeholder.
+   */
+  mentionDirectory: IMentionDirectory;
   /**
    * The ordered type catalog (Epic, Feature, Story, Bug, …); index 0 is the root (epic) type.
    * Matches the configured work item types in settings.
@@ -61,6 +72,17 @@ export interface EnhancedViewServices {
    * currently assigned across the project's work.
    */
   featureCrew: IFeatureCrewWriter;
+  /**
+   * Reads a work item's discussion notes (and tells the view who is reading them, so it can offer
+   * editing only on the notes that person wrote).
+   */
+  noteLoader: IWorkItemNoteLoader;
+  /**
+   * Posts new discussion notes and rewrites existing ones. Separate from `noteLoader` (Interface
+   * Segregation): showing notes and authoring them are different capabilities, and only some views
+   * offer the second.
+   */
+  noteWriter: IWorkItemNoteWriter;
   /**
    * Writes a single work item field back to Azure DevOps (e.g. `System.State` or a type's ETA date
    * field), using the item's last-known rev as an optimistic-concurrency guard. The write is atomic

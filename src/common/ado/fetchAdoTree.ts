@@ -14,6 +14,13 @@ const MAX_TREE_DEPTH = 50;
 const STATE_CHANGE_DATE_FIELD = "Microsoft.VSTS.Common.StateChangeDate";
 
 /**
+ * How many discussion comments the item has. Read with the tree so a board can tell "nothing to
+ * read" from "something to read" WITHOUT opening every item's discussion — the whole point of
+ * loading notes lazily is that dozens of them are never opened.
+ */
+const COMMENT_COUNT_FIELD = "System.CommentCount";
+
+/**
  * The rank given to an item ADO returned no backlog rank for. A LOWER rank means more important, so
  * an unranked item has to fall to the bottom of its group rather than jump to the top of a backlog
  * it was never placed in. Deliberately a finite number, not `Infinity`: the ordering comparator
@@ -40,6 +47,7 @@ export const TRACKING_FIELDS: readonly string[] = [
   "System.ChangedBy",
   STATE_CHANGE_DATE_FIELD,
   "System.Description",
+  COMMENT_COUNT_FIELD,
   IMPORTANCE_FIELD,
   "System.Rev",
   "System.Parent",
@@ -377,6 +385,7 @@ function hydrateTrackedWorkItem(
   const eta = typeof etaValue === "string" && etaValue.length > 0 ? etaValue : null;
 
   const rank = field(IMPORTANCE_FIELD);
+  const commentCount = field(COMMENT_COUNT_FIELD);
 
   return {
     id,
@@ -392,8 +401,14 @@ function hydrateTrackedWorkItem(
     changedDate: readString("System.ChangedDate"),
     changedBy: parseIdentity(field("System.ChangedBy")),
     stateChangeDate: readString(STATE_CHANGE_DATE_FIELD),
-    description: htmlToText(readString("System.Description")),
+    // Kept exactly as Azure DevOps stored it — rich-text HTML or Markdown, never flattened. The view
+    // renders it through the shared MarkdownText control, which is what makes an embedded screenshot
+    // and an @-mention survive; stripping the tags here would destroy both before anyone saw them,
+    // and the control's allowlist rebuild (not this parse) is what makes the markup safe.
+    description: readString("System.Description"),
     importance: typeof rank === "number" ? rank : UNRANKED_IMPORTANCE,
+    // ADO omits the field entirely on an item that has never been commented on, so absent means 0.
+    noteCount: typeof commentCount === "number" ? commentCount : 0,
     eta,
     children: [],
   };
@@ -432,37 +447,4 @@ function sprintLeaf(iterationPath: string | null): string | null {
   const segments = iterationPath.split("\\");
   const leaf = segments[segments.length - 1];
   return leaf && leaf.length > 0 ? leaf : null;
-}
-
-/** The HTML entities `htmlToText` decodes, mapped to the character each one stands for. */
-const HTML_ENTITIES: Readonly<Record<string, string>> = {
-  "&amp;": "&",
-  "&lt;": "<",
-  "&gt;": ">",
-  "&quot;": '"',
-  "&#39;": "'",
-  "&nbsp;": " ",
-};
-
-/**
- * Strip HTML tags and decode a few common entities (&amp;&lt;&gt;&quot;&#39;&nbsp;) to plain text.
- * Returns "" when empty. Pure string ops — does NOT use DOM/DOMParser; this module must stay DOM-free.
- */
-function htmlToText(html: string): string {
-  if (html.length === 0) {
-    return "";
-  }
-  // Decode entities BEFORE stripping tags: ADO can hand back descriptions whose markup is itself
-  // entity-encoded (e.g. `&lt;p&gt;`), so decoding first turns those back into real tags that the
-  // strip pass then removes — otherwise the encoded tags would survive as visible text. A literal
-  // tag is unaffected by the decode pass and still gets stripped.
-  //
-  // The decode is ONE pass over the string, not a chain of replaces: chained replaces let an earlier
-  // substitution manufacture an entity a later one then decodes, so `&amp;lt;` — which encodes the
-  // literal text `&lt;` — would wrongly come out as `<`.
-  const decoded = html.replace(
-    /&(?:amp|lt|gt|quot|#39|nbsp);/g,
-    (entity) => HTML_ENTITIES[entity] ?? entity,
-  );
-  return decoded.replace(/<[^>]*>/g, "");
 }

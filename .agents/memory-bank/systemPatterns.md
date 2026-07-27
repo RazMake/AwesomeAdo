@@ -28,6 +28,12 @@ metadata parsing today. **All ADO field definitions and data shapes live here** 
 contracts). The exact field list grows as views are implemented (it depends on each view's functionality); only the common core is shared. Today the
 folder holds the options-page project metadata (`AdoMetadata`, `buildAdoMetadataUrls`, the parsers).
 
+A work item's **notes** are modelled here too: `WorkItemNote` (id, author, createdDate, the Markdown
+source AND ADO's own rendering) plus the pure windowing rules — `noteWindowStart`,
+`sortNotesNewestFirst`, `selectRecentNoteDays`, `isOwnNote` — with the URL builders and parsers in
+`fetchWorkItemNotes` and the `IWorkItemNoteLoader` / `IWorkItemNoteWriter` contracts split apart
+(Interface Segregation: showing notes and authoring them are different capabilities). See ADR-043.
+
 ### `src/common/browser`
 
 The **only** place allowed to touch `chrome.*`, plus the browser-adjacent plumbing that pairs with
@@ -37,11 +43,14 @@ it. Four groups live here:
    `chrome.storage`), `ChromeAdoTabReader` / `ChromeAdoMetadataReader` (the only users of
    `chrome.tabs`), `observeStorageKeys`, `onStorageAreaChange`, `requestFromTab`, `pickAdoQueryTab`.
 2. **Message contracts** — `AdoTreeRequest`, `AdoIterationsRequest`, `FeatureCrewRequest`,
-   `WorkItemFieldRequest`: the typed content↔background shapes plus their guards. Pure data.
+   `WorkItemFieldRequest`, `WorkItemNoteRequest`: the typed content↔background shapes plus their
+   guards. Pure data.
 3. **MAIN-world fetchers** — `fetchAdoTreeInPage`, `fetchAdoIterationsInPage`, `fetchAdoRawInPage`,
+   `fetchWorkItemNotesInPage`, `writeWorkItemNoteInPage`,
    `findFeatureCrewInPage`, `applyFeatureCrewInPage`, `updateWorkItemFieldInPage`. Each is
    serialized by `chrome.scripting.executeScript` and must therefore stay import-free.
 4. **Messaging adapters** implementing `common/ado` contracts — `MessagingWorkItemTreeLoader`,
+   `MessagingWorkItemNoteLoader`, `MessagingWorkItemNoteWriter`,
    `MessagingTeamIterationsLoader`, `MessagingFeatureCrewWriter`, `MessagingWorkItemFieldWriter`.
 
 Key members:
@@ -81,6 +90,11 @@ registry, renderers) live under `src/content/views` — see the `src/content` se
 abstractions here is ordinary DIP, not a §6 exception. Its scope is **common view UX** — the shared
 view contracts today, plus reusable cross-view UX building blocks (menus, shared components) as they
 arrive. It must **never** hold ADO data shapes or field definitions; those live in `src/common/ado`.
+
+`control/MarkdownText` is the single place author-written content is turned into DOM (descriptions
+and every discussion note). Nothing there ever assigns to `innerHTML` on the live document: the
+source is parsed into an inert document and rebuilt node by node against an allowlist, which is what
+makes passing ADO's raw rich-text HTML through safe. See ADR-044.
 
 ### `src/common/ordering`
 

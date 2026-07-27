@@ -627,3 +627,135 @@
   persist-then-reflect rule stands for the parts ADO rejected, but a re-parent ADO **applied** must be
   reflected or the board keeps showing a tree that no longer exists and resends a doomed request; and
   a renumber changes siblings the user never dragged, so every written rank is copied back.
+
+## ADR-043: Item notes are the ADO Discussion, fetched on first open, bounded twice
+
+- Context: the Project Tracking board needs each item's running commentary. Azure DevOps already has
+  exactly that in the work item's **Discussion**, and the binding already declares an
+  **Updates window (weeks)** property that nothing consumed.
+- Decision: "notes" ARE the ADO discussion comments — no parallel store, no custom field. They are
+  read through `_apis/wit/workItems/{id}/comments` and authored as **Markdown** (`format=0`).
+- Decision: a panel fetches on **first open**, not with the board. A tracking board routinely shows
+  dozens of items; reading every discussion up front would fire dozens of credentialed requests for
+  panels nobody opens. The result is cached for the session, and a failed read clears the cache so a
+  later open retries rather than staying broken.
+- Decision: the list is bounded **twice, for different reasons**. The `weeks` window bounds what is
+  FETCHED (a per-query setting, so a team that reviews fortnightly sees a fortnight); the **two most
+  recent days that have notes** bound what is SHOWN, so an expanded panel stays a glance. Days, not a
+  note count: a burst of updates in one afternoon is a single conversation and must not be cut in half.
+- Decision: the work item **type icon** in front of the title IS the notes toggle, at three emphasis
+  levels: grey (no discussion), the type's color dimmed (something to read), full color (open). A
+  dense row cannot afford another control, and three states make "where are the notes?" answerable by
+  scanning the board's left edge rather than by clicking every row.
+- Consequence: `System.CommentCount` is read with the tree. The grey state has to be known BEFORE a
+  panel opens, and the whole point of fetching on first open is that most panels never do. It is a
+  TOTAL, so it is treated as "worth opening" and CORRECTED to the real in-window count once a panel
+  reports one — an item whose comments all predate the window starts colored and settles to grey.
+- Consequence: a FAILED read never greys an icon. The count is then unknown, not zero, and claiming
+  "no discussion" because nobody could read it is worse than leaving the previous answer showing.
+- Consequence: the read also returns the signed-in identity (`_apis/ConnectionData`) in the same
+  MAIN-world call, because "which of these may I edit?" is unanswerable without it and useless
+  without the notes it qualifies. Ownership is matched on identity GUID first and sign-in address
+  second — never display names, which two people routinely share.
+- Consequence: editing is offered only on the reader's own notes. ADO rejects anyone else's edit, so a
+  universal affordance would be a button whose only purpose is to fail. Authorization stays on the
+  server; the UI only declines to offer what would be refused.
+- Consequence: every failure is **classified** (`http` / `sign-in` / `network`) rather than collapsed
+  to an empty list. ADO answers an expired session with a 200 carrying its HTML sign-in page, which
+  would otherwise parse as "this item has no notes" and leave nothing in the log to explain it.
+
+## ADR-044: Author-written content renders through one control, allowlist-rebuilt
+
+- Context: descriptions were previously written to the page as plain text, so ADO rich text and
+  Markdown arrived as literal markup. Rendering them means rendering content written by whoever edited
+  the work item — any teammate, and on a public project anyone at all — INSIDE the reader's signed-in
+  ADO page.
+- Decision: one shared control (`common/view-common/control/MarkdownText`) renders every piece of
+  author-written content: item descriptions and every discussion note. What may render, how an image
+  loads, and what an `@`-mention looks like are then decided in exactly one place.
+- Decision: nothing is ever assigned to `innerHTML` on the live document. The source is parsed into an
+  **inert** document (`createHTMLDocument` — no browsing context, so no script runs and no image
+  request fires while parsing), then rebuilt node by node against an **allowlist**. Unknown elements
+  are unwrapped to their text; `<script>`/`<style>`/`<iframe>`/form controls are dropped whole; every
+  attribute except the few named per tag is discarded, which covers `on*` and `style` by construction.
+- Decision: ADO's own `renderedText` is preferred over the stored source when the response carries it,
+  because that is where ADO resolves an `@`-mention to a person's name — the raw Markdown only holds
+  their GUID. The source is still kept, because an edit must re-open what the author typed.
+- Consequence: ADO attachment images need no proxy or token handling here. The view renders inside the
+  ADO page, so an attachment URL is same-origin and the browser sends the session with it — unlike the
+  team's PowerShell tracker, which had to proxy them through its local server.
+- Consequence: the Markdown converter is hand-written rather than a dependency. This code is injected
+  into every ADO page, the input is the narrow subset ADO's own editors produce, and its output is
+  never trusted — the sanitizer is what makes passing raw HTML through safe.
+- Consequence: `TrackedWorkItem.description` is no longer flattened at parse time. The tree loader
+  used to strip the tags to plain text, which destroyed embedded screenshots and `@`-mentions before
+  any renderer saw them — rendering is the view's job, and sanitizing is the control's.
+
+## ADR-045: A worker listener owns a malformed message and answers with the reason
+
+- Context: notes reads failed with nothing but `no response from background` on the content side and
+  **complete silence** in the worker's own log. That message is what `chrome.runtime.sendMessage`
+  produces when NO listener returns `true`, which covers three unrelated situations: the message was
+  malformed and every type-guarded listener skipped it, the worker is running older code than the
+  page (reloaded or updated while the ADO tab stayed open), or the worker failed to start. Nothing on
+  either side distinguished them.
+- Decision: a listener claims a message by its `type` FIRST (`claimsMessageType`), then validates.
+  Filtering on the strict guard makes a listener silently drop a malformed message of its own kind,
+  which is precisely the dead end above. This generalizes the rule ADR-040's reorder listener already
+  applied, and the notes listeners now follow it.
+- Decision: every message-shape contract exposes a `…Problem(value)` describer returning the offending
+  field, with the boolean guard defined AS `problem(value) === null` so the two can never drift.
+- Decision: the worker logs each notes request on **arrival** and again with its **outcome** (pages,
+  HTTP status, failure classification, whether the identity was read). A successful read used to log
+  nothing at all, so "never arrived" and "arrived and worked" were the same silence.
+- Consequence: the content side's remaining `undefined` response now has exactly one meaning — no
+  listener claimed it — so it says so, and names the two causes worth acting on.
+
+## ADR-046: `@`-mentions are resolved in bulk through a directory of their own
+
+- Context: `MarkdownText` has always accepted a `mentionNames` map, but **no production caller ever
+  supplied one**, so every mention the extension rendered itself came out as the anonymous
+  `@mention` placeholder. Notes escaped it only because ADO's `renderedText` already carries names
+  (ADR-044); descriptions have no such rendering, and a note ADO returned no `renderedText` for falls
+  back to the raw source and its bare GUIDs.
+- Decision: a **separate** contract, `IMentionDirectory` (`resolveNames(ids)` + `knownNames()`), not
+  a method on `IUserDirectory` (Interface Segregation). Searching for a person a user is choosing
+  between is interactive and per-keystroke; naming ids in content that is already written is a bulk,
+  one-shot concern. They also hit different endpoints.
+- Decision: **bulk by contract.** Every mention is collected across everything about to be rendered
+  and resolved together (`collectMentionIdentityIds` → one read per batch), because a lookup per
+  mention per item is a request storm on a board of dozens of items. Both encodings are collected —
+  the Markdown `@<guid>` token AND ADO's rich-text `data-vss-mention` anchor — since a board carries
+  both. `MENTION_TOKEN_PATTERN` is owned by `common/ado` and shared with the control so the collector
+  and the renderer can never disagree about the token shape.
+- Decision: the endpoint is the `vssps` bulk identity read
+  (`{identityBase}/_apis/identities?identityIds=…`), reached through the same background/MAIN-world
+  bridge as every other credentialed ADO call. This is the **only** ADO read in the extension that is
+  genuinely cross-origin — `resolveAdoIdentityServiceBase` exists to make that hop explicit rather
+  than hidden in a URL template. ADO's own SPA makes the same hop from the same page, so the session
+  rides along; a tenant that refused it degrades to `network` in the log and unresolved placeholders
+  on screen.
+- Decision: the board resolves **after** its first paint and repaints, rather than awaiting the names
+  before painting. The ids only exist once the tree is in hand, so awaiting first would hold a whole
+  board back on a cosmetic detail. A notes panel awaits instead, because it is already showing
+  "Loading notes…" and its rows are built once.
+- Consequence: `BoardHandle` now exposes `repaint()`. Project Tracking repaints only when the read
+  actually learned a name — a repaint that changes nothing is a flicker the reader paid for.
+- Consequence: ids are content-supplied, so `buildAdoIdentityNamesUrls` re-validates each one against
+  a GUID pattern (they are interpolated into a query string) and `MAX_MENTION_IDS` caps how many
+  credentialed reads one message can become.
+- Consequence: `MessagingMentionDirectory` asks about each id **once** for the life of the page.
+  Dedupe is on an id's _settled answer_, and an in-flight read is **shared, not skipped**: a second
+  caller awaits the read a first one started. A dedupe set alone ("already asked") returns an
+  incomplete map to whoever asks second, which is precisely how a mention ended up anonymous while
+  the identical mention elsewhere on the board resolved.
+- Consequence: "no name" is only remembered when the read **completed** (`ResolveAdoIdentityNamesResponse.complete`),
+  because the endpoint OMITS ids it cannot resolve — a short answer and a failed batch look the same
+  otherwise. A failed batch, a truncated id list, a rejected round-trip or an unclaimed message all
+  leave the id open for the next render. Retrying an authoritative "not recognized" is pointless and
+  would loop on every repaint, so that one is settled for good and **logged by id**.
+- Consequence: the log names the unresolved **ids** (capped at 10) and whether they will be retried.
+  A display name is a person's name (AGENTS.md §9); an identity id is the identifier that makes
+  "why is this mention anonymous?" answerable from Diagnostics alone.
+- Consequence: reasons carry **lengths, never content**. An over-long note is reported by its
+  character count; the diagnostics log is exported into bug reports (AGENTS.md §9).

@@ -11,14 +11,15 @@ halves of the view — its configuration and its renderer.
   these per-query properties:
   - `orderingPolicy` (select) — how items are ordered within each group; choices and the default
     come from [`common/ordering`](../../../common/ordering), which also resolves the raw sort key.
-  - `weeks` (number) — how far back per-item Updates reach.
+  - `weeks` (number) — how far back per-item Updates (notes) reach.
   - `days` (number) — hide resolved items once resolved more than this many days ago.
   - `hours` (number) — rolling window behind the "newly created / updated / new notes" pills.
 
-  `orderingPolicyOf(properties)` and `hideResolvedAfterDays(properties)` turn a binding's stored
-  strings into the typed values the renderer uses — defaulted, clamped, and validated against the
-  offered choices. Use them instead of reading `properties["…"]` directly, so a key or a default can
-  never drift between the binding form and the board.
+  `orderingPolicyOf(properties)`, `hideResolvedAfterDays(properties)` and
+  `updatesWindowWeeks(properties)` turn a binding's stored strings into the typed values the renderer
+  uses — defaulted, clamped, and validated against the offered choices. Use them instead of reading
+  `properties["…"]` directly, so a key or a default can never drift between the binding form and the
+  board.
 
 - `ProjectTrackingView.ts` → `projectTrackingView: EnhancedView` — the renderer. Renders a live
   tree board with the following features:
@@ -115,10 +116,25 @@ halves of the view — its configuration and its renderer.
   - **Indentation**: 70% less than before (~7px vs 24px) with a discrete themed vertical guide line
     showing parent-child relationships (low-alpha neutral border).
   - **Description panel**: toggles below each row; displays "Created on: <date>, Last Modified on:
-    <date>" followed by the item's description text. Uses
+    <date>" followed by the item's description. Uses
     [`renderItemLifecycleInfo`](../../../common/view-common/control/ItemLifecycleInfo/README.md),
     which shows each actor's name in a "By <name>" tooltip and renders dates with
-    [`DateLabel`](../../../common/view-common/control/DateLabel/README.md) (never innerHTML).
+    [`DateLabel`](../../../common/view-common/control/DateLabel/README.md) (never innerHTML). The
+    description itself renders through
+    [`MarkdownText`](../../../common/view-common/control/MarkdownText/README.md), so Markdown, ADO
+    rich text, embedded attachment images and `@`-mentions all show as they do in ADO.
+  - **Type icon + notes**: each row's title is preceded by its work item type icon
+    ([`ItemTypeIcon`](../../../common/view-common/control/ItemTypeIcon/README.md)), sized to the
+    title and tinted by ADO in the type's own color. The icon **is** the item's notes toggle, and it
+    carries three states so the board can be read without clicking anything: **grey** when the item
+    has no discussion, the type's **color dimmed** when there is something to read, and **full color**
+    while it is open. The grey state is seeded from the item's `System.CommentCount` (which arrives
+    with the tree, so it costs nothing) and corrected once a panel has actually read its window — a
+    total counts comments the window excludes, so an item can start out promising notes and settle to
+    grey. A failed read never greys an icon: the count is then unknown, not zero. Opening the icon
+    reveals the [`notes`](./notes/README.md) panel — a "+ Add note" link above a newest-first list of
+    the item's ADO Discussion. See that folder for the fetch-on-first-open behaviour, the Updates
+    window, the two-day rule, and who may edit what.
   - **Theme compliance**: EVERY control (badges, pills, buttons, twisties, the header panel, the
     guide line) follows the ADO theme via CSS custom properties with literal fallbacks, never
     hard-coded light-only colors as the sole value (ADR-034, principle #13).

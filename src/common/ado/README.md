@@ -39,7 +39,10 @@ response-parsing logic, kept pure so they are unit-testable without a browser.
   user references, and `importance` (ADO's manual backlog rank — a LOWER number is more important).
   `stateChangeDate` is when `System.State` last moved, kept separate from `changedDate` so "how long
   has this been done?" is not reset by an edit that never touched the state; an item ADO returned no
-  rank for hydrates as `UNRANKED_IMPORTANCE` so it sorts below every ranked one.
+  rank for hydrates as `UNRANKED_IMPORTANCE` so it sorts below every ranked one. `description` is
+  kept **exactly as ADO stored it** (rich-text HTML or Markdown, never flattened) so the view can
+  render embedded images and `@`-mentions. `noteCount` is `System.CommentCount` — a TOTAL, so treat
+  it as "worth opening", not as "has notes inside the Updates window".
 - `TypeCatalogEntry` — `{ name, color, icon, etaField, columns }` for each work item type in the
   hierarchy. `columns` is a `TrackedTypeColumn[]`: each column carries the board-column label (the
   team's application state) plus the ADO state names routed onto it, with `states[0]` being the
@@ -109,6 +112,34 @@ response-parsing logic, kept pure so they are unit-testable without a browser.
   its in-memory suggestions below it).
 - `IDENTITY_SEARCH_MAX_RESULTS` — how many identities one search asks for.
 
+### `IMentionDirectory.ts`
+
+- `IMentionDirectory` — `{ resolveNames(ids), knownNames() }`. Resolves the identity GUIDs an
+  `@`-mention is stored as into display names, keyed by **lowercase** GUID. Deliberately separate
+  from `IUserDirectory` (Interface Segregation): that one searches for a person a user is choosing
+  between, this one answers "who are these ids?" for content that is already written.
+  `resolveNames` is **bulk by contract** and never rejects; ids it could not resolve are simply
+  absent. `knownNames()` is the synchronous view of what has been resolved so far, for renderers
+  that paint synchronously.
+
+### `mentionIdentities.ts`
+
+- `collectMentionIdentityIds(sources)` — every identity GUID mentioned across the given texts,
+  lowercased and de-duplicated in first-seen order. Finds **both** encodings ADO uses: the Markdown
+  token (`@<guid>`) and the rich-text mention anchor (`data-vss-mention="version:2.0,guid"`).
+- `buildAdoIdentityNamesUrls(href, ids)` — the bulk `_apis/identities?identityIds=…` URLs for the
+  organization that owns `href`, one per batch; `[]` when the URL is not ADO or no id is usable.
+  Anything that is not a well-formed GUID is **dropped**, because the ids are content-supplied and
+  are interpolated into a query string.
+- `parseAdoIdentityNames(bodies)` — the batch bodies as a `Map` of lowercase GUID → display name
+  (custom display name, else the provider's, else the sign-in account); **best-effort** (a
+  missing/malformed body contributes nothing).
+- `MENTION_TOKEN_PATTERN` — the Markdown mention shape, as a pattern **source**. Shared with
+  `view-common/control/MarkdownText` so the collector and the renderer agree on one token shape; a
+  source rather than a `RegExp` because a global regex carries a mutable `lastIndex`.
+- `MENTION_BATCH_SIZE` / `MAX_MENTION_IDS` — how many ids ride in one URL, and the ceiling on one
+  request.
+
 ### `fetchAdoMetadata.ts`
 
 - `buildAdoMetadataUrls(href)` — parses the org/project from the tab URL and returns the
@@ -128,6 +159,11 @@ response-parsing logic, kept pure so they are unit-testable without a browser.
   so only user-chosen target dates are offered as an ETA; **best-effort** (a missing/malformed body
   yields an empty set).
 - `adoCollectionBaseUrl` — the small pure helper the URLs share, exported for focused testing.
+- `resolveAdoIdentityServiceBase(href)` — the base for the organization's **identity** service, or
+  `null` when the href is not ADO. This is the one read in this folder that is **not** served from
+  the collection base: bulk identity reads live on `vssps.dev.azure.com/{org}` (or
+  `{org}.vssps.visualstudio.com`), so a request built from it is a genuine cross-origin hop. No
+  project is needed — identities are org-scoped.
 - `resolveAdoProjectContext(href)` — resolves the `{ base, project }` (collection base URL +
   URL-encoded project) for a project-scoped ADO href, or `null` when the URL is not project-scoped.
   Shared by `buildAdoMetadataUrls` and `fetchAdoTree`'s `buildAdoTreeUrls` so the parse-and-encode
@@ -139,6 +175,15 @@ response-parsing logic, kept pure so they are unit-testable without a browser.
   `apiVersion` is a parameter because not every team-scoped route has left preview.
 - `AdoMetadataUrls` — the `{ teamsUrl, areaPathsUrl, workItemTypesUrl, fieldsUrl }` shape
   `buildAdoMetadataUrls` returns.
+
+### `adoAttachment.ts`
+
+- `buildAdoAttachmentUrl(pageHref, reference)` — the REST URL an image embedded in ADO rich text must
+  be fetched from, or `null` when `reference` is not an ADO attachment reference (or `pageHref` is not
+  an ADO page). ADO's rendered notes and descriptions point at a pasted screenshot with the
+  attachment's **bare id** (`4f76001f-…?fileName=image.png`); this turns that into
+  `{collectionBase}/_apis/wit/attachments/{id}?fileName=…&api-version=7.1`, the request ADO's own UI
+  makes. Org-scoped, so it also works on pages that name no project.
 
 ### `fetchAdoTree.ts`
 
@@ -292,6 +337,55 @@ reseeded?, error? }`. The two IO steps are **injected** because the real calls m
   `writeField` **and** every reorder so ordering is deterministic and no two writes race on
   `System.Rev` (ADR-030). Both entry points always resolve (never reject), and a failed write never
   stalls the chain. See [`WorkItemWriteQueue/README.md`](./WorkItemWriteQueue/README.md).
+
+### `WorkItemNote.ts`
+
+The normalized model for a work item **note** — one entry in its Azure DevOps Discussion.
+
+- `NoteAuthor` — `{ displayName, id, uniqueName }`; `id` is the ADO identity GUID and `uniqueName`
+  the sign-in address, either of which may be `null`.
+- `WorkItemNote` — `{ id, workItemId, author, createdDate, text, renderedHtml }`. `text` is the
+  Markdown/rich-text **source** (what an edit re-opens); `renderedHtml` is ADO's own rendering, which
+  is where an `@`-mention carries the person's name instead of their GUID.
+- `MAX_NOTE_LENGTH` — the longest note this extension will author; the composer stops there and the
+  message contract refuses past it.
+- `noteWindowStart(now, weeks)` — the ISO start of the Updates window, so the fetch and the list
+  narrow by exactly the same instant.
+- `sortNotesNewestFirst(notes)` — non-mutating; an unparseable date sorts last.
+- `selectRecentNoteDays(notes)` — the notes from the two most recent **local calendar days that have
+  notes**, complete: a burst of updates in one afternoon is never cut in half.
+- `isOwnNote(note, reader)` — identity GUID first, sign-in address second; display names are never
+  compared, because two people routinely share one.
+
+### `fetchWorkItemNotes.ts`
+
+- `buildWorkItemNotesUrls(href, workItemId)` — the comments URL (newest first, `$expand=renderedText`
+  so mentions resolve to names) plus the org's `ConnectionData` URL; `null` when `href` is not
+  project-scoped.
+- `buildAddNoteUrl(href, workItemId)` / `buildEditNoteUrl(href, workItemId, noteId)` — the Markdown
+  (`format=0`) write endpoints; `null` when `href` is not project-scoped.
+- `parseCurrentUser(rawConnection)` — the signed-in `NoteAuthor`, or `null` when neither handle is
+  present (no note is then editable).
+- `parseWorkItemNotes(rawPages, workItemId, sinceIso)` — the notes inside the Updates window.
+- `parseWorkItemNote(rawComment, workItemId)` — one note; `null` without a numeric id and a parseable
+  `createdDate`.
+- `NOTES_PAGE_SIZE` — the largest page ADO serves from the comments collection.
+
+### `IWorkItemNoteLoader.ts`
+
+- `WorkItemNotesRequest` — `{ workItemId, sinceIso }`.
+- `WorkItemNotesResult` — `{ notes, currentUser, error }`. The reader travels with the notes because
+  a view can only offer "edit" on the notes that person wrote, and ADO answers both from the same
+  credentialed page context.
+- `IWorkItemNoteLoader` — `loadNotes(request)`.
+
+### `IWorkItemNoteWriter.ts`
+
+- `AddNoteRequest` — `{ workItemId, text }`; `EditNoteRequest` — `{ workItemId, noteId, text }`.
+- `NoteWriteResult` — `{ ok, note?, error? }`; the saved note comes back so a list can show exactly
+  what ADO stored rather than echoing what was typed.
+- `IWorkItemNoteWriter` — `addNote` / `editNote`. Kept separate from the loader (Interface
+  Segregation): showing notes and authoring them are different capabilities.
 
 ## Usage guidance
 

@@ -38,6 +38,18 @@ const hideResolvedAfterDaysProperty: ViewTypeProperty = {
   hint: "Resolved items are hidden once resolved more than this many days ago, unless an unresolved item still sits beneath them. 0 hides them immediately.",
 };
 
+/** How far back per-item notes reach; shared with its reader, as above. */
+const updatesWindowWeeksProperty: ViewTypeProperty = {
+  key: "weeks",
+  label: "Updates window (weeks)",
+  required: false,
+  kind: "number",
+  defaultValue: "2",
+  min: 1,
+  max: 52,
+  hint: "How far back per-item Updates reach, in weeks. Only newer updates are shown; same-day entries are collapsed together.",
+};
+
 /**
  * The Project Tracking view's configuration: presents a query's items grouped for status tracking,
  * with per-query control over ordering and the various "recent activity" windows.
@@ -50,16 +62,7 @@ export const projectTrackingViewType: ViewType = {
   label: "Project Tracking",
   properties: [
     orderingPolicyProperty,
-    {
-      key: "weeks",
-      label: "Updates window (weeks)",
-      required: false,
-      kind: "number",
-      defaultValue: "2",
-      min: 1,
-      max: 52,
-      hint: "How far back per-item Updates reach, in weeks. Only newer updates are shown; same-day entries are collapsed together.",
-    },
+    updatesWindowWeeksProperty,
     hideResolvedAfterDaysProperty,
     {
       key: "hours",
@@ -100,6 +103,20 @@ export function hideResolvedAfterDays(properties: Record<string, string>): numbe
     resolveViewTypePropertyValue(
       hideResolvedAfterDaysProperty,
       properties[hideResolvedAfterDaysProperty.key],
+    ),
+  );
+}
+
+/**
+ * How many weeks of notes an item's Updates panel reaches back over, from the binding's stored
+ * properties. Routed through the shared resolver for the same reason as the day window: the number
+ * the fetch bounds itself by is the defaulted, clamped whole number the binding form showed.
+ */
+export function updatesWindowWeeks(properties: Record<string, string>): number {
+  return Number(
+    resolveViewTypePropertyValue(
+      updatesWindowWeeksProperty,
+      properties[updatesWindowWeeksProperty.key],
     ),
   );
 }

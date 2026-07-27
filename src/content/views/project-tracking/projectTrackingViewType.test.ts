@@ -6,6 +6,7 @@ import {
   hideResolvedAfterDays,
   orderingPolicyOf,
   projectTrackingViewType,
+  updatesWindowWeeks,
 } from "./projectTrackingViewType";
 
 describe("orderingPolicyOf", () => {
@@ -48,5 +49,32 @@ describe("hideResolvedAfterDays", () => {
 
   it("falls back to the declared window when the stored value is not a number", () => {
     expect(hideResolvedAfterDays({ days: "soon" })).toBe(4);
+  });
+});
+
+describe("updatesWindowWeeks", () => {
+  it("defaults to the declared window when the binding stored none", () => {
+    expect(updatesWindowWeeks({})).toBe(2);
+  });
+
+  it("returns the stored window as a number", () => {
+    expect(updatesWindowWeeks({ weeks: "6" })).toBe(6);
+  });
+
+  it("clamps a stored value into the property's range", () => {
+    // A zero-week window would fetch nothing at all, and a year is as far back as the panel reaches.
+    expect(updatesWindowWeeks({ weeks: "0" })).toBe(1);
+    expect(updatesWindowWeeks({ weeks: "-4" })).toBe(1);
+    expect(updatesWindowWeeks({ weeks: "99999" })).toBe(52);
+  });
+
+  it("falls back to the declared window when the stored value is not a number", () => {
+    expect(updatesWindowWeeks({ weeks: "recently" })).toBe(2);
+  });
+
+  it("reads the same property key the binding form writes", () => {
+    const property = projectTrackingViewType.properties.find((p) => p.key === "weeks");
+    expect(property?.kind).toBe("number");
+    expect(property?.defaultValue).toBe("2");
   });
 });

@@ -25,6 +25,7 @@ describe("TRACKING_FIELDS", () => {
     expect(TRACKING_FIELDS).toContain("System.ChangedDate");
     expect(TRACKING_FIELDS).toContain("System.ChangedBy");
     expect(TRACKING_FIELDS).toContain("System.Description");
+    expect(TRACKING_FIELDS).toContain("System.CommentCount");
     expect(TRACKING_FIELDS).toContain("System.Rev");
     expect(TRACKING_FIELDS).toContain("System.Parent");
   });
@@ -228,7 +229,9 @@ describe("parseTrackedTree - nested tree", () => {
     expect(epic.changedBy).toEqual({ displayName: "Charlie", uniqueName: null, imageUrl: null });
     expect(epic.stateChangeDate).toBe("2024-01-12T09:00:00Z");
     expect(epic.importance).toBe(1999.5);
-    expect(epic.description).toBe("Epic description with & entities.");
+    // Handed on exactly as ADO stored it: the view renders (and sanitizes) the markup, because
+    // flattening it here would destroy embedded screenshots and @-mentions before anyone saw them.
+    expect(epic.description).toBe("<p>Epic <b>description</b> with &amp; entities.</p>");
     expect(epic.eta).toBe("2024-03-31T00:00:00Z");
     expect(epic.children).toHaveLength(1);
 
@@ -255,7 +258,7 @@ describe("parseTrackedTree - nested tree", () => {
     expect(story.assignedTo).toBeNull();
     expect(story.createdBy).toBeNull();
     expect(story.changedBy).toBeNull();
-    expect(story.description).toBe("Story notes");
+    expect(story.description).toBe("<div>Story notes</div>");
     expect(story.eta).toBeNull();
     expect(story.children).toHaveLength(0);
   });
@@ -514,7 +517,7 @@ describe("parseTrackedTree - eta, sprint and description", () => {
     expect(result.roots[0]?.sprintName).toBeNull();
   });
 
-  it("decodes HTML entities in description", () => {
+  it("keeps a description's markup, so the view can render it as rich text", () => {
     const raw: AdoRawTree = {
       wiql: {
         queryType: "tree",
@@ -534,7 +537,42 @@ describe("parseTrackedTree - eta, sprint and description", () => {
       ],
     };
     const result = parseTrackedTree(raw, new Map());
-    expect(result.roots[0]?.description).toBe("Less than & greater > and \"quotes\" 'apos'  space");
+    expect(result.roots[0]?.description).toBe(
+      "&lt;p&gt;Less than &amp; greater &gt; and &quot;quotes&quot; &#39;apos&#39; &nbsp;space&lt;/p&gt;",
+    );
+  });
+});
+
+describe("parseTrackedTree - note count", () => {
+  /** A one-item tree whose Epic carries whatever `System.CommentCount` the test supplies. */
+  function treeWithCommentCount(commentCount: unknown): AdoRawTree {
+    const fields: Record<string, unknown> = {
+      "System.WorkItemType": "Epic",
+      "System.Title": "Epic 1",
+    };
+    if (commentCount !== undefined) {
+      fields["System.CommentCount"] = commentCount;
+    }
+    return {
+      wiql: { queryType: "tree", workItemRelations: [{ source: null, target: { id: 1 } }] },
+      items: [{ id: 1, rev: 1, fields }],
+    };
+  }
+
+  it("reads the discussion count, so a board can show which items are worth opening", () => {
+    const result = parseTrackedTree(treeWithCommentCount(3), new Map());
+    expect(result.roots[0]?.noteCount).toBe(3);
+  });
+
+  it("treats an item ADO reported no count for as having none", () => {
+    // ADO omits the field entirely on an item nobody has ever commented on.
+    const result = parseTrackedTree(treeWithCommentCount(undefined), new Map());
+    expect(result.roots[0]?.noteCount).toBe(0);
+  });
+
+  it("refuses a non-numeric count rather than letting it reach the board", () => {
+    const result = parseTrackedTree(treeWithCommentCount("many"), new Map());
+    expect(result.roots[0]?.noteCount).toBe(0);
   });
 });
 

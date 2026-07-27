@@ -7,6 +7,7 @@ import {
   parseDateFieldReferenceNames,
   parseTeams,
   parseWorkItemTypes,
+  resolveAdoIdentityServiceBase,
 } from "./fetchAdoMetadata";
 
 describe("adoCollectionBaseUrl", () => {
@@ -30,6 +31,32 @@ describe("adoCollectionBaseUrl", () => {
         "contoso",
       ),
     ).toBe("https://contoso.visualstudio.com");
+  });
+});
+
+describe("resolveAdoIdentityServiceBase", () => {
+  it("points at the vssps service host, not the collection base", () => {
+    // Identities are the one read here that is NOT served from the collection base; sending it there
+    // answers 404 and silently anonymizes every @-mention.
+    expect(
+      resolveAdoIdentityServiceBase("https://dev.azure.com/contoso/Fabrikam/_queries/query/abc"),
+    ).toBe("https://vssps.dev.azure.com/contoso");
+  });
+
+  it("uses the per-organization identity host on the legacy visualstudio.com shape", () => {
+    expect(resolveAdoIdentityServiceBase("https://contoso.visualstudio.com/Fabrikam")).toBe(
+      "https://contoso.vssps.visualstudio.com",
+    );
+  });
+
+  it("resolves an org-level URL, since identities are org-scoped and need no project", () => {
+    expect(resolveAdoIdentityServiceBase("https://dev.azure.com/contoso/_queries")).toBe(
+      "https://vssps.dev.azure.com/contoso",
+    );
+  });
+
+  it("returns null for a URL that is not a recognized ADO location", () => {
+    expect(resolveAdoIdentityServiceBase("https://example.com/contoso")).toBeNull();
   });
 });
 

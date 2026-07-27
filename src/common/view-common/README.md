@@ -43,7 +43,7 @@ renderer.
   views (carrying the tree loader, user directory, type catalog, sprint window, clock, logger), absent
   for placeholder views.
 - `EnhancedViewServices` — the cross-view data/service singletons injected at the composition root:
-  `loadTree`, `featureCrew`, `writeField`, `reorderItem`, `currentTeam`, `userDirectory`, `getTypes`,
+  `loadTree`, `featureCrew`, `writeField`, `reorderItem`, `currentTeam`, `userDirectory`, `mentionDirectory`, `getTypes`,
   `getBoardColumns`, `loadSprintWindow`, `now`, `logger`, `openDiagnosticsLog`. `writeField` persists
   a single work item
   field change (e.g.
@@ -82,6 +82,8 @@ view — regardless of which bundle renders it — reuses the same consistent pa
 | `Breadcrumbs`      | [`control/Breadcrumbs`](./control/Breadcrumbs/README.md)           | A trail of clickable segments separated by a glyph (a "you are here").                            |
 | `DateLabel`        | [`control/DateLabel`](./control/DateLabel/README.md)               | A `MM/DD/YYYY` PST date label with a full-timestamp hover tooltip.                                |
 | `EtaBadge`         | [`control/EtaBadge`](./control/EtaBadge/README.md)                 | An ETA date badge with severity color, a countdown tooltip, and an optional editable date picker. |
+| `ItemTypeIcon`     | [`control/ItemTypeIcon`](./control/ItemTypeIcon/README.md)         | The ADO work item type icon, sized to the title it precedes, at three emphasis levels.            |
+| `MarkdownText`     | [`control/MarkdownText`](./control/MarkdownText/README.md)         | Author-written content (descriptions, notes) rendered as safe DOM, with images and @-mentions.    |
 | `OrderingPicker`   | [`control/OrderingPicker`](./control/OrderingPicker/README.md)     | A discrete sort glyph naming the ordering policy in force, with a menu to change it.              |
 | `TagPill`          | [`control/TagPill`](./control/TagPill/README.md)                   | A colored Feature Crew tag pill (a neutral "??" pill when untagged).                              |
 | `WriteQueueStatus` | [`control/WriteQueueStatus`](./control/WriteQueueStatus/README.md) | A "Saving N change(s)…" spinner shown only while writes are in flight.                            |

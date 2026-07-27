@@ -359,6 +359,66 @@ person's name, and the diagnostics log is exported into bug reports. The URL and
 `buildAdoIdentitySearchRequest` (in `common/ado/fetchAdoIdentities`), built from the sender's own
 trusted tab URL, keeping the worker a closed "search this organization's people" operation.
 
+## Naming the people behind `@`-mentions
+
+A work item's description and its discussion store an `@`-mention as a bare identity GUID, so a view
+that renders them has to ask who those people are. That read is credentialed like the others, and
+follows the same bridge — but it is asked in **bulk**: every mention on the board at once, rather
+than one lookup per mentioned person per item.
+
+### `AdoIdentityNamesRequest.ts` — the content→background message contract
+
+- `RESOLVE_ADO_IDENTITY_NAMES_MESSAGE` / `ResolveAdoIdentityNamesMessage` (`{ type, ids }`) — the
+  request a view sends with the identity GUIDs it collected.
+- `ResolveAdoIdentityNamesResponse` (`{ raw, complete }`) — one raw `_apis/identities` body per batch
+  that was read, or `null` when nothing could be read. A **partial** list is deliberate: names that
+  did resolve are still worth rendering. `complete` says whether every requested id was actually put
+  to ADO and answered for — the endpoint simply OMITS an id it cannot resolve, so without it a short
+  answer is indistinguishable from a failed batch.
+- `isResolveAdoIdentityNamesMessage(value)` — the type guard the worker uses before serving it.
+
+### `MessagingMentionDirectory` (class) — the content-side directory
+
+The `IMentionDirectory` implementation views depend on. It messages the worker with the ids, parses
+the returned bodies with `parseAdoIdentityNames`, and degrades to "no names resolved" (logged) on any
+failure.
+
+Two rules make it correct under the overlap that actually happens in a board:
+
+- **In-flight reads are shared, not skipped.** A caller that wants an id another caller is already
+  asking about **awaits that read**. Returning early on "already asked" is what left a mention
+  anonymous purely because a different panel had asked about the same person a moment earlier.
+- **Only a settled answer is remembered.** An id is never re-asked once it has a name, or once a
+  `complete` read said ADO does not recognize it (retrying cannot change that, and a board repaints
+  often enough to turn it into a request loop). Anything else — a failed batch, a truncated id list,
+  a rejected round-trip, a reply no listener claimed — stays open for the next render.
+
+The log names the unresolved **ids** (capped, never the names that resolved) and says whether they
+will be retried, so "why is that one mention anonymous?" is answerable from Diagnostics alone.
+
+`resolveMentionsIn(directory, sources)` is the collect-then-resolve pair the callers use (the board
+before it repaints its descriptions, a notes panel after it fetches and after it writes); it asks
+nothing when the content mentions nobody.
+
+### `fetchAdoIdentityNamesInPage(urls)` — `fetchAdoIdentityNamesInPage.ts`
+
+The self-contained function the background worker injects into the ADO tab's MAIN world to serve a
+`ResolveAdoIdentityNamesMessage`. It performs one credentialed GET per caller-built batch URL and
+returns an `AdoIdentityNamesOutcome` (`{ status, bodies, failure }`) using the same failure
+classification as the identity search above — except that `bodies` keeps every batch that **did**
+succeed, because the batching is only a URL-length concern and one bad batch must not discard the
+rest.
+
+> **Note:** this is the one ADO read here that is genuinely **cross-origin**. Bulk identity reads are
+> served from the `vssps` service host, not the collection base (see `resolveAdoIdentityServiceBase`).
+> ADO's own web application makes the same hop from the same page, so the session rides along on
+> `credentials: "include"`; a tenant that refused it would arrive as a `network` failure and every
+> mention would simply keep its placeholder.
+
+The URLs come from `buildAdoIdentityNamesUrls` (in `common/ado/mentionIdentities`), built from the
+sender's own trusted tab URL with each id re-validated as a GUID, keeping the worker a closed
+"who are these people in this organization?" operation.
+
 ## Reconciling the Feature Crew roster
 
 The Project Tracking view keeps a project's **Feature Crew** roster — the list of everyone assigned
@@ -556,3 +616,71 @@ written directly instead — see `common/ado/rankFallback` for when and why.
 
 Both are serialized with `Function.prototype.toString` and reference only their parameter and page
 globals. Every URL is built by the worker from the sender's own trusted tab URL.
+
+## Reading and writing a work item's notes (its Discussion)
+
+The Project Tracking board shows each item's ADO Discussion as its **notes**, and lets the reader add
+one or correct their own. Both halves follow the pattern above: the content script messages the
+background worker, which runs the credentialed calls in the ADO tab's MAIN world and builds every URL
+from the **sender's own trusted tab URL**.
+
+### `WorkItemNoteRequest.ts` — the content→background message contract
+
+- `LOAD_WORK_ITEM_NOTES_MESSAGE` / `LoadWorkItemNotesMessage` (`{ type, workItemId, sinceIso }`) —
+  read one item's discussion, no further back than the view's Updates window.
+- `RawWorkItemNotes` (`{ pages, connection, status, failure }`) — the raw bodies the read produced:
+  each comments page, the org's `ConnectionData` (for the signed-in identity), and a **classified**
+  outcome. `failure` is `none` / `http` / `sign-in` / `network`, because an expired session and an
+  item with no notes would otherwise both arrive as an empty list and be equally silent in the log.
+- `LoadWorkItemNotesResponse` (`{ raw, error? }`).
+- `WRITE_WORK_ITEM_NOTE_MESSAGE` / `WriteWorkItemNoteMessage`
+  (`{ type, workItemId, noteId, text }`) — post a note (`noteId: null`) or rewrite one.
+- `WriteWorkItemNoteResponse` (`{ ok, raw?, error? }`) — the saved comment body on success.
+- `isLoadWorkItemNotesMessage(value)` / `isWriteWorkItemNoteMessage(value)` — the guards: a positive
+  integer work item id, a parseable `sinceIso`, a non-blank `text` no longer than `MAX_NOTE_LENGTH`,
+  and a `noteId` that is either `null` or a real id.
+- `loadNotesMessageProblem(value)` / `writeNoteMessageProblem(value)` — the same checks phrased as a
+  **reason**. The worker validates with these and replies with the offending field rather than
+  ignoring a malformed message: an ignored message reaches the content side as the uninformative
+  "no response from background", which looks identical to a worker that has no handler at all. The
+  over-long-note reason reports the note's LENGTH, never its text — these reasons are logged.
+- `claimsMessageType(message, type)` — the cheap "is this mine at all?" check a listener filters on
+  BEFORE validating, so it owns a malformed message of its own kind instead of dropping it.
+
+### `MessagingWorkItemNoteLoader` / `MessagingWorkItemNoteWriter` (classes)
+
+The `IWorkItemNoteLoader` / `IWorkItemNoteWriter` implementations the view depends on. Both inject
+their `chrome.runtime.sendMessage` binding (`SendNotesRequest` / `SendNoteWriteRequest`), so neither
+touches `chrome` directly. The **parse** lives on the content side: the worker has no reason to know
+the view's model.
+
+```typescript
+const loader = new MessagingWorkItemNoteLoader(sendNotesRequest, logger);
+const { notes, currentUser, error } = await loader.loadNotes({ workItemId, sinceIso });
+
+const writer = new MessagingWorkItemNoteWriter(sendNoteWriteRequest, logger);
+await writer.addNote({ workItemId, text });
+await writer.editNote({ workItemId, noteId, text });
+```
+
+Neither ever throws, and neither ever logs a note's text or an author's name — the diagnostics log is
+exported into bug reports, and a discussion routinely names people and customers (AGENTS.md §9).
+
+### `fetchWorkItemNotesInPage(commentsUrl, connectionUrl, sinceIso, maxPages)`
+
+The self-contained function the worker injects to read the discussion. It **pages**: ADO caps a
+comments page regardless of the requested `$top`, so reading only the first response would hide the
+older half of a busy discussion. Paging stops as soon as a page reaches past the Updates window (the
+collection is requested newest-first) and `maxPages` guards a server that ignores the continuation
+token. Every response is read as **text** first, so a 200 carrying ADO's HTML sign-in page is
+classified as `sign-in` rather than parsed as "no notes". A failed identity read is not a failed
+notes read — the panel still shows every note, it just cannot offer to edit any of them.
+
+### `writeWorkItemNoteInPage(url, method, text)`
+
+The self-contained function the worker injects to `POST` a new note or `PATCH` an existing one. Azure
+DevOps itself rejects an edit from anyone but the note's original author, so authorization stays on
+the server rather than being asserted in the page world.
+
+Both are serialized with `Function.prototype.toString` and reference only their parameters and page
+globals.
