@@ -272,10 +272,15 @@ describe("renderProjectTrackingHeader - refresh button", () => {
     expect(element.querySelector(".awesomeado-tracking__refresh")).toBe(refreshButton.element);
   });
 
-  it("starts idle, describing itself so the glyph is not the only explanation", () => {
+  it("starts idle, describing itself so the icon is not the only explanation", () => {
     const { refreshButton } = renderProjectTrackingHeader(document, baseOptions());
 
-    expect(refreshButton.element.textContent).toBe("\u27F3");
+    // Drawn geometry, not the ⟳ character: a text glyph is placed by the font's baseline, so it
+    // lands off-centre in the square button by an amount that differs per platform font.
+    const icon = refreshButton.element.querySelector("svg");
+    expect(icon).not.toBeNull();
+    expect(icon!.getAttribute("viewBox")).toBe("0 0 24 24");
+    expect(icon!.getAttribute("aria-hidden")).toBe("true");
     expect(refreshButton.element.disabled).toBe(false);
     expect(refreshButton.element.title).toContain("Refresh");
     expect(refreshButton.element.getAttribute("aria-label")).toContain("Refresh");

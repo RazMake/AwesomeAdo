@@ -9,6 +9,61 @@ we hit, why they happened, and the exact fix so nobody re-derives them.
 agent-tool-local memory (it does not clone or transfer between machines/agents). Record new findings
 here so every agent, teammate, and clone sees them.
 
+## "New notes" emptied the board: a STALE service worker, then a half-migrated API
+
+Two independent faults with the identical symptom (pill lights, board goes blank). Both are worth
+knowing, and the FIRST one is the trap that costs the most time.
+
+### 1. The background worker keeps running the OLD bundle after `pnpm build`
+
+- SYMPTOM: `Note-activity read failed … the background worker did not handle the request` in
+  Diagnostics, then `New notes filter settled: known=0, failed=46`. Earlier in the same log the same
+  board had logged `known=46, failed=0` — i.e. it worked, then stopped.
+- ROOT CAUSE: the content script was running the NEW bundle (it sent
+  `awesomeado:read-note-activity`), while the service worker was still the pre-refactor build with no
+  listener for that type. `chrome.runtime.sendMessage` then resolves **`undefined`**, which is
+  indistinguishable from a network fault unless you name it — hence `UNHANDLED_BY_WORKER` in
+  `common/browser/workerReply.ts`.
+- FIX / RULE: **`pnpm build` rewrites `dist/`, but an already-registered MV3 service worker keeps
+  serving its old bundle. Reloading the ADO tab is NOT enough — press Reload on the extension card
+  (`edge://extensions`) whenever a message contract changes, then hard-reload the tab.** A content
+  script and a worker from different builds is the default state after a rebuild, not an edge case.
+- DIAGNOSIS RECIPE: dump the log from the **service worker** console (extensions page → "service
+  worker"), where `chrome.storage.local` is reachable:
+  ```js
+  ((await chrome.storage.local.get("diagnostics.log"))["diagnostics.log"] || [])
+    .filter((e) => /new notes|note.?activity/i.test(e.message))
+    .map(
+      (e) =>
+        `${new Date(e.timestamp).toISOString().slice(11, 19)} [${e.level}] ${e.source}: ${e.message}`,
+    );
+  ```
+  A `New notes filter: reading N…` line with NO matching `Note-activity read requested…` from
+  `background` means the message never reached the worker — i.e. this fault.
+
+### 2. `pnpm build` does NOT typecheck, so a half-migrated API ships silently
+
+- The same refactor rewrote `RecentNotesIndex` onto the bulk `INoteActivityReader` (ADR-048) and
+  changed three signatures — `new RecentNotesIndex(reader, logger)` (was `(loader, logger, onSettled)`),
+  `ensureProbed(root)` (was `(root, sinceIso)`), `hasRecentNote(item, sinceMs)` (was `(item)`) — but
+  the call sites in `ProjectTrackingView.ts` were never updated. JavaScript accepts all three: extra
+  arguments are dropped, and the missing `sinceMs` becomes `undefined`, so `newestNoteAt >= undefined`
+  is **always false** and no item can ever match.
+- `pnpm build` is esbuild: it strips types and **never type-checks**. `pnpm typecheck` reported all
+  four errors instantly. **After changing any signature, run `pnpm verify` BEFORE loading `dist/` — a
+  green build proves nothing about call-site agreement.**
+- LESSON: when a filter shows nothing, suspect the predicate's INPUTS before its logic.
+  `x >= undefined`, `x > null` and `Set.has(undefined)` all turn a narrowing predicate into "hide
+  everything" without throwing.
+
+### What was NOT wrong (do not re-investigate)
+
+Verified live against `o365exchange.visualstudio.com`: `System.CommentCount` IS returned by
+`_apis/wit/workitemsbatch` with an explicit `fields` list (so `TrackedWorkItem.noteCount` is sound);
+`comments?$top=1&order=desc` DOES return the newest comment (ADO also defaults to newest-first); and
+the injected `fetchNoteActivityInPage` serializes clean — the build sets neither `minify` nor
+`keepNames`, so no `__name` wrapper leaks into the MAIN world.
+
 ## `ConnectionData` is PREVIEW-ONLY — a released api-version made every note read-only
 
 - SYMPTOM: on the Project Tracking board, the author's name on your OWN note was never clickable, so
@@ -713,6 +768,45 @@ id(s); … (guid, guid)` with the unresolved ids. If the id IS listed as "did no
   `scroll` listener (scroll does NOT bubble) that closes it, ignoring scrolls inside the popup itself.
 - Fixed escapes overflow ONLY because no ancestor has transform/filter/will-change/contain (same
   caveat as `AutocompleteInput.enableFloating`). Verify before adding any such style to the overlay.
+
+## A WRAPPING popup must set `width:max-content` — shrink-to-fit resolves against its ~30px anchor
+
+- SYMPTOM: the ChildItemsBadge rollup popup rendered ~240px wide with every title broken ONE
+  CHARACTER PER LINE, no matter how large `max-width` was set.
+- ROOT CAUSE: every popupHost control anchors its popup `position:absolute; top:100%; left:0` inside
+  a `position:relative` root that is only as wide as its trigger (here the "2 / 3" chip, ~30px). For
+  an absolutely positioned box with `width:auto`, shrink-to-fit is
+  `min(max(min-content, available), max-content)` where **available = containing block width − left**
+  — i.e. ~30px. So the popup collapsed onto its `min-width` floor, the title column got the few
+  pixels left after the checkbox/assignee/ETA, and `overflow-wrap:anywhere` made min-content a single
+  character. `max-width` is a CAP and can never restore width shrink-to-fit already gave away.
+- FIX: `width:max-content` on the popup, with `min-width` as the floor and `max-width` (viewport
+  based) as the cap. Width then comes from the rows, and only the viewport forces a wrap.
+- WHY ONLY THIS CONTROL: StatusBadge / OrderingPicker / AssignedTo / SprintPicker / EtaBadge popups
+  use `white-space:nowrap` rows, so their min-content IS the full row width and shrink-to-fit lands
+  on it by accident. Any NEW popup whose content wraps hits this — set `width:max-content`.
+- It also masked itself: when the popup does not fit its clipping ancestor, `keepPopupInView`
+  switches it to `position:fixed`, whose containing block is the viewport — so the same markup could
+  look correct in one place and collapse in another purely from where it opened.
+
+## Follow-ADO erased the rollup checkbox's BOX (third instance of the same token trap)
+
+- SYMPTOM: in the ChildItemsBadge popup the completion checkbox showed only a floating tick under
+  "Follow ADO" — no frame, no inset around the check — while Light/Dark/Blue drew the box correctly.
+- ROOT CAUSE: the box used `var(--palette-neutral-20, …)` / `var(--palette-neutral-8, …)`. A PINNED
+  theme sets those to its own translucent neutrals, but under Follow ADO they fall through to ADO's
+  values, which are the surface colors this popup is already painted with — frame and fill vanish
+  into the background.
+- FIX: fixed translucent greys (`rgba(128,128,128,0.55)` border, `rgba(128,128,128,0.14)` fill).
+  Grey composites the other way on both — darkens a light surface, lightens a dark one.
+- RULE OF THUMB: a neutral token is fine for a wash ON a surface, but NEVER for something that must
+  be DISTINGUISHABLE FROM that surface (borders of a chip on a popup, a row highlight, a checkbox
+  frame). Prior instances: the AssignedTo row highlight, and the EtaBadge popup borders.
+- Geometry note for that checkbox: the tick is two borders of a rotated box, so rotation costs a
+  factor of √2 — its bounding box is `(arm + stroke + stem + stroke) / √2`. Keep that under the box's
+  INNER size (edge − 2 × border) or the check touches the frame. It self-centers with
+  `left:50%; top:46%; transform:translate(-50%,-50%) rotate(45deg)`, so box and tick can be resized
+  independently; the 46% is optical centering (a check reads low when geometrically centered).
 
 ## Memory bank / changelog state (deep-review)
 

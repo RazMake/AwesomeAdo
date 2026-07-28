@@ -127,9 +127,16 @@ halves of the view — its configuration and its renderer.
     abandoned child never counts as finished. The rollup honors the active sprint and tag filters, so
     it always agrees with what the board claims to be showing, and a deepest row therefore has no
     twisty (there is no branch to expand). Clicking the chip opens a popup with one row per child:
-    `{Assigned To} {title in its type color} {ETA} {type icon → opens the item in ADO}`. Both the
-    assignee picker and the ETA behave exactly as they do in a tree row — the ETA is built with the
-    same helper, so edits persist through the board's shared write queue.
+    `{done checkbox} {Assigned To + Feature Crew tag pill} {title in its type color}{open-in-ADO glyph} {ETA}`.
+    The assignee carries (and can edit) the crew tag pill just like a tree row, because a rolled-up
+    child is the only place its assignee is shown. The popup
+    widens to fit its longest title so the list reads one child per line wherever the viewport
+    allows. The checkbox is ticked (and the title struck through) for a child already on the
+    completed column; clicking it moves the child to the completed column, or — for a child already
+    there — back onto the **in-progress** column (board position 1). All three controls behave
+    exactly as they do in a tree row: they persist through the board's shared write queue and only
+    reflect what it commits. A type that routes no state onto the target column leaves the tick where
+    it was and says so in the diagnostics log.
   - **Indentation**: 70% less than before (~7px vs 24px) with a discrete themed vertical guide line
     showing parent-child relationships (low-alpha neutral border).
   - **Description panel**: toggles below each row; displays "Created on: <date>, Last Modified on:

@@ -36,6 +36,10 @@ import {
   type SendIdentityNamesRequest,
 } from "../common/browser/MessagingMentionDirectory";
 import {
+  MessagingNoteActivityReader,
+  type SendNoteActivityRequest,
+} from "../common/browser/MessagingNoteActivityReader";
+import {
   MessagingTeamIterationsLoader,
   type SendIterationsRequest,
 } from "../common/browser/MessagingTeamIterationsLoader";
@@ -63,6 +67,10 @@ import {
   MessagingWorkItemTreeLoader,
   type SendTreeRequest,
 } from "../common/browser/MessagingWorkItemTreeLoader";
+import {
+  type ReadNoteActivityMessage,
+  type ReadNoteActivityResponse,
+} from "../common/browser/NoteActivityRequest";
 import {
   type UpdateWorkItemFieldMessage,
   type UpdateWorkItemFieldResponse,
@@ -228,6 +236,18 @@ const noteLoader = new MessagingWorkItemNoteLoader(
   loggers.forSource("content/views"),
 );
 
+// The board's "New notes" filter asks a different question of the same collection — "when was each
+// of these last commented on?" — and asks it about the whole board at once, so it gets its own
+// reader rather than a loop over the one above (see `INoteActivityReader`).
+const sendNoteActivityRequest: SendNoteActivityRequest = (message) =>
+  chrome.runtime.sendMessage<ReadNoteActivityMessage, ReadNoteActivityResponse | undefined>(
+    message,
+  );
+const noteActivity = new MessagingNoteActivityReader(
+  sendNoteActivityRequest,
+  loggers.forSource("content/views"),
+);
+
 const sendNoteWriteRequest: SendNoteWriteRequest = (message) =>
   chrome.runtime.sendMessage<WriteWorkItemNoteMessage, WriteWorkItemNoteResponse | undefined>(
     message,
@@ -251,6 +271,7 @@ const trackingServices: EnhancedViewServices = {
   loadTree: (queryId) => treeLoader.loadTree(queryId),
   featureCrew: featureCrewWriter,
   noteLoader,
+  noteActivity,
   noteWriter,
   userDirectory,
   mentionDirectory,

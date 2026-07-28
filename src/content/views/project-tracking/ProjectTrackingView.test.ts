@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { FeatureCrewAssignee } from "../../../common/ado/FeatureCrew";
 import type { FeatureCrewReconcileRequest } from "../../../common/ado/IFeatureCrewWriter";
@@ -87,6 +87,12 @@ function createFakeServices(overrides?: Partial<EnhancedViewServices>): Enhanced
     },
     noteLoader: {
       loadNotes: async () => ({ notes: [], currentUser: null, error: null }),
+    },
+    // Nothing in the fixtures has been commented on, so the default answers "read fine, no dates" —
+    // which is what lets a test assert the "New notes" pill empties the board without also having to
+    // rule out a failed read. The tests that light that pill override this with canned dates.
+    noteActivity: {
+      readNoteActivity: async () => ({ activity: [], error: null }),
     },
     noteWriter: {
       addNote: async () => ({ ok: true }),
@@ -2447,38 +2453,98 @@ const tagFilterPillOf = (root: HTMLElement, label: string): HTMLButtonElement | 
     ),
   ].find((pill) => pill.textContent === label);
 
+/** One Feature Crew roster entry, as the reconcile fake hands it back. */
+type CrewMember = { alias: string; fullName: string; tag: string };
+
+/**
+ * Renders the fixture board with a Feature Crew roster applied and the sprint filter already off, so
+ * every descendant is a candidate for the tag pills. `prepare` can adjust the tree before it loads
+ * (e.g. to make one item recently created). Shared by the tag-pill tests so the identical seven-line
+ * render-and-settle dance lives in one place.
+ */
+async function renderTaggedBoard(
+  members: CrewMember[],
+  prepare?: (epic: TrackedWorkItem) => void,
+): Promise<HTMLElement> {
+  const epic = createFixtureTree();
+  prepare?.(epic);
+  const services = createFakeServices({
+    loadTree: async () => ({ isTreeQuery: true, roots: [epic], error: null }),
+    featureCrew: { reconcile: async () => ({ ok: true, changed: false, members }) },
+  });
+
+  const context: EnhancedViewContext = { doc: document, queryId: "q1", properties: {}, services };
+  const root = projectTrackingView.render(context);
+  await Promise.resolve();
+  await Promise.resolve();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await Promise.resolve();
+  await turnSprintFilterOff(root);
+  return root;
+}
+
+describe("ProjectTrackingView — combined pill filtering", () => {
+  it("ORs the tag pills with one another, so a second tag widens the board", async () => {
+    const root = await renderTaggedBoard([
+      { alias: "bob.jones", fullName: "Bob Jones", tag: "Platform" },
+      { alias: "carol.white", fullName: "Carol White", tag: "" },
+    ]);
+
+    tagFilterPillOf(root, "Platform")?.click();
+    await Promise.resolve();
+    expect(renderedRowTitles(root)).toEqual(["User Authentication"]);
+
+    // Carol is untagged, so the "??" bucket is her pill. Lighting it ADDS her story.
+    tagFilterPillOf(root, "??")?.click();
+    await Promise.resolve();
+    expect(renderedRowTitles(root)).toEqual(["User Authentication", "Login UI"]);
+  });
+
+  it("ANDs the tag group against the activity group, so an activity pill narrows a tag", async () => {
+    // Bob's Feature (Platform) and the unassigned Data Migration were both created an hour ago;
+    // Carol's Story is months old. Lighting Platform + "Newly created" must therefore keep ONLY
+    // Bob's item: Data Migration is just as new, but it is not Bob's.
+    const root = await renderTaggedBoard(
+      [
+        { alias: "bob.jones", fullName: "Bob Jones", tag: "Platform" },
+        { alias: "carol.white", fullName: "Carol White", tag: "" },
+      ],
+      (epic) => {
+        epic.children[0]!.createdDate = "2026-07-24T11:00:00Z";
+        epic.children[1]!.createdDate = "2026-07-24T11:00:00Z";
+      },
+    );
+
+    activityPillOf(root, "created").click();
+    await Promise.resolve();
+    expect(renderedRowTitles(root)).toEqual(["User Authentication", "Data Migration"]);
+
+    // The tag group intersects with the activity group rather than adding to it: were the two OR'd,
+    // Data Migration would survive on being newly created alone.
+    tagFilterPillOf(root, "Platform")?.click();
+    await Promise.resolve();
+    expect(renderedRowTitles(root)).toEqual(["User Authentication"]);
+  });
+
+  it("keeps an unlit group out of the way, so lighting nothing narrows nothing", async () => {
+    const root = await renderTaggedBoard([
+      { alias: "bob.jones", fullName: "Bob Jones", tag: "Platform" },
+      { alias: "carol.white", fullName: "Carol White", tag: "" },
+    ]);
+
+    expect(renderedRowTitles(root)).toEqual(["User Authentication", "Login UI", "Data Migration"]);
+  });
+});
+
 describe("ProjectTrackingView — tag filtering", () => {
   it("filters the tree to people wearing a selected tag when its pill is clicked", async () => {
-    const doc = document;
+    const root = await renderTaggedBoard([
+      { alias: "alice.smith", fullName: "Alice Smith", tag: "Core" },
+      { alias: "bob.jones", fullName: "Bob Jones", tag: "Platform" },
+      { alias: "carol.white", fullName: "Carol White", tag: "" },
+    ]);
 
-    const epic = createFixtureTree();
-    const services = createFakeServices({
-      loadTree: async () => ({ isTreeQuery: true, roots: [epic], error: null }),
-      featureCrew: {
-        reconcile: async () => ({
-          ok: true,
-          changed: false,
-          members: [
-            { alias: "alice.smith", fullName: "Alice Smith", tag: "Core" },
-            { alias: "bob.jones", fullName: "Bob Jones", tag: "Platform" },
-            { alias: "carol.white", fullName: "Carol White", tag: "" },
-          ],
-        }),
-      },
-    });
-
-    const context: EnhancedViewContext = { doc, queryId: "q1", properties: {}, services };
-    const root = projectTrackingView.render(context);
-    await Promise.resolve();
-    await Promise.resolve();
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    await Promise.resolve();
-
-    // Turn the sprint filter OFF so every item is a candidate; then all three descendants show.
-    const toggle = root.querySelector(".awesomeado-sprint-picker__button") as HTMLButtonElement;
-    toggle.click();
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    await Promise.resolve();
+    // With the sprint filter off, all three descendants show.
     expect(root.querySelectorAll(".awesomeado-tracking__row").length).toBe(3);
 
     // Click the "Platform" filter pill: only Bob's feature (Platform) survives; the untagged story
@@ -2494,34 +2560,10 @@ describe("ProjectTrackingView — tag filtering", () => {
   });
 
   it("narrows to untagged people when the ?? filter pill is clicked", async () => {
-    const doc = document;
-
-    const epic = createFixtureTree();
-    const services = createFakeServices({
-      loadTree: async () => ({ isTreeQuery: true, roots: [epic], error: null }),
-      featureCrew: {
-        reconcile: async () => ({
-          ok: true,
-          changed: false,
-          members: [
-            { alias: "bob.jones", fullName: "Bob Jones", tag: "Platform" },
-            { alias: "carol.white", fullName: "Carol White", tag: "" },
-          ],
-        }),
-      },
-    });
-
-    const context: EnhancedViewContext = { doc, queryId: "q1", properties: {}, services };
-    const root = projectTrackingView.render(context);
-    await Promise.resolve();
-    await Promise.resolve();
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    await Promise.resolve();
-
-    const toggle = root.querySelector(".awesomeado-sprint-picker__button") as HTMLButtonElement;
-    toggle.click();
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    await Promise.resolve();
+    const root = await renderTaggedBoard([
+      { alias: "bob.jones", fullName: "Bob Jones", tag: "Platform" },
+      { alias: "carol.white", fullName: "Carol White", tag: "" },
+    ]);
 
     // The "??" bucket catches assigned-but-untagged people (Carol on the Login UI story). Her
     // ancestor feature stays so she is not orphaned; the unassigned Data Migration feature drops out.
@@ -2708,11 +2750,14 @@ describe("ProjectTrackingView — rolled-up minor children", () => {
     expect(rollupBadgeOf(root).textContent).toBe("1 / 3");
   });
 
-  it("summarizes only the children the active sprint filter leaves visible", async () => {
+  it("summarizes every child, including one the active sprint filter hides from the outline", async () => {
     const root = await renderDeepBoard();
 
-    // Filter defaults ON at Sprint 1, so the Sprint 2 Task drops out of the rollup entirely.
-    expect(rollupBadgeOf(root).textContent).toBe("1 / 2");
+    // The sprint filter defaults ON at Sprint 1, but the rollup answers "how much of this is done?"
+    // about the ITEM, not about what the board is narrowed to — so the Sprint 2 Task still counts.
+    // Dropping it silently understated the work: the same 3 Tasks read "1 / 2" here and "1 / 3" with
+    // the filter off.
+    expect(rollupBadgeOf(root).textContent).toBe("1 / 3");
   });
 
   it("tints the rollup badge with a discrete wash of the last configured type's color", async () => {
@@ -2775,6 +2820,21 @@ describe("ProjectTrackingView — rollup popup rows", () => {
     expect(styleTheForm.querySelector(".awesomeado-child-items__icon img")).toBeNull();
   });
 
+  it("wears the assignee's Feature Crew tag pill on each rolled-up child, hidden when unassigned", async () => {
+    const root = await renderDeepBoard();
+    await turnSprintFilterOff(root);
+
+    rollupBadgeOf(root).click();
+
+    const rows = [...root.querySelectorAll<HTMLElement>(".awesomeado-child-items__row")];
+    // Bob is assigned, so his pill shows; the unassigned first child keeps a hidden pill so a later
+    // reassignment can reveal it.
+    const assignedPill = rows[1]!.querySelector<HTMLElement>(".awesomeado-tag-pill")!;
+    expect(assignedPill.style.display).toBe("");
+    const unassignedPill = rows[0]!.querySelector<HTMLElement>(".awesomeado-tag-pill")!;
+    expect(unassignedPill.style.display).toBe("none");
+  });
+
   it("shows No ETA for a rolled-up child with no ETA set", async () => {
     const root = await renderDeepBoard();
     await turnSprintFilterOff(root);
@@ -2807,7 +2867,115 @@ describe("ProjectTrackingView — rollup popup rows", () => {
       { id: 4, rev: 1, field: "Custom.TaskETA", value: "2026-10-05T12:00:00Z" },
     ]);
   });
+
+  it("ticks the checkbox of each rolled-up child already in the completed column", async () => {
+    const root = await renderDeepBoard();
+    await turnSprintFilterOff(root);
+
+    rollupBadgeOf(root).click();
+
+    // Task 4 is Closed→Done; Task 5 is Active and Task 6 is Removed, neither of which is completed.
+    const ticked = [...root.querySelectorAll(".awesomeado-child-items__check")].map((check) =>
+      check.getAttribute("aria-checked"),
+    );
+    expect(ticked).toEqual(["true", "false", "false"]);
+  });
 });
+
+describe("ProjectTrackingView — rollup popup completion writes", () => {
+  it("moves a rolled-up child to the completed column when its checkbox is ticked", async () => {
+    const writes: WorkItemFieldWriteRequest[] = [];
+    const root = await renderDeepBoard({
+      writeField: async (request) => {
+        writes.push(request);
+        return { ok: true, rev: 2 };
+      },
+    });
+    await turnSprintFilterOff(root);
+
+    rollupBadgeOf(root).click();
+    // Task 5 ("Style the form") is Active, so ticking it writes Done's primary state.
+    checkOfChildRow(root, 1).click();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(writes).toEqual([{ id: 5, rev: 1, field: "System.State", value: "Closed" }]);
+    await vi.waitFor(() =>
+      expect(checkOfChildRow(root, 1).getAttribute("aria-checked")).toBe("true"),
+    );
+  });
+
+  it("reopens a completed rolled-up child onto the in-progress column", async () => {
+    const writes: WorkItemFieldWriteRequest[] = [];
+    const root = await renderDeepBoard({
+      writeField: async (request) => {
+        writes.push(request);
+        return { ok: true, rev: 2 };
+      },
+    });
+    await turnSprintFilterOff(root);
+
+    rollupBadgeOf(root).click();
+    // Task 4 is Closed→Done; clearing it writes the primary state of board column 1 ("Active").
+    checkOfChildRow(root, 0).click();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(writes).toEqual([{ id: 4, rev: 1, field: "System.State", value: "Active" }]);
+    await vi.waitFor(() =>
+      expect(checkOfChildRow(root, 0).getAttribute("aria-checked")).toBe("false"),
+    );
+  });
+
+  it("leaves the tick where ADO has it when the completion write is rejected", async () => {
+    const root = await renderDeepBoard({
+      writeField: async () => ({ ok: false, error: "rejected" }),
+    });
+    await turnSprintFilterOff(root);
+
+    rollupBadgeOf(root).click();
+    checkOfChildRow(root, 1).click();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    await vi.waitFor(() =>
+      expect(checkOfChildRow(root, 1).getAttribute("aria-checked")).toBe("false"),
+    );
+  });
+
+  it("writes nothing, and says why, when the child's type routes no state to the target column", async () => {
+    const lines: string[] = [];
+    const writes: WorkItemFieldWriteRequest[] = [];
+    const root = await renderDeepBoard({
+      // A Task type with no column on the in-progress position, so a completed child cannot reopen.
+      getTypes: () => [
+        ...DEEP_TYPES.slice(0, 3),
+        { ...DEEP_TYPES[3]!, columns: [{ column: "Done", states: ["Closed"] }] },
+      ],
+      writeField: async (request) => {
+        writes.push(request);
+        return { ok: true, rev: 2 };
+      },
+      logger: { info: (message) => lines.push(message), error: () => undefined },
+    });
+    await turnSprintFilterOff(root);
+
+    rollupBadgeOf(root).click();
+    checkOfChildRow(root, 0).click();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(writes).toEqual([]);
+    expect(checkOfChildRow(root, 0).getAttribute("aria-checked")).toBe("true");
+    expect(lines).toContain(
+      "Child 4 (Task) completion unchanged: no state routed to board column 1",
+    );
+  });
+});
+
+/** The completion checkbox of the rolled-up child popup row at `index`. */
+const checkOfChildRow = (root: HTMLElement, index: number): HTMLButtonElement =>
+  [...root.querySelectorAll<HTMLButtonElement>(".awesomeado-child-items__check")][index]!;
 
 /** Renders a board over `tree` with the given binding properties, and waits for its async load. */
 async function renderBoardForTree(
@@ -2941,7 +3109,7 @@ describe("ProjectTrackingView — resolved item window", () => {
     expect(renderedRowTitles(root)).toEqual(["Still active"]);
   });
 
-  it("drops a long-resolved child from the rollup summary as well as the outline", async () => {
+  it("keeps a long-resolved child in the rollup summary, though the outline would drop it", async () => {
     const root = await renderBoardForTree(
       epicOverRolledUpTasks([
         resolvedTask(4, "Long done", LONG_AGO),
@@ -2952,8 +3120,10 @@ describe("ProjectTrackingView — resolved item window", () => {
       { getTypes: () => DEEP_TYPES },
     );
 
-    // 3 Tasks, but the long-resolved one is off the board entirely: 1 of the 2 left is completed.
-    expect(rollupBadgeOf(root).textContent).toBe("1 / 2");
+    // All 3 Tasks count, 2 of them resolved. Ageing the long-resolved one out of the rollup made a
+    // finished row report LESS work than it had done — and a row whose children had ALL finished
+    // before the window lost its badge entirely, reading as though it had no children at all.
+    expect(rollupBadgeOf(root).textContent).toBe("2 / 3");
   });
 });
 
@@ -3800,36 +3970,26 @@ describe("ProjectTrackingView — what the recent-activity pills narrow to", () 
 });
 
 describe("ProjectTrackingView — the New notes pill", () => {
-  /** Answers with a note for the one fixture item that was discussed. */
-  const discussedItemLoader = (requests: number[]) => ({
-    loadNotes: async (request: { workItemId: number }) => {
-      requests.push(request.workItemId);
+  /** Dates the one fixture item that was discussed, and reports the rest as never commented on. */
+  const discussedItemActivity = (asked: number[]) => ({
+    readNoteActivity: async (request: { workItemIds: number[] }) => {
+      asked.push(...request.workItemIds);
       return {
-        notes:
-          request.workItemId === 5
-            ? [
-                {
-                  id: 1,
-                  workItemId: 5,
-                  author: { displayName: "Bob Jones", id: null, uniqueName: null },
-                  createdDate: AN_HOUR_AGO,
-                  text: "Looked at this.",
-                  renderedHtml: null,
-                },
-              ]
-            : [],
-        currentUser: null,
+        activity: request.workItemIds.map((workItemId) => ({
+          workItemId,
+          newestNoteDate: workItemId === 5 ? AN_HOUR_AGO : null,
+        })),
         error: null,
       };
     },
   });
 
   it("leaves the board wide, and says it is still reading, until the discussions land", async () => {
-    const requests: number[] = [];
+    const asked: number[] = [];
     const root = await renderBoardForTree(
       epicOverRecentActivity(),
       {},
-      { noteLoader: discussedItemLoader(requests) },
+      { noteActivity: discussedItemActivity(asked) },
     );
 
     activityPillOf(root, "notes").click();
@@ -3841,11 +4001,11 @@ describe("ProjectTrackingView — the New notes pill", () => {
   });
 
   it("narrows to the items that gained a note once the reads settle", async () => {
-    const requests: number[] = [];
+    const asked: number[] = [];
     const root = await renderBoardForTree(
       epicOverRecentActivity(),
       {},
-      { noteLoader: discussedItemLoader(requests) },
+      { noteActivity: discussedItemActivity(asked) },
     );
 
     activityPillOf(root, "notes").click();
@@ -3853,19 +4013,19 @@ describe("ProjectTrackingView — the New notes pill", () => {
 
     expect(renderedRowTitles(root)).toEqual(["Discussed feature"]);
     expect(activityPillOf(root, "notes").getAttribute("aria-busy")).toBe("false");
-    // Only the item ADO reports a discussion on is read; the other three cost nothing.
-    expect(requests).toEqual([5]);
+    // Only the item ADO reports a discussion on is asked about; the other three cost nothing.
+    expect(asked).toEqual([5]);
   });
 
   it("reads no discussion at all until the pill is lit", async () => {
-    const requests: number[] = [];
+    const asked: number[] = [];
     await renderBoardForTree(
       epicOverRecentActivity(),
       {},
-      { noteLoader: discussedItemLoader(requests) },
+      { noteActivity: discussedItemActivity(asked) },
     );
     await settleActivityReads();
 
-    expect(requests).toEqual([]);
+    expect(asked).toEqual([]);
   });
 });

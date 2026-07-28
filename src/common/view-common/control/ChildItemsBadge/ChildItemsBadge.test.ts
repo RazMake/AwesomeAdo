@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { renderChildItemsBadge, type ChildItemDescriptor } from "./ChildItemsBadge";
 
@@ -19,6 +19,7 @@ const assigneeOf = (name = "Alice"): HTMLElement => {
 /** Build a child descriptor with sensible defaults, overridable per test. */
 const childOf = (overrides: Partial<ChildItemDescriptor> = {}): ChildItemDescriptor => ({
   assignee: assigneeOf(),
+  done: false,
   title: "Do the thing",
   titleColor: "#CC293D",
   eta: null,
@@ -35,6 +36,23 @@ const badgeOf = (root: HTMLElement): HTMLElement =>
 
 const popupOf = (root: HTMLElement): HTMLElement | null =>
   root.querySelector<HTMLElement>(".awesomeado-child-items__popup");
+
+const checkboxOf = (root: HTMLElement): HTMLButtonElement =>
+  popupOf(root)!.querySelector<HTMLButtonElement>(".awesomeado-child-items__check")!;
+
+const titleOf = (root: HTMLElement): HTMLElement =>
+  popupOf(root)!.querySelector<HTMLElement>(".awesomeado-child-items__title")!;
+
+const titleTextOf = (root: HTMLElement): HTMLElement =>
+  popupOf(root)!.querySelector<HTMLElement>(".awesomeado-child-items__title-text")!;
+
+/** Opens the badge's popup on a body-mounted root, which is what the popup host needs to measure. */
+const openPopup = (options: Parameters<typeof renderChildItemsBadge>[1]): HTMLElement => {
+  const root = renderChildItemsBadge(document, options);
+  document.body.append(root);
+  badgeOf(root).click();
+  return root;
+};
 
 afterEach(() => {
   document.body.innerHTML = "";
@@ -97,6 +115,15 @@ describe("renderChildItemsBadge - badge and popup rendering", () => {
 
     const rows = root.querySelectorAll(".awesomeado-child-items__row");
     expect(rows).toHaveLength(2);
+  });
+
+  it("sizes the popup from its rows, not from the badge it is anchored inside", () => {
+    const root = openPopup({ children: [childOf()], completedCount: 0 });
+
+    // Shrink-to-fit would resolve against the badge's own ~30px root and squeeze titles to a few
+    // pixels wide, so the width has to come from the content and be capped only by the viewport.
+    expect(popupOf(root)!.style.width).toBe("max-content");
+    expect(popupOf(root)!.style.maxWidth).toBe("calc(100vw - 24px)");
   });
 });
 
@@ -171,6 +198,7 @@ describe("renderChildItemsBadge - row content", () => {
     const slots = [
       ...popupOf(root)!.querySelectorAll<HTMLElement>(".awesomeado-child-items__slot"),
     ];
+    // The checkbox, the assignee and the ETA; the open glyph rides inside the title instead.
     expect(slots).toHaveLength(3);
     for (const slot of slots) {
       expect(slot.style.alignItems).toBe("center");
@@ -180,7 +208,7 @@ describe("renderChildItemsBadge - row content", () => {
 });
 
 describe("renderChildItemsBadge - row ETA slot", () => {
-  it("places the caller's ETA control between the title and the open affordance", () => {
+  it("places the caller's ETA control after the title, at the row's right edge", () => {
     const eta = document.createElement("span");
     eta.className = "fake-eta";
     eta.textContent = "Aug 15";
@@ -193,13 +221,17 @@ describe("renderChildItemsBadge - row ETA slot", () => {
     badgeOf(root).click();
 
     const row = popupOf(root)!.querySelector<HTMLElement>(".awesomeado-child-items__row")!;
-    // The side controls sit inside a one-line-tall slot, so compare the slotted content.
-    const classes = [...row.children].map((child) => (child.firstElementChild ?? child).className);
+    // The side controls sit inside a one-line-tall slot, so unwrap those to compare what they hold.
+    const classes = [...row.children].map((child) =>
+      child.className === "awesomeado-child-items__slot"
+        ? child.firstElementChild!.className
+        : child.className,
+    );
     expect(classes).toEqual([
+      "awesomeado-child-items__check",
       "awesomeado-assigned",
       "awesomeado-child-items__title",
       "fake-eta awesomeado-child-items__eta",
-      "awesomeado-child-items__open",
     ]);
     expect(row.textContent).toContain("Aug 15");
   });
@@ -218,7 +250,7 @@ describe("renderChildItemsBadge - row ETA slot", () => {
 });
 
 describe("renderChildItemsBadge - row open affordance", () => {
-  it("links a chain-link glyph to the child's ADO url in a new tab", () => {
+  it("links an open-in-new-tab glyph to the child's ADO url in a new tab", () => {
     const root = renderChildItemsBadge(document, {
       children: [childOf({ url: "https://dev.azure.com/contoso/web/_workitems/edit/42" })],
       completedCount: 0,
@@ -236,6 +268,18 @@ describe("renderChildItemsBadge - row open affordance", () => {
     expect(link.querySelector("img")).toBeNull();
     const glyph = link.querySelector<SVGSVGElement>(".awesomeado-child-items__icon svg")!;
     expect(glyph.querySelector("path")?.getAttribute("stroke")).toBe("currentColor");
+  });
+
+  it("trails the title's words, taking the title's own color", () => {
+    const root = openPopup({ children: [childOf({ titleColor: "#CC293D" })], completedCount: 0 });
+
+    const title = titleOf(root);
+    // Inside the title (so it follows the last word of a wrapped title) and last within it.
+    expect(title.lastElementChild?.className).toBe("awesomeado-child-items__open");
+    expect(title.firstElementChild).toBe(titleTextOf(root));
+    // `currentColor` on the glyph resolves against the anchor, which inherits the title's color.
+    expect(title.style.color).toBe("rgb(204, 41, 61)");
+    expect(title.lastElementChild).toHaveProperty("style.color", "inherit");
   });
 
   it("renders an inert affordance when the child has no url", () => {
@@ -307,5 +351,109 @@ describe("renderChildItemsBadge - interaction and dismissal", () => {
     popupOf(root)!.dispatchEvent(new Event("pointerdown", { bubbles: true }));
 
     expect(popupOf(root)).not.toBeNull();
+  });
+});
+
+describe("renderChildItemsBadge - row completion", () => {
+  it("ticks the checkbox and strikes the title through for a finished child", () => {
+    const root = openPopup({ children: [childOf({ done: true })], completedCount: 1 });
+
+    expect(checkboxOf(root).getAttribute("aria-checked")).toBe("true");
+    expect(
+      popupOf(root)!.querySelector<HTMLElement>(".awesomeado-child-items__tick")!.style.visibility,
+    ).toBe("visible");
+    expect(titleTextOf(root).style.textDecoration).toBe("line-through");
+    // Struck on the words only, so the line is not dragged across the open glyph beside them.
+    expect(titleOf(root).style.textDecoration).toBe("");
+  });
+
+  it("leaves an unfinished child's checkbox clear and its title unstruck", () => {
+    const root = openPopup({ children: [childOf({ done: false })], completedCount: 0 });
+
+    expect(checkboxOf(root).getAttribute("aria-checked")).toBe("false");
+    expect(
+      popupOf(root)!.querySelector<HTMLElement>(".awesomeado-child-items__tick")!.style.visibility,
+    ).toBe("hidden");
+    expect(titleTextOf(root).style.textDecoration).toBe("none");
+  });
+
+  it("disables the checkbox when the caller supplied no writer", () => {
+    const root = openPopup({ children: [childOf()], completedCount: 0 });
+
+    expect(checkboxOf(root).disabled).toBe(true);
+    expect(checkboxOf(root).style.cursor).toBe("default");
+  });
+
+  it("frames the checkbox in a theme-independent grey, so the box survives Follow-ADO", () => {
+    const root = openPopup({ children: [childOf()], completedCount: 0 });
+
+    // A themed neutral token resolves to ADO's own surface color under Follow ADO — the very color
+    // this popup is painted with — which erased the box and left the tick floating.
+    expect(checkboxOf(root).style.borderColor).not.toContain("--palette");
+    expect(checkboxOf(root).style.background).not.toContain("--palette");
+  });
+
+  it("picks the tick's green from the surface it is drawn on", () => {
+    const root = openPopup({ children: [childOf({ done: true })], completedCount: 1 });
+
+    // One fixed green cannot pop on both a light and a dark surface, and a 3px stroke has little
+    // area to make its case with, so the shade follows the host's declared color-scheme.
+    const tick = popupOf(root)!.querySelector<HTMLElement>(".awesomeado-child-items__tick")!;
+    expect(tick.style.borderColor).toContain("light-dark(");
+  });
+
+  it("asks the caller to persist the opposite of the child's current completion", async () => {
+    const onToggleDone = vi.fn(() => Promise.resolve(true));
+    const root = openPopup({
+      children: [childOf({ done: false, onToggleDone })],
+      completedCount: 0,
+    });
+
+    checkboxOf(root).click();
+    await vi.waitFor(() => expect(onToggleDone).toHaveBeenCalledWith(true));
+
+    expect(checkboxOf(root).getAttribute("aria-checked")).toBe("true");
+    expect(titleTextOf(root).style.textDecoration).toBe("line-through");
+  });
+
+  it("reflects the completion the write committed, not the one that was clicked", async () => {
+    // The write did not take, so the caller reports the child as still unfinished.
+    const onToggleDone = vi.fn(() => Promise.resolve(false));
+    const root = openPopup({
+      children: [childOf({ done: false, onToggleDone })],
+      completedCount: 0,
+    });
+
+    checkboxOf(root).click();
+    await vi.waitFor(() => expect(onToggleDone).toHaveBeenCalled());
+
+    expect(checkboxOf(root).getAttribute("aria-checked")).toBe("false");
+    expect(titleTextOf(root).style.textDecoration).toBe("none");
+  });
+
+  it("ignores further clicks while a completion write is still in flight", async () => {
+    let settle: (committed: boolean) => void = () => undefined;
+    const onToggleDone = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          settle = resolve;
+        }),
+    );
+    const root = openPopup({
+      children: [childOf({ done: false, onToggleDone })],
+      completedCount: 0,
+    });
+
+    checkboxOf(root).click();
+    checkboxOf(root).click();
+    expect(onToggleDone).toHaveBeenCalledTimes(1);
+
+    settle(true);
+    await vi.waitFor(() => expect(checkboxOf(root).getAttribute("aria-checked")).toBe("true"));
+
+    // The row is released once the write settles, so the next click is accepted.
+    checkboxOf(root).click();
+    expect(onToggleDone).toHaveBeenCalledTimes(2);
+    expect(onToggleDone).toHaveBeenLastCalledWith(false);
   });
 });

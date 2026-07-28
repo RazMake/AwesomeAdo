@@ -687,3 +687,31 @@ the server rather than being asserted in the page world.
 
 Both are serialized with `Function.prototype.toString` and reference only their parameters and page
 globals.
+
+### `NoteActivityRequest` (message contract)
+
+`READ_NOTE_ACTIVITY_MESSAGE` + `ReadNoteActivityMessage` (`{ workItemIds }`), `RawNoteActivity`
+(`{ newest, failedIds, failure, status }`), `ReadNoteActivityResponse`, and
+`readNoteActivityMessageProblem(value)` — the same "reason, not a boolean" validator the notes
+contract uses, and the same reason for it. The message carries **only ids**: the worker builds every
+URL from the sender's own tab location, so a content script can name WHICH items it means but never
+WHERE the request goes.
+
+### `MessagingNoteActivityReader` (class)
+
+The `INoteActivityReader` implementation the board's **New notes** filter depends on. Injects its
+`chrome.runtime.sendMessage` binding (`SendNoteActivityRequest`), never throws, and keeps a **partial**
+answer: the items that were read still narrow the board, the ones that were lost are reported
+alongside them so a partial failure cannot look like a complete, quiet one. An empty ask is answered
+without a round-trip. Counts only in the log, never a comment or an author (AGENTS.md §9).
+
+### `fetchNoteActivityInPage(requests, concurrency)`
+
+The self-contained function the worker injects to read the **whole board's** newest-comment dates in
+ONE injection. Asking through `fetchWorkItemNotesInPage` instead meant an injection and a worker
+round-trip per item, plus two fetches and up to 200 rendered comments each, to read one timestamp —
+which is what made the first use of that filter a visible wait. Runs a small worker pool (browsers
+cap concurrent same-origin requests anyway, and the board's own writes share that budget), reads each
+response as **text** first so a 200 carrying ADO's sign-in page is classified as `sign-in` rather
+than parsed as "no comments", and reports a failed item in `failedIds` rather than as a null date.
+Only the FIRST failure is kept, so one lost session is not reported once per item.

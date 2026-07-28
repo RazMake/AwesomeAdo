@@ -216,6 +216,9 @@ describe("EnhancedViewSurface - keep-alive", () => {
       noteLoader: {
         loadNotes: () => Promise.resolve({ notes: [], currentUser: null, error: null }),
       },
+      noteActivity: {
+        readNoteActivity: () => Promise.resolve({ activity: [], error: null }),
+      },
       noteWriter: {
         addNote: () => Promise.resolve({ ok: true }),
         editNote: () => Promise.resolve({ ok: true }),

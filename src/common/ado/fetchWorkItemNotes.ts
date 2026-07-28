@@ -28,6 +28,27 @@ export interface WorkItemNotesUrls {
 }
 
 /**
+ * The URL of one work item's comments collection with `query` appended, or null when `href` is not a
+ * project-scoped ADO location.
+ *
+ * Shared by every caller that addresses that collection — reading a discussion, posting a note,
+ * rewriting one, and the board's newest-comment-date read — so the path is written once and a
+ * caller only says what it wants BACK from it.
+ */
+export function buildWorkItemCommentsUrl(
+  href: string,
+  workItemId: number,
+  query: string,
+): string | null {
+  const resolved = resolveAdoProjectContext(href);
+  if (resolved === null) {
+    return null;
+  }
+  const { base, project } = resolved;
+  return `${base}/${project}/_apis/wit/workItems/${workItemId}/comments${query}`;
+}
+
+/**
  * Build the URLs one work item's notes are read through, or null when `href` is not a
  * project-scoped ADO location.
  */
@@ -36,11 +57,17 @@ export function buildWorkItemNotesUrls(href: string, workItemId: number): WorkIt
   if (resolved === null) {
     return null;
   }
-  const { base, project } = resolved;
+  const { base } = resolved;
+  const commentsUrl = buildWorkItemCommentsUrl(
+    href,
+    workItemId,
+    `?api-version=${ADO_COMMENTS_API_VERSION}&$top=${NOTES_PAGE_SIZE}&order=desc&$expand=renderedText`,
+  );
+  if (commentsUrl === null) {
+    return null;
+  }
   return {
-    commentsUrl:
-      `${base}/${project}/_apis/wit/workItems/${workItemId}/comments` +
-      `?api-version=${ADO_COMMENTS_API_VERSION}&$top=${NOTES_PAGE_SIZE}&order=desc&$expand=renderedText`,
+    commentsUrl,
     connectionUrl: `${base}/_apis/ConnectionData?api-version=${ADO_CONNECTION_DATA_API_VERSION}`,
   };
 }
@@ -52,27 +79,19 @@ export function buildWorkItemNotesUrls(href: string, workItemId: number): WorkIt
  * the text they typed; the default (HTML) would hand them back markup they never wrote.
  */
 export function buildAddNoteUrl(href: string, workItemId: number): string | null {
-  const resolved = resolveAdoProjectContext(href);
-  if (resolved === null) {
-    return null;
-  }
-  const { base, project } = resolved;
-  return (
-    `${base}/${project}/_apis/wit/workItems/${workItemId}/comments` +
-    `?format=0&api-version=${ADO_COMMENTS_WRITE_API_VERSION}`
+  return buildWorkItemCommentsUrl(
+    href,
+    workItemId,
+    `?format=0&api-version=${ADO_COMMENTS_WRITE_API_VERSION}`,
   );
 }
 
 /** Build the URL one existing note is rewritten through; null when `href` is not project-scoped. */
 export function buildEditNoteUrl(href: string, workItemId: number, noteId: number): string | null {
-  const resolved = resolveAdoProjectContext(href);
-  if (resolved === null) {
-    return null;
-  }
-  const { base, project } = resolved;
-  return (
-    `${base}/${project}/_apis/wit/workItems/${workItemId}/comments/${noteId}` +
-    `?format=0&api-version=${ADO_COMMENTS_WRITE_API_VERSION}`
+  return buildWorkItemCommentsUrl(
+    href,
+    workItemId,
+    `/${noteId}?format=0&api-version=${ADO_COMMENTS_WRITE_API_VERSION}`,
   );
 }
 

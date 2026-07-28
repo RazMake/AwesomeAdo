@@ -785,6 +785,14 @@
   the validation scaffold and loses the refresh button. Accepted: the message is truthful, it matches
   first-load behaviour, and flipping to ADO's view and back through the top-bar menu re-renders the
   view from scratch.
+- Consequence: the button's busy state spans the POST-paint reads too. The Feature Crew reconcile and
+  the bulk `@`-mention lookup deliberately run after the first paint, and each ends in another full
+  repaint, so `renderLoadedBoard` returns a `settled` promise (`crewSync.whenSettled()` +
+  `resolveBoardMentions`, neither of which rejects) and the refresh clears busy only after it. The
+  busy state is re-armed immediately after the swap, because the replacement board's button is built
+  idle. Clearing at the first paint reported the board as settled while two repaints were still
+  queued, so the reader's next click landed in the middle of them and felt slow while every later
+  click was instant.
 
 ## ADR-048: The "New notes" pill reads discussions on demand, and narrows only once it can
 
@@ -802,12 +810,56 @@ project-tracking/activity-filter`) that narrow the tree to items created, change
   requests for a filter nobody asked for — the same argument that made note panels fetch on first
   open. Applying the criterion before the answer exists would empty the board and then repopulate it:
   two visible jumps for a question nobody has answered.
-- Consequence: the notes answer is pinned to the window of the FIRST probe, not re-measured per
-  repaint like the created/updated halves. Re-measuring would re-read every discussion each time the
-  clock moved a second. `⟳ Refresh` builds a new board and therefore a new index, which is how the
-  question is re-asked.
+- Consequence: "New notes" reads through its OWN contract, `INoteActivityReader` — not the per-item
+  `IWorkItemNoteLoader` (Interface Segregation). Asking through the loader cost one
+  `chrome.scripting.executeScript` injection and one service-worker round-trip PER ITEM, plus two
+  credentialed fetches and up to 200 `$expand=renderedText` comments each, to read one timestamp;
+  that is what made the first use of the pill a visible wait. The bulk reader is one injection
+  (`fetchNoteActivityInPage`) that fetches `$top=1&order=desc` per item, six at a time, inside the
+  page. The message carries only work item IDS — the worker still builds every URL from the sender's
+  own tab location.
+- Consequence: the notes answer is recorded as the newest note's TIMESTAMP, not a boolean, and is
+  re-tested against each pass's window. A boolean would rot as the rolling window slid forward; a
+  timestamp lets an item age out of "newly commented" without being re-read.
+- Consequence: `RecentNotesIndex` lives on `BoardSession` (ADR-047), NOT on the board. Each read is a
+  message → injected MAIN-world script → two credentialed fetches, so a board-scoped index handed the
+  whole cost straight back to the reader on their first click after every refresh — the reported
+  symptom that drove this. It is re-validated instead of rebuilt: an item is re-read only when its
+  `System.CommentCount` has moved, which the refresh's tree read already reports for free. (A note
+  added _and_ deleted between two reads leaves the count equal and goes unseen; self-corrects on the
+  next change, and not worth a round-trip per item per refresh to catch.)
+- Consequence: those re-reads join the refresh's `settled` promise, so the cost is paid inside the
+  spinner the reader is already watching rather than ambushing their next click.
 - Consequence: an item whose discussion could not be read is never claimed to be newly commented. The
-  failure is logged (per AGENTS.md §9) rather than guessed at in either direction.
+  failure is logged (per AGENTS.md §9) rather than guessed at in either direction, and is not retried
+  on every repaint — a later count change earns it another try.
 - Consequence: the pill selection lives in `BoardSession` (ADR-047), so it survives a repaint and a
   refresh and is never written back to the binding — the same rule the sprint, tag and ordering picks
   follow.
+
+## ADR-049: Pills OR within a group and AND between groups; the child rollup ignores filters
+
+Two rules about how the Project Tracking board narrows, both settled after comparing it against the
+team's reference PowerShell board (`View-ProjectTracking`) and deliberately choosing a different
+answer in one of them.
+
+- Decision: the filter pills form two independent GROUPS — the Feature Crew tags and the
+  recent-activity pills. Pills **within** a group are OR'd; the two groups are **AND'd**. A group
+  with nothing lit imposes nothing. So lighting a second tag widens the board, while lighting an
+  activity pill on top of a tag narrows to that person's recent work.
+- Why: the reference board ORs every pill together (`nodeMatchesTag || nodeMatchesBlocker ||
+nodeMatchesChange`). Copied here, that makes an activity pill drag in items belonging to people the
+  reader has explicitly filtered out — the selection stops meaning "whose work am I looking at?". The
+  two groups answer different questions (WHOSE vs WHAT CHANGED), so intersecting them is what makes
+  combining them useful. **This is an intentional divergence from the reference; do not "fix" it back.**
+- Consequence: `matchesRecentActivity` answering `true` when nothing is lit IS the "unlit group
+  imposes nothing" rule, so `matchesLitPills` needs no separate is-anything-lit test.
+- Decision: the deepest row's rolled-up "done / total" child badge is built from the item's COMPLETE
+  child set, ignoring every active filter.
+- Why: the rollup answers "how much of this item is done?", which is a fact about the work, not about
+  what the board is currently narrowed to. Filtering it made the denominator lie — a child on another
+  sprint silently left the total, and under the resolved-age window (4 days by default) a row whose
+  children had all finished last week lost its badge entirely and read as having no children at all.
+  This matches the reference board, whose task pill is always `done/total` over every child.
+- Consequence: `createMinorChildrenBadge` deliberately does NOT call `isVisibleUnderFilter`. The
+  sprint/tag/activity/resolved rules bound the OUTLINE only.

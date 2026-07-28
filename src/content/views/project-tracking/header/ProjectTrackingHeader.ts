@@ -114,6 +114,19 @@ const TOP_ROW_MIN_HEIGHT_PX = 24;
  */
 const REFRESH_BUTTON_GAP_PX = 24;
 
+/**
+ * The outer box every band button occupies, in pixels (border included).
+ *
+ * Pinned to a square rather than left to shrink-wrap each glyph: the three buttons carry glyphs of
+ * very different widths, and letting the text decide the box would leave them visibly mismatched.
+ * The value is the height the band already had (14px text + 5.6px padding + 1px border a side), so
+ * fixing the size does not move the band.
+ */
+const BAND_BUTTON_SIZE_PX = 27.2;
+
+/** The band button's border width, in pixels; subtracted when sizing a glyph to its inner box. */
+const BAND_BUTTON_BORDER_PX = 1;
+
 /** Builds one themed band button carrying the class the board's wiring queries by. */
 function renderBandButton(
   doc: Document,
@@ -131,13 +144,19 @@ function renderBandButton(
   }
   // Subtle themed affordance: neutral fill + a clearly visible rounded border so it reads as a button
   // on any theme (ADO's --palette-neutral-20 is too faint under the pinned themes, so use a fixed grey).
-  // The box is trimmed via padding alone (32px -> 27.2px, 15% smaller) so the glyph stays legible at
-  // the same 14px as the rest of the band.
+  // Flex centring (rather than padding) is what keeps a glyph optically centred in the fixed square
+  // whatever size it is drawn at, so each button can size its own glyph independently.
   button.style.cssText = [
     "cursor:pointer",
-    "border:1px solid rgba(128,128,128,0.5)",
+    "box-sizing:border-box",
+    `width:${BAND_BUTTON_SIZE_PX}px`,
+    `height:${BAND_BUTTON_SIZE_PX}px`,
+    "display:inline-flex",
+    "align-items:center",
+    "justify-content:center",
+    `border:${BAND_BUTTON_BORDER_PX}px solid rgba(128,128,128,0.5)`,
     "border-radius:6px",
-    "padding:5.6px 5.6px",
+    "padding:0",
     "background:var(--palette-neutral-4, rgba(128,128,128,0.08))",
     "color:var(--text-primary-color, #323130)",
     "font-size:14px",
@@ -154,14 +173,67 @@ const REFRESH_FAILED_LABEL =
   "Couldn't refresh — this board is showing older data. Click for details.";
 
 /**
- * The refresh glyph's colour while all is well.
+ * The refresh icon's colour while all is well.
  *
- * A fixed green rather than a theme token: ADO ships no success colour every pinned theme defines,
- * and this is the same shade the board's "done" status text already uses — chosen to read on light
- * and dark alike. Green also separates refresh from the `+`/`−` pair beside it at a glance, and
- * leaves the failed state's error red as the only tint that means "look at me".
+ * A fixed vivid green rather than a theme token: ADO ships no success colour every pinned theme
+ * defines, and this one is picked to stay bright against a light AND a dark surface. It is
+ * deliberately a step brighter than the "done" green the status chips use — those sit inside a
+ * tinted chip that already carries them, while this is a bare stroke on the header's own surface and
+ * has to catch the eye as the board's one destructive-ish action. Green also separates refresh from
+ * the `+`/`−` pair beside it at a glance, and leaves the failed state's error red as the only tint
+ * that means "look at me".
  */
-const REFRESH_IDLE_COLOR = "rgb(30,140,45)";
+const REFRESH_IDLE_COLOR = "rgb(0,200,83)";
+
+/**
+ * The gap left between the refresh icon and the button's border, in pixels.
+ *
+ * Just enough that the icon never appears to touch (or bleed through) the rounded border, while
+ * still letting it fill the button — a thin circular arrow reads as far weaker than a bold `+`
+ * unless it is drawn much bigger.
+ */
+const REFRESH_GLYPH_INSET_PX = 2;
+
+const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
+
+/**
+ * Builds the refresh icon as drawn geometry rather than as the ⟳ character.
+ *
+ * A text glyph is positioned by the font's baseline and side bearings, not by its ink, so it lands
+ * visibly off-centre inside a square button — and there is no font-independent way to correct that,
+ * because the offset differs per platform font. An SVG viewBox is centred by construction at any
+ * size. The paths are stroked/filled in `currentColor` so the button's state colouring (idle green,
+ * failed red) still reaches the icon without this function knowing about those states.
+ */
+function renderRefreshIcon(doc: Document, sizePx: number): SVGSVGElement {
+  const svg = doc.createElementNS(SVG_NAMESPACE, "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("width", `${sizePx}`);
+  svg.setAttribute("height", `${sizePx}`);
+  // The button already carries the accessible name, so the icon must not add a second one.
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+  svg.style.display = "block";
+
+  // A circle of r=8 about the viewBox centre, drawn clockwise and left open across a wide 100° arc on
+  // the right so the two ends read as clearly separate rather than as a closed ring. The radius is
+  // held back from the box edge to leave room for the arrowhead, whose base spans radially.
+  const arc = doc.createElementNS(SVG_NAMESPACE, "path");
+  arc.setAttribute("d", "M18.93 16A8 8 0 1 1 14.74 4.48");
+  arc.setAttribute("fill", "none");
+  arc.setAttribute("stroke", "currentColor");
+  arc.setAttribute("stroke-width", "3.5");
+  arc.setAttribute("stroke-linecap", "round");
+
+  // The arrowhead, based on the arc's end point and pointing along its direction of travel. Wider
+  // than the stroke so it still reads as a head now that the stroke itself is heavy.
+  const head = doc.createElementNS(SVG_NAMESPACE, "path");
+  head.setAttribute("d", "M13.37 8.24 16.11 0.72 19.81 6.33Z");
+  head.setAttribute("fill", "currentColor");
+
+  svg.append(arc, head);
+  return svg;
+}
 
 /**
  * Builds the refresh button and the two state commands the view drives it through.
@@ -172,15 +244,15 @@ const REFRESH_IDLE_COLOR = "rgb(30,140,45)";
  * changed.
  */
 function renderRefreshButton(doc: Document): RefreshButtonHandle {
-  const element = renderBandButton(
-    doc,
-    "awesomeado-tracking__refresh",
-    "\u27F3",
-    REFRESH_IDLE_LABEL,
+  const element = renderBandButton(doc, "awesomeado-tracking__refresh", "", REFRESH_IDLE_LABEL);
+  // Drawn as large as the shared square allows — the inner box less the border and a 1px breathing
+  // gap — so the icon fills the button the `+`/`−` pair sizes; the button itself keeps the band's size.
+  element.append(
+    renderRefreshIcon(
+      doc,
+      BAND_BUTTON_SIZE_PX - 2 * (BAND_BUTTON_BORDER_PX + REFRESH_GLYPH_INSET_PX),
+    ),
   );
-  // Keeps the band's bold weight so the glyph reads at the same strength as the `+`/`−` pair; the
-  // wider box keeps it optically the same size as them too.
-  element.style.fontSize = "15px";
   element.style.marginLeft = `${REFRESH_BUTTON_GAP_PX}px`;
 
   let busy = false;
@@ -190,7 +262,7 @@ function renderRefreshButton(doc: Document): RefreshButtonHandle {
     element.disabled = busy;
     element.style.opacity = busy ? "0.5" : "1";
     element.style.cursor = busy ? "default" : "pointer";
-    // A failure is reported in the theme's error color rather than by swapping the glyph, so the
+    // A failure is reported in the theme's error color rather than by swapping the icon, so the
     // button still reads as the same control the reader just pressed.
     element.style.color = failed ? "var(--palette-error-text, #a4262c)" : REFRESH_IDLE_COLOR;
     element.style.borderColor = failed

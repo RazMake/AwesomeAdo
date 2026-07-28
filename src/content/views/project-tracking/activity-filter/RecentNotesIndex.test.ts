@@ -1,17 +1,19 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type {
-  IWorkItemNoteLoader,
-  WorkItemNotesRequest,
-  WorkItemNotesResult,
-} from "../../../../common/ado/IWorkItemNoteLoader";
+  INoteActivityReader,
+  NoteActivityRequest,
+  NoteActivityResult,
+} from "../../../../common/ado/INoteActivityReader";
 import type { TrackedWorkItem } from "../../../../common/ado/TrackedWorkItem";
-import type { WorkItemNote } from "../../../../common/ado/WorkItemNote";
 import type { ILogger } from "../../../../common/logging/ILogger";
 
 import { RecentNotesIndex } from "./RecentNotesIndex";
 
-const SINCE = "2026-07-23T12:00:00Z";
+const NOTE_DATE = "2026-07-24T09:00:00Z";
+const NOTE_AT = Date.parse(NOTE_DATE);
+/** A window that opens a day before the fixture note. */
+const WINDOW_START = Date.parse("2026-07-23T12:00:00Z");
 
 /** A tracked item carrying only what the index reads: its id, its comment count, its children. */
 function item(id: number, noteCount: number, children: TrackedWorkItem[] = []): TrackedWorkItem {
@@ -37,29 +39,34 @@ function item(id: number, noteCount: number, children: TrackedWorkItem[] = []): 
   };
 }
 
-/** One note; only its presence matters, so every field is a placeholder. */
-const someNote: WorkItemNote = {
-  id: 1,
-  workItemId: 0,
-  author: { displayName: "Someone", id: null, uniqueName: null },
-  createdDate: "2026-07-24T09:00:00Z",
-  text: "hi",
-  renderedHtml: null,
-};
-
-/** A loader that answers from a per-item map, recording every request it was handed. */
-function fakeLoader(
-  answer: (request: WorkItemNotesRequest) => WorkItemNotesResult | Promise<WorkItemNotesResult>,
-): IWorkItemNoteLoader & { requests: WorkItemNotesRequest[] } {
-  const requests: WorkItemNotesRequest[] = [];
+/** A reader that answers from a callback, recording every id list it was handed. */
+function fakeReader(
+  answer: (request: NoteActivityRequest) => NoteActivityResult | Promise<NoteActivityResult>,
+): INoteActivityReader & { asked: number[][] } {
+  const asked: number[][] = [];
   return {
-    requests,
-    loadNotes: async (request) => {
-      requests.push(request);
+    asked,
+    readNoteActivity: async (request) => {
+      asked.push([...request.workItemIds]);
       return answer(request);
     },
   };
 }
+
+/** Dates every requested item with the fixture note. */
+const datesEverything = (request: NoteActivityRequest): NoteActivityResult => ({
+  activity: request.workItemIds.map((workItemId) => ({
+    workItemId,
+    newestNoteDate: NOTE_DATE,
+  })),
+  error: null,
+});
+
+/** Answers that every requested item has never been commented on. */
+const datesNothing = (request: NoteActivityRequest): NoteActivityResult => ({
+  activity: request.workItemIds.map((workItemId) => ({ workItemId, newestNoteDate: null })),
+  error: null,
+});
 
 function fakeLogger(): ILogger & { infos: string[]; errors: string[] } {
   const infos: string[] = [];
@@ -67,159 +74,200 @@ function fakeLogger(): ILogger & { infos: string[]; errors: string[] } {
   return { infos, errors, info: (m) => infos.push(m), error: (m) => errors.push(m) };
 }
 
-/** Drains the microtask queue the reads and their completion hooks resolve on. */
+/** Drains the microtask queue the read and its completion hooks resolve on. */
 async function settle(): Promise<void> {
   for (let tick = 0; tick < 50; tick++) {
     await Promise.resolve();
   }
 }
 
-const EMPTY: WorkItemNotesResult = { notes: [], currentUser: null, error: null };
+describe("RecentNotesIndex — what it asks for", () => {
+  it("asks about every commented item under the root, in one read", async () => {
+    const reader = fakeReader(datesNothing);
+    const index = new RecentNotesIndex(reader, fakeLogger());
 
-describe("RecentNotesIndex — what it reads", () => {
-  it("reads only the discussions ADO says exist", async () => {
-    const loader = fakeLoader(() => EMPTY);
-    const index = new RecentNotesIndex(loader, fakeLogger(), () => {});
-
-    index.ensureProbed(item(1, 0, [item(2, 0), item(3, 4, [item(4, 1)])]), SINCE);
+    index.ensureProbed(item(1, 0, [item(2, 0), item(3, 4, [item(4, 1)])]));
     await settle();
 
-    expect(loader.requests.map((request) => request.workItemId).sort()).toEqual([3, 4]);
-    expect(loader.requests[0]?.sinceIso).toBe(SINCE);
+    // One round-trip for the whole board, and the item ADO says has no comments is left out of it.
+    expect(reader.asked).toHaveLength(1);
+    expect([...(reader.asked[0] ?? [])].sort()).toEqual([3, 4]);
   });
 
-  it("records only the items whose discussion carried a note inside the window", async () => {
-    const loader = fakeLoader((request) =>
-      request.workItemId === 2 ? { ...EMPTY, notes: [someNote] } : EMPTY,
+  it("asks for nothing at all when no item under the root has a discussion", async () => {
+    const reader = fakeReader(datesNothing);
+    const index = new RecentNotesIndex(reader, fakeLogger());
+
+    index.ensureProbed(item(1, 0, [item(2, 0)]));
+    await settle();
+
+    expect(reader.asked).toEqual([]);
+    expect(index.isPending()).toBe(false);
+  });
+
+  it("does not start a second read while one is still in flight", async () => {
+    let release!: (result: NoteActivityResult) => void;
+    const reader = fakeReader(
+      async () => await new Promise<NoteActivityResult>((resolve) => (release = resolve)),
     );
-    const index = new RecentNotesIndex(loader, fakeLogger(), () => {});
-    const tree = item(1, 0, [item(2, 1), item(3, 1)]);
-
-    index.ensureProbed(tree, SINCE);
-    await settle();
-
-    expect(index.hasRecentNote(item(2, 1))).toBe(true);
-    expect(index.hasRecentNote(item(3, 1))).toBe(false);
-  });
-
-  it("never reads the same discussion twice, and keeps the window it first probed with", async () => {
-    const loader = fakeLoader(() => EMPTY);
-    const index = new RecentNotesIndex(loader, fakeLogger(), () => {});
+    const index = new RecentNotesIndex(reader, fakeLogger());
     const tree = item(1, 0, [item(2, 1)]);
 
-    index.ensureProbed(tree, SINCE);
+    index.ensureProbed(tree);
+    index.ensureProbed(tree);
+    expect(reader.asked).toHaveLength(1);
+
+    release({ activity: [], error: null });
     await settle();
-    index.ensureProbed(tree, "2026-07-24T00:00:00Z");
+  });
+});
+
+describe("RecentNotesIndex — what it records", () => {
+  it("reports an item as newly commented only inside the window its newest note falls in", async () => {
+    const reader = fakeReader(datesEverything);
+    const index = new RecentNotesIndex(reader, fakeLogger());
+
+    index.ensureProbed(item(1, 0, [item(2, 1)]));
     await settle();
 
-    expect(loader.requests.length).toBe(1);
+    expect(index.hasRecentNote(item(2, 1), WINDOW_START)).toBe(true);
+    // The recorded answer is the note's TIMESTAMP, so a later window re-tests it for free.
+    expect(index.hasRecentNote(item(2, 1), NOTE_AT)).toBe(true);
+    expect(index.hasRecentNote(item(2, 1), NOTE_AT + 1)).toBe(false);
+    expect(reader.asked).toHaveLength(1);
   });
 
-  it("pins later reads to the window the first probe opened", async () => {
-    const loader = fakeLoader(() => EMPTY);
-    const index = new RecentNotesIndex(loader, fakeLogger(), () => {});
-    const tree = item(1, 0, [item(2, 1)]);
+  it("never claims activity for an item that has no comment date", async () => {
+    const index = new RecentNotesIndex(fakeReader(datesNothing), fakeLogger());
 
-    index.ensureProbed(tree, SINCE);
-    await settle();
-    tree.children.push(item(5, 1));
-    index.ensureProbed(tree, "2026-07-24T00:00:00Z");
+    index.ensureProbed(item(1, 0, [item(2, 1)]));
     await settle();
 
-    expect(loader.requests.map((request) => request.sinceIso)).toEqual([SINCE, SINCE]);
+    // Even against a window that reaches back years, an item nobody has commented on never matches.
+    expect(index.hasRecentNote(item(2, 1), Date.parse("2000-01-01T00:00:00Z"))).toBe(false);
   });
 
-  it("never has more than six discussions in flight at once", async () => {
-    let inFlight = 0;
-    let peak = 0;
-    const release: (() => void)[] = [];
-    const loader = fakeLoader(async () => {
-      inFlight++;
-      peak = Math.max(peak, inFlight);
-      await new Promise<void>((resolve) => release.push(resolve));
-      inFlight--;
-      return EMPTY;
-    });
-    const index = new RecentNotesIndex(loader, fakeLogger(), () => {});
-    const children = Array.from({ length: 15 }, (_, offset) => item(offset + 2, 1));
+  it("never claims activity for an item it has not read", () => {
+    const index = new RecentNotesIndex(fakeReader(datesEverything), fakeLogger());
 
-    index.ensureProbed(item(1, 0, children), SINCE);
+    expect(index.hasRecentNote(item(2, 1), WINDOW_START)).toBe(false);
+  });
+});
+
+describe("RecentNotesIndex — what it re-reads", () => {
+  it("never re-reads a discussion whose comment count has not moved", async () => {
+    const reader = fakeReader(datesEverything);
+    const index = new RecentNotesIndex(reader, fakeLogger());
+
+    index.ensureProbed(item(1, 0, [item(2, 1)]));
     await settle();
-    expect(peak).toBe(6);
+    // A refresh: same board, same counts, so nothing is worth another round-trip.
+    index.ensureProbed(item(1, 0, [item(2, 1)]));
+    await settle();
 
-    while (release.length > 0) {
-      release.shift()?.();
-      await settle();
-    }
+    expect(reader.asked).toHaveLength(1);
+  });
 
-    expect(loader.requests.length).toBe(15);
-    expect(peak).toBe(6);
+  it("re-reads only the discussion whose comment count moved", async () => {
+    const reader = fakeReader(datesEverything);
+    const index = new RecentNotesIndex(reader, fakeLogger());
+
+    index.ensureProbed(item(1, 0, [item(2, 1), item(3, 1)]));
+    await settle();
+    // The refreshed tree says item 3 gained a comment; item 2 is untouched.
+    index.ensureProbed(item(1, 0, [item(2, 1), item(3, 2)]));
+    await settle();
+
+    expect(reader.asked[1]).toEqual([3]);
+  });
+
+  it("does not retry a failed item until its comment count moves", async () => {
+    const reader = fakeReader(() => ({ activity: [], error: "sign-in (HTTP 200)" }));
+    const index = new RecentNotesIndex(reader, fakeLogger());
+
+    index.ensureProbed(item(1, 0, [item(2, 1)]));
+    await settle();
+    index.ensureProbed(item(1, 0, [item(2, 1)]));
+    await settle();
+    expect(reader.asked).toHaveLength(1);
+
+    index.ensureProbed(item(1, 0, [item(2, 2)]));
+    await settle();
+    expect(reader.asked).toHaveLength(2);
   });
 });
 
 describe("RecentNotesIndex — what it reports", () => {
-  it("reports itself pending until every read lands, then settles exactly once", async () => {
-    const pending: (() => void)[] = [];
-    const loader = fakeLoader(
-      async () =>
-        await new Promise<WorkItemNotesResult>((resolve) => {
-          pending.push(() => resolve(EMPTY));
-        }),
+  it("reports itself pending until the read lands, then releases its waiters", async () => {
+    let release!: (result: NoteActivityResult) => void;
+    const reader = fakeReader(
+      async () => await new Promise<NoteActivityResult>((resolve) => (release = resolve)),
     );
-    const onSettled = vi.fn();
-    const index = new RecentNotesIndex(loader, fakeLogger(), onSettled);
+    const index = new RecentNotesIndex(reader, fakeLogger());
+    const settled = vi.fn();
 
-    index.ensureProbed(item(1, 0, [item(2, 1), item(3, 1)]), SINCE);
+    index.ensureProbed(item(1, 0, [item(2, 1)]));
     expect(index.isPending()).toBe(true);
+    void index.whenSettled().then(settled);
 
-    pending[0]?.();
     await settle();
-    expect(index.isPending()).toBe(true);
-    expect(onSettled).not.toHaveBeenCalled();
+    expect(settled).not.toHaveBeenCalled();
 
-    pending[1]?.();
+    release({ activity: [{ workItemId: 2, newestNoteDate: NOTE_DATE }], error: null });
     await settle();
+
     expect(index.isPending()).toBe(false);
-    expect(onSettled).toHaveBeenCalledTimes(1);
+    expect(settled).toHaveBeenCalledTimes(1);
   });
 
-  it("does nothing when there is no discussion left to read", async () => {
-    const loader = fakeLoader(() => EMPTY);
-    const onSettled = vi.fn();
-    const index = new RecentNotesIndex(loader, fakeLogger(), onSettled);
+  it("settles immediately when nothing is being read", async () => {
+    const settled = vi.fn();
+    const index = new RecentNotesIndex(fakeReader(datesNothing), fakeLogger());
 
-    index.ensureProbed(item(1, 0, [item(2, 0)]), SINCE);
+    void index.whenSettled().then(settled);
     await settle();
 
-    expect(loader.requests).toEqual([]);
-    expect(index.isPending()).toBe(false);
-    expect(onSettled).not.toHaveBeenCalled();
+    expect(settled).toHaveBeenCalledTimes(1);
   });
 
-  it("logs a failed read and never counts it as activity", async () => {
-    const loader = fakeLoader(() => ({ ...EMPTY, error: "403 Forbidden" }));
+  it("logs the items a failed read lost, and never counts them as activity", async () => {
+    const reader = fakeReader(() => ({ activity: [], error: "http (HTTP 403)" }));
     const logger = fakeLogger();
-    const index = new RecentNotesIndex(loader, logger, () => {});
+    const index = new RecentNotesIndex(reader, logger);
 
-    index.ensureProbed(item(1, 0, [item(2, 1)]), SINCE);
+    index.ensureProbed(item(1, 0, [item(2, 1)]));
     await settle();
 
-    expect(index.hasRecentNote(item(2, 1))).toBe(false);
-    expect(logger.errors[0]).toContain("403 Forbidden");
+    expect(index.hasRecentNote(item(2, 1), WINDOW_START)).toBe(false);
+    expect(logger.errors[0]).toContain("http (HTTP 403)");
     expect(logger.infos.at(-1)).toContain("failed=1");
   });
 
+  it("keeps the items a PARTIAL read did answer for", async () => {
+    const reader = fakeReader(() => ({
+      activity: [{ workItemId: 2, newestNoteDate: NOTE_DATE }],
+      error: "network (HTTP 0)",
+    }));
+    const index = new RecentNotesIndex(reader, fakeLogger());
+
+    index.ensureProbed(item(1, 0, [item(2, 1), item(3, 1)]));
+    await settle();
+
+    expect(index.hasRecentNote(item(2, 1), WINDOW_START)).toBe(true);
+    expect(index.hasRecentNote(item(3, 1), WINDOW_START)).toBe(false);
+  });
+
   it("logs a thrown read and never counts it as activity", async () => {
-    const loader = fakeLoader(() => {
+    const reader = fakeReader(() => {
       throw new Error("channel closed");
     });
     const logger = fakeLogger();
-    const index = new RecentNotesIndex(loader, logger, () => {});
+    const index = new RecentNotesIndex(reader, logger);
 
-    index.ensureProbed(item(1, 0, [item(2, 1)]), SINCE);
+    index.ensureProbed(item(1, 0, [item(2, 1)]));
     await settle();
 
-    expect(index.hasRecentNote(item(2, 1))).toBe(false);
+    expect(index.hasRecentNote(item(2, 1), WINDOW_START)).toBe(false);
     expect(logger.errors[0]).toContain("threw");
   });
 });

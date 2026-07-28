@@ -139,7 +139,7 @@ function itemTagKey(item: TrackedWorkItem): string | null | undefined {
 interface TreeFilter {
   /** The sprint the board is filtered to, or null when the sprint filter is off. */
   sprint: string | null;
-  /** The active Feature Crew tag filter (empty = everyone); `null` is the untagged "??" bucket. */
+  /** The active Feature Crew tag filter (empty = nobody selected); `null` is the untagged "??" bucket. */
   tags: Set<string | null>;
   /** True once an item has sat in the resolved column longer than the binding's window allows. */
   isResolvedPastWindow(item: TrackedWorkItem): boolean;
@@ -148,22 +148,38 @@ interface TreeFilter {
 }
 
 /**
+ * Does this item match the pills that are lit?
+ *
+ * The pills form two independent GROUPS — the Feature Crew tags, and the recent-activity pills — and
+ * the rule is deliberately different within a group than between them: pills inside a group are
+ * OR'd, and the two groups are AND'd. So "(any selected tag) AND (any selected activity)": lighting
+ * a second tag WIDENS the board, while lighting an activity pill on top of a tag NARROWS it to that
+ * person's recent work. A group with nothing lit imposes nothing, which is what makes "no pills lit"
+ * mean "no narrowing" rather than "hide everything".
+ *
+ * Note this is deliberately NOT what the reference PowerShell board does — it ORs every pill
+ * together, which lets an activity pill drag in items belonging to people the reader explicitly
+ * filtered out.
+ */
+function matchesLitPills(item: TrackedWorkItem, filter: TreeFilter): boolean {
+  const key = itemTagKey(item);
+  const matchesTags = filter.tags.size === 0 || (key !== undefined && filter.tags.has(key));
+  // The activity half already answers `true` for every item when no activity pill is lit, so the
+  // "an unlit group imposes nothing" rule needs no second check here.
+  return matchesTags && filter.matchesRecentActivity(item);
+}
+
+/**
  * Predicate: is this item (or any of its descendants) visible under the active filters? An item
- * self-matches when it passes the sprint filter, the tag filter (an empty selection passes; multiple
- * selected tags form an OR), the recent-activity pills (same OR rule) AND has not been resolved for
- * longer than the binding allows. An ancestor stays visible when any descendant self-matches, so a
- * matching item is never orphaned from its path — which is also what keeps a long-resolved parent on
- * the board while unresolved work sits beneath it.
+ * self-matches when it passes the sprint filter, the lit pills (see `matchesLitPills`) AND has not
+ * been resolved for longer than the binding allows. An ancestor stays visible when any descendant
+ * self-matches, so a matching item is never orphaned from its path — which is also what keeps a
+ * long-resolved parent on the board while unresolved work sits beneath it.
  */
 function isVisibleUnderFilter(item: TrackedWorkItem, filter: TreeFilter): boolean {
   const matchesSprint = !filter.sprint || item.sprintName === filter.sprint;
-  const key = itemTagKey(item);
-  const matchesTag = filter.tags.size === 0 || (key !== undefined && filter.tags.has(key));
   const selfMatches =
-    matchesSprint &&
-    matchesTag &&
-    filter.matchesRecentActivity(item) &&
-    !filter.isResolvedPastWindow(item);
+    matchesSprint && matchesLitPills(item, filter) && !filter.isResolvedPastWindow(item);
   if (selfMatches) return true;
   return item.children.some((child) => isVisibleUnderFilter(child, filter));
 }
@@ -594,6 +610,36 @@ function completedColumnOrdinal(boardColumns: string[]): number {
 }
 
 /**
+ * The board-column position a reopened item lands on.
+ *
+ * Positional like every other board-column decision here: the five columns are fixed and only their
+ * titles belong to the team, so position 1 always means "someone is working on it" whatever they
+ * named it. Reopening onto the queue instead would throw away the fact that the item had already
+ * been picked up once.
+ */
+const ACTIVE_COLUMN_ORDINAL = 1;
+
+/**
+ * Whether an item's status sits on the board's completed column.
+ *
+ * Both `completedColumnOrdinal` and `boardColumnOrdinal` answer -1 — for a board too short to name a
+ * completed column, and for a status mapped to no column at all — so a negative target is rejected
+ * rather than letting every unmapped item read as finished.
+ */
+function isCompleted(
+  item: TrackedWorkItem,
+  typeMap: Map<string, TypeCatalogEntry>,
+  boardColumns: string[],
+): boolean {
+  const completedOrdinal = completedColumnOrdinal(boardColumns);
+  if (completedOrdinal < 0) {
+    return false;
+  }
+  const status = statusLabelOf(item, typeMap.get(item.type));
+  return boardColumnOrdinal(status, boardColumns) === completedOrdinal;
+}
+
+/**
  * Builds the "matches the recent-activity pills" test for one render pass.
  *
  * Rebuilt per pass for the same reason the resolved-age test is: the window is rolling, so a board
@@ -607,10 +653,14 @@ function createRecentActivityFilter(
   selected: ReadonlySet<RecentActivityKind>,
   recentNotes: RecentNotesIndex,
 ): (item: TrackedWorkItem) => boolean {
+  // Named before the criteria rather than inlined twice: the index stores WHEN each item was last
+  // commented on, so it has to be tested against the very same window start the other two pills use.
+  // Two separately-computed "now"s would let an item pass one pill and fail another in one pass.
+  const sinceMs = recentWindowStart(now, recentChangesWindowHours(properties));
   const criteria = {
     selected: activityFilterInForce(selected, recentNotes.isPending()),
-    sinceMs: recentWindowStart(now, recentChangesWindowHours(properties)),
-    hasRecentNote: (item: TrackedWorkItem) => recentNotes.hasRecentNote(item),
+    sinceMs,
+    hasRecentNote: (item: TrackedWorkItem) => recentNotes.hasRecentNote(item, sinceMs),
   };
   return (item) => matchesRecentActivity(item, criteria);
 }
@@ -636,8 +686,7 @@ function createResolvedWindowFilter(
   }
   const cutoff = now.getTime() - hideAfterDays * MS_PER_DAY;
   return (item) => {
-    const status = statusLabelOf(item, typeMap.get(item.type));
-    if (boardColumnOrdinal(status, boardColumns) !== resolvedOrdinal) {
+    if (!isCompleted(item, typeMap, boardColumns)) {
       return false;
     }
     const resolvedAt = epochOf(item.stateChangeDate);
@@ -994,20 +1043,79 @@ function createItemEtaBadge(
 }
 
 /**
- * Describes one rolled-up child for the badge's popup: its assignee chip, type-colored title, its own
- * editable ETA badge, and the ADO deep link. The assignee and ETA controls are built with the SAME
- * helpers the tree rows use, so a rolled-up child is reassigned and re-dated exactly like a row
- * rather than being a read-only echo.
+ * The ADO state that moves an item onto a given board column: the primary state of the type's column
+ * at that position, or null when the type routes nothing there.
+ *
+ * A team is free to leave a column unmapped for a type, and an unmapped column has no state to
+ * write — so the caller has to be told "there is nowhere to move this to" rather than be handed a
+ * guess that would park the item somewhere the team never configured.
+ */
+function primaryStateForOrdinal(
+  item: TrackedWorkItem,
+  typeMap: Map<string, TypeCatalogEntry>,
+  boardColumns: string[],
+  ordinal: number,
+): string | null {
+  const columns = typeMap.get(item.type)?.columns ?? [];
+  const target = columns.find((c) => boardColumnOrdinal(c.column, boardColumns) === ordinal);
+  return target?.states[0] ?? null;
+}
+
+/**
+ * Persists a rolled-up child's completion tick, resolving with the completion that ACTUALLY
+ * committed — so a rejected write leaves the checkbox where ADO still has it instead of showing a
+ * change nobody accepted. Completion before the click is `!next`, which is what every unsuccessful
+ * path reports back.
+ */
+function toggleMinorChildDone(
+  child: TrackedWorkItem,
+  options: TreeRenderOptions,
+  next: boolean,
+): Promise<boolean> {
+  const { typeMap, boardColumns, queue, context } = options;
+  const ordinal = next ? completedColumnOrdinal(boardColumns) : ACTIVE_COLUMN_ORDINAL;
+  const target = primaryStateForOrdinal(child, typeMap, boardColumns, ordinal);
+  if (target === null) {
+    // Clicked, but this type routes no state onto that column, so there is nothing to write and the
+    // tick has to stay put. Logged with the signals that decided it: without them the log would say
+    // only that a click did nothing.
+    context.services.logger.info(
+      `Child ${child.id} (${child.type}) completion unchanged: no state routed to board column ${ordinal}`,
+    );
+    return Promise.resolve(!next);
+  }
+  return queue
+    .enqueue({ id: child.id, currentRev: () => child.rev, field: "System.State", value: target })
+    .then((result) => {
+      // The queue logs and counts its own failures and never rejects, so a lost write needs no
+      // rollback here — reporting the completion ADO still holds is the whole correction.
+      if (!result.ok || result.rev === undefined) {
+        return !next;
+      }
+      child.state = target;
+      child.rev = result.rev;
+      return next;
+    });
+}
+
+/**
+ * Describes one rolled-up child for the badge's popup: its completion, its assignee chip, its
+ * type-colored title, its own editable ETA badge, and the ADO deep link. The assignee and ETA
+ * controls are built with the SAME helpers the tree rows use, so a rolled-up child is reassigned and
+ * re-dated exactly like a row rather than being a read-only echo.
  */
 function describeMinorChild(
   child: TrackedWorkItem,
   options: TreeRenderOptions,
 ): ChildItemDescriptor {
-  const { doc, typeMap, queue, context } = options;
+  const { doc, typeMap, queue, context, boardColumns } = options;
   return {
-    // The rollup popup is a dense one-line-per-child list, so the crew tag pill is left off here —
-    // the tag is edited from the tree row that owns the person.
-    assignee: createItemAssignee(child, options.chip, false),
+    // Tagged like a tree row: a rolled-up child is the ONLY place its assignee appears, so hiding
+    // the crew pill here hid which crew owns that work entirely — and left the popup the one place
+    // a person could not be retagged.
+    assignee: createItemAssignee(child, options.chip, true),
+    done: isCompleted(child, typeMap, boardColumns),
+    onToggleDone: (next) => toggleMinorChildDone(child, options, next),
     title: child.title,
     titleColor: typeColorOf(child.type, typeMap),
     eta: createItemEtaBadge(doc, child, typeMap, queue, context.services.now()),
@@ -1019,32 +1127,29 @@ function describeMinorChild(
 
 /**
  * Rolls a row's children up into a single "completed / total" badge, or null when there is nothing
- * to summarize. Only children that survive the active filters are counted or listed, so the rollup
- * always agrees with what the board claims to be showing — including the resolved-age window, so a
- * child hidden from the outline is not still counted here.
+ * to summarize.
+ *
+ * Deliberately NOT narrowed by the active filters: this is the row's COMPLETE child rollup. Counting
+ * only the children that survive the filters made the denominator lie about the work — under the
+ * resolved-age window a row whose children all finished last week reported no children at all
+ * instead of "5 / 5", and under a sprint filter a child parked on another sprint silently left the
+ * total. The rollup answers "how much of this is done?", which is a fact about the item rather than
+ * about what the board is currently narrowed to.
  */
 function createMinorChildrenBadge(
   item: TrackedWorkItem,
   options: TreeRenderOptions,
 ): HTMLElement | null {
-  const { typeMap, boardColumns, filter } = options;
+  const children = orderTrackedItems(item.children, options.orderingPolicy);
+  if (children.length === 0) return null;
 
-  const visible = orderTrackedItems(
-    item.children.filter((child) => isVisibleUnderFilter(child, filter)),
-    options.orderingPolicy,
-  );
-  if (visible.length === 0) return null;
-
-  const completedOrdinal = completedColumnOrdinal(boardColumns);
-  const completedCount = visible.filter(
-    (child) =>
-      boardColumnOrdinal(statusLabelOf(child, typeMap.get(child.type)), boardColumns) ===
-      completedOrdinal,
-  ).length;
+  const descriptors = children.map((child) => describeMinorChild(child, options));
 
   const badge = renderChildItemsBadge(options.doc, {
-    children: visible.map((child) => describeMinorChild(child, options)),
-    completedCount,
+    children: descriptors,
+    // Counted off the very same per-child answer the rows tick their checkboxes from, so the badge
+    // can never report a total the list it opens disagrees with.
+    completedCount: descriptors.filter((descriptor) => descriptor.done).length,
     color: options.minorChildColor,
   });
   badge.classList.add("awesomeado-tracking__minor-children");
@@ -1770,6 +1875,11 @@ function createFilterRowRenderer(params: {
   const { selectedTags, selectedActivity } = params.session;
   const windowHours = recentChangesWindowHours(context.properties);
 
+  // True while a repaint is already queued behind the index's in-flight read. Without it, every
+  // render that happens while the discussions are being read would queue another repaint against the
+  // same read, and they would all fire together when it lands.
+  let repaintQueuedOnNotes = false;
+
   const render = (): void => {
     // Dropping a selected tag nobody in the tree wears any more is what keeps the filter from
     // getting stuck on a tag that has no pill left to unclick.
@@ -1777,19 +1887,27 @@ function createFilterRowRenderer(params: {
     for (const selected of [...selectedTags]) {
       if (!tags.includes(selected)) selectedTags.delete(selected);
     }
-    if (selectedActivity.has("notes")) {
-      // Idempotent: the index only reads a discussion it has not read yet, so calling this on every
-      // repaint costs nothing once the board has been covered.
-      recentNotes.ensureProbed(
-        root,
-        new Date(recentWindowStart(context.services.now(), windowHours)).toISOString(),
-      );
-    }
 
     const repaint = (): void => {
       render();
       params.onChange();
     };
+
+    if (selectedActivity.has("notes")) {
+      // Idempotent: the index only re-reads a discussion whose recorded answer is missing or has gone
+      // stale, so calling this on every repaint costs nothing once the board has been covered.
+      recentNotes.ensureProbed(root);
+      if (recentNotes.isPending() && !repaintQueuedOnNotes) {
+        // The pills and the tree both answer "New notes" out of the index, so both are repainted
+        // ONCE — when the read lands — rather than flickering as individual answers arrive.
+        repaintQueuedOnNotes = true;
+        void recentNotes.whenSettled().then(() => {
+          repaintQueuedOnNotes = false;
+          repaint();
+        });
+      }
+    }
+
     container.replaceChildren(
       renderFiltersLabel(doc),
       ...renderTagFilterPills(doc, { tags, selected: selectedTags, onChange: repaint }),
@@ -2167,14 +2285,10 @@ function mountBoardBody(params: {
   const { doc, root, context, session, core } = params;
   const { filterRow, treeContainer } = createBoardPanels(doc, params.board);
 
-  // Late-bound for the same reason the drag repaint is: the index has to exist before the renderers
-  // that read it, but only those renderers know how to show the answer once the discussions land.
-  let onRecentNotesSettled: () => void = () => {};
-  const recentNotes = new RecentNotesIndex(
-    context.services.noteLoader,
-    context.services.logger,
-    () => onRecentNotesSettled(),
-  );
+  // Asked through the bulk activity reader, not the per-item note loader: the pill needs one date per
+  // item, and answering it through the loader cost a credentialed round-trip and up to 200 rendered
+  // comments per row. The filter row owns repainting once a read lands (see `createFilterRowRenderer`).
+  const recentNotes = new RecentNotesIndex(context.services.noteActivity, context.services.logger);
 
   const renderTreeContent = createBoardTreeRenderer({
     doc,
@@ -2203,10 +2317,6 @@ function mountBoardBody(params: {
     recentNotes,
     onChange: renderTreeContent,
   });
-  onRecentNotesSettled = () => {
-    refreshFilters();
-    renderTreeContent();
-  };
   // Painted before the first tree pass so the pills are on screen from the board's first frame; a
   // selection carried across a refresh also re-starts its discussion reads here.
   refreshFilters();

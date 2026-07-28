@@ -3,150 +3,197 @@
  *
  * The tree cannot answer it: Azure DevOps reports only `System.CommentCount`, a running TOTAL with
  * no dates on it, so an item that was talked about a year ago is indistinguishable from one that was
- * talked about an hour ago. The only source of truth is each item's discussion, which is why this
- * exists at all — and why it reads them **on demand**, when the reader lights the pill, rather than
- * with the board: a tracking board routinely shows dozens of items, and reading every discussion up
- * front would fire dozens of requests for a filter nobody asked for.
+ * talked about an hour ago. The only source of truth is the discussions themselves — so this reads
+ * the DATE of each item's newest comment through `INoteActivityReader`, which asks about the whole
+ * board in ONE credentialed round-trip.
  *
- * Each item is read at most once per board. A refresh builds a new board, and therefore a new index,
- * which is what makes the ⟳ button the way to re-ask the question.
+ * Three properties, and each is the answer to a way this was slow:
+ *
+ * - **One read for the board, not one per item.** Asking through the per-item notes loader meant an
+ *   injected script and a worker round-trip each time, which is what made the first click on the
+ *   pill a visible wait.
+ * - **Session-scoped, not board-scoped.** A refresh replaces the board, and an index that went with
+ *   it would hand every read straight back to the reader as another wait.
+ * - **A timestamp, not a yes/no.** A boolean answer silently rots as the rolling window slides
+ *   forward, whereas a timestamp can be re-tested against any later window, so an item correctly
+ *   ages out of "newly commented" without being re-read.
+ *
+ * A recorded answer is re-read only when the item's comment count has moved, which is what makes a
+ * refresh cheap: the tree read already brings the fresh count, so an untouched discussion is skipped
+ * and only the ones that actually changed cost anything.
  */
 
-import type { IWorkItemNoteLoader } from "../../../../common/ado/IWorkItemNoteLoader";
+import type { INoteActivityReader } from "../../../../common/ado/INoteActivityReader";
 import type { TrackedWorkItem } from "../../../../common/ado/TrackedWorkItem";
 import type { ILogger } from "../../../../common/logging/ILogger";
 
-/**
- * How many discussions are read at once.
- *
- * Every read is a credentialed round-trip to Azure DevOps routed through the service worker, so
- * releasing a whole board's worth at once would both queue behind itself and compete with the writes
- * and note panels sharing that channel. Small enough to stay polite, large enough that a board of a
- * few dozen items settles in a handful of round-trip times.
- */
-const MAX_CONCURRENT_DISCUSSION_READS = 6;
+/** What one read established about an item's discussion. */
+interface KnownDiscussion {
+  /**
+   * The item's comment count at the moment it was read. A LATER count that differs is the signal
+   * that this answer is out of date — the only cheap one Azure DevOps gives, since it ships no
+   * "last commented" date on the work item.
+   */
+  noteCount: number;
+  /**
+   * Epoch milliseconds of the newest comment, or `-Infinity` when the item has none.
+   *
+   * Stored instead of a boolean so the answer survives the window sliding forward: an item whose
+   * newest comment was 23 hours ago is "newly commented" now and is not an hour from now, and
+   * nothing has to be re-read for the board to get that right.
+   */
+  newestNoteAt: number;
+}
 
-/** The lazily-built answer to "which items were talked about inside the recent-changes window?". */
+/** The remembered answer to "which items were talked about inside the recent-changes window?". */
 export class RecentNotesIndex {
-  /** Items known to carry at least one note inside the window that was probed. */
-  private readonly withRecentNote = new Set<number>();
-
-  /** Items already read (or being read) — the guard that keeps each discussion to a single fetch. */
-  private readonly probed = new Set<number>();
-
-  /** Items whose read failed. Kept out of `withRecentNote` so a failure never invents activity. */
-  private readonly failed = new Set<number>();
-
-  private readonly waiting: number[] = [];
-
-  private inFlight = 0;
-
-  /** The window the recorded answers are pinned to; empty until the first probe. */
-  private probedSinceIso = "";
+  /** What each successfully-read discussion established. */
+  private readonly known = new Map<number, KnownDiscussion>();
 
   /**
-   * @param onSettled Called once each time the index goes from reading to idle, so the board can
-   * repaint with the completed answer instead of flickering per item as reads land.
+   * The count an item carried when its read FAILED. Kept so a failure is not retried on every
+   * repaint, while a later count change still earns it another try.
    */
+  private readonly failures = new Map<number, number>();
+
+  private reading = false;
+
+  /** Resolvers handed out by `whenSettled`, released together when a read lands. */
+  private settleWaiters: (() => void)[] = [];
+
   constructor(
-    private readonly loader: IWorkItemNoteLoader,
+    private readonly reader: INoteActivityReader,
     private readonly logger: ILogger,
-    private readonly onSettled: () => void,
   ) {}
 
-  /** True while discussions are still being read, so the pill can say the answer is not in yet. */
+  /** True while the board's discussions are being read, so the pill can say the answer is not in. */
   isPending(): boolean {
-    return this.inFlight > 0 || this.waiting.length > 0;
+    return this.reading;
   }
 
   /**
-   * Whether the item is KNOWN to have gained a note inside the probed window. An item that has not
+   * Resolves once the read in flight has landed. Resolves immediately when there is none, and never
+   * rejects: a caller is asking when the reading stopped, not whether it worked.
+   */
+  whenSettled(): Promise<void> {
+    if (!this.reading) {
+      return Promise.resolve();
+    }
+    return new Promise<void>((resolve) => {
+      this.settleWaiters.push(resolve);
+    });
+  }
+
+  /**
+   * Whether the item is KNOWN to have gained a comment at or after `sinceMs`. An item that has not
    * been read, or whose read failed, answers `false`: the board must not claim activity it never
    * confirmed.
    */
-  hasRecentNote(item: TrackedWorkItem): boolean {
-    return this.withRecentNote.has(item.id);
+  hasRecentNote(item: TrackedWorkItem, sinceMs: number): boolean {
+    const answer = this.known.get(item.id);
+    return answer !== undefined && answer.newestNoteAt >= sinceMs;
   }
 
   /**
-   * Read the discussions of every item under `root` that could carry a recent note, skipping those
-   * already read. Safe to call on every repaint — it is a no-op once the tree has been covered.
+   * Read the newest-comment date of every item under `root` whose answer is missing or out of date,
+   * and skip the rest. Safe to call on every repaint — it is a no-op once the board is covered.
    *
-   * Items ADO reports no comments for are skipped outright rather than read and found empty: that is
-   * the difference between a handful of requests and one per row on a board where most items have
+   * Items ADO reports no comments for are skipped outright rather than asked about and found empty:
+   * that is the difference between a small request and one per row on a board where most items have
    * never been commented on.
    */
-  ensureProbed(root: TrackedWorkItem, sinceIso: string): void {
-    // Pinned to the FIRST probe: "now" advances on every repaint, and re-reading each discussion
-    // because the window slid by a few seconds would turn a one-off cost into a permanent one.
-    if (this.probedSinceIso === "") {
-      this.probedSinceIso = sinceIso;
-    }
-
-    const queued: number[] = [];
-    for (const item of descendantsOf(root)) {
-      if (item.noteCount > 0 && !this.probed.has(item.id)) {
-        this.probed.add(item.id);
-        this.waiting.push(item.id);
-        queued.push(item.id);
-      }
-    }
-    if (queued.length === 0) {
+  ensureProbed(root: TrackedWorkItem): void {
+    if (this.reading) {
+      // A second pass while the first is in flight would re-ask for everything it has not recorded
+      // yet. The pass that lands re-checks the tree, so nothing is missed by waiting.
       return;
     }
-    // A rare, user-driven read of a whole board's discussions: worth one line naming what triggered
-    // it and how much it cost, so an unexpected burst of ADO traffic is explainable from the log.
-    this.logger.info(
-      `New notes filter: reading ${queued.length} discussion(s) since ${this.probedSinceIso} ` +
-        `(already known: ${this.probed.size - queued.length}).`,
+    const stale = descendantsOf(root).filter(
+      (item) => item.noteCount > 0 && this.needsReading(item),
     );
-    this.pump();
+    if (stale.length === 0) {
+      return;
+    }
+    // A rare, user-driven read of a board's discussions: worth one line naming what it cost and what
+    // it reused, so an unexpected burst of ADO traffic — or the absence of one after a refresh — is
+    // explainable from the log alone.
+    this.logger.info(
+      `New notes filter: reading ${stale.length} discussion date(s); ` +
+        `${this.known.size} already known and still current.`,
+    );
+    this.reading = true;
+    void this.read(stale).finally(() => {
+      this.reading = false;
+      this.reportSettled();
+    });
   }
 
-  /** Starts as many reads as the concurrency budget allows, then lets each completion start more. */
-  private pump(): void {
-    while (this.inFlight < MAX_CONCURRENT_DISCUSSION_READS && this.waiting.length > 0) {
-      const workItemId = this.waiting.shift();
-      if (workItemId === undefined) {
-        return;
-      }
-      this.inFlight++;
-      void this.read(workItemId).finally(() => {
-        this.inFlight--;
-        if (this.isPending()) {
-          this.pump();
-        } else {
-          this.reportSettled();
+  /**
+   * Is this item's answer missing or stale?
+   *
+   * The comment count is the whole test. It is the only per-item signal the tree carries about the
+   * discussion, so a count that has not moved means no comment was added — and the recorded answer,
+   * being a timestamp rather than a yes/no, is still true against today's window. (A comment added
+   * and deleted between two reads would leave the count equal and go unseen; it is self-correcting
+   * on the next change, and not worth re-reading the whole board on every refresh to catch.)
+   */
+  private needsReading(item: TrackedWorkItem): boolean {
+    const seen = this.known.get(item.id)?.noteCount ?? this.failures.get(item.id);
+    return seen !== item.noteCount;
+  }
+
+  /** Runs the bulk read and records only what the response actually established. */
+  private async read(stale: TrackedWorkItem[]): Promise<void> {
+    // Captured BEFORE the await: a notes panel opening meanwhile rewrites `item.noteCount` to the
+    // in-window count, and recording that against this answer would invalidate it on the next pass.
+    const counts = new Map(stale.map((item) => [item.id, item.noteCount]));
+    try {
+      const result = await this.reader.readNoteActivity({ workItemIds: [...counts.keys()] });
+      const answered = new Set<number>();
+      for (const entry of result.activity) {
+        const noteCount = counts.get(entry.workItemId);
+        if (noteCount === undefined) {
+          continue;
         }
-      });
+        answered.add(entry.workItemId);
+        this.failures.delete(entry.workItemId);
+        this.known.set(entry.workItemId, {
+          noteCount,
+          newestNoteAt: epochOf(entry.newestNoteDate),
+        });
+      }
+      // Anything the reader did not answer for is recorded as a failure, so it is neither claimed as
+      // "nobody commented" nor re-asked on every repaint.
+      this.recordUnanswered(counts, answered, result.error);
+    } catch (error) {
+      for (const [workItemId, noteCount] of counts) {
+        this.failures.set(workItemId, noteCount);
+      }
+      this.logger.error(
+        "New notes filter: reading the board's discussion dates threw. Those items will not be " +
+          "shown as newly commented.",
+        error,
+      );
     }
   }
 
-  /** Reads one item's discussion, recording only what the response actually established. */
-  private async read(workItemId: number): Promise<void> {
-    try {
-      const result = await this.loader.loadNotes({
-        workItemId,
-        sinceIso: this.probedSinceIso,
-      });
-      if (result.error !== null) {
-        this.failed.add(workItemId);
-        this.logger.error(
-          `New notes filter: couldn't read work item ${workItemId}'s discussion — ${result.error}. ` +
-            "It will not be shown as newly commented.",
-        );
-        return;
+  /** Marks the items the read did not answer for, and says why once rather than per item. */
+  private recordUnanswered(
+    counts: ReadonlyMap<number, number>,
+    answered: ReadonlySet<number>,
+    error: string | null,
+  ): void {
+    let lost = 0;
+    for (const [workItemId, noteCount] of counts) {
+      if (!answered.has(workItemId)) {
+        this.failures.set(workItemId, noteCount);
+        lost++;
       }
-      // The loader already drops anything older than the window, so a non-empty list IS the answer.
-      if (result.notes.length > 0) {
-        this.withRecentNote.add(workItemId);
-      }
-    } catch (error) {
-      this.failed.add(workItemId);
+    }
+    if (lost > 0) {
       this.logger.error(
-        `New notes filter: reading work item ${workItemId}'s discussion threw. ` +
-          "It will not be shown as newly commented.",
-        error,
+        `New notes filter: ${lost} discussion date(s) could not be read — ${error ?? "no reason given"}. ` +
+          "Those items will not be shown as newly commented.",
       );
     }
   }
@@ -154,11 +201,27 @@ export class RecentNotesIndex {
   /** One summary per settle, not one line per item: the diagnostics log is a bounded ring buffer. */
   private reportSettled(): void {
     this.logger.info(
-      `New notes filter settled: probed=${this.probed.size}, ` +
-        `withRecentNote=${this.withRecentNote.size}, failed=${this.failed.size}.`,
+      `New notes filter settled: known=${this.known.size}, failed=${this.failures.size}.`,
     );
-    this.onSettled();
+    const waiters = this.settleWaiters;
+    this.settleWaiters = [];
+    for (const resolve of waiters) {
+      resolve();
+    }
   }
+}
+
+/**
+ * An ISO timestamp as epoch milliseconds, or `-Infinity` when there is none (or it cannot be dated).
+ * `-Infinity` is deliberate rather than `null`: it compares correctly against every window start, so
+ * the caller never has to special-case "nothing here".
+ */
+function epochOf(iso: string | null): number {
+  if (iso === null) {
+    return Number.NEGATIVE_INFINITY;
+  }
+  const at = Date.parse(iso);
+  return Number.isNaN(at) ? Number.NEGATIVE_INFINITY : at;
 }
 
 /** Every item beneath `root`, excluding the root itself — the board never renders it as a row. */

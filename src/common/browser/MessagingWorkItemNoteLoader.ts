@@ -11,6 +11,7 @@ import {
   type LoadWorkItemNotesMessage,
   type LoadWorkItemNotesResponse,
 } from "./WorkItemNoteRequest";
+import { workerReplyProblem } from "./workerReply";
 
 /** Sends a load-notes request and resolves the background worker's reply, if any. */
 export type SendNotesRequest = (
@@ -44,16 +45,7 @@ export class MessagingWorkItemNoteLoader implements IWorkItemNoteLoader {
       if (response === undefined || response === null || response.raw === null) {
         // A failed read and an empty discussion must not look alike: an error leaves the panel able
         // to say so instead of claiming there is nothing to read.
-        //
-        // A response of `undefined` specifically means NO listener in the worker claimed the
-        // message — the worker now answers even a malformed one with a reason, so the only ways
-        // left to get here are a worker running older code than this page (the extension was
-        // reloaded or updated while the tab stayed open) or one that failed to start at all. Say so,
-        // because "no response" alone sends the reader looking for a network fault that is not there.
-        const error =
-          response?.error ??
-          "the background worker did not handle the request — it is running older code than this " +
-            "page (reload the ADO tab) or failed to start (check the extension's service worker)";
+        const error = workerReplyProblem(response);
         this.logger.error(`Notes load failed for work item ${request.workItemId}: ${error}.`);
         return { notes: [], currentUser: null, error };
       }

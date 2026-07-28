@@ -12,6 +12,7 @@ import {
   buildWorkItemUpdateUrl,
   type AdoRawTree,
 } from "../common/ado/fetchAdoTree";
+import { buildNewestNoteUrl } from "../common/ado/fetchNoteActivity";
 import {
   buildAddNoteUrl,
   buildEditNoteUrl,
@@ -66,6 +67,13 @@ import {
   type ReconcileFeatureCrewResponse,
 } from "../common/browser/FeatureCrewRequest";
 import {
+  READ_NOTE_ACTIVITY_MESSAGE,
+  readNoteActivityMessageProblem,
+  type RawNoteActivity,
+  type ReadNoteActivityMessage,
+  type ReadNoteActivityResponse,
+} from "../common/browser/NoteActivityRequest";
+import {
   isUpdateWorkItemFieldMessage,
   type UpdateWorkItemFieldMessage,
   type UpdateWorkItemFieldResponse,
@@ -104,6 +112,7 @@ import {
 } from "../common/browser/fetchAdoIdentityNamesInPage";
 import { fetchAdoIterationsInPage } from "../common/browser/fetchAdoIterationsInPage";
 import { fetchAdoTreeInPage } from "../common/browser/fetchAdoTreeInPage";
+import { fetchNoteActivityInPage } from "../common/browser/fetchNoteActivityInPage";
 import { fetchWorkItemNotesInPage } from "../common/browser/fetchWorkItemNotesInPage";
 import { findFeatureCrewInPage } from "../common/browser/findFeatureCrewInPage";
 import { readWorkItemRanksInPage } from "../common/browser/readWorkItemRanksInPage";
@@ -957,6 +966,92 @@ const loadWorkItemNotes = async (
  * than any window this board offers can contain.
  */
 const MAX_NOTE_PAGES = 10;
+
+/**
+ * How many of the board's discussions are read at once INSIDE the page.
+ *
+ * Browsers cap concurrent same-origin requests at around this anyway, and the board's own writes and
+ * note panels share that budget — releasing a whole board at once would simply queue them behind
+ * this read.
+ */
+const NOTE_ACTIVITY_CONCURRENCY = 6;
+
+/**
+ * Answers "when was each of these items last commented on?" for the board's **New notes** filter.
+ *
+ * ONE injection for the whole board, deliberately: the filter used to ask through the per-item notes
+ * loader, which meant one `executeScript` and one worker round-trip PER ITEM — overhead that dwarfed
+ * the fetches themselves and made the first use of that filter a visible wait. Every URL is still
+ * built here from the SENDER's own trusted tab URL, so the content side names WHICH items it means
+ * and never WHERE the request goes.
+ */
+const readNoteActivity = async (
+  message: ReadNoteActivityMessage,
+  tabId: number,
+  tabUrl: string,
+): Promise<ReadNoteActivityResponse> => {
+  // Logged on ARRIVAL, before anything can go wrong — same reason as the notes read above.
+  logger.info(`Note-activity read requested for ${message.workItemIds.length} work item(s).`);
+  const requests = message.workItemIds
+    .map((workItemId) => ({ workItemId, url: buildNewestNoteUrl(tabUrl, workItemId) }))
+    .filter((entry): entry is { workItemId: number; url: string } => entry.url !== null);
+  if (requests.length === 0) {
+    logger.info("Note-activity read skipped: tab is not a project-scoped ADO URL.");
+    return { raw: null, error: "not a project-scoped ADO URL" };
+  }
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: "MAIN",
+      func: fetchNoteActivityInPage,
+      args: [requests, NOTE_ACTIVITY_CONCURRENCY],
+    });
+    const raw = firstScriptResult(results) as RawNoteActivity | null;
+    if (raw === null) {
+      logger.error("Note-activity read returned no result.");
+      return { raw: null, error: "no result" };
+    }
+    // Counts and classification only, never a comment's text or an author's name (AGENTS.md §9).
+    logger.info(
+      `Note-activity read finished: dated=${raw.newest.length}, failed=${raw.failedIds.length}, ` +
+        `failure=${raw.failure}, status=${raw.status}.`,
+    );
+    return { raw };
+  } catch (error) {
+    // Injection fails on a closed/navigated/restricted tab; report "no data" so the filter degrades.
+    logger.error("Could not read note activity", error);
+    return { raw: null, error: "exception" };
+  }
+};
+
+chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
+  if (!claimsMessageType(message, READ_NOTE_ACTIVITY_MESSAGE)) {
+    // Not ours — leave it for the other listeners to handle.
+    return undefined;
+  }
+  const problem = readNoteActivityMessageProblem(message);
+  if (problem !== null) {
+    // Answered rather than ignored: an ignored message reaches the content side as "no response
+    // from background", which looks identical to a worker that has no handler at all.
+    logger.error(`Rejected a malformed note-activity request: ${problem}.`);
+    sendResponse({
+      raw: null,
+      error: `malformed request: ${problem}`,
+    } satisfies ReadNoteActivityResponse);
+    return undefined;
+  }
+  const tabId = sender.tab?.id;
+  const tabUrl = sender.tab?.url;
+  if (tabId === undefined || tabUrl === undefined) {
+    // Only a real ADO tab can be scripted; a message with no sender tab cannot be served.
+    logger.error("Cannot read note activity: message has no sender tab.");
+    sendResponse({ raw: null, error: "no sender tab" } satisfies ReadNoteActivityResponse);
+    return undefined;
+  }
+  void readNoteActivity(message as ReadNoteActivityMessage, tabId, tabUrl).then(sendResponse);
+  // Keep the message channel open for the async fetch reply above.
+  return true;
+});
 
 chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
   if (!claimsMessageType(message, LOAD_WORK_ITEM_NOTES_MESSAGE)) {

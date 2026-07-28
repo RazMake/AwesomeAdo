@@ -9,6 +9,7 @@
 
 import type { IFeatureCrewWriter } from "../ado/IFeatureCrewWriter";
 import type { IMentionDirectory } from "../ado/IMentionDirectory";
+import type { INoteActivityReader } from "../ado/INoteActivityReader";
 import type { IUserDirectory } from "../ado/IUserDirectory";
 import type {
   WorkItemFieldWriteRequest,
@@ -77,6 +78,15 @@ export interface EnhancedViewServices {
    * editing only on the notes that person wrote).
    */
   noteLoader: IWorkItemNoteLoader;
+  /**
+   * Reads only the DATE of each item's newest comment, for many items at once.
+   *
+   * Separate from `noteLoader` (Interface Segregation): showing one item's discussion and asking
+   * "which of these were talked about lately?" are different capabilities with wildly different
+   * costs. Answering the second through the first meant two credentialed fetches and up to 200
+   * rendered comments per item, one round-trip at a time.
+   */
+  noteActivity: INoteActivityReader;
   /**
    * Posts new discussion notes and rewrites existing ones. Separate from `noteLoader` (Interface
    * Segregation): showing notes and authoring them are different capabilities, and only some views

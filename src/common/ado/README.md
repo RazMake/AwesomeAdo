@@ -389,6 +389,24 @@ The normalized model for a work item **note** — one entry in its Azure DevOps 
 - `IWorkItemNoteWriter` — `addNote` / `editNote`. Kept separate from the loader (Interface
   Segregation): showing notes and authoring them are different capabilities.
 
+### `INoteActivityReader.ts` + `fetchNoteActivity.ts`
+
+Answers "when was each of these last commented on?" for many items at once — the board's **New
+notes** filter. Kept apart from the note loader for the same Interface-Segregation reason the writer
+is, and for a blunt cost reason: the loader fetches two credentialed URLs and up to 200
+`$expand=renderedText` comments **per item**, one round-trip at a time, and all this needs is one
+timestamp each.
+
+- `NoteActivityRequest` — `{ workItemIds }`; `NoteActivity` — `{ workItemId, newestNoteDate }`.
+- `NoteActivityResult` — `{ activity, error }`. An item whose read failed is **absent** from
+  `activity` rather than dated `null`, so "nobody commented" and "nobody could find out" stay apart.
+- `INoteActivityReader` — `readNoteActivity(request)`.
+- `buildNewestNoteUrl(href, workItemId)` — the smallest request ADO will answer: `$top=1&order=desc`,
+  no `$expand`.
+- `parseNewestNoteDate(rawPage)` — the newest comment's ISO date, or `null`; never throws, because
+  one odd response must not lose the rest of the board.
+- `MAX_NOTE_ACTIVITY_ITEMS` — the ceiling on one bulk ask (a runaway guard, not a real limit).
+
 ## Usage guidance
 
 - The **options-page reader** (`ChromeAdoMetadataReader` in `src/common/browser`) calls
