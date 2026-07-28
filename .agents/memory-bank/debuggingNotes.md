@@ -9,6 +9,69 @@ we hit, why they happened, and the exact fix so nobody re-derives them.
 agent-tool-local memory (it does not clone or transfer between machines/agents). Record new findings
 here so every agent, teammate, and clone sees them.
 
+## `executeScript` args must be JSON-serializable — an optional one is an `undefined` HOLE
+
+- SYMPTOM: `Work item 7623516 field write failed: exception.` — no HTTP status anywhere, because no
+  request was ever sent. Appeared the moment a 7th optional positional argument (`comment`) was added
+  to `updateWorkItemFieldInPage`, while the 6th (`multilineFormat`) was `undefined` for that call.
+- ROOT CAUSE: `chrome.scripting.executeScript` requires **every entry of `args` to be
+  JSON-serializable, and `undefined` is not.** A trailing `undefined` had been tolerated; an
+  `undefined` with a defined argument AFTER it is a hole in the middle of the array, and Chrome
+  rejects the entire injection. The background's `catch` reported that as a bare `"exception"`, which
+  is indistinguishable from a closed/restricted tab — and reads exactly like a rejected write.
+- FIX / RULE: **an injected function takes ONE config object, never an argument each.** Optional
+  _properties_ simply disappear when the object is serialized, so the config keeps growing safely.
+  This is why `FeatureCrewApplyConfig` is shaped that way; `UpdateWorkItemFieldConfig` now matches.
+- The background now returns `injection failed: <message>` instead of `"exception"`, so "the tab went
+  away" and "we passed something unserializable" are told apart from the board's log alone.
+- WATCH FOR: this is a runtime-only failure. `pnpm typecheck` is perfectly happy with an optional
+  positional argument, and every unit test calls the function DIRECTLY — never through
+  `executeScript` — so the suite cannot see it either. Any change to an injected function's
+  parameters must be exercised in a real browser.
+
+## Posting a comment BUMPS `System.Rev` — a field write after one always fails HTTP 412
+
+- SYMPTOM: the marker-tag command ("Tag with Blocked") recorded its comment and then logged, for
+  every single use: `Field write for item 7623516 → "System.Tags" failed (base rev 12)` / `HTTP 412`.
+  The item ended up commented but never tagged.
+- ROOT CAUSE: Azure DevOps creates a **new work item revision** when a comment is posted through the
+  comments API. Every field patch this extension sends is guarded by `{ op: "test", path: "/rev" }`,
+  so the tag write that followed carried a rev that was already one behind and ADO rejected the whole
+  patch. The comments API reports **no** new rev in its response, so there is nothing to re-bind to —
+  `currentRev()` cannot recover it, and neither can the queue.
+- FIX / RULE: **everything one user action changes on one item goes in ONE JSON Patch.** A comment
+  explaining a change is written as a `/fields/System.History` op **in the same patch** as the field
+  (`WorkItemFieldWriteRequest.comment` → `updateWorkItemFieldInPage`), so both are one revision:
+  they land together or neither does. See the `batch-work-item-writes` skill.
+- Do NOT "fix" this by reordering the two writes. Field-then-comment merely moves the failure: the
+  item changes and the comment explaining it can still fail, which then needs a compensating undo
+  that can itself fail. Two writes is the bug; one patch is the fix.
+- `System.History` is an **HTML** field, so the MAIN-world patch escapes `& < >` and turns newlines
+  into `<br>`. A comment written there still shows up in the Comments API the notes panel reads.
+- Related, already recorded below: reordering also bumps `System.Rev` but the order API never reports
+  the new one — never treat a post-move cached rev as authoritative.
+
+## A cached `System.Rev` goes stale ON ITS OWN — `baseValue` is the one licensed rebase
+
+- SYMPTOM: the SAME `HTTP 412` as above (`Field write for item 7623516 → "System.Tags" failed (base
+rev 15)`) reappearing on a marker-tag command that was ALREADY one patch. One patch was still the
+  right fix; it just is not the only way a rev goes stale.
+- DO NOT re-diagnose this as "two writes". Check the patch first (`comment` rides in it?). If it does,
+  the rev drifted between the board's last read and the write.
+- ROOT CAUSE: several things advance `System.Rev` **without reporting the new value**, so the board's
+  cached `item.rev` silently falls behind and EVERY later write on that item is refused until the
+  board is reloaded: a drag-reorder (`_apis/work/workitemsorder`), the ADR-042 rank fallback, a note
+  posted through the comments API, and anyone editing the item in ADO's own tab.
+- FIX / RULE: a change **derived** from a field's current value passes that value as `baseValue`
+  (`ItemFieldChange` → `QueuedFieldWrite` → `WorkItemFieldWriteRequest` → `UpdateWorkItemFieldConfig`).
+  On a 412/409 the injected patch re-reads the item and retries ONCE against the server's rev — but
+  only while the field still holds `baseValue`. A field that moved is still reported as a conflict,
+  so ADR-030's "no auto-rebase" still holds for the case it was written for.
+- The retry passes `mayRebase: false`, so it can never loop against an item that is moving.
+- Comparison is a trimmed string compare, which is exact for `System.Tags` because
+  `formatWorkItemTags` joins with ADO's own `"; "`. A field whose stored form differs from what the
+  extension would write simply never rebases (it fails as before) — it can never rebase wrongly.
+
 ## "New notes" emptied the board: a STALE service worker, then a half-migrated API
 
 Two independent faults with the identical symptom (pill lights, board goes blank). Both are worth
@@ -574,9 +637,9 @@ iterationPath.includes("\\")`. sprintName = leaf of iterationPath (`sprintLeaf` 
   got `knownNames()` before the answer landed, rendered the placeholder, and the id was then marked
   asked forever. **An in-flight read must be SHARED (awaited), never skipped.** Symptom is
   order-dependent and looks random — the same person resolves in one place and not another.
-- A batch failure used to settle every id in that batch as "has no name" permanently. The endpoint
-  OMITS ids it cannot resolve, so a short answer is indistinguishable from a failed batch without an
-  explicit `complete` flag on the response. Only settle a miss when the read completed.
+- A failed read used to settle every id in it as "has no name" permanently. An id ADO cannot resolve
+  comes back as an EMPTY match, not an error, so it is indistinguishable from a failed request
+  without an explicit `complete` flag on the response. Only settle a miss when the read completed.
 - Notes LOOKED fine because ADO's `renderedText` carries names; descriptions never do, and a note ADO
   returned no `renderedText` for falls back to the raw source. A note the extension **just wrote** is
   handed back with NO rendering at all, so `submitNote` has to re-resolve before repainting.

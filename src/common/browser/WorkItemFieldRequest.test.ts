@@ -222,3 +222,67 @@ describe("isUpdateWorkItemFieldMessage - value", () => {
     ).toBe(false);
   });
 });
+
+describe("isUpdateWorkItemFieldMessage - comment", () => {
+  it("accepts a plain-text comment riding along with the field change, or none at all", () => {
+    for (const comment of ["[BLOCKED] Waiting on the API.", "", undefined]) {
+      expect(
+        isUpdateWorkItemFieldMessage({
+          type: UPDATE_WORK_ITEM_FIELD_MESSAGE,
+          id: 123,
+          rev: 5,
+          field: "System.Tags",
+          value: "Blocked",
+          comment,
+        }),
+      ).toBe(true);
+    }
+  });
+
+  it("rejects a comment that is not a string, so nothing else reaches the patch body", () => {
+    for (const comment of [1, null, {}, ["a"]]) {
+      expect(
+        isUpdateWorkItemFieldMessage({
+          type: UPDATE_WORK_ITEM_FIELD_MESSAGE,
+          id: 123,
+          rev: 5,
+          field: "System.Tags",
+          value: "Blocked",
+          comment,
+        }),
+      ).toBe(false);
+    }
+  });
+});
+
+describe("isUpdateWorkItemFieldMessage - base value", () => {
+  it("accepts the field's expected current value, a cleared one, or none at all", () => {
+    for (const baseValue of ["Blocked", "", null, undefined]) {
+      expect(
+        isUpdateWorkItemFieldMessage({
+          type: UPDATE_WORK_ITEM_FIELD_MESSAGE,
+          id: 123,
+          rev: 5,
+          field: "System.Tags",
+          value: "Blocked; Interrupt",
+          baseValue,
+        }),
+      ).toBe(true);
+    }
+  });
+
+  it("rejects a base value that is neither a string nor null", () => {
+    for (const baseValue of [1, {}, ["a"]]) {
+      expect(
+        isUpdateWorkItemFieldMessage({
+          type: UPDATE_WORK_ITEM_FIELD_MESSAGE,
+          id: 123,
+          rev: 5,
+          field: "System.Tags",
+          value: "Blocked; Interrupt",
+          baseValue,
+        }),
+      ).toBe(false);
+    }
+  });
+});

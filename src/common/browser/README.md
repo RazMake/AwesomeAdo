@@ -517,16 +517,44 @@ thrown send, a missing/`undefined` reply, or an `ok: false` response is logged a
 Constructed only in the composition root (`src/content/index.ts`); feature code depends on
 `IWorkItemFieldWriter`.
 
-### `updateWorkItemFieldInPage(updateUrl, id, rev, field, value)` — `updateWorkItemFieldInPage.ts`
+### `updateWorkItemFieldInPage(config)` — `updateWorkItemFieldInPage.ts`
 
 The self-contained function the **background worker** injects into the ADO tab's MAIN world to PATCH
-a single work item field. Uses JSON Patch (`application/json-patch+json`) with a test-and-set: the
+a single work item field. Takes ONE `UpdateWorkItemFieldConfig`
+(`{ updateUrl, rev, field, value, multilineFormat?, comment?, baseValue? }`) rather than an argument
+each, because `executeScript` requires every entry of `args` to be JSON-serializable and `undefined`
+is not — an omitted optional argument is an unserializable hole in that array and Chrome rejects the
+whole injection before it runs (see the note under **Injecting into the page world** below).
+
+Uses JSON Patch (`application/json-patch+json`) with a test-and-set: the
 rev is tested first (`{ op: "test", path: "/rev", value: rev }`), then the field is written — a set
 value adds it (`{ op: "add", path: "/fields/<field>", value }`) and a `null` value clears it
 (`{ op: "remove", path: "/fields/<field>" }`). Returns `{ ok: true, rev }` on success (extracting the
 new rev from the response body), or `{ ok: false, error }` on failure. The URL is built by
 `buildWorkItemUpdateUrl` (in `common/ado/fetchAdoTree`) from the sender's own trusted tab URL.
 Serialized with `Function.prototype.toString`, so it references only its parameters and page globals.
+
+Two more operations can ride along in the **same** patch, and both must:
+
+- `multilineFormat` → `{ op: "add", path: "/multilineFieldsFormat/<field>", value }`. A multiline
+  field left on ADO's default (`Html`) stores Markdown source verbatim, so setting the format in a
+  later request would leave one revision of literal asterisks behind.
+- `comment` → `{ op: "add", path: "/fields/System.History", value }`, the discussion comment saying
+  why the change was made. **Never post it through the comments API instead**: that creates its own
+  revision, so the field patch is then rejected by its own rev test with `HTTP 412`. One patch means
+  one revision — the change and its reason land together or neither does. The text arrives as plain
+  text and is escaped here (`& < >`, newlines → `<br>`) because `System.History` is an HTML field.
+  See the `batch-work-item-writes` skill.
+
+`baseValue` — the value the caller believes the field currently holds — authorizes **one**
+rebase-and-retry when the rev test is refused (`HTTP 412`/`409`). The item is re-read and the same
+patch is re-sent against the server's current rev **only** while the field still holds `baseValue`;
+otherwise the conflict is reported as `HTTP 412 — the field changed since it was read`. Supply it
+whenever the new value is derived from the old one (adding a tag to the tags already there), because
+a drag-reorder, the rank fallback, a note posted through the comments API and any edit made in ADO's
+own tab all advance `System.Rev` **without reporting the new one** — so a cached rev goes stale by
+itself and every later write is refused until the board is reloaded. Omit it to keep the strict
+"one attempt, no rebase" behaviour.
 
 ## Moving a work item (drag-to-reorder)
 

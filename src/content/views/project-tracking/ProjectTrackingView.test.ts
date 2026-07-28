@@ -9,6 +9,7 @@ import type {
   TypeCatalogEntry,
 } from "../../../common/ado/TrackedWorkItem";
 import type { WorkItemNote } from "../../../common/ado/WorkItemNote";
+import { normalizeMarkerTags } from "../../../common/settings/ExtensionSettings";
 import type {
   EnhancedViewContext,
   EnhancedViewServices,
@@ -111,6 +112,9 @@ function createFakeServices(overrides?: Partial<EnhancedViewServices>): Enhanced
     },
     getTypes: () => FIXTURE_TYPES,
     getBoardColumns: () => ["Queue", "Active", "Waiting", "Done", "Removed"],
+    // The shipped defaults, so the marker commands and pills are configured in every fixture; tests
+    // covering the "nothing configured" degradation override this with blank tags.
+    markerTags: () => normalizeMarkerTags(undefined),
     loadSprintWindow: async () => ({
       entries: [...FIXTURE_SPRINT_WINDOW.entries],
       currentName: FIXTURE_SPRINT_WINDOW.currentName,
@@ -164,6 +168,7 @@ function createFixtureFeatures(bob: TrackedUser, carol: TrackedUser, alice: Trac
       changedBy: carol,
       stateChangeDate: "2026-07-22T10:15:00Z",
       description: "Implement OAuth2 authentication.",
+      tags: [],
       importance: 100,
       // The one fixture item ADO says has a discussion, so the "has notes" icon state is exercised.
       noteCount: 2,
@@ -184,6 +189,7 @@ function createFixtureFeatures(bob: TrackedUser, carol: TrackedUser, alice: Trac
           changedBy: carol,
           stateChangeDate: "2026-01-20T10:00:00Z",
           description: "Design and implement the login screen.",
+          tags: [],
           importance: 100,
           noteCount: 0,
           eta: null,
@@ -206,6 +212,7 @@ function createFixtureFeatures(bob: TrackedUser, carol: TrackedUser, alice: Trac
       changedBy: alice,
       stateChangeDate: "2026-01-18T11:00:00Z",
       description: "Migrate legacy data to new schema.",
+      tags: [],
       importance: 200,
       noteCount: 0,
       eta: null,
@@ -237,6 +244,7 @@ function createFixtureTree(): TrackedWorkItem {
     changedBy: bob,
     stateChangeDate: "2026-07-20T14:30:00Z",
     description: "Modernize the platform infrastructure.",
+    tags: [],
     importance: 100,
     noteCount: 0,
     eta: "2026-12-31T00:00:00Z",
@@ -2645,6 +2653,7 @@ function createItem(overrides: Partial<TrackedWorkItem> & { id: number }): Track
     // unless the test says so.
     stateChangeDate: "2026-07-24T08:00:00Z",
     description: "",
+    tags: [],
     importance: overrides.id,
     noteCount: 0,
     eta: null,
@@ -2839,7 +2848,7 @@ describe("ProjectTrackingView — the item right-click menu", () => {
     return writeText;
   };
 
-  it("offers the three shared commands, then the item's own, on a tree row", async () => {
+  it("offers the three shared commands, then the item's own, then the marker flags", async () => {
     const root = await renderDeepBoard();
     await turnSprintFilterOff(root);
 
@@ -2853,8 +2862,11 @@ describe("ProjectTrackingView — the item right-click menu", () => {
       "Update description",
       "Move to another sprint\u203A",
       "View all notes",
+      "Tag with Blocked (internal)",
+      "Tag with Blocked by another team",
     ]);
-    expect(root.querySelector(".awesomeado-item-menu__separator")).not.toBeNull();
+    // Two rules: one under the commands that only DESCRIBE the item, one above the flags.
+    expect(root.querySelectorAll(".awesomeado-item-menu__separator")).toHaveLength(2);
   });
 
   it("copies the id of the row that was right-clicked", async () => {
@@ -4312,5 +4324,283 @@ describe("ProjectTrackingView — the New notes pill", () => {
     await settleActivityReads();
 
     expect(asked).toEqual([]);
+  });
+});
+
+/** A board whose one Feature row (id 2) carries the given ADO tags, with every write recorded. */
+async function renderFlaggedBoard(
+  tags: string[],
+  overrides: Partial<EnhancedViewServices> = {},
+): Promise<{
+  root: HTMLElement;
+  writes: WorkItemFieldWriteRequest[];
+  notes: { workItemId: number; text: string }[];
+}> {
+  const writes: WorkItemFieldWriteRequest[] = [];
+  // Recorded so a test can prove the reason does NOT go through the comments API: a separately
+  // posted comment advances the item's rev and gets the tag patch rejected with HTTP 412.
+  const notes: { workItemId: number; text: string }[] = [];
+  const root = await renderDeepBoard({
+    loadTree: async () => ({
+      isTreeQuery: true,
+      roots: [
+        createItem({
+          id: 1,
+          type: "Epic",
+          title: "Platform Modernization",
+          children: [
+            createItem({ id: 2, type: "Feature", title: "User Authentication", tags }),
+            createItem({ id: 7, type: "Feature", title: "Data Migration" }),
+          ],
+        }),
+      ],
+      error: null,
+    }),
+    writeField: async (request) => {
+      writes.push(request);
+      return { ok: true, rev: request.rev + 1 };
+    },
+    noteWriter: {
+      addNote: async (request) => {
+        notes.push(request);
+        return { ok: true };
+      },
+      editNote: async () => ({ ok: true }),
+    },
+    ...overrides,
+  });
+  await turnSprintFilterOff(root);
+  return { root, writes, notes };
+}
+
+/** Opens the menu on the flagged row and returns the marker command whose label starts with `verb`. */
+function markerCommand(root: HTMLElement, verb: string): HTMLButtonElement {
+  rightClick(root.querySelector(".awesomeado-tracking__row")!);
+  return commandNamed(root, verb);
+}
+
+/** The marker pills on the board's filter row (never the one drawn inside a menu command). */
+const filterMarkerPills = (root: HTMLElement): HTMLButtonElement[] => [
+  ...root.querySelectorAll<HTMLButtonElement>(
+    ".awesomeado-tracking__filters .awesomeado-marker-pill",
+  ),
+];
+
+/** Every row title currently on the board. */
+const rowTitles = (root: HTMLElement): (string | null)[] =>
+  [...root.querySelectorAll(".awesomeado-tracking__item-title")].map((title) => title.textContent);
+
+describe("ProjectTrackingView - flagging an item from its menu", () => {
+  it("shows each flag as the very pill the item will wear", async () => {
+    const { root } = await renderFlaggedBoard([]);
+
+    const command = markerCommand(root, "Tag with Blocked (internal)");
+    const pill = command.querySelector<HTMLElement>(".awesomeado-marker-pill")!;
+    expect(pill.textContent).toBe("Blocked (internal)");
+    expect(pill.title).toBe('Azure DevOps tag "Blocked"');
+    // The row is still announceable despite its label being a rendered thing rather than text.
+    expect(command.getAttribute("aria-label")).toBe("Tag with Blocked (internal)");
+  });
+
+  it("refuses to flag an item until a reason is typed", async () => {
+    const { root, writes, notes } = await renderFlaggedBoard([]);
+
+    markerCommand(root, "Tag with Blocked (internal)").click();
+    editorIn(root).save.click();
+    await settleWrites();
+
+    expect(notes).toEqual([]);
+    expect(writes).toEqual([]);
+  });
+
+  it("carries the reason and the tag in ONE patch, never as a separate comment", async () => {
+    const { root, writes, notes } = await renderFlaggedBoard([]);
+
+    markerCommand(root, "Tag with Blocked (internal)").click();
+    const { input, save } = editorIn(root);
+    input.value = "Waiting on the API.";
+    save.click();
+    await settleWrites();
+
+    expect(writes).toEqual([
+      expect.objectContaining({
+        id: 2,
+        field: "System.Tags",
+        value: "Blocked",
+        comment: "[BLOCKED] Waiting on the API.",
+      }),
+    ]);
+    // Posting it through the comments API would create its own revision and get this very patch
+    // rejected on its rev test, so nothing may reach the note writer.
+    expect(notes).toEqual([]);
+  });
+
+  it("adds the other team's tag alongside one the item already wears", async () => {
+    const { root, writes } = await renderFlaggedBoard(["Blocked"]);
+
+    markerCommand(root, "Tag with Blocked by another team").click();
+    const { input, save } = editorIn(root);
+    input.value = "Handed to Platform.";
+    save.click();
+    await settleWrites();
+
+    expect(writes[0]).toMatchObject({
+      field: "System.Tags",
+      value: "Blocked; Blocked by another team",
+    });
+  });
+
+  it("names the tags it derived the change from, so a rev bump elsewhere cannot sink the write", async () => {
+    const { root, writes } = await renderFlaggedBoard(["Blocked"]);
+
+    markerCommand(root, "Tag with Blocked by another team").click();
+    const { input, save } = editorIn(root);
+    input.value = "Handed to Platform.";
+    save.click();
+    await settleWrites();
+
+    // A drag-reorder or a note advances System.Rev without reporting it, so without the base value
+    // the very next flag on that item is refused with HTTP 412 until the board is reloaded.
+    expect(writes[0]).toMatchObject({ baseValue: "Blocked" });
+  });
+
+  it("does not flag the item when the patch carrying the reason was rejected", async () => {
+    const { root, writes } = await renderFlaggedBoard([], {
+      writeField: async (request) => {
+        writes.push(request);
+        return { ok: false, error: "HTTP 412" };
+      },
+    });
+
+    markerCommand(root, "Tag with Blocked (internal)").click();
+    const { input, save } = editorIn(root);
+    input.value = "Waiting on the API.";
+    save.click();
+    await settleWrites();
+
+    // One patch means one outcome: the reason and the tag were refused together, so there is nothing
+    // to undo — the pill never appears and the author keeps their words.
+    expect(filterMarkerPills(root)).toEqual([]);
+    expect(editorIn(root).input.value).toBe("Waiting on the API.");
+  });
+});
+
+describe("ProjectTrackingView - clearing a flag and unconfigured markers", () => {
+  it("offers to clear a flag the item already wears, with no reason asked for", async () => {
+    const { root } = await renderFlaggedBoard(["Blocked"]);
+
+    const command = markerCommand(root, "Clear Blocked (internal)");
+    expect(command.querySelector(".awesomeado-marker-pill")?.textContent).toBe(
+      "Blocked (internal)",
+    );
+
+    command.click();
+    await settleWrites();
+
+    expect(root.querySelector(".awesomeado-item-menu__panel")).toBeNull();
+  });
+
+  it("clears the tag with no reason attached to the patch", async () => {
+    const { root, writes } = await renderFlaggedBoard(["Blocked"]);
+
+    markerCommand(root, "Clear Blocked (internal)").click();
+    await settleWrites();
+
+    expect(writes[0]).toMatchObject({ id: 2, field: "System.Tags", value: "" });
+    expect(writes[0]?.comment).toBeUndefined();
+  });
+
+  it("leaves the flag inert, saying why, when the team configured no tag for it", async () => {
+    const { root } = await renderFlaggedBoard([], {
+      markerTags: () => ({
+        blocked: { tag: "", commentTag: "" },
+        blockedByOtherTeam: { tag: "Blocked by another team", commentTag: "" },
+        interrupt: { tag: "", commentTag: "" },
+      }),
+    });
+
+    const command = markerCommand(root, "Tag with Blocked (internal)");
+    expect(command.disabled).toBe(true);
+    expect(command.title).toContain("Marker tags");
+  });
+
+  it("writes the bare comment when the team configured no comment token", async () => {
+    const { root, writes } = await renderFlaggedBoard([], {
+      markerTags: () => ({
+        blocked: { tag: "Blocked", commentTag: "" },
+        blockedByOtherTeam: { tag: "Blocked by another team", commentTag: "" },
+        interrupt: { tag: "", commentTag: "" },
+      }),
+    });
+
+    markerCommand(root, "Tag with Blocked (internal)").click();
+    const { input, save } = editorIn(root);
+    input.value = "Waiting on the API.";
+    save.click();
+    await settleWrites();
+
+    expect(writes[0]?.comment).toBe("Waiting on the API.");
+  });
+});
+
+describe("ProjectTrackingView - the marker filter pills", () => {
+  it("offers no pill while nothing on the board is flagged", async () => {
+    const { root } = await renderFlaggedBoard([]);
+
+    expect(filterMarkerPills(root)).toEqual([]);
+  });
+
+  it("offers a pill the moment any item carries that tag", async () => {
+    const { root } = await renderFlaggedBoard(["Blocked"]);
+
+    expect(filterMarkerPills(root).map((pill) => pill.textContent)).toEqual(["Blocked (internal)"]);
+  });
+
+  it("narrows the board to the flagged item when its pill is lit", async () => {
+    const { root } = await renderFlaggedBoard(["Blocked"]);
+    expect(rowTitles(root)).toEqual(["User Authentication", "Data Migration"]);
+
+    filterMarkerPills(root)[0]!.click();
+
+    expect(rowTitles(root)).toEqual(["User Authentication"]);
+  });
+
+  it("ANDs the marker group with the crew-tag group rather than widening it", async () => {
+    const { root } = await renderFlaggedBoard(["Blocked"]);
+
+    filterMarkerPills(root)[0]!.click();
+    // The flagged Feature is unassigned, so it wears no crew tag; lighting the untagged bucket must
+    // not drag the unflagged Feature back in.
+    const untagged = root.querySelector<HTMLButtonElement>(
+      ".awesomeado-tracking__filters .awesomeado-tag-pill",
+    );
+    untagged?.click();
+
+    expect(rowTitles(root)).toEqual(["User Authentication"]);
+  });
+
+  it("drops a selection whose pill is gone once the item is no longer flagged", async () => {
+    const { root } = await renderFlaggedBoard(["Blocked"]);
+
+    filterMarkerPills(root)[0]!.click();
+    markerCommand(root, "Clear Blocked (internal)").click();
+    await settleWrites();
+
+    // The pill it was lit on no longer exists, so the board is not left narrowed to nothing.
+    expect(filterMarkerPills(root)).toEqual([]);
+    expect(rowTitles(root)).toEqual(["User Authentication", "Data Migration"]);
+  });
+});
+
+describe("ProjectTrackingView - when a flag write is rejected", () => {
+  it("keeps showing a flag whose removal was refused", async () => {
+    const { root } = await renderFlaggedBoard(["Blocked"], {
+      writeField: async () => ({ ok: false, error: "HTTP 412" }),
+    });
+
+    markerCommand(root, "Clear Blocked (internal)").click();
+    await settleWrites();
+
+    expect(filterMarkerPills(root).map((pill) => pill.textContent)).toEqual(["Blocked (internal)"]);
   });
 });

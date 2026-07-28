@@ -26,12 +26,50 @@ export interface UpdateWorkItemFieldMessage {
    * never reach the patch body — the same closed-operation reasoning as `isFieldReferenceName`.
    */
   multilineFormat?: MultilineFieldFormat;
+  /**
+   * A discussion comment recorded as part of the same revision (`System.History`). Plain text — the
+   * MAIN-world patch escapes it for the HTML field it lands in.
+   */
+  comment?: string;
+  /**
+   * The value the sender believes `field` currently holds, which authorizes ONE rebase-and-retry
+   * after a stale-rev refusal (see `updateWorkItemFieldInPage`). Omitted means "never rebase".
+   *
+   * Safe to accept from the content side: it can only ever make the patch run against a rev the
+   * SERVER just reported, never widen what the patch does — the field, the value and the pointer are
+   * all still the ones already validated above.
+   */
+  baseValue?: string | null;
 }
 
 export interface UpdateWorkItemFieldResponse {
   ok: boolean;
   rev?: number;
   error?: string;
+}
+
+/**
+ * What the background worker hands the MAIN-world patch: the message's own values plus the update
+ * URL it built from the SENDER's trusted tab URL (which is why this is not simply the message).
+ *
+ * ONE object rather than an argument each because `chrome.scripting.executeScript` requires every
+ * entry of `args` to be JSON-serializable, and `undefined` is not — an omitted optional argument
+ * leaves an unserializable hole in that array and Chrome rejects the whole injection before it runs.
+ * Optional *properties* just disappear when the object is serialized, so this shape stays safe as it
+ * grows.
+ */
+export interface UpdateWorkItemFieldConfig {
+  /** The item's `_apis/wit/workitems/{id}` endpoint, already resolved from the sender's tab. */
+  updateUrl: string;
+  /** The item's last-known rev, asserted by the patch's `test` op. */
+  rev: number;
+  field: string;
+  value: string | null;
+  multilineFormat?: MultilineFieldFormat;
+  /** Plain text; the patch escapes it for the HTML field it lands in. */
+  comment?: string;
+  /** The field's expected current value; supplying it authorizes one rebase after a stale rev. */
+  baseValue?: string | null;
 }
 
 /**
@@ -63,6 +101,26 @@ function isMultilineFormat(value: unknown): value is MultilineFieldFormat | unde
   return value === undefined || value === "Markdown" || value === "Html";
 }
 
+/** A revision number: any integer, since it is only ever echoed back into the patch's `test` op. */
+function isRevision(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value);
+}
+
+/** The field's new value: any string, or `null` to clear it. */
+function isFieldValue(value: unknown): value is string | null {
+  return typeof value === "string" || value === null;
+}
+
+/** The field's expected current value: like a field value, or simply absent ("never rebase"). */
+function isBaseValue(value: unknown): value is string | null | undefined {
+  return value === undefined || isFieldValue(value);
+}
+
+/** An optional plain-text comment to record in the same revision. */
+function isComment(value: unknown): value is string | undefined {
+  return value === undefined || typeof value === "string";
+}
+
 export function isUpdateWorkItemFieldMessage(value: unknown): value is UpdateWorkItemFieldMessage {
   if (typeof value !== "object" || value === null) {
     return false;
@@ -71,10 +129,11 @@ export function isUpdateWorkItemFieldMessage(value: unknown): value is UpdateWor
   return (
     candidate.type === UPDATE_WORK_ITEM_FIELD_MESSAGE &&
     isWorkItemId(candidate.id) &&
-    typeof candidate.rev === "number" &&
-    Number.isInteger(candidate.rev) &&
+    isRevision(candidate.rev) &&
     isFieldReferenceName(candidate.field) &&
     isMultilineFormat(candidate.multilineFormat) &&
-    (typeof candidate.value === "string" || candidate.value === null)
+    isComment(candidate.comment) &&
+    isBaseValue(candidate.baseValue) &&
+    isFieldValue(candidate.value)
   );
 }

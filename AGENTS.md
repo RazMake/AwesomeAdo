@@ -304,7 +304,7 @@ These are **non-negotiable**.
 
 ## 13. Skills Index
 
-Six cross-agent skills live under `.agents/skills/`. Each skill links back to this file and adds
+Seven cross-agent skills live under `.agents/skills/`. Each skill links back to this file and adds
 workflow detail without copying its rule bodies.
 
 | Skill                  | Path                                             | Purpose                                                     |
@@ -315,6 +315,7 @@ workflow detail without copying its rule bodies.
 | Changelog & Versioning | `.agents/skills/changelog-versioning/SKILL.md`   | Version scheme, ChangeLog format, worker bullet protocol    |
 | Add an Enhanced View   | `.agents/skills/add-enhanced-view/SKILL.md`      | Recipe + boilerplate for adding a new query view            |
 | Add an Ordering Policy | `.agents/skills/add-ordering-policy/SKILL.md`    | Recipe for a new sort order and for applying one in a view  |
+| Batch Work Item Writes | `.agents/skills/batch-work-item-writes/SKILL.md` | One JSON Patch per user action; the rev guard and HTTP 412  |
 
 ---
 

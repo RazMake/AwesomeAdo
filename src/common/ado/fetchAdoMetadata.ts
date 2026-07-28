@@ -1,5 +1,4 @@
 import { parseAdoContext } from "../navigation/AdoContext";
-import { VISUAL_STUDIO_SUFFIX } from "../navigation/AdoHost";
 
 import type { AdoTeam, AdoWorkItemField, AdoWorkItemType } from "./AdoMetadata";
 import { ADO_API_VERSION } from "./adoApi";
@@ -52,26 +51,23 @@ export function resolveAdoProjectContext(href: string): { base: string; project:
 }
 
 /**
- * The REST base for the organization's IDENTITY service, or null when `href` is not a recognized ADO
- * location. Unlike every other builder here this does NOT need a project — identities are org-scoped.
+ * The REST collection base for the organization that owns `href`, or null when `href` is not a
+ * recognized ADO location. Unlike `resolveAdoProjectContext` this does NOT need a project, for the
+ * org-scoped services (identities) that are reachable from a folder or org-level tab too.
  *
- * Identities are the one thing in this folder that is NOT served from the collection base: the bulk
- * read lives on Azure DevOps' separate `vssps` service host (`vssps.dev.azure.com/{org}`, or
- * `{org}.vssps.visualstudio.com` on the legacy per-org host). Deriving it beside `adoCollectionBaseUrl`
- * keeps "which host serves which ADO service" a single decision, and makes the cross-origin hop
- * explicit rather than a surprise buried in a URL template — a MAIN-world fetch to this base is a
- * real CORS request, not the same-origin call the rest of the extension's reads rely on.
+ * WHY this must stay the collection base: it is the ONLY ADO host the extension can read with the
+ * signed-in session. The separate `vssps` identity host answers a credentialed cross-origin fetch
+ * with `Access-Control-Allow-Origin: *`, which the browser rejects outright for a request whose
+ * credentials mode is `include` — see `mentionIdentities`.
  */
-export function resolveAdoIdentityServiceBase(href: string): string | null {
+export function resolveAdoOrganizationBase(href: string): string | null {
   const context = parseAdoContext(href);
   if (context === null) {
     return null;
   }
   // parseAdoContext already validated the URL, so this cannot throw.
   const url = new URL(href);
-  return url.hostname === "dev.azure.com"
-    ? `https://vssps.dev.azure.com/${encodeURIComponent(context.organization)}`
-    : `https://${encodeURIComponent(context.organization)}.vssps${VISUAL_STUDIO_SUFFIX}`;
+  return adoCollectionBaseUrl(url.origin, url.hostname, context.organization);
 }
 
 /**

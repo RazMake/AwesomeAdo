@@ -24,20 +24,34 @@ The extension is feature-complete for its current scope:
   sized in `em` to the title it precedes, dimmable), and `MarkdownText` (author-written content —
   descriptions and notes — rendered as allowlist-rebuilt DOM, with attachment images and
   `@`-mentions; ADR-044), plus `TextEditor` (the one themed in-place editor — one-line or multi-line
-  Markdown — behind every note, title and description edit) and `ItemContextMenu` (the shared
+  Markdown — behind every note, title and description edit), `MarkerPill` (the fixed-color pill for a
+  recognized condition — amber blocked / red blocked-by-another-team / violet interrupt — shared by
+  the tagging commands and the board's filter row) and `ItemContextMenu` (the shared
   per-item right-click menu: Copy Item ID / Copy ADO Url / Open in ADO, the last accented, then a
-  rule and whatever commands the CALLER supplies for that item as `run` / `panel` / `submenu`; one
+  rule and whatever commands the CALLER supplies for that item as `run` / `panel` / `submenu`; a
+  command may also carry `separatorBefore` to group the caller's own list and `renderLabel` to draw
+  its label as nodes rather than text, with `label` then used as the row's `aria-label`; one
   instance per view, opened at the pointer through a zero-size viewport-fixed anchor handed to
   `popupHost` as its trigger). Project Tracking supplies four through
   `content/views/project-tracking/item-commands`: Update title, Update description (written with
   `multilineFormat: "Markdown"`, which `WorkItemFieldWriteRequest` now carries into a second
   `/multilineFieldsFormat/<field>` patch op), Move to another sprint (current + future entries of the
-  sprint window, minus the item's own), and View all notes (`NotesPanel` with `showAllInWindow`).
+  sprint window, minus the item's own), and View all notes (`NotesPanel` with `showAllInWindow`) —
+  plus, in their own separated group from `item-commands/MarkerCommands`, Tag with / Clear for the
+  two blocked markers (a mandatory reason and `System.Tags` written as ONE patch — the reason rides
+  along as a `System.History` op via `WorkItemFieldWriteRequest.comment`, because a separately posted
+  comment advances `System.Rev` and gets the tag patch rejected with HTTP 412).
+  Every one of those writes also names the value it replaces as
+  `WorkItemFieldWriteRequest.baseValue`, which licenses ONE rebase-and-retry when the `/rev` test is
+  refused and the field itself is unchanged (ADR-030 amendment) — a drag-reorder, the rank fallback
+  and a note posted through the comments API all bump `System.Rev` without reporting the new one, so
+  the board's cached rev goes stale on its own.
   `sprint` is still a placeholder shell;
   `project-tracking` is now a **data-driven tree board**. Adding a view is a folder plus two
   registrations — see the `add-enhanced-view` skill.
 - Data-driven views depend on an injected `EnhancedViewServices` (optional field on
-  `EnhancedViewContext`): `loadTree`, `userDirectory`, `getTypes`, `loadSprintWindow`, `noteLoader`,
+  `EnhancedViewContext`): `loadTree`, `userDirectory`, `getTypes`, `getBoardColumns`, `markerTags`,
+  `loadSprintWindow`, `noteLoader`,
   `noteWriter`, `now`, `logger`
   (ADR-032). The normalized tree model + loader/directory contracts live in `common/ado`
   (`TrackedWorkItem`, `TrackedUser`, `TypeCatalogEntry`, `TeamIteration`, `IWorkItemTreeLoader`,
@@ -61,13 +75,19 @@ The extension is feature-complete for its current scope:
   sat in the resolved column (the one before Removed) longer than that window, aged from
   `stateChangeDate`, and `weeks` now bounds how far back each item's **notes** are fetched. `hours`
   is honored by the **recent-activity pills** (`content/views/project-tracking/activity-filter`,
-  ADR-048): _Newly created_ / _Newly updated_ / _New notes_ close the board's single wrapping
-  `Filters:` row (tag pills first, activity pills last — every pill a direct child of one flex row so
+  ADR-048): _Newly created_ / _Newly updated_ / _New notes_ sit in the board's single wrapping
+  `Filters:` row (tag pills first, activity pills, then marker pills last — every pill a direct child
+  of one flex row so
   it reflows as one line), OR together, and combine with the sprint and tag filters. The first two
   read `createdDate` / `changedDate` off
   the tree; the third is answered by `RecentNotesIndex`, which reads discussions on demand (only when
   the pill is lit, only where `noteCount > 0`, ≤6 in flight, once per board) and leaves the board
   unnarrowed — pill showing `New notes…` — until the reads settle.
+  The **marker pills** (`content/views/project-tracking/marker-filter`) form a third AND-ed group:
+  one pill per configured `markerTags` condition that something in the tree actually carries
+  (`TrackedWorkItem.tags` ← `System.Tags`, split by `common/ado/workItemTags`), appearing and
+  disappearing with the flags themselves. Because a menu command can change which pills EXIST, the
+  repaint handed to menu commands refreshes the filter row before the tree (`repaintBoard`).
   Each row's title is preceded by its work item **type icon** (`ItemTypeIcon`), which doubles as the
   item's notes toggle — muted closed, bright open. Opening it mounts
   `content/views/project-tracking/notes` (`NotesPanel` + `NoteRow` + `NoteComposer` + `NoteEditor`):
@@ -99,12 +119,14 @@ The extension is feature-complete for its current scope:
   (`collectAssignedDirectoryUsers` over the live tree), filters locally, and searches ADO from two
   characters up; picking someone writes `System.AssignedTo` through the board's `WorkItemWriteQueue` and
   repaints only on success (`AssignedToHandle.setUser`).
-  `@`-mentions are named by a directory of their own (ADR-046): `IMentionDirectory` /
+  `@`-mentions are named by a directory of their own (ADR-046/050): `IMentionDirectory` /
   `MessagingMentionDirectory` (`common/browser`) collects every mention GUID across the board's
-  descriptions (and, per panel, its notes) and resolves them in ONE bulk read over the same
-  background/MAIN-world bridge (`AdoIdentityNamesRequest` + `fetchAdoIdentityNamesInPage`, URLs from
-  `common/ado/mentionIdentities`, base from `resolveAdoIdentityServiceBase`). This is the extension's
-  only genuinely CROSS-origin ADO read — bulk identity reads live on the `vssps` service host. The
+  descriptions (and, per panel, its notes) and resolves them over the same background/MAIN-world
+  bridge (`AdoIdentityNamesRequest` + `fetchAdoIdentityNamesInPage`, request from
+  `common/ado/mentionIdentities`, base from `resolveAdoOrganizationBase`). The endpoint is the
+  SAME-ORIGIN Identity Picker (`_apis/IdentityPicker/Identities`, `queryTypeHint: "uid"`), which
+  answers one person per request, so the reads run through a bounded pool and the directory's
+  session-long memo is what keeps the count proportional to people rather than mentions. The
   board paints first and repaints when names arrive (`BoardHandle.repaint`); a notes panel awaits the
   resolve before building its rows.
   Rows can also be **dragged to reorder** (ADR-040/041): the title is the drag handle, a themed

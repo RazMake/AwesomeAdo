@@ -26,6 +26,7 @@ import {
   orderItems,
   type OrderingPolicy,
 } from "../../../common/ordering/ItemOrdering";
+import type { WorkItemMarker } from "../../../common/settings/ExtensionSettings";
 import type {
   DataDrivenViewContext,
   EnhancedView,
@@ -79,6 +80,9 @@ import {
   type RefreshButtonHandle,
 } from "./header/ProjectTrackingHeader";
 import { buildItemCommands } from "./item-commands/ItemCommands";
+import { buildMarkerCommands } from "./item-commands/MarkerCommands";
+import { renderMarkerFilterPills } from "./marker-filter/MarkerFilterPanel";
+import { collectMarkersInUse, createMarkerFilter } from "./marker-filter/markerPresence";
 import { renderNotesPanel } from "./notes/NotesPanel";
 import {
   hideResolvedAfterDays,
@@ -151,17 +155,20 @@ interface TreeFilter {
   isResolvedPastWindow(item: TrackedWorkItem): boolean;
   /** True when the item passes the recent-activity pills (no pill lit passes everything). */
   matchesRecentActivity(item: TrackedWorkItem): boolean;
+  /** True when the item passes the marker pills (no pill lit passes everything). */
+  matchesMarkers(item: TrackedWorkItem): boolean;
 }
 
 /**
  * Does this item match the pills that are lit?
  *
- * The pills form two independent GROUPS — the Feature Crew tags, and the recent-activity pills — and
- * the rule is deliberately different within a group than between them: pills inside a group are
- * OR'd, and the two groups are AND'd. So "(any selected tag) AND (any selected activity)": lighting
- * a second tag WIDENS the board, while lighting an activity pill on top of a tag NARROWS it to that
- * person's recent work. A group with nothing lit imposes nothing, which is what makes "no pills lit"
- * mean "no narrowing" rather than "hide everything".
+ * The pills form three independent GROUPS — the Feature Crew tags, the recent-activity pills, and
+ * the marker (blocked / blocked by another team) pills — and the rule is deliberately different
+ * within a group than between them: pills inside a group are OR'd, and the groups are AND'd. So
+ * "(any selected tag) AND (any selected activity) AND (any selected marker)": lighting a second tag
+ * WIDENS the board, while lighting an activity or marker pill on top of a tag NARROWS it to that
+ * person's recent or blocked work. A group with nothing lit imposes nothing, which is what makes "no
+ * pills lit" mean "no narrowing" rather than "hide everything".
  *
  * Note this is deliberately NOT what the reference PowerShell board does — it ORs every pill
  * together, which lets an activity pill drag in items belonging to people the reader explicitly
@@ -170,9 +177,9 @@ interface TreeFilter {
 function matchesLitPills(item: TrackedWorkItem, filter: TreeFilter): boolean {
   const key = itemTagKey(item);
   const matchesTags = filter.tags.size === 0 || (key !== undefined && filter.tags.has(key));
-  // The activity half already answers `true` for every item when no activity pill is lit, so the
-  // "an unlit group imposes nothing" rule needs no second check here.
-  return matchesTags && filter.matchesRecentActivity(item);
+  // The activity and marker halves already answer `true` for every item when nothing in their group
+  // is lit, so the "an unlit group imposes nothing" rule needs no second check for either here.
+  return matchesTags && filter.matchesRecentActivity(item) && filter.matchesMarkers(item);
 }
 
 /**
@@ -530,7 +537,11 @@ interface TreeRenderOptions {
   contextMenu: ItemContextMenu;
   /** The team's sprint window, so an item's menu can offer the sprints it may move to. */
   sprintWindow: SprintWindow;
-  /** Repaints the board after a menu command changed what a row shows. */
+  /**
+   * Repaints the board after a menu command changed what a row shows — the FILTER ROW as well as the
+   * tree, because a command can change which pills exist at all (flagging an item is what makes its
+   * marker pill appear, and clearing the last one is what takes it away).
+   */
   repaint: () => void;
   /** Collects every expandable row rendered in this pass so expand-all/collapse-all can drive them. */
   expandableRows: ExpandableRow[];
@@ -1151,18 +1162,27 @@ function menuTargetFor(params: {
   onChanged: () => void;
 }): ItemContextMenuTarget {
   const { doc, item, context } = params;
+  const target = {
+    doc,
+    item,
+    services: context.services,
+    queue: params.queue,
+    onChanged: params.onChanged,
+  };
   return {
     id: item.id,
     url: itemUrl(doc, item.id),
-    commands: buildItemCommands({
-      doc,
-      item,
-      services: context.services,
-      queue: params.queue,
-      sprintWindow: params.sprintWindow,
-      notesSinceIso: boardNotesSince(context),
-      onChanged: params.onChanged,
-    }),
+    commands: [
+      ...buildItemCommands({
+        ...target,
+        sprintWindow: params.sprintWindow,
+        notesSinceIso: boardNotesSince(context),
+      }),
+      // Asked for explicitly, under their own rule: this board is where a team tracks what is stuck,
+      // so it is the board that turns the shared menu's flagging commands on. A view with no such
+      // notion simply never asks for them.
+      ...buildMarkerCommands(target),
+    ],
   };
 }
 
@@ -1517,6 +1537,8 @@ interface BoardSession {
   selectedTags: Set<string | null>;
   /** The recent-activity pills the reader lit (OR across them; empty = no activity filter). */
   selectedActivity: Set<RecentActivityKind>;
+  /** The marker pills the reader lit (OR across them; empty = no marker filter). */
+  selectedMarkers: Set<WorkItemMarker>;
   /** The sprint filter as the reader last left it, or null while they have not touched the picker. */
   sprint: { selectedName: string | null; filterActive: boolean } | null;
   /** The order the reader picked this session, or null while the binding's configured order applies. */
@@ -1530,6 +1552,7 @@ function createBoardSession(): BoardSession {
     expandedNoteIds: new Set<number>(),
     selectedTags: new Set<string | null>(),
     selectedActivity: new Set<RecentActivityKind>(),
+    selectedMarkers: new Set<WorkItemMarker>(),
     sprint: null,
     orderingPolicy: null,
   };
@@ -1873,6 +1896,12 @@ interface BoardTreeRendererParams {
    * the live ordering policy.
    */
   dragReorder: DragReorderController | null;
+  /**
+   * Repaints the whole board — the filter row and then the tree — for a change that can alter which
+   * pills exist. Taken as a callback rather than assembled here because the filter row's own renderer
+   * is built ON this one, so the combined repaint only exists once both do.
+   */
+  repaintBoard: () => void;
 }
 
 /**
@@ -1888,7 +1917,8 @@ function createBoardTreeRenderer(params: BoardTreeRendererParams): () => void {
   // Same reason, opposite default, for the opened discussions: a notes panel fetches when it opens,
   // so the rows that were OPENED are what has to survive — recording the closed ones would make every
   // newly-rendered row start by loading a discussion nobody asked to see.
-  const { collapsedIds, expandedNoteIds, selectedTags, selectedActivity } = params.session;
+  const { collapsedIds, expandedNoteIds, selectedTags, selectedActivity, selectedMarkers } =
+    params.session;
 
   const renderTreeContent = (): void => {
     const filterOn = sprintPickerHandle.isFilterActive();
@@ -1924,6 +1954,10 @@ function createBoardTreeRenderer(params: BoardTreeRendererParams): () => void {
           selectedActivity,
           params.recentNotes,
         ),
+        // Read per pass rather than captured, for the same reason the windows are: the team can
+        // change its marker vocabulary in Options while the board is open, and the tree must narrow
+        // by the tags the pills are currently showing.
+        matchesMarkers: createMarkerFilter(params.context.services.markerTags(), selectedMarkers),
       },
       orderingPolicy,
       // Sprint pills only earn their space when the sprint filter is not already narrowing the board.
@@ -1932,8 +1966,10 @@ function createBoardTreeRenderer(params: BoardTreeRendererParams): () => void {
       contextMenu: params.contextMenu,
       sprintWindow: params.sprintWindow,
       // Self-referencing so a menu command repaints through the very renderer it was built inside;
-      // the reference resolves at call time, long after this assignment completes.
-      repaint: () => renderTreeContent(),
+      // the reference resolves at call time, long after this assignment completes. It goes through
+      // the whole-board repaint rather than this pass alone, because a command can also change which
+      // filter pills the board should be offering.
+      repaint: () => params.repaintBoard(),
       expandableRows,
       collapsedIds,
       expandedNoteIds,
@@ -1993,7 +2029,7 @@ function createFilterRowRenderer(params: {
   onChange: () => void;
 }): () => void {
   const { doc, root, context, container, recentNotes } = params;
-  const { selectedTags, selectedActivity } = params.session;
+  const { selectedTags, selectedActivity, selectedMarkers } = params.session;
   const windowHours = recentChangesWindowHours(context.properties);
 
   // True while a repaint is already queued behind the index's in-flight read. Without it, every
@@ -2007,6 +2043,14 @@ function createFilterRowRenderer(params: {
     const tags = collectAssignedTags([root]);
     for (const selected of [...selectedTags]) {
       if (!tags.includes(selected)) selectedTags.delete(selected);
+    }
+
+    // Same reason, for the markers: a pill only exists while something in the tree carries it, so a
+    // selection left over from before an item was un-blocked has to go with the pill it belonged to.
+    const markerTags = context.services.markerTags();
+    const markers = collectMarkersInUse(root, markerTags);
+    for (const selected of [...selectedMarkers]) {
+      if (!markers.includes(selected)) selectedMarkers.delete(selected);
     }
 
     const repaint = (): void => {
@@ -2041,10 +2085,33 @@ function createFilterRowRenderer(params: {
           repaint();
         },
       }),
+      ...renderMarkerFilterPills(doc, {
+        markers,
+        markerTags,
+        selected: selectedMarkers,
+        onChange: () => {
+          logMarkerFilterFlip(context, selectedMarkers);
+          repaint();
+        },
+      }),
     );
   };
 
   return render;
+}
+
+/**
+ * Records a marker flip, for the same reason the recent-activity one is recorded: a rare,
+ * user-driven change to what the WHOLE board shows, and the log is where "why is this item missing?"
+ * has to be answerable from.
+ */
+function logMarkerFilterFlip(
+  context: DataDrivenViewContext,
+  selected: ReadonlySet<WorkItemMarker>,
+): void {
+  context.services.logger.info(
+    `Project Tracking marker filter: selected=[${[...selected].join(", ")}].`,
+  );
 }
 
 /**
@@ -2415,6 +2482,11 @@ function mountBoardBody(params: {
   // comments per row. The filter row owns repainting once a read lands (see `createFilterRowRenderer`).
   const recentNotes = new RecentNotesIndex(context.services.noteActivity, context.services.logger);
 
+  // Late-bound because the two halves are built in a cycle: the tree renderer hands menu commands a
+  // whole-board repaint, and the filter row is built ON the tree renderer. Reassigned below, once
+  // both exist; until then a menu cannot have been opened, so the stub can never be the one that runs.
+  let repaintBoard = (): void => {};
+
   const renderTreeContent = createBoardTreeRenderer({
     doc,
     root,
@@ -2433,6 +2505,7 @@ function mountBoardBody(params: {
     collapseAll: params.collapseAll,
     currentOrderingPolicy: core.ordering.policy,
     dragReorder: core.dragReorder,
+    repaintBoard: () => repaintBoard(),
   });
 
   const refreshFilters = createFilterRowRenderer({
@@ -2444,6 +2517,12 @@ function mountBoardBody(params: {
     recentNotes,
     onChange: renderTreeContent,
   });
+  // Filters FIRST: a command that flagged an item changes which pills exist, and the pass that drops
+  // a now-impossible selection has to run before the tree narrows by it.
+  repaintBoard = () => {
+    refreshFilters();
+    renderTreeContent();
+  };
   // Painted before the first tree pass so the pills are on screen from the board's first frame; a
   // selection carried across a refresh also re-starts its discussion reads here.
   refreshFilters();
@@ -2569,9 +2648,11 @@ function renderBoard(params: RenderBoardParams): BoardHandle {
   renderTreeContent();
   core.setRepaint(renderTreeContent);
   // The header is painted once and is not part of a tree pass, so the root's own title has to be
-  // re-labelled here; the tree still repaints because the root's sprint reaches its children's rows.
+  // re-labelled here; the tree still repaints because the root's sprint reaches its children's rows,
+  // and the filter row because the root can be flagged from this menu like any other item.
   onRootChanged = () => {
     setHeaderTitle(root.title);
+    refreshFilters();
     renderTreeContent();
   };
   wireSprintPickerRerender(sprintPickerHandle, session, renderTreeContent);

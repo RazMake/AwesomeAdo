@@ -10,6 +10,19 @@ import { createPopupHost, type PopupHost } from "../popupHost/popupHost";
  */
 export interface ItemContextMenuCommand {
   label: string;
+  /**
+   * Builds the row's visible content instead of rendering `label` as plain text — for a command that
+   * has to SHOW the thing it acts on (a colored condition pill) rather than name it, because the
+   * color is the meaning. `label` stays required and is what the row announces to assistive
+   * technology, so the command is never nameless to a screen reader.
+   */
+  renderLabel?: (doc: Document) => Node[];
+  /**
+   * Draws a rule above this command, splitting the caller's list into groups. Use it where the
+   * commands beneath answer a different question from the ones above ("edit this item" vs. "flag
+   * this item"), so a mis-click cannot cross between them.
+   */
+  separatorBefore?: boolean;
   /** Style declarations for the label (e.g. a sprint's relation color); omitted uses the theme's. */
   declarations?: [string, string][];
   /** Runs the command and closes the menu. */
@@ -105,6 +118,19 @@ const MENU_Z_INDEX = 2147483647;
 const ROW_HOVER_BACKGROUND = "rgba(128,128,128,0.28)";
 const MENU_BORDER = "1px solid rgba(128,128,128,0.5)";
 
+/**
+ * The menu surface's corner radius, the inset its rows sit in, and the rows' own radius.
+ *
+ * Rounded like the board's other floating surfaces (the rolled-up children popup) so a right-click
+ * menu reads as one of this extension's controls rather than as browser chrome. The rows are inset
+ * by `MENU_PADDING_PX` and rounded by exactly that much less, so a hovered command's wash nests
+ * inside the menu's curve instead of cutting across it — which is why the rows no longer run edge to
+ * edge.
+ */
+const MENU_RADIUS_PX = 10;
+const MENU_PADDING_PX = 4;
+const ROW_RADIUS_PX = MENU_RADIUS_PX - MENU_PADDING_PX;
+
 /** How much clear space a repositioned surface keeps from the window's edge. */
 const WINDOW_MARGIN_PX = 8;
 
@@ -125,13 +151,21 @@ const OPEN_COMMAND_COLOR_BY_SCHEME = "light-dark(rgb(0,90,158), rgb(96,175,255))
  * One command row. Every command is a `<button>`, including the one that opens a tab: an `<a>` would
  * have to survive the menu being torn down in its own click handler, and whether a detached anchor
  * still navigates is left to the engine.
+ *
+ * `content` replaces the plain-text label for a command that has to show a rendered thing (a colored
+ * pill); the row is still LABELLED by `label` in that case, so it stays announceable.
  */
-function renderCommandRow(doc: Document, label: string): HTMLButtonElement {
+function renderCommandRow(doc: Document, label: string, content?: Node[]): HTMLButtonElement {
   const row = doc.createElement("button");
   row.className = "awesomeado-item-menu__command";
   row.type = "button";
   row.setAttribute("role", "menuitem");
-  row.textContent = label;
+  if (content === undefined) {
+    row.textContent = label;
+  } else {
+    row.setAttribute("aria-label", label);
+    row.append(...content);
+  }
   row.style.cssText = [
     "display:block",
     "width:100%",
@@ -139,7 +173,8 @@ function renderCommandRow(doc: Document, label: string): HTMLButtonElement {
     "text-align:left",
     "border:none",
     "background-color:transparent",
-    "padding:6px 14px",
+    `border-radius:${ROW_RADIUS_PX}px`,
+    "padding:6px 10px",
     "font:inherit",
     "font-size:12px",
     "line-height:1.6",
@@ -251,7 +286,7 @@ function buildMenu(
     "margin-top:4px",
     "background:var(--callout-background-color, var(--background-color, #fff))",
     `border:${MENU_BORDER}`,
-    "border-radius:3px",
+    `border-radius:${MENU_RADIUS_PX}px`,
     "box-shadow:0 2px 8px rgba(0,0,0,0.15)",
     "min-width:160px",
     // Sized from its OWN rows, not shrink-to-fit. The menu is absolutely positioned inside a
@@ -260,7 +295,7 @@ function buildMenu(
     // `max-content` takes the width the rows actually want, which no `max-width` could restore.
     "width:max-content",
     `max-width:calc(100vw - ${2 * WINDOW_MARGIN_PX}px)`,
-    "padding:4px 0",
+    `padding:${MENU_PADDING_PX}px`,
     "z-index:1000",
   ].join(";");
   // Right-clicking the menu itself must not hand the browser's own menu back over the top of it.
@@ -280,6 +315,11 @@ function buildMenu(
   if (target.commands?.length) {
     commands.append(renderSeparator(doc));
     for (const command of target.commands) {
+      // A caller can split its own list further; the rule reads the same as the one above so the
+      // menu has one visual language for "these answer a different question".
+      if (command.separatorBefore) {
+        commands.append(renderSeparator(doc));
+      }
       commands.append(renderCustomCommand(doc, command, menu, close));
     }
   }
@@ -316,7 +356,7 @@ function renderCustomCommand(
   menu: HTMLElement,
   close: () => void,
 ): HTMLElement {
-  const row = renderCommandRow(doc, command.label);
+  const row = renderCommandRow(doc, command.label, command.renderLabel?.(doc));
   for (const [property, value] of command.declarations ?? []) {
     row.style.setProperty(property, value);
   }
@@ -332,11 +372,11 @@ function renderCustomCommand(
   if (command.panel) {
     const panel = command.panel;
     row.addEventListener("click", () => {
-      // Padded here rather than by each panel: the menu's own padding is vertical only, because its
-      // rows run edge to edge to give the hover wash the full width.
+      // Padded here rather than by each panel, and only by what the menu's own inset does not already
+      // give it, so an editor sits the same distance from the edge as a command row's text does.
       const surface = doc.createElement("div");
       surface.className = "awesomeado-item-menu__panel";
-      surface.style.cssText = "padding:8px 10px";
+      surface.style.cssText = `padding:${MENU_PADDING_PX}px ${MENU_PADDING_PX + 2}px`;
       surface.append(panel(close));
       menu.replaceChildren(surface);
       if (command.centerPanel) {
@@ -395,14 +435,14 @@ function renderSubmenu(
       `top:-${SUBMENU_TOP_OFFSET_PX}px`,
       "background:var(--callout-background-color, var(--background-color, #fff))",
       `border:${MENU_BORDER}`,
-      "border-radius:3px",
+      `border-radius:${MENU_RADIUS_PX}px`,
       "box-shadow:0 2px 8px rgba(0,0,0,0.15)",
       "min-width:160px",
       // Same reason as the menu itself: a flyout of sprint labels is far wider than its floor.
       "width:max-content",
       "max-height:320px",
       "overflow-y:auto",
-      "padding:4px 0",
+      `padding:${MENU_PADDING_PX}px`,
       "z-index:1",
     ].join(";");
     for (const nested of build()) {

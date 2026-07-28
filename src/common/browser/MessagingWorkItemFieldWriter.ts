@@ -39,6 +39,8 @@ export class MessagingWorkItemFieldWriter implements IWorkItemFieldWriter {
       field: request.field,
       value: request.value,
       multilineFormat: request.multilineFormat,
+      comment: request.comment,
+      baseValue: request.baseValue,
     };
 
     try {

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { normalizeMarkerTags } from "../../common/settings/ExtensionSettings";
 import type { EnhancedViewServices } from "../../common/view-common/EnhancedView";
 
 import { EnhancedViewSurface, type EnhancedViewRequest } from "./EnhancedViewSurface";
@@ -230,6 +231,7 @@ describe("EnhancedViewSurface - keep-alive", () => {
       },
       getTypes: () => [],
       getBoardColumns: () => [],
+      markerTags: () => normalizeMarkerTags(undefined),
       loadSprintWindow: () => Promise.resolve({ entries: [], currentName: null }),
       now: () => new Date(),
       logger: { info: () => {}, error: () => {} },

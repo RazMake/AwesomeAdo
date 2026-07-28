@@ -61,15 +61,17 @@ row.addEventListener("contextmenu", (event) => {
 
 Exactly one of `run`, `panel` and `submenu` gives a command its behaviour.
 
-| Field            | Meaning                                                                                                                                                          |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `label`          | The row's text.                                                                                                                                                  |
-| `run`            | `() => void` — runs the command and closes the menu.                                                                                                             |
-| `panel`          | `(close) => HTMLElement` — **replaces** the menu's commands with this element (an editor, a list). `close` dismisses the whole menu.                             |
-| `centerPanel`    | Centres the panel in the window instead of anchoring it to the pointer, for a panel big enough that the pointer's position stops being a useful place to put it. |
-| `submenu`        | `() => ItemContextMenuCommand[]` — nested commands in a flyout beside the row. Built **on open**, so it can read live state.                                     |
-| `declarations`   | `[property, value][]` applied to the label (e.g. a sprint's relation color).                                                                                     |
-| `disabledReason` | Dims the row and makes it inert, with this as the tooltip. Overrides the three above.                                                                            |
+| Field             | Meaning                                                                                                                                                          |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `label`           | The row's text — and, when `renderLabel` is given, the name the row is announced by.                                                                             |
+| `renderLabel`     | `(doc) => Node[]` — builds the row's visible content instead of plain text, for a command that has to **show** the thing it acts on (a colored condition pill).  |
+| `separatorBefore` | Draws a rule above the row, splitting the caller's own list into groups that answer different questions.                                                         |
+| `run`             | `() => void` — runs the command and closes the menu.                                                                                                             |
+| `panel`           | `(close) => HTMLElement` — **replaces** the menu's commands with this element (an editor, a list). `close` dismisses the whole menu.                             |
+| `centerPanel`     | Centres the panel in the window instead of anchoring it to the pointer, for a panel big enough that the pointer's position stops being a useful place to put it. |
+| `submenu`         | `() => ItemContextMenuCommand[]` — nested commands in a flyout beside the row. Built **on open**, so it can read live state.                                     |
+| `declarations`    | `[property, value][]` applied to the label (e.g. a sprint's relation color).                                                                                     |
+| `disabledReason`  | Dims the row and makes it inert, with this as the tooltip. Overrides the three above.                                                                            |
 
 ## Notes
 
@@ -92,5 +94,12 @@ Exactly one of `run`, `panel` and `submenu` gives a command its behaviour.
 - **A flyout flips to the other side** of its row when it would open past the window's right edge.
 - **The menu is sized from its own rows** (`width:max-content`), so no command label wraps: it is
   positioned inside a zero-width anchor, where shrink-to-fit would collapse it onto its `min-width`.
+- **A command can still be announced when its label is a rendered thing.** `renderLabel` replaces the
+  row's text with nodes (a [`MarkerPill`](../MarkerPill/README.md), say), and `label` is then applied
+  as the row's `aria-label` so it is never nameless to a screen reader.
+- **A caller can group its own commands** with `separatorBefore`. The rule reads exactly like the one
+  under the three built-in commands, so the menu has one visual language for "these answer a
+  different question" — which is what keeps a mis-click from crossing between "edit this item" and
+  "flag this item".
 - **Escape inside an editor belongs to the editor.** The menu passes `dismissOnFieldEscape: false` to
   the host, so the first Escape abandons what is being typed and the second dismisses the menu.

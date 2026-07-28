@@ -2,6 +2,7 @@ import type { QueryFolderCrumb, WorkItemTreeResult } from "./IWorkItemTreeLoader
 import type { TrackedUser, TrackedWorkItem } from "./TrackedWorkItem";
 import { ADO_API_VERSION, ASSIGNED_TO_FIELD, IMPORTANCE_FIELD } from "./adoApi";
 import { resolveAdoProjectContext } from "./fetchAdoMetadata";
+import { parseWorkItemTags } from "./workItemTags";
 
 const API_VERSION = ADO_API_VERSION;
 // Cap tree depth to prevent runaway recursion if the ADO data contains cycles or deeply nested chains.
@@ -19,6 +20,13 @@ const STATE_CHANGE_DATE_FIELD = "Microsoft.VSTS.Common.StateChangeDate";
  * loading notes lazily is that dozens of them are never opened.
  */
 const COMMENT_COUNT_FIELD = "System.CommentCount";
+
+/**
+ * The item's tags, as ONE semicolon-separated string. Read with the tree because the board narrows
+ * by the team's marker tags (blocked, blocked by another team) on every render pass, and a per-item
+ * round trip for a field the batch already returns for free would make that filter unusable.
+ */
+const TAGS_FIELD = "System.Tags";
 
 /**
  * The rank given to an item ADO returned no backlog rank for. A LOWER rank means more important, so
@@ -49,6 +57,7 @@ export const TRACKING_FIELDS: readonly string[] = [
   "System.Description",
   COMMENT_COUNT_FIELD,
   IMPORTANCE_FIELD,
+  TAGS_FIELD,
   "System.Rev",
   "System.Parent",
 ];
@@ -406,6 +415,7 @@ function hydrateTrackedWorkItem(
     // and an @-mention survive; stripping the tags here would destroy both before anyone saw them,
     // and the control's allowlist rebuild (not this parse) is what makes the markup safe.
     description: readString("System.Description"),
+    tags: parseWorkItemTags(field(TAGS_FIELD)),
     importance: typeof rank === "number" ? rank : UNRANKED_IMPORTANCE,
     // ADO omits the field entirely on an item that has never been commented on, so absent means 0.
     noteCount: typeof commentCount === "number" ? commentCount : 0,

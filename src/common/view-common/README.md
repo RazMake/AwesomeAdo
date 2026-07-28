@@ -44,7 +44,7 @@ renderer.
   for placeholder views.
 - `EnhancedViewServices` — the cross-view data/service singletons injected at the composition root:
   `loadTree`, `featureCrew`, `writeField`, `reorderItem`, `currentTeam`, `userDirectory`, `mentionDirectory`, `getTypes`,
-  `getBoardColumns`, `loadSprintWindow`, `now`, `logger`, `openDiagnosticsLog`. `writeField` persists
+  `getBoardColumns`, `markerTags`, `loadSprintWindow`, `now`, `logger`, `openDiagnosticsLog`. `writeField` persists
   a single work item
   field change (e.g.
   `System.State` or a type's ETA date field) back to Azure DevOps, using the item's last-known rev as
@@ -62,6 +62,9 @@ renderer.
   its offset, plus the name to select by default.
   `getBoardColumns` returns the team's global board columns in order so a status's color can be keyed
   off its board-column position (identical for every work-item type).
+  `markerTags` returns the team's own Azure DevOps tag and comment token for each recognized condition
+  (blocked, blocked by another team, interrupt); the vocabulary is the team's, so a view that
+  hard-coded it would ignore the tag its users actually apply.
   `openDiagnosticsLog` opens the extension's Diagnostics log filtered to errors, so a view can hand
   the user the recorded cause behind a failure it can only summarize on screen (the board's
   "Couldn't save…" chip); a view cannot open an extension page itself, so the round-trip is injected.
@@ -84,6 +87,7 @@ view — regardless of which bundle renders it — reuses the same consistent pa
 | `EtaBadge`         | [`control/EtaBadge`](./control/EtaBadge/README.md)                 | An ETA date badge with severity color, a countdown tooltip, and an optional editable date picker. |
 | `ItemTypeIcon`     | [`control/ItemTypeIcon`](./control/ItemTypeIcon/README.md)         | The ADO work item type icon, sized to the title it precedes, colored/drained and loud/receded.    |
 | `MarkdownText`     | [`control/MarkdownText`](./control/MarkdownText/README.md)         | Author-written content (descriptions, notes) rendered as safe DOM, with images and @-mentions.    |
+| `MarkerPill`       | [`control/MarkerPill`](./control/MarkerPill/README.md)             | A fixed-color pill for a recognized condition (blocked, blocked by another team, interrupt).      |
 | `OrderingPicker`   | [`control/OrderingPicker`](./control/OrderingPicker/README.md)     | A discrete sort glyph naming the ordering policy in force, with a menu to change it.              |
 | `TagPill`          | [`control/TagPill`](./control/TagPill/README.md)                   | A colored Feature Crew tag pill (a neutral "??" pill when untagged).                              |
 | `WriteQueueStatus` | [`control/WriteQueueStatus`](./control/WriteQueueStatus/README.md) | A "Saving N change(s)…" spinner shown only while writes are in flight.                            |

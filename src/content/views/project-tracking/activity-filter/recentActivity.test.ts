@@ -30,6 +30,7 @@ function trackedItem(createdDate: string, changedDate: string): TrackedWorkItem 
     changedBy: null,
     stateChangeDate: "",
     description: "",
+    tags: [],
     noteCount: 0,
     importance: 100,
     eta: null,

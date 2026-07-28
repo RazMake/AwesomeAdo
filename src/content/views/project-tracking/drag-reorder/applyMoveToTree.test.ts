@@ -21,6 +21,7 @@ function item(id: number, importance: number, children: TrackedWorkItem[] = []):
     changedBy: null,
     stateChangeDate: "",
     description: "",
+    tags: [],
     importance,
     noteCount: 0,
     eta: null,

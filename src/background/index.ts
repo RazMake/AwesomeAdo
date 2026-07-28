@@ -18,7 +18,11 @@ import {
   buildEditNoteUrl,
   buildWorkItemNotesUrls,
 } from "../common/ado/fetchWorkItemNotes";
-import { buildAdoIdentityNamesUrls, MAX_MENTION_IDS } from "../common/ado/mentionIdentities";
+import {
+  buildAdoIdentityPickerRequest,
+  MAX_MENTION_IDS,
+  MENTION_REQUEST_CONCURRENCY,
+} from "../common/ado/mentionIdentities";
 import { applyRankFallback, buildWorkItemsBatchUrl } from "../common/ado/rankFallback";
 import {
   buildFeatureCrewApplyConfig,
@@ -406,17 +410,17 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
 
 // A work item's description and its discussion store an `@`-mention as a bare identity GUID, so a
 // view that renders them has to ask who those people are. The whole board's mentions are collected
-// and resolved TOGETHER — one read per batch of ids, rather than one per mentioned person per item.
-// The ids come from the content side, but the URLs are built here from the SENDER's own trusted tab
-// URL and each id is re-validated as a GUID before it reaches the query string, so a content script
-// can influence WHO is looked up but never WHERE the request goes.
+// and resolved TOGETHER — one pooled pass over the board's distinct ids, rather than a fresh read per
+// mentioned person per item. The ids come from the content side, but the URL is built here from the
+// SENDER's own trusted tab URL and each id is re-validated as a GUID before it is sent, so a content
+// script can influence WHO is looked up but never WHERE the request goes.
 const resolveAdoIdentityNames = async (
   message: ResolveAdoIdentityNamesMessage,
   tabId: number,
   tabUrl: string,
 ): Promise<ResolveAdoIdentityNamesResponse> => {
-  const urls = buildAdoIdentityNamesUrls(tabUrl, message.ids);
-  if (urls.length === 0) {
+  const request = buildAdoIdentityPickerRequest(tabUrl, message.ids);
+  if (request === null) {
     logger.info(
       "Mention resolution skipped: tab is not a recognized ADO URL, or no valid identity ids " +
         `were supplied (${message.ids.length} received).`,
@@ -438,7 +442,7 @@ const resolveAdoIdentityNames = async (
       target: { tabId },
       world: "MAIN",
       func: fetchAdoIdentityNamesInPage,
-      args: [urls],
+      args: [request.url, request.ids, MENTION_REQUEST_CONCURRENCY],
     });
     const outcome = firstScriptResult(results) as AdoIdentityNamesOutcome | null;
     if (outcome === null) {
@@ -451,7 +455,7 @@ const resolveAdoIdentityNames = async (
       // still returned below — the names that DID resolve are worth rendering.
       logger.error(
         `Mention resolution failed (${outcome.failure}, HTTP ${outcome.status}): ` +
-          `${outcome.bodies.length} of ${urls.length} batch(es) read.`,
+          `${outcome.bodies.length} of ${request.ids.length} identity id(s) read.`,
       );
     }
     return {
@@ -620,13 +624,18 @@ const updateWorkItemField = async (
       target: { tabId },
       world: "MAIN",
       func: updateWorkItemFieldInPage,
+      // One config object, never an argument each: an absent optional argument would be `undefined`,
+      // which is not JSON-serializable, and Chrome rejects the entire injection over it.
       args: [
-        updateUrl,
-        message.id,
-        message.rev,
-        message.field,
-        message.value,
-        message.multilineFormat,
+        {
+          updateUrl,
+          rev: message.rev,
+          field: message.field,
+          value: message.value,
+          multilineFormat: message.multilineFormat,
+          comment: message.comment,
+          baseValue: message.baseValue,
+        },
       ],
     });
     const result = (results[0]?.result as UpdateWorkItemFieldResponse | undefined) ?? null;
@@ -643,9 +652,12 @@ const updateWorkItemField = async (
     }
     return result;
   } catch (error) {
-    // Injection fails on a closed/navigated/restricted tab; report the failure.
+    // Injection fails on a closed/navigated/restricted tab — and ALSO when an argument is not
+    // JSON-serializable, in which case NOTHING ever reached Azure DevOps. The thrown message rides
+    // back to the caller because a bare "exception" makes those indistinguishable, and the second
+    // one is an extension bug that reads exactly like a rejected write.
     logger.error(`Could not update work item ${message.id} field`, error);
-    return { ok: false, error: "exception" };
+    return { ok: false, error: `injection failed: ${String(error)}` };
   }
 };
 

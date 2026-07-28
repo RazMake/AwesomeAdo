@@ -15,7 +15,10 @@ const GRACE = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
 
 /** A worker reply naming `id`, from a read that completed unless told otherwise. */
 function named(id: string, name: string, complete = true): ResolveAdoIdentityNamesResponse {
-  return { raw: [{ value: [{ id, providerDisplayName: name }] }], complete };
+  return {
+    raw: [{ results: [{ queryToken: id, identities: [{ displayName: name }] }] }],
+    complete,
+  };
 }
 
 /** A worker reply that answered for nobody. */

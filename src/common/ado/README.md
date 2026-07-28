@@ -42,7 +42,9 @@ response-parsing logic, kept pure so they are unit-testable without a browser.
   rank for hydrates as `UNRANKED_IMPORTANCE` so it sorts below every ranked one. `description` is
   kept **exactly as ADO stored it** (rich-text HTML or Markdown, never flattened) so the view can
   render embedded images and `@`-mentions. `noteCount` is `System.CommentCount` — a TOTAL, so treat
-  it as "worth opening", not as "has notes inside the Updates window".
+  it as "worth opening", not as "has notes inside the Updates window". `tags` is `System.Tags`
+  already split into a list (see `workItemTags.ts`), because every consumer asks "does it carry this
+  tag?" rather than "what does the field say".
 - `TypeCatalogEntry` — `{ name, color, icon, etaField, columns }` for each work item type in the
   hierarchy. `columns` is a `TrackedTypeColumn[]`: each column carries the board-column label (the
   team's application state) plus the ADO state names routed onto it, with `states[0]` being the
@@ -218,6 +220,19 @@ response-parsing logic, kept pure so they are unit-testable without a browser.
   `query` is the best-effort query-metadata body (may be absent when that read fails).
 - `AdoTreeUrls` — `{ wiqlUrl, batchUrl, queryUrl }` shape `buildAdoTreeUrls` returns.
 
+### `workItemTags.ts`
+
+Reading and rewriting `System.Tags`, which Azure DevOps stores as ONE semicolon-separated string and
+compares **case-insensitively** while preserving the casing first used. Pure, so the tree parser, the
+board's filters and the tagging commands all share one interpretation of the field.
+
+- `parseWorkItemTags(raw)` — splits the field into trimmed, non-empty tags; `[]` for a non-string.
+- `formatWorkItemTags(tags)` — joins them back the way ADO stores them (`"A; B"`); `""` clears the field.
+- `hasWorkItemTag(tags, tag)` — case-insensitive membership. A **blank** `tag` never matches, so an
+  unconfigured marker reads as absent rather than as present on everything.
+- `withWorkItemTag(tags, tag)` / `withoutWorkItemTag(tags, tag)` — the list with a tag added (last,
+  so existing order and casing survive) or every case-insensitive match removed.
+
 ### `FeatureCrew.ts`
 
 - `FeatureCrewMember` — one roster line: `{ alias, fullName, tag }`. `FeatureCrewAssignee` —
@@ -269,7 +284,11 @@ response-parsing logic, kept pure so they are unit-testable without a browser.
   field back to Azure DevOps. `field` is the ADO field reference name (e.g. `System.State` or a
   type's ETA date field) and `value` is the new value, or `null` to clear the field. Includes the
   item's last-known `rev` as an optimistic-concurrency guard so the PATCH fails when the item was
-  edited concurrently by someone else (its rev advanced).
+  edited concurrently by someone else (its rev advanced). Optional `baseValue` names the value the
+  field held when the change was computed from it; supplying it lets the write be retried once
+  against the server's current rev when — and only when — the field itself has not moved, which is
+  what keeps an edit alive across the rev bumps nothing reports back (a drag-reorder, the rank
+  fallback, a note posted through the comments API).
 - `WorkItemFieldWriteResult` — `{ ok, rev?, error? }`; the result of writing a work item field;
   `ok` indicates success, `rev` is the item's new System.Rev after a successful write, and `error` is
   a short description when `ok` is false.

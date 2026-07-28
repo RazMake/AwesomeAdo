@@ -43,6 +43,19 @@ export interface QueuedFieldWrite {
    * description); omitted leaves the field's current format alone.
    */
   multilineFormat?: MultilineFieldFormat;
+  /**
+   * A discussion comment to record in the SAME revision as the field change (see
+   * `WorkItemFieldWriteRequest.comment`). Riding along in one patch is what keeps a change and the
+   * reason for it atomic — and what stops a separately-posted comment from advancing the rev this
+   * write is tested against.
+   */
+  comment?: string;
+  /**
+   * The value the field held when this change was computed from it (see
+   * `WorkItemFieldWriteRequest.baseValue`). Supplying it lets a write survive a rev bump that had
+   * nothing to do with this field, while a real conflict on the field itself is still refused.
+   */
+  baseValue?: string | null;
 }
 
 /**
@@ -274,6 +287,8 @@ export class WorkItemWriteQueue {
       field: queued.field,
       value: queued.value,
       multilineFormat: queued.multilineFormat,
+      comment: queued.comment,
+      baseValue: queued.baseValue,
     };
     try {
       const result = await this.writeField(request);

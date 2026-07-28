@@ -31,6 +31,30 @@ export interface WorkItemFieldWriteRequest {
    * field's current format alone, which is what every single-line field wants.
    */
   multilineFormat?: MultilineFieldFormat;
+  /**
+   * A discussion comment to record **as part of this same revision** (written to `System.History`).
+   *
+   * Here rather than posted separately because posting a comment through the comments API ADVANCES
+   * the item's rev, which then invalidates the `test /rev` guard on any field write that follows it
+   * — an edit that says why it happened would otherwise be rejected with HTTP 412 every time. Riding
+   * along in the patch also makes the two atomic: the reason and the change land together or neither
+   * does, so the item can never carry one without the other.
+   *
+   * Plain text. `System.History` is an HTML field, so the MAIN-world patch escapes it and turns
+   * newlines into breaks — the caller never has to know the field's storage format.
+   */
+  comment?: string;
+  /**
+   * The value `field` held when this change was computed from it.
+   *
+   * Supplying it authorizes ONE rebase-and-retry when the `rev` guard above is refused: the item is
+   * re-read, and the write is retried against the server's current rev **only** if the field still
+   * holds this value. That is what keeps an edit alive across the rev bumps nothing reports back — a
+   * drag-reorder, the rank fallback, a note posted through the comments API — without ever
+   * overwriting a concurrent change to the very field being written, which is still reported as the
+   * conflict it is. Omit it (the default) to keep the strict "one attempt, no rebase" behaviour.
+   */
+  baseValue?: string | null;
 }
 
 /**

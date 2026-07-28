@@ -8,9 +8,8 @@
  * board's descriptions and notes, and the worker hands back the raw bodies for parsing.
  *
  * The ids are content-supplied, but the request URL is still built background-side from the SENDER's
- * trusted tab URL — and each id is re-validated as a GUID before it reaches the query string — so
- * this stays a closed "who are these people in this organization?" operation, not a fetch-any-URL
- * proxy.
+ * trusted tab URL — and each id is re-validated as a GUID before it is sent — so this stays a closed
+ * "who are these people in this organization?" operation, not a fetch-any-URL proxy.
  */
 export const RESOLVE_ADO_IDENTITY_NAMES_MESSAGE = "awesomeado:resolve-ado-identity-names";
 
@@ -22,18 +21,19 @@ export interface ResolveAdoIdentityNamesMessage {
 
 export interface ResolveAdoIdentityNamesResponse {
   /**
-   * One raw `_apis/identities` body per batch that was read, or null when nothing could be read at
-   * all. A partial list is deliberate: names that DID resolve are still worth rendering, and the
-   * batch that failed is reported to the diagnostics log rather than discarding the rest.
+   * One raw Identity Picker body per id that was read, or null when nothing could be read at all. A
+   * partial list is deliberate: names that DID resolve are still worth rendering, and the requests
+   * that failed are reported to the diagnostics log rather than discarding the rest.
    */
   raw: unknown[] | null;
   /**
    * Whether every requested id was actually put to Azure DevOps and answered for.
    *
-   * This is what separates "ADO does not know that identity" from "nobody managed to ask". The
-   * endpoint simply OMITS an id it cannot resolve, so a short answer is indistinguishable from a
-   * failed batch without it — and the caller would then remember a transient failure as a permanent
-   * "this person has no name". False when any batch failed or the id list was truncated.
+   * This is what separates "ADO does not know that identity" from "nobody managed to ask". A query
+   * for an id ADO cannot resolve comes back as an EMPTY match rather than an error, so it is
+   * indistinguishable from a failed request without this flag — and the caller would then remember a
+   * transient outage as a permanent "this person has no name". False when any request failed or the
+   * id list was truncated.
    */
   complete: boolean;
 }

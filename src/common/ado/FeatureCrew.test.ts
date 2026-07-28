@@ -40,6 +40,7 @@ function item(
     changedBy: null,
     stateChangeDate: "2024-01-01T00:00:00Z",
     description: "",
+    tags: [],
     importance: 1,
     noteCount: 0,
     eta: null,

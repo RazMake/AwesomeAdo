@@ -58,6 +58,13 @@ export interface TrackedWorkItem {
    */
   noteCount: number;
   /**
+   * The item's Azure DevOps tags, already split out of the single semicolon-separated field ADO
+   * stores them in (see `common/ado/workItemTags`). Kept as a list because every consumer asks
+   * "does it carry this tag?" rather than "what does the field say", and re-splitting the raw string
+   * at each of those call sites is how two of them end up disagreeing.
+   */
+  tags: string[];
+  /**
    * The manual backlog rank (ADO's stack rank); a LOWER number means more important. Items ADO
    * returned no rank for sort after every ranked one rather than jumping to the top.
    */

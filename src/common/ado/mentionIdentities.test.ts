@@ -1,10 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  buildAdoIdentityNamesUrls,
+  buildAdoIdentityPickerRequest,
   collectMentionIdentityIds,
   MAX_MENTION_IDS,
-  MENTION_BATCH_SIZE,
   parseAdoIdentityNames,
 } from "./mentionIdentities";
 
@@ -18,6 +17,11 @@ function guids(count: number): string[] {
     { length: count },
     (_unused, index) => `00000000-0000-0000-0000-${String(index).padStart(12, "0")}`,
   );
+}
+
+/** One Identity Picker answer: the token echoed back, and whatever it matched. */
+function pickerBody(queryToken: string, identities: readonly unknown[]): unknown {
+  return { results: [{ queryToken, identities, pagingToken: "" }] };
 }
 
 describe("collectMentionIdentityIds", () => {
@@ -64,69 +68,66 @@ describe("collectMentionIdentityIds", () => {
   });
 });
 
-describe("buildAdoIdentityNamesUrls", () => {
-  it("targets the organization's identity service host, not the collection base", () => {
-    // Bulk identity reads are served from `vssps`, not from dev.azure.com/{org}; pointing them at
-    // the collection base answers 404 and silently anonymizes every mention.
-    expect(buildAdoIdentityNamesUrls(QUERY_PAGE, [ADA])).toEqual([
-      `https://vssps.dev.azure.com/contoso/_apis/identities?identityIds=${ADA}` +
-        "&queryMembership=None&api-version=7.1",
-    ]);
+describe("buildAdoIdentityPickerRequest", () => {
+  it("targets the collection base, which is the only host the page session can read", () => {
+    // The bulk `vssps` read this replaced answers a credentialed cross-origin fetch with a wildcard
+    // allow-origin, which the browser rejects outright — every mention went anonymous.
+    expect(buildAdoIdentityPickerRequest(QUERY_PAGE, [ADA])).toEqual({
+      url: "https://dev.azure.com/contoso/_apis/IdentityPicker/Identities?api-version=5.2-preview.1",
+      ids: [ADA],
+    });
   });
 
-  it("uses the per-organization identity host on the legacy visualstudio.com shape", () => {
+  it("uses the origin as the base on the legacy visualstudio.com shape", () => {
     expect(
-      buildAdoIdentityNamesUrls(`https://contoso.visualstudio.com/Fabrikam/_queries`, [ADA])[0],
-    ).toContain("https://contoso.vssps.visualstudio.com/_apis/identities?");
+      buildAdoIdentityPickerRequest(`https://contoso.visualstudio.com/Fabrikam/_queries`, [ADA])
+        ?.url,
+    ).toBe(
+      "https://contoso.visualstudio.com/_apis/IdentityPicker/Identities?api-version=5.2-preview.1",
+    );
   });
 
   it("returns nothing when the URL is not a recognized ADO location", () => {
-    expect(buildAdoIdentityNamesUrls("https://example.com/whatever", [ADA])).toEqual([]);
+    expect(buildAdoIdentityPickerRequest("https://example.com/whatever", [ADA])).toBeNull();
   });
 
   it("returns nothing when there is nobody to ask about", () => {
-    expect(buildAdoIdentityNamesUrls(QUERY_PAGE, [])).toEqual([]);
+    expect(buildAdoIdentityPickerRequest(QUERY_PAGE, [])).toBeNull();
+  });
+
+  it("de-duplicates and lowercases, so one person costs one request", () => {
+    // The picker answers one identity per request, so a duplicate id is a wasted credentialed call.
+    expect(buildAdoIdentityPickerRequest(QUERY_PAGE, [ADA.toUpperCase(), ADA, GRACE])?.ids).toEqual(
+      [ADA, GRACE],
+    );
   });
 
   it("drops anything that is not a well-formed GUID", () => {
-    // The ids arrive from the content side and are interpolated into a query string, so a value that
-    // is not a GUID must never reach the URL.
-    const urls = buildAdoIdentityNamesUrls(QUERY_PAGE, [
-      "not-a-guid",
-      "&api-version=1.0&identityIds=evil",
-      ADA,
-    ]);
-
-    expect(urls).toHaveLength(1);
-    expect(urls[0]).toContain(`identityIds=${ADA}&`);
-    expect(urls[0]).not.toContain("evil");
+    // The ids arrive from the content side, so a value that is not a GUID must never be sent — it
+    // would turn a mention resolve into an arbitrary directory search.
+    expect(
+      buildAdoIdentityPickerRequest(QUERY_PAGE, ["not-a-guid", "Ada Lovelace", ADA])?.ids,
+    ).toEqual([ADA]);
   });
 
   it("rejects an id list that is entirely invalid rather than issuing an empty read", () => {
-    expect(buildAdoIdentityNamesUrls(QUERY_PAGE, ["../../_apis/git/repositories"])).toEqual([]);
-  });
-
-  it("splits the ids into batches so no single URL grows unbounded", () => {
-    const urls = buildAdoIdentityNamesUrls(QUERY_PAGE, guids(MENTION_BATCH_SIZE + 1));
-
-    expect(urls).toHaveLength(2);
-    expect(urls[0]!.split(",")).toHaveLength(MENTION_BATCH_SIZE);
-    expect(urls[1]!.split(",")).toHaveLength(1);
+    expect(buildAdoIdentityPickerRequest(QUERY_PAGE, ["../../_apis/git/repositories"])).toBeNull();
   });
 
   it("caps how many identities one request may ask about", () => {
-    // Without a ceiling a single message could turn into an unbounded number of credentialed reads.
-    const urls = buildAdoIdentityNamesUrls(QUERY_PAGE, guids(MAX_MENTION_IDS + MENTION_BATCH_SIZE));
-
-    expect(urls).toHaveLength(MAX_MENTION_IDS / MENTION_BATCH_SIZE);
+    // Each id costs its own credentialed request, so without a ceiling one message could turn into
+    // an unbounded number of them.
+    expect(
+      buildAdoIdentityPickerRequest(QUERY_PAGE, guids(MAX_MENTION_IDS + 10))?.ids,
+    ).toHaveLength(MAX_MENTION_IDS);
   });
 });
 
 describe("parseAdoIdentityNames", () => {
-  it("keys names by lowercase GUID across every batch body", () => {
+  it("keys names by the echoed query token across every body", () => {
     const names = parseAdoIdentityNames([
-      { value: [{ id: ADA.toUpperCase(), providerDisplayName: "Ada Lovelace" }] },
-      { value: [{ id: GRACE, providerDisplayName: "Grace Hopper" }] },
+      pickerBody(ADA.toUpperCase(), [{ displayName: "Ada Lovelace" }]),
+      pickerBody(GRACE, [{ displayName: "Grace Hopper" }]),
     ]);
 
     expect([...names]).toEqual([
@@ -135,40 +136,42 @@ describe("parseAdoIdentityNames", () => {
     ]);
   });
 
-  it("prefers the organization's custom display name over the directory's", () => {
-    // The custom name is the one ADO's own mention chips show, so matching it keeps the board and
-    // the ADO page reading the same.
+  it("keys by the query token, not by an id field on the identity", () => {
+    // The picker returns BOTH the ADO identity id (`localId`, what a mention stores) and the
+    // directory object behind it (`originId`). Keying by the wrong one files every name under an id
+    // no mention will ever look up, and the board renders placeholders despite a successful read.
     const names = parseAdoIdentityNames([
-      {
-        value: [
-          { id: ADA, customDisplayName: "Ada L. (Contoso)", providerDisplayName: "Ada Lovelace" },
-        ],
-      },
+      pickerBody(ADA, [{ localId: ADA, originId: GRACE, displayName: "Ada Lovelace" }]),
     ]);
 
-    expect(names.get(ADA)).toBe("Ada L. (Contoso)");
+    expect([...names.keys()]).toEqual([ADA]);
   });
 
-  it("falls back to the sign-in account so a mention still reads as a person", () => {
-    const names = parseAdoIdentityNames([
-      { value: [{ id: ADA, properties: { Account: { $value: "ada@contoso.com" } } }] },
-    ]);
+  it("falls back to the sign-in address so a mention still reads as a person", () => {
+    const names = parseAdoIdentityNames([pickerBody(ADA, [{ signInAddress: "ada@contoso.com" }])]);
 
     expect(names.get(ADA)).toBe("ada@contoso.com");
   });
 
-  it("skips an identity with no usable name rather than showing a blank one", () => {
+  it("skips a nameless match ahead of the real one rather than anonymizing the mention", () => {
+    const names = parseAdoIdentityNames([
+      pickerBody(ADA, [{ displayName: "   " }, { displayName: "Ada Lovelace" }]),
+    ]);
+
+    expect(names.get(ADA)).toBe("Ada Lovelace");
+  });
+
+  it("skips an id Azure DevOps matched nobody for, rather than showing a blank name", () => {
+    expect(parseAdoIdentityNames([pickerBody(ADA, [])]).size).toBe(0);
+  });
+
+  it("skips a result with no query token, which nothing could be keyed by", () => {
     expect(
-      parseAdoIdentityNames([{ value: [{ id: ADA, providerDisplayName: "   " }, { id: GRACE }] }])
-        .size,
+      parseAdoIdentityNames([{ results: [{ identities: [{ displayName: "Ada" }] }] }]).size,
     ).toBe(0);
   });
 
-  it("skips an entry with no id, which nothing could be keyed by", () => {
-    expect(parseAdoIdentityNames([{ value: [{ providerDisplayName: "Ada" }] }]).size).toBe(0);
-  });
-
   it("degrades to no names for a malformed or missing body", () => {
-    expect(parseAdoIdentityNames([null, undefined, {}, { value: "nope" }, 7]).size).toBe(0);
+    expect(parseAdoIdentityNames([null, undefined, {}, { results: "nope" }, 7]).size).toBe(0);
   });
 });

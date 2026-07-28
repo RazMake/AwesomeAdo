@@ -33,6 +33,16 @@ queue
 
 // A null value clears the field (e.g. resetting an item's ETA to "No ETA").
 queue.enqueue({ id: item.id, rev: item.rev, field: etaField, value: null });
+
+// A change DERIVED from the field's current value names what it was derived from, so the write
+// survives a rev bump nothing reported back (a drag-reorder, a note) instead of dying on HTTP 412.
+queue.enqueue({
+  id: item.id,
+  currentRev: () => item.rev,
+  field: "System.Tags",
+  value: formatWorkItemTags(withWorkItemTag(item.tags, "Blocked")),
+  baseValue: formatWorkItemTags(item.tags),
+});
 ```
 
 ## Public API

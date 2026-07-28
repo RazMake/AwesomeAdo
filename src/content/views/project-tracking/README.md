@@ -189,7 +189,8 @@ halves of the view — its configuration and its renderer.
   - **Filter row**: one wrapping row sits between the header and the tree, introduced by a single
     **`Filters:`** label (vertically centred against the pills it shares a line with). It holds the
     [`tag-filter`](./tag-filter/README.md) pills first, then the
-    [`activity-filter`](./activity-filter/README.md) pills that close it; every pill is a direct
+    [`activity-filter`](./activity-filter/README.md) pills, then the
+    [`marker-filter`](./marker-filter/README.md) pills that close it; every pill is a direct
     child of that one flex row, so a narrow window reflows them all as a single continuous line. The
     board re-renders the row whole on any change.
     - **Tag pills**: once the Feature Crew roster resolves, one clickable pill per tag worn across
@@ -205,6 +206,16 @@ halves of the view — its configuration and its renderer.
       so lighting it reads the discussions of the items ADO says have one — on demand, bounded, and
       at most once per board. Until those reads land the pill reads `New notes…` and the board stays
       wide, so it narrows once rather than emptying and repopulating.
+    - **Marker pills**: one pill per recognized condition (**Blocked (internal)**, **Blocked by
+      another team**, **Interrupt**) that something in the tree is actually tagged with, using the
+      team's own tags from _Options → Azure DevOps → Marker tags_. A pill appears the moment any item
+      carries its tag and goes away with the last one. Lit pills **OR** together and the group
+      **AND**s with the tag and activity groups, exactly like the other two.
+  - **Flagging an item**: the right-click menu's last group (`item-commands/MarkerCommands`) applies
+    or clears those same markers. Applying one asks for a **mandatory** reason and writes the tag and
+    that reason (prefixed with the team's configured token) as **one** JSON Patch — a separately
+    posted comment would advance `System.Rev` and get the tag patch rejected with HTTP 412. Clearing
+    asks for nothing. See [`item-commands`](./item-commands/README.md).
 
 Because every property is stored on the binding, the same view bound to two queries can use
 different windows. Both halves are registered centrally: the config in `../viewCatalog.ts`, the

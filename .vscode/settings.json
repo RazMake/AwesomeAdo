@@ -10,5 +10,9 @@
     "artifacts": true,
     ".debug-profiles": true,
     "pnpm-lock.yaml": true
+  },
+  "chat.tools.terminal.autoApprove": {
+    "npx vitest": true,
+    "npx prettier": true
   }
 }

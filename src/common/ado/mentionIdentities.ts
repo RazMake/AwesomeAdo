@@ -1,30 +1,31 @@
-import { resolveAdoIdentityServiceBase } from "./fetchAdoMetadata";
+import { resolveAdoOrganizationBase } from "./fetchAdoMetadata";
 
 /**
- * The identity service is pinned separately from `ADO_API_VERSION` only so the bulk read stays on a
- * version that is documented as generally available; the endpoint lives on a different service host
- * from every other call in this folder and versions on its own schedule.
+ * The Identity Picker is pinned separately from `ADO_API_VERSION` because it has never left preview
+ * and versions on its own schedule; the rest of this folder's reads are on the GA line.
  */
-const IDENTITIES_API_VERSION = "7.1";
+const IDENTITY_PICKER_API_VERSION = "5.2-preview.1";
 
 /**
- * How many identity GUIDs one bulk read asks about.
+ * How many mention resolutions may be in flight at once.
  *
- * The ids travel in the query string, so the batch is bounded by URL length rather than by server
- * paging: 100 dashed GUIDs plus separators is roughly 3.7 KB, comfortably inside every proxy's
- * limit while still collapsing a whole board's mentions into one or two round-trips.
+ * The picker answers ONE identity per request (see `buildAdoIdentityPickerRequest`), so a board that
+ * mentions thirty people is thirty round-trips. Firing them all at once would stall the ADO page's
+ * own requests behind the browser's per-host connection limit; a small pool keeps the board
+ * responsive while still resolving a whole board in a fraction of the serial time.
  */
-export const MENTION_BATCH_SIZE = 100;
+export const MENTION_REQUEST_CONCURRENCY = 6;
 
 /**
- * The most identities one resolve request may ask about, across all batches.
+ * The most identities one resolve request may ask about.
  *
  * A ceiling exists because the ids are supplied by the content side: without one, a page could turn
- * a single message into an unbounded number of credentialed requests. Ten batches covers every
- * realistic board — the tree is already capped at two levels — and anything beyond it is a bug or an
- * abuse, not a discussion.
+ * a single message into an unbounded number of credentialed requests. Since the picker costs one
+ * request PER id, this ceiling is now a request budget rather than a URL-length budget, so it is far
+ * lower than the batched read it replaced — 200 covers every realistic board (the tree is already
+ * capped at two levels) and anything beyond it is a bug or an abuse, not a discussion.
  */
-export const MAX_MENTION_IDS = MENTION_BATCH_SIZE * 10;
+export const MAX_MENTION_IDS = 200;
 
 /** The shape of an Azure DevOps identity GUID, as a pattern source (no anchors, no flags). */
 const GUID_PATTERN = "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}";
@@ -73,51 +74,76 @@ export function collectMentionIdentityIds(sources: Iterable<string | null | unde
   return [...ids];
 }
 
+/** Where to resolve mentions for one organization, and the ids worth asking about. */
+export interface AdoIdentityPickerRequest {
+  /** The org-scoped Identity Picker endpoint; the same URL answers for every id. */
+  url: string;
+  /** The well-formed, de-duplicated, lowercased ids to ask about — one request each. */
+  ids: string[];
+}
+
 /**
- * Build the bulk identity-read URLs for the organization that owns `href`, one per batch of ids, or
- * an empty list when there is nothing (or nowhere) to ask.
+ * Build the mention-resolution request for the organization that owns `href`, or null when there is
+ * nothing (or nowhere) to ask.
  *
- * WHY a bulk read at all: a mention is stored as a bare GUID, so rendering a board's descriptions
- * and notes one name at a time would cost a request per mentioned person, per item. Collecting every
- * GUID first and resolving them together is what keeps the whole board to one or two round-trips.
+ * WHY the Identity Picker rather than the bulk `_apis/identities` read it replaced: the bulk read is
+ * served only from the separate `vssps` host, and that host answers a credentialed cross-origin
+ * fetch with `Access-Control-Allow-Origin: *` — which the browser rejects for any request whose
+ * credentials mode is `include`. No header on our side can change that, so every mention resolved to
+ * nothing. The picker is served from the collection base the page is already on, so the read is
+ * same-origin and the session rides along with no CORS involved at all.
+ *
+ * The cost is that the picker resolves ONE identity per request: its `query` is a single opaque
+ * string, and a comma-separated list comes back as one unmatched token rather than a batch. Callers
+ * therefore issue a request per id (pooled by `MENTION_REQUEST_CONCURRENCY`), which is affordable
+ * only because `MessagingMentionDirectory` memoizes every answer for the session — a person is asked
+ * about once, not once per repaint.
  *
  * Anything that is not a well-formed GUID is DROPPED rather than passed through. The ids arrive from
- * the content side, and they are interpolated into a query string: validating the shape here is what
- * keeps a page from steering the request somewhere else.
+ * the content side, so validating the shape here is what keeps a page from turning a mention resolve
+ * into an arbitrary directory search.
  */
-export function buildAdoIdentityNamesUrls(href: string, ids: readonly string[]): string[] {
-  const base = resolveAdoIdentityServiceBase(href);
+export function buildAdoIdentityPickerRequest(
+  href: string,
+  ids: readonly string[],
+): AdoIdentityPickerRequest | null {
+  const base = resolveAdoOrganizationBase(href);
   if (base === null) {
-    return [];
+    return null;
   }
   const exact = new RegExp(`^${GUID_PATTERN}$`);
   const safe = [...new Set(ids.map((id) => id.trim().toLowerCase()))]
     .filter((id) => exact.test(id))
     .slice(0, MAX_MENTION_IDS);
-
-  const urls: string[] = [];
-  for (let start = 0; start < safe.length; start += MENTION_BATCH_SIZE) {
-    const batch = safe.slice(start, start + MENTION_BATCH_SIZE).join(",");
-    // `queryMembership=None` keeps the response to the identities themselves: the default expands
-    // every group each person belongs to, which is a large body for an answer that is one name.
-    urls.push(
-      `${base}/_apis/identities?identityIds=${batch}` +
-        `&queryMembership=None&api-version=${IDENTITIES_API_VERSION}`,
-    );
+  if (safe.length === 0) {
+    return null;
   }
-  return urls;
+  return {
+    url: `${base}/_apis/IdentityPicker/Identities?api-version=${IDENTITY_PICKER_API_VERSION}`,
+    ids: safe,
+  };
 }
 
-/** One identity as the bulk read returns it; every field is optional on the wire. */
-interface RawIdentity {
-  id?: unknown;
-  customDisplayName?: unknown;
-  providerDisplayName?: unknown;
-  properties?: unknown;
+/** One resolved identity as the picker returns it; every field is optional on the wire. */
+interface RawPickerIdentity {
+  displayName?: unknown;
+  signInAddress?: unknown;
+  mail?: unknown;
+}
+
+/** One query's answer: the token echoed back, and the identities it matched (often none). */
+interface RawPickerResult {
+  queryToken?: unknown;
+  identities?: unknown;
 }
 
 /**
- * Parse the bulk identity bodies into display names keyed by LOWERCASE identity GUID.
+ * Parse the Identity Picker bodies into display names keyed by LOWERCASE identity GUID.
+ *
+ * Keyed by the echoed `queryToken` rather than by any id field ON the identity, because the picker
+ * returns BOTH `localId` (the ADO identity, which is what a mention stores) and `originId` (the
+ * directory object behind it) and picking the wrong one keys every name under an id no mention will
+ * ever look up. The token is by definition the id that was asked about.
  *
  * Best-effort like every other parser here: a missing or malformed body contributes nothing, so an
  * unresolvable mention renders as the neutral "@mention" label instead of breaking the view. An
@@ -127,35 +153,43 @@ interface RawIdentity {
 export function parseAdoIdentityNames(bodies: readonly unknown[]): Map<string, string> {
   const names = new Map<string, string>();
   for (const body of bodies) {
-    const value = (body as { value?: unknown } | null)?.value;
-    if (!Array.isArray(value)) {
+    const results = (body as { results?: unknown } | null)?.results;
+    if (!Array.isArray(results)) {
       continue;
     }
-    for (const raw of value) {
-      const identity = raw as RawIdentity | null;
-      const id = typeof identity?.id === "string" ? identity.id.toLowerCase() : null;
-      const name = id === null ? null : displayNameOf(identity as RawIdentity);
-      if (id !== null && name !== null) {
-        names.set(id, name);
+    for (const raw of results) {
+      const named = namedIdentityIn(raw);
+      if (named !== null) {
+        names.set(named[0], named[1]);
       }
     }
   }
   return names;
 }
 
+/** One query's answer as an id/name pair, or null when it named nobody this map could be keyed by. */
+function namedIdentityIn(raw: unknown): readonly [string, string] | null {
+  const result = raw as RawPickerResult | null;
+  const id = typeof result?.queryToken === "string" ? result.queryToken.toLowerCase() : null;
+  const name = Array.isArray(result?.identities) ? displayNameIn(result.identities) : null;
+  return id === null || name === null ? null : [id, name];
+}
+
 /**
- * The name to show for one identity, or null when it carries none.
+ * The name to show for one query's matches, or null when none of them carry a usable one.
  *
- * A custom display name wins because that is the name the organization chose to show this person
- * under, and it is what ADO's own mention chips render; the provider name is the directory's, and
- * the sign-in account is the last resort so a mention still reads as a person rather than a GUID.
+ * A `uid` query matches at most one person, but the list is walked anyway so a directory that
+ * returns a nameless placeholder ahead of the real match does not anonymize the mention. The display
+ * name wins because it is what ADO's own mention chips render; the sign-in address and mail are last
+ * resorts so a mention still reads as a person rather than a GUID.
  */
-function displayNameOf(identity: RawIdentity): string | null {
-  const account = (identity.properties as { Account?: { $value?: unknown } } | null)?.Account
-    ?.$value;
-  for (const candidate of [identity.customDisplayName, identity.providerDisplayName, account]) {
-    if (typeof candidate === "string" && candidate.trim().length > 0) {
-      return candidate;
+function displayNameIn(identities: readonly unknown[]): string | null {
+  for (const raw of identities) {
+    const identity = raw as RawPickerIdentity | null;
+    for (const candidate of [identity?.displayName, identity?.signInAddress, identity?.mail]) {
+      if (typeof candidate === "string" && candidate.trim().length > 0) {
+        return candidate;
+      }
     }
   }
   return null;

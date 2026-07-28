@@ -27,7 +27,12 @@ describe("updateWorkItemFieldInPage", () => {
     const fetchMock = vi.fn(() => Promise.resolve(jsonResponse({ rev: 6 })));
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
-    const result = await updateWorkItemFieldInPage(UPDATE_URL, 123, 5, "System.State", "Active");
+    const result = await updateWorkItemFieldInPage({
+      updateUrl: UPDATE_URL,
+      rev: 5,
+      field: "System.State",
+      value: "Active",
+    });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
@@ -46,13 +51,12 @@ describe("updateWorkItemFieldInPage", () => {
     const fetchMock = vi.fn(() => Promise.resolve(jsonResponse({ rev: 7 })));
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
-    const result = await updateWorkItemFieldInPage(
-      UPDATE_URL,
-      123,
-      6,
-      "Microsoft.VSTS.Scheduling.TargetDate",
-      null,
-    );
+    const result = await updateWorkItemFieldInPage({
+      updateUrl: UPDATE_URL,
+      rev: 6,
+      field: "Microsoft.VSTS.Scheduling.TargetDate",
+      value: null,
+    });
 
     const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(parsePatchBody(init)).toEqual([
@@ -66,14 +70,13 @@ describe("updateWorkItemFieldInPage", () => {
     const fetchMock = vi.fn(() => Promise.resolve(jsonResponse({ rev: 8 })));
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
-    await updateWorkItemFieldInPage(
-      UPDATE_URL,
-      123,
-      7,
-      "System.Description",
-      "**Bold** plan.",
-      "Markdown",
-    );
+    await updateWorkItemFieldInPage({
+      updateUrl: UPDATE_URL,
+      rev: 7,
+      field: "System.Description",
+      value: "**Bold** plan.",
+      multilineFormat: "Markdown",
+    });
 
     const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     // One patch, not two: a field still on `Html` stores Markdown source verbatim, so a format set
@@ -88,18 +91,29 @@ describe("updateWorkItemFieldInPage", () => {
   it("leaves a field's format alone when none was asked for", async () => {
     const fetchMock = vi.fn(() => Promise.resolve(jsonResponse({ rev: 9 })));
     globalThis.fetch = fetchMock as unknown as typeof fetch;
-
-    await updateWorkItemFieldInPage(UPDATE_URL, 123, 8, "System.Title", "Renamed");
+    await updateWorkItemFieldInPage({
+      updateUrl: UPDATE_URL,
+      rev: 8,
+      field: "System.Title",
+      value: "Renamed",
+    });
 
     const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(parsePatchBody(init)).toHaveLength(2);
   });
+});
 
+describe("updateWorkItemFieldInPage - what it reports back", () => {
   it("reports rev undefined when the response omits a numeric rev", async () => {
     const fetchMock = vi.fn(() => Promise.resolve(jsonResponse({})));
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
-    const result = await updateWorkItemFieldInPage(UPDATE_URL, 123, 5, "System.State", "Active");
+    const result = await updateWorkItemFieldInPage({
+      updateUrl: UPDATE_URL,
+      rev: 5,
+      field: "System.State",
+      value: "Active",
+    });
 
     expect(result).toEqual({ ok: true, rev: undefined });
   });
@@ -108,7 +122,12 @@ describe("updateWorkItemFieldInPage", () => {
     const fetchMock = vi.fn(() => Promise.resolve(jsonResponse({}, false, 409)));
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
-    const result = await updateWorkItemFieldInPage(UPDATE_URL, 123, 5, "System.State", "Active");
+    const result = await updateWorkItemFieldInPage({
+      updateUrl: UPDATE_URL,
+      rev: 5,
+      field: "System.State",
+      value: "Active",
+    });
 
     expect(result).toEqual({ ok: false, error: "HTTP 409" });
   });
@@ -117,9 +136,234 @@ describe("updateWorkItemFieldInPage", () => {
     const fetchMock = vi.fn(() => Promise.reject(new Error("network down")));
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
-    const result = await updateWorkItemFieldInPage(UPDATE_URL, 123, 5, "System.State", "Active");
+    const result = await updateWorkItemFieldInPage({
+      updateUrl: UPDATE_URL,
+      rev: 5,
+      field: "System.State",
+      value: "Active",
+    });
 
     expect(result.ok).toBe(false);
     expect(result.error).toContain("network down");
+  });
+});
+
+describe("updateWorkItemFieldInPage - a comment riding in the same patch", () => {
+  it("records the comment in the SAME patch as the field it explains", async () => {
+    const fetchMock = vi.fn(() => Promise.resolve(jsonResponse({ rev: 13 })));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    await updateWorkItemFieldInPage({
+      updateUrl: UPDATE_URL,
+      rev: 12,
+      field: "System.Tags",
+      value: "Blocked",
+      comment: "[BLOCKED] Waiting on the API.",
+    });
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    // One patch means one revision. Posting the comment through the comments API instead would
+    // advance the rev and get this very patch rejected on its own `test` op with HTTP 412.
+    expect(parsePatchBody(init)).toEqual([
+      { op: "test", path: "/rev", value: 12 },
+      { op: "add", path: "/fields/System.Tags", value: "Blocked" },
+      { op: "add", path: "/fields/System.History", value: "[BLOCKED] Waiting on the API." },
+    ]);
+  });
+
+  it("escapes the comment, because System.History is an HTML field", async () => {
+    const fetchMock = vi.fn(() => Promise.resolve(jsonResponse({ rev: 3 })));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    await updateWorkItemFieldInPage({
+      updateUrl: UPDATE_URL,
+      rev: 2,
+      field: "System.Tags",
+      value: "Blocked",
+      comment: "a < b && b > c\nsecond line",
+    });
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    // Unescaped, a `<` in someone's reason is swallowed as markup and the rest of the line with it.
+    expect(parsePatchBody(init)[2]).toEqual({
+      op: "add",
+      path: "/fields/System.History",
+      value: "a &lt; b &amp;&amp; b &gt; c<br>second line",
+    });
+  });
+
+  it("adds no comment op when none was given", async () => {
+    const fetchMock = vi.fn(() => Promise.resolve(jsonResponse({ rev: 3 })));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    await updateWorkItemFieldInPage({
+      updateUrl: UPDATE_URL,
+      rev: 2,
+      field: "System.State",
+      value: "Active",
+    });
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(parsePatchBody(init)).toHaveLength(2);
+  });
+
+  it("carries no unserializable hole: every optional left out is simply absent", () => {
+    // The regression this guards: an omitted optional passed POSITIONALLY is `undefined`, which
+    // `chrome.scripting.executeScript` refuses to serialize — it rejects the whole injection, so
+    // nothing reaches ADO and the board reports a bare "exception" that looks like a failed write.
+    const config = {
+      updateUrl: UPDATE_URL,
+      rev: 2,
+      field: "System.State",
+      value: "Active",
+      multilineFormat: undefined,
+      comment: undefined,
+    };
+
+    expect(JSON.parse(JSON.stringify(config))).toEqual({
+      updateUrl: UPDATE_URL,
+      rev: 2,
+      field: "System.State",
+      value: "Active",
+    });
+  });
+});
+
+/**
+ * A stale rev is the normal state of a board that has been used: a drag-reorder, the rank fallback
+ * and a note posted from the panel all advance `System.Rev` without reporting the new one, so these
+ * cover the one rebase that keeps the next edit from being refused forever.
+ */
+
+/** A fetch mock that refuses any PATCH whose rev is not `serverRev`, and serves the item on GET. */
+function conflictingAdo(stored: unknown, serverRev: number) {
+  return vi.fn((_url: string, init?: RequestInit) => {
+    if (init?.method !== "PATCH") {
+      return Promise.resolve(jsonResponse({ rev: serverRev, fields: { "System.Tags": stored } }));
+    }
+    const rev = (parsePatchBody(init)[0] as { value: number }).value;
+    return Promise.resolve(
+      rev === serverRev ? jsonResponse({ rev: serverRev + 1 }) : jsonResponse({}, false, 412),
+    );
+  });
+}
+
+describe("updateWorkItemFieldInPage - rebasing a write whose rev went stale", () => {
+  it("re-reads the item and retries against the server's rev when the field is untouched", async () => {
+    const fetchMock = conflictingAdo("Blocked", 20);
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const result = await updateWorkItemFieldInPage({
+      updateUrl: UPDATE_URL,
+      rev: 15,
+      field: "System.Tags",
+      value: "Blocked; Blocked by another team",
+      baseValue: "Blocked",
+      comment: "[BLOCKED] Waiting on the platform team.",
+    });
+
+    // PATCH (412) → GET → PATCH. The retry carries the rev the SERVER just reported, and the
+    // comment rides along in it exactly as it did in the first attempt.
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    const retry = parsePatchBody((fetchMock.mock.calls[2] as unknown as [string, RequestInit])[1]);
+    expect(retry[0]).toEqual({ op: "test", path: "/rev", value: 20 });
+    expect(retry[2]).toEqual({
+      op: "add",
+      path: "/fields/System.History",
+      value: "[BLOCKED] Waiting on the platform team.",
+    });
+    expect(result).toEqual({ ok: true, rev: 21 });
+  });
+
+  it("treats an absent field as empty, so clearing one can still be rebased", async () => {
+    const fetchMock = conflictingAdo(undefined, 20);
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const result = await updateWorkItemFieldInPage({
+      updateUrl: UPDATE_URL,
+      rev: 15,
+      field: "System.Tags",
+      value: "Blocked",
+      baseValue: "",
+    });
+
+    expect(result).toEqual({ ok: true, rev: 21 });
+  });
+});
+
+describe("updateWorkItemFieldInPage - when it refuses to rebase", () => {
+  it("refuses when the field itself changed — that is a real conflict", async () => {
+    const fetchMock = conflictingAdo("Blocked; Someone else's tag", 20);
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const result = await updateWorkItemFieldInPage({
+      updateUrl: UPDATE_URL,
+      rev: 15,
+      field: "System.Tags",
+      value: "Blocked; Blocked by another team",
+      baseValue: "Blocked",
+    });
+
+    // PATCH → GET, and no second PATCH: rebasing here would drop the other person's tag.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("412");
+  });
+
+  it("never rebases when no base value was given", async () => {
+    const fetchMock = conflictingAdo("Blocked", 20);
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const result = await updateWorkItemFieldInPage({
+      updateUrl: UPDATE_URL,
+      rev: 15,
+      field: "System.Tags",
+      value: "Blocked; Blocked by another team",
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ ok: false, error: "HTTP 412" });
+  });
+
+  it("rebases at most once, so a moving item cannot spin the write in a loop", async () => {
+    // The server refuses every PATCH, so the retry is refused as well.
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) =>
+      Promise.resolve(
+        init?.method === "PATCH"
+          ? jsonResponse({}, false, 412)
+          : jsonResponse({ rev: 20, fields: {} }),
+      ),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const result = await updateWorkItemFieldInPage({
+      updateUrl: UPDATE_URL,
+      rev: 15,
+      field: "System.Tags",
+      value: "Blocked",
+      baseValue: "",
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(result).toEqual({ ok: false, error: "HTTP 412" });
+  });
+
+  it("reports the original conflict when the item cannot be re-read", async () => {
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) =>
+      Promise.resolve(
+        init?.method === "PATCH" ? jsonResponse({}, false, 412) : jsonResponse(null, false, 500),
+      ),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const result = await updateWorkItemFieldInPage({
+      updateUrl: UPDATE_URL,
+      rev: 15,
+      field: "System.Tags",
+      value: "Blocked",
+      baseValue: "",
+    });
+
+    expect(result).toEqual({ ok: false, error: "HTTP 412" });
   });
 });

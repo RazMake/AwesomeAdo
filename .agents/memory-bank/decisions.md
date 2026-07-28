@@ -330,6 +330,16 @@
   left the screen unchanged and was indistinguishable from a slow one. `FieldWriteQueue` now exposes
   `onWriteFailed` as a second, narrow subscription (deliberately not a widening of the pending-count
   callback), and the board's write-status control renders "Couldn't save N change(s)".
+- Amendment (one licensed rebase): "no auto-rebase" assumed a stale rev means a concurrent edit. It
+  usually does not. A drag-reorder, the ADR-042 rank fallback and a note posted through the comments
+  API all advance `System.Rev` **without reporting the new value**, so the board's cached rev goes
+  stale by itself and every later write on that item is refused with `HTTP 412` until the board is
+  reloaded — which made the marker-tag command unusable after any drag. A field write may now carry
+  `baseValue`, the value the change was DERIVED from; on a 412/409 the injected patch re-reads the
+  item and retries once against the server's rev **only while the field still holds that value**. A
+  field that actually moved is still reported as a conflict and never overwritten, which is the case
+  "no auto-rebase" was written for; the rebase is bounded to one attempt so a moving item cannot spin
+  the write.
 
 ## ADR-031: Tab-local view override with fixed precedence
 
@@ -728,13 +738,13 @@
   the Markdown `@<guid>` token AND ADO's rich-text `data-vss-mention` anchor — since a board carries
   both. `MENTION_TOKEN_PATTERN` is owned by `common/ado` and shared with the control so the collector
   and the renderer can never disagree about the token shape.
-- Decision: the endpoint is the `vssps` bulk identity read
+- Decision (**SUPERSEDED by ADR-050**): the endpoint is the `vssps` bulk identity read
   (`{identityBase}/_apis/identities?identityIds=…`), reached through the same background/MAIN-world
   bridge as every other credentialed ADO call. This is the **only** ADO read in the extension that is
   genuinely cross-origin — `resolveAdoIdentityServiceBase` exists to make that hop explicit rather
   than hidden in a URL template. ADO's own SPA makes the same hop from the same page, so the session
   rides along; a tenant that refused it degrades to `network` in the log and unresolved placeholders
-  on screen.
+  on screen. _(The premise was false: the SPA does not make that hop, and the browser blocks it.)_
 - Decision: the board resolves **after** its first paint and repaints, rather than awaiting the names
   before painting. The ids only exist once the tree is in hand, so awaiting first would hold a whole
   board back on a cosmetic detail. A notes panel awaits instead, because it is already showing
@@ -863,3 +873,34 @@ nodeMatchesChange`). Copied here, that makes an activity pill drag in items belo
   This matches the reference board, whose task pill is always `done/total` over every child.
 - Consequence: `createMinorChildrenBadge` deliberately does NOT call `isVisibleUnderFilter`. The
   sprint/tag/activity/resolved rules bound the OUTLINE only.
+
+## ADR-050: Mentions resolve through the same-origin Identity Picker, one request per person
+
+- Supersedes the endpoint decision in ADR-046. Everything else in ADR-046 (the `IMentionDirectory`
+  contract, shared in-flight reads, `complete`-gated settling, logging by id) stands unchanged.
+- Context: the `vssps` bulk read ADR-046 chose can never succeed from the page. `vssps` answers the
+  credentialed preflight with `Access-Control-Allow-Origin: *`, and the fetch spec forbids a wildcard
+  when credentials mode is `include`. Every mention on every board resolved to nothing, reported as
+  `Mention resolution failed (network, HTTP 0)`. No request header on our side can change this, and
+  the collection base does not front `_apis/identities` (404).
+- Decision: resolve through `{collectionBase}/_apis/IdentityPicker/Identities`, the endpoint ADO's
+  own SPA uses for mention chips. It is **same-origin** with the page, so the read carries the
+  session with no CORS involved at all — which also removes the extension's only cross-origin ADO
+  dependency and the `vssps` host knowledge that came with it.
+- Decision: `queryTypeHint: "uid"` is part of the contract, not a tuning knob. Without it the picker
+  matches the GUID against display names and answers HTTP 200 with zero identities — a total failure
+  wearing a success's clothes.
+- Consequence: **the bulk property of ADR-046 is lost at the transport.** The picker's `query` is one
+  opaque string; a comma-separated list returns a single unmatched token. Resolution is now one
+  request per distinct person, run through a pool (`MENTION_REQUEST_CONCURRENCY`) so a board cannot
+  starve the ADO page's own traffic. This is affordable only because ADR-046's session-long memo
+  already guarantees a person is asked about once — collect-then-resolve stays bulk at the CALLER,
+  which is what kept the request count proportional to people rather than to mentions.
+- Consequence: `MAX_MENTION_IDS` drops from 1000 to 200. It was a URL-length budget; it is now a
+  credentialed-request budget, and the old value would have authorized 1000 round-trips.
+- Consequence: names are keyed by each result's echoed `queryToken`, not by an id on the identity.
+  The picker returns both `localId` (what a mention stores) and `originId` (the directory object);
+  keying by the wrong one files every name under an id no mention will ever look up.
+- Consequence: `resolveAdoIdentityServiceBase` is replaced by `resolveAdoOrganizationBase`, and the
+  in-page reader's outcome is merged in **id order** rather than completion order so a pooled read
+  still produces a deterministic diagnostics line.

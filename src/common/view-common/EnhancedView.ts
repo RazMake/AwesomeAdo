@@ -22,6 +22,7 @@ import type { WorkItemTreeResult } from "../ado/IWorkItemTreeLoader";
 import type { TypeCatalogEntry } from "../ado/TrackedWorkItem";
 import type { SprintWindow } from "../ado/sprintWindow";
 import type { ILogger } from "../logging/ILogger";
+import type { WorkItemMarkerTags } from "../settings/ExtensionSettings";
 
 /**
  * Data-loading and cross-view services injected into data-driven views.
@@ -54,6 +55,15 @@ export interface EnhancedViewServices {
    * identically for every work-item type.
    */
   getBoardColumns(): string[];
+  /**
+   * The Azure DevOps tag and comment token the team uses for each recognized condition (blocked,
+   * blocked by another team, interrupt).
+   *
+   * Read through the services rather than baked into a view because the vocabulary is the TEAM's:
+   * a view that hard-coded "Blocked" would silently ignore the tag its users actually apply, and the
+   * marker a board filters by must be the same one its tagging commands write.
+   */
+  markerTags(): WorkItemMarkerTags;
   /**
    * Load the current team's sprint window: the iterations around the current one (bounded by the
    * configured past/future sprint counts), each labelled by its offset ("Current", "Next",

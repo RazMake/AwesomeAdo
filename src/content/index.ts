@@ -89,7 +89,11 @@ import { createLoggerFactory } from "../common/logging/createLogger";
 import { type AdoThemeResponse, isAdoThemeRequest } from "../common/navigation/AdoContext";
 import { isAdoNavigationMessage } from "../common/navigation/AdoQueryRoute";
 import type { ExtensionSettings } from "../common/settings/ExtensionSettings";
-import { DEFAULT_SETTINGS, isAdoConfigured } from "../common/settings/ExtensionSettings";
+import {
+  DEFAULT_SETTINGS,
+  isAdoConfigured,
+  normalizeMarkerTags,
+} from "../common/settings/ExtensionSettings";
 import { createSettingsStore } from "../common/settings/createSettingsStore";
 import type { EnhancedViewServices } from "../common/view-common/EnhancedView";
 
@@ -284,6 +288,9 @@ const trackingServices: EnhancedViewServices = {
       columns: t.columns.map((c) => ({ column: c.column, states: [...c.states] })),
     })),
   getBoardColumns: () => [...(latestSettings?.boardColumns ?? [])],
+  // Copied out of the latest synced snapshot rather than handed the live object, so a view can never
+  // mutate the settings the whole content script reads from.
+  markerTags: () => normalizeMarkerTags(latestSettings?.markerTags),
   loadSprintWindow: async () => {
     // The iteration list is team-scoped in ADO, so a team must be configured before there is
     // anything to fetch; without one the picker simply shows nothing. The team's stable id is used
