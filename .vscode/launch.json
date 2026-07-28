@@ -1,51 +1,27 @@
 {
   "version": "0.2.0",
-  "inputs": [
-    {
-      "id": "adoQueryUrl",
-      "type": "promptString",
-      "description": "Azure DevOps Query URL to open",
-      "default": "https://dev.azure.com/"
-    },
-    {
-      "id": "chromeForTestingPath",
-      "type": "promptString",
-      "description": "Absolute path to Chrome for Testing chrome.exe"
-    }
-  ],
   "configurations": [
+    // Attach-only by design: a browser `request:launch` config lets js-debug spawn the browser, which
+    // hands off to any already-running instance (its port never binds -> "Unable to attach to
+    // browser") and gates every new target on the debugger, freezing service-worker-opened tabs.
+    // The preLaunchTask launches the browser itself and does not return until the CDP port answers.
     {
-      "name": "Debug Extension (Edge)",
-      "type": "msedge",
-      "request": "launch",
-      "url": "${input:adoQueryUrl}",
-      "preLaunchTask": "Build: Extension",
-      "userDataDir": "${workspaceFolder}/.debug-profiles/edge",
-      "runtimeArgs": ["--load-extension=${workspaceFolder}/dist"]
-    },
-    {
-      "name": "Debug Extension (Chrome for Testing)",
-      "type": "chrome",
-      "request": "launch",
-      "runtimeExecutable": "${input:chromeForTestingPath}",
-      "url": "${input:adoQueryUrl}",
-      "preLaunchTask": "Build: Extension",
-      "userDataDir": "${workspaceFolder}/.debug-profiles/chrome",
-      "runtimeArgs": ["--load-extension=${workspaceFolder}/dist"]
-    },
-    {
-      "name": "Attach to Extension (Edge)",
+      "name": "Run/Debug Extension (Edge)",
       "type": "msedge",
       "request": "attach",
       "port": 9222,
-      "webRoot": "${workspaceFolder}/dist"
+      "webRoot": "${workspaceFolder}/dist",
+      "timeout": 30000,
+      "preLaunchTask": "Run: Extension (Edge, no debugger)"
     },
     {
-      "name": "Attach to Extension (Chrome for Testing)",
+      "name": "Run/Debug Extension (Chrome for Testing)",
       "type": "chrome",
       "request": "attach",
       "port": 9223,
-      "webRoot": "${workspaceFolder}/dist"
+      "webRoot": "${workspaceFolder}/dist",
+      "timeout": 30000,
+      "preLaunchTask": "Run: Extension (Chrome for Testing, no debugger)"
     }
   ]
 }

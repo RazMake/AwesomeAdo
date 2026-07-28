@@ -81,17 +81,17 @@
     },
     {
       "label": "Run: Extension (Edge, no debugger)",
-      "detail": "Launch Edge with the built extension but WITHOUT the VS Code debugger launching it, so service-worker-opened tabs (e.g. the options page) are never held in the 'waiting for debugger' pause. Exposes port 9222 so the 'Attach to Extension (Edge)' launch config can attach for breakpoints.",
+      "detail": "Launch Edge with the built extension but WITHOUT the VS Code debugger launching it, so service-worker-opened tabs (e.g. the options page) are never held in the 'waiting for debugger' pause. Blocks until CDP port 9222 answers so the matching attach launch config cannot race the browser's cold start.",
       "type": "shell",
-      "command": "Start-Process msedge -ArgumentList '--remote-debugging-port=9222','--user-data-dir=${workspaceFolder}\\.debug-profiles\\edge-nodebug','--load-extension=${workspaceFolder}\\dist','https://dev.azure.com/'",
+      "command": "$u='http://127.0.0.1:9222/json/version'; try { Invoke-WebRequest -UseBasicParsing -Uri $u -TimeoutSec 2 | Out-Null; Write-Host 'CDP already listening on 9222 - reusing running browser'; exit 0 } catch { }; Start-Process msedge -ArgumentList '--remote-debugging-port=9222','--user-data-dir=${workspaceFolder}\\.debug-profiles\\edge-nodebug','--load-extension=${workspaceFolder}\\dist','https://dev.azure.com/'; $deadline=(Get-Date).AddSeconds(30); while ((Get-Date) -lt $deadline) { try { Invoke-WebRequest -UseBasicParsing -Uri $u -TimeoutSec 2 | Out-Null; Write-Host 'CDP ready on 9222'; exit 0 } catch { Start-Sleep -Milliseconds 300 } }; Write-Host 'ERROR: CDP port 9222 never came up. Close any Edge already using .debug-profiles\\edge-nodebug (or delete that folder) and retry.'; exit 1",
       "dependsOn": "Build: Extension",
       "problemMatcher": []
     },
     {
       "label": "Run: Extension (Chrome for Testing, no debugger)",
-      "detail": "Launch Chrome for Testing with the built extension but WITHOUT the VS Code debugger launching it. Exposes port 9223 so the 'Attach to Extension (Chrome for Testing)' launch config can attach for breakpoints.",
+      "detail": "Launch Chrome for Testing with the built extension but WITHOUT the VS Code debugger launching it. Blocks until CDP port 9223 answers so the matching attach launch config cannot race the browser's cold start.",
       "type": "shell",
-      "command": "Start-Process -FilePath '${input:chromeForTestingPath}' -ArgumentList '--remote-debugging-port=9223','--user-data-dir=${workspaceFolder}\\.debug-profiles\\chrome-nodebug','--load-extension=${workspaceFolder}\\dist','https://dev.azure.com/'",
+      "command": "$u='http://127.0.0.1:9223/json/version'; try { Invoke-WebRequest -UseBasicParsing -Uri $u -TimeoutSec 2 | Out-Null; Write-Host 'CDP already listening on 9223 - reusing running browser'; exit 0 } catch { }; Start-Process -FilePath '${input:chromeForTestingPath}' -ArgumentList '--remote-debugging-port=9223','--user-data-dir=${workspaceFolder}\\.debug-profiles\\chrome-nodebug','--load-extension=${workspaceFolder}\\dist','https://dev.azure.com/'; $deadline=(Get-Date).AddSeconds(30); while ((Get-Date) -lt $deadline) { try { Invoke-WebRequest -UseBasicParsing -Uri $u -TimeoutSec 2 | Out-Null; Write-Host 'CDP ready on 9223'; exit 0 } catch { Start-Sleep -Milliseconds 300 } }; Write-Host 'ERROR: CDP port 9223 never came up. Close any Chrome already using .debug-profiles\\chrome-nodebug (or delete that folder) and retry.'; exit 1",
       "dependsOn": "Build: Extension",
       "problemMatcher": []
     }

@@ -476,6 +476,10 @@ settings.defaultView==="enhanced")`; unbound → not enhanced. `content/index.ts
   are self-sufficient via preLaunchTask. If a stale prior Edge still holds port 9222, close it or
   delete `.debug-profiles/edge-nodebug` and retry. Verified: the task's launch+poll binds 9222 from a
   clean state AND reuses it when Edge is already running.
+- This fix REGRESSED once because `.vscode/launch.json` + `.vscode/tasks.json` were only ever edited
+  in the working tree and never committed (`git log` showed just the scaffold commit), so the files
+  reverted to the broken `request:launch` + poll-less-`Start-Process` shape. COMMIT both files after
+  touching them — the debug workflow is repo knowledge, not local scratch.
 
 ## Single-source-of-truth abstractions (post deep-review refactor)
 
