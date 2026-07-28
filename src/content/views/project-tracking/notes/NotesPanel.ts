@@ -36,6 +36,15 @@ export interface NotesPanelOptions {
    * something to read. Never called on a FAILED load: an unknown count must not be reported as none.
    */
   onNoteCountKnown?: (count: number) => void;
+  /**
+   * Show EVERY note inside the Updates window instead of only the two most recent days with notes.
+   *
+   * The two-day rule exists because a panel under a ROW is a glance — dozens of them are on screen at
+   * once, and a scroll under each would bury the board. A surface the reader deliberately opened to
+   * read one item's discussion is the opposite case: there, cutting the list off at two days hides
+   * exactly what they asked for.
+   */
+  showAllInWindow?: boolean;
 }
 
 /** A mounted notes panel and the one thing the row that owns it changes about it. */
@@ -125,7 +134,7 @@ interface PanelState {
   error?: string;
 }
 
-/** The rows an expanded panel shows: the last two days of notes, or a single explanatory line. */
+/** The rows an expanded panel shows: the notes inside its window, or a single explanatory line. */
 function renderRows(
   options: NotesPanelOptions,
   state: PanelState,
@@ -135,7 +144,7 @@ function renderRows(
   if (state.error !== undefined) {
     return [statusLine(doc, "Could not load notes.")];
   }
-  const visible = selectRecentNoteDays(state.notes);
+  const visible = options.showAllInWindow ? state.notes : selectRecentNoteDays(state.notes);
   if (visible.length === 0) {
     return [statusLine(doc, "No notes in this window.")];
   }

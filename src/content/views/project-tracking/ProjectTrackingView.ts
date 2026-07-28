@@ -44,6 +44,11 @@ import {
   renderEtaBadge,
   type EtaBadgeHandle,
 } from "../../../common/view-common/control/EtaBadge/EtaBadge";
+import {
+  createItemContextMenu,
+  type ItemContextMenu,
+  type ItemContextMenuTarget,
+} from "../../../common/view-common/control/ItemContextMenu/ItemContextMenu";
 import { renderItemLifecycleInfo } from "../../../common/view-common/control/ItemLifecycleInfo/ItemLifecycleInfo";
 import {
   renderItemTypeIcon,
@@ -73,6 +78,7 @@ import {
   renderProjectTrackingHeader,
   type RefreshButtonHandle,
 } from "./header/ProjectTrackingHeader";
+import { buildItemCommands } from "./item-commands/ItemCommands";
 import { renderNotesPanel } from "./notes/NotesPanel";
 import {
   hideResolvedAfterDays,
@@ -517,6 +523,15 @@ interface TreeRenderOptions {
   showSprintPills: boolean;
   /** How every assignee chip on this pass offers people and persists a pick. */
   chip: AssigneeChipContext;
+  /**
+   * The board's single right-click menu, shared by every row this pass renders (and by the rolled-up
+   * children inside them). One instance rather than one per row, because only one menu can be open.
+   */
+  contextMenu: ItemContextMenu;
+  /** The team's sprint window, so an item's menu can offer the sprints it may move to. */
+  sprintWindow: SprintWindow;
+  /** Repaints the board after a menu command changed what a row shows. */
+  repaint: () => void;
   /** Collects every expandable row rendered in this pass so expand-all/collapse-all can drive them. */
   expandableRows: ExpandableRow[];
   /**
@@ -1099,6 +1114,71 @@ function toggleMinorChildDone(
 }
 
 /**
+ * The ADO deep link for one item.
+ *
+ * The view runs on the ADO query page, so the page's own address supplies the org/project the link
+ * resolves against; an address that names neither leaves every affordance built on it inert rather
+ * than pointing somewhere that does not exist.
+ */
+function itemUrl(doc: Document, id: number): string | null {
+  return buildWorkItemUrl(doc.location?.href ?? "", id);
+}
+
+/**
+ * The oldest note any surface on this board will read, from the binding's Updates window.
+ *
+ * Computed on demand rather than once per board: "the last N weeks" moves with the clock, so a board
+ * left open overnight must not keep fetching against the window it opened on.
+ */
+function boardNotesSince(context: DataDrivenViewContext): string {
+  return noteWindowStart(context.services.now(), updatesWindowWeeks(context.properties));
+}
+
+/**
+ * What the right-click menu acts on for one item: how to name it in Azure DevOps, and the commands
+ * that change it.
+ *
+ * Built per open rather than per pass, because the commands close over the item's CURRENT values
+ * (the title an editor opens on, the sprint the destinations exclude) and a board left open changes
+ * under them.
+ */
+function menuTargetFor(params: {
+  doc: Document;
+  item: TrackedWorkItem;
+  context: DataDrivenViewContext;
+  queue: WorkItemWriteQueue;
+  sprintWindow: SprintWindow;
+  onChanged: () => void;
+}): ItemContextMenuTarget {
+  const { doc, item, context } = params;
+  return {
+    id: item.id,
+    url: itemUrl(doc, item.id),
+    commands: buildItemCommands({
+      doc,
+      item,
+      services: context.services,
+      queue: params.queue,
+      sprintWindow: params.sprintWindow,
+      notesSinceIso: boardNotesSince(context),
+      onChanged: params.onChanged,
+    }),
+  };
+}
+
+/** The menu target for an item rendered by the tree, drawn from the current pass's options. */
+function itemMenuTarget(item: TrackedWorkItem, options: TreeRenderOptions): ItemContextMenuTarget {
+  return menuTargetFor({
+    doc: options.doc,
+    item,
+    context: options.context,
+    queue: options.queue,
+    sprintWindow: options.sprintWindow,
+    onChanged: options.repaint,
+  });
+}
+
+/**
  * Describes one rolled-up child for the badge's popup: its completion, its assignee chip, its
  * type-colored title, its own editable ETA badge, and the ADO deep link. The assignee and ETA
  * controls are built with the SAME helpers the tree rows use, so a rolled-up child is reassigned and
@@ -1109,6 +1189,7 @@ function describeMinorChild(
   options: TreeRenderOptions,
 ): ChildItemDescriptor {
   const { doc, typeMap, queue, context, boardColumns } = options;
+  const url = itemUrl(doc, child.id);
   return {
     // Tagged like a tree row: a rolled-up child is the ONLY place its assignee appears, so hiding
     // the crew pill here hid which crew owns that work entirely — and left the popup the one place
@@ -1119,9 +1200,11 @@ function describeMinorChild(
     title: child.title,
     titleColor: typeColorOf(child.type, typeMap),
     eta: createItemEtaBadge(doc, child, typeMap, queue, context.services.now()),
-    // The view runs on the ADO query page, so the page's own URL supplies the org/project the item
-    // link resolves against; an unrecognizable location leaves the affordance inert.
-    url: buildWorkItemUrl(doc.location?.href ?? "", child.id),
+    url,
+    // A rolled-up child is a work item like any other, so it answers the right-click with the same
+    // menu a tree row does — otherwise the deepest level of the board would be the one place those
+    // commands were unavailable.
+    onContextMenu: (event) => options.contextMenu.openAt(event, itemMenuTarget(child, options)),
   };
 }
 
@@ -1198,19 +1281,29 @@ function createRowRightControls(
     const pill = doc.createElement("span");
     pill.className = "awesomeado-tracking__sprint-pill";
     pill.textContent = item.sprintName;
-    // Themed sprint pill: subtle fill and discrete border so it reads on any theme.
+    // Deliberately the same chip as the (unassigned) assignee control it sits beside: same faint
+    // fixed-grey fill, radius and muted 10px text. Two neutral row chips that differed only slightly
+    // read as an accident, and the fixed grey survives Follow-ADO themes where surface tokens
+    // collapse into the page color. Borderless, so the 4px vertical padding buys the same 18px
+    // height as the bordered status badge on the row. The horizontal padding runs 1px wider than the
+    // assignee chip's because this chip's text starts at its own edge, with no button inset to
+    // borrow breathing room from.
     pill.style.cssText = [
-      "display:inline-block",
+      "display:inline-flex",
+      "align-items:center",
       "vertical-align:middle",
-      "border:1px solid var(--palette-neutral-20, #ddd)",
-      "border-radius:3px",
-      "padding:2px 6px",
+      "background:rgba(128,128,128,0.12)",
+      "border-radius:6px",
+      "padding:4px 6px",
       "margin-left:6px",
-      "font-size:9px",
-      "background:var(--palette-neutral-4, rgba(128,128,128,0.08))",
-      "color:var(--text-primary-color, #323130)",
+      "font-size:10px",
+      "line-height:1",
+      "color:var(--text-secondary-color, #8a8886)",
       "white-space:nowrap",
+      "cursor:pointer",
     ].join(";");
+    // Matches the row assignee's dimming so both chips recede behind the title by the same amount.
+    pill.style.opacity = "0.75";
     inline.push(pill);
   }
 
@@ -1267,6 +1360,12 @@ function renderRow(
   // three share the same first-line box height their vertical centers coincide with the first line.
   row.style.cssText = ["display:flex", "align-items:flex-start", "gap:8px", "padding:4px 0"].join(
     ";",
+  );
+  // Wired on the row itself (not the wrapper) so a right-click lands on the item whose LINE is under
+  // the pointer: the wrapper also spans this row's description, notes and whole child subtree, which
+  // belong to other items.
+  row.addEventListener("contextmenu", (event) =>
+    options.contextMenu.openAt(event, itemMenuTarget(item, options)),
   );
 
   const { gutter, stateBadge, twisty } = createRowControls(item, options, showsChildRows);
@@ -1508,6 +1607,15 @@ interface HeaderBoardControls {
   writeQueueStatus: HTMLElement;
   /** The discrete ordering indicator/picker, pinned to the tile's top-right corner. */
   orderingPicker: HTMLElement;
+  /**
+   * The board's right-click menu for the ROOT item, opened from the project title — the one work
+   * item the board never renders as a row, and which would otherwise be the only item on screen with
+   * no way to copy its id, open it, or edit it.
+   *
+   * Handed in already wired rather than as the menu itself: the root's commands have to repaint both
+   * the tree and this very header, neither of which exists yet when the header is built.
+   */
+  onTitleContextMenu: (event: MouseEvent) => void;
 }
 
 /**
@@ -1528,6 +1636,8 @@ function renderHeader(
   queue: WorkItemWriteQueue,
 ): {
   header: HTMLElement;
+  /** Re-labels the project title after the root is renamed; the tree repaint cannot reach it. */
+  setHeaderTitle: (title: string) => void;
   sprintPickerHandle: SprintPickerHandle;
   expandAll: HTMLButtonElement;
   collapseAll: HTMLButtonElement;
@@ -1544,6 +1654,7 @@ function renderHeader(
 
   const {
     element: header,
+    setTitle: setHeaderTitle,
     expandAllButton: expandAll,
     collapseAllButton: collapseAll,
     refreshButton: refresh,
@@ -1556,6 +1667,7 @@ function renderHeader(
     }),
     title: root.title,
     titleColor: typeColorOf(root.type, typeMap),
+    onTitleContextMenu: boardControls.onTitleContextMenu,
     techLead,
     eta: createItemEtaBadge(doc, root, typeMap, queue, context.services.now()),
     sprintPicker: sprintPickerHandle.element,
@@ -1563,7 +1675,7 @@ function renderHeader(
     writeQueueStatus: boardControls.writeQueueStatus,
   });
 
-  return { header, sprintPickerHandle, expandAll, collapseAll, refresh, techLead };
+  return { header, setHeaderTitle, sprintPickerHandle, expandAll, collapseAll, refresh, techLead };
 }
 
 /**
@@ -1742,6 +1854,10 @@ interface BoardTreeRendererParams {
   recentNotes: RecentNotesIndex;
   sprintPickerHandle: SprintPickerHandle;
   chipContext: AssigneeChipContext;
+  /** The board's single right-click menu, handed to every pass rather than rebuilt per repaint. */
+  contextMenu: ItemContextMenu;
+  /** The team's sprint window, so an item's menu can offer the sprints it may move to. */
+  sprintWindow: SprintWindow;
   fieldWrites: WorkItemWriteQueue;
   metrics: BoardMetrics;
   expandAll: HTMLButtonElement;
@@ -1813,12 +1929,17 @@ function createBoardTreeRenderer(params: BoardTreeRendererParams): () => void {
       // Sprint pills only earn their space when the sprint filter is not already narrowing the board.
       showSprintPills: !filterOn,
       chip: params.chipContext,
+      contextMenu: params.contextMenu,
+      sprintWindow: params.sprintWindow,
+      // Self-referencing so a menu command repaints through the very renderer it was built inside;
+      // the reference resolves at call time, long after this assignment completes.
+      repaint: () => renderTreeContent(),
       expandableRows,
       collapsedIds,
       expandedNoteIds,
       // Rebuilt per pass for the same reason the resolved-age filter is: "the last N weeks" moves
       // with the clock, so a board left open must not keep fetching against the window it opened on.
-      notesSinceIso: noteWindowStart(params.context.services.now(), updatesWindowWeeks(properties)),
+      notesSinceIso: boardNotesSince(params.context),
       mentionNames: params.context.services.mentionDirectory.knownNames(),
       minorChildColor: params.metrics.minorChildColor,
       // Manual drag order only means anything while the board is showing the manual rank; under any
@@ -2278,6 +2399,10 @@ function mountBoardBody(params: {
   board: HTMLElement;
   sprintPickerHandle: SprintPickerHandle;
   chipContext: AssigneeChipContext;
+  /** The board's single right-click menu, built once by `renderBoard` and shared with the header. */
+  contextMenu: ItemContextMenu;
+  /** The team's sprint window, forwarded to the tree so an item's menu can offer sprint moves. */
+  sprintWindow: SprintWindow;
   core: BoardCore;
   expandAll: HTMLButtonElement;
   collapseAll: HTMLButtonElement;
@@ -2300,6 +2425,8 @@ function mountBoardBody(params: {
     recentNotes,
     sprintPickerHandle: params.sprintPickerHandle,
     chipContext: params.chipContext,
+    contextMenu: params.contextMenu,
+    sprintWindow: params.sprintWindow,
     fieldWrites: core.writes,
     metrics: core.metrics,
     expandAll: params.expandAll,
@@ -2324,12 +2451,73 @@ function mountBoardBody(params: {
   return { renderTreeContent, refreshFilters };
 }
 
+/**
+ * Renders the board's header tile, including the root item's own right-click menu.
+ *
+ * Split out of `renderBoard` because the header takes almost everything the board has, and its
+ * argument list buried the handful of lines that actually assemble the board around it.
+ *
+ * `onRootChanged` is invoked (not captured) at command time: the surfaces a root edit has to repaint
+ * — the tree, and this very header — are both built after the handler the header needs.
+ */
+function mountBoardHeader(params: {
+  doc: Document;
+  root: TrackedWorkItem;
+  context: DataDrivenViewContext;
+  typeMap: Map<string, TypeCatalogEntry>;
+  sprintWindow: SprintWindow;
+  session: BoardSession;
+  core: BoardCore;
+  folderPath: QueryFolderCrumb[];
+  contextMenu: ItemContextMenu;
+  onRootChanged: () => void;
+}): ReturnType<typeof renderHeader> {
+  const { doc, root, context, typeMap, sprintWindow, session, core } = params;
+  return renderHeader(
+    doc,
+    root,
+    context,
+    typeMap,
+    sprintWindow,
+    session,
+    core.chipContext,
+    {
+      writeQueueStatus: core.writeStatus.element,
+      orderingPicker: core.ordering.element,
+      onTitleContextMenu: (event) =>
+        params.contextMenu.openAt(
+          event,
+          menuTargetFor({
+            doc,
+            item: root,
+            context,
+            queue: core.writes,
+            sprintWindow,
+            onChanged: params.onRootChanged,
+          }),
+        ),
+    },
+    params.folderPath,
+    core.writes,
+  );
+}
+
 function renderBoard(params: RenderBoardParams): BoardHandle {
   const { doc, root, context, typeMap, sprintWindow, session, folderPath } = params;
   const board = doc.createElement("div");
   // Trim the top padding to 2px so the header card sits close to the top of the view; the sides and
   // bottom keep the board's shared edge padding.
   board.style.cssText = `padding:2px ${BOARD_EDGE_PADDING_PX}px ${BOARD_EDGE_PADDING_PX}px`;
+
+  // One menu for the whole board: only one context menu can ever be open, and its pointer anchor has
+  // to outlive the rows a repaint throws away — so it is mounted on the board rather than in the tree
+  // container the renderer empties on every pass. Built before the header, because the project title
+  // opens it for the root item.
+  const contextMenu = createItemContextMenu({
+    doc,
+    mountInto: board,
+    logger: context.services.logger,
+  });
 
   const core = createBoardCore({
     doc,
@@ -2342,18 +2530,23 @@ function renderBoard(params: RenderBoardParams): BoardHandle {
   });
   const { chipContext, writeStatus } = core;
 
-  const { header, sprintPickerHandle, expandAll, collapseAll, refresh, techLead } = renderHeader(
-    doc,
-    root,
-    context,
-    typeMap,
-    sprintWindow,
-    session,
-    chipContext,
-    { writeQueueStatus: writeStatus.element, orderingPicker: core.ordering.element },
-    folderPath,
-    core.writes,
-  );
+  // Late-bound because the root's own commands have to repaint the tree AND re-label the header, and
+  // neither exists until after the call below that consumes this handler.
+  let onRootChanged: () => void = () => {};
+
+  const { header, setHeaderTitle, sprintPickerHandle, expandAll, collapseAll, refresh, techLead } =
+    mountBoardHeader({
+      doc,
+      root,
+      context,
+      typeMap,
+      sprintWindow,
+      session,
+      core,
+      folderPath,
+      contextMenu,
+      onRootChanged: () => onRootChanged(),
+    });
   refresh.element.onclick = () => params.onRefresh();
   board.append(header);
 
@@ -2366,6 +2559,8 @@ function renderBoard(params: RenderBoardParams): BoardHandle {
     board,
     sprintPickerHandle,
     chipContext,
+    contextMenu,
+    sprintWindow,
     core,
     expandAll,
     collapseAll,
@@ -2373,6 +2568,12 @@ function renderBoard(params: RenderBoardParams): BoardHandle {
 
   renderTreeContent();
   core.setRepaint(renderTreeContent);
+  // The header is painted once and is not part of a tree pass, so the root's own title has to be
+  // re-labelled here; the tree still repaints because the root's sprint reaches its children's rows.
+  onRootChanged = () => {
+    setHeaderTitle(root.title);
+    renderTreeContent();
+  };
   wireSprintPickerRerender(sprintPickerHandle, session, renderTreeContent);
 
   return {

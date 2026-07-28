@@ -164,7 +164,7 @@ describe("renderNoteRow — correcting a note in place", () => {
 
     authorOf(row).click();
 
-    expect(row.querySelector<HTMLTextAreaElement>(".awesomeado-note-editor__input")?.value).toBe(
+    expect(row.querySelector<HTMLTextAreaElement>(".awesomeado-text-editor__input")?.value).toBe(
       "**Blocked** on the schema review.",
     );
   });
@@ -175,7 +175,7 @@ describe("renderNoteRow — correcting a note in place", () => {
     authorOf(row).click();
 
     expect(row.querySelector(".awesomeado-note__text")).toBeNull();
-    expect(row.querySelector(".awesomeado-note-editor")).not.toBeNull();
+    expect(row.querySelector(".awesomeado-text-editor")).not.toBeNull();
   });
 
   it("puts the note back exactly as it was when the edit is abandoned", () => {
@@ -187,7 +187,7 @@ describe("renderNoteRow — correcting a note in place", () => {
     );
     cancel?.click();
 
-    expect(row.querySelector(".awesomeado-note-editor")).toBeNull();
+    expect(row.querySelector(".awesomeado-text-editor")).toBeNull();
     expect(authorOf(row).textContent).toBe("Alice Smith");
     expect(row.querySelector(".awesomeado-note__text")?.textContent).toContain(
       "Blocked on the schema review.",
@@ -197,7 +197,7 @@ describe("renderNoteRow — correcting a note in place", () => {
   it("persists the corrected text through the caller's hook", () => {
     const { row, onEdit } = renderRow(createNote(READER), READER);
     authorOf(row).click();
-    row.querySelector<HTMLTextAreaElement>(".awesomeado-note-editor__input")!.value =
+    row.querySelector<HTMLTextAreaElement>(".awesomeado-text-editor__input")!.value =
       "Unblocked now.";
 
     const save = [...row.querySelectorAll("button")].find(

@@ -802,6 +802,11 @@ id(s); … (guid, guid)` with the unresolved ids. If the id IS listed as "did no
 - RULE OF THUMB: a neutral token is fine for a wash ON a surface, but NEVER for something that must
   be DISTINGUISHABLE FROM that surface (borders of a chip on a popup, a row highlight, a checkbox
   frame). Prior instances: the AssignedTo row highlight, and the EtaBadge popup borders.
+- FOURTH instance (`ItemContextMenu`, the item right-click menu): its hover wash was copied from
+  `ChildItemsBadge`'s `var(--palette-neutral-4, …)` row hover, so the highlighted command was
+  invisible under Follow ADO. Fixed to `rgba(128,128,128,0.28)` (the AssignedTo highlight alpha) plus
+  a `rgba(128,128,128,0.5)` border. NOTE: `ChildItemsBadge` and `OrderingPicker` still use the token
+  for THEIR row hover and have the same latent bug — do not copy that line into a new control.
 - Geometry note for that checkbox: the tick is two borders of a rotated box, so rotation costs a
   factor of √2 — its bounding box is `(arm + stroke + stem + stroke) / √2`. Keep that under the box's
   INNER size (edge − 2 × border) or the check touches the frame. It self-centers with

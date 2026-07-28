@@ -352,6 +352,28 @@ describe("renderChildItemsBadge - interaction and dismissal", () => {
 
     expect(popupOf(root)).not.toBeNull();
   });
+
+  it("reports a right-click on a row so the view can offer its own menu", () => {
+    const seen: MouseEvent[] = [];
+    const root = openPopup({
+      children: [childOf({ onContextMenu: (event) => seen.push(event) })],
+      completedCount: 0,
+    });
+
+    const event = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+    popupOf(root)!.querySelector(".awesomeado-child-items__row")!.dispatchEvent(event);
+
+    expect(seen).toEqual([event]);
+  });
+
+  it("leaves a right-click alone when no menu is offered", () => {
+    const root = openPopup({ children: [childOf()], completedCount: 0 });
+
+    const event = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+    popupOf(root)!.querySelector(".awesomeado-child-items__row")!.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(false);
+  });
 });
 
 describe("renderChildItemsBadge - row completion", () => {

@@ -23,7 +23,17 @@ The extension is feature-complete for its current scope:
   `AssignedTo` (assignee label + inline directory-search picker), `ItemTypeIcon` (the ADO type icon,
   sized in `em` to the title it precedes, dimmable), and `MarkdownText` (author-written content —
   descriptions and notes — rendered as allowlist-rebuilt DOM, with attachment images and
-  `@`-mentions; ADR-044). `sprint` is still a placeholder shell;
+  `@`-mentions; ADR-044), plus `TextEditor` (the one themed in-place editor — one-line or multi-line
+  Markdown — behind every note, title and description edit) and `ItemContextMenu` (the shared
+  per-item right-click menu: Copy Item ID / Copy ADO Url / Open in ADO, the last accented, then a
+  rule and whatever commands the CALLER supplies for that item as `run` / `panel` / `submenu`; one
+  instance per view, opened at the pointer through a zero-size viewport-fixed anchor handed to
+  `popupHost` as its trigger). Project Tracking supplies four through
+  `content/views/project-tracking/item-commands`: Update title, Update description (written with
+  `multilineFormat: "Markdown"`, which `WorkItemFieldWriteRequest` now carries into a second
+  `/multilineFieldsFormat/<field>` patch op), Move to another sprint (current + future entries of the
+  sprint window, minus the item's own), and View all notes (`NotesPanel` with `showAllInWindow`).
+  `sprint` is still a placeholder shell;
   `project-tracking` is now a **data-driven tree board**. Adding a view is a folder plus two
   registrations — see the `add-enhanced-view` skill.
 - Data-driven views depend on an injected `EnhancedViewServices` (optional field on

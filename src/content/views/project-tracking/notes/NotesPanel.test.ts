@@ -272,7 +272,7 @@ describe("renderNotesPanel — @-mentions", () => {
     await expand(handle);
 
     buttonLabelled(handle.element, "+\u00A0Add note").click();
-    handle.element.querySelector<HTMLTextAreaElement>(".awesomeado-note-editor__input")!.value =
+    handle.element.querySelector<HTMLTextAreaElement>(".awesomeado-text-editor__input")!.value =
       "Over to someone";
     buttonLabelled(handle.element, "Add").click();
     await flush();
@@ -287,7 +287,7 @@ describe("renderNotesPanel — adding a note", () => {
   /** Open the composer, type `text` and confirm it. */
   async function addThroughComposer(handle: NotesPanelHandle, text: string): Promise<void> {
     buttonLabelled(handle.element, "+\u00A0Add note").click();
-    handle.element.querySelector<HTMLTextAreaElement>(".awesomeado-note-editor__input")!.value =
+    handle.element.querySelector<HTMLTextAreaElement>(".awesomeado-text-editor__input")!.value =
       text;
     buttonLabelled(handle.element, "Add").click();
     await flush();
@@ -329,7 +329,7 @@ describe("renderNotesPanel — correcting a note", () => {
 
     const row = rowsOf(handle)[0]!;
     buttonLabelled(row, READER.displayName).click();
-    row.querySelector<HTMLTextAreaElement>(".awesomeado-note-editor__input")!.value = "Corrected.";
+    row.querySelector<HTMLTextAreaElement>(".awesomeado-text-editor__input")!.value = "Corrected.";
     buttonLabelled(row, "Save").click();
     await flush();
 

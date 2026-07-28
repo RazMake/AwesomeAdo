@@ -35,6 +35,13 @@ const host = createPopupHost({
   cannot take focus, so focusing during the build silently does nothing.
 - **`interactive?: boolean`** — When `false`, the trigger click is not wired (read-only control).
   Defaults to `true`.
+- **`dismissOnFieldEscape?: boolean`** — Whether an Escape pressed inside a **text field** in the
+  popup dismisses the popup. Defaults to `true`, which suits a popup that only offers values to pick.
+  Set `false` for a popup that can hold an editor: there, Escape is how the author abandons what they
+  are typing, and dismissing the whole surface on the same keystroke takes the editor away with
+  everything around it. The second Escape, with nothing left editing, still closes the popup.
+  Recognized by tag name (`INPUT`, `TEXTAREA`, `contenteditable`), and only for a field **inside** the
+  popup.
 
 ### `PopupHost`
 

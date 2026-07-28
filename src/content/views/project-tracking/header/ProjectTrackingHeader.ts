@@ -44,6 +44,12 @@ export interface ProjectTrackingHeaderOptions {
   /** Hex color for the title (the root type's color), or null to keep the themed default. */
   titleColor: string | null;
   /**
+   * Called when the title is right-clicked, so the view can offer the root item the same menu its
+   * rows offer. The header stays menu-agnostic: it reports the gesture, the view decides what opens.
+   * Omitted leaves the browser's own menu alone.
+   */
+  onTitleContextMenu?: (event: MouseEvent) => void;
+  /**
    * The Tech Lead control (the root's "TechLead:" label + Assigned To picker), built by the view so
    * this control stays free of the user directory. Null when view services are unavailable.
    */
@@ -87,6 +93,14 @@ export interface RefreshButtonHandle {
 export interface ProjectTrackingHeaderHandle {
   /** The header tile to mount at the top of the board. */
   element: HTMLElement;
+  /**
+   * Re-labels the project title in place.
+   *
+   * The root item is summarized here rather than rendered as a row, so a repaint of the TREE cannot
+   * reach it — without this, renaming the root would leave the board's own heading showing the name
+   * nobody uses any more.
+   */
+  setTitle(title: string): void;
   /** The expand-all ("+") button; the view wires it to open every twisty. */
   expandAllButton: HTMLButtonElement;
   /** The collapse-all ("−") button; the view wires it to close every twisty. */
@@ -289,7 +303,10 @@ function renderRefreshButton(doc: Document): RefreshButtonHandle {
 }
 
 /** Builds the stacked title (top) and TechLead + ETA (bottom) block that anchors the tile. */
-function renderInfoColumn(doc: Document, options: ProjectTrackingHeaderOptions): HTMLElement {
+function renderInfoColumn(
+  doc: Document,
+  options: ProjectTrackingHeaderOptions,
+): { element: HTMLElement; title: HTMLElement } {
   const info = doc.createElement("div");
   info.className = "awesomeado-tracking__header-info";
   info.style.cssText = ["display:flex", "flex-direction:column", "gap:4px"].join(";");
@@ -300,6 +317,10 @@ function renderInfoColumn(doc: Document, options: ProjectTrackingHeaderOptions):
   titleEl.style.cssText = "font-size:17px;font-weight:bold";
   if (options.titleColor) {
     titleEl.style.color = options.titleColor;
+  }
+  const onTitleContextMenu = options.onTitleContextMenu;
+  if (onTitleContextMenu) {
+    titleEl.addEventListener("contextmenu", (event) => onTitleContextMenu(event));
   }
   info.append(titleEl);
 
@@ -314,7 +335,7 @@ function renderInfoColumn(doc: Document, options: ProjectTrackingHeaderOptions):
   }
   info.append(techLeadRow);
 
-  return info;
+  return { element: info, title: titleEl };
 }
 
 /**
@@ -398,7 +419,8 @@ export function renderProjectTrackingHeader(
   mainRow.className = "awesomeado-tracking__header-main";
   mainRow.style.cssText = ["display:flex", "align-items:center", "gap:32px"].join(";");
 
-  mainRow.append(renderInfoColumn(doc, options));
+  const info = renderInfoColumn(doc, options);
+  mainRow.append(info.element);
 
   const expandAllButton = renderBandButton(doc, "awesomeado-tracking__expand-all", "\uFF0B");
   const collapseAllButton = renderBandButton(doc, "awesomeado-tracking__collapse-all", "\uFF0D");
@@ -416,5 +438,13 @@ export function renderProjectTrackingHeader(
 
   header.append(mainRow);
 
-  return { element: header, expandAllButton, collapseAllButton, refreshButton };
+  return {
+    element: header,
+    setTitle: (title) => {
+      info.title.textContent = title;
+    },
+    expandAllButton,
+    collapseAllButton,
+    refreshButton,
+  };
 }

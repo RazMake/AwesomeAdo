@@ -1,5 +1,9 @@
 import type { ILogger } from "../../logging/ILogger";
-import type { WorkItemFieldWriteRequest, WorkItemFieldWriteResult } from "../IWorkItemFieldWriter";
+import type {
+  MultilineFieldFormat,
+  WorkItemFieldWriteRequest,
+  WorkItemFieldWriteResult,
+} from "../IWorkItemFieldWriter";
 import type { WorkItemReorderRequest, WorkItemReorderResult } from "../IWorkItemReorderWriter";
 
 /**
@@ -34,6 +38,11 @@ export interface QueuedFieldWrite {
   field: string;
   /** The value to set; `null` clears the field. */
   value: string | null;
+  /**
+   * The storage format to put a MULTILINE field into as part of this write (e.g. `Markdown` for a
+   * description); omitted leaves the field's current format alone.
+   */
+  multilineFormat?: MultilineFieldFormat;
 }
 
 /**
@@ -264,6 +273,7 @@ export class WorkItemWriteQueue {
       rev: queued.currentRev(),
       field: queued.field,
       value: queued.value,
+      multilineFormat: queued.multilineFormat,
     };
     try {
       const result = await this.writeField(request);

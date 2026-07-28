@@ -8,6 +8,7 @@ import type {
   TrackedWorkItem,
   TypeCatalogEntry,
 } from "../../../common/ado/TrackedWorkItem";
+import type { WorkItemNote } from "../../../common/ado/WorkItemNote";
 import type {
   EnhancedViewContext,
   EnhancedViewServices,
@@ -2795,6 +2796,290 @@ function epicOnly(): TrackedWorkItem {
     ],
   });
 }
+
+/** Right-clicks an element the way a reader would, so the item menu opens over it. */
+const rightClick = (element: Element): void => {
+  element.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+};
+
+/** Every command row in whatever the item menu is currently showing. */
+const menuCommands = (root: HTMLElement): HTMLButtonElement[] => [
+  ...root.querySelectorAll<HTMLButtonElement>(".awesomeado-item-menu__command"),
+];
+
+/** The command whose label starts with `label` — the chevron on a submenu row is not part of it. */
+const commandNamed = (root: HTMLElement, label: string): HTMLButtonElement =>
+  menuCommands(root).find((command) => command.textContent?.startsWith(label))!;
+
+/** The editor a menu panel opened, and the button that commits it. */
+const editorIn = (root: HTMLElement) => ({
+  input: root.querySelector<HTMLInputElement | HTMLTextAreaElement>(
+    ".awesomeado-item-menu__panel .awesomeado-text-editor__input",
+  )!,
+  save: root.querySelector<HTMLButtonElement>(
+    ".awesomeado-item-menu__panel .awesomeado-text-editor button",
+  )!,
+});
+
+/** Lets the write queue's promise chain settle; every hop in it is a microtask. */
+async function settleWrites(): Promise<void> {
+  for (let tick = 0; tick < 8; tick++) {
+    await Promise.resolve();
+  }
+}
+
+describe("ProjectTrackingView — the item right-click menu", () => {
+  /** Installs a clipboard the menu's copy commands can write to, and reports what they wrote. */
+  const captureClipboard = (): ReturnType<typeof vi.fn> => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(window.navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+    return writeText;
+  };
+
+  it("offers the three shared commands, then the item's own, on a tree row", async () => {
+    const root = await renderDeepBoard();
+    await turnSprintFilterOff(root);
+
+    rightClick(root.querySelector(".awesomeado-tracking__row")!);
+
+    expect(menuCommands(root).map((command) => command.textContent)).toEqual([
+      "Copy Item ID",
+      "Copy ADO Url",
+      "Open in ADO",
+      "Update title",
+      "Update description",
+      "Move to another sprint\u203A",
+      "View all notes",
+    ]);
+    expect(root.querySelector(".awesomeado-item-menu__separator")).not.toBeNull();
+  });
+
+  it("copies the id of the row that was right-clicked", async () => {
+    const writeText = captureClipboard();
+    const root = await renderDeepBoard();
+    await turnSprintFilterOff(root);
+
+    // The second row is the Story (Login UI, id 3) nested under the Feature.
+    rightClick([...root.querySelectorAll(".awesomeado-tracking__row")][1]!);
+    menuCommands(root)[0]!.click();
+
+    expect(writeText).toHaveBeenCalledWith("3");
+  });
+
+  it("answers a rolled-up child with its OWN menu, not the row it is nested in", async () => {
+    const writeText = captureClipboard();
+    const root = await renderDeepBoard();
+    await turnSprintFilterOff(root);
+    rollupBadgeOf(root).click();
+
+    // "Style the form" (id 5) — a popup row living inside the Story row that opened it.
+    rightClick([...root.querySelectorAll(".awesomeado-child-items__row")][1]!);
+    menuCommands(root)[0]!.click();
+
+    expect(writeText).toHaveBeenCalledWith("5");
+  });
+
+  it("offers the ROOT item's menu on the project title, which is never a row", async () => {
+    const writeText = captureClipboard();
+    const root = await renderDeepBoard();
+
+    rightClick(root.querySelector(".awesomeado-tracking__title")!);
+    menuCommands(root)[0]!.click();
+
+    // The Epic (id 1) is summarized in the header rather than listed, so the title is the only
+    // place its id can be copied from.
+    expect(writeText).toHaveBeenCalledWith("1");
+  });
+});
+
+/** A board whose field writes are recorded and always accepted, each committing the next rev. */
+async function renderRecordingBoard(): Promise<{
+  root: HTMLElement;
+  writes: WorkItemFieldWriteRequest[];
+}> {
+  const writes: WorkItemFieldWriteRequest[] = [];
+  const root = await renderDeepBoard({
+    writeField: async (request) => {
+      writes.push(request);
+      return { ok: true, rev: request.rev + 1 };
+    },
+  });
+  return { root, writes };
+}
+
+describe("ProjectTrackingView — the item's own menu commands", () => {
+  it("renames the item and repaints the board with the new title", async () => {
+    const { root, writes } = await renderRecordingBoard();
+    await turnSprintFilterOff(root);
+
+    rightClick(root.querySelector(".awesomeado-tracking__row")!);
+    commandNamed(root, "Update title").click();
+    const { input, save } = editorIn(root);
+    // The editor opens on what is stored, so a rename starts from the name in use.
+    expect(input.value).toBe("User Authentication");
+
+    input.value = "Sign-in";
+    save.click();
+    await settleWrites();
+
+    expect(writes[0]).toMatchObject({ id: 2, field: "System.Title", value: "Sign-in" });
+    expect(root.querySelector(".awesomeado-tracking__item-title")?.textContent).toBe("Sign-in");
+  });
+
+  it("re-labels the header when the ROOT is renamed, which no tree pass can reach", async () => {
+    const { root } = await renderRecordingBoard();
+
+    rightClick(root.querySelector(".awesomeado-tracking__title")!);
+    commandNamed(root, "Update title").click();
+    const { input, save } = editorIn(root);
+    input.value = "Modernization";
+    save.click();
+    await settleWrites();
+
+    expect(root.querySelector(".awesomeado-tracking__title")?.textContent).toBe("Modernization");
+  });
+
+  it("saves a description as Markdown, not as the HTML the field defaults to", async () => {
+    const { root, writes } = await renderRecordingBoard();
+    await turnSprintFilterOff(root);
+
+    rightClick(root.querySelector(".awesomeado-tracking__row")!);
+    commandNamed(root, "Update description").click();
+    const { input, save } = editorIn(root);
+    input.value = "**Bold** plan.";
+    save.click();
+    await settleWrites();
+
+    expect(writes[0]).toMatchObject({
+      field: "System.Description",
+      value: "**Bold** plan.",
+      multilineFormat: "Markdown",
+    });
+  });
+
+  it("offers only the sprints the item is not already on and has not passed", async () => {
+    const { root } = await renderRecordingBoard();
+    await turnSprintFilterOff(root);
+
+    rightClick(root.querySelector(".awesomeado-tracking__row")!);
+    commandNamed(root, "Move to another sprint").click();
+
+    const options = [...root.querySelectorAll(".awesomeado-item-menu__submenu button")];
+    // The Feature sits on Sprint 1 (the current one), so only the next sprint is a move.
+    expect(options.map((option) => option.textContent)).toEqual(["Next - Sprint 2"]);
+  });
+});
+
+describe("ProjectTrackingView — moving an item and reading its discussion", () => {
+  it("moves the item to the sprint that was picked", async () => {
+    const { root, writes } = await renderRecordingBoard();
+    await turnSprintFilterOff(root);
+
+    rightClick(root.querySelector(".awesomeado-tracking__row")!);
+    commandNamed(root, "Move to another sprint").click();
+    root.querySelector<HTMLButtonElement>(".awesomeado-item-menu__submenu button")!.click();
+    await settleWrites();
+
+    expect(writes[0]).toMatchObject({
+      id: 2,
+      field: "System.IterationPath",
+      value: "Project\\Sprint 2",
+    });
+  });
+
+  it("shows every note in the window, not the two days a row's panel is limited to", async () => {
+    const root = await renderDeepBoard({
+      noteLoader: {
+        loadNotes: async () => ({
+          notes: [
+            fixtureNote(1, "2026-07-23T09:00:00Z"),
+            fixtureNote(2, "2026-07-22T09:00:00Z"),
+            fixtureNote(3, "2026-07-21T09:00:00Z"),
+          ],
+          currentUser: null,
+          error: null,
+        }),
+      },
+    });
+    await turnSprintFilterOff(root);
+
+    rightClick(root.querySelector(".awesomeado-tracking__row")!);
+    commandNamed(root, "View all notes").click();
+    await settleWrites();
+
+    const panel = root.querySelector(".awesomeado-item-menu__panel")!;
+    expect(panel.querySelectorAll(".awesomeado-note")).toHaveLength(3);
+    // The composer comes with the panel, so a discussion can be added to from here too.
+    expect(panel.querySelector(".awesomeado-note-composer__trigger")).not.toBeNull();
+  });
+});
+
+/** One note on a given day, by someone other than the reader. */
+function fixtureNote(id: number, createdDate: string): WorkItemNote {
+  return {
+    id,
+    workItemId: 2,
+    author: { displayName: "Bob Jones", id: null, uniqueName: "bob@example.com" },
+    createdDate,
+    text: `Note ${id}.`,
+    renderedHtml: null,
+  };
+}
+
+/** Opens one command's panel on the board's first tree row and returns the panel. */
+async function openPanel(label: string): Promise<HTMLElement> {
+  const { root } = await renderRecordingBoard();
+  await turnSprintFilterOff(root);
+  rightClick(root.querySelector(".awesomeado-tracking__row")!);
+  commandNamed(root, label).click();
+  return root.querySelector<HTMLElement>(".awesomeado-item-menu__panel")!;
+}
+
+describe("ProjectTrackingView — what a command's panel says it is about", () => {
+  it("heads every panel with the item's number, as the link that opens it in ADO", async () => {
+    const panel = await openPanel("Update title");
+
+    const id = panel.querySelector<HTMLElement>(".awesomeado-item-command__id")!;
+    expect(id.textContent).toBe("#2");
+    // jsdom's page address is not an ADO project, so the number is shown but cannot be followed.
+    expect(id.tagName).toBe("SPAN");
+  });
+
+  it("does not repeat the title above the box that edits it", async () => {
+    const panel = await openPanel("Update title");
+
+    expect(panel.querySelector(".awesomeado-item-command__title")).toBeNull();
+  });
+
+  it("names the item above a description, where the box says nothing about which it is", async () => {
+    const panel = await openPanel("Update description");
+
+    expect(panel.querySelector(".awesomeado-item-command__title")?.textContent).toBe(
+      "User Authentication",
+    );
+  });
+
+  it("opens a description far taller than a title, since one is paragraphs and one is a line", async () => {
+    const description = await openPanel("Update description");
+    const title = await openPanel("Update title");
+
+    expect(
+      description.querySelector<HTMLTextAreaElement>(".awesomeado-text-editor__input")!.rows,
+    ).toBeGreaterThan(3);
+    expect(title.querySelector(".awesomeado-text-editor__input")!.tagName).toBe("INPUT");
+  });
+
+  it("sizes the discussion from the window rather than from the pointer", async () => {
+    const panel = await openPanel("View all notes");
+
+    const surface = panel.querySelector<HTMLElement>(".awesomeado-item-command__panel")!;
+    expect(surface.style.width).toBe("70vw");
+    expect(surface.style.height).toBe("70vh");
+  });
+});
 
 describe("ProjectTrackingView — rollup popup rows", () => {
   it("lists each rolled-up child with its assignee, title, ETA and ADO link", async () => {

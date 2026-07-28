@@ -40,6 +40,12 @@ export interface ChildItemDescriptor {
   eta: HTMLElement | null;
   /** The ADO web URL that opens this item; null renders the affordance inert. */
   url: string | null;
+  /**
+   * Called when the row is right-clicked, so the owning view can offer the same per-item menu here
+   * as on a tree row. The badge stays menu-agnostic: it reports the gesture and the caller decides
+   * what (if anything) it opens. Omitted leaves the browser's own menu alone.
+   */
+  onContextMenu?: (event: MouseEvent) => void;
 }
 
 /** Options for rendering a child-items badge. */
@@ -293,6 +299,10 @@ function renderChildRow(doc: Document, child: ChildItemDescriptor): HTMLElement 
   row.addEventListener("mouseleave", () => {
     row.style.backgroundColor = "";
   });
+  if (child.onContextMenu) {
+    const onContextMenu = child.onContextMenu;
+    row.addEventListener("contextmenu", (event) => onContextMenu(event));
+  }
 
   const title = renderChildTitle(doc, child);
   row.append(firstLineSlot(doc, renderDoneCheckbox(doc, child, row, title)));

@@ -101,8 +101,14 @@ const FUTURE_SPRINT_COLOR = "var(--communication-foreground, #0078d4)";
  * The style declarations that express a sprint's position in time: past = amber, future = theme
  * accent, current = bold in the inherited color (emphasis without competing with the two colored
  * directions). Shared by the dropdown options and the collapsed select so both read identically.
+ *
+ * Exported because the dropdown is no longer the only place a sprint is offered — the item
+ * right-click menu lists the same sprints as menu rows. Re-deriving the palette there would let the
+ * two drift into disagreeing about which sprint is which.
  */
-function relationDeclarations(relation: SprintRelation | undefined): [string, string][] {
+export function sprintRelationDeclarations(
+  relation: SprintRelation | undefined,
+): [string, string][] {
   if (relation === "past") {
     return [["color", PAST_SPRINT_COLOR]];
   }
@@ -124,7 +130,7 @@ function applyRelationDeclarations(
   style: CSSStyleDeclaration,
   relation: SprintRelation | undefined,
 ): void {
-  for (const [property, value] of relationDeclarations(relation)) {
+  for (const [property, value] of sprintRelationDeclarations(relation)) {
     style.setProperty(property, value);
   }
 }

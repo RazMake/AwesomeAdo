@@ -146,6 +146,69 @@ describe("createPopupHost - dismissal and lifecycle", () => {
   });
 });
 
+/** A host whose popup holds a text field, opened, with Escape handling as the caller asked. */
+const setupWithField = (dismissOnFieldEscape: boolean) => {
+  const trigger = document.createElement("button");
+  const mountInto = document.createElement("div");
+  mountInto.append(trigger);
+  document.body.append(mountInto);
+  const field = document.createElement("textarea");
+  const host = createPopupHost({
+    doc: document,
+    trigger,
+    mountInto,
+    dismissOnFieldEscape,
+    buildPopup: () => {
+      const popup = document.createElement("div");
+      popup.append(field);
+      return popup;
+    },
+  });
+  trigger.click();
+  return { host, field, mountInto };
+};
+
+/** Escape as it actually arrives: at the field, bubbling up to the host's document listener. */
+const escapeFrom = (target: EventTarget): void => {
+  target.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+};
+
+describe("createPopupHost - Escape inside a text field", () => {
+  it("dismisses the popup by default, which suits one that only offers values to pick", () => {
+    const { host, field } = setupWithField(true);
+
+    escapeFrom(field);
+
+    expect(host.isOpen).toBe(false);
+  });
+
+  it("leaves the popup alone when the field is meant to answer that Escape", () => {
+    const { host, field } = setupWithField(false);
+
+    escapeFrom(field);
+
+    expect(host.isOpen).toBe(true);
+  });
+
+  it("still closes on the NEXT Escape, once nothing inside is editing", () => {
+    const { host, mountInto } = setupWithField(false);
+
+    escapeFrom(mountInto);
+
+    expect(host.isOpen).toBe(false);
+  });
+
+  it("only spares a field INSIDE the popup, not one that happens to be elsewhere", () => {
+    const { host } = setupWithField(false);
+    const outsideField = document.createElement("input");
+    document.body.append(outsideField);
+
+    escapeFrom(outsideField);
+
+    expect(host.isOpen).toBe(false);
+  });
+});
+
 describe("createPopupHost - keeping the popup on screen", () => {
   /** Open a host whose popup reports a fixed box, so the repositioning maths is deterministic. */
   const openWithBox = (

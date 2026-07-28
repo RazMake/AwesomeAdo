@@ -1,9 +1,8 @@
 import type { NoteAuthor, WorkItemNote } from "../../../../common/ado/WorkItemNote";
-import { isOwnNote } from "../../../../common/ado/WorkItemNote";
+import { MAX_NOTE_LENGTH, isOwnNote } from "../../../../common/ado/WorkItemNote";
 import { renderDateLabel } from "../../../../common/view-common/control/DateLabel/DateLabel";
 import { renderMarkdownText } from "../../../../common/view-common/control/MarkdownText/MarkdownText";
-
-import { renderNoteEditor } from "./NoteEditor";
+import { renderTextEditor } from "../../../../common/view-common/control/TextEditor/TextEditor";
 
 /** What one note row shows, and what it may do about it. */
 export interface NoteRowOptions {
@@ -162,9 +161,10 @@ function openEditor(doc: Document, trigger: HTMLElement, options: NoteRowOptions
   const close = (): void => {
     row.replaceChildren(...restored);
   };
-  const editor = renderNoteEditor(doc, {
+  const editor = renderTextEditor(doc, {
     initialText: options.note.text,
     submitLabel: "Save",
+    maxLength: MAX_NOTE_LENGTH,
     onSubmit: (text) => options.onEdit(text),
     onCancel: close,
   });

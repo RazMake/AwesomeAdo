@@ -165,6 +165,40 @@ describe("isUpdateWorkItemFieldMessage - rev, field and value", () => {
     }
   });
 
+  it("accepts the two multiline storage formats ADO knows", () => {
+    for (const multilineFormat of ["Markdown", "Html", undefined]) {
+      expect(
+        isUpdateWorkItemFieldMessage({
+          type: UPDATE_WORK_ITEM_FIELD_MESSAGE,
+          id: 123,
+          rev: 5,
+          field: "System.Description",
+          value: "text",
+          multilineFormat,
+        }),
+      ).toBe(true);
+    }
+  });
+});
+
+describe("isUpdateWorkItemFieldMessage - multiline format", () => {
+  it("rejects any other multiline format, so no caller string reaches the patch body", () => {
+    for (const multilineFormat of ["markdown", "", 1, null, "Html /rev"]) {
+      expect(
+        isUpdateWorkItemFieldMessage({
+          type: UPDATE_WORK_ITEM_FIELD_MESSAGE,
+          id: 123,
+          rev: 5,
+          field: "System.Description",
+          value: "text",
+          multilineFormat,
+        }),
+      ).toBe(false);
+    }
+  });
+});
+
+describe("isUpdateWorkItemFieldMessage - value", () => {
   it("rejects a missing value", () => {
     expect(
       isUpdateWorkItemFieldMessage({

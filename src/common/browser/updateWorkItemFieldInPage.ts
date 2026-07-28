@@ -14,6 +14,12 @@ import type { UpdateWorkItemFieldResponse } from "./WorkItemFieldRequest";
  * async/await) avoids any transpiler helper being hoisted out of the function body.
  *
  * A `null` value clears the field (JSON Patch `remove`); any other value sets it (`add`).
+ *
+ * `multilineFormat` (when supplied) adds the second patch operation ADO needs to store a multiline
+ * field as Markdown rather than HTML. It is part of the SAME patch as the value: a field still on
+ * `Html` stores Markdown source verbatim, so setting the format afterwards would leave one revision
+ * of literal asterisks behind, and setting it in a separate request would cost a second rev the
+ * optimistic-concurrency test would then have to be re-based on.
  */
 export function updateWorkItemFieldInPage(
   updateUrl: string,
@@ -21,11 +27,21 @@ export function updateWorkItemFieldInPage(
   rev: number,
   field: string,
   value: string | null,
+  multilineFormat?: string,
 ): Promise<UpdateWorkItemFieldResponse> {
-  const fieldOp =
+  const operations: { op: string; path: string; value?: unknown }[] = [
+    { op: "test", path: "/rev", value: rev },
     value === null
       ? { op: "remove", path: "/fields/" + field }
-      : { op: "add", path: "/fields/" + field, value: value };
+      : { op: "add", path: "/fields/" + field, value: value },
+  ];
+  if (multilineFormat) {
+    operations.push({
+      op: "add",
+      path: "/multilineFieldsFormat/" + field,
+      value: multilineFormat,
+    });
+  }
   return fetch(updateUrl, {
     method: "PATCH",
     credentials: "include",
@@ -33,7 +49,7 @@ export function updateWorkItemFieldInPage(
       "Content-Type": "application/json-patch+json",
       Accept: "application/json",
     },
-    body: JSON.stringify([{ op: "test", path: "/rev", value: rev }, fieldOp]),
+    body: JSON.stringify(operations),
   })
     .then((response) => {
       if (response.ok) {

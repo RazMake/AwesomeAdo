@@ -16,7 +16,7 @@ function triggerOf(root: HTMLElement): HTMLButtonElement | null {
 
 /** The composer's open editor input, or null while it is collapsed. */
 function inputOf(root: HTMLElement): HTMLTextAreaElement | null {
-  return root.querySelector<HTMLTextAreaElement>(".awesomeado-note-editor__input");
+  return root.querySelector<HTMLTextAreaElement>(".awesomeado-text-editor__input");
 }
 
 describe("renderNoteComposer", () => {

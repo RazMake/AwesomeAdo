@@ -55,6 +55,10 @@ const badge = renderChildItemsBadge(document, {
   [`EtaBadge`](../EtaBadge/README.md)) so the write path stays with the owning view; `null` renders
   no ETA for that row.
 - **`url: string | null`** — The ADO web URL that opens the item; `null` renders the affordance inert.
+- **`onContextMenu?: (event: MouseEvent) => void`** — Called when the row is right-clicked, so the
+  owning view can offer the same per-item menu here as on its own rows (typically
+  [`ItemContextMenu`](../ItemContextMenu/README.md)). The badge stays menu-agnostic: it reports the
+  gesture and the caller decides what it opens. Omitted leaves the browser's own menu alone.
 
 ### `renderChildItemsBadge(doc, options): HTMLElement`
 

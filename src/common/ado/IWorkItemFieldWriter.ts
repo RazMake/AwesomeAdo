@@ -1,4 +1,14 @@
 /**
+ * How Azure DevOps stores the text of a MULTILINE field (`System.Description` and friends).
+ *
+ * ADO keeps this per field, alongside the value, and defaults it to `Html`. A field left on `Html`
+ * stores whatever it is handed VERBATIM, so writing Markdown into one persists the asterisks and
+ * hashes as literal characters rather than as formatting. Declaring the format is therefore part of
+ * writing the value, not a separate setting — which is why it rides along on the write request.
+ */
+export type MultilineFieldFormat = "Markdown" | "Html";
+
+/**
  * The request to write a single work item field back to Azure DevOps.
  *
  * Includes the item's last-known rev as an optimistic-concurrency guard: the patch operation will
@@ -16,6 +26,11 @@ export interface WorkItemFieldWriteRequest {
   field: string;
   /** The value to set; `null` clears the field (removes its current value). */
   value: string | null;
+  /**
+   * The storage format to put a MULTILINE field into as part of this write. Omitted leaves the
+   * field's current format alone, which is what every single-line field wants.
+   */
+  multilineFormat?: MultilineFieldFormat;
 }
 
 /**

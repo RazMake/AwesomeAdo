@@ -1,4 +1,5 @@
-import { renderNoteEditor } from "./NoteEditor";
+import { MAX_NOTE_LENGTH } from "../../../../common/ado/WorkItemNote";
+import { renderTextEditor } from "../../../../common/view-common/control/TextEditor/TextEditor";
 
 /** What the composer posts and what it does afterwards. */
 export interface NoteComposerOptions {
@@ -42,9 +43,10 @@ export function renderNoteComposer(doc: Document, options: NoteComposerOptions):
 
   trigger.addEventListener("click", () => {
     root.replaceChildren(
-      renderNoteEditor(doc, {
+      renderTextEditor(doc, {
         initialText: "",
         submitLabel: "Add",
+        maxLength: MAX_NOTE_LENGTH,
         // The composer closes ITSELF on success. The panel only rebuilds its list, so leaving that
         // to the caller would strand the author looking at a spent editor still holding the note
         // they had just posted — which reads as "it did not save" and invites a second one.

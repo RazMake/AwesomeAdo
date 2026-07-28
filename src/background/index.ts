@@ -620,7 +620,14 @@ const updateWorkItemField = async (
       target: { tabId },
       world: "MAIN",
       func: updateWorkItemFieldInPage,
-      args: [updateUrl, message.id, message.rev, message.field, message.value],
+      args: [
+        updateUrl,
+        message.id,
+        message.rev,
+        message.field,
+        message.value,
+        message.multilineFormat,
+      ],
     });
     const result = (results[0]?.result as UpdateWorkItemFieldResponse | undefined) ?? null;
     if (result === null) {

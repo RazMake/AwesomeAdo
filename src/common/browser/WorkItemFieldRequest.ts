@@ -1,3 +1,5 @@
+import type { MultilineFieldFormat } from "../ado/IWorkItemFieldWriter";
+
 /**
  * The content→background message contract for updating a single work item field.
  *
@@ -18,6 +20,12 @@ export interface UpdateWorkItemFieldMessage {
   field: string;
   /** The value to set; `null` clears the field. */
   value: string | null;
+  /**
+   * The storage format to put a MULTILINE field into as part of this write; omitted leaves the
+   * field's current format alone. Constrained to the two ADO accepts so a caller-supplied string can
+   * never reach the patch body — the same closed-operation reasoning as `isFieldReferenceName`.
+   */
+  multilineFormat?: MultilineFieldFormat;
 }
 
 export interface UpdateWorkItemFieldResponse {
@@ -50,6 +58,11 @@ function isWorkItemId(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value > 0;
 }
 
+/** Whether `value` is one of the two multiline storage formats ADO accepts, or simply absent. */
+function isMultilineFormat(value: unknown): value is MultilineFieldFormat | undefined {
+  return value === undefined || value === "Markdown" || value === "Html";
+}
+
 export function isUpdateWorkItemFieldMessage(value: unknown): value is UpdateWorkItemFieldMessage {
   if (typeof value !== "object" || value === null) {
     return false;
@@ -61,6 +74,7 @@ export function isUpdateWorkItemFieldMessage(value: unknown): value is UpdateWor
     typeof candidate.rev === "number" &&
     Number.isInteger(candidate.rev) &&
     isFieldReferenceName(candidate.field) &&
+    isMultilineFormat(candidate.multilineFormat) &&
     (typeof candidate.value === "string" || candidate.value === null)
   );
 }

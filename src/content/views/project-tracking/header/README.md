@@ -39,16 +39,17 @@ one three-button group and invite the mis-click.
 
 ### Options
 
-| Field              | Meaning                                                                                                  |
-| ------------------ | -------------------------------------------------------------------------------------------------------- |
-| `breadcrumbs`      | Parent-folder segments (`{ label, url? }`), outermost first, trimmed to the two nearest folders.         |
-| `orderingPicker`   | The board's item-ordering indicator/picker, pinned to the tile's top-right corner.                       |
-| `title`            | The project (root item) title.                                                                           |
-| `titleColor`       | Hex color for the title, or `null` for the themed default.                                               |
-| `techLead`         | The Tech Lead control element, or `null` when view services are unavailable.                             |
-| `eta`              | The root item's ETA badge element (pre-built by the view), or `null` when view services are unavailable. |
-| `sprintPicker`     | The sprint picker element, pinned to the right of the controls band.                                     |
-| `writeQueueStatus` | The write-queue status indicator, on its own row above the sprint picker (`null`/omitted hides the row). |
+| Field                | Meaning                                                                                                                           |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `breadcrumbs`        | Parent-folder segments (`{ label, url? }`), outermost first, trimmed to the two nearest folders.                                  |
+| `orderingPicker`     | The board's item-ordering indicator/picker, pinned to the tile's top-right corner.                                                |
+| `title`              | The project (root item) title.                                                                                                    |
+| `titleColor`         | Hex color for the title, or `null` for the themed default.                                                                        |
+| `onTitleContextMenu` | Called when the title is right-clicked, so the view can offer the root item's own menu (omitted leaves the browser's menu alone). |
+| `techLead`           | The Tech Lead control element, or `null` when view services are unavailable.                                                      |
+| `eta`                | The root item's ETA badge element (pre-built by the view), or `null` when view services are unavailable.                          |
+| `sprintPicker`       | The sprint picker element, pinned to the right of the controls band.                                                              |
+| `writeQueueStatus`   | The write-queue status indicator, on its own row above the sprint picker (`null`/omitted hides the row).                          |
 
 ### Handle
 

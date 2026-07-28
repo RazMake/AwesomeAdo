@@ -28,6 +28,35 @@ export interface PopupHostOptions {
   onOpened?: (popup: HTMLElement) => void;
   /** When false the trigger click is not wired (a read-only control). Defaults to true. */
   interactive?: boolean;
+  /**
+   * Whether an Escape pressed inside a TEXT FIELD in the popup dismisses the popup. Defaults to
+   * true, which is right for a popup that only offers values to pick.
+   *
+   * Set false for a popup that can hold an editor: there, Escape is how the author abandons what
+   * they are typing, and dismissing the whole surface on the same keystroke takes the editor away
+   * WITH everything around it — they wanted out of the field, not out of the discussion they opened
+   * it from. The second Escape, with nothing left editing, still closes the popup.
+   */
+  dismissOnFieldEscape?: boolean;
+}
+
+/**
+ * Whether `target` is a text field inside `popup` — the case where Escape belongs to the field.
+ *
+ * Tag names rather than `instanceof`: the popup may be built in another document (a test harness, a
+ * frame), where the constructors are different objects and every `instanceof` silently answers false.
+ */
+function isFieldInside(popup: HTMLElement | null, target: EventTarget | null): boolean {
+  const node = target as Node | null;
+  if (!popup || !node || !popup.contains(node)) {
+    return false;
+  }
+  const element = target as Partial<HTMLElement> & { tagName?: string };
+  return (
+    element.tagName === "INPUT" ||
+    element.tagName === "TEXTAREA" ||
+    element.isContentEditable === true
+  );
 }
 
 // Breathing room kept between a repositioned popup and the edge of the visible area.
@@ -226,7 +255,15 @@ function keepPopupInView(popup: HTMLElement, trigger: HTMLElement, view: Window)
  * anchoring it to the viewport when the scroll box it opened inside is too small to show it.
  */
 export function createPopupHost(options: PopupHostOptions): PopupHost {
-  const { doc, trigger, mountInto, buildPopup, onOpened, interactive = true } = options;
+  const {
+    doc,
+    trigger,
+    mountInto,
+    buildPopup,
+    onOpened,
+    interactive = true,
+    dismissOnFieldEscape = true,
+  } = options;
 
   let popup: HTMLElement | null = null;
 
@@ -239,9 +276,15 @@ export function createPopupHost(options: PopupHostOptions): PopupHost {
   };
 
   const handleKeydown = (event: KeyboardEvent): void => {
-    if (event.key === "Escape") {
-      close();
+    if (event.key !== "Escape") {
+      return;
     }
+    // Listened for in the CAPTURE phase, so this runs before the field's own handler and a
+    // `stopPropagation` down there could never reach it — the field has to be recognized here.
+    if (!dismissOnFieldEscape && isFieldInside(popup, event.target)) {
+      return;
+    }
+    close();
   };
 
   // A viewport-anchored popup no longer travels with its trigger, so any scroll around it would

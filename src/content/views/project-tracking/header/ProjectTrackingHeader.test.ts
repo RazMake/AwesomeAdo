@@ -70,6 +70,28 @@ describe("renderProjectTrackingHeader - title & controls", () => {
     const style = title?.getAttribute("style") ?? "";
     expect(style.includes("#ff6b6b") || style.includes("rgb(255, 107, 107)")).toBe(true);
   });
+
+  it("reports a right-click on the title so the view can offer the root item's menu", () => {
+    const seen: MouseEvent[] = [];
+    const { element } = renderProjectTrackingHeader(
+      document,
+      baseOptions({ onTitleContextMenu: (event) => seen.push(event) }),
+    );
+
+    const event = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+    element.querySelector(".awesomeado-tracking__title")!.dispatchEvent(event);
+
+    expect(seen).toEqual([event]);
+  });
+
+  it("leaves a right-click on the title alone when no menu is offered", () => {
+    const { element } = renderProjectTrackingHeader(document, baseOptions());
+
+    const event = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+    element.querySelector(".awesomeado-tracking__title")!.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(false);
+  });
 });
 
 describe("renderProjectTrackingHeader - tech lead & ETA", () => {

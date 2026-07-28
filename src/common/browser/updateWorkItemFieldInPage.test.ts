@@ -62,6 +62,39 @@ describe("updateWorkItemFieldInPage", () => {
     expect(result).toEqual({ ok: true, rev: 7 });
   });
 
+  it("sets a multiline field's storage format in the SAME patch as its value", async () => {
+    const fetchMock = vi.fn(() => Promise.resolve(jsonResponse({ rev: 8 })));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    await updateWorkItemFieldInPage(
+      UPDATE_URL,
+      123,
+      7,
+      "System.Description",
+      "**Bold** plan.",
+      "Markdown",
+    );
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    // One patch, not two: a field still on `Html` stores Markdown source verbatim, so a format set
+    // afterwards would leave a revision of literal asterisks behind.
+    expect(parsePatchBody(init)).toEqual([
+      { op: "test", path: "/rev", value: 7 },
+      { op: "add", path: "/fields/System.Description", value: "**Bold** plan." },
+      { op: "add", path: "/multilineFieldsFormat/System.Description", value: "Markdown" },
+    ]);
+  });
+
+  it("leaves a field's format alone when none was asked for", async () => {
+    const fetchMock = vi.fn(() => Promise.resolve(jsonResponse({ rev: 9 })));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    await updateWorkItemFieldInPage(UPDATE_URL, 123, 8, "System.Title", "Renamed");
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(parsePatchBody(init)).toHaveLength(2);
+  });
+
   it("reports rev undefined when the response omits a numeric rev", async () => {
     const fetchMock = vi.fn(() => Promise.resolve(jsonResponse({})));
     globalThis.fetch = fetchMock as unknown as typeof fetch;
