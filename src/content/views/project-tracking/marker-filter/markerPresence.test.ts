@@ -16,6 +16,7 @@ function item(id: number, tags: string[], children: TrackedWorkItem[] = []): Tra
     type: "Story",
     title: `Item ${id}`,
     state: "New",
+    priority: null,
     assignedTo: null,
     iterationPath: null,
     sprintName: null,

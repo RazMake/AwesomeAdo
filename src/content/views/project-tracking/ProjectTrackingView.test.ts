@@ -159,6 +159,7 @@ function createFixtureFeatures(bob: TrackedUser, carol: TrackedUser, alice: Trac
       type: "Feature",
       title: "User Authentication",
       state: "Active",
+      priority: 1,
       assignedTo: bob,
       iterationPath: "Project\\Sprint 1",
       sprintName: "Sprint 1",
@@ -180,6 +181,7 @@ function createFixtureFeatures(bob: TrackedUser, carol: TrackedUser, alice: Trac
           type: "Story",
           title: "Login UI",
           state: "New",
+          priority: 2,
           assignedTo: carol,
           iterationPath: "Project\\Sprint 2",
           sprintName: "Sprint 2",
@@ -203,6 +205,7 @@ function createFixtureFeatures(bob: TrackedUser, carol: TrackedUser, alice: Trac
       type: "Feature",
       title: "Data Migration",
       state: "New",
+      priority: 0,
       assignedTo: null,
       iterationPath: "Project\\Sprint 2",
       sprintName: "Sprint 2",
@@ -235,6 +238,7 @@ function createFixtureTree(): TrackedWorkItem {
     type: "Epic",
     title: "Platform Modernization",
     state: "In Progress",
+    priority: 2,
     assignedTo: alice,
     iterationPath: "Project\\Sprint 1",
     sprintName: "Sprint 1",
@@ -252,6 +256,10 @@ function createFixtureTree(): TrackedWorkItem {
   };
 
   return epic;
+}
+
+function marginRightOf(element: Element | null | undefined): string {
+  return element instanceof HTMLElement ? element.style.marginRight : "";
 }
 
 describe("ProjectTrackingView — services & load errors", () => {
@@ -807,7 +815,7 @@ describe("ProjectTrackingView — collapse all & description", () => {
 });
 
 describe("ProjectTrackingView — the row's leading controls", () => {
-  it("leads with the ? disc, then the type icon, then the title", async () => {
+  it("leads with status, priority, the ? disc, type icon, then title", async () => {
     const root = await renderBoardForTree(
       epicOver([createItem({ id: 2, type: "Feature", title: "User Authentication" })]),
     );
@@ -816,8 +824,9 @@ describe("ProjectTrackingView — the row's leading controls", () => {
     const order = [...content.children].map((child) => child.className.split(" ")[0]);
     // Leading-edge controls, so every row's ? sits in the same column instead of at whatever point
     // the title happens to end on.
-    expect(order.slice(0, 5)).toEqual([
+    expect(order.slice(0, 6)).toEqual([
       "awesomeado-status",
+      "awesomeado-priority",
       "awesomeado-tracking__describe",
       "awesomeado-tracking__notes-toggle",
       "awesomeado-tracking__item-title",
@@ -1249,6 +1258,56 @@ describe("ProjectTrackingView — status badge", () => {
     // enqueues the same edit twice. The first badge is the Feature (id 2, rev 2, ADO State
     // "Active"); its only alternative Status is "Done", whose primary ADO State is "Closed".
     expect(writeFieldCalls).toEqual([{ id: 2, rev: 2, field: "System.State", value: "Closed" }]);
+  });
+});
+
+describe("ProjectTrackingView — priority badge", () => {
+  it("renders immediately after status and writes a selected alternative", async () => {
+    const epic = createFixtureTree();
+    const writes: WorkItemFieldWriteRequest[] = [];
+    const services = createFakeServices({
+      loadTree: async () => ({ isTreeQuery: true, roots: [epic], error: null }),
+      writeField: async (request) => {
+        writes.push(request);
+        return { ok: true, rev: request.rev + 1 };
+      },
+    });
+    const root = projectTrackingView.render({
+      doc: document,
+      queryId: "q1",
+      properties: {},
+      services,
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const content = root.querySelector(".awesomeado-tracking__content");
+    const status = content?.querySelector(".awesomeado-status");
+    const priority = content?.querySelector(".awesomeado-priority");
+    expect(status?.nextElementSibling).toBe(priority);
+    expect(priority?.textContent).toContain("P1");
+    expect(marginRightOf(status)).toBe("2px");
+    expect(marginRightOf(priority)).toBe("3px");
+
+    priority?.querySelector<HTMLButtonElement>(".awesomeado-priority__badge")?.click();
+    const options = [
+      ...(priority?.querySelectorAll<HTMLButtonElement>(".awesomeado-priority__option") ?? []),
+    ];
+    expect(options.map((option) => option.textContent)).not.toContain("P1");
+    options[0]?.click();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(writes).toEqual([
+      {
+        id: 2,
+        rev: 2,
+        field: "Microsoft.VSTS.Common.Priority",
+        value: "0",
+        baseValue: "1",
+      },
+    ]);
+    await vi.waitFor(() => expect(priority?.textContent).toContain("P0"));
   });
 });
 
@@ -2683,6 +2742,7 @@ function createItem(overrides: Partial<TrackedWorkItem> & { id: number }): Track
     type: "Task",
     title: `Item ${overrides.id}`,
     state: "Active",
+    priority: null,
     assignedTo: null,
     iterationPath: "Project\\Sprint 1",
     sprintName: "Sprint 1",

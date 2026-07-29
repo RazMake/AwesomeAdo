@@ -21,6 +21,7 @@ function trackedItem(createdDate: string, changedDate: string): TrackedWorkItem 
     type: "Story",
     title: "Anything",
     state: "New",
+    priority: null,
     assignedTo: null,
     iterationPath: null,
     sprintName: null,

@@ -17,7 +17,7 @@ import type {
 } from "../../../common/ado/TrackedWorkItem";
 import { noteWindowStart } from "../../../common/ado/WorkItemNote";
 import { WorkItemWriteQueue } from "../../../common/ado/WorkItemWriteQueue/WorkItemWriteQueue";
-import { ASSIGNED_TO_FIELD, identityFieldValue } from "../../../common/ado/adoApi";
+import { ASSIGNED_TO_FIELD, PRIORITY_FIELD, identityFieldValue } from "../../../common/ado/adoApi";
 import { buildQueryFolderUrl, buildWorkItemUrl } from "../../../common/ado/fetchAdoTree";
 import type { SprintWindow } from "../../../common/ado/sprintWindow";
 import { resolveMentionsIn } from "../../../common/browser/MessagingMentionDirectory";
@@ -57,6 +57,10 @@ import {
 } from "../../../common/view-common/control/ItemTypeIcon/ItemTypeIcon";
 import { renderMarkdownText } from "../../../common/view-common/control/MarkdownText/MarkdownText";
 import { renderOrderingPicker } from "../../../common/view-common/control/OrderingPicker/OrderingPicker";
+import {
+  renderPriorityBadge,
+  type PriorityBadgeHandle,
+} from "../../../common/view-common/control/PriorityBadge/PriorityBadge";
 import {
   renderSprintPicker,
   type SprintPickerHandle,
@@ -763,8 +767,38 @@ function childrenContainerOf(twisty: HTMLElement): HTMLElement | null {
   return container instanceof HTMLElement ? container : null;
 }
 
+/** Create the priority chip and reflect a new value only after Azure DevOps accepts the write. */
+function createPriorityBadge(
+  item: TrackedWorkItem,
+  options: TreeRenderOptions,
+): PriorityBadgeHandle {
+  const badge = renderPriorityBadge(options.doc, {
+    priority: item.priority,
+    onChange: (priority) => {
+      options.queue
+        .enqueue({
+          id: item.id,
+          currentRev: () => item.rev,
+          field: PRIORITY_FIELD,
+          value: String(priority),
+          baseValue: item.priority === null ? null : String(item.priority),
+        })
+        .then((result) => {
+          if (result.ok && result.rev !== undefined) {
+            item.priority = priority;
+            item.rev = result.rev;
+            badge.setPriority(priority);
+          }
+        });
+    },
+  });
+  badge.style.verticalAlign = "middle";
+  badge.style.marginRight = "3px";
+  return badge;
+}
+
 /**
- * Creates the row controls: the fixed tree gutter (twisty or spacer) and the editable status badge.
+ * Creates the row controls: the fixed tree gutter plus editable status and priority badges.
  * The gutter is a rigid flex child on the row; the status badge flows inline at the head of the
  * content block (with the title, ? and assignee) so those four read as one line that wraps together.
  *
@@ -775,7 +809,12 @@ function createRowControls(
   item: TrackedWorkItem,
   options: TreeRenderOptions,
   showsChildRows: boolean,
-): { gutter: HTMLElement; stateBadge: HTMLElement; twisty: HTMLButtonElement | null } {
+): {
+  gutter: HTMLElement;
+  stateBadge: HTMLElement;
+  priorityBadge: PriorityBadgeHandle;
+  twisty: HTMLButtonElement | null;
+} {
   const { doc, typeMap, queue, statusWidthCh, boardColumns } = options;
   let twisty: HTMLButtonElement | null = null;
   let gutter: HTMLElement;
@@ -865,9 +904,9 @@ function createRowControls(
   // title/?/assignee and wraps together with them; middle-align it to the text line and give it a
   // little breathing room before the title.
   stateBadge.style.verticalAlign = "middle";
-  stateBadge.style.marginRight = "6px";
+  stateBadge.style.marginRight = "2px";
 
-  return { gutter, stateBadge, twisty };
+  return { gutter, stateBadge, priorityBadge: createPriorityBadge(item, options), twisty };
 }
 
 /**
@@ -1417,7 +1456,11 @@ function renderRow(
     options.contextMenu.openAt(event, itemMenuTarget(item, options)),
   );
 
-  const { gutter, stateBadge, twisty } = createRowControls(item, options, showsChildRows);
+  const { gutter, stateBadge, priorityBadge, twisty } = createRowControls(
+    item,
+    options,
+    showsChildRows,
+  );
   row.append(gutter);
 
   const { titleSpan, descButton, descPanel } = createTitleControls(
@@ -1429,8 +1472,8 @@ function renderRow(
   const notes = createItemNotes(item, options);
   const { inline, eta } = createRowRightControls(item, options, showsChildRows);
 
-  // Status badge, ? disc, type icon, title and assignee share ONE inline-flow block so they read as
-  // a single line. Because they flow as inline content (not rigid flex items) they pack tightly and
+  // Status and priority badges, ? disc, type icon, title and assignee share ONE inline-flow block so
+  // they read as a single line. Because they flow as inline content (not rigid flex items) they pack tightly and
   // wrap together, so the assignee always hugs the end of the wrapped title instead of drifting to a
   // stretched box's right edge. The block grows and shrinks (flex:1 1 auto) and wraps the title
   // INTERNALLY; the row itself never wraps, so the ETA stays to the right. The status badge is the
@@ -1440,7 +1483,7 @@ function renderRow(
   const contentBlock = doc.createElement("span");
   contentBlock.className = "awesomeado-tracking__content";
   contentBlock.style.cssText = "flex:1 1 auto;min-width:0;line-height:1.8";
-  contentBlock.append(stateBadge, descButton, notes.toggle, titleSpan, ...inline);
+  contentBlock.append(stateBadge, priorityBadge, descButton, notes.toggle, titleSpan, ...inline);
   row.append(contentBlock);
 
   if (eta) {

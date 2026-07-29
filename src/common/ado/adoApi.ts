@@ -47,6 +47,15 @@ export const ADO_CONNECTION_DATA_API_VERSION = "7.1-preview.1";
 export const ASSIGNED_TO_FIELD = "System.AssignedTo";
 
 /**
+ * The reference name of Azure DevOps' numeric Priority field.
+ *
+ * Priority is part of the Common field namespace, not System. Keeping the read and write on this
+ * one constant prevents an unknown field from rejecting the whole work-items batch while the chip
+ * later writes somewhere else.
+ */
+export const PRIORITY_FIELD = "Microsoft.VSTS.Common.Priority";
+
+/**
  * The reference name of Azure DevOps' manual backlog rank (a LOWER number is more important).
  *
  * Named here rather than inside the tree loader because both ends of "order by importance" now use

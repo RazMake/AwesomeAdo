@@ -12,6 +12,7 @@ function item(id: number, importance: number, children: TrackedWorkItem[] = []):
     type: "User Story",
     title: `Item ${id}`,
     state: "Active",
+    priority: null,
     assignedTo: null,
     iterationPath: null,
     sprintName: null,

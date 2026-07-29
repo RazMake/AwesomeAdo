@@ -21,7 +21,7 @@ scripts/               build + release automation (never bundled into the extens
 
 The chrome-free ADO REST layer: the URL builders and response parsers, and — going forward — the
 **normalized work-item data model** every enhanced view consumes (a common core of id, rev, type,
-title, state, assignedTo, iteration, rank/importance, eta, parent/child ids, plus whatever extra
+title, state, priority, assignedTo, iteration, rank/importance, eta, parent/child ids, plus whatever extra
 fields a specific view declares it needs), **decoupled from raw ADO JSON** by a parse layer like the
 metadata parsing today. **All ADO field definitions and data shapes live here** — never in
 `src/common/view-common`, which is for common view UX (menus, reusable components, the view
@@ -274,7 +274,7 @@ returned only to us, and **never log field values or identity**.
 
 Views consume one normalized work-item shape **decoupled from raw ADO JSON** by a parse layer (like
 the metadata parsing today). Common core: `id, rev, type, title, state, assignedTo, iteration,
-rank/importance, eta, parent/child ids`; per-view fields grow as views are built. All ADO field
+priority, rank/importance, eta, parent/child ids`; per-view fields grow as views are built. All ADO field
 definitions and data shapes live in `common/ado`; `common/view-common` is UX only.
 
 ### 5. Fluid optimistic writes via a per-tab sequential queue

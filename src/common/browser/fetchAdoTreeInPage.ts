@@ -21,9 +21,19 @@ export function fetchAdoTreeInPage(
 ): Promise<AdoRawTree> {
   // Bound the ids-to-hydrate and batch-page counts so a misbehaving/huge query can never turn this
   // into an unbounded number of page-world fetches.
-  const MAX_IDS = 10000;
-  const PAGE_SIZE = 200;
-  const MAX_BATCH_PAGES = 100;
+  const [MAX_IDS, PAGE_SIZE, MAX_BATCH_PAGES] = [10000, 200, 100];
+
+  // Keep transport failures as data because this injected function has no logger of its own. The
+  // content-side loader logs the stage/status after the worker returns it; swallowing it here would
+  // turn a rejected batch into the indistinguishable and incorrect conclusion "query has no items".
+  const readJson = (url: string, init: RequestInit, stage: "wiql" | "batch"): Promise<unknown> =>
+    fetch(url, init).then(
+      (response) =>
+        response.ok
+          ? response.json().catch(() => Promise.reject({ stage, status: response.status }))
+          : Promise.reject({ stage, status: response.status }),
+      () => Promise.reject({ stage, status: 0 }),
+    );
 
   // Collect the work-item ids to hydrate from the WIQL body. Defined inline (not imported) because
   // this whole function is serialized and injected into the ADO MAIN world. A tree query carries both
@@ -60,10 +70,11 @@ export function fetchAdoTreeInPage(
     .then((response) => (response.ok ? response.json() : null))
     .catch(() => null);
 
-  const tree = fetch(wiqlUrl, { credentials: "include", headers: { Accept: "application/json" } })
-    .then((response) =>
-      response.ok ? response.json() : Promise.reject(new Error("wiql request failed")),
-    )
+  const tree = readJson(
+    wiqlUrl,
+    { credentials: "include", headers: { Accept: "application/json" } },
+    "wiql",
+  )
     .then((wiql) => {
       const idList = collectIds(wiql);
       if (idList.length === 0) return { wiql, items: [] };
@@ -71,32 +82,34 @@ export function fetchAdoTreeInPage(
       const items: unknown[] = [];
       const readBatchPage = (start: number, pagesLeft: number): Promise<void> => {
         const pageIds = idList.slice(start, start + PAGE_SIZE);
-        return fetch(batchUrl, {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json", Accept: "application/json" },
-          body: JSON.stringify({ ids: pageIds, fields: fields }),
-        })
-          .then((response) => (response.ok ? response.json() : null))
-          .catch(() => null)
-          .then((body) => {
-            const page = body as { value?: unknown } | null;
-            if (page !== null && Array.isArray(page.value)) items.push(...page.value);
-            const nextStart = start + PAGE_SIZE;
-            if (nextStart >= idList.length || pagesLeft <= 1) return undefined;
-            return readBatchPage(nextStart, pagesLeft - 1);
-          });
+        return readJson(
+          batchUrl,
+          {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json", Accept: "application/json" },
+            body: JSON.stringify({ ids: pageIds, fields: fields }),
+          },
+          "batch",
+        ).then((body) => {
+          const page = body as { value?: unknown };
+          if (Array.isArray(page.value)) items.push(...page.value);
+          const nextStart = start + PAGE_SIZE;
+          if (nextStart >= idList.length || pagesLeft <= 1) return undefined;
+          return readBatchPage(nextStart, pagesLeft - 1);
+        });
       };
 
       return readBatchPage(0, MAX_BATCH_PAGES).then(() => ({ wiql, items }));
     })
-    .catch(() => ({ wiql: null, items: [] as unknown[] }));
+    .catch((error: unknown) => {
+      const candidate = error as { stage?: unknown; status?: unknown } | null;
+      const stage: "wiql" | "batch" = candidate?.stage === "batch" ? "batch" : "wiql";
+      const status = typeof candidate?.status === "number" ? candidate.status : 0;
+      return { wiql: null, items: [] as unknown[], failure: { stage, status } };
+    });
 
   // Fold the best-effort query metadata into the tree result once both settle. Promise.all keeps the
   // metadata failure isolated (it already resolved to `null`), so the tree still returns normally.
-  return Promise.all([tree, queryMeta]).then(([treeResult, query]) => ({
-    wiql: treeResult.wiql,
-    items: treeResult.items,
-    query,
-  }));
+  return Promise.all([tree, queryMeta]).then(([treeResult, query]) => ({ ...treeResult, query }));
 }

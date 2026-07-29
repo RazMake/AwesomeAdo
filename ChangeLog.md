@@ -5,6 +5,8 @@ Major.Minor with a CI build number to form Major.Minor.Build.
 
 ## Next Version
 
+- **Every Project Tracking item now shows and edits its priority.** A compact, extra-bold priority chip sits close beside Status. Every priority uses the same gray background: the subtle existing wash on light themes and a darker solid fill and edge on dark themes. Only the bright, high-contrast text changes: P0 is unmixed red, P1 is unmixed orange, and later priorities use the theme's primary text color. Clicking it opens the other priorities as chips formatted exactly like those in the board, leaving out the value the item already has; choosing one saves it directly to Azure DevOps. Priority is now read and written through Azure DevOps' actual `Microsoft.VSTS.Common.Priority` field, so loading it cannot make an otherwise populated query look empty. If Azure DevOps rejects a tree or item-batch read, the board shows a load error and Diagnostics records the failed stage and HTTP status instead of reporting that the query returned no items.
+
 - **The View all notes popup now has a close button.** The button stays in the top-right corner of the discussion, so it can be dismissed directly without reaching for Escape or clicking outside it.
 
 - **The AwesomeADO button now stays beside Search instead of covering the profile picture.** When the extension started before Azure DevOps had finished drawing its header, the button temporarily used a top-right fallback position but never moved out of it, leaving the blue icon over the user avatar. It now detects the late-arriving command bar and moves into its intended place between Search and Azure DevOps' own buttons.

@@ -18,6 +18,7 @@ describe("TRACKING_FIELDS", () => {
     expect(TRACKING_FIELDS).toContain("System.WorkItemType");
     expect(TRACKING_FIELDS).toContain("System.Title");
     expect(TRACKING_FIELDS).toContain("System.State");
+    expect(TRACKING_FIELDS).toContain("Microsoft.VSTS.Common.Priority");
     expect(TRACKING_FIELDS).toContain("System.AssignedTo");
     expect(TRACKING_FIELDS).toContain("System.IterationPath");
     expect(TRACKING_FIELDS).toContain("System.CreatedDate");
@@ -141,6 +142,7 @@ function buildNestedEpicTree(): { raw: AdoRawTree; etaFieldByType: Map<string, s
           "System.WorkItemType": "Epic",
           "System.Title": "Quarterly Goal",
           "System.State": "In Progress",
+          "Microsoft.VSTS.Common.Priority": 0,
           "System.AssignedTo": {
             displayName: "Alice",
             uniqueName: "alice@contoso.com",
@@ -212,6 +214,7 @@ describe("parseTrackedTree - nested tree", () => {
     expect(epic.type).toBe("Epic");
     expect(epic.title).toBe("Quarterly Goal");
     expect(epic.state).toBe("In Progress");
+    expect(epic.priority).toBe(0);
     expect(epic.assignedTo).toEqual({
       displayName: "Alice",
       uniqueName: "alice@contoso.com",
@@ -598,7 +601,7 @@ describe("parseTrackedTree - malformed data", () => {
     expect(result.roots[0]?.id).toBe(1);
   });
 
-  it("skips children with no batch item", () => {
+  it("reports a load failure when a related item is missing from the batch", () => {
     const raw: AdoRawTree = {
       wiql: {
         queryType: "tree",
@@ -612,7 +615,12 @@ describe("parseTrackedTree - malformed data", () => {
       ],
     };
     const result = parseTrackedTree(raw, new Map());
-    expect(result.roots[0]?.children).toHaveLength(0);
+    expect(result).toEqual({
+      isTreeQuery: false,
+      roots: [],
+      error: "Could not load this query from Azure DevOps.",
+      folderPath: [],
+    });
   });
 });
 

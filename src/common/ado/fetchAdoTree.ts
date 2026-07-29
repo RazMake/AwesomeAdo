@@ -1,6 +1,6 @@
 import type { QueryFolderCrumb, WorkItemTreeResult } from "./IWorkItemTreeLoader";
 import type { TrackedUser, TrackedWorkItem } from "./TrackedWorkItem";
-import { ADO_API_VERSION, ASSIGNED_TO_FIELD, IMPORTANCE_FIELD } from "./adoApi";
+import { ADO_API_VERSION, ASSIGNED_TO_FIELD, IMPORTANCE_FIELD, PRIORITY_FIELD } from "./adoApi";
 import { resolveAdoProjectContext } from "./fetchAdoMetadata";
 import { parseWorkItemTags } from "./workItemTags";
 
@@ -47,6 +47,7 @@ export const TRACKING_FIELDS: readonly string[] = [
   "System.WorkItemType",
   "System.Title",
   "System.State",
+  PRIORITY_FIELD,
   ASSIGNED_TO_FIELD,
   "System.IterationPath",
   "System.CreatedDate",
@@ -62,12 +63,20 @@ export const TRACKING_FIELDS: readonly string[] = [
   "System.Parent",
 ];
 
+/** A failed credentialed read inside the ADO page. Status 0 means no HTTP response was received. */
+export interface AdoTreeReadFailure {
+  stage: "wiql" | "batch";
+  status: number;
+}
+
 /** The raw JSON bodies from the ADO REST calls, before parsing into the normalized tree. */
 export interface AdoRawTree {
   /** The `_apis/wit/wiql/{id}` response body (carries queryType + workItemRelations/workItems). */
   wiql: unknown;
   /** The accumulated `_apis/wit/workitemsbatch` result items (array of { id, rev, fields }). */
   items: unknown;
+  /** Present when the WIQL or work-items batch read failed; consumers must log it as an error. */
+  failure?: AdoTreeReadFailure;
   /**
    * The `_apis/wit/queries/{id}` response body (a `QueryHierarchyItem`), read only for its `path` so
    * the view can show where the query lives. `null` when the metadata call failed — the breadcrumb
@@ -231,6 +240,10 @@ export function parseTrackedTree(
     folderPath,
   };
 
+  if (raw.failure !== undefined) {
+    return loadFailure;
+  }
+
   // A missing/malformed WIQL body means the fetch itself failed (the in-page fetcher returns
   // `wiql: null` on error), so it is reported as a load error — distinct from a well-formed body
   // that simply is not a tree query. This ordering must precede the queryType check, otherwise a
@@ -255,6 +268,9 @@ export function parseTrackedTree(
 
   const itemsById = indexItemsById(raw.items);
   const { childrenById, rootIds } = buildTreeAdjacency(relations);
+  if (!hasEveryTreeItem(itemsById, childrenById, rootIds)) {
+    return loadFailure;
+  }
 
   // Recursively build the tree from each root, guarding cycles and depth.
   const roots: TrackedWorkItem[] = [];
@@ -266,6 +282,23 @@ export function parseTrackedTree(
   }
 
   return { isTreeQuery: true, roots, error: null, folderPath };
+}
+
+/** A tree must never quietly lose an item because one hydration page failed or was incomplete. */
+function hasEveryTreeItem(
+  itemsById: ReadonlyMap<number, unknown>,
+  childrenById: ReadonlyMap<number, number[]>,
+  rootIds: readonly number[],
+): boolean {
+  if (rootIds.some((id) => !itemsById.has(id))) {
+    return false;
+  }
+  for (const [parentId, childIds] of childrenById) {
+    if (!itemsById.has(parentId) || childIds.some((id) => !itemsById.has(id))) {
+      return false;
+    }
+  }
+  return true;
 }
 
 /**
@@ -369,6 +402,11 @@ function buildNode(
   return node;
 }
 
+/** Normalize the numeric ADO priority, preserving absence rather than inventing a default. */
+function parsePriority(value: unknown): number | null {
+  return typeof value === "number" && Number.isInteger(value) ? value : null;
+}
+
 /**
  * Hydrate a TrackedWorkItem's own fields from a batch item (children are attached by the caller). The
  * nested `field`/`readString` closures keep the many repeated `fields[...] ?? ""` reads out of this
@@ -402,6 +440,7 @@ function hydrateTrackedWorkItem(
     type,
     title: readString("System.Title"),
     state: readString("System.State"),
+    priority: parsePriority(field(PRIORITY_FIELD)),
     assignedTo: parseIdentity(field(ASSIGNED_TO_FIELD)),
     iterationPath: iterationPathStr,
     sprintName: sprintLeaf(iterationPathStr),

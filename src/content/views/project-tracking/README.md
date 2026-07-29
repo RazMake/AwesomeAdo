@@ -104,8 +104,8 @@ halves of the view — its configuration and its renderer.
     sprint + ancestor paths, pills hidden); OFF shows all rows with sprint pills. Empty sprints →
     forced OFF, toggle disabled.
   - **Tree rows**: the tree renders only **two levels below the root** — the root's children and
-    their children. Each row shows twisty (when it has child rows), editable Status badge,
-    description toggle ("?" button), type icon (the notes toggle), title
+    their children. Each row shows twisty (when it has child rows), editable Status badge, editable
+    Priority chip immediately after it, description toggle ("?" button), type icon (the notes toggle), title
     (type-colored), Assigned To control (with the assignee's Feature
     Crew **tag pill**), an amber **Blocked (internal)** pill and/or red **Blocked by another team**
     pill when the item carries those configured tags (click one to read the notes that say why — see
@@ -122,6 +122,13 @@ halves of the view — its configuration and its renderer.
     that column's primary ADO State via
     [`WorkItemWriteQueue`](../../../common/ado/WorkItemWriteQueue/README.md) (one queue per board, shared
     with ETA edits, so writes never race on `System.Rev`).
+    The Priority chip uses
+    [`renderPriorityBadge`](../../../common/view-common/control/PriorityBadge/README.md): every
+    priority has the same gray background (darker with a darker edge on dark themes), while P0 has
+    unmixed red text, P1 has unmixed orange text, and P2 or later uses themed primary text. The
+    brighter, extra-bold label sits in compact padding close to Status. Clicking it opens P0-P4 as
+    identically formatted chips, omits the current value, and writes the selected
+    `Microsoft.VSTS.Common.Priority` through the same serialized queue.
   - **Rolled-up minor children**: the level below the last rendered row is summarized inline by
     [`ChildItemsBadge`](../../../common/view-common/control/ChildItemsBadge/README.md) — a
     "completed / total" chip (e.g. `1 / 3`) tinted with a discrete wash of the **last configured work

@@ -36,7 +36,8 @@ response-parsing logic, kept pure so they are unit-testable without a browser.
   string = the assigned crew tag.
 - `TrackedWorkItem` — the normalized work-item tree model for Project Tracking views; carries its
   `children`, ISO 8601 date strings (`createdDate`, `changedDate`, `stateChangeDate`, `eta`), typed
-  user references, and `importance` (ADO's manual backlog rank — a LOWER number is more important).
+  user references, `priority` (`Microsoft.VSTS.Common.Priority`, or `null` when absent), and
+  `importance` (ADO's manual backlog rank — a LOWER number is more important).
   `stateChangeDate` is when `System.State` last moved, kept separate from `changedDate` so "how long
   has this been done?" is not reset by an edit that never touched the state; an item ADO returned no
   rank for hydrates as `UNRANKED_IMPORTANCE` so it sorts below every ranked one. `description` is

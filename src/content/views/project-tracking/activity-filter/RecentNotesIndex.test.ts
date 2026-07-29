@@ -23,6 +23,7 @@ function item(id: number, noteCount: number, children: TrackedWorkItem[] = []): 
     type: "Story",
     title: `Item ${id}`,
     state: "New",
+    priority: null,
     assignedTo: null,
     iterationPath: null,
     sprintName: null,

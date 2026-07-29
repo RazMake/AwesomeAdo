@@ -60,7 +60,12 @@ The extension is feature-complete for its current scope:
   services once at the content composition root and forwards them per render. Project Tracking renders a
   single-root tree (validates: tree query, exactly one root, root is the first configured type), titles
   the page with the epic (in its type color), shows the epic's assignee as TechLead, a sprint dropdown +
-  on/off filter toggle (pills when off), per-item expand/collapse, a `?` description panel with
+  on/off filter toggle (pills when off), per-item expand/collapse, an editable `PriorityBadge`
+  immediately after Status (all priorities share one gray background, with a darker solid fill/edge
+  on dark themes; P0/P1 use literal, unmixed red/orange text selected per scheme, later priorities
+  use primary text; all labels are extra-bold with compact padding and close row spacing; popup
+  options reuse the same chip format and omit the current value; reads and writes share
+  `Microsoft.VSTS.Common.Priority`), a `?` description panel with
   Created/Last-Modified metadata, inline assignee change, and a right-aligned ETA. A header **`⟳`
   refresh** button re-reads the tree + sprint window and repaints in place (ADR-047): the reader's
   transient state lives in a view-owned `BoardSession` (collapsed ids, opened note ids, tag

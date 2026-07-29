@@ -74,6 +74,45 @@ describe("MessagingWorkItemTreeLoader", () => {
     expect(result.roots[0]).toMatchObject({ id: 1, type: "Epic", title: "Root epic" });
     expect(logger.error).not.toHaveBeenCalled();
   });
+});
+
+describe("MessagingWorkItemTreeLoader failures", () => {
+  it("logs the stage and HTTP status when the work-items batch fails", async () => {
+    const raw: AdoRawTree = {
+      wiql: null,
+      items: [],
+      failure: { stage: "batch", status: 400 },
+    };
+    const { loader, logger } = makeLoader(vi.fn<SendTreeRequest>().mockResolvedValue({ raw }));
+
+    const result = await loader.loadTree("query-1");
+
+    expect(result.error).toBe(LOAD_FAILURE_ERROR);
+    expect(logger.error).toHaveBeenCalledWith(
+      "Could not load query tree for query-1: batch request failed (HTTP 400).",
+      raw.failure,
+    );
+    expect(logger.info).not.toHaveBeenCalled();
+  });
+
+  it("logs an error when Azure DevOps returns incomplete tree data without a transport failure", async () => {
+    const raw: AdoRawTree = {
+      wiql: {
+        queryType: "tree",
+        workItemRelations: [{ source: null, target: { id: 1 } }],
+      },
+      items: [],
+    };
+    const { loader, logger } = makeLoader(vi.fn<SendTreeRequest>().mockResolvedValue({ raw }));
+
+    const result = await loader.loadTree("query-1");
+
+    expect(result.error).toBe(LOAD_FAILURE_ERROR);
+    expect(logger.error).toHaveBeenCalledWith(
+      "Could not load query tree for query-1: Azure DevOps returned incomplete or malformed tree data.",
+    );
+    expect(logger.info).not.toHaveBeenCalled();
+  });
 
   it("returns an error result and logs when raw is null", async () => {
     const send = vi.fn<SendTreeRequest>().mockResolvedValue({ raw: null } as LoadQueryTreeResponse);

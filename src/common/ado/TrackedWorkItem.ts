@@ -26,6 +26,8 @@ export interface TrackedWorkItem {
   type: string;
   title: string;
   state: string;
+  /** The numeric Azure DevOps priority, or null when the process does not provide one. */
+  priority: number | null;
   assignedTo: TrackedUser | null;
   iterationPath: string | null;
   sprintName: string | null;

@@ -9,6 +9,24 @@ we hit, why they happened, and the exact fix so nobody re-derives them.
 agent-tool-local memory (it does not clone or transfer between machines/agents). Record new findings
 here so every agent, teammate, and clone sees them.
 
+## One unknown `workitemsbatch` field rejected the WHOLE tree and looked like an empty query
+
+- SYMPTOM: Project Tracking said the query returned no items even though ADO's query showed items;
+  Diagnostics had no error. This appeared immediately after Priority was added to the requested
+  fields.
+- ROOT CAUSE: the built-in Priority reference is `Microsoft.VSTS.Common.Priority`, not
+  `System.Priority`. ADO rejects an entire `_apis/wit/workitemsbatch` page when any requested field
+  is unknown. `fetchAdoTreeInPage` then converted that non-OK response into `null`, contributed zero
+  items, and the loader logged a successful zero-root parse.
+- FIX / RULE: field reference names shared by reads and writes live in `common/ado/adoApi.ts`;
+  Priority uses `PRIORITY_FIELD`. WIQL/batch failures return a structured `{ stage, status }`, and
+  `MessagingWorkItemTreeLoader` MUST emit an error log carrying both the message and that detail.
+  A tree whose relation ids are not all present in the hydrated batch is also a load error and is
+  logged as incomplete/malformed data. Empty server data and failed hydration never share a shape.
+- TEST THE BOUNDARY: a non-OK batch test must assert a structured batch failure, and the loader test
+  must assert `logger.error` receives the stage/status. Testing the parser with matching fixtures
+  cannot prove a field reference is accepted by ADO.
+
 ## `executeScript` args must be JSON-serializable — an optional one is an `undefined` HOLE
 
 - SYMPTOM: `Work item 7623516 field write failed: exception.` — no HTTP status anywhere, because no

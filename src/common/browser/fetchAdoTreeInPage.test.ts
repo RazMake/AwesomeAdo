@@ -8,8 +8,8 @@ const QUERY_URL = "https://ado.example/_apis/wit/queries/query-id";
 const FIELDS = ["System.Id", "System.Title"];
 const QUERY_META = { path: "Shared Queries/Team A/Reports/Weekly" };
 
-function jsonResponse(body: unknown, ok = true): Response {
-  return { ok, json: () => Promise.resolve(body) } as unknown as Response;
+function jsonResponse(body: unknown, ok = true, status = ok ? 200 : 500): Response {
+  return { ok, status, json: () => Promise.resolve(body) } as unknown as Response;
 }
 
 function parseBatchBody(init: RequestInit | undefined): { ids: number[]; fields: string[] } {
@@ -139,7 +139,12 @@ describe("fetchAdoTreeInPage - failure handling", () => {
     const result = await fetchAdoTreeInPage(WIQL_URL, BATCH_URL, FIELDS, QUERY_URL);
 
     // A not-ok query-metadata read degrades to a null folder path rather than failing the load.
-    expect(result).toEqual({ wiql: null, items: [], query: null });
+    expect(result).toEqual({
+      wiql: null,
+      items: [],
+      failure: { stage: "wiql", status: 500 },
+      query: null,
+    });
     // Only the WIQL and (best-effort) query-metadata reads run; the batch endpoint is never hit.
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(fetchMock).not.toHaveBeenCalledWith(BATCH_URL, expect.anything());
@@ -151,7 +156,12 @@ describe("fetchAdoTreeInPage - failure handling", () => {
 
     const result = await fetchAdoTreeInPage(WIQL_URL, BATCH_URL, FIELDS, QUERY_URL);
 
-    expect(result).toEqual({ wiql: null, items: [], query: null });
+    expect(result).toEqual({
+      wiql: null,
+      items: [],
+      failure: { stage: "wiql", status: 0 },
+      query: null,
+    });
   });
 
   it("resolves with the wiql body and no items when there are zero ids to hydrate, without calling the batch endpoint", async () => {
@@ -167,7 +177,7 @@ describe("fetchAdoTreeInPage - failure handling", () => {
     expect(fetchMock).not.toHaveBeenCalledWith(BATCH_URL, expect.anything());
   });
 
-  it("treats a non-ok batch page as an empty contribution while other pages still accumulate", async () => {
+  it("fails the whole load with the batch status when any hydration page is rejected", async () => {
     const workItems = Array.from({ length: 250 }, (_, i) => ({ id: i + 1 }));
     const wiqlBody = { queryType: "flat", workItems };
     let batchCallCount = 0;
@@ -189,7 +199,12 @@ describe("fetchAdoTreeInPage - failure handling", () => {
 
     const result = await fetchAdoTreeInPage(WIQL_URL, BATCH_URL, FIELDS, QUERY_URL);
 
-    expect(batchCallCount).toBe(2);
-    expect(result.items).toHaveLength(50);
+    expect(batchCallCount).toBe(1);
+    expect(result).toEqual({
+      wiql: null,
+      items: [],
+      failure: { stage: "batch", status: 500 },
+      query: QUERY_META,
+    });
   });
 });

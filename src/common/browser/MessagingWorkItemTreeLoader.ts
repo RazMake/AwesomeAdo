@@ -1,4 +1,5 @@
 import type { IWorkItemTreeLoader, WorkItemTreeResult } from "../ado/IWorkItemTreeLoader";
+import type { AdoRawTree } from "../ado/fetchAdoTree";
 import { parseTrackedTree, TRACKING_FIELDS } from "../ado/fetchAdoTree";
 import type { ILogger } from "../logging/ILogger";
 
@@ -14,6 +15,31 @@ export type SendTreeRequest = (
 ) => Promise<LoadQueryTreeResponse | undefined>;
 
 const LOAD_FAILURE_ERROR = "Could not load this query from Azure DevOps.";
+
+/** Log the specific read/parse failure once and tell the caller whether loading must stop. */
+function logTreeFailure(
+  logger: ILogger,
+  queryId: string,
+  raw: AdoRawTree,
+  result: WorkItemTreeResult,
+): boolean {
+  const readFailure = raw.failure;
+  if (readFailure !== undefined) {
+    const outcome = readFailure.status === 0 ? "no HTTP response" : `HTTP ${readFailure.status}`;
+    logger.error(
+      `Could not load query tree for ${queryId}: ${readFailure.stage} request failed (${outcome}).`,
+      readFailure,
+    );
+    return true;
+  }
+  if (result.error !== null) {
+    logger.error(
+      `Could not load query tree for ${queryId}: Azure DevOps returned incomplete or malformed tree data.`,
+    );
+    return true;
+  }
+  return false;
+}
 
 /**
  * Loads a query's work-item tree by messaging the background service worker.
@@ -43,6 +69,9 @@ export class MessagingWorkItemTreeLoader implements IWorkItemTreeLoader {
       }
 
       const result = parseTrackedTree(response.raw, etaFieldByType);
+      if (logTreeFailure(this.logger, queryId, response.raw, result)) {
+        return result;
+      }
       // Record whether the query-metadata read produced a folder trail: an empty trail with no raw
       // query body means the breadcrumb hid because the metadata call came back empty, not because
       // the query truly sits at a root — the distinction is otherwise invisible in Diagnostics.

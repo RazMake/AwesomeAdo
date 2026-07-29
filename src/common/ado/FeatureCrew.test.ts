@@ -31,6 +31,7 @@ function item(
     type: "Task",
     title: `Item ${id}`,
     state: "Active",
+    priority: null,
     assignedTo,
     iterationPath: null,
     sprintName: null,
