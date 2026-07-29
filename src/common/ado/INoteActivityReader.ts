@@ -12,6 +12,8 @@
 /** Which items to ask about. The caller narrows this to items ADO says have a discussion at all. */
 export interface NoteActivityRequest {
   workItemIds: number[];
+  /** Comment prefixes omitted when choosing each item's newest relevant note. */
+  excludedPrefixes: string[];
 }
 
 /** When one item was last commented on. */

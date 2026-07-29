@@ -64,6 +64,7 @@ export class RecentNotesIndex {
   constructor(
     private readonly reader: INoteActivityReader,
     private readonly logger: ILogger,
+    private readonly excludedPrefixes: readonly string[] = [],
   ) {}
 
   /** True while the board's discussions are being read, so the pill can say the answer is not in. */
@@ -148,7 +149,10 @@ export class RecentNotesIndex {
     // in-window count, and recording that against this answer would invalidate it on the next pass.
     const counts = new Map(stale.map((item) => [item.id, item.noteCount]));
     try {
-      const result = await this.reader.readNoteActivity({ workItemIds: [...counts.keys()] });
+      const result = await this.reader.readNoteActivity({
+        workItemIds: [...counts.keys()],
+        excludedPrefixes: [...this.excludedPrefixes],
+      });
       const answered = new Set<number>();
       for (const entry of result.activity) {
         const noteCount = counts.get(entry.workItemId);

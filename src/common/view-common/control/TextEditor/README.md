@@ -24,6 +24,7 @@ const describe = renderTextEditor(document, {
   initialText: item.description,
   submitLabel: "Save",
   allowEmpty: true,
+  mentions: { userDirectory: services.userDirectory, logger: services.logger },
   onSubmit: (text) => persistDescription(text),
   onCancel: () => closeSurface(),
 });
@@ -38,7 +39,10 @@ const describe = renderTextEditor(document, {
 | `initialText` | The text the editor opens on — empty for a new value, the existing **source** for a correction.              |
 | `submitLabel` | The confirm button's label (`"Add"` / `"Save"`).                                                             |
 | `singleLine`  | Renders a one-line `<input>` instead of the multi-line Markdown `<textarea>`. Defaults to multi-line.        |
-| `maxLength`   | Characters the field accepts; omitted leaves it unbounded.                                                   |     | `rows` | How many lines the multi-line box opens at (default 3). Ignored for a one-line field. |     | `placeholder` | Hint text; omitted uses the hint matching the shape. |
+| `maxLength`   | Characters the field accepts; omitted leaves it unbounded.                                                   |
+| `rows`        | Lines the multi-line box opens at (default 3). Ignored for a one-line field.                                 |
+| `placeholder` | Hint text; omitted uses the hint matching the shape.                                                         |
+| `mentions`    | `{ userDirectory, logger, mentionNames? }` enables typed `@` identity suggestions in a multi-line field.     |
 | `allowEmpty`  | Whether submitting nothing is meaningful. Default `false` (the empty field is inert); `true` lets it clear.  |
 | `onSubmit`    | `(text) => Promise<boolean>` — resolve `true` to close, `false` to keep the editor open with the text in it. |
 | `onCancel`    | Abandon the edit and put the surface back as it was.                                                         |
@@ -48,6 +52,25 @@ const describe = renderTextEditor(document, {
 - **Keyboard.** `Esc` cancels. `Ctrl`/`Cmd`+`Enter` saves a multi-line box; a **bare `Enter`** saves a
   one-line field, where there is no newline to insert. Every keystroke is stopped from reaching ADO's
   own page shortcuts underneath the view.
+- **Markdown.** `Ctrl`/`Cmd`+`B` wraps the selection in `**`; with no selection it inserts `****`
+  with the caret between them. `Ctrl`/`Cmd`+`I` does the same with `_`. Pasting one HTTP(S) URL
+  inserts `[](url)` and leaves the caret in the empty label.
+- **Mentions.** In a mention-enabled field, `@` after the start of the field, a space, `.`, `/`, `\`,
+  or Tab opens an identity list with no second search box. The text after `@` is the query; Up/Down
+  changes the highlighted person and Enter inserts them. The list opens
+  against the `@` itself — under the line being typed, not under the bottom of a box that may be
+  many lines tall. A mention always reads as the **person** — `@Ada Lovelace`, in the same purple it
+  wears once rendered — never as the `@<guid>` Azure DevOps stores. That holds for the mentions
+  already in the text the editor opened on (pass `mentions.mentionNames` to name them) as much as for
+  one just picked, and `onSubmit` receives the reference form back, so editing a note cannot destroy
+  a mention in it. A name nobody could resolve is left exactly as stored rather than dropped.
+- **Why the mention is highlighted rather than recoloured.** A `<textarea>` lays out and paints its
+  own text, so the colour is drawn on a layer **behind** it: the field keeps its own glyphs, its
+  caret and its selection, and the layer only washes the mention's background. Painting the letters
+  themselves would mean hiding the field's text and making every character depend on the layer
+  landing exactly right — and an editor is built **detached**, where every measurement reads 0.
+  Nothing here measures anything: the layer is stretched with `inset` and shares one literal set of
+  text metrics (`FIELD_TEXT_STYLE`) with the field, so it cannot drift.
 - **While saving** both buttons are disabled. A write that resolves `false` re-enables them and shows
   _"Not saved — see the diagnostics log."_, leaving the author's words untouched.
 - **Focus** is taken on the next tick, after the element is in the document.

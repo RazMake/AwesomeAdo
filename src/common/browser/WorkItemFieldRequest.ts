@@ -27,8 +27,9 @@ export interface UpdateWorkItemFieldMessage {
    */
   multilineFormat?: MultilineFieldFormat;
   /**
-   * A discussion comment recorded as part of the same revision (`System.History`). Plain text — the
-   * MAIN-world patch escapes it for the HTML field it lands in.
+   * A discussion comment recorded as part of the same revision (`System.History`). Markdown — the
+   * patch stores that field as Markdown, so an `@<guid>` mention in it resolves to the person
+   * instead of being HTML-encoded into visible markup.
    */
   comment?: string;
   /**
@@ -66,7 +67,7 @@ export interface UpdateWorkItemFieldConfig {
   field: string;
   value: string | null;
   multilineFormat?: MultilineFieldFormat;
-  /** Plain text; the patch escapes it for the HTML field it lands in. */
+  /** Markdown; the patch stores `System.History` in that format so a mention in it resolves. */
   comment?: string;
   /** The field's expected current value; supplying it authorizes one rebase after a stale rev. */
   baseValue?: string | null;

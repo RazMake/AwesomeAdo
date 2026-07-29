@@ -92,7 +92,8 @@ response-parsing logic, kept pure so they are unit-testable without a browser.
 
 ### `IUserDirectory.ts`
 
-- `DirectoryUser` — `{ displayName, uniqueName, imageUrl }` from an identity search or roster.
+- `DirectoryUser` — `{ id?, displayName, uniqueName, imageUrl }` from an identity search or roster;
+  `id` is the local ADO identity GUID needed to author an `@<id>` mention when the picker supplies it.
 - `IUserDirectory` — `{ search(query), resolve(nameOrUnique) }`; queries the user directory for
   assignee-pickers and identity resolution.
 
@@ -416,15 +417,17 @@ is, and for a blunt cost reason: the loader fetches two credentialed URLs and up
 `$expand=renderedText` comments **per item**, one round-trip at a time, and all this needs is one
 timestamp each.
 
-- `NoteActivityRequest` — `{ workItemIds }`; `NoteActivity` — `{ workItemId, newestNoteDate }`.
+- `NoteActivityRequest` — `{ workItemIds, excludedPrefixes }`; `NoteActivity` —
+  `{ workItemId, newestNoteDate }`. Prefixes identify marker-generated comments that must not count.
 - `NoteActivityResult` — `{ activity, error }`. An item whose read failed is **absent** from
   `activity` rather than dated `null`, so "nobody commented" and "nobody could find out" stay apart.
 - `INoteActivityReader` — `readNoteActivity(request)`.
-- `buildNewestNoteUrl(href, workItemId)` — the smallest request ADO will answer: `$top=1&order=desc`,
-  no `$expand`.
+- `buildNewestNoteUrl(href, workItemId)` — one newest-first source page, no `$expand`; the page-world
+  reader follows continuation tokens only while every comment seen is excluded.
 - `parseNewestNoteDate(rawPage)` — the newest comment's ISO date, or `null`; never throws, because
   one odd response must not lose the rest of the board.
-- `MAX_NOTE_ACTIVITY_ITEMS` — the ceiling on one bulk ask (a runaway guard, not a real limit).
+- `MAX_NOTE_ACTIVITY_ITEMS`, `MAX_NOTE_ACTIVITY_PAGES`, and the prefix bounds are runaway guards on
+  one bulk ask, not expected user limits.
 
 ## Usage guidance
 

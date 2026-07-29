@@ -36,8 +36,10 @@ import type {
  * reasoning taken further: posting a comment through the comments API creates its own revision, so a
  * field write issued after one is rejected by the `test /rev` above (HTTP 412) — and a field write
  * issued before one can succeed while the comment explaining it fails. One patch makes them one
- * revision. The text arrives as PLAIN TEXT and is escaped here because `System.History` is an HTML
- * field: unescaped, a `<` in someone's reason would be swallowed as markup.
+ * revision. It rides with `/multilineFieldsFormat/System.History` = `Markdown`, which is what makes
+ * an `@`-mention in it REACH the person: left on the field's default HTML, Azure DevOps stores the
+ * comment HTML-encoded (`&lt;a …&gt;`, quotes and all) and the reader sees markup instead of a name.
+ * As Markdown it takes the same `@<guid>` token a discussion note does.
  *
  * `baseValue` (when supplied) authorizes ONE rebase-and-retry after a stale-rev rejection, and is
  * the whole reason a tag edit does not simply die when something else advanced the item's rev.
@@ -54,13 +56,17 @@ export function updateWorkItemFieldInPage(
 ): Promise<UpdateWorkItemFieldResponse> {
   const field = config.field;
   const base = config.baseValue;
+  // `add` APPENDS to a multi-value field: Azure DevOps answers a shortened `System.Tags` list with
+  // HTTP 200 and keeps every tag, so a removal is silently lost. `replace` sets a field that already
+  // holds a value; a field with no value yet has nothing to replace, so it still takes `add`.
+  const setOp = typeof base === "string" && base.length > 0 ? "replace" : "add";
 
   function buildPatch(rev: number): { op: string; path: string; value?: unknown }[] {
     const operations: { op: string; path: string; value?: unknown }[] = [
       { op: "test", path: "/rev", value: rev },
       config.value === null
         ? { op: "remove", path: "/fields/" + field }
-        : { op: "add", path: "/fields/" + field, value: config.value },
+        : { op: setOp, path: "/fields/" + field, value: config.value },
     ];
     if (config.multilineFormat) {
       operations.push({
@@ -73,11 +79,12 @@ export function updateWorkItemFieldInPage(
       operations.push({
         op: "add",
         path: "/fields/System.History",
-        value: config.comment
-          .replace(/&/g, "&amp;")
-          .replace(/</g, "&lt;")
-          .replace(/>/g, "&gt;")
-          .replace(/\r?\n/g, "<br>"),
+        value: config.comment,
+      });
+      operations.push({
+        op: "add",
+        path: "/multilineFieldsFormat/System.History",
+        value: "Markdown",
       });
     }
     return operations;

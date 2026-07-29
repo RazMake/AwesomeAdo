@@ -96,6 +96,12 @@ and every discussion note). Nothing there ever assigns to `innerHTML` on the liv
 source is parsed into an inert document and rebuilt node by node against an allowlist, which is what
 makes passing ADO's raw rich-text HTML through safe. See ADR-044.
 
+`control/TextEditor` is the single multi-line Markdown authoring surface. It owns bold/italic/link
+caret transforms and the optional directory-backed `@` suggestion flow, inserting ADO's local
+identity reference rather than display text. Project Tracking's inline note glance and New notes
+activity index omit source text beginning with configured marker `commentTag` prefixes; View all
+notes remains complete. See ADR-051.
+
 ### `src/common/ordering`
 
 `ItemOrdering` — the single definition of what "most important first" / "a–z" / "by ETA" mean:

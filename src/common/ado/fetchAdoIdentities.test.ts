@@ -61,6 +61,7 @@ describe("parseAdoIdentities - mapping a person", () => {
         {
           identities: [
             {
+              localId: "11111111-2222-3333-4444-555555555555",
               displayName: "Ada Lovelace",
               signInAddress: "ada@example.com",
               mail: "ada.contact@example.com",
@@ -73,6 +74,7 @@ describe("parseAdoIdentities - mapping a person", () => {
 
     expect(users).toEqual([
       {
+        id: "11111111-2222-3333-4444-555555555555",
         displayName: "Ada Lovelace",
         uniqueName: "ada@example.com",
         imageUrl: "https://example.com/ada.png",
@@ -93,8 +95,8 @@ describe("parseAdoIdentities - mapping a person", () => {
     });
 
     expect(users).toEqual([
-      { displayName: "Mail Only", uniqueName: "mail@example.com", imageUrl: null },
-      { displayName: "Nameless", uniqueName: null, imageUrl: null },
+      { id: null, displayName: "Mail Only", uniqueName: "mail@example.com", imageUrl: null },
+      { id: null, displayName: "Nameless", uniqueName: null, imageUrl: null },
     ]);
   });
 });

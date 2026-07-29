@@ -3,9 +3,9 @@
 The colored pill that stands for one of the team's recognized work-item conditions — **Blocked
 (internal)** (amber), **Blocked by another team** (red), **Interrupt** (violet).
 
-One control, two surfaces: the right-click command that applies or clears the condition, and the
-Project Tracking board's filter row. The pill inside the menu is a preview of the pill the item will
-wear, so both must be rendered from here rather than painted twice.
+One control, three surfaces: the Project Tracking item row, the right-click command that applies or
+clears the condition, and the board's filter row. The pill inside the menu is a preview of the pill
+the item will wear, so all three must be rendered from here rather than painted separately.
 
 ## Usage
 
@@ -15,7 +15,7 @@ import {
   markerLabel,
 } from "../../common/view-common/control/MarkerPill/MarkerPill";
 
-// Static label, e.g. inside a context-menu command
+// Static label, e.g. on an item row or inside a context-menu command
 row.append(renderMarkerPill(doc, { marker: "blocked", title: 'Azure DevOps tag "Blocked"' }));
 
 // Interactive filter toggle

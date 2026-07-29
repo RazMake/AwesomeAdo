@@ -12,7 +12,7 @@ import {
   buildWorkItemUpdateUrl,
   type AdoRawTree,
 } from "../common/ado/fetchAdoTree";
-import { buildNewestNoteUrl } from "../common/ado/fetchNoteActivity";
+import { buildNewestNoteUrl, MAX_NOTE_ACTIVITY_PAGES } from "../common/ado/fetchNoteActivity";
 import {
   buildAddNoteUrl,
   buildEditNoteUrl,
@@ -1023,7 +1023,14 @@ const readNoteActivity = async (
       target: { tabId },
       world: "MAIN",
       func: fetchNoteActivityInPage,
-      args: [requests, NOTE_ACTIVITY_CONCURRENCY],
+      args: [
+        {
+          requests,
+          concurrency: NOTE_ACTIVITY_CONCURRENCY,
+          excludedPrefixes: message.excludedPrefixes,
+          maxPages: MAX_NOTE_ACTIVITY_PAGES,
+        },
+      ],
     });
     const raw = firstScriptResult(results) as RawNoteActivity | null;
     if (raw === null) {

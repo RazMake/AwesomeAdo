@@ -5,7 +5,16 @@ import { renderNoteComposer } from "./NoteComposer";
 /** A composer over a recording submit hook. */
 function openComposer() {
   const onSubmit = vi.fn(() => Promise.resolve(true));
-  const root = renderNoteComposer(document, { onSubmit });
+  const root = renderNoteComposer(document, {
+    mentions: {
+      userDirectory: {
+        search: vi.fn(() => Promise.resolve([])),
+        resolve: vi.fn(() => Promise.resolve(null)),
+      },
+      logger: { info: vi.fn(), error: vi.fn() },
+    },
+    onSubmit,
+  });
   return { root, onSubmit };
 }
 

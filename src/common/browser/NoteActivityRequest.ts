@@ -8,13 +8,18 @@
  * trusted tab location.
  */
 
-import { MAX_NOTE_ACTIVITY_ITEMS } from "../ado/fetchNoteActivity";
+import {
+  MAX_NOTE_ACTIVITY_ITEMS,
+  MAX_NOTE_ACTIVITY_PREFIXES,
+  MAX_NOTE_ACTIVITY_PREFIX_LENGTH,
+} from "../ado/fetchNoteActivity";
 
 export const READ_NOTE_ACTIVITY_MESSAGE = "awesomeado:read-note-activity";
 
 export interface ReadNoteActivityMessage {
   type: typeof READ_NOTE_ACTIVITY_MESSAGE;
   workItemIds: number[];
+  excludedPrefixes: string[];
 }
 
 /** What one bulk read produced, straight from the page. */
@@ -34,7 +39,7 @@ export interface RawNoteActivity {
    * Classified rather than collapsed, for the same reason the notes read classifies: a lost session
    * and a quiet board would otherwise leave the same silence in the log (AGENTS.md §9).
    */
-  failure: "none" | "http" | "sign-in" | "network";
+  failure: "none" | "http" | "sign-in" | "network" | "limit";
   /** The HTTP status of the first failure, or 0 when there was none (or it never completed). */
   status: number;
 }
@@ -43,6 +48,22 @@ export interface ReadNoteActivityResponse {
   raw: RawNoteActivity | null;
   /** A short description of why the read failed; absent on success. */
   error?: string;
+}
+
+/** Why the marker-comment exclusions are unsafe to send to the page, if anything. */
+function excludedPrefixesProblem(prefixes: unknown): string | null {
+  if (!Array.isArray(prefixes) || prefixes.length > MAX_NOTE_ACTIVITY_PREFIXES) {
+    return `excludedPrefixes is not an array within the ${MAX_NOTE_ACTIVITY_PREFIXES} prefix ceiling`;
+  }
+  const valid = prefixes.every(
+    (prefix) =>
+      typeof prefix === "string" &&
+      prefix.length > 0 &&
+      prefix.length <= MAX_NOTE_ACTIVITY_PREFIX_LENGTH,
+  );
+  return valid
+    ? null
+    : `excludedPrefixes contains an empty, non-string, or over-${MAX_NOTE_ACTIVITY_PREFIX_LENGTH}-character entry`;
 }
 
 /**
@@ -72,5 +93,5 @@ export function readNoteActivityMessageProblem(value: unknown): string | null {
     // before a URL can be built from it.
     return "workItemIds contains an entry that is not a positive integer";
   }
-  return null;
+  return excludedPrefixesProblem(candidate.excludedPrefixes);
 }

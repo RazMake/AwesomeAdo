@@ -1,22 +1,21 @@
 import type { IMentionDirectory } from "../../../../common/ado/IMentionDirectory";
+import type { IUserDirectory } from "../../../../common/ado/IUserDirectory";
 import type { IWorkItemNoteLoader } from "../../../../common/ado/IWorkItemNoteLoader";
 import type { IWorkItemNoteWriter } from "../../../../common/ado/IWorkItemNoteWriter";
 import type { NoteAuthor, WorkItemNote } from "../../../../common/ado/WorkItemNote";
 import { selectRecentNoteDays, sortNotesNewestFirst } from "../../../../common/ado/WorkItemNote";
 import { resolveMentionsIn } from "../../../../common/browser/MessagingMentionDirectory";
 import type { ILogger } from "../../../../common/logging/ILogger";
+import type { WorkItemMarkerTags } from "../../../../common/settings/ExtensionSettings";
 
 import { renderNoteComposer } from "./NoteComposer";
 import { renderNoteRow } from "./NoteRow";
+import { markerCommentPrefixes, startsWithMarkerComment } from "./markerNotes";
 
-/** Everything one item's notes panel needs to fetch, show and author notes. */
-export interface NotesPanelOptions {
-  doc: Document;
-  workItemId: number;
-  /** ISO 8601 start of the binding's Updates window; nothing older is fetched or shown. */
-  sinceIso: string;
-  loader: IWorkItemNoteLoader;
-  writer: IWorkItemNoteWriter;
+/** The narrow slice of enhanced-view services used by a notes panel. */
+export interface NotesPanelServices {
+  noteLoader: IWorkItemNoteLoader;
+  noteWriter: IWorkItemNoteWriter;
   /**
    * Resolves the identity GUIDs the notes' `@`-mentions are stored as.
    *
@@ -25,7 +24,20 @@ export interface NotesPanelOptions {
    * descriptions cost nothing here.
    */
   mentionDirectory: IMentionDirectory;
+  /** Searches identities while an author types an `@` mention. */
+  userDirectory: IUserDirectory;
+  /** The team's marker comment prefixes; inline panels omit notes beginning with any of them. */
+  markerTags(): WorkItemMarkerTags;
   logger: ILogger;
+}
+
+/** Everything one item's notes panel needs to fetch, show and author notes. */
+export interface NotesPanelOptions {
+  doc: Document;
+  workItemId: number;
+  /** ISO 8601 start of the binding's Updates window; nothing older is fetched or shown. */
+  sinceIso: string;
+  services: NotesPanelServices;
   /**
    * Called with the number of notes actually inside the Updates window, whenever that becomes known
    * or changes (after the first load, and after a note is added).
@@ -45,6 +57,14 @@ export interface NotesPanelOptions {
    * exactly what they asked for.
    */
   showAllInWindow?: boolean;
+  /**
+   * Show ONLY the notes beginning with this marker comment prefix, and no composer with them.
+   *
+   * A surface opened from one marker answers a single question — why is it blocked? — so everything
+   * else in the discussion is noise there. It carries no "+ Add note" because a note typed into it
+   * would not begin with the prefix, and would therefore vanish from the very list it was written in.
+   */
+  onlyCommentPrefix?: string;
 }
 
 /** A mounted notes panel and the one thing the row that owns it changes about it. */
@@ -68,7 +88,7 @@ export interface NotesPanelHandle {
  * SHOWN, so an expanded panel stays a glance rather than a scroll.
  */
 export function renderNotesPanel(options: NotesPanelOptions): NotesPanelHandle {
-  const { doc } = options;
+  const { doc, services } = options;
 
   const element = doc.createElement("div");
   element.className = "awesomeado-notes";
@@ -86,6 +106,11 @@ export function renderNotesPanel(options: NotesPanelOptions): NotesPanelHandle {
   list.className = "awesomeado-notes__list";
 
   const composer = renderNoteComposer(doc, {
+    mentions: {
+      userDirectory: services.userDirectory,
+      logger: services.logger,
+      mentionNames: services.mentionDirectory.knownNames(),
+    },
     onSubmit: (text) => submitNote(options, state, null, text).then((ok) => finish(ok, render)),
   });
 
@@ -94,12 +119,11 @@ export function renderNotesPanel(options: NotesPanelOptions): NotesPanelHandle {
     // Only ever reported from a SUCCESSFUL read: after a failure the count is unknown, and calling
     // this with 0 would grey out an item whose discussion nobody managed to read.
     if (state.error === undefined && state.loaded) {
-      options.onNoteCountKnown?.(state.notes.length);
+      options.onNoteCountKnown?.(notesForSurface(options, state.notes).length);
     }
   };
 
-  element.append(composer, list);
-
+  element.append(...(options.onlyCommentPrefix === undefined ? [composer] : []), list);
   const setExpanded = (expanded: boolean): void => {
     if (state.expanded === expanded) {
       // Only a real flip is acted on (and logged): the board repaints often, and a panel told again
@@ -109,7 +133,7 @@ export function renderNotesPanel(options: NotesPanelOptions): NotesPanelHandle {
     state.expanded = expanded;
     element.style.display = expanded ? "block" : "none";
     const fetching = expanded && !state.loaded;
-    options.logger.info(
+    services.logger.info(
       `Notes panel for work item ${options.workItemId} ${expanded ? "expanded" : "collapsed"}: ` +
         `fetching=${fetching}, cachedNotes=${state.notes.length}.`,
     );
@@ -144,19 +168,44 @@ function renderRows(
   if (state.error !== undefined) {
     return [statusLine(doc, "Could not load notes.")];
   }
-  const visible = options.showAllInWindow ? state.notes : selectRecentNoteDays(state.notes);
+  const notes = notesForSurface(options, state.notes);
+  const visible =
+    options.showAllInWindow || options.onlyCommentPrefix !== undefined
+      ? notes
+      : selectRecentNoteDays(notes);
   if (visible.length === 0) {
     return [statusLine(doc, "No notes in this window.")];
   }
   return visible.map((note) =>
     renderNoteRow(doc, {
       note,
+      codePrefixes: markerCommentPrefixes(options.services.markerTags()),
       currentUser: state.currentUser,
-      mentionNames: options.mentionDirectory.knownNames(),
+      mentionNames: options.services.mentionDirectory.knownNames(),
+      mentions: {
+        userDirectory: options.services.userDirectory,
+        logger: options.services.logger,
+      },
       onEdit: (text) =>
         submitNote(options, state, note.id, text).then((ok) => finish(ok, rerender)),
     }),
   );
+}
+
+/** The notes this surface is allowed to show; the deliberately-full popup bypasses marker filtering. */
+function notesForSurface(
+  options: NotesPanelOptions,
+  notes: readonly WorkItemNote[],
+): readonly WorkItemNote[] {
+  const only = options.onlyCommentPrefix;
+  if (only !== undefined) {
+    return notes.filter((note) => note.text.startsWith(only));
+  }
+  if (options.showAllInWindow) {
+    return notes;
+  }
+  const prefixes = markerCommentPrefixes(options.services.markerTags());
+  return notes.filter((note) => !startsWithMarkerComment(note.text, prefixes));
 }
 
 /**
@@ -176,8 +225,8 @@ async function submitNote(
   const request = { workItemId: options.workItemId, text };
   const result =
     noteId === null
-      ? await options.writer.addNote(request)
-      : await options.writer.editNote({ ...request, noteId });
+      ? await options.services.noteWriter.addNote(request)
+      : await options.services.noteWriter.editNote({ ...request, noteId });
   if (!result.ok) {
     return false;
   }
@@ -189,7 +238,10 @@ async function submitNote(
     // A note Azure DevOps has just stored is handed back WITHOUT its rendering, so the row renders
     // from the raw source — where a mention is still a bare GUID. Resolved before the list repaints,
     // or the mention an author just typed would be the one anonymous name on the board.
-    await resolveMentionsIn(options.mentionDirectory, [result.note.text, result.note.renderedHtml]);
+    await resolveMentionsIn(options.services.mentionDirectory, [
+      result.note.text,
+      result.note.renderedHtml,
+    ]);
   } else {
     // ADO stored it but did not describe it back; drop the cache so the next open refetches rather
     // than showing a list that is quietly one note short.
@@ -208,7 +260,7 @@ function finish(ok: boolean, rerender: () => void): boolean {
 
 /** Read the item's notes into the panel's state; a failure is recorded, never thrown at the row. */
 async function loadNotes(options: NotesPanelOptions, state: PanelState): Promise<void> {
-  const result = await options.loader.loadNotes({
+  const result = await options.services.noteLoader.loadNotes({
     workItemId: options.workItemId,
     sinceIso: options.sinceIso,
   });
@@ -225,7 +277,7 @@ async function loadNotes(options: NotesPanelOptions, state: PanelState): Promise
   // the panel. Both encodings are collected — the stored Markdown AND ADO's own rendering — because
   // a note whose `renderedText` ADO omitted falls back to the raw source and its bare GUIDs.
   await resolveMentionsIn(
-    options.mentionDirectory,
+    options.services.mentionDirectory,
     state.notes.flatMap((note) => [note.text, note.renderedHtml]),
   );
 }

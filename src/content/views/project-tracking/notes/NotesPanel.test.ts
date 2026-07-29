@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { NoteAuthor, WorkItemNote } from "../../../../common/ado/WorkItemNote";
+import { normalizeMarkerTags } from "../../../../common/settings/ExtensionSettings";
 
 import { renderNotesPanel, type NotesPanelHandle } from "./NotesPanel";
 
@@ -51,6 +52,7 @@ function mountPanel(
     addResult?: { ok: boolean; note?: WorkItemNote };
     editResult?: { ok: boolean; note?: WorkItemNote };
     mentionNames?: Map<string, string>;
+    showAllInWindow?: boolean;
   } = {},
 ) {
   const loadNotes = vi.fn(() =>
@@ -70,10 +72,18 @@ function mountPanel(
     doc: document,
     workItemId: WORK_ITEM_ID,
     sinceIso: SINCE,
-    loader: { loadNotes },
-    writer: { addNote, editNote },
-    mentionDirectory: { resolveNames, knownNames: () => knownMentions },
-    logger: { info, error },
+    services: {
+      noteLoader: { loadNotes },
+      noteWriter: { addNote, editNote },
+      mentionDirectory: { resolveNames, knownNames: () => knownMentions },
+      userDirectory: {
+        search: vi.fn(() => Promise.resolve([])),
+        resolve: vi.fn(() => Promise.resolve(null)),
+      },
+      markerTags: () => normalizeMarkerTags(undefined),
+      logger: { info, error },
+    },
+    showAllInWindow: overrides.showAllInWindow,
   });
   return { handle, loadNotes, addNote, editNote, resolveNames, info, error };
 }
@@ -183,6 +193,48 @@ describe("renderNotesPanel — what an open panel shows", () => {
     await expand(handle);
 
     expect(rowsOf(handle)[0]?.textContent).toContain("Later");
+  });
+
+  it("omits notes beginning with any configured marker comment tag", async () => {
+    const { handle } = mountPanel({
+      notes: [
+        createNote({ id: 1, text: "[BLOCKED] Waiting for review." }),
+        createNote({ id: 2, text: "[ACCEPTED] Another team owns this." }),
+        createNote({ id: 3, text: "A normal project note." }),
+      ],
+    });
+
+    await expand(handle);
+
+    expect(rowsOf(handle)).toHaveLength(1);
+    expect(handle.element.textContent).toContain("A normal project note.");
+    expect(handle.element.textContent).not.toContain("Waiting for review");
+  });
+
+  it("shows marker-prefixed notes in the deliberately complete popup", async () => {
+    const { handle } = mountPanel({
+      notes: [
+        createNote({ id: 1, text: "[BLOCKED] Waiting for review." }),
+        createNote({ id: 2, text: "A normal project note." }),
+      ],
+      showAllInWindow: true,
+    });
+
+    await expand(handle);
+
+    expect(rowsOf(handle)).toHaveLength(2);
+    expect(handle.element.textContent).toContain("[BLOCKED] Waiting for review.");
+  });
+
+  it("sets the marker prefix apart as code, so it reads as a token rather than as words", async () => {
+    const { handle } = mountPanel({
+      notes: [createNote({ id: 1, text: "[BLOCKED] Waiting for review." })],
+      showAllInWindow: true,
+    });
+
+    await expand(handle);
+
+    expect(handle.element.querySelector("code")?.textContent).toBe("[BLOCKED]");
   });
 });
 

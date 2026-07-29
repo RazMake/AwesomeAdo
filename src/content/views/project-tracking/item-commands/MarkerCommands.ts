@@ -107,6 +107,7 @@ function commentPanel(
       initialText: "",
       submitLabel: "Save",
       placeholder: `Why is this ${markerLabel(marker).toLowerCase()}?`,
+      mentions: { userDirectory: target.services.userDirectory, logger: target.services.logger },
       onSubmit: (text) => applyMarker(target, marker, tags, text, close),
       onCancel: close,
     }),

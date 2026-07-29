@@ -82,8 +82,14 @@ import {
 import { buildItemCommands } from "./item-commands/ItemCommands";
 import { buildMarkerCommands } from "./item-commands/MarkerCommands";
 import { renderMarkerFilterPills } from "./marker-filter/MarkerFilterPanel";
-import { collectMarkersInUse, createMarkerFilter } from "./marker-filter/markerPresence";
+import {
+  collectMarkersInUse,
+  createMarkerFilter,
+  itemHasMarker,
+} from "./marker-filter/markerPresence";
+import { renderMarkerReasonsPill } from "./marker-reasons/MarkerReasonsPill";
 import { renderNotesPanel } from "./notes/NotesPanel";
+import { markerCommentPrefixes } from "./notes/markerNotes";
 import {
   hideResolvedAfterDays,
   orderingPolicyOf,
@@ -961,10 +967,7 @@ function createItemNotes(
     doc,
     workItemId: item.id,
     sinceIso: options.notesSinceIso,
-    loader: services.noteLoader,
-    writer: services.noteWriter,
-    mentionDirectory: services.mentionDirectory,
-    logger: services.logger,
+    services,
     onNoteCountKnown: (count) => {
       hasNotes = count > 0;
       // Written back to the model so a later repaint seeds from the truth rather than from ADO's
@@ -1282,10 +1285,35 @@ function createRowAssignee(item: TrackedWorkItem, options: TreeRenderOptions): H
   return assignedEl;
 }
 
+const ROW_BLOCKED_MARKERS = [
+  "blocked",
+  "blockedByOtherTeam",
+] as const satisfies readonly WorkItemMarker[];
+
+/** Creates the blocked-condition pills carried directly by one work-item row. */
+function createRowBlockedMarkerPills(
+  item: TrackedWorkItem,
+  options: TreeRenderOptions,
+): HTMLElement[] {
+  const services = options.context.services;
+  const markerTags = services.markerTags();
+  return ROW_BLOCKED_MARKERS.filter((marker) => itemHasMarker(item, marker, markerTags)).map(
+    (marker) =>
+      renderMarkerReasonsPill({
+        doc: options.doc,
+        item,
+        marker,
+        tags: markerTags[marker],
+        notesSinceIso: options.notesSinceIso,
+        services,
+      }),
+  );
+}
+
 /**
- * Creates the row right-side controls. The assignee, sprint pill and rolled-up child badge flow
- * inline right after the title (returned in `inline`); the ETA is pinned to the row's far right
- * (returned separately).
+ * Creates the row right-side controls. The assignee, blocked markers, sprint pill and rolled-up
+ * child badge flow inline right after the title (returned in `inline`); the ETA is pinned to the
+ * row's far right (returned separately).
  */
 function createRowRightControls(
   item: TrackedWorkItem,
@@ -1296,6 +1324,7 @@ function createRowRightControls(
   const inline: HTMLElement[] = [];
 
   inline.push(createRowAssignee(item, options));
+  inline.push(...createRowBlockedMarkerPills(item, options));
 
   if (showSprintPills && isLeafSprint(item)) {
     const pill = doc.createElement("span");
@@ -1351,9 +1380,9 @@ function createRowRightControls(
 }
 
 /**
- * Renders a single work item row with all its controls (twisty, state, title, assignee, sprint pill,
- * rolled-up child badge, ETA). Returns the row element, the children container, and the twisty
- * button (null when the row has no expandable child rows).
+ * Renders a single work item row with all its controls (twisty, state, title, assignee, blocked
+ * markers, sprint pill, rolled-up child badge, ETA). Returns the row element, the children
+ * container, and the twisty button (null when the row has no expandable child rows).
  */
 function renderRow(
   item: TrackedWorkItem,
@@ -2480,7 +2509,11 @@ function mountBoardBody(params: {
   // Asked through the bulk activity reader, not the per-item note loader: the pill needs one date per
   // item, and answering it through the loader cost a credentialed round-trip and up to 200 rendered
   // comments per row. The filter row owns repainting once a read lands (see `createFilterRowRenderer`).
-  const recentNotes = new RecentNotesIndex(context.services.noteActivity, context.services.logger);
+  const recentNotes = new RecentNotesIndex(
+    context.services.noteActivity,
+    context.services.logger,
+    markerCommentPrefixes(context.services.markerTags()),
+  );
 
   // Late-bound because the two halves are built in a cycle: the tree renderer hands menu commands a
   // whole-board repaint, and the filter row is built ON the tree renderer. Reassigned below, once

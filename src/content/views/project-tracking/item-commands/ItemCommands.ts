@@ -109,6 +109,11 @@ function updateDescriptionCommand(options: ItemCommandsOptions): ItemContextMenu
           initialText: item.description,
           submitLabel: "Save",
           rows: DESCRIPTION_ROWS,
+          mentions: {
+            userDirectory: options.services.userDirectory,
+            logger: options.services.logger,
+            mentionNames: options.services.mentionDirectory.knownNames(),
+          },
           // A description is allowed not to exist, unlike a title, so an empty box is a real answer.
           allowEmpty: true,
           onSubmit: (text) =>
@@ -186,15 +191,12 @@ function viewAllNotesCommand(options: ItemCommandsOptions): ItemContextMenuComma
     // it, and the corrections that keep an anchored surface on screen would land it somewhere
     // different for every row it was opened from.
     centerPanel: true,
-    panel: () => {
+    panel: (close) => {
       const notes = renderNotesPanel({
         doc,
         workItemId: item.id,
         sinceIso: options.notesSinceIso,
-        loader: services.noteLoader,
-        writer: services.noteWriter,
-        mentionDirectory: services.mentionDirectory,
-        logger: services.logger,
+        services,
         showAllInWindow: true,
       });
       // The panel is built for life under a row: hidden until expanded, and indented to clear the
@@ -207,7 +209,7 @@ function viewAllNotesCommand(options: ItemCommandsOptions): ItemContextMenuComma
       notes.element.style.flex = "1 1 auto";
       notes.element.style.minHeight = "0";
       notes.element.style.overflowY = "auto";
-      return panelFor(
+      const panel = panelFor(
         doc,
         item,
         {
@@ -217,6 +219,37 @@ function viewAllNotesCommand(options: ItemCommandsOptions): ItemContextMenuComma
         },
         [notes.element],
       );
+      panel.style.position = "relative";
+      panel.style.boxSizing = "border-box";
+      panel.style.paddingRight = "28px";
+      panel.append(renderNotesCloseButton(doc, close));
+      return panel;
     },
   };
+}
+
+/** Dismisses the deliberately large discussion without making the reader reach for Escape. */
+function renderNotesCloseButton(doc: Document, close: () => void): HTMLButtonElement {
+  const button = doc.createElement("button");
+  button.type = "button";
+  button.className = "awesomeado-item-command__close-notes";
+  button.setAttribute("aria-label", "Close notes");
+  button.title = "Close notes";
+  button.textContent = "\u00D7";
+  button.style.cssText = [
+    "position:absolute",
+    "top:0",
+    "right:0",
+    "width:24px",
+    "height:24px",
+    "padding:0",
+    "border:0",
+    "background:transparent",
+    "color:var(--text-primary-color, #323130)",
+    "font-size:20px",
+    "line-height:20px",
+    "cursor:pointer",
+  ].join(";");
+  button.addEventListener("click", close);
+  return button;
 }

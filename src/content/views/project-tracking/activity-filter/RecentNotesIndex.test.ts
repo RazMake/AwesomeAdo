@@ -121,6 +121,20 @@ describe("RecentNotesIndex — what it asks for", () => {
     release({ activity: [], error: null });
     await settle();
   });
+
+  it("passes the configured marker prefixes to the bulk reader", async () => {
+    const requests: NoteActivityRequest[] = [];
+    const reader = fakeReader((request) => {
+      requests.push(request);
+      return datesNothing(request);
+    });
+    const index = new RecentNotesIndex(reader, fakeLogger(), ["[BLOCKED]", "[ACCEPTED]"]);
+
+    index.ensureProbed(item(1, 0, [item(2, 1)]));
+    await settle();
+
+    expect(requests[0]?.excludedPrefixes).toEqual(["[BLOCKED]", "[ACCEPTED]"]);
+  });
 });
 
 describe("RecentNotesIndex — what it records", () => {

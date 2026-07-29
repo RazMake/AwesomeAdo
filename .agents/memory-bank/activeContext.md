@@ -24,7 +24,8 @@ The extension is feature-complete for its current scope:
   sized in `em` to the title it precedes, dimmable), and `MarkdownText` (author-written content —
   descriptions and notes — rendered as allowlist-rebuilt DOM, with attachment images and
   `@`-mentions; ADR-044), plus `TextEditor` (the one themed in-place editor — one-line or multi-line
-  Markdown — behind every note, title and description edit), `MarkerPill` (the fixed-color pill for a
+  Markdown — behind every note, title and description edit; multi-line editors own bold/italic/link
+  shortcuts and typed `@<localId>` identity suggestions, ADR-051), `MarkerPill` (the fixed-color pill for a
   recognized condition — amber blocked / red blocked-by-another-team / violet interrupt — shared by
   the tagging commands and the board's filter row) and `ItemContextMenu` (the shared
   per-item right-click menu: Copy Item ID / Copy ADO Url / Open in ADO, the last accented, then a
@@ -81,18 +82,22 @@ The extension is feature-complete for its current scope:
   it reflows as one line), OR together, and combine with the sprint and tag filters. The first two
   read `createdDate` / `changedDate` off
   the tree; the third is answered by `RecentNotesIndex`, which reads discussions on demand (only when
-  the pill is lit, only where `noteCount > 0`, ≤6 in flight, once per board) and leaves the board
-  unnarrowed — pill showing `New notes…` — until the reads settle.
+  the pill is lit, only where `noteCount > 0`, ≤6 in flight, once per board), pages to the newest note
+  not beginning with a configured marker `commentTag`, and leaves the board unnarrowed — pill showing
+  `New notes…` — until the reads settle (ADR-051).
   The **marker pills** (`content/views/project-tracking/marker-filter`) form a third AND-ed group:
   one pill per configured `markerTags` condition that something in the tree actually carries
   (`TrackedWorkItem.tags` ← `System.Tags`, split by `common/ado/workItemTags`), appearing and
   disappearing with the flags themselves. Because a menu command can change which pills EXIST, the
-  repaint handed to menu commands refreshes the filter row before the tree (`repaintBoard`).
+  repaint handed to menu commands refreshes the filter row before the tree (`repaintBoard`). Each
+  item row also renders the static amber/red pill for either blocked condition it carries, immediately
+  after Assigned To and before its sprint pill; an item carrying both tags shows both pills.
   Each row's title is preceded by its work item **type icon** (`ItemTypeIcon`), which doubles as the
   item's notes toggle — muted closed, bright open. Opening it mounts
   `content/views/project-tracking/notes` (`NotesPanel` + `NoteRow` + `NoteComposer` + `NoteEditor`):
   the item's ADO Discussion, fetched on FIRST open only (ADR-043), "+ Add note" above a newest-first
-  list, and the two most recent days that have notes shown in full. A note reads
+  list, and the two most recent days that have non-marker notes shown in full; the explicit View all
+  notes popup includes marker comments too (ADR-051). A note reads
   `{author} {date} {text}`; the author's name is clickable only on the reader's own notes and opens
   an inline Markdown editor. Reads/writes go through `EnhancedViewServices.noteLoader` /
   `noteWriter` → `MessagingWorkItemNoteLoader` / `MessagingWorkItemNoteWriter` → the background

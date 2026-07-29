@@ -76,6 +76,7 @@ export function buildAdoIdentitySearchRequest(
 
 /** One identity as the picker endpoint returns it; every field is optional on the wire. */
 interface RawIdentity {
+  localId?: unknown;
   displayName?: unknown;
   signInAddress?: unknown;
   mail?: unknown;
@@ -164,6 +165,7 @@ function toDirectoryUser(identity: RawIdentity): DirectoryUser | null {
     return null;
   }
   return {
+    id: typeof identity.localId === "string" ? identity.localId : null,
     displayName,
     uniqueName: uniqueNameOf(identity),
     imageUrl: typeof image === "string" && image.length > 0 ? image : null,

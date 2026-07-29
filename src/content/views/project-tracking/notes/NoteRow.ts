@@ -2,11 +2,18 @@ import type { NoteAuthor, WorkItemNote } from "../../../../common/ado/WorkItemNo
 import { MAX_NOTE_LENGTH, isOwnNote } from "../../../../common/ado/WorkItemNote";
 import { renderDateLabel } from "../../../../common/view-common/control/DateLabel/DateLabel";
 import { renderMarkdownText } from "../../../../common/view-common/control/MarkdownText/MarkdownText";
+import type { TextEditorMentionOptions } from "../../../../common/view-common/control/TextEditor/MentionSuggestions";
 import { renderTextEditor } from "../../../../common/view-common/control/TextEditor/TextEditor";
+
+import { withMarkerCommentAsCode } from "./markerNotes";
 
 /** What one note row shows, and what it may do about it. */
 export interface NoteRowOptions {
   note: WorkItemNote;
+  /** Marker comment prefixes to show as inline code when this note opens with one. */
+  codePrefixes?: readonly string[];
+  /** Identity search used when this note opens for editing. */
+  mentions: TextEditorMentionOptions;
   /** The signed-in reader; only their own notes offer the edit affordance. */
   currentUser: NoteAuthor | null;
   /**
@@ -92,10 +99,13 @@ export function renderNoteRow(doc: Document, options: NoteRowOptions): HTMLEleme
   // read as a continuation of the name they sit under. The first line is pushed past the floated
   // header instead, which is what puts the note on the author's own line.
   body.style.paddingLeft = `${NOTE_WRAP_INDENT_PX}px`;
+  const source = withMarkerCommentAsCode(note.text, options.codePrefixes ?? []);
   body.append(
     renderMarkdownText(doc, {
-      text: note.text,
-      html: note.renderedHtml,
+      text: source,
+      // Azure DevOps' own rendering carries the prefix as prose, so a note whose source was marked up
+      // here has to be rendered FROM that source or the markers would simply not show.
+      html: source === note.text ? note.renderedHtml : null,
       mentionNames: options.mentionNames,
     }),
   );
@@ -165,6 +175,7 @@ function openEditor(doc: Document, trigger: HTMLElement, options: NoteRowOptions
     initialText: options.note.text,
     submitLabel: "Save",
     maxLength: MAX_NOTE_LENGTH,
+    mentions: { ...options.mentions, mentionNames: options.mentionNames },
     onSubmit: (text) => options.onEdit(text),
     onCancel: close,
   });

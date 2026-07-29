@@ -36,8 +36,10 @@ const UNRESOLVED_MENTION = "mention";
  *
  * Deliberately NOT the communication accent every link in this control uses: a mention names a
  * person, not a destination, and wearing the link color made it read as a link that refused to open.
+ * Exported because the EDITOR paints the mentions in its own field with it — a person must look the
+ * same while they are being written as they do once the text is rendered.
  */
-const MENTION_COLOR_FALLBACK = "#8a63d2";
+export const MENTION_COLOR_FALLBACK = "#8a63d2";
 
 /**
  * The purple a mention is written in, nudged toward the surrounding theme's own polarity so it stays
@@ -47,7 +49,7 @@ const MENTION_COLOR_FALLBACK = "#8a63d2";
  * still admits 106) drops this declaration as invalid and keeps the flat purple, which is a slightly
  * worse match for the theme rather than no color at all.
  */
-const MENTION_COLOR = `color-mix(in srgb, var(--text-primary-color, #323130) 25%, ${MENTION_COLOR_FALLBACK})`;
+export const MENTION_COLOR = `color-mix(in srgb, var(--text-primary-color, #323130) 25%, ${MENTION_COLOR_FALLBACK})`;
 
 /**
  * Renders Markdown / ADO rich text as safe, theme-aware DOM.

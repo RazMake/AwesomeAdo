@@ -527,9 +527,13 @@ is not — an omitted optional argument is an unserializable hole in that array 
 whole injection before it runs (see the note under **Injecting into the page world** below).
 
 Uses JSON Patch (`application/json-patch+json`) with a test-and-set: the
-rev is tested first (`{ op: "test", path: "/rev", value: rev }`), then the field is written — a set
-value adds it (`{ op: "add", path: "/fields/<field>", value }`) and a `null` value clears it
-(`{ op: "remove", path: "/fields/<field>" }`). Returns `{ ok: true, rev }` on success (extracting the
+rev is tested first (`{ op: "test", path: "/rev", value: rev }`), then the field is written. A `null`
+value clears it (`{ op: "remove", path: "/fields/<field>" }`); any other value sets it, using
+`replace` when `baseValue` names a non-empty current value and `add` otherwise. The op is not
+cosmetic: Azure DevOps treats `add` on `System.Tags` as **append**, so a shortened tag list comes
+back `HTTP 200` with every tag still on the item — a removal that silently never happened. `replace`
+sets a field that already holds a value; a field with nothing to replace still takes `add`.
+Returns `{ ok: true, rev }` on success (extracting the
 new rev from the response body), or `{ ok: false, error }` on failure. The URL is built by
 `buildWorkItemUpdateUrl` (in `common/ado/fetchAdoTree`) from the sender's own trusted tab URL.
 Serialized with `Function.prototype.toString`, so it references only its parameters and page globals.
@@ -542,9 +546,11 @@ Two more operations can ride along in the **same** patch, and both must:
 - `comment` → `{ op: "add", path: "/fields/System.History", value }`, the discussion comment saying
   why the change was made. **Never post it through the comments API instead**: that creates its own
   revision, so the field patch is then rejected by its own rev test with `HTTP 412`. One patch means
-  one revision — the change and its reason land together or neither does. The text arrives as plain
-  text and is escaped here (`& < >`, newlines → `<br>`) because `System.History` is an HTML field.
-  See the `batch-work-item-writes` skill.
+  one revision — the change and its reason land together or neither does. It rides with
+  `/multilineFieldsFormat/System.History` = `Markdown`, which is what makes an `@`-mention in it
+  reach the person: left on that field's default HTML, Azure DevOps HTML-ENCODES the value (quotes
+  and all) and the reader sees markup where a name belongs. As Markdown it takes the same `@<guid>`
+  token a discussion note does, and needs no escaping. See the `batch-work-item-writes` skill.
 
 `baseValue` — the value the caller believes the field currently holds — authorizes **one**
 rebase-and-retry when the rev test is refused (`HTTP 412`/`409`). The item is re-read and the same
@@ -718,12 +724,12 @@ globals.
 
 ### `NoteActivityRequest` (message contract)
 
-`READ_NOTE_ACTIVITY_MESSAGE` + `ReadNoteActivityMessage` (`{ workItemIds }`), `RawNoteActivity`
+`READ_NOTE_ACTIVITY_MESSAGE` + `ReadNoteActivityMessage` (`{ workItemIds, excludedPrefixes }`), `RawNoteActivity`
 (`{ newest, failedIds, failure, status }`), `ReadNoteActivityResponse`, and
 `readNoteActivityMessageProblem(value)` — the same "reason, not a boolean" validator the notes
-contract uses, and the same reason for it. The message carries **only ids**: the worker builds every
-URL from the sender's own tab location, so a content script can name WHICH items it means but never
-WHERE the request goes.
+contract uses, and the same reason for it. The message carries ids plus bounded marker-comment
+prefixes; the worker still builds every URL from the sender's own tab location, so a content script
+can name WHICH items it means and which source text to omit, but never WHERE the request goes.
 
 ### `MessagingNoteActivityReader` (class)
 
@@ -733,7 +739,7 @@ answer: the items that were read still narrow the board, the ones that were lost
 alongside them so a partial failure cannot look like a complete, quiet one. An empty ask is answered
 without a round-trip. Counts only in the log, never a comment or an author (AGENTS.md §9).
 
-### `fetchNoteActivityInPage(requests, concurrency)`
+### `fetchNoteActivityInPage(config)`
 
 The self-contained function the worker injects to read the **whole board's** newest-comment dates in
 ONE injection. Asking through `fetchWorkItemNotesInPage` instead meant an injection and a worker
@@ -741,5 +747,7 @@ round-trip per item, plus two fetches and up to 200 rendered comments each, to r
 which is what made the first use of that filter a visible wait. Runs a small worker pool (browsers
 cap concurrent same-origin requests anyway, and the board's own writes share that budget), reads each
 response as **text** first so a 200 carrying ADO's sign-in page is classified as `sign-in` rather
-than parsed as "no comments", and reports a failed item in `failedIds` rather than as a null date.
-Only the FIRST failure is kept, so one lost session is not reported once per item.
+than parsed as "no comments", skips comments beginning with any configured marker prefix, and
+follows continuation pages until it finds the newest remaining comment. A page-limit cutoff is
+reported in `failedIds` rather than as a null date. Only the FIRST failure is kept, so one lost
+session is not reported once per item.

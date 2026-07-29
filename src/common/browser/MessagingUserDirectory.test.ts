@@ -8,8 +8,15 @@ import {
 } from "./AdoIdentityRequest";
 import { MessagingUserDirectory, type SendIdentitySearchRequest } from "./MessagingUserDirectory";
 
+const ADA_ID = "11111111-2222-3333-4444-555555555555";
 const ADA_BODY = {
-  results: [{ identities: [{ displayName: "Ada Lovelace", signInAddress: "ada@example.com" }] }],
+  results: [
+    {
+      identities: [
+        { localId: ADA_ID, displayName: "Ada Lovelace", signInAddress: "ada@example.com" },
+      ],
+    },
+  ],
 };
 
 function makeLoggerSpy(): ILogger {
@@ -34,7 +41,7 @@ describe("MessagingUserDirectory - search", () => {
     const message = send.mock.calls[0]?.[0] as SearchAdoIdentitiesMessage;
     expect(message).toEqual({ type: SEARCH_ADO_IDENTITIES_MESSAGE, query: "ada" });
     expect(users).toEqual([
-      { displayName: "Ada Lovelace", uniqueName: "ada@example.com", imageUrl: null },
+      { id: ADA_ID, displayName: "Ada Lovelace", uniqueName: "ada@example.com", imageUrl: null },
     ]);
     expect(logger.error).not.toHaveBeenCalled();
   });

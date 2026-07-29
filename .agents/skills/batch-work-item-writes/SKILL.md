@@ -91,6 +91,15 @@ Then a test at both ends: the patch body in `updateWorkItemFieldInPage.test.ts`,
 - **Know the field's storage format.** `System.History` and `System.Description` are HTML fields:
   escape `& < >` and turn newlines into `<br>`, or set `/multilineFieldsFormat/<field>` to `Markdown`
   in the same patch. A multiline field left on ADO's default stores Markdown source verbatim.
+- **A comment rides as Markdown.** The patch sets `/multilineFieldsFormat/System.History` to
+  `Markdown` whenever it carries a `comment`, so an `@<guid>` mention in it resolves exactly as it
+  does in a discussion note. Left on that field's default HTML, Azure DevOps HTML-ENCODES the value
+  — quotes and all — and the reader sees markup where a name belongs. Its rich-text mention ANCHOR
+  is not accepted from a patch either; the format is the lever, not the markup.
+- **`add` APPENDS to `System.Tags`; use `replace` to set it.** Tags are one semicolon-separated
+  string with no per-tag op, so a removal writes the whole remaining list — and under `add` ADO
+  merges that list back into the existing tags, answers `HTTP 200`, and removes nothing. The injected
+  patch picks `replace` whenever `baseValue` names a non-empty current value.
 - **Fold the returned rev back onto the item** (`item.rev = result.rev`). The queue binds the rev at
   _execution_ time via a `currentRev` resolver; an item whose rev was not updated makes its own **next**
   edit fail as a conflict against itself.

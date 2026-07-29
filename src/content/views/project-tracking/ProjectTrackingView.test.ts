@@ -1540,6 +1540,47 @@ describe("ProjectTrackingView — write-queue indicator", () => {
   });
 });
 
+describe("ProjectTrackingView — blocked marker pills", () => {
+  it("shows both blocked markers after Assigned To and before the sprint pill", async () => {
+    const epic = createFixtureTree();
+    epic.children[0]!.tags = ["Blocked", "Blocked by another team", "Interrupt"];
+    const services = createFakeServices({
+      loadTree: async () => ({ isTreeQuery: true, roots: [epic], error: null }),
+    });
+    const context: EnhancedViewContext = {
+      doc: document,
+      queryId: "q1",
+      properties: {},
+      services,
+    };
+
+    const root = projectTrackingView.render(context);
+    await Promise.resolve();
+    await Promise.resolve();
+    await turnSprintFilterOff(root);
+
+    const content = [...root.querySelectorAll<HTMLElement>(".awesomeado-tracking__content")].find(
+      (row) =>
+        row.querySelector(".awesomeado-tracking__item-title")?.textContent ===
+        "User Authentication",
+    )!;
+    const inlineOrder = [...content.children]
+      .filter((element) =>
+        element.matches(
+          ".awesomeado-assigned, .awesomeado-marker-reasons, .awesomeado-tracking__sprint-pill",
+        ),
+      )
+      .map((element) => {
+        if (element.classList.contains("awesomeado-assigned")) return "assigned";
+        if (element.classList.contains("awesomeado-tracking__sprint-pill")) return "sprint";
+        // Each pill sits in its own positioned shell, which is what its reasons popup hangs off.
+        return element.querySelector(".awesomeado-marker-pill")?.getAttribute("data-marker");
+      });
+
+    expect(inlineOrder).toEqual(["assigned", "blocked", "blockedByOtherTeam", "sprint"]);
+  });
+});
+
 describe("ProjectTrackingView — sprint pills", () => {
   it("should toggle filter OFF and show sprint pills", async () => {
     const doc = document;
@@ -3027,6 +3068,17 @@ describe("ProjectTrackingView — moving an item and reading its discussion", ()
     // The composer comes with the panel, so a discussion can be added to from here too.
     expect(panel.querySelector(".awesomeado-note-composer__trigger")).not.toBeNull();
   });
+
+  it("closes the notes popup from its top-right button", async () => {
+    const root = await renderDeepBoard();
+    await turnSprintFilterOff(root);
+
+    rightClick(root.querySelector(".awesomeado-tracking__row")!);
+    commandNamed(root, "View all notes").click();
+    root.querySelector<HTMLButtonElement>('[aria-label="Close notes"]')!.click();
+
+    expect(root.querySelector(".awesomeado-item-menu")).toBeNull();
+  });
 });
 
 /** One note on a given day, by someone other than the reader. */
@@ -4508,6 +4560,15 @@ describe("ProjectTrackingView - clearing a flag and unconfigured markers", () =>
 
     expect(writes[0]).toMatchObject({ id: 2, field: "System.Tags", value: "" });
     expect(writes[0]?.comment).toBeUndefined();
+  });
+
+  it("keeps the tags it is not clearing when the item wears more than one", async () => {
+    const { root, writes } = await renderFlaggedBoard(["Blocked", "Needs review"]);
+
+    markerCommand(root, "Clear Blocked (internal)").click();
+    await settleWrites();
+
+    expect(writes[0]).toMatchObject({ field: "System.Tags", value: "Needs review" });
   });
 
   it("leaves the flag inert, saying why, when the team configured no tag for it", async () => {

@@ -72,6 +72,71 @@ rev 15)`) reappearing on a marker-tag command that was ALREADY one patch. One pa
   `formatWorkItemTags` joins with ADO's own `"; "`. A field whose stored form differs from what the
   extension would write simply never rebases (it fails as before) — it can never rebase wrongly.
 
+## Clearing a tag "succeeded" and changed nothing — `add` APPENDS to `System.Tags`
+
+- SYMPTOM: **Clear ‹marker›** reported success (pill gone, no failed-write count, Diagnostics logging
+  `field System.Tags updated`) and the tag was still on the item after a reload. Applying a tag
+  worked, so the write path itself was plainly reaching Azure DevOps.
+- DO NOT re-diagnose this as a rev/412 problem: there is no failure to find. ADO answers `HTTP 200`.
+- DO NOT chase the VALUE either. It is right: `withoutWorkItemTag` keeps every other tag and drops
+  only the marker. The first guess — that an empty string does not clear the field — is wrong, and it
+  cannot explain a removal failing while ONE tag is left, which is the case that proves the point.
+- ROOT CAUSE: the patch op. Azure DevOps treats `{ op: "add", path: "/fields/System.Tags" }` as
+  **append**, so writing the shortened list merges it back into the tags already there and removes
+  nothing. Microsoft's own `terraform-provider-azuredevops` says the same: `expandTags(..., Add)` on
+  create, `expandTags(..., Replace)` on update.
+- FIX / RULE: `updateWorkItemFieldInPage` sends `replace` when `baseValue` names a non-empty current
+  value, and `add` only when there is nothing to replace (`replace` needs an existing value).
+- There is NO per-tag operation. `System.Tags` is one semicolon-separated string, so every write
+  rewrites the whole field and `remove` clears ALL tags, not one. Other people's tags are preserved
+  by the VALUE we compute, and protected by the `test /rev` guard plus the `baseValue` rebase check —
+  a concurrent tag edit bumps the rev and is refused rather than overwritten.
+
+## An `@`-mention in a MARKER reason never resolved (it is the comment's FORMAT)
+
+- SYMPTOM: a `[BLOCKED]` comment written from the board showed `@<ca16a18e-…>` instead of the person,
+  in the extension's notes popup AND in ADO's own discussion. `"mentions": []` — nobody notified.
+  A note added under the item, with the same token, resolved perfectly.
+- ROOT CAUSE: a marker reason does not go through the comments API. It rides in the tag patch as
+  `System.History`, which defaults to **HTML**, and Azure DevOps HTML-ENCODES what it is given there.
+- READ THE STORED COMMENT BEFORE THEORISING. `GET .../workItems/{id}/comments?$expand=renderedText`
+  showed the two side by side and settled it in one request:
+  | | marker reason | note under the item |
+  | `format` | `html` | `markdown` |
+  | `text` | `[BLOCKED] &lt;a href=&quot;#&quot; …&gt;@Name&lt;/a&gt;` | `@<guid> …` |
+  | `renderedText` | the same escaped text | `<p><a data-vss-mention=…>` |
+- The `&quot;` is the tell: the extension escapes `& < >` and never quotes, so a quote-escaped value
+  is ADO's own encoding — proof the field rejected the markup rather than that we mangled it.
+- WRONG TURN, DO NOT REPEAT: writing the mention as ADO's rich-text anchor
+  (`<a href="#" data-vss-mention="version:2.0,{guid}">@Name</a>`). An HTML-format comment does not
+  accept it from a patch — ADO encodes the whole anchor and stores it as visible markup.
+- FIX: the patch adds `/multilineFieldsFormat/System.History` = `Markdown` alongside the comment, so
+  it stores in the same format a discussion note does and takes the same `@<guid>` token. No escaping
+  is needed or wanted — a Markdown field stores its source verbatim.
+- Verified against the live org with `?validateOnly=true`, which checks a patch WITHOUT saving it —
+  the safe way to ask ADO whether it accepts an op.
+
+## An editor's text went INVISIBLE: a layer measured while the control was detached
+
+- SYMPTOM: every note and description editor showed an empty box. The text was there — selecting it
+  made it appear (Chromium's `::selection` overrides a transparent colour), which is the giveaway
+  that the field's own glyphs were hidden on purpose and whatever was meant to replace them was not
+  drawing.
+- ROOT CAUSE: a highlight layer laid over the field to colour `@`-mentions took its size from
+  `offsetWidth`/`offsetHeight` and its metrics from `getComputedStyle`. **A `TextEditor` is built
+  DETACHED and mounted by its caller**, so at build time every measurement is 0 and the computed
+  style is empty — the layer was sized to nothing, and `overflow:hidden` did the rest.
+- RULE: a control here may not measure itself while it is being built. Stretch a layer with `inset`
+  and share LITERAL metrics with the field (`FIELD_TEXT_STYLE`) instead of copying computed ones.
+- Do not hide the field's own text either. Painting the glyphs on a layer makes every character
+  depend on that layer landing exactly right; drawing BEHIND the field (a background wash) fails
+  visibly-but-harmlessly instead of hiding everything. Bold is out for the same reason: bold glyphs
+  are wider, so the field would wrap differently from the run painted over it.
+- REPRODUCING THIS WITHOUT THE BROWSER: jsdom has no layout, so no unit test can catch it. A tiny
+  static page that builds the same DOM **detached and appends it afterwards**, served over
+  `http://127.0.0.1` (the browser tool refuses `file:`), reproduces it and proves the fix in one
+  screenshot.
+
 ## "New notes" emptied the board: a STALE service worker, then a half-migrated API
 
 Two independent faults with the identical symptom (pill lights, board goes blank). Both are worth
@@ -379,16 +444,18 @@ outside of its immediate parent.` — every single time, for the same item, with
   Native icons are MONOCHROME (currentColor, white on dark theme); our brand icon stays COLORED so
   it visibly stands out among them — flattening it to monochrome would need a new line-glyph asset.
 - `styleAsInline`: flex:0 0 auto; align-self:center; margin:0 (flush with native buttons). Overlay
-  fallback (`styleAsOverlay`) floats top-right and previously OVERLAPPED the profile avatar when the
-  search box wasn't ready at show() time — menubar placement loads earlier and avoids that. Both
-  placements stay outside `[role="main"]` so they survive Enhanced View blanking.
+  fallback (`styleAsOverlay`) floats top-right and OVERLAPS the profile avatar when the search box
+  is not ready at `show()` time. The observer must therefore promote a still-connected overlay into
+  the navigation/menubar when those anchors appear; watching only for a disconnected button leaves
+  the fallback over the avatar indefinitely. Both placements stay outside `[role="main"]` so they
+  survive Enhanced View blanking.
 - CRITICAL: ADO re-renders its header (framework/Bolt tree) DURING and shortly after load and
   silently DROPS foreign injected nodes. A one-time insertion INTERMITTENTLY disappears ("button
-  does not show up"). Fix = MutationObserver (`keepPlaced`) on `doc.documentElement` {childList,subtree}
-  that re-runs `place(button)` whenever `this.button && !this.button.isConnected`. `hide()` must
-  `observer.disconnect()` FIRST. Verified live: button re-attaches <100ms after removal, survives
-  repeated removals. Tests: `afterEach(button.hide())` to stop observers leaking across tests +
-  `flushMutations = setTimeout(0)` to let MO callbacks run.
+  does not show up"). Fix = MutationObserver (`keepPlaced`) on `doc.documentElement`
+  `{childList,subtree}` that re-runs `place(button)` when the button is disconnected OR when a better
+  late-rendered anchor is available. `hide()` must `observer.disconnect()` FIRST. Tests:
+  `afterEach(button.hide())` to stop observers leaking across tests + `flushMutations = setTimeout(0)`
+  to let MO callbacks run.
 - BUTTON OPENS A POPUP MENU (not a direct options jump). Button shows on ANY single-query route
   (bound OR unbound), hidden elsewhere. Click toggles `src/content/BindingMenu.ts` (transient popup,
   position:fixed, z-index 2147483647, right-edge aligned to button, top=rect.bottom+4). Menu dismiss:

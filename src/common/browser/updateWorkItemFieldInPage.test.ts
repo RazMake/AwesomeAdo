@@ -103,6 +103,49 @@ describe("updateWorkItemFieldInPage", () => {
   });
 });
 
+describe("updateWorkItemFieldInPage - setting a field that already holds a value", () => {
+  it("REPLACES a field it was given the current value of, so a shortened tag list really shrinks", async () => {
+    const fetchMock = vi.fn(() => Promise.resolve(jsonResponse({ rev: 10 })));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    await updateWorkItemFieldInPage({
+      updateUrl: UPDATE_URL,
+      rev: 9,
+      field: "System.Tags",
+      value: "Needs review",
+      baseValue: "Blocked; Needs review",
+    });
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    // `add` APPENDS to System.Tags: Azure DevOps answers the shortened list with a 200 and keeps
+    // every tag, so a cleared marker comes back on the next read.
+    expect(parsePatchBody(init)).toEqual([
+      { op: "test", path: "/rev", value: 9 },
+      { op: "replace", path: "/fields/System.Tags", value: "Needs review" },
+    ]);
+  });
+
+  it("still ADDs when the field has no value to replace yet", async () => {
+    const fetchMock = vi.fn(() => Promise.resolve(jsonResponse({ rev: 11 })));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    await updateWorkItemFieldInPage({
+      updateUrl: UPDATE_URL,
+      rev: 10,
+      field: "System.Tags",
+      value: "Blocked",
+      baseValue: "",
+    });
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(parsePatchBody(init)[1]).toEqual({
+      op: "add",
+      path: "/fields/System.Tags",
+      value: "Blocked",
+    });
+  });
+});
+
 describe("updateWorkItemFieldInPage - what it reports back", () => {
   it("reports rev undefined when the response omits a numeric rev", async () => {
     const fetchMock = vi.fn(() => Promise.resolve(jsonResponse({})));
@@ -168,10 +211,11 @@ describe("updateWorkItemFieldInPage - a comment riding in the same patch", () =>
       { op: "test", path: "/rev", value: 12 },
       { op: "add", path: "/fields/System.Tags", value: "Blocked" },
       { op: "add", path: "/fields/System.History", value: "[BLOCKED] Waiting on the API." },
+      { op: "add", path: "/multilineFieldsFormat/System.History", value: "Markdown" },
     ]);
   });
 
-  it("escapes the comment, because System.History is an HTML field", async () => {
+  it("stores the comment as Markdown, so an @-mention in it reaches the person", async () => {
     const fetchMock = vi.fn(() => Promise.resolve(jsonResponse({ rev: 3 })));
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
@@ -180,16 +224,20 @@ describe("updateWorkItemFieldInPage - a comment riding in the same patch", () =>
       rev: 2,
       field: "System.Tags",
       value: "Blocked",
-      comment: "a < b && b > c\nsecond line",
+      comment: "[BLOCKED] Waiting on @<ca16a18e-f2f0-443a-ba90-f30b29950a3b>.",
     });
 
     const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    // Unescaped, a `<` in someone's reason is swallowed as markup and the rest of the line with it.
-    expect(parsePatchBody(init)[2]).toEqual({
-      op: "add",
-      path: "/fields/System.History",
-      value: "a &lt; b &amp;&amp; b &gt; c<br>second line",
-    });
+    // Left on the field's default HTML, ADO stores the comment HTML-ENCODED and the reader sees
+    // markup where a name belongs; as Markdown the token resolves exactly as it does in a note.
+    expect(parsePatchBody(init).slice(2)).toEqual([
+      {
+        op: "add",
+        path: "/fields/System.History",
+        value: "[BLOCKED] Waiting on @<ca16a18e-f2f0-443a-ba90-f30b29950a3b>.",
+      },
+      { op: "add", path: "/multilineFieldsFormat/System.History", value: "Markdown" },
+    ]);
   });
 
   it("adds no comment op when none was given", async () => {

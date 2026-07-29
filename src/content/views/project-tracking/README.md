@@ -107,7 +107,9 @@ halves of the view — its configuration and its renderer.
     their children. Each row shows twisty (when it has child rows), editable Status badge,
     description toggle ("?" button), type icon (the notes toggle), title
     (type-colored), Assigned To control (with the assignee's Feature
-    Crew **tag pill**), sprint pill (when filter
+    Crew **tag pill**), an amber **Blocked (internal)** pill and/or red **Blocked by another team**
+    pill when the item carries those configured tags (click one to read the notes that say why — see
+    [`marker-reasons`](./marker-reasons/README.md)), sprint pill (when filter
     OFF — shown only for items on a real, leaf iteration; an item parked on the iteration root shows
     no pill), and ETA badge (right-aligned; editable — click to pick a date or clear it when the
     item's type has an ETA field configured). Clicking the twisty expands/collapses that node's children.

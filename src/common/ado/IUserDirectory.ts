@@ -2,6 +2,8 @@
  * A directory user (from an ADO team member roster or an identity search).
  */
 export interface DirectoryUser {
+  /** The local ADO identity GUID, when the picker supplied one; required for an `@` reference. */
+  id?: string | null;
   displayName: string;
   uniqueName: string | null;
   imageUrl: string | null;

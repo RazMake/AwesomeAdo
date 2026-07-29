@@ -19,6 +19,20 @@ function requestsFor(count: number): { workItemId: number; url: string }[] {
   }));
 }
 
+/** The single serializable config object passed through executeScript. */
+function configFor(
+  count: number,
+  overrides: Partial<Parameters<typeof fetchNoteActivityInPage>[0]> = {},
+): Parameters<typeof fetchNoteActivityInPage>[0] {
+  return {
+    requests: requestsFor(count),
+    concurrency: 6,
+    excludedPrefixes: [],
+    maxPages: 10,
+    ...overrides,
+  };
+}
+
 /** A response whose body is read as text, exactly as the fetcher reads it. */
 function jsonResponse(body: unknown, ok = true, status = ok ? 200 : 500): Response {
   return { ok, status, text: () => Promise.resolve(JSON.stringify(body)) } as unknown as Response;
@@ -53,7 +67,7 @@ describe("fetchNoteActivityInPage — what it reads", () => {
     );
     globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
 
-    const result = await fetchNoteActivityInPage(requestsFor(2), 6);
+    const result = await fetchNoteActivityInPage(configFor(2));
 
     expect(result.newest).toEqual([
       { workItemId: 1, newestNoteDate: "2026-07-24T09:00:00Z" },
@@ -68,7 +82,7 @@ describe("fetchNoteActivityInPage — what it reads", () => {
       Promise.resolve(jsonResponse({ comments: [] })),
     ) as unknown as typeof globalThis.fetch;
 
-    const result = await fetchNoteActivityInPage(requestsFor(1), 6);
+    const result = await fetchNoteActivityInPage(configFor(1));
 
     expect(result.newest).toEqual([{ workItemId: 1, newestNoteDate: null }]);
     expect(result.failedIds).toEqual([]);
@@ -78,7 +92,7 @@ describe("fetchNoteActivityInPage — what it reads", () => {
     const fetchMock = vi.fn();
     globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
 
-    const result = await fetchNoteActivityInPage([], 6);
+    const result = await fetchNoteActivityInPage(configFor(0));
 
     expect(fetchMock).not.toHaveBeenCalled();
     expect(result).toEqual({ newest: [], failedIds: [], failure: "none", status: 0 });
@@ -99,7 +113,7 @@ describe("fetchNoteActivityInPage — what it reads", () => {
       });
     }) as unknown as typeof globalThis.fetch;
 
-    const pending = fetchNoteActivityInPage(requestsFor(10), 3);
+    const pending = fetchNoteActivityInPage(configFor(10, { concurrency: 3 }));
     await Promise.resolve();
     expect(peak).toBe(3);
 
@@ -117,6 +131,49 @@ describe("fetchNoteActivityInPage — what it reads", () => {
   });
 });
 
+describe("fetchNoteActivityInPage — marker-comment paging", () => {
+  it("skips marker-prefixed comments and keeps paging to the newest ordinary note", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          comments: [{ text: "[BLOCKED] Waiting", createdDate: "2026-07-24T09:00:00Z" }],
+          continuationToken: "next page",
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          comments: [{ text: "Planning update", createdDate: "2026-07-23T09:00:00Z" }],
+        }),
+      );
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+
+    const result = await fetchNoteActivityInPage(configFor(1, { excludedPrefixes: ["[BLOCKED]"] }));
+
+    expect(result.newest).toEqual([{ workItemId: 1, newestNoteDate: "2026-07-23T09:00:00Z" }]);
+    expect(fetchMock.mock.calls[1]?.[0]).toContain("continuationToken=next%20page");
+  });
+
+  it("reports an incomplete answer when the page guard is reached", async () => {
+    globalThis.fetch = vi.fn(() =>
+      Promise.resolve(
+        jsonResponse({
+          comments: [{ text: "[BLOCKED] Waiting", createdDate: "2026-07-24T09:00:00Z" }],
+          continuationToken: "more",
+        }),
+      ),
+    ) as unknown as typeof globalThis.fetch;
+
+    const result = await fetchNoteActivityInPage(
+      configFor(1, { excludedPrefixes: ["[BLOCKED]"], maxPages: 1 }),
+    );
+
+    expect(result.newest).toEqual([]);
+    expect(result.failedIds).toEqual([1]);
+    expect(result.failure).toBe("limit");
+  });
+});
+
 describe("fetchNoteActivityInPage — what it does when a read fails", () => {
   it("keeps the items that were read when one of them fails", async () => {
     globalThis.fetch = vi.fn((url: string) =>
@@ -125,7 +182,7 @@ describe("fetchNoteActivityInPage — what it does when a read fails", () => {
       ),
     ) as unknown as typeof globalThis.fetch;
 
-    const result = await fetchNoteActivityInPage(requestsFor(2), 6);
+    const result = await fetchNoteActivityInPage(configFor(2));
 
     // A partial answer still narrows the board correctly; the lost item is simply never claimed.
     expect(result.newest).toEqual([{ workItemId: 2, newestNoteDate: "2026-07-24T09:00:00Z" }]);
@@ -139,7 +196,7 @@ describe("fetchNoteActivityInPage — what it does when a read fails", () => {
       Promise.resolve(signInPageResponse()),
     ) as unknown as typeof globalThis.fetch;
 
-    const result = await fetchNoteActivityInPage(requestsFor(1), 6);
+    const result = await fetchNoteActivityInPage(configFor(1));
 
     expect(result.failure).toBe("sign-in");
     expect(result.newest).toEqual([]);
@@ -150,7 +207,7 @@ describe("fetchNoteActivityInPage — what it does when a read fails", () => {
       Promise.reject(new Error("offline")),
     ) as unknown as typeof globalThis.fetch;
 
-    const result = await fetchNoteActivityInPage(requestsFor(1), 6);
+    const result = await fetchNoteActivityInPage(configFor(1));
 
     expect(result.failure).toBe("network");
     expect(result.status).toBe(0);
@@ -164,7 +221,7 @@ describe("fetchNoteActivityInPage — what it does when a read fails", () => {
       return Promise.resolve(call === 1 ? jsonResponse(null, false, 401) : signInPageResponse());
     }) as unknown as typeof globalThis.fetch;
 
-    const result = await fetchNoteActivityInPage(requestsFor(2), 1);
+    const result = await fetchNoteActivityInPage(configFor(2, { concurrency: 1 }));
 
     expect(result.failure).toBe("http");
     expect(result.status).toBe(401);

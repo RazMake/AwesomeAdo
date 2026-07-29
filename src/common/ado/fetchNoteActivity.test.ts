@@ -1,17 +1,20 @@
 import { describe, expect, it } from "vitest";
 
-import { buildNewestNoteUrl, parseNewestNoteDate } from "./fetchNoteActivity";
+import {
+  buildNewestNoteUrl,
+  NOTE_ACTIVITY_PAGE_SIZE,
+  parseNewestNoteDate,
+} from "./fetchNoteActivity";
 
 const ADO_HREF = "https://dev.azure.com/contoso/MyProject/_queries/query/abc";
 
 describe("buildNewestNoteUrl", () => {
-  it("asks for the newest comment only, without ADO's rendering of it", () => {
+  it("asks for one newest-first source page without ADO's rendering", () => {
     const url = buildNewestNoteUrl(ADO_HREF, 42);
 
     expect(url).toContain("/contoso/MyProject/_apis/wit/workItems/42/comments");
-    // The board wants a DATE: one comment, newest first, and none of the rendered HTML the notes
-    // panel needs.
-    expect(url).toContain("$top=1");
+    // Source text identifies marker-generated notes; rendered HTML would only add payload.
+    expect(url).toContain(`$top=${NOTE_ACTIVITY_PAGE_SIZE}`);
     expect(url).toContain("order=desc");
     expect(url).not.toContain("$expand");
   });

@@ -1,8 +1,11 @@
 import { MAX_NOTE_LENGTH } from "../../../../common/ado/WorkItemNote";
+import type { TextEditorMentionOptions } from "../../../../common/view-common/control/TextEditor/MentionSuggestions";
 import { renderTextEditor } from "../../../../common/view-common/control/TextEditor/TextEditor";
 
 /** What the composer posts and what it does afterwards. */
 export interface NoteComposerOptions {
+  /** Identity search used by the editor's typed `@` suggestions. */
+  mentions: TextEditorMentionOptions;
   /**
    * Post the typed text. Resolving `true` closes the composer (the panel then re-renders with the
    * new note); `false` leaves it open with the author's words intact.
@@ -47,6 +50,7 @@ export function renderNoteComposer(doc: Document, options: NoteComposerOptions):
         initialText: "",
         submitLabel: "Add",
         maxLength: MAX_NOTE_LENGTH,
+        mentions: options.mentions,
         // The composer closes ITSELF on success. The panel only rebuilds its list, so leaving that
         // to the caller would strand the author looking at a spent editor still holding the note
         // they had just posted — which reads as "it did not save" and invites a second one.

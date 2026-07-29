@@ -39,6 +39,7 @@ export class MessagingNoteActivityReader implements INoteActivityReader {
     const message: ReadNoteActivityMessage = {
       type: READ_NOTE_ACTIVITY_MESSAGE,
       workItemIds: request.workItemIds,
+      excludedPrefixes: request.excludedPrefixes,
     };
 
     try {

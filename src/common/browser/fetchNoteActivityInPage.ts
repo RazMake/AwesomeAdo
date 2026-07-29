@@ -20,10 +20,15 @@ import type { RawNoteActivity } from "./NoteActivityRequest";
  * A failed item is reported in `failedIds` rather than as a null date, so the caller can keep
  * "nobody commented" and "nobody could find out" apart.
  */
-export function fetchNoteActivityInPage(
-  requests: { workItemId: number; url: string }[],
-  concurrency: number,
-): Promise<RawNoteActivity> {
+export interface FetchNoteActivityConfig {
+  requests: { workItemId: number; url: string }[];
+  concurrency: number;
+  excludedPrefixes: string[];
+  maxPages: number;
+}
+
+export function fetchNoteActivityInPage(config: FetchNoteActivityConfig): Promise<RawNoteActivity> {
+  const { requests, concurrency, excludedPrefixes, maxPages } = config;
   const result: RawNoteActivity = { newest: [], failedIds: [], failure: "none", status: 0 };
   let next = 0;
 
@@ -46,54 +51,73 @@ export function fetchNoteActivityInPage(
     }
   };
 
-  const readOne = (entry: { workItemId: number; url: string }): Promise<void> =>
-    fetch(entry.url, init)
-      .then((response) =>
-        // Read as text first: the parse itself is what distinguishes a real answer from a sign-in
-        // page served with a 200.
-        response.text().then((text) => {
-          if (!response.ok) {
-            fail(entry.workItemId, "http", response.status);
-            return;
-          }
-          let body: unknown;
-          try {
-            body = JSON.parse(text);
-          } catch {
-            fail(entry.workItemId, "sign-in", response.status);
-            return;
-          }
-          const comments = (body as { comments?: unknown } | null)?.comments;
-          const first = Array.isArray(comments)
-            ? (comments[0] as { createdDate?: unknown } | undefined)
-            : undefined;
-          const created = first === undefined ? undefined : first.createdDate;
-          result.newest.push({
-            workItemId: entry.workItemId,
-            newestNoteDate: typeof created === "string" ? created : null,
-          });
-        }),
-      )
-      .catch(() => {
-        fail(entry.workItemId, "network", 0);
-      });
+  const readOne = (entry: { workItemId: number; url: string }): Promise<void> => {
+    const readPage = (url: string, pagesLeft: number): Promise<string | null | undefined> =>
+      fetch(url, init)
+        .then((response) =>
+          // Read as text first: the parse itself is what distinguishes a real answer from a sign-in
+          // page served with a 200.
+          response.text().then((text) => {
+            if (!response.ok) {
+              fail(entry.workItemId, "http", response.status);
+              return undefined;
+            }
+            let body: unknown;
+            try {
+              body = JSON.parse(text);
+            } catch {
+              fail(entry.workItemId, "sign-in", response.status);
+              return undefined;
+            }
+            const comments = (body as { comments?: unknown } | null)?.comments;
+            if (!Array.isArray(comments)) {
+              return null;
+            }
+            const newest = comments.find((raw) => {
+              const comment = raw as { text?: unknown; createdDate?: unknown };
+              const text = typeof comment.text === "string" ? comment.text : "";
+              return (
+                typeof comment.createdDate === "string" &&
+                !isNaN(Date.parse(comment.createdDate)) &&
+                !excludedPrefixes.some((prefix) => text.startsWith(prefix))
+              );
+            }) as { createdDate: string } | undefined;
+            if (newest !== undefined) {
+              return newest.createdDate;
+            }
+            const token = (body as { continuationToken?: unknown }).continuationToken;
+            if (typeof token !== "string" || token.length === 0) {
+              return null;
+            }
+            if (pagesLeft <= 1) {
+              fail(entry.workItemId, "limit", 0);
+              return undefined;
+            }
+            return readPage(
+              entry.url + "&continuationToken=" + encodeURIComponent(token),
+              pagesLeft - 1,
+            );
+          }),
+        )
+        .catch(() => {
+          fail(entry.workItemId, "network", 0);
+          return undefined;
+        });
+
+    return readPage(entry.url, maxPages > 0 ? maxPages : 1).then((newestNoteDate) => {
+      if (newestNoteDate !== undefined) {
+        result.newest.push({ workItemId: entry.workItemId, newestNoteDate });
+      }
+    });
+  };
 
   // A worker pool rather than one `Promise.all` over everything: browsers cap concurrent same-origin
   // requests anyway, and releasing a whole board at once would queue the board's own writes and note
   // panels behind this read.
-  const pump = (): Promise<void> => {
-    if (next >= requests.length) {
-      return Promise.resolve();
-    }
-    const entry = requests[next];
-    next++;
-    return entry === undefined ? Promise.resolve() : readOne(entry).then(pump);
-  };
+  const pump = (): Promise<void> =>
+    next >= requests.length ? Promise.resolve() : readOne(requests[next++]!).then(pump);
 
-  const lanes: Promise<void>[] = [];
-  const width = concurrency > 0 ? concurrency : 1;
-  for (let lane = 0; lane < width && lane < requests.length; lane++) {
-    lanes.push(pump());
-  }
+  const width = Math.min(requests.length, Math.max(1, concurrency));
+  const lanes = Array.from({ length: width }, () => pump());
   return Promise.all(lanes).then(() => result);
 }

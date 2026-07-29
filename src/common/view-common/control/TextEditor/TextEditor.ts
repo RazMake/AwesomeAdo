@@ -1,3 +1,11 @@
+import { createMentionHighlight, type MentionHighlight } from "./MentionHighlight";
+import {
+  createMentionSuggestions,
+  type MentionSuggestions,
+  type TextEditorMentionOptions,
+} from "./MentionSuggestions";
+import { FIELD_TEXT_STYLE } from "./fieldMetrics";
+
 /** What the editor starts with, how it is shaped, and what it does with what the author types. */
 export interface TextEditorOptions {
   /** The text the editor opens on: empty for a new value, the existing source for a correction. */
@@ -19,6 +27,8 @@ export interface TextEditorOptions {
   rows?: number;
   /** The field's hint text; omitted uses the hint that matches the shape. */
   placeholder?: string;
+  /** Enables typed `@` identity suggestions for a Markdown field. Ignored for a one-line field. */
+  mentions?: TextEditorMentionOptions;
   /**
    * Whether submitting nothing is meaningful. False (the default) makes the empty field inert, which
    * is right for a value that must exist; true lets an author CLEAR one that need not.
@@ -58,6 +68,12 @@ export function renderTextEditor(doc: Document, options: TextEditorOptions): HTM
 
   const singleLine = options.singleLine === true;
   const input = createField(doc, options, singleLine);
+  const fieldShell = doc.createElement("div");
+  fieldShell.style.cssText = "position:relative";
+  fieldShell.append(input);
+  const mentions = createMentionSupport(doc, fieldShell, input, options, singleLine);
+  const mentionSuggestions = mentions?.suggestions ?? null;
+  const mentionHighlight = mentions?.highlight ?? null;
 
   const failure = doc.createElement("span");
   failure.className = "awesomeado-text-editor__error";
@@ -69,18 +85,21 @@ export function renderTextEditor(doc: Document, options: TextEditorOptions): HTM
   buttons.style.cssText = ["display:flex", "gap:6px", "align-items:center"].join(";");
   buttons.append(submit, cancel, failure);
 
-  root.append(input, buttons);
+  root.append(fieldShell, buttons);
 
   let saving = false;
   const save = (): void => {
-    const text = input.value.trim();
-    if (saving || (text.length === 0 && options.allowEmpty !== true)) {
+    const typed = input.value.trim();
+    if (saving || (typed.length === 0 && options.allowEmpty !== true)) {
       return;
     }
     saving = true;
     submit.disabled = true;
     cancel.disabled = true;
     failure.style.display = "none";
+    // The box shows each mention as the person's NAME; what ADO stores has to be the identity
+    // reference behind it, so the two are swapped back at the moment of saving.
+    const text = mentionSuggestions?.toStoredText(typed) ?? typed;
     void options.onSubmit(text).then((saved) => {
       saving = false;
       if (saved) {
@@ -100,6 +119,14 @@ export function renderTextEditor(doc: Document, options: TextEditorOptions): HTM
   // Typed through `HTMLElement` because a `<input> | <textarea>` union collapses `addEventListener`
   // onto its bare-`Event` overload, which knows nothing about keys.
   (input as HTMLElement).addEventListener("keydown", (event) => {
+    if (mentionSuggestions?.handleKeydown(event) === true) {
+      event.stopPropagation();
+      return;
+    }
+    if (!singleLine && applyMarkdownShortcut(event, input)) {
+      event.stopPropagation();
+      return;
+    }
     // A bare Enter commits a one-line field (there is no newline to insert) but must not commit a
     // Markdown box, where it is how paragraphs are written.
     if (event.key === "Enter" && (singleLine || event.ctrlKey || event.metaKey)) {
@@ -112,11 +139,108 @@ export function renderTextEditor(doc: Document, options: TextEditorOptions): HTM
     // Typing inside an enhanced view must never reach ADO's page shortcuts underneath it.
     event.stopPropagation();
   });
+  if (!singleLine) {
+    (input as HTMLTextAreaElement).addEventListener("paste", (event) =>
+      pasteMarkdownLink(event, input),
+    );
+    input.addEventListener("input", () => {
+      mentionSuggestions?.refresh();
+      mentionHighlight?.refresh();
+    });
+  }
 
   // Deferred so the element is in the document before it is asked to take focus.
   setTimeout(() => input.focus(), 0);
 
   return root;
+}
+
+/**
+ * The mention list and the layer that paints what it inserted, for a field that offers mentions.
+ *
+ * Null for a one-line field (a title has no mentions) and for a caller that asked for none. The
+ * field's text is switched to the DISPLAY form here, before anything else reads it: what an author
+ * gets back to edit has to be the people they wrote, not the identity ids stored behind them.
+ */
+function createMentionSupport(
+  doc: Document,
+  fieldShell: HTMLElement,
+  input: HTMLInputElement | HTMLTextAreaElement,
+  options: TextEditorOptions,
+  singleLine: boolean,
+): { suggestions: MentionSuggestions; highlight: MentionHighlight } | null {
+  if (singleLine || options.mentions === undefined) {
+    return null;
+  }
+  const field = input as HTMLTextAreaElement;
+  const suggestions = createMentionSuggestions(doc, fieldShell, field, options.mentions);
+  field.value = suggestions.toDisplayText(options.initialText);
+  const highlight = createMentionHighlight({
+    doc,
+    shell: fieldShell,
+    input: field,
+    labels: () => suggestions.labels(),
+  });
+  return { suggestions, highlight };
+}
+
+/** Apply the Markdown shortcut represented by `event`, when it is one this editor owns. */
+function applyMarkdownShortcut(
+  event: KeyboardEvent,
+  input: HTMLInputElement | HTMLTextAreaElement,
+): boolean {
+  if ((!event.ctrlKey && !event.metaKey) || event.altKey) {
+    return false;
+  }
+  const marker =
+    event.key.toLowerCase() === "b" ? "**" : event.key.toLowerCase() === "i" ? "_" : null;
+  if (marker === null) {
+    return false;
+  }
+  event.preventDefault();
+  wrapSelection(input, marker);
+  return true;
+}
+
+/** Wrap the current selection, leaving the selected text selected and an empty caret between markers. */
+function wrapSelection(input: HTMLInputElement | HTMLTextAreaElement, marker: string): void {
+  const start = input.selectionStart ?? input.value.length;
+  const end = input.selectionEnd ?? start;
+  const selected = input.value.slice(start, end);
+  input.setRangeText(`${marker}${selected}${marker}`, start, end);
+  input.setSelectionRange(start + marker.length, start + marker.length + selected.length);
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+/** Turn a pasted HTTP(S) URL into an empty Markdown link whose label is ready to type. */
+function pasteMarkdownLink(
+  event: ClipboardEvent,
+  input: HTMLInputElement | HTMLTextAreaElement,
+): void {
+  const link = pastedHttpUrl(event);
+  if (link === null) {
+    return;
+  }
+  event.preventDefault();
+  const start = input.selectionStart ?? input.value.length;
+  const end = input.selectionEnd ?? start;
+  input.setRangeText(`[](${link})`, start, end);
+  input.setSelectionRange(start + 1, start + 1);
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+/** The clipboard's URL when it contains only one HTTP(S) link; otherwise leave native paste alone. */
+function pastedHttpUrl(event: ClipboardEvent): string | null {
+  const text = event.clipboardData?.getData("text/plain").trim();
+  if (text === undefined || text.length === 0) {
+    return null;
+  }
+  try {
+    const parsed = new URL(text);
+    return parsed.protocol === "http:" || parsed.protocol === "https:" ? text : null;
+  } catch {
+    return null;
+  }
 }
 
 /** The field itself: a one-line `input` or the multi-line Markdown `textarea`. */
@@ -129,11 +253,8 @@ function createField(
   // Follow-ADO alike, with a fixed fallback for the tokens a theme may not define.
   const styles = [
     "width:100%",
-    "box-sizing:border-box",
-    "font:inherit",
-    "font-size:11px",
-    "padding:4px 6px",
-    "border:1px solid var(--palette-neutral-20, rgba(128,128,128,0.45))",
+    ...FIELD_TEXT_STYLE,
+    "border-color:var(--palette-neutral-20, rgba(128,128,128,0.45))",
     "border-radius:3px",
     "background:var(--callout-background-color, rgba(128,128,128,0.08))",
     "color:var(--text-primary-color, #323130)",

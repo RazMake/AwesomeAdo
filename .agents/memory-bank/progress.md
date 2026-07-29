@@ -18,6 +18,9 @@ This is a flattened snapshot of what exists now, not a build log.
   `ENHANCED_VIEWS` registry), a shared placeholder shell (`renderViewScaffold`), and `sprint` /
   `project-tracking` views. Options imports only `content/views/viewCatalog` (scoped §6 exception,
   ADR-027, lint-enforced).
+- **Markdown authoring** (`common/view-common/control/TextEditor`): shared bold/italic/link shortcuts
+  and keyboard-driven ADO `@`-mention insertion across note/comment and description editors; inline
+  notes and New notes activity omit configured marker-comment prefixes while View all stays complete.
 - **Settings transfer** (`src/common/settings-transfer` + `src/options/settings-transfer`):
   `AwesomeADO.config` export/import of the whole configuration, wired to the Appearance tab.
 - **Navigation** (`src/common/navigation`): `AdoHost` single-source host matching, query-route and

@@ -4,7 +4,11 @@ import { MAX_NOTE_ACTIVITY_ITEMS } from "../ado/fetchNoteActivity";
 
 import { READ_NOTE_ACTIVITY_MESSAGE, readNoteActivityMessageProblem } from "./NoteActivityRequest";
 
-const valid = { type: READ_NOTE_ACTIVITY_MESSAGE, workItemIds: [1, 2, 3] };
+const valid = {
+  type: READ_NOTE_ACTIVITY_MESSAGE,
+  workItemIds: [1, 2, 3],
+  excludedPrefixes: ["[BLOCKED]"],
+};
 
 describe("readNoteActivityMessageProblem", () => {
   it("accepts a well-formed request", () => {
@@ -36,5 +40,12 @@ describe("readNoteActivityMessageProblem", () => {
     const tooMany = Array.from({ length: MAX_NOTE_ACTIVITY_ITEMS + 1 }, (_, index) => index + 1);
 
     expect(readNoteActivityMessageProblem({ ...valid, workItemIds: tooMany })).toContain("ceiling");
+  });
+
+  it("refuses malformed or unbounded exclusion prefixes", () => {
+    expect(readNoteActivityMessageProblem({ ...valid, excludedPrefixes: "[BLOCKED]" })).toContain(
+      "excludedPrefixes",
+    );
+    expect(readNoteActivityMessageProblem({ ...valid, excludedPrefixes: [""] })).toContain("empty");
   });
 });

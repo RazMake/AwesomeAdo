@@ -119,11 +119,24 @@ export class BindingButton {
   private keepPlaced(): void {
     this.observer?.disconnect();
     this.observer = new MutationObserver(() => {
-      if (this.button && !this.button.isConnected) {
+      if (this.button && this.needsPlacement(this.button)) {
         this.place(this.button);
       }
     });
     this.observer.observe(this.doc.documentElement, { childList: true, subtree: true });
+  }
+
+  private needsPlacement(button: HTMLButtonElement): boolean {
+    if (!button.isConnected) {
+      return true;
+    }
+    const menubar = this.findMenubar();
+    if (menubar) {
+      return button.parentElement !== menubar;
+    }
+    // The controller can show the button before ADO paints its header. Promote that temporary
+    // overlay as soon as Search appears instead of leaving it over the profile avatar indefinitely.
+    return button.style.position === "fixed" && this.findSearchBox() !== null;
   }
 
   // Mirror ADO's own top-bar buttons, which light up with a subtle background on hover. The button

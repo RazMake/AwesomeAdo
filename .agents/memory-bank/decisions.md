@@ -904,3 +904,24 @@ nodeMatchesChange`). Copied here, that makes an activity pill drag in items belo
 - Consequence: `resolveAdoIdentityServiceBase` is replaced by `resolveAdoOrganizationBase`, and the
   in-page reader's outcome is merged in **id order** rather than completion order so a pooled read
   still produces a deterministic diagnostics line.
+
+## ADR-051: Shared Markdown authoring and marker-note visibility
+
+- Decision: `common/view-common/control/TextEditor` owns Markdown authoring behavior for every
+  multi-line note/comment and description edit: Ctrl/Cmd+B and Ctrl/Cmd+I wrap the selection, an
+  HTTP(S)-only paste becomes an empty Markdown link, and an optional injected `IUserDirectory` opens
+  a no-input `@` suggestion list. Enter stores the selected person as ADO's `@<localId>` token;
+  `DirectoryUser.id` therefore preserves the picker's local identity GUID when one exists. Titles
+  remain one-line and do not enable these behaviors.
+- Rationale: authoring behavior repeated at note-add, note-edit, marker-reason, and description call
+  sites would drift. One shared control makes the key handling, caret placement, directory search,
+  reference format, save state, and diagnostics boundary identical everywhere.
+- Decision: a discussion entry whose source text starts with any non-empty configured Marker Tags
+  `commentTag` is operational marker history, not a reader-authored note for the board's glance or
+  **New notes** signal. Inline panels remove those entries before selecting their two recent days;
+  the explicit **View all notes** surface bypasses the removal and remains a complete discussion.
+- Consequence: `INoteActivityReader` carries bounded `excludedPrefixes`. Its MAIN-world reader asks
+  for newest-first source pages and follows ADO continuation tokens until it finds the newest
+  non-marker comment. Hitting `MAX_NOTE_ACTIVITY_PAGES` is reported as incomplete, never as an
+  authoritative null date. URLs remain worker-built from the sender tab; prefixes cannot widen the
+  closed operation.

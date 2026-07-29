@@ -168,6 +168,27 @@ describe("BindingButton - interaction", () => {
 });
 
 describe("BindingButton - persistence", () => {
+  it("moves an early overlay into the command menubar when the header appears", async () => {
+    button.show(vi.fn());
+    const injected = document.querySelector<HTMLButtonElement>("#awesomeado-enhance-button");
+    expect(injected?.style.position).toBe("fixed");
+
+    const row = document.createElement("div");
+    const nav = document.createElement("div");
+    nav.setAttribute("role", "navigation");
+    const searchBox = document.createElement("div");
+    searchBox.setAttribute("role", "search");
+    nav.append(searchBox);
+    const menubar = document.createElement("div");
+    menubar.className = "region-header-menubar";
+    row.append(nav, menubar);
+    document.body.append(row);
+    await flushMutations();
+
+    expect(menubar.firstElementChild).toBe(injected);
+    expect(injected?.style.position).not.toBe("fixed");
+  });
+
   it("re-attaches itself when Azure DevOps removes it from the DOM", async () => {
     const onClick = vi.fn();
     button.show(onClick);

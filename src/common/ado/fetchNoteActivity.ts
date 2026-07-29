@@ -4,10 +4,9 @@ import { buildWorkItemCommentsUrl } from "./fetchWorkItemNotes";
 /**
  * Building and parsing the "when was this last commented on?" read.
  *
- * The request is deliberately the smallest one Azure DevOps will answer: the newest comment only
- * (`$top=1&order=desc`), with no `$expand=renderedText`. The board is asking about a TIMESTAMP, and
- * the notes panel's request — up to 200 comments with ADO's HTML rendering of each — costs orders of
- * magnitude more bytes to carry the same one date.
+ * The request carries one page of source comments, newest first, without `$expand=renderedText`.
+ * Source text is needed only to skip marker-generated notes; paging continues only when every entry
+ * seen so far was excluded, so the common case remains one small request.
  */
 
 /**
@@ -19,6 +18,16 @@ import { buildWorkItemCommentsUrl } from "./fetchWorkItemNotes";
  */
 export const MAX_NOTE_ACTIVITY_ITEMS = 500;
 
+/** The comments requested at once while looking for the newest non-marker note. */
+export const NOTE_ACTIVITY_PAGE_SIZE = 200;
+
+/** A runaway guard for a discussion made entirely of marker-generated notes. */
+export const MAX_NOTE_ACTIVITY_PAGES = 10;
+
+/** Bounds on content-supplied exclusion prefixes before they enter the credentialed page read. */
+export const MAX_NOTE_ACTIVITY_PREFIXES = 20;
+export const MAX_NOTE_ACTIVITY_PREFIX_LENGTH = 200;
+
 /**
  * The URL one item's newest comment is read through, or null when `href` is not a project-scoped ADO
  * location.
@@ -27,7 +36,7 @@ export function buildNewestNoteUrl(href: string, workItemId: number): string | n
   return buildWorkItemCommentsUrl(
     href,
     workItemId,
-    `?api-version=${ADO_COMMENTS_API_VERSION}&$top=1&order=desc`,
+    `?api-version=${ADO_COMMENTS_API_VERSION}&$top=${NOTE_ACTIVITY_PAGE_SIZE}&order=desc`,
   );
 }
 

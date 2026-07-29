@@ -36,7 +36,19 @@ function renderRow(
   mentionNames: ReadonlyMap<string, string> = new Map(),
 ) {
   const onEdit = vi.fn(() => Promise.resolve(true));
-  const row = renderNoteRow(document, { note, currentUser, mentionNames, onEdit });
+  const row = renderNoteRow(document, {
+    note,
+    currentUser,
+    mentionNames,
+    mentions: {
+      userDirectory: {
+        search: vi.fn(() => Promise.resolve([])),
+        resolve: vi.fn(() => Promise.resolve(null)),
+      },
+      logger: { info: vi.fn(), error: vi.fn() },
+    },
+    onEdit,
+  });
   return { row, onEdit };
 }
 

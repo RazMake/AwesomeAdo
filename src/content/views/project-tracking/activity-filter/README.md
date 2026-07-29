@@ -36,6 +36,10 @@ worker, an injected MAIN-world script, two credentialed fetches), which drives e
 - **Recorded as the newest note's timestamp, not a yes/no.** A boolean would rot as the rolling
   window slides forward; a timestamp is re-tested against the current window on every repaint, so an
   item ages out of "newly commented" without being re-read.
+- **Marker-generated notes do not count.** The index passes every non-empty Marker Tags `commentTag`
+  as an excluded prefix. The page read requests comments newest-first and follows continuation pages
+  until it finds the newest ordinary note. Reaching the page guard is an incomplete read, never a
+  false claim that the discussion has no relevant activity.
 - While reads are in flight the pill shows `New notes…` (`aria-busy`) and the criterion is **not**
   applied — the board narrows once, when the answer is complete, instead of emptying and
   repopulating. A refresh keeps its spinner up until these reads land too, so the cost is paid inside
@@ -66,7 +70,7 @@ wrap independently of the rest of the row instead of flowing as one line.
 - **`matchesRecentActivity(item, criteria): boolean`** — the OR across the lit pills.
 - **`activityFilterInForce(selected, notesPending)`** — the pills that may actually narrow right now.
 
-### `new RecentNotesIndex(reader, logger)`
+### `new RecentNotesIndex(reader, logger, excludedPrefixes?)`
 
 - **`ensureProbed(root)`** — idempotent; reads the newest-comment date of any item under `root`
   whose answer is missing or whose comment count has moved since it was read. A no-op while a read
