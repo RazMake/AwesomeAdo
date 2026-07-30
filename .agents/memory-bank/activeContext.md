@@ -165,7 +165,7 @@ The extension is feature-complete for its current scope:
   (all settings + every binding) to/from an `AwesomeADO.config` file; `src/options/settings-transfer`
   wires it to the Appearance tab's Import/Export controls. Import replaces bindings wholesale via
   `IQueryBindingStore.replaceAll`.
-- Options page: Appearance (theme + default view + import/export), Azure DevOps config, Query
+- Options page: Appearance (Dark/Light/Blue theme, Follow ADO dark/light resolution, default view + import/export), Azure DevOps config, Query
   Bindings manager, Diagnostics.
 - SPA-aware navigation via the background service worker.
 - Device-local, source-tagged diagnostics log (`src/common/logging`): every line carries the

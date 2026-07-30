@@ -5,47 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>AwesomeADO options</title>
     <style>
-      /* Theme palettes. The controller sets <html data-theme="light|dark|blue">; the page defaults
-         to dark so it never flashes an unstyled state before settings load. */
-      :root,
-      [data-theme="dark"] {
-        color-scheme: dark;
-        --bg: #1b1b1c;
-        --surface: #252526;
-        --surface-hover: #2d2d2f;
-        --text: #e6e6e6;
-        --text-muted: #9d9d9d;
-        --border: #3a3a3c;
-        --accent: #3794ff;
-        --accent-contrast: #ffffff;
-        /* Yellow shifts per theme so the empty-state notice stays legible on each background. */
-        --warning: #e5c07b;
-      }
-      [data-theme="light"] {
-        color-scheme: light;
-        --bg: #f3f3f3;
-        --surface: #ffffff;
-        --surface-hover: #f0f6ff;
-        --text: #1f1f1f;
-        --text-muted: #616161;
-        --border: #e0e0e0;
-        --accent: #0067b8;
-        --accent-contrast: #ffffff;
-        --warning: #8a6d00;
-      }
-      [data-theme="blue"] {
-        color-scheme: light;
-        --bg: #eef4fb;
-        --surface: #ffffff;
-        --surface-hover: #dcecfb;
-        --text: #10233b;
-        --text-muted: #4a5b70;
-        --border: #cfe0f4;
-        --accent: #005a9e;
-        --accent-contrast: #ffffff;
-        --warning: #8a6d00;
-      }
-
       * {
         box-sizing: border-box;
       }
@@ -143,7 +102,7 @@
          line the reader has already learned to skim as "done" — so the colour is what makes it
          land. Same red as the page-level .status and .banner--error. */
       .card__hint--error {
-        color: #e06c75;
+        color: var(--error);
       }
       .field {
         display: flex;
@@ -215,7 +174,7 @@
         background: var(--surface);
         border: 1px solid var(--border);
         border-radius: 6px;
-        box-shadow: 0 6px 18px rgb(0 0 0 / 28%);
+        box-shadow: 0 6px 18px var(--shadow);
       }
       .combobox__list {
         position: absolute;
@@ -408,7 +367,7 @@
         border-radius: 4px;
       }
       .wit-col__delete:hover {
-        color: #e06c75;
+        color: var(--error);
       }
       .wit-col__delete:focus-visible {
         outline: 2px solid var(--accent);
@@ -555,7 +514,7 @@
         border-radius: 4px;
       }
       .wit-row__delete:hover {
-        color: #e06c75;
+        color: var(--error);
       }
       .wit-row__delete:focus-visible {
         outline: 2px solid var(--accent);
@@ -690,7 +649,7 @@
         min-height: 18px;
         margin-top: 4px;
         font-size: 13px;
-        color: #e06c75;
+        color: var(--error);
       }
 
       /* Page-level notice shown when a query is bound but the ADO settings are still incomplete, so
@@ -703,8 +662,8 @@
         line-height: 1.5;
       }
       .banner--error {
-        border: 1px solid #e06c75;
-        background: rgb(224 108 117 / 12%);
+        border: 1px solid var(--error);
+        background: var(--error-background);
         color: var(--text);
       }
 
@@ -758,8 +717,8 @@
       }
       .button--danger {
         background: transparent;
-        color: #e06c75;
-        border: 1px solid #e06c75;
+        color: var(--error);
+        border: 1px solid var(--error);
       }
       .button:disabled {
         opacity: 0.55;
@@ -963,7 +922,7 @@
       }
       .log-row--error .log-row__level,
       .log-row--error .log-row__message {
-        color: #e06c75;
+        color: var(--error);
       }
       .log-row__detail {
         margin: 2px 0 6px;
@@ -1046,17 +1005,11 @@
         <div class="card">
           <h2 class="card__title">Theme</h2>
           <p class="card__hint">
-            Choose a theme, or pick <strong>Auto</strong> to follow the theme Azure DevOps is
-            currently using.
+            Choose a theme, or follow Azure DevOps to switch automatically between Dark and Light.
           </p>
           <div class="field">
             <label for="theme-select">Theme</label>
-            <select id="theme-select" disabled>
-              <option value="auto">Auto (follow Azure DevOps)</option>
-              <option value="light">Light</option>
-              <option value="dark">Dark</option>
-              <option value="blue">Blue</option>
-            </select>
+            <select id="theme-select" disabled></select>
           </div>
         </div>
 

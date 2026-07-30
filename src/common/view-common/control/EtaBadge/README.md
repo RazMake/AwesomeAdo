@@ -55,12 +55,11 @@ urgency signaling across all themes.
 - A **Clear** button appears only while an ETA is set and calls `onChange(null)` to reset the item to
   the "No ETA" state. It carries a subtle border and brightens on hover so it reads as a button.
 - The popup, the date input, and the Clear button draw their borders from a **self-contained** low-alpha
-  grey rather than an ADO neutral palette token, so the chrome stays visible under the "Follow ADO"
-  theme (which pins no palette tokens). Surfaces and text still follow the theme.
+  grey rather than a neutral surface-wash token, so the chrome stays visible on every concrete theme.
+  Surfaces and text still follow the theme.
 - The browser's **own** calendar popup and its indicator glyph follow the view's `color-scheme`, which
-  the enhanced-view host declares (see `common/view-common/theme`). The date field is therefore left
-  transparent over the popup's themed surface — painting it from an unpinned token would leave the
-  browser's calendar button unreadable against it.
+  the enhanced-view host declares (see `common/view-common/themes`). The date field is therefore left
+  transparent over the popup's themed surface so the browser's calendar button remains readable.
 - Opening the popup injects one document-level rule (`#awesomeado-eta-picker-style`) giving that
   calendar button a **hand cursor**. It is the control's only non-inline style: the button is a UA
   pseudo-element that no inline style can reach. The rule is re-added on open if ADO's re-render drops

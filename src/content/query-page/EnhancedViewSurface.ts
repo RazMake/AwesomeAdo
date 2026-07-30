@@ -1,10 +1,7 @@
 import type { Theme } from "../../common/settings/ExtensionSettings";
 import type { EnhancedViewServices } from "../../common/view-common/EnhancedView";
-import {
-  VIEW_THEME_VARIABLES,
-  resolveViewThemeColorScheme,
-  resolveViewThemePalette,
-} from "../../common/view-common/theme/viewTheme";
+import { THEME_COLOR_VARIABLES } from "../../common/view-common/themes/ThemeDefinition";
+import { resolveTheme } from "../../common/view-common/themes/themes";
 import { detectAdoTheme } from "../ado-probe/AdoThemeProbe";
 import { getEnhancedView } from "../views/enhancedViewRegistry";
 
@@ -79,7 +76,7 @@ export class EnhancedViewSurface {
   // The user's chosen theme, pinned onto the host so every control it hosts re-themes at once. Held
   // here (not read per render) so a re-attach after ADO redraws the page restores it, and so a theme
   // change while a view is showing is applied immediately without a rebuild. "auto" = Follow ADO,
-  // where nothing is pinned and controls inherit ADO's own tokens.
+  // resolved to the extension's matching Dark or Light palette.
   private theme: Theme = "auto";
 
   /**
@@ -112,9 +109,9 @@ export class EnhancedViewSurface {
   }
 
   /**
-   * Pin (or, for "auto", clear) the extension's chosen theme so every control the host renders
-   * follows it, not just Azure DevOps' own theme. Applied live when a view is already showing so a
-   * theme change in Options re-themes the open view immediately, without rebuilding its DOM.
+   * Pin the extension's resolved concrete theme so every control the host renders follows it.
+   * Applied live when a view is already showing so a theme change in Options re-themes the open view
+   * immediately, without rebuilding its DOM.
    */
   applyTheme(theme: Theme): void {
     this.theme = theme;
@@ -125,26 +122,21 @@ export class EnhancedViewSurface {
 
   // Pin the palette onto the host element itself so its tokens win over ADO's inherited ones for the
   // whole view subtree, while ADO's surviving chrome (breadcrumb bar, left rail) keeps ADO's theme.
-  // "auto" clears the tokens so controls fall back to ADO's own — that is what "Follow ADO" means.
+  // Follow ADO is resolved to one of our concrete palettes so every extension control stays coherent.
   private applyThemeToHost(): void {
     if (!this.host) {
       return;
     }
-    const palette = resolveViewThemePalette(this.theme);
-    for (const name of VIEW_THEME_VARIABLES) {
-      if (palette) {
-        this.host.style.setProperty(name, palette[name]);
-      } else {
-        this.host.style.removeProperty(name);
-      }
+    const adoTheme = this.theme === "auto" ? detectAdoTheme(this.doc) : null;
+    const resolved = resolveTheme(this.theme, adoTheme);
+    for (const variable of THEME_COLOR_VARIABLES) {
+      this.host.style.setProperty(variable, resolved.colors[variable]);
     }
     // Widgets the browser draws itself — the ETA picker's calendar popup and its indicator glyph,
     // scrollbars — read `color-scheme`, not our tokens, so a dark view opened a stark white calendar
     // with a barely-visible button. Declaring the scheme on the host fixes all of them at once
-    // because color-scheme inherits. For "auto" we ask ADO's own page which scheme it is painting,
-    // and fall back to light when that is unknowable (still-loading or un-themed page).
-    const scheme = resolveViewThemeColorScheme(this.theme) ?? detectAdoTheme(this.doc) ?? "light";
-    this.host.style.setProperty("color-scheme", scheme);
+    // because color-scheme inherits.
+    this.host.style.setProperty("color-scheme", resolved.colorScheme);
   }
 
   private restore(): void {

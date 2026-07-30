@@ -31,8 +31,8 @@ interface ExtensionSettings {
 `AreaPath` shapes, the `WorkItemType` / `WorkItemColumn` shapes, the `BOARD_COLUMN_COUNT` count and
 `DEFAULT_BOARD_COLUMNS` fixed list, the `WorkItemMarker` / `MarkerTags` / `WorkItemMarkerTags` shapes,
 the `WORK_ITEM_MARKERS` ordered marker list (key + UI label) and its `DEFAULT_MARKER_TAGS` seed, the
-`THEMES` / `DEFAULT_VIEWS` value lists (used to populate the
-options selects), the `MIN_FUTURE_SPRINTS` / `MAX_FUTURE_SPRINTS` and `MIN_PAST_SPRINTS` /
+`THEMES` / `DEFAULT_VIEWS` accepted-value lists, the `MIN_FUTURE_SPRINTS` /
+`MAX_FUTURE_SPRINTS` and `MIN_PAST_SPRINTS` /
 `MAX_PAST_SPRINTS` bounds, and `DEFAULT_SETTINGS`.
 `normalizeSettings(raw)` validates each field independently and falls back to the default when a
 value is missing or unrecognized. The focused helpers `normalizeFutureSprintsCount(raw)` (clamps to
@@ -93,9 +93,9 @@ unsubscribe();
 
 ## The settings
 
-- **`theme`** picks the visual theme the options page paints. `auto` follows Azure DevOps' own
-  active theme (detected from the live Query tab); `light`, `dark`, and `blue` pin a specific
-  theme regardless of what ADO is using.
+- **`theme`** picks the visual theme used by both options and enhanced views. `auto` detects whether
+  the live ADO tab is dark or light and selects AwesomeADO's corresponding theme; `light`, `dark`,
+  and `blue` pin a specific theme. Blue is never selected by `auto`.
 - **`defaultView`** decides what the content script shows on an ADO Query page. `enhanced`
   (default) lets the extension take over the page below the breadcrumb bar; `original` leaves ADO
   untouched.

@@ -279,14 +279,16 @@ describe("EnhancedViewSurface - theming", () => {
     expect(host?.firstElementChild).toBe(firstNode);
   });
 
-  it("clears pinned tokens for 'auto' so controls inherit ADO's own theme", () => {
-    surface.applyTheme("light");
-    surface.apply(sprint);
-    expect(hostEl()?.style.getPropertyValue("--text-primary-color")).toBe("#1f1f1f");
-
-    surface.applyTheme("auto");
-    expect(hostEl()?.style.getPropertyValue("--text-primary-color")).toBe("");
-    expect(hostEl()?.style.getPropertyValue("--background-color")).toBe("");
+  it("pins the matching concrete palette for 'auto' instead of inheriting ADO colors", () => {
+    document.body.style.setProperty("--background-color", "rgb(32, 32, 32)");
+    try {
+      surface.applyTheme("auto");
+      surface.apply(sprint);
+      expect(hostEl()?.style.getPropertyValue("--text-primary-color")).toBe("#e6e6e6");
+      expect(hostEl()?.style.getPropertyValue("--background-color")).toBe("#1f1f1f");
+    } finally {
+      document.body.style.removeProperty("--background-color");
+    }
   });
 
   it("restores the pinned theme after ADO's re-render drops and re-attaches the host", async () => {
@@ -318,10 +320,11 @@ describe("EnhancedViewSurface - theming", () => {
     }
   });
 
-  it("falls back to a light color-scheme when ADO's theme is unknowable", () => {
+  it("falls back to Dark when ADO's theme is unknowable", () => {
     surface.applyTheme("auto");
     surface.apply(sprint);
 
-    expect(hostEl()?.style.getPropertyValue("color-scheme")).toBe("light");
+    expect(hostEl()?.style.getPropertyValue("color-scheme")).toBe("dark");
+    expect(hostEl()?.style.getPropertyValue("--background-color")).toBe("#1f1f1f");
   });
 });

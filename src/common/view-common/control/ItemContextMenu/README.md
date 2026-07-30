@@ -85,8 +85,8 @@ Exactly one of `run`, `panel` and `submenu` gives a command its behaviour.
 - **A failed copy is never silent in Diagnostics.** The clipboard write can be refused (the page lost
   focus, access denied) after the menu has already closed, so the rejection is logged.
 - **The hover highlight and the menu's edge are fixed translucent greys**, not neutral palette
-  tokens. Under **Follow ADO** those tokens resolve to ADO's own surface colors — the ones the menu
-  is already painted with — so the highlighted command vanished into the menu on that theme.
+  tokens. Theme neutrals are intentionally subtle surface washes, while these two details must stay
+  distinct from the menu surface under every palette.
 - **A panel takes over the menu** rather than opening a second popup, so one thing is on screen and
   the host's dismissal contract covers the editor too. The menu is pulled back inside the window
   afterwards, because the host measured it when it held three short rows — unless `centerPanel` put

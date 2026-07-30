@@ -6,8 +6,8 @@ import type {
   Theme,
 } from "../../common/settings/ExtensionSettings";
 import type { ISettingsStore } from "../../common/settings/ISettingsStore";
-
-import { resolveTheme } from "./theme";
+import { THEME_COLOR_VARIABLES } from "../../common/view-common/themes/ThemeDefinition";
+import { CONCRETE_THEMES, resolveTheme } from "../../common/view-common/themes/themes";
 
 /** The options-page elements the controller drives. Passed in so the controller stays testable. */
 export interface OptionsElements {
@@ -39,6 +39,8 @@ export class OptionsController {
     private readonly elements: OptionsElements,
     private readonly reportError: ReportError = defaultReportError,
   ) {
+    populateThemeSelect(elements.themeSelect);
+    this.applyTheme("auto");
     elements.themeSelect.disabled = true;
     elements.defaultViewSelect.disabled = true;
     this.themeBinding = new SettingBinding(
@@ -96,7 +98,12 @@ export class OptionsController {
   };
 
   private applyTheme(theme: Theme): void {
-    this.elements.root.dataset.theme = resolveTheme(theme, this.adoTheme);
+    const resolved = resolveTheme(theme, this.adoTheme);
+    this.elements.root.dataset.theme = resolved.id;
+    this.elements.root.style.setProperty("color-scheme", resolved.colorScheme);
+    for (const variable of THEME_COLOR_VARIABLES) {
+      this.elements.root.style.setProperty(variable, resolved.colors[variable]);
+    }
   }
 
   private async loadAdoTheme(): Promise<void> {
@@ -114,6 +121,19 @@ export class OptionsController {
     // Re-resolve "auto" now that ADO's theme is known.
     this.applyTheme(this.elements.themeSelect.value as Theme);
   }
+}
+
+function populateThemeSelect(select: HTMLSelectElement): void {
+  const createOption = (value: Theme, label: string): HTMLOptionElement => {
+    const option = select.ownerDocument.createElement("option");
+    option.value = value;
+    option.textContent = label;
+    return option;
+  };
+  select.replaceChildren(
+    createOption("auto", "Follow Azure DevOps (Dark or Light)"),
+    ...CONCRETE_THEMES.map((theme) => createOption(theme.id, theme.label)),
+  );
 }
 
 /**

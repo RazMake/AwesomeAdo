@@ -10,7 +10,8 @@ full ADO DOM for an instant toggle-off.
 Behaviour is configured from a themeable, tabbed options page:
 
 - **Appearance**
-  - **Theme** — `Auto` (follows Azure DevOps' own active theme), `Light`, `Dark`, or `Blue`.
+  - **Theme** — `Dark`, `Light`, or `Blue`; `Follow Azure DevOps` automatically chooses Dark or
+    Light, while Blue is selected manually.
   - **ADO Configuration** — read-only view of the organization and project of the active ADO
     Query tab.
   - **Default view** — `Enhanced View` (the extension takes over bound queries) or

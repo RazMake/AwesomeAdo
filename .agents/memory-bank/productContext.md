@@ -26,9 +26,9 @@ and want per-query control over how their saved queries are presented.
    re-fetches, while flipping back to the enhanced view refreshes in place. A separate **"make this
    my default"** action writes the synced per-query default, which takes effect on the next
    navigation to the query.
-5. The **options page** lets the user set a theme (`Auto` follows ADO's own theme), see the active
-   query tab's organization/project, choose the global default view (which applies only to bound
-   queries), and manage per-query bindings.
+5. The **options page** lets the user choose Dark, Light, or Blue (`Follow Azure DevOps` automatically
+   selects only Dark or Light), see the active query tab's organization/project, choose the global
+   default view (which applies only to bound queries), and manage per-query bindings.
 6. **Synced settings** (theme, global default view, per-query bindings and defaults) follow the user
    across devices via `chrome.storage.sync`, while the **tab-local view override** (point 4) stays on
    the one tab. The extension follows ADO's **SPA navigation**, so moving into or out of a query

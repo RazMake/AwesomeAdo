@@ -202,6 +202,25 @@ describe("OptionsController — initialization", () => {
     expect(elements.defaultViewSelect.disabled).toBe(true);
   });
 
+  it("paints the Dark fallback before settings and the ADO theme load", () => {
+    new OptionsController(store, reader, elements);
+    expect(elements.root.dataset.theme).toBe("dark");
+    expect(elements.root.style.getPropertyValue("--bg")).toBe("#1b1b1c");
+    expect(elements.root.style.getPropertyValue("color-scheme")).toBe("dark");
+  });
+
+  it("builds the theme choices from the shared registry", () => {
+    new OptionsController(store, reader, elements);
+    expect(
+      Array.from(elements.themeSelect.options, ({ value, text }) => ({ value, text })),
+    ).toEqual([
+      { value: "auto", text: "Follow Azure DevOps (Dark or Light)" },
+      { value: "dark", text: "Dark" },
+      { value: "light", text: "Light" },
+      { value: "blue", text: "Blue" },
+    ]);
+  });
+
   it("enables both selects after init() resolves", async () => {
     const controller = await initReady(store, reader, elements);
     expect(elements.themeSelect.disabled).toBe(false);
@@ -242,6 +261,9 @@ describe("OptionsController — initialization", () => {
       defaultView: "enhanced",
     });
     expect(elements.root.dataset.theme).toBe("light");
+    expect(elements.root.style.getPropertyValue("--bg")).toBe("#f3f3f3");
+    expect(elements.root.style.getPropertyValue("--background-color")).toBe("#ffffff");
+    expect(elements.root.style.getPropertyValue("color-scheme")).toBe("light");
     controller.dispose();
   });
 });

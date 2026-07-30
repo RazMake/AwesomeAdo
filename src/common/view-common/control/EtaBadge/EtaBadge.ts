@@ -36,11 +36,10 @@ export interface EtaBadgeHandle extends HTMLElement {
 // Muted, theme-aware color for the "No ETA" placeholder — reads on both light and dark ADO themes.
 const NO_ETA_COLOR = "var(--text-secondary-color, #8a8886)";
 
-// Popup chrome is drawn with fixed low-alpha greys rather than a neutral palette token: under
-// "Follow ADO" nothing is pinned and ADO's own --palette-neutral-* value leaves these outlines
-// invisible, so the popup and its date input lost their borders on that theme only. A grey at low
-// alpha reads on light and dark surfaces alike — the same self-contained fix the tracking header and
-// sprint picker already use.
+// Popup chrome is drawn with fixed low-alpha greys rather than a neutral palette token. Theme
+// neutrals are intentionally subtle surface washes, while these outlines must stay distinct from
+// the surface on every palette. The same self-contained contrast rule is used by the tracking header
+// and sprint picker.
 const POPUP_BORDER = "1px solid rgba(128,128,128,0.5)";
 const CLEAR_BORDER = "1px solid rgba(128,128,128,0.35)";
 const CLEAR_BACKGROUND = "rgba(128,128,128,0.12)";

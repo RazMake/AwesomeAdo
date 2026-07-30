@@ -345,20 +345,20 @@ the freshness token, override precedence, data-requirements → batch planning, 
 layer. The MAIN-world bridge and real ADO reads/writes are composition-root/browser-validated
 (coverage-excluded).
 
-### 13. Every control follows the ADO theme (non-negotiable)
+### 13. Every control follows the selected AwesomeADO theme (non-negotiable)
 
 **Every** UI control an enhanced view renders — badges, pills, buttons, twisties, dropdowns, popups,
-panels, the status control, the sprint picker, expand/collapse affordances — MUST follow the account's
-active ADO theme (light / dark / blue / high-contrast). No control may hard-code a light-only palette
-(`#fff` backgrounds, `#333`/`#666` text, `#ddd` borders as the _only_ value): those wash out or turn
-invisible on the dark theme. Concretely:
+panels, the status control, the sprint picker, expand/collapse affordances — MUST follow the selected
+AwesomeADO theme (Dark / Light / Blue). `Follow Azure DevOps` detects only ADO's dark/light polarity
+and resolves it to AwesomeADO's matching concrete theme; Blue is manual. No control may hard-code a
+light-only palette as its only value.
 
-- Style from ADO's theme CSS custom properties with a hard fallback, never a bare literal: surfaces use
-  `var(--callout-background-color, var(--background-color, #fff))` / `var(--background-color, …)`, text
-  uses `var(--text-primary-color, …)` / `var(--text-secondary-color, …)`, and borders/separators use a
-  neutral token such as `var(--palette-neutral-20, …)` /
-  `var(--component-menu-separator-color, rgba(128,128,128,0.35))`. Follow the tokens already proven in
-  `BindingMenu`, `AssignedTo`, and `EnhancedViewSurface`.
+- Theme definitions live independently in `common/view-common/themes/<name>Theme.ts` and satisfy one
+  complete CSS-variable contract. `themes.ts` is the only concrete-theme registry; settings values,
+  the options selector, options colors, and the enhanced-view host derive from it.
+- Controls continue reading the shared ADO-compatible CSS custom-property names, but the enhanced-view
+  host always pins the resolved concrete theme's values. Options consumes the same definition through
+  its options-specific variables, so the two surfaces cannot drift.
 - A control that encodes a **status/state color** (the work-item state control) derives the hue from the
   ADO state color but renders it **muted/discrete** (low-alpha tint over the themed surface, not a solid
   fill) so it reads on any theme and never fights the page.

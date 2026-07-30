@@ -73,8 +73,8 @@ toggles a popup with one row per child:
   the badge never has to know which field a change persists to or which queue serializes it.
 - **Completion at a glance:** a ticked checkbox plus a struck-through, dimmed title, so the list
   answers "what is still open?" by shape alone. The box is drawn in a translucent grey rather than a
-  themed neutral token — under Follow ADO those tokens resolve to ADO's own surface color, which
-  erased the box and left the tick floating. The tick itself is green, picked per surface with
+  themed neutral surface wash, which can be too subtle to frame the tick. The tick itself is green,
+  picked per surface with
   `light-dark()` (the view host always declares a concrete `color-scheme`) and falling back to the
   board's shared "done" green where that is unsupported, because "finished" is meaning rather than
   decoration. Toggling is **persist-then-reflect** — the row is held busy for the width of the write

@@ -1,3 +1,5 @@
+import { THEME_PREFERENCES, type ThemePreference } from "../view-common/themes/themes";
+
 import { reachesWorkItemType } from "./workItemHierarchy";
 
 /**
@@ -64,7 +66,7 @@ export interface ExtensionSettings {
   markerTags: WorkItemMarkerTags;
 }
 
-export type Theme = "auto" | "light" | "dark" | "blue";
+export type Theme = ThemePreference;
 export type DefaultView = "original" | "enhanced";
 
 /** An ADO team the user selected: its stable id plus the name shown in the picker. */
@@ -167,7 +169,7 @@ export const DEFAULT_MARKER_TAGS: WorkItemMarkerTags = {
 };
 
 /** Allowed theme values, in the order they are offered to the user. */
-export const THEMES: readonly Theme[] = ["auto", "light", "dark", "blue"];
+export const THEMES: readonly Theme[] = THEME_PREFERENCES;
 
 /** Allowed default-view values. */
 export const DEFAULT_VIEWS: readonly DefaultView[] = ["original", "enhanced"];

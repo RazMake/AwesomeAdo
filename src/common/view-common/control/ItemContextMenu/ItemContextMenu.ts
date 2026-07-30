@@ -107,13 +107,11 @@ const MENU_Z_INDEX = 2147483647;
 /**
  * The wash the command under the pointer takes, and the menu's own edge.
  *
- * Fixed translucent greys, NOT `--palette-neutral-4` / `--palette-neutral-20`: a pinned theme sets
- * those to its own neutrals, but under "Follow ADO" they fall through to ADO's, which are the very
- * surface colors this menu is painted with — so the highlighted command was indistinguishable from
- * the rest of the menu on exactly the theme most people run. Grey at a low alpha composites the
- * other way on both, darkening a light surface and lightening a dark one. Same trap as the
- * AssignedTo result highlight, the EtaBadge popup chrome and the rollup checkbox's frame: a neutral
- * token is fine for a wash ON a surface, never for something that must be told APART from it.
+ * Fixed translucent greys, NOT `--palette-neutral-4` / `--palette-neutral-20`: those variables are
+ * intentionally subtle surface washes, while the highlighted command and menu edge must be told
+ * apart from their surface on every palette. Grey at a low alpha composites the other way on both,
+ * darkening a light surface and lightening a dark one. Same rule as the AssignedTo result highlight,
+ * the EtaBadge popup chrome and the rollup checkbox's frame.
  */
 const ROW_HOVER_BACKGROUND = "rgba(128,128,128,0.28)";
 const MENU_BORDER = "1px solid rgba(128,128,128,0.5)";

@@ -11,6 +11,9 @@ everything else here stays a pure contract.
 The concrete views (the catalog, the renderer registry, and each view's config + renderer) live
 under [`src/content/views`](../../content/views/README.md).
 
+Shared concrete theme definitions live under [`themes/`](./themes/README.md). Both options and the
+enhanced-view host consume that registry, so their palettes cannot drift.
+
 ## The two halves of a view
 
 A view is deliberately split into two contracts so the options page never bundles renderer DOM:

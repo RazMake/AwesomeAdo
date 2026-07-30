@@ -358,15 +358,17 @@ outside of its immediate parent.` — every single time, for the same item, with
   Reusable theme-aware controls live in `src/common/view-common/control/<Control>/` (sole DOM allowed
   under `common/`, AGENTS.md §11).
 
-## Extension THEME (options: auto/light/dark/blue) re-themes the WHOLE enhanced view + controls
+## Extension themes are standalone; Follow ADO resolves only to Dark or Light
 
-- HOW it works (DRY, zero per-control change): controls already read ADO token names
-  (`var(--text-primary-color,…)` etc.). `src/common/view-common/theme/viewTheme.ts` defines full-color
-  palettes for light/dark/blue UNDER THOSE SAME ADO TOKEN NAMES (`VIEW_THEME_VARIABLES` list) +
-  `resolveViewThemePalette(theme)`→palette|null (null = "auto"/Follow ADO). `EnhancedViewSurface.applyTheme(theme)`
-  PINS those tokens on the HOST overlay element via `host.style.setProperty` (or `removeProperty`
-  for auto) so they win over ADO's inherited tokens for the view subtree ONLY — ADO's surviving chrome
-  (breadcrumb bar, left rail) keeps ADO's theme. `applyThemeToHost()` is re-called from `ensureHost()`
+- `src/common/view-common/themes` owns a complete CSS-variable contract plus one independent file for
+  Dark, Light, and Blue. `themes.ts` is the only registry; `Theme`/`THEMES`, the options selector, and
+  both rendering surfaces derive from it. Adding a theme means one definition plus one registry entry.
+- `resolveTheme("auto", adoTheme)` maps only to Dark or Light (Dark if detection is unavailable).
+  Blue is always manual. Both Options and `EnhancedViewSurface` pin every color from the resolved
+  definition; Follow ADO never clears tokens or inherits ADO's arbitrary palette.
+- `EnhancedViewSurface.applyTheme(theme)` pins the variables on the HOST overlay element so they win
+  for the view subtree only; ADO's surviving chrome keeps ADO's own theme. `applyThemeToHost()` is
+  re-called from `ensureHost()`
   every mount because cssText (`HOST_OVERLAY_CSS`) is only assigned on host CREATE, so a re-attach
   after ADO redraws would otherwise lose the custom props. host bg = `var(--background-color,#fff)`
   resolves to the pinned value on the same element. `QueryPageController.applySettings` forwards
@@ -375,9 +377,8 @@ outside of its immediate parent.` — every single time, for the same item, with
   `applyTheme: vi.fn()`.
 - CSS custom properties DO NOT reach browser-drawn widgets (native `<input type=date>` calendar popup
   - its indicator glyph, scrollbars): those read `color-scheme`. `applyThemeToHost()` therefore ALSO
-    sets `color-scheme` on the host (inherited by the whole subtree):
-    `resolveViewThemeColorScheme(theme) ?? detectAdoTheme(doc) ?? "light"` (dark→dark, light/blue→light,
-    auto→ask ADO). Without it a dark view opened a stark WHITE calendar. Corollary: never style a
+    sets the resolved definition's `colorScheme` on the host (inherited by the whole subtree).
+    Without it a dark view opened a stark WHITE calendar. Corollary: never style a
     control from a token the view does NOT pin (`--input-background` painted the ETA date field white
     under a pinned dark theme over a light ADO page) — use `transparent` over the popup's themed surface.
 - Scope decision: `BindingMenu`/`BindingButton` (ADO top bar) intentionally still follow ADO (they

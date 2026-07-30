@@ -22,8 +22,8 @@ a single codebase.
   content, resolved through the enhanced-view registry. Unbound queries are always left on ADO's own
   view — only the button is injected.
 - **Options page.** A themeable, tabbed page (Appearance, Query Bindings, Diagnostics placeholder):
-  a Theme selector (`Auto`/`Light`/`Dark`/`Blue`, where `Auto` follows ADO's own theme detected
-  from the live tab), a read-only ADO Configuration panel showing the active query tab's
+  a Theme selector (`Dark`/`Light`/`Blue`, plus `Follow Azure DevOps`, which detects the live tab and
+  chooses only Dark or Light), a read-only ADO Configuration panel showing the active query tab's
   organization/project, a Default view selector (`Original ADO View`/`Enhanced View`) that applies
   only to bound queries, and a Query Bindings manager (bind a specific query opened from its button,
   or pick from open/bound queries).

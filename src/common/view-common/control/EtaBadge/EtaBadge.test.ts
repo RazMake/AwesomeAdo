@@ -192,8 +192,8 @@ describe("renderEtaBadge - editing interactions", () => {
 });
 
 describe("renderEtaBadge - popup chrome", () => {
-  // "Follow ADO" pins no palette tokens, so a border expressed as var(--palette-neutral-*) collapses
-  // to nothing on that theme. These assert the chrome carries its own resolved color instead.
+  // Theme neutrals are surface washes, so these assert that outline chrome carries its own stronger
+  // resolved color instead.
   const openPopup = (eta: string | null): HTMLElement => {
     const badge = renderEtaBadge(document, { eta, now, onChange: () => {} });
     document.body.append(badge);

@@ -349,13 +349,10 @@ export function renderProjectTrackingHeader(
 ): ProjectTrackingHeaderHandle {
   const header = doc.createElement("div");
   header.className = "awesomeado-tracking__header";
-  // Read as a raised "card" on any theme. In "Follow ADO" nothing is pinned, so ADO's own
-  // --palette-neutral-4 (an OPAQUE near-surface color) would match the page and erase the tile;
-  // painting the raised callout surface (which ADO keeps distinct from the page) plus a border and
-  // elevation shadow keeps the card visible even when its fill matches the background. The border is
-  // a fixed grey (not --palette-neutral-20): in "Follow ADO" that token resolves to ADO's own value,
-  // which is too faint on the callout surface and made the card's outline vanish — the same reason
-  // the +/- band buttons already pin a fixed grey. The pinned themes read identically to before.
+  // Read as a raised "card" on any theme. The callout surface plus a border and elevation shadow
+  // keeps the tile visible even where its fill approaches the page background. The border is a fixed
+  // grey rather than the deliberately subtle --palette-neutral-20 surface token, for the same reason
+  // the +/- band buttons use a fixed grey.
   // Pinned to the top of the scroll container (position:sticky + top:0) so the project title,
   // sprint picker, and expand/collapse controls stay reachable while the board's items scroll under
   // it. The card's fill is an OPAQUE surface (--callout-background-color), which is required for a

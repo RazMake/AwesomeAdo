@@ -5,6 +5,8 @@ Major.Minor with a CI build number to form Major.Minor.Build.
 
 ## Next Version
 
+- **AwesomeADO now has three consistent themes: Dark, Light, and Blue.** **Follow Azure DevOps** remains available, but now chooses only between AwesomeADO's Dark and Light themes instead of inheriting an arbitrary Azure DevOps palette; Blue is always selected manually. The options page and every enhanced view now read the same standalone theme definitions, so their colors stay aligned and another theme can be added in one registry without changing the existing themes.
+
 - **Sprint pills on Project Tracking rows can now move the item.** When the sprint filter is off, clicking an item's sprint chip opens the same current-and-future sprint choices used by the sprint dropdown and right-click command, styled by their position in time and clearly highlighted under the pointer or keyboard focus. The sprint the item is already on is omitted; choosing another saves the new iteration path to Azure DevOps and repaints the row after the write succeeds.
 
 - **The Project Tracking `+` and `−` controls now include item notes and descriptions.** `+` first opens every parent row; when the whole outline is already open, its next click opens the notes under every visible item. `−` works inward-out: it first closes any open notes and descriptions while leaving the outline in place, and only collapses the parent rows once those item details are already closed.

@@ -43,8 +43,8 @@ callers that need the text alone (a tooltip, a log line).
 ## Notes
 
 - **The colors are fixed, not theme tokens.** A marker pill is a warning whose job is to be told
-  apart from the surface under it; the neutral tokens fall through to ADO's own surface colors under
-  "Follow ADO", which is what it must not blend into.
+  apart from the surface under it; a neutral surface token would remove the condition's stable visual
+  identity and could blend into the surrounding palette.
 - **Text color is per-hue.** White on the amber "blocked" fill is the one combination here that drops
   under a readable contrast ratio, so that pill carries near-black instead.
 - **The pill never reads settings.** It is told which marker to paint; the caller supplies the

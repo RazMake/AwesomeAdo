@@ -429,27 +429,22 @@
   missing (`null`) WIQL body as a load error (checked before the queryType branch), and `htmlToText`
   decodes entities before stripping tags so entity-encoded markup does not survive as visible text.
 
-## ADR-034: Every enhanced-view control follows the ADO theme
+## ADR-034: Every enhanced-view control follows the selected AwesomeADO theme
 
 - Decision: Every UI control an enhanced view renders (badges, pills, buttons, twisties, dropdowns,
   popups, panels, the work-item status control, the sprint picker, expand/collapse affordances) MUST
-  follow the account's active ADO theme (light / dark / blue / high-contrast). Controls style from ADO's
-  theme CSS custom properties with a hard literal fallback — never a bare literal color as the only
-  value: surfaces use `var(--callout-background-color, var(--background-color, #fff))`, text uses
-  `var(--text-primary-color, …)` / `var(--text-secondary-color, …)`, and borders/separators use a
-  neutral token (`var(--palette-neutral-20, …)` /
-  `var(--component-menu-separator-color, rgba(128,128,128,0.35))`), mirroring `BindingMenu`,
-  `AssignedTo`, and `EnhancedViewSurface`. A control that encodes a status/state color renders it
-  **muted/discrete** (a low-alpha tint over the themed surface, not a solid fill) so it reads on any
-  theme; decorative guides (e.g. the child-indent line) use a discrete theme-derived neutral. Reusable
-  theme-aware controls live under `src/common/view-common/control/<Control>/` (the sole DOM allowed
-  under `common/`, per AGENTS.md §11) so every view shares one correctly-themed implementation.
+  follow one of three concrete AwesomeADO themes: Dark, Light, or Blue. `Follow Azure DevOps` is a
+  preference, not a fourth theme: it detects ADO's polarity and resolves only to Dark or Light; Blue
+  is manual. Each complete palette lives in its own `common/view-common/themes/<name>Theme.ts` module
+  and never imports or extends another theme. One registry derives the setting type and accepted
+  values, populates the options selector, and supplies the palette used by both options and enhanced
+  views. Controls read the shared ADO-compatible variables pinned on the view host; semantic status
+  colors remain muted/discrete, and reusable controls remain under `view-common/control`.
 - Rationale: Hard-coded light-only palettes (`#fff` fills, `#333`/`#666` text, `#ddd`-only borders) are
-  invisible or jarring on the dark theme — the earlier Project Tracking board shipped several. Sourcing
-  from ADO's own theme tokens with fallbacks makes each control track whatever theme the account paints,
-  with no theme-detection code in the control. Muted status tints keep the state hue legible without a
-  solid block of color fighting the page on any theme. Recorded as principle #13 in systemPatterns and
-  enforced as a standing review gate (a control that hard-codes non-theme colors is a defect).
+  invisible or jarring on the dark theme. A complete shared variable contract keeps every control
+  coherent, while standalone definitions prevent a new theme from changing or inheriting hidden
+  assumptions from an existing one. Resolving Follow ADO at the boundary preserves automatic
+  dark/light behavior without coupling controls to Azure DevOps' palette or high-contrast variants.
 
 ## ADR-035: Project Tracking renders two child levels and rolls the rest into `ChildItemsBadge`
 
