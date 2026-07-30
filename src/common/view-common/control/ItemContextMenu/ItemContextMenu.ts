@@ -43,6 +43,8 @@ export interface ItemContextMenuCommand {
    * it on screen, and lands somewhere different for every row it was opened from.
    */
   centerPanel?: boolean;
+  /** Adds a maximize/restore button that expands the panel inside the configured bounds. */
+  maximizablePanel?: boolean;
   /** Nested commands, shown in a flyout beside this row. Built on open, so it can read live state. */
   submenu?: () => ItemContextMenuCommand[];
   /** Dimmed and inert, with this as the tooltip saying why. Overrides the three above. */
@@ -78,6 +80,8 @@ export interface ItemContextMenuOptions {
    * mounting it on the document would strand one invisible node per view that ever opened a menu.
    */
   mountInto: HTMLElement;
+  /** Resolves the live surface a maximized panel must stay inside. Defaults to the viewport. */
+  panelBounds?: () => Element | null;
   /** Records a clipboard write that never landed — see `copyToClipboard`. */
   logger: ILogger;
 }
@@ -130,6 +134,8 @@ const ROW_RADIUS_PX = MENU_RADIUS_PX - MENU_PADDING_PX;
 
 /** How much clear space a repositioned surface keeps from the window's edge. */
 const WINDOW_MARGIN_PX = 8;
+/** Maximized panels leave a narrow edge inside the enhanced-view surface. */
+const MAXIMIZED_PANEL_MARGIN_PX = 10;
 
 /**
  * "Open in ADO" is the one command that leaves the page, so it is the one command drawn in a hue
@@ -265,6 +271,7 @@ function buildMenu(
   target: ItemContextMenuTarget,
   close: () => void,
   logger: ILogger,
+  panelBounds?: () => Element | null,
 ): HTMLElement {
   const menu = doc.createElement("div");
   menu.className = "awesomeado-item-menu";
@@ -312,7 +319,7 @@ function buildMenu(
       if (command.separatorBefore) {
         commands.append(renderSeparator(doc));
       }
-      commands.append(renderCustomCommand(doc, command, menu, close));
+      commands.append(renderCustomCommand(doc, command, menu, close, panelBounds));
     }
   }
 
@@ -347,6 +354,7 @@ function renderCustomCommand(
   command: ItemContextMenuCommand,
   menu: HTMLElement,
   close: () => void,
+  panelBounds?: () => Element | null,
 ): HTMLElement {
   const row = renderCommandRow(doc, command.label, command.renderLabel?.(doc));
   row.title = command.title ?? "";
@@ -359,7 +367,7 @@ function renderCustomCommand(
   }
 
   if (command.submenu) {
-    return renderSubmenu(doc, row, command.submenu, menu, close);
+    return renderSubmenu(doc, row, command.submenu, menu, close, panelBounds);
   }
 
   if (command.panel) {
@@ -369,8 +377,15 @@ function renderCustomCommand(
       // give it, so an editor sits the same distance from the edge as a command row's text does.
       const surface = doc.createElement("div");
       surface.className = "awesomeado-item-menu__panel";
-      surface.style.cssText = `padding:${MENU_PADDING_PX}px ${MENU_PADDING_PX + 2}px`;
-      surface.append(panel(close));
+      surface.style.cssText = [
+        "position:relative",
+        `padding:${MENU_PADDING_PX}px ${MENU_PADDING_PX + 2}px`,
+      ].join(";");
+      const panelElement = panel(close);
+      surface.append(panelElement);
+      if (command.maximizablePanel) {
+        surface.append(renderPanelMaximizeButton(doc, menu, surface, panelElement, panelBounds));
+      }
       menu.replaceChildren(surface);
       if (command.centerPanel) {
         centerInWindow(menu);
@@ -389,6 +404,176 @@ function renderCustomCommand(
   return row;
 }
 
+interface PanelStyleSnapshot {
+  menu: string;
+  surface: string;
+  panel: string;
+}
+
+/** Adds the viewport-size toggle while retaining the panel's exact original geometry for restore. */
+function renderPanelMaximizeButton(
+  doc: Document,
+  menu: HTMLElement,
+  surface: HTMLElement,
+  panel: HTMLElement,
+  panelBounds?: () => Element | null,
+): HTMLButtonElement {
+  const button = doc.createElement("button");
+  button.type = "button";
+  button.className = "awesomeado-item-menu__maximize-panel";
+  button.style.cssText = [
+    "position:absolute",
+    `top:${MENU_PADDING_PX}px`,
+    `right:${MENU_PADDING_PX + 32}px`,
+    "width:24px",
+    "height:24px",
+    "padding:0",
+    "border:0",
+    "background:none",
+    "color:var(--text-primary-color)",
+    "font-size:18px",
+    "line-height:18px",
+    "cursor:pointer",
+  ].join(";");
+
+  let restoreStyles: PanelStyleSnapshot | null = null;
+  const showMaximize = (): void => {
+    button.setAttribute("aria-label", "Maximize panel");
+    button.setAttribute("aria-pressed", "false");
+    button.title = "Maximize";
+    button.replaceChildren(renderPanelSizeIcon(doc, false));
+  };
+  const showRestore = (): void => {
+    button.setAttribute("aria-label", "Restore panel");
+    button.setAttribute("aria-pressed", "true");
+    button.title = "Restore";
+    button.replaceChildren(renderPanelSizeIcon(doc, true));
+  };
+
+  showMaximize();
+  button.addEventListener("click", () => {
+    if (restoreStyles) {
+      menu.style.cssText = restoreStyles.menu;
+      surface.style.cssText = restoreStyles.surface;
+      panel.style.cssText = restoreStyles.panel;
+      restoreStyles = null;
+      showMaximize();
+      return;
+    }
+
+    restoreStyles = {
+      menu: menu.style.cssText,
+      surface: surface.style.cssText,
+      panel: panel.style.cssText,
+    };
+    maximizePanel(doc, menu, surface, panel, panelBounds?.());
+    showRestore();
+  });
+  return button;
+}
+
+/** Draw one window for maximize or two overlapping windows for the familiar restore affordance. */
+function renderPanelSizeIcon(doc: Document, restore: boolean): HTMLElement {
+  const icon = doc.createElement("span");
+  icon.className = "awesomeado-item-menu__panel-size-icon";
+  icon.style.cssText = [
+    "position:relative",
+    "display:inline-block",
+    "width:14px",
+    "height:14px",
+    "vertical-align:middle",
+    "pointer-events:none",
+  ].join(";");
+
+  const addWindow = (declarations: string[]): void => {
+    const windowOutline = doc.createElement("span");
+    windowOutline.className = "awesomeado-item-menu__window-outline";
+    windowOutline.style.cssText = [
+      "position:absolute",
+      "box-sizing:border-box",
+      "border:1.5px solid currentColor",
+      ...declarations,
+    ].join(";");
+    icon.append(windowOutline);
+  };
+
+  if (restore) {
+    addWindow(["top:1px", "right:1px", "width:9px", "height:9px"]);
+    addWindow([
+      "left:1px",
+      "bottom:1px",
+      "width:9px",
+      "height:9px",
+      "background:var(--callout-background-color)",
+    ]);
+  } else {
+    addWindow(["inset:2px"]);
+  }
+  return icon;
+}
+
+interface PanelEdges {
+  top: number;
+  left: number;
+  right: number;
+  bottom: number;
+}
+
+/** Read the viewport dimensions across browsers and jsdom's zero-sized document element. */
+function viewportSize(doc: Document): { width: number; height: number } {
+  return {
+    width: doc.documentElement.clientWidth || doc.defaultView?.innerWidth || 0,
+    height: doc.documentElement.clientHeight || doc.defaultView?.innerHeight || 0,
+  };
+}
+
+/** Resolve fixed-position offsets from the live surface, falling back to the whole viewport. */
+function maximizedPanelEdges(doc: Document, boundsElement: Element | null): PanelEdges {
+  const bounds = boundsElement?.getBoundingClientRect();
+  if (bounds === undefined || bounds.width <= 0 || bounds.height <= 0) {
+    return {
+      top: MAXIMIZED_PANEL_MARGIN_PX,
+      left: MAXIMIZED_PANEL_MARGIN_PX,
+      right: MAXIMIZED_PANEL_MARGIN_PX,
+      bottom: MAXIMIZED_PANEL_MARGIN_PX,
+    };
+  }
+  const viewport = viewportSize(doc);
+  return {
+    top: Math.round(Math.max(0, bounds.top)) + MAXIMIZED_PANEL_MARGIN_PX,
+    left: Math.round(Math.max(0, bounds.left)) + MAXIMIZED_PANEL_MARGIN_PX,
+    right: Math.round(Math.max(0, viewport.width - bounds.right)) + MAXIMIZED_PANEL_MARGIN_PX,
+    bottom: Math.round(Math.max(0, viewport.height - bounds.bottom)) + MAXIMIZED_PANEL_MARGIN_PX,
+  };
+}
+
+/** Stretch all panel layers inside the owning view while leaving ADO's bars uncovered. */
+function maximizePanel(
+  doc: Document,
+  menu: HTMLElement,
+  surface: HTMLElement,
+  panel: HTMLElement,
+  boundsElement: Element | null = null,
+): void {
+  const edges = maximizedPanelEdges(doc, boundsElement);
+
+  menu.style.position = "fixed";
+  menu.style.top = `${edges.top}px`;
+  menu.style.left = `${edges.left}px`;
+  menu.style.right = `${edges.right}px`;
+  menu.style.bottom = `${edges.bottom}px`;
+  menu.style.margin = "0";
+  menu.style.transform = "none";
+  menu.style.width = "auto";
+  menu.style.maxWidth = "none";
+  menu.style.boxSizing = "border-box";
+  surface.style.height = "100%";
+  surface.style.boxSizing = "border-box";
+  panel.style.width = "100%";
+  panel.style.maxWidth = "none";
+  panel.style.height = "100%";
+}
+
 /** How far a flyout is pulled up so its first row lines up with the row that opened it. */
 const SUBMENU_TOP_OFFSET_PX = 4;
 /**
@@ -404,6 +589,7 @@ function renderSubmenu(
   build: () => ItemContextMenuCommand[],
   menu: HTMLElement,
   close: () => void,
+  panelBounds?: () => Element | null,
 ): HTMLElement {
   const wrapper = doc.createElement("div");
   wrapper.className = "awesomeado-item-menu__submenu-host";
@@ -439,7 +625,7 @@ function renderSubmenu(
       "z-index:1",
     ].join(";");
     for (const nested of build()) {
-      flyout.append(renderCustomCommand(doc, nested, menu, close));
+      flyout.append(renderCustomCommand(doc, nested, menu, close, panelBounds));
     }
     wrapper.append(flyout);
     keepFlyoutInView(flyout, doc);
@@ -533,7 +719,7 @@ function centerInWindow(menu: HTMLElement): void {
  * which are written against a trigger element rather than a coordinate.
  */
 export function createItemContextMenu(options: ItemContextMenuOptions): ItemContextMenu {
-  const { doc, mountInto, logger } = options;
+  const { doc, mountInto, logger, panelBounds } = options;
 
   // Reused rather than built per open: the popup host removes only the popup it built, so a fresh
   // anchor each time would leave one stray node behind for every right-click.
@@ -579,7 +765,7 @@ export function createItemContextMenu(options: ItemContextMenuOptions): ItemCont
       // what they are typing — taking the whole menu with it would close the discussion they opened
       // the editor from. A second Escape, with nothing left editing, still dismisses the menu.
       dismissOnFieldEscape: false,
-      buildPopup: (dismiss) => buildMenu(doc, target, dismiss, logger),
+      buildPopup: (dismiss) => buildMenu(doc, target, dismiss, logger, panelBounds),
     });
     host.toggle();
   };

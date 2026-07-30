@@ -87,7 +87,9 @@ contextMenu.openAt(event, {
 - **View all notes** shows every note the window holds, unlike the panel under a row, which shows the
   two most recent days with notes because dozens of those are on screen at once. It opens **centred**
   at ~70% of the window, because the pointer's position stops being a useful place to put a surface
-  that size, and what it holds has no natural size — it is however much discussion an item has.
+  that size, and what it holds has no natural size — it is however much discussion an item has. Its
+  maximize button stretches the discussion to a `10px` inset inside the enhanced-view surface, so
+  ADO's top and left bars remain uncovered; restore returns it to the centred size.
 - **Every panel is headed by the item's number**, as the link that opens it in Azure DevOps. A panel
   opened from a right-click has nothing else to identify itself with: the menu covers the row it came
   from, and a box holding one field's text looks the same for every item on the board. The item's

@@ -24,7 +24,7 @@ describe("renderPriorityBadge", () => {
     );
   });
 
-  it("emphasizes P0 through P2 while later priorities use muted normal text", () => {
+  it("emphasizes P0 and P1 most, P2 moderately, and later priorities normally", () => {
     const p0 = chipOf(renderPriorityBadge(document, { priority: 0 }));
     const p1 = chipOf(renderPriorityBadge(document, { priority: 1 }));
     const p2 = chipOf(renderPriorityBadge(document, { priority: 2 }));
@@ -37,7 +37,8 @@ describe("renderPriorityBadge", () => {
     expect(p1.style.color).not.toContain("color-mix");
     expect(p2.style.color).toBe("var(--priority-medium-foreground)");
     expect([p3, p4].every((chip) => chip.style.color === "var(--text-secondary-color)")).toBe(true);
-    expect([p0, p1, p2].every((chip) => chip.style.fontWeight === "800")).toBe(true);
+    expect([p0, p1].every((chip) => chip.style.fontWeight === "800")).toBe(true);
+    expect(p2.style.fontWeight).toBe("600");
     expect([p3, p4].every((chip) => chip.style.fontWeight === "400")).toBe(true);
     expect([p0, p1, p2, p3, p4].every((chip) => chip.style.fontSize === "11px")).toBe(true);
     expect([p0, p1, p2, p3, p4].every((chip) => chip.style.padding === "2px 6px")).toBe(true);
@@ -51,7 +52,7 @@ describe("renderPriorityBadge", () => {
 
     const options = [...badge.querySelectorAll<HTMLButtonElement>(".awesomeado-priority__option")];
     expect(options.map((option) => option.textContent)).toEqual(["P0", "P2", "P3", "P4"]);
-    expect(options.map((option) => option.style.fontWeight)).toEqual(["800", "800", "400", "400"]);
+    expect(options.map((option) => option.style.fontWeight)).toEqual(["800", "600", "400", "400"]);
     expect(options[0]?.style.padding).toBe(chipOf(badge).style.padding);
     expect(options[0]?.style.borderRadius).toBe(chipOf(badge).style.borderRadius);
     expect(

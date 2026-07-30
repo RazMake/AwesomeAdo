@@ -8,6 +8,10 @@ builds use the repository's `Major.Minor.Build` release versioning.
 - Makes Project Tracking open and refresh faster by loading its renderer only when needed, fetching
   work-item batches concurrently with transient retry, and reusing discussion activity already read
   during the board session.
+- Reduces the visual emphasis of P2 priority chips while keeping them more prominent than P3 and
+  later priorities.
+- Adds a clearer maximize/restore button to the View all notes popup, expanding the discussion to a
+  ten-pixel inset inside the enhanced view while leaving Azure DevOps' top and left bars visible.
 
 ## 0.1
 

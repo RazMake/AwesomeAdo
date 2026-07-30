@@ -37,7 +37,10 @@ function textColorForPriority(priority: number | null): string {
 }
 
 function fontWeightForPriority(priority: number | null): string {
-  return priority === 0 || priority === 1 || priority === 2 ? "800" : "400";
+  if (priority === 0 || priority === 1) {
+    return "800";
+  }
+  return priority === 2 ? "600" : "400";
 }
 
 /** Apply the one visual definition shared by the row chip and every popup choice. */

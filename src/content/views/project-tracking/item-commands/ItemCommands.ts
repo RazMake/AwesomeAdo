@@ -244,6 +244,7 @@ function viewAllNotesCommand(options: ItemCommandsOptions): ItemContextMenuComma
     // it, and the corrections that keep an anchored surface on screen would land it somewhere
     // different for every row it was opened from.
     centerPanel: true,
+    maximizablePanel: true,
     panel: (close) => {
       const notes = renderNotesPanel({
         doc,
@@ -274,7 +275,7 @@ function viewAllNotesCommand(options: ItemCommandsOptions): ItemContextMenuComma
       );
       panel.style.position = "relative";
       panel.style.boxSizing = "border-box";
-      panel.style.paddingRight = "28px";
+      panel.style.paddingRight = "56px";
       panel.append(renderNotesCloseButton(doc, close));
       return panel;
     },

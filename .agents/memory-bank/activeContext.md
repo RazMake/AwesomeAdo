@@ -45,7 +45,9 @@ The extension is feature-complete for its current scope:
   `/multilineFieldsFormat/<field>` patch op), Move to another sprint (current + future entries of the
   sprint window, minus the item's own), Change area path (the header filter's eligible full paths,
   labelled identically and minus the item's own), and View all notes (`NotesPanel` with
-  `showAllInWindow`) —
+  `showAllInWindow`) with a same-size single-window/overlapping-window maximize/restore control that
+  stretches the discussion to a ten-pixel inset inside the enhanced-view surface, leaving ADO's top
+  and left bars uncovered —
   plus, in their own separated group from `item-commands/MarkerCommands`, Tag with / Clear for the
   two blocked markers (a mandatory reason and `System.Tags` written as ONE patch — the reason rides
   along as a `System.History` op via `WorkItemFieldWriteRequest.comment`, because a separately posted
@@ -75,7 +77,7 @@ The extension is feature-complete for its current scope:
   `+` opens parent rows before notes, while `−` closes notes/descriptions before parent rows. An editable `PriorityBadge`
   immediately after Status (all priorities share one gray background, with a darker solid fill/edge
   on dark themes; P0/P1 use theme-owned, unmixed red/orange text, later priorities
-  split at P2: P2 keeps extra-bold but uses a restrained scheme-aware gray while P3+ uses muted secondary text at normal weight;
+  split at P2: P2 uses medium-weight, restrained scheme-aware gray while P3+ uses muted secondary text at normal weight;
   all labels use compact padding and close row spacing; popup
   options reuse the same chip format and omit the current value; reads and writes share
   `Microsoft.VSTS.Common.Priority`), a `?` description panel with

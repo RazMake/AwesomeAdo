@@ -155,7 +155,7 @@ halves of the view — its configuration and its renderer.
     [`renderPriorityBadge`](../../../common/view-common/control/PriorityBadge/README.md): every
     priority has the same gray background (darker with a darker edge on dark themes), while P0 has
     unmixed red text, P1 has unmixed orange text, and P2 uses a restrained gray on every theme. Those three are
-    extra-bold; P3 and later use muted secondary text at normal weight. The compact label sits close
+    emphasized, with P2 at medium weight below the extra-bold P0 and P1; P3 and later use muted secondary text at normal weight. The compact label sits close
     to Status. Clicking it opens P0-P4 as identically formatted chips, omits the current value, and writes the selected
     `Microsoft.VSTS.Common.Priority` through the same serialized queue.
   - **Rolled-up minor children**: the level below the last rendered row is summarized inline by

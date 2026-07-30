@@ -330,6 +330,67 @@ describe("createItemContextMenu panels", () => {
     expect(menuSurface.style.bottom).toBe("auto");
     expect(menuSurface.style.transform).toBe("translate(-50%, -50%)");
   });
+});
+
+describe("createItemContextMenu panel sizing and dismissal", () => {
+  it("maximizes inside its surface with a ten-pixel inset and restores its original size", () => {
+    const panel = document.createElement("div");
+    panel.style.cssText = "width:70vw;max-width:90vw;height:70vh";
+    const panelBounds = document.createElement("section");
+    panelBounds.getBoundingClientRect = () =>
+      ({ top: 70, left: 180, right: 980, bottom: 720, width: 800, height: 650 }) as DOMRect;
+    menu = createItemContextMenu({
+      doc: document,
+      mountInto: mount,
+      panelBounds: () => panelBounds,
+      logger,
+    });
+    openWithCommands([
+      {
+        label: "Notes",
+        centerPanel: true,
+        maximizablePanel: true,
+        panel: () => panel,
+      },
+    ]);
+    const menuSurface = mount.querySelector<HTMLElement>(".awesomeado-item-menu")!;
+
+    command(3).click();
+    const maximize = mount.querySelector<HTMLButtonElement>('[aria-label="Maximize panel"]')!;
+    const iconSize = maximize.querySelector<HTMLElement>(".awesomeado-item-menu__panel-size-icon")!;
+    expect(iconSize.style.width).toBe("14px");
+    expect(iconSize.style.height).toBe("14px");
+    expect(maximize.querySelectorAll(".awesomeado-item-menu__window-outline")).toHaveLength(1);
+    expect(
+      maximize.querySelector<HTMLElement>(".awesomeado-item-menu__window-outline")?.style.inset,
+    ).toBe("2px");
+    maximize.click();
+
+    expect(menuSurface.style.position).toBe("fixed");
+    expect(menuSurface.style.top).toBe("80px");
+    expect(menuSurface.style.left).toBe("190px");
+    expect(menuSurface.style.right).toBe("54px");
+    expect(menuSurface.style.bottom).toBe("58px");
+    expect(menuSurface.style.transform).toBe("none");
+    expect(panel.style.width).toBe("100%");
+    expect(panel.style.maxWidth).toBe("none");
+    expect(panel.style.height).toBe("100%");
+    expect(maximize.getAttribute("aria-label")).toBe("Restore panel");
+    expect(maximize.querySelectorAll(".awesomeado-item-menu__window-outline")).toHaveLength(2);
+    expect(
+      maximize.querySelector<HTMLElement>(".awesomeado-item-menu__panel-size-icon")?.style.width,
+    ).toBe("14px");
+
+    maximize.click();
+
+    expect(menuSurface.style.left).toBe("50%");
+    expect(menuSurface.style.top).toBe("50%");
+    expect(menuSurface.style.transform).toBe("translate(-50%, -50%)");
+    expect(panel.style.width).toBe("70vw");
+    expect(panel.style.maxWidth).toBe("90vw");
+    expect(panel.style.height).toBe("70vh");
+    expect(maximize.getAttribute("aria-label")).toBe("Maximize panel");
+  });
 
   it("leaves an ordinary panel anchored where the reader right-clicked", () => {
     openWithCommands([{ label: "Rename", panel: () => document.createElement("div") }]);

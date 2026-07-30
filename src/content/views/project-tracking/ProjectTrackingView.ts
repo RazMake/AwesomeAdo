@@ -2960,6 +2960,8 @@ function createBoardCore(params: {
 interface RenderBoardParams {
   doc: Document;
   root: TrackedWorkItem;
+  /** Stable view root whose parent is the enhanced-view surface that must remain uncovered. */
+  viewRoot: HTMLElement;
   context: DataDrivenViewContext;
   typeMap: Map<string, TypeCatalogEntry>;
   sprintWindow: SprintWindow;
@@ -3117,6 +3119,16 @@ function mountBoardHeader(params: {
   );
 }
 
+/** Build the board-wide menu against the stable enhanced-view surface rather than the viewport. */
+function createBoardContextMenu(params: RenderBoardParams, board: HTMLElement): ItemContextMenu {
+  return createItemContextMenu({
+    doc: params.doc,
+    mountInto: board,
+    panelBounds: () => params.viewRoot.parentElement ?? params.viewRoot,
+    logger: params.context.services.logger,
+  });
+}
+
 function renderBoard(params: RenderBoardParams): BoardHandle {
   const { doc, root, context, typeMap, sprintWindow, session, folderPath } = params;
   const board = doc.createElement("div");
@@ -3129,11 +3141,7 @@ function renderBoard(params: RenderBoardParams): BoardHandle {
   // to outlive the rows a repaint throws away — so it is mounted on the board rather than in the tree
   // container the renderer empties on every pass. Built before the header, because the project title
   // opens it for the root item.
-  const contextMenu = createItemContextMenu({
-    doc,
-    mountInto: board,
-    logger: context.services.logger,
-  });
+  const contextMenu = createBoardContextMenu(params, board);
 
   const core = createBoardCore({
     doc,
@@ -3483,6 +3491,7 @@ function renderLoadedBoard(params: RenderLoadedBoardParams): BoardHandle | null 
   const board = renderBoard({
     doc: context.doc,
     root: treeRoot,
+    viewRoot: root,
     context,
     typeMap,
     sprintWindow,

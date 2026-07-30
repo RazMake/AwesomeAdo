@@ -3400,6 +3400,24 @@ describe("ProjectTrackingView — moving an item and reading its discussion", ()
 
     expect(root.querySelector(".awesomeado-item-menu")).toBeNull();
   });
+
+  it("offers a maximize button on the notes popup", async () => {
+    const root = await renderDeepBoard();
+    await turnSprintFilterOff(root);
+    root.getBoundingClientRect = () =>
+      ({ top: 70, left: 180, right: 980, bottom: 720, width: 800, height: 650 }) as DOMRect;
+
+    rightClick(root.querySelector(".awesomeado-tracking__row")!);
+    commandNamed(root, "View all notes").click();
+    const maximize = root.querySelector<HTMLButtonElement>('[aria-label="Maximize panel"]')!;
+    maximize.click();
+
+    const menu = root.querySelector<HTMLElement>(".awesomeado-item-menu")!;
+    expect(menu.style.top).toBe("80px");
+    expect(menu.style.left).toBe("190px");
+    expect(maximize.getAttribute("aria-label")).toBe("Restore panel");
+    expect(maximize.querySelectorAll(".awesomeado-item-menu__window-outline")).toHaveLength(2);
+  });
 });
 
 /** One note on a given day, by someone other than the reader. */

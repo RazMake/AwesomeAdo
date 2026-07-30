@@ -38,6 +38,8 @@ row.addEventListener("contextmenu", (event) => {
   **owning view** discards when it is torn down (its board root, not `document.body`): the anchor
   outlives any single repaint, so mounting it on the document would strand one invisible node per
   view that ever opened a menu.
+- **`panelBounds?: () => Element | null`** — Resolves the live surface a maximized panel must stay
+  inside. Omit it to use the viewport.
 - **`logger: ILogger`** — Records a clipboard write that never landed.
 
 ### `ItemContextMenu`
@@ -61,18 +63,19 @@ row.addEventListener("contextmenu", (event) => {
 
 Exactly one of `run`, `panel` and `submenu` gives a command its behaviour.
 
-| Field             | Meaning                                                                                                                                                          |
-| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `label`           | The row's text — and, when `renderLabel` is given, the name the row is announced by.                                                                             |
-| `title`           | Optional tooltip for a compact label whose complete value still needs to be available.                                                                           |
-| `renderLabel`     | `(doc) => Node[]` — builds the row's visible content instead of plain text, for a command that has to **show** the thing it acts on (a colored condition pill).  |
-| `separatorBefore` | Draws a rule above the row, splitting the caller's own list into groups that answer different questions.                                                         |
-| `run`             | `() => void` — runs the command and closes the menu.                                                                                                             |
-| `panel`           | `(close) => HTMLElement` — **replaces** the menu's commands with this element (an editor, a list). `close` dismisses the whole menu.                             |
-| `centerPanel`     | Centres the panel in the window instead of anchoring it to the pointer, for a panel big enough that the pointer's position stops being a useful place to put it. |
-| `submenu`         | `() => ItemContextMenuCommand[]` — nested commands in a flyout beside the row. Built **on open**, so it can read live state.                                     |
-| `declarations`    | `[property, value][]` applied to the label (e.g. a sprint's relation color).                                                                                     |
-| `disabledReason`  | Dims the row and makes it inert, with this as the tooltip. Overrides the three above.                                                                            |
+| Field              | Meaning                                                                                                                                                          |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `label`            | The row's text — and, when `renderLabel` is given, the name the row is announced by.                                                                             |
+| `title`            | Optional tooltip for a compact label whose complete value still needs to be available.                                                                           |
+| `renderLabel`      | `(doc) => Node[]` — builds the row's visible content instead of plain text, for a command that has to **show** the thing it acts on (a colored condition pill).  |
+| `separatorBefore`  | Draws a rule above the row, splitting the caller's own list into groups that answer different questions.                                                         |
+| `run`              | `() => void` — runs the command and closes the menu.                                                                                                             |
+| `panel`            | `(close) => HTMLElement` — **replaces** the menu's commands with this element (an editor, a list). `close` dismisses the whole menu.                             |
+| `centerPanel`      | Centres the panel in the window instead of anchoring it to the pointer, for a panel big enough that the pointer's position stops being a useful place to put it. |
+| `maximizablePanel` | Adds a maximize/restore icon button that expands the panel to a `10px` inset inside `panelBounds`.                                                               |
+| `submenu`          | `() => ItemContextMenuCommand[]` — nested commands in a flyout beside the row. Built **on open**, so it can read live state.                                     |
+| `declarations`     | `[property, value][]` applied to the label (e.g. a sprint's relation color).                                                                                     |
+| `disabledReason`   | Dims the row and makes it inert, with this as the tooltip. Overrides the three above.                                                                            |
 
 ## Notes
 
@@ -92,6 +95,10 @@ Exactly one of `run`, `panel` and `submenu` gives a command its behaviour.
   the host's dismissal contract covers the editor too. The menu is pulled back inside the window
   afterwards, because the host measured it when it held three short rows — unless `centerPanel` put
   it in the middle of the window instead.
+- **A maximizable panel stretches every panel layer**, not only the outer menu, so its contents use
+  the bounds-sized frame. Restore returns the exact inline geometry captured before maximizing. Its
+  icon changes from one slightly inset window to two overlapping windows without changing its
+  `14px` footprint.
 - **A flyout flips to the other side** of its row when it would open past the window's right edge.
 - **The menu is sized from its own rows** (`width:max-content`), so no command label wraps: it is
   positioned inside a zero-width anchor, where shrink-to-fit would collapse it onto its `min-width`.
