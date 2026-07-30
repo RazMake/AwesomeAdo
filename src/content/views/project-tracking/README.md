@@ -113,8 +113,10 @@ halves of the view — its configuration and its renderer.
     pill when the item carries those configured tags (click one to read the notes that say why — see
     [`marker-reasons`](./marker-reasons/README.md)), sprint pill (when filter
     OFF — shown only for items on a real, leaf iteration; an item parked on the iteration root shows
-    no pill), and ETA badge (right-aligned; editable — click to pick a date or clear it when the
-    item's type has an ETA field configured). Clicking the twisty expands/collapses that node's children.
+    no pill; click it to move the item to another current or future sprint, with the item's present
+    sprint omitted and each destination highlighted on hover or focus), and ETA badge (right-aligned;
+    editable — click to pick a date or clear it when the item's type has an ETA field configured).
+    Clicking the twisty expands/collapses that node's children.
     Rows open expanded, and a row you collapse **stays** collapsed across every repaint — a
     drag-reorder, a re-sort, a sprint or tag filter change — because each pass builds new elements
     and the closed rows are remembered by work item id outside the DOM.
@@ -127,9 +129,9 @@ halves of the view — its configuration and its renderer.
     The Priority chip uses
     [`renderPriorityBadge`](../../../common/view-common/control/PriorityBadge/README.md): every
     priority has the same gray background (darker with a darker edge on dark themes), while P0 has
-    unmixed red text, P1 has unmixed orange text, and P2 or later uses themed primary text. The
-    brighter, extra-bold label sits in compact padding close to Status. Clicking it opens P0-P4 as
-    identically formatted chips, omits the current value, and writes the selected
+    unmixed red text, P1 has unmixed orange text, and P2 uses a restrained gray on every theme. Those three are
+    extra-bold; P3 and later use muted secondary text at normal weight. The compact label sits close
+    to Status. Clicking it opens P0-P4 as identically formatted chips, omits the current value, and writes the selected
     `Microsoft.VSTS.Common.Priority` through the same serialized queue.
   - **Rolled-up minor children**: the level below the last rendered row is summarized inline by
     [`ChildItemsBadge`](../../../common/view-common/control/ChildItemsBadge/README.md) — a
@@ -158,15 +160,11 @@ halves of the view — its configuration and its renderer.
     description itself renders through
     [`MarkdownText`](../../../common/view-common/control/MarkdownText/README.md), so Markdown, ADO
     rich text, embedded attachment images and `@`-mentions all show as they do in ADO. The **"?"
-    disc** that toggles it follows the type icon's emphasis, with two deliberate differences: it wears
-    the item's **type color darkened** when there is a description and **brighter** while the panel is
-    open, but an item with **no** description stays a neutral **grey** in both states — opening it
-    only brightens the same grey, because the type color is the board's "there is something written
-    here" signal and an empty panel has nothing to spend it on. Every colored step is pulled back
-    further than the icon's matching one: the icon is a thin outline glyph while the disc is a solid
-    filled circle, so at equal brightness the disc reads as a second, louder version of the same type
-    color sitting right beside the first. The disc darkens rather than fading (the icon fades) because
-    it carries a white "?" that a lower opacity would wash out. The disc's `title` names only the
+    disc** that toggles it follows the type icon's emphasis. On light and blue themes it uses an
+    almost-white tint of the item's **type color**, strengthening that tint while open; on dark themes
+    the same two states retain the deeper type-color treatment. An item with **no** description stays
+    neutral in both states. The glyph switches between dark and light ink with the scheme and is
+    flex-centered in the fixed circle. The disc's `title` names only the
     ACTION ("Show description" / "Hide description"), never whether there is one: the panel still
     carries the created/modified line either way, so the disc is worth pressing on every row and a
     "nothing here" label would talk the reader out of it. The shade answers that question instead.

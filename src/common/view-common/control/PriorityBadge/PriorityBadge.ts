@@ -22,7 +22,7 @@ export interface PriorityBadgeHandle extends HTMLElement {
 const CHIP_BACKGROUND = "light-dark(rgba(200, 200, 200, 0.18), rgb(39, 39, 39))";
 const CHIP_BORDER = "light-dark(rgba(172, 172, 172, 0.5), rgb(54, 54, 54))";
 
-/** P0 is literal red, P1 literal orange, and later priorities use themed primary text. */
+/** P0/P1 keep alert colors, P2 uses primary text, and lower priorities recede. */
 function textColorForPriority(priority: number | null): string {
   if (priority === 0) {
     return "light-dark(rgb(182, 1, 25), rgb(255, 32, 54))";
@@ -30,7 +30,14 @@ function textColorForPriority(priority: number | null): string {
   if (priority === 1) {
     return "light-dark(rgb(210, 146, 7), rgb(255, 167, 72))";
   }
-  return "var(--text-primary-color, #323130)";
+  if (priority === 2) {
+    return "light-dark(rgb(76, 76, 76), rgb(200, 200, 200))";
+  }
+  return "var(--text-secondary-color, #8a8886)";
+}
+
+function fontWeightForPriority(priority: number | null): string {
+  return priority === 0 || priority === 1 || priority === 2 ? "800" : "400";
 }
 
 /** Apply the one visual definition shared by the row chip and every popup choice. */
@@ -44,7 +51,7 @@ function stylePriorityChip(chip: HTMLButtonElement, priority: number | null): vo
     "padding:2px 6px",
     "font-family:inherit",
     "font-size:11px",
-    "font-weight:800",
+    `font-weight:${fontWeightForPriority(priority)}`,
     "line-height:1",
     "white-space:nowrap",
     "display:inline-flex",

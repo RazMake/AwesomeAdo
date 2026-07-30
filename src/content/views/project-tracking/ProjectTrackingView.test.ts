@@ -908,68 +908,58 @@ describe("ProjectTrackingView — the description disc's shade", () => {
     return root.querySelector<HTMLButtonElement>(".awesomeado-tracking__describe")!;
   }
 
-  /** How much of the disc's own color survives its filter; 1 is the brightest state. */
-  function brightnessOf(disc: HTMLButtonElement): number {
-    const filter = disc.style.filter;
-    return filter === "none" ? 1 : Number.parseFloat(/brightness\(([\d.]+)\)/.exec(filter)![1]!);
-  }
-
   // The Feature type's configured color (6bcf7f), which is what the disc must borrow.
   const FEATURE_COLOR = "rgb(107, 207, 127)";
+  const COLLAPSED_FEATURE_COLOR = `light-dark(color-mix(in srgb, ${FEATURE_COLOR} 14%, white), color-mix(in srgb, ${FEATURE_COLOR}, black))`;
+  const EXPANDED_FEATURE_COLOR = `light-dark(color-mix(in srgb, ${FEATURE_COLOR} 24%, white), color-mix(in srgb, ${FEATURE_COLOR} 80%, black))`;
 
-  it("stays grey when the item has no description to show", async () => {
+  it("uses an almost-white neutral fill on light themes when there is no description", async () => {
     const disc = await discOver("   ");
 
     // Whitespace is not a description: a disc promising text that turns out to be blank is worse
     // than one that never promised any.
-    expect(disc.style.background.replace(/\s/g, "")).toBe("rgba(128,128,128,0.55)");
+    expect(disc.style.background).toBe("light-dark(rgb(246, 246, 246), rgb(58, 58, 58))");
     // The tooltip names the ACTION, not the state: the panel still carries the created/modified
     // line, so the disc is worth pressing on this row too.
     expect(disc.title).toBe("Show description");
   });
 
-  it("wears the work item type's color once there is a description", async () => {
+  it("uses an almost-white tint of the work item type on light themes", async () => {
     const disc = await discOver("Implement OAuth2 authentication.");
 
-    expect(disc.style.background).toBe(FEATURE_COLOR);
+    expect(disc.style.background).toBe(COLLAPSED_FEATURE_COLOR);
     expect(disc.title).toBe("Show description");
   });
 
-  it("brightens on expand and darkens again on collapse, keeping the type's color", async () => {
+  it("strengthens the same type-color tint while expanded", async () => {
     const disc = await discOver("Implement OAuth2 authentication.");
-    const collapsed = brightnessOf(disc);
 
     disc.click();
-    expect(disc.style.background).toBe(FEATURE_COLOR);
+    expect(disc.style.background).toBe(EXPANDED_FEATURE_COLOR);
     expect(disc.title).toBe("Hide description");
-    expect(brightnessOf(disc)).toBeGreaterThan(collapsed);
 
     disc.click();
-    expect(brightnessOf(disc)).toBe(collapsed);
+    expect(disc.style.background).toBe(COLLAPSED_FEATURE_COLOR);
   });
 
-  it("reads quieter with no description than with one, at every step", async () => {
-    const empty = await discOver("");
-    const described = await discOver("Implement OAuth2 authentication.");
-    const collapsed = brightnessOf(described);
-
-    // The states must be a progression, exactly like the type icon's: nothing here < there is
-    // something here < you are looking at it.
-    expect(brightnessOf(empty)).toBeLessThan(collapsed);
-    described.click();
-    expect(brightnessOf(described)).toBeGreaterThan(collapsed);
-  });
-
-  it("only brightens the same grey when an item with no description is expanded", async () => {
+  it("changes only the neutral intensity when an empty description is expanded", async () => {
     const disc = await discOver("");
-    const collapsed = brightnessOf(disc);
 
     disc.click();
 
     // The type color is the board's "there is something written here" signal; an open but empty
     // panel must not spend it on nothing.
-    expect(disc.style.background.replace(/\s/g, "")).toBe("rgba(128,128,128,0.55)");
-    expect(brightnessOf(disc)).toBeGreaterThan(collapsed);
+    expect(disc.style.background).toBe("light-dark(rgb(235, 235, 235), rgb(128, 128, 128))");
+  });
+
+  it("centers the question mark in a fixed circle without native button padding", async () => {
+    const disc = await discOver("Implement OAuth2 authentication.");
+
+    expect(disc.style.display).toBe("inline-flex");
+    expect(disc.style.alignItems).toBe("center");
+    expect(disc.style.justifyContent).toBe("center");
+    expect(disc.style.padding).toBe("0px");
+    expect(disc.style.lineHeight).toBe("1");
   });
 });
 
@@ -1758,6 +1748,42 @@ describe("ProjectTrackingView — sprint pills", () => {
     expect(pills.length).toBe(2);
     const pillTexts = Array.from(pills, (pill) => pill.textContent);
     expect(pillTexts).not.toContain("Project");
+  });
+});
+
+describe("ProjectTrackingView — interactive sprint pills", () => {
+  it("moves from a clicked sprint pill and omits the current sprint", async () => {
+    const { root, writes } = await renderRecordingBoard();
+    await turnSprintFilterOff(root);
+
+    root.querySelector<HTMLButtonElement>(".awesomeado-tracking__sprint-pill-button")!.click();
+
+    const choices = [
+      ...root.querySelectorAll<HTMLButtonElement>(".awesomeado-tracking__sprint-option"),
+    ];
+    expect(choices.map((choice) => choice.textContent)).toEqual(["Next - Sprint 2"]);
+    expect(choices[0]?.style.color).toBe("var(--communication-foreground, #0078d4)");
+
+    choices[0]!.dispatchEvent(new MouseEvent("mouseenter"));
+    expect(choices[0]?.style.backgroundColor).toBe("rgba(128, 128, 128, 0.28)");
+    choices[0]!.dispatchEvent(new MouseEvent("mouseleave"));
+    expect(choices[0]?.style.backgroundColor).toBe("transparent");
+
+    choices[0]!.dispatchEvent(new FocusEvent("focus"));
+    expect(choices[0]?.style.backgroundColor).toBe("rgba(128, 128, 128, 0.28)");
+    choices[0]!.dispatchEvent(new FocusEvent("blur"));
+    expect(choices[0]?.style.backgroundColor).toBe("transparent");
+
+    choices[0]!.click();
+    expect(root.querySelector(".awesomeado-tracking__sprint-popup")).toBeNull();
+    await settleWrites();
+
+    expect(writes[0]).toMatchObject({
+      id: 2,
+      field: "System.IterationPath",
+      value: "Project\\Sprint 2",
+      baseValue: "Project\\Sprint 1",
+    });
   });
 });
 

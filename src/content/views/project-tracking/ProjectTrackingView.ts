@@ -68,6 +68,7 @@ import {
 import { renderStatusBadge } from "../../../common/view-common/control/StatusBadge/StatusBadge";
 import { renderViewScaffold } from "../../../common/view-common/control/ViewScaffold/ViewScaffold";
 import { renderWriteQueueStatus } from "../../../common/view-common/control/WriteQueueStatus/WriteQueueStatus";
+import { createPopupHost } from "../../../common/view-common/control/popupHost/popupHost";
 
 import { renderActivityFilterPills } from "./activity-filter/ActivityFilterPanel";
 import { RecentNotesIndex } from "./activity-filter/RecentNotesIndex";
@@ -83,7 +84,7 @@ import {
   renderProjectTrackingHeader,
   type RefreshButtonHandle,
 } from "./header/ProjectTrackingHeader";
-import { buildItemCommands } from "./item-commands/ItemCommands";
+import { buildItemCommands, buildSprintMoveCommands } from "./item-commands/ItemCommands";
 import { buildMarkerCommands } from "./item-commands/MarkerCommands";
 import { renderMarkerFilterPills } from "./marker-filter/MarkerFilterPanel";
 import {
@@ -270,33 +271,8 @@ function buildMetaLine(
   return { container: meta, dateElements: 2 };
 }
 
-/**
- * The disc's fill when it has nothing to promise: a fixed mid-grey (not a theme surface token) so it
- * is always distinct from the page background — identical on every theme, including Follow ADO where
- * surface tokens can collapse into the page color and hide both the disc and its margin.
- */
-const DESCRIBE_DISC_NEUTRAL = "rgba(128,128,128,0.55)";
-
-/**
- * How bright the description disc renders, mirroring the type icon beside it so both controls answer
- * "is there anything here?" in the same visual language.
- *
- * The pulled-back step DARKENS where the icon fades: the disc carries a white "?" on a filled circle,
- * and lowering its opacity would bleed the page through both instead of reading as a quieter state.
- * `brightness` scales the glyph and its fill together, so the "?" keeps its contrast at every level.
- *
- * Every COLORED step is pulled back further than the icon's matching one, and further than the
- * disc's own grey steps. ADO's type icon is a thin outline glyph on transparent, while this is a
- * solid filled circle: at equal brightness the disc lays down several times the ink and reads as a
- * second, louder version of the type's color sitting right next to the first. A drained disc has no
- * such twin to clash with, so it keeps the brighter grey.
- */
-function describeDiscFilter(emphasis: ItemTypeIconEmphasis): string {
-  if (emphasis.loud) {
-    return emphasis.colored ? "brightness(0.8)" : "none";
-  }
-  return emphasis.colored ? "brightness(0.5)" : "brightness(0.45)";
-}
+const DESCRIBE_DISC_NEUTRAL = "light-dark(rgb(246, 246, 246), rgb(58, 58, 58))";
+const DESCRIBE_DISC_NEUTRAL_ACTIVE = "light-dark(rgb(235, 235, 235), rgb(128, 128, 128))";
 
 /**
  * The disc's fill: the item's own type color, but only once there is a description to promise.
@@ -306,7 +282,12 @@ function describeDiscFilter(emphasis: ItemTypeIconEmphasis): string {
  * nothing. Opening such a row only brightens the same grey.
  */
 function describeDiscColor(emphasis: ItemTypeIconEmphasis, typeColor: string | null): string {
-  return emphasis.colored && typeColor !== null ? typeColor : DESCRIBE_DISC_NEUTRAL;
+  if (!emphasis.colored || typeColor === null) {
+    return emphasis.loud ? DESCRIBE_DISC_NEUTRAL_ACTIVE : DESCRIBE_DISC_NEUTRAL;
+  }
+  const lightStrength = emphasis.loud ? 24 : 14;
+  const darkStrength = emphasis.loud ? 80 : 50;
+  return `light-dark(color-mix(in srgb, ${typeColor} ${lightStrength}%, white), color-mix(in srgb, ${typeColor} ${darkStrength}%, black))`;
 }
 
 /**
@@ -344,12 +325,14 @@ function renderDescription(
     "height:16px",
     "font-size:10px",
     "font-weight:bold",
-    "color:var(--text-on-communication-background, #fff)",
-    "padding:2",
+    "line-height:1",
+    "color:light-dark(var(--text-secondary-color, #605e5c), var(--text-on-communication-background, #fff))",
+    "padding:0",
     "margin:1px",
-    // Instant enough to feel like a direct response, slow enough to be seen as a change of state —
-    // the same timing the type icon uses, so the pair moves together.
-    "transition:background 120ms ease, filter 120ms ease",
+    "display:inline-flex",
+    "align-items:center",
+    "justify-content:center",
+    "transition:background 120ms ease",
   ].join(";");
 
   const panel = doc.createElement("div");
@@ -371,7 +354,6 @@ function renderDescription(
     toggleButton.setAttribute("aria-expanded", expanded ? "true" : "false");
     toggleButton.title = describeToggleTitle(expanded);
     toggleButton.style.background = describeDiscColor(emphasis, typeColor);
-    toggleButton.style.filter = describeDiscFilter(emphasis);
     panel.style.display = expanded ? "block" : "none";
   };
   setExpanded(false);
@@ -1376,6 +1358,134 @@ function createRowBlockedMarkerPills(
   );
 }
 
+// A low-alpha neutral wash changes direction with the surface beneath it, so an option remains
+// distinct on both light and dark themes without replacing its sprint-relation text color.
+const SPRINT_OPTION_HIGHLIGHT = "rgba(128,128,128,0.28)";
+
+/** Keeps pointer and keyboard navigation equally visible in the sprint popup. */
+function setSprintOptionHighlighted(choice: HTMLButtonElement, highlighted: boolean): void {
+  choice.style.backgroundColor = highlighted ? SPRINT_OPTION_HIGHLIGHT : "transparent";
+}
+
+/** Builds the direct sprint choices shown when the row's current-sprint chip is clicked. */
+function buildSprintPillPopup(
+  item: TrackedWorkItem,
+  options: TreeRenderOptions,
+  close: () => void,
+): HTMLElement {
+  const popup = options.doc.createElement("div");
+  popup.className = "awesomeado-tracking__sprint-popup";
+  popup.setAttribute("role", "menu");
+  popup.style.cssText = [
+    "position:absolute",
+    "top:100%",
+    "left:0",
+    "margin-top:4px",
+    "padding:4px",
+    "display:flex",
+    "flex-direction:column",
+    "align-items:stretch",
+    "background:var(--callout-background-color, var(--background-color, #fff))",
+    "border:1px solid rgba(128,128,128,0.5)",
+    "border-radius:6px",
+    "box-shadow:0 2px 8px rgba(0,0,0,0.15)",
+    "z-index:1000",
+  ].join(";");
+
+  const commands = buildSprintMoveCommands({
+    doc: options.doc,
+    item,
+    services: options.context.services,
+    queue: options.queue,
+    onChanged: options.repaint,
+    sprintWindow: options.sprintWindow,
+  });
+  for (const command of commands) {
+    const choice = options.doc.createElement("button");
+    choice.type = "button";
+    choice.className = "awesomeado-tracking__sprint-option";
+    choice.setAttribute("role", "menuitem");
+    choice.textContent = command.label;
+    choice.style.cssText = [
+      "display:block",
+      "width:100%",
+      "padding:4px 8px",
+      "border:0",
+      "border-radius:3px",
+      "background:transparent",
+      "color:var(--text-primary-color, #323130)",
+      "font:inherit",
+      "text-align:left",
+      "white-space:nowrap",
+      "cursor:pointer",
+    ].join(";");
+    for (const [property, value] of command.declarations ?? []) {
+      choice.style.setProperty(property, value);
+    }
+    choice.addEventListener("mouseenter", () => setSprintOptionHighlighted(choice, true));
+    choice.addEventListener("mouseleave", () => setSprintOptionHighlighted(choice, false));
+    choice.addEventListener("focus", () => setSprintOptionHighlighted(choice, true));
+    choice.addEventListener("blur", () => setSprintOptionHighlighted(choice, false));
+    choice.addEventListener("click", () => {
+      command.run?.();
+      close();
+    });
+    popup.append(choice);
+  }
+  return popup;
+}
+
+/** Renders a clickable current-sprint chip whose menu offers every valid alternative. */
+function createRowSprintPill(item: TrackedWorkItem, options: TreeRenderOptions): HTMLElement {
+  const root = options.doc.createElement("span");
+  root.className = "awesomeado-tracking__sprint-pill";
+  root.style.cssText =
+    "position:relative;display:inline-flex;margin-left:6px;vertical-align:middle";
+
+  const pill = options.doc.createElement("button");
+  pill.type = "button";
+  pill.className = "awesomeado-tracking__sprint-pill-button";
+  pill.setAttribute("aria-haspopup", "menu");
+  pill.setAttribute("aria-label", `Move from ${item.sprintName ?? "current sprint"}`);
+  pill.title = "Move to another sprint";
+  pill.textContent = item.sprintName;
+  // Deliberately the same neutral chip as the unassigned assignee control beside it. The popup's
+  // option colors carry time direction; the current value stays quiet behind the item title.
+  pill.style.cssText = [
+    "display:inline-flex",
+    "align-items:center",
+    "background:rgba(128,128,128,0.12)",
+    "border:0",
+    "border-radius:6px",
+    "padding:4px 6px",
+    "font:inherit",
+    "font-size:10px",
+    "line-height:1",
+    "color:var(--text-secondary-color, #8a8886)",
+    "white-space:nowrap",
+    "cursor:pointer",
+    "opacity:0.75",
+  ].join(";");
+  root.append(pill);
+
+  createPopupHost({
+    doc: options.doc,
+    trigger: pill,
+    mountInto: root,
+    buildPopup: (close) => buildSprintPillPopup(item, options, close),
+    interactive:
+      buildSprintMoveCommands({
+        doc: options.doc,
+        item,
+        services: options.context.services,
+        queue: options.queue,
+        onChanged: options.repaint,
+        sprintWindow: options.sprintWindow,
+      }).length > 0,
+  });
+  return root;
+}
+
 /**
  * Creates the row right-side controls. The assignee, blocked markers, sprint pill and rolled-up
  * child badge flow inline right after the title (returned in `inline`); the ETA is pinned to the
@@ -1393,33 +1503,7 @@ function createRowRightControls(
   inline.push(...createRowBlockedMarkerPills(item, options));
 
   if (showSprintPills && isLeafSprint(item)) {
-    const pill = doc.createElement("span");
-    pill.className = "awesomeado-tracking__sprint-pill";
-    pill.textContent = item.sprintName;
-    // Deliberately the same chip as the (unassigned) assignee control it sits beside: same faint
-    // fixed-grey fill, radius and muted 10px text. Two neutral row chips that differed only slightly
-    // read as an accident, and the fixed grey survives Follow-ADO themes where surface tokens
-    // collapse into the page color. Borderless, so the 4px vertical padding buys the same 18px
-    // height as the bordered status badge on the row. The horizontal padding runs 1px wider than the
-    // assignee chip's because this chip's text starts at its own edge, with no button inset to
-    // borrow breathing room from.
-    pill.style.cssText = [
-      "display:inline-flex",
-      "align-items:center",
-      "vertical-align:middle",
-      "background:rgba(128,128,128,0.12)",
-      "border-radius:6px",
-      "padding:4px 6px",
-      "margin-left:6px",
-      "font-size:10px",
-      "line-height:1",
-      "color:var(--text-secondary-color, #8a8886)",
-      "white-space:nowrap",
-      "cursor:pointer",
-    ].join(";");
-    // Matches the row assignee's dimming so both chips recede behind the title by the same amount.
-    pill.style.opacity = "0.75";
-    inline.push(pill);
+    inline.push(createRowSprintPill(item, options));
   }
 
   // The deepest rendered row carries its children as a rollup badge instead of an expandable branch.

@@ -20,6 +20,9 @@ export interface ItemCommandsOptions extends ItemCommandTarget {
   notesSinceIso: string;
 }
 
+/** The subset needed anywhere the board offers a direct sprint move. */
+export type SprintMoveOptions = ItemCommandTarget & Pick<ItemCommandsOptions, "sprintWindow">;
+
 const TITLE_FIELD = "System.Title";
 const DESCRIPTION_FIELD = "System.Description";
 const ITERATION_PATH_FIELD = "System.IterationPath";
@@ -143,10 +146,7 @@ function updateDescriptionCommand(options: ItemCommandsOptions): ItemContextMenu
  * already on is left out too — it is not a move, and listing it invites the click that does nothing.
  */
 function moveToSprintCommand(options: ItemCommandsOptions): ItemContextMenuCommand {
-  const destinations = (): SprintWindowEntry[] =>
-    options.sprintWindow.entries.filter(
-      (entry) => entry.relation !== "past" && entry.name !== options.item.sprintName,
-    );
+  const destinations = (): ItemContextMenuCommand[] => buildSprintMoveCommands(options);
 
   return {
     label: "Move to another sprint",
@@ -154,26 +154,41 @@ function moveToSprintCommand(options: ItemCommandsOptions): ItemContextMenuComma
       destinations().length === 0
         ? "No other current or future sprint is configured for this team."
         : null,
-    submenu: () =>
-      destinations().map((entry) => ({
-        label: entry.label,
-        // The same declarations the sprint dropdown paints its options with, so the two surfaces
-        // cannot disagree about which sprint is which.
-        declarations: sprintRelationDeclarations(entry.relation),
-        run: () => {
-          void writeField(options, {
-            field: ITERATION_PATH_FIELD,
-            value: entry.path,
-            baseValue: options.item.iterationPath,
-          }).then((ok) => {
-            if (!ok) return;
-            options.item.iterationPath = entry.path;
-            options.item.sprintName = entry.name;
-            options.onChanged();
-          });
-        },
-      })),
+    submenu: destinations,
   };
+}
+
+/**
+ * Builds the live destination list shared by the context-menu command and the row's sprint chip.
+ *
+ * Kept as commands because both surfaces need the same label, relation styling and action. Building
+ * on open reads the item's current path after any earlier move, so the value already in use is never
+ * offered back as a destination.
+ */
+export function buildSprintMoveCommands(options: SprintMoveOptions): ItemContextMenuCommand[] {
+  return options.sprintWindow.entries
+    .filter(
+      (entry): entry is SprintWindowEntry =>
+        entry.relation !== "past" && entry.path !== options.item.iterationPath,
+    )
+    .map((entry) => ({
+      label: entry.label,
+      // The same declarations the sprint dropdown paints its options with, so the two surfaces
+      // cannot disagree about which sprint is which.
+      declarations: sprintRelationDeclarations(entry.relation),
+      run: () => {
+        void writeField(options, {
+          field: ITERATION_PATH_FIELD,
+          value: entry.path,
+          baseValue: options.item.iterationPath,
+        }).then((ok) => {
+          if (!ok) return;
+          options.item.iterationPath = entry.path;
+          options.item.sprintName = entry.name;
+          options.onChanged();
+        });
+      },
+    }));
 }
 
 /**

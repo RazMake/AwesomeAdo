@@ -89,7 +89,7 @@ view — regardless of which bundle renders it — reuses the same consistent pa
 | `MarkdownText`     | [`control/MarkdownText`](./control/MarkdownText/README.md)         | Author-written content (descriptions, notes) rendered as safe DOM, with images and @-mentions.    |
 | `MarkerPill`       | [`control/MarkerPill`](./control/MarkerPill/README.md)             | A fixed-color pill for a recognized condition (blocked, blocked by another team, interrupt).      |
 | `OrderingPicker`   | [`control/OrderingPicker`](./control/OrderingPicker/README.md)     | A discrete sort glyph naming the ordering policy in force, with a menu to change it.              |
-| `PriorityBadge`    | [`control/PriorityBadge`](./control/PriorityBadge/README.md)       | A bold P0-P4 chip with priority colors and a same-styled selection popup.                         |
+| `PriorityBadge`    | [`control/PriorityBadge`](./control/PriorityBadge/README.md)       | A P0-P4 chip emphasizing P0-P2 and muting later priorities, with a matching selection popup.      |
 | `TagPill`          | [`control/TagPill`](./control/TagPill/README.md)                   | A colored Feature Crew tag pill (a neutral "??" pill when untagged).                              |
 | `WriteQueueStatus` | [`control/WriteQueueStatus`](./control/WriteQueueStatus/README.md) | A "Saving N change(s)…" spinner shown only while writes are in flight.                            |
 | `ViewScaffold`     | [`control/ViewScaffold`](./control/ViewScaffold/README.md)         | The centered title + message placeholder shell every view starts from.                            |

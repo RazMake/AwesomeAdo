@@ -2,9 +2,10 @@
 
 A theme-aware, editable Azure DevOps priority chip. Every priority uses the same gray background and
 edge: the existing subtle wash on light themes, and a darker solid fill and border on dark themes.
-P0 uses literal red text, P1 literal orange text, and P2 or later the active theme's primary text
-color. The red/orange shade is selected directly for the declared color scheme without mixing it
-with another color. Compact padding keeps the background close to the bold label.
+P0 uses literal red text, P1 literal orange text, and P2 a restrained scheme-aware gray; all three
+are extra-bold. P3 and later use the theme's muted secondary text at normal weight. The red/orange
+shade is selected directly for the declared color scheme without mixing it with another color.
+Compact padding keeps the background close to the label.
 
 ## Usage
 
