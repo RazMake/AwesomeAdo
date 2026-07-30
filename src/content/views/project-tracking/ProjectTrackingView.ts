@@ -34,6 +34,10 @@ import type {
   EnhancedViewServices,
 } from "../../../common/view-common/EnhancedView";
 import {
+  renderAreaPathFilter,
+  type AreaPathFilterHandle,
+} from "../../../common/view-common/control/AreaPathFilter/AreaPathFilter";
+import {
   renderAssignedTo,
   type AssignedToHandle,
 } from "../../../common/view-common/control/AssignedTo/AssignedTo";
@@ -160,6 +164,8 @@ function itemTagKey(item: TrackedWorkItem): string | null | undefined {
 interface TreeFilter {
   /** The sprint the board is filtered to, or null when the sprint filter is off. */
   sprint: string | null;
+  /** Full Azure DevOps area paths selected in the header (empty = every area). */
+  areaPaths: ReadonlySet<string>;
   /** The active Feature Crew tag filter (empty = nobody selected); `null` is the untagged "??" bucket. */
   tags: Set<string | null>;
   /** True once an item has sat in the resolved column longer than the binding's window allows. */
@@ -202,8 +208,13 @@ function matchesLitPills(item: TrackedWorkItem, filter: TreeFilter): boolean {
  */
 function isVisibleUnderFilter(item: TrackedWorkItem, filter: TreeFilter): boolean {
   const matchesSprint = !filter.sprint || item.sprintName === filter.sprint;
+  const matchesAreaPath =
+    filter.areaPaths.size === 0 || (item.areaPath !== null && filter.areaPaths.has(item.areaPath));
   const selfMatches =
-    matchesSprint && matchesLitPills(item, filter) && !filter.isResolvedPastWindow(item);
+    matchesSprint &&
+    matchesAreaPath &&
+    matchesLitPills(item, filter) &&
+    !filter.isResolvedPastWindow(item);
   if (selfMatches) return true;
   return item.children.some((child) => isVisibleUnderFilter(child, filter));
 }
@@ -1874,6 +1885,8 @@ interface BoardSession {
   expandedNoteIds: Set<number>;
   /** The active tag filter (OR across the entries; empty = everyone). `null` is the untagged bucket. */
   selectedTags: Set<string | null>;
+  /** Full area paths selected in the header (OR across entries; empty = every area). */
+  selectedAreaPaths: Set<string>;
   /** The recent-activity pills the reader lit (OR across them; empty = no activity filter). */
   selectedActivity: Set<RecentActivityKind>;
   /** The marker pills the reader lit (OR across them; empty = no marker filter). */
@@ -1892,6 +1905,7 @@ function createBoardSession(): BoardSession {
     collapsedIds: new Set<number>(),
     expandedNoteIds: new Set<number>(),
     selectedTags: new Set<string | null>(),
+    selectedAreaPaths: new Set<string>(),
     selectedActivity: new Set<RecentActivityKind>(),
     selectedMarkers: new Set<WorkItemMarker>(),
     sprint: null,
@@ -1919,6 +1933,52 @@ function renderSprintControls(
     sprints: sprintWindow.entries,
     selectedName: chosen?.selectedName ?? sprintWindow.currentName,
     filterActive: chosen?.filterActive ?? sprintWindow.entries.length > 0,
+  });
+}
+
+/** Collect paths that can survive the board's non-optional resolved-age rule. */
+function collectAreaPaths(
+  root: TrackedWorkItem,
+  isResolvedPastWindow: (item: TrackedWorkItem) => boolean,
+): string[] {
+  const paths = new Set<string>();
+  const visit = (item: TrackedWorkItem): void => {
+    if (
+      !isResolvedPastWindow(item) &&
+      typeof item.areaPath === "string" &&
+      item.areaPath.length > 0
+    ) {
+      paths.add(item.areaPath);
+    }
+    for (const child of item.children) visit(child);
+  };
+  for (const child of root.children) visit(child);
+  return [...paths].sort((left, right) => left.localeCompare(right));
+}
+
+/** Build the shared full-path selector and keep stale refresh selections from hiding every row. */
+function renderAreaPathControls(
+  context: DataDrivenViewContext,
+  root: TrackedWorkItem,
+  session: BoardSession,
+  isResolvedPastWindow: (item: TrackedWorkItem) => boolean,
+  onChange: () => void,
+): AreaPathFilterHandle {
+  const areaPaths = collectAreaPaths(root, isResolvedPastWindow);
+  for (const selected of [...session.selectedAreaPaths]) {
+    if (!areaPaths.includes(selected)) session.selectedAreaPaths.delete(selected);
+  }
+  return renderAreaPathFilter(context.doc, {
+    areaPaths,
+    selectedAreaPaths: [...session.selectedAreaPaths],
+    onChange: (selected) => {
+      session.selectedAreaPaths.clear();
+      for (const path of selected) session.selectedAreaPaths.add(path);
+      context.services.logger.info(
+        `Project Tracking area-path filter: selectedCount=${selected.length}.`,
+      );
+      onChange();
+    },
   });
 }
 
@@ -1972,6 +2032,8 @@ interface HeaderBoardControls {
   writeQueueStatus: HTMLElement;
   /** The discrete ordering indicator/picker, pinned to the tile's top-right corner. */
   orderingPicker: HTMLElement;
+  /** Re-narrow the tree after the header's area-path selection changes. */
+  onAreaPathChange: () => void;
   /**
    * The board's right-click menu for the ROOT item, opened from the project title — the one work
    * item the board never renders as a row, and which would otherwise be the only item on screen with
@@ -2011,6 +2073,18 @@ function renderHeader(
   techLead: HTMLElement | null;
 } {
   const sprintPickerHandle = renderSprintControls(doc, sprintWindow, session);
+  const areaPathFilter = renderAreaPathControls(
+    context,
+    root,
+    session,
+    createResolvedWindowFilter(
+      typeMap,
+      boardColumns,
+      hideResolvedAfterDays(context.properties),
+      context.services.now(),
+    ),
+    boardControls.onAreaPathChange,
+  );
   const techLead = createTechLeadGroup(root, chipContext);
 
   // The view runs on the ADO query page, so the page's own URL supplies the org/project the folder
@@ -2036,6 +2110,7 @@ function renderHeader(
     onTitleContextMenu: boardControls.onTitleContextMenu,
     techLead,
     eta: createItemEtaBadge(doc, root, typeMap, boardColumns, queue, context.services.now()),
+    areaPathFilter: areaPathFilter.element,
     sprintPicker: sprintPickerHandle.element,
     orderingPicker: boardControls.orderingPicker,
     writeQueueStatus: boardControls.writeQueueStatus,
@@ -2278,8 +2353,8 @@ function createBoardTreeRenderer(params: BoardTreeRendererParams): () => void {
   // Same reason, opposite default, for the opened discussions: a notes panel fetches when it opens,
   // so the rows that were OPENED are what has to survive — recording the closed ones would make every
   // newly-rendered row start by loading a discussion nobody asked to see.
-  const { collapsedIds, expandedNoteIds, selectedTags, selectedActivity, selectedMarkers } =
-    params.session;
+  const { collapsedIds, expandedNoteIds, selectedTags } = params.session;
+  const { selectedAreaPaths, selectedActivity, selectedMarkers } = params.session;
 
   const renderTreeContent = (): void => {
     const filterOn = sprintPickerHandle.isFilterActive();
@@ -2300,6 +2375,7 @@ function createBoardTreeRenderer(params: BoardTreeRendererParams): () => void {
       boardColumns: params.metrics.boardColumns,
       filter: {
         sprint: filterOn ? sprintPickerHandle.selectedSprint() : null,
+        areaPaths: selectedAreaPaths,
         tags: selectedTags,
         // Rebuilt on every pass rather than once per board: "now" moves, so a board left open long
         // enough ages an item out the next time anything repaints it.
@@ -2962,6 +3038,7 @@ function mountBoardHeader(params: {
   folderPath: QueryFolderCrumb[];
   contextMenu: ItemContextMenu;
   onRootChanged: () => void;
+  onAreaPathChange: () => void;
 }): ReturnType<typeof renderHeader> {
   const { doc, root, context, typeMap, sprintWindow, session, core } = params;
   return renderHeader(
@@ -2976,6 +3053,7 @@ function mountBoardHeader(params: {
     {
       writeQueueStatus: core.writeStatus.element,
       orderingPicker: core.ordering.element,
+      onAreaPathChange: params.onAreaPathChange,
       onTitleContextMenu: (event) =>
         params.contextMenu.openAt(
           event,
@@ -3026,6 +3104,9 @@ function renderBoard(params: RenderBoardParams): BoardHandle {
   // Late-bound because the root's own commands have to repaint the tree AND re-label the header, and
   // neither exists until after the call below that consumes this handler.
   let onRootChanged: () => void = () => {};
+  // The header is assembled before the tree renderer. Synchronous setup replaces this before the
+  // first user event can arrive, mirroring the root-command callback directly above.
+  let onAreaPathChange: () => void = () => {};
 
   const { header, setHeaderTitle, sprintPickerHandle, expandAll, collapseAll, refresh, techLead } =
     mountBoardHeader({
@@ -3039,6 +3120,7 @@ function renderBoard(params: RenderBoardParams): BoardHandle {
       folderPath,
       contextMenu,
       onRootChanged: () => onRootChanged(),
+      onAreaPathChange: () => onAreaPathChange(),
     });
   refresh.element.onclick = () => params.onRefresh();
   board.append(header);
@@ -3061,6 +3143,7 @@ function renderBoard(params: RenderBoardParams): BoardHandle {
 
   renderTreeContent();
   core.setRepaint(renderTreeContent);
+  onAreaPathChange = renderTreeContent;
   // The header is painted once and is not part of a tree pass, so the root's own title has to be
   // re-labelled here; the tree still repaints because the root's sprint reaches its children's rows,
   // and the filter row because the root can be flagged from this menu like any other item.

@@ -25,8 +25,9 @@ Renders a single subtle-filled tile with these bands:
    (`options.writeQueueStatus`) on its own right-aligned row directly above the sprint picker.
    Omitted/`null` hides the row; the indicator itself stays hidden while no save is in flight.
 3. **Title + controls** — the project title (`options.title`, colored by `options.titleColor`) with
-   the expand-all (`+`), collapse-all (`−`) and refresh (`⟳`) buttons beside it, and the sprint picker
-   (`options.sprintPicker`) pinned to the right edge of the same band.
+   the expand-all (`+`), collapse-all (`−`) and refresh (`⟳`) buttons beside it. The compact area-path
+   filter (`options.areaPathFilter`) and sprint picker (`options.sprintPicker`) form one filter group
+   pinned to the right edge of the same band.
 4. **Tech Lead + ETA** — the caller-supplied Tech Lead control (`options.techLead`) followed by the
    caller-supplied ETA badge (`options.eta`, built with the shared
    [`renderEtaBadge`](../../../../common/view-common/control/EtaBadge/README.md) so the view owns its
@@ -50,6 +51,7 @@ it, so sitting them flush would read as one three-button group and invite the mi
 | `onTitleContextMenu` | Called when the title is right-clicked, so the view can offer the root item's own menu (omitted leaves the browser's menu alone). |
 | `techLead`           | The Tech Lead control element, or `null` when view services are unavailable.                                                      |
 | `eta`                | The root item's ETA badge element (pre-built by the view), or `null` when view services are unavailable.                          |
+| `areaPathFilter`     | The compact area-path multi-select, grouped with the sprint picker at the right edge.                                             |
 | `sprintPicker`       | The sprint picker element, pinned to the right of the controls band.                                                              |
 | `writeQueueStatus`   | The write-queue status indicator, on its own row above the sprint picker (`null`/omitted hides the row).                          |
 
@@ -73,7 +75,7 @@ a re-read is neither instant nor guaranteed, and the glyph alone cannot tell "st
 
 The caller owns both states: only it knows when the fetch settled.
 
-The control composes the controls it is handed (Tech Lead, sprint picker, ordering picker) plus the
-shared ETA badge and
+The control composes the controls it is handed (Tech Lead, area-path filter, sprint picker, ordering
+picker) plus the shared ETA badge and
 [`Breadcrumbs`](../../../../common/view-common/control/Breadcrumbs/README.md) controls; it never
 reaches for ADO data itself.

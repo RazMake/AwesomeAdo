@@ -946,3 +946,22 @@ nodeMatchesChange`). Copied here, that makes an activity pill drag in items belo
   every depth and counts hidden branches; it cannot keep the visible outline alternating through an
   expansion. Explicit visible-order parity makes the reading sequence stable, while theme-owned roles
   preserve tuned contrast independently in Dark, Light, and Blue.
+
+## ADR-053: Area-path filtering uses full values, shortest unique labels, and session state
+
+- Decision: `TrackedWorkItem.areaPath` carries the full `System.AreaPath` fetched with the Project
+  Tracking tree. The shared `common/view-common/control/AreaPathFilter` receives and returns only
+  those full values; display labels begin at the leaf and grow toward the root one segment at a time
+  only while another offered path has the same label.
+- Decision: Project Tracking derives the offered paths from loaded descendants that are not hidden by
+  the resolved-age predicate and keeps the selected set in `BoardSession`. No other active filter
+  changes the offered paths. Selected paths OR together as their own filter group, which ANDs with
+  sprint, crew-tag, recent-activity, marker, and resolved-age filtering. The existing recursive
+  visibility predicate keeps ancestors of a matching descendant visible.
+- Rationale: leaf labels make the common case compact, while minimum suffix expansion removes
+  ambiguity without filling a small header popup with repeated project prefixes. Filtering must use
+  the full server value so two identical leaves never collapse into one condition. The choice is a
+  transient reading position like sprint and in-view ordering, so persisting it to the query binding
+  would turn a quick narrowing action into a synced setting and force an unnecessary board reload.
+  Applying the always-on resolved-age rule while collecting options prevents a choice that can never
+  reveal an item, while ignoring interactive filters keeps those independent controls composable.

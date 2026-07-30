@@ -21,6 +21,9 @@ function baseOptions(
   const sprintPicker = document.createElement("div");
   sprintPicker.className = "awesomeado-sprint-picker";
 
+  const areaPathFilter = document.createElement("div");
+  areaPathFilter.className = "awesomeado-area-filter";
+
   const orderingPicker = document.createElement("span");
   orderingPicker.className = "awesomeado-ordering";
 
@@ -30,6 +33,7 @@ function baseOptions(
     titleColor: null,
     techLead,
     eta: renderEtaBadge(document, { eta: null, now }),
+    areaPathFilter,
     sprintPicker,
     orderingPicker,
     ...overrides,
@@ -51,13 +55,16 @@ function readBreadcrumbNav(element: Element): {
 }
 
 describe("renderProjectTrackingHeader - title & controls", () => {
-  it("renders the tile with the title and mounts the sprint picker", () => {
+  it("renders the title and groups both narrowing controls at the right edge", () => {
     const { element } = renderProjectTrackingHeader(document, baseOptions());
 
     expect(element.className).toBe("awesomeado-tracking__header");
     const title = element.querySelector(".awesomeado-tracking__title");
     expect(title?.textContent).toBe("Platform Modernization");
-    expect(element.querySelector(".awesomeado-sprint-picker")).toBeTruthy();
+    const filters = element.querySelector<HTMLElement>(".awesomeado-tracking__header-filters");
+    expect(filters?.querySelector(".awesomeado-area-filter")).toBeTruthy();
+    expect(filters?.querySelector(".awesomeado-sprint-picker")).toBeTruthy();
+    expect(filters?.style.marginLeft).toBe("auto");
   });
 
   it("applies the title color when provided", () => {

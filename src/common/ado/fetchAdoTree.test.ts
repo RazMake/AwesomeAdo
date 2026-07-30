@@ -20,6 +20,7 @@ describe("TRACKING_FIELDS", () => {
     expect(TRACKING_FIELDS).toContain("System.State");
     expect(TRACKING_FIELDS).toContain("Microsoft.VSTS.Common.Priority");
     expect(TRACKING_FIELDS).toContain("System.AssignedTo");
+    expect(TRACKING_FIELDS).toContain("System.AreaPath");
     expect(TRACKING_FIELDS).toContain("System.IterationPath");
     expect(TRACKING_FIELDS).toContain("System.CreatedDate");
     expect(TRACKING_FIELDS).toContain("System.CreatedBy");
@@ -148,6 +149,7 @@ function buildNestedEpicTree(): { raw: AdoRawTree; etaFieldByType: Map<string, s
             uniqueName: "alice@contoso.com",
             imageUrl: "https://ado/alice.jpg",
           },
+          "System.AreaPath": "Project\\Platform\\Services",
           "System.IterationPath": "Project\\Team\\Sprint 1",
           "System.CreatedDate": "2024-01-01T10:00:00Z",
           "System.CreatedBy": { displayName: "Bob", uniqueName: "bob@contoso.com" },
@@ -215,6 +217,7 @@ describe("parseTrackedTree - nested tree", () => {
     expect(epic.title).toBe("Quarterly Goal");
     expect(epic.state).toBe("In Progress");
     expect(epic.priority).toBe(0);
+    expect(epic.areaPath).toBe("Project\\Platform\\Services");
     expect(epic.assignedTo).toEqual({
       displayName: "Alice",
       uniqueName: "alice@contoso.com",

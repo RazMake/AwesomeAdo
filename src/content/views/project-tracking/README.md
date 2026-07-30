@@ -42,7 +42,7 @@ halves of the view — its configuration and its renderer.
        the sticky header — which would otherwise shove the whole board down and back on every edit.
     3. Title + controls: the root item's title (colored by type) with the expand-all/collapse-all
        (`+`/`−`) buttons beside it, the refresh (`⟳`) button spaced apart from that pair, and the
-       sprint picker pinned to the right edge of the same band. `+` opens all parent rows before a
+       area-path filter and sprint picker grouped at the right edge of the same band. `+` opens all parent rows before a
        later click opens every visible item's notes. `−` closes open notes and descriptions before a
        later click collapses the parent rows.
     4. Tech Lead + ETA: "TechLead:" label + root's Assigned To, followed by the root's editable ETA
@@ -112,6 +112,14 @@ halves of the view — its configuration and its renderer.
     default when sprints exist and pre-selected on the current sprint (rows filtered to selected
     sprint + ancestor paths, pills hidden); OFF shows all rows with sprint pills. Empty sprints →
     forced OFF, toggle disabled.
+  - **Area-path filter**: the compact
+    [`AreaPathFilter`](../../../common/view-common/control/AreaPathFilter/README.md) in the sticky
+    header lists every full `System.AreaPath` represented by an item that has not aged out under the
+    resolved-item window. Sprint and pill filters do not remove options. Checkboxes return and filter
+    by full path values, while their labels use only the shortest unique suffix (`API`, or
+    `Platform › API` when the leaf is ambiguous). Selected paths OR together and AND with the sprint,
+    crew-tag, activity, marker, and resolved-window filters. Ancestors of matching descendants remain
+    visible, and the selection survives an in-place Refresh.
   - **Tree rows**: the tree renders only **two levels below the root** — the root's children and
     their children. Each row shows twisty (when it has child rows), editable Status badge, editable
     Priority chip immediately after it, description toggle ("?" button), type icon (the notes toggle), title

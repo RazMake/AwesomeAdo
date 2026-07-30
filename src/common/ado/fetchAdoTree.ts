@@ -49,6 +49,7 @@ export const TRACKING_FIELDS: readonly string[] = [
   "System.State",
   PRIORITY_FIELD,
   ASSIGNED_TO_FIELD,
+  "System.AreaPath",
   "System.IterationPath",
   "System.CreatedDate",
   "System.CreatedBy",
@@ -407,6 +408,11 @@ function parsePriority(value: unknown): number | null {
   return typeof value === "number" && Number.isInteger(value) ? value : null;
 }
 
+/** Preserve optional ADO string fields without coercing absent values into display text. */
+function parseOptionalString(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
+}
+
 /**
  * Hydrate a TrackedWorkItem's own fields from a batch item (children are attached by the caller). The
  * nested `field`/`readString` closures keep the many repeated `fields[...] ?? ""` reads out of this
@@ -423,8 +429,7 @@ function hydrateTrackedWorkItem(
   const readString = (key: string): string => String(field(key) ?? "");
 
   const type = readString("System.WorkItemType");
-  const iterationPath = field("System.IterationPath");
-  const iterationPathStr = typeof iterationPath === "string" ? iterationPath : null;
+  const iterationPathStr = parseOptionalString(field("System.IterationPath"));
 
   // ETA comes from the type-specific field, if one is configured.
   const etaFieldRef = etaFieldByType.get(type);
@@ -442,6 +447,7 @@ function hydrateTrackedWorkItem(
     state: readString("System.State"),
     priority: parsePriority(field(PRIORITY_FIELD)),
     assignedTo: parseIdentity(field(ASSIGNED_TO_FIELD)),
+    areaPath: parseOptionalString(field("System.AreaPath")),
     iterationPath: iterationPathStr,
     sprintName: sprintLeaf(iterationPathStr),
     createdDate: readString("System.CreatedDate"),

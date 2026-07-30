@@ -18,6 +18,7 @@ function item(id: number, tags: string[], children: TrackedWorkItem[] = []): Tra
     state: "New",
     priority: null,
     assignedTo: null,
+    areaPath: null,
     iterationPath: null,
     sprintName: null,
     createdDate: "2026-01-01T00:00:00Z",

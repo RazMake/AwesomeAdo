@@ -36,7 +36,8 @@ response-parsing logic, kept pure so they are unit-testable without a browser.
   string = the assigned crew tag.
 - `TrackedWorkItem` — the normalized work-item tree model for Project Tracking views; carries its
   `children`, ISO 8601 date strings (`createdDate`, `changedDate`, `stateChangeDate`, `eta`), typed
-  user references, `priority` (`Microsoft.VSTS.Common.Priority`, or `null` when absent), and
+  user references, the full `areaPath` (`System.AreaPath`, or `null` when absent),
+  `priority` (`Microsoft.VSTS.Common.Priority`, or `null` when absent), and
   `importance` (ADO's manual backlog rank — a LOWER number is more important).
   `stateChangeDate` is when `System.State` last moved, kept separate from `changedDate` so "how long
   has this been done?" is not reset by an edit that never touched the state; an item ADO returned no
@@ -201,9 +202,10 @@ response-parsing logic, kept pure so they are unit-testable without a browser.
 - `parseTrackedTree(raw, etaFieldByType)` — parses the raw WIQL + batch REST bodies into the
   normalized `TrackedWorkItem` tree; **best-effort** (missing/malformed input yields
   `{ isTreeQuery:false, roots:[], error, folderPath }` or an empty tree). Guards cycles and depth.
-  Accepts batch items as either a bare array or `{ value: [...] }`. Hydrates each node's fields from
-  the batch, strips HTML from descriptions, decodes entities, and pulls ETA from the per-type field
-  map. Also derives `folderPath` from the optional query-metadata body via `parseQueryFolderPath`.
+  Accepts batch items as either a bare array or `{ value: [...] }`. Hydrates each node's fields,
+  including its full area path, from the batch; strips HTML from descriptions; decodes entities; and
+  pulls ETA from the per-type field map. Also derives `folderPath` from the optional query-metadata
+  body via `parseQueryFolderPath`.
 - `parseQueryFolderPath(rawQuery)` — extracts the query's ancestor-folder trail (outermost → nearest)
   from the raw query-metadata body as `QueryFolderCrumb[]`: splits its `path` on either separator
   (`/` or `\`), drops the leaf (the query's own name) and the built-in root container
@@ -217,7 +219,8 @@ response-parsing logic, kept pure so they are unit-testable without a browser.
 - `buildWorkItemUrl(href, id)` — builds the human-facing work item deep link
   (`{base}/{project}/_workitems/edit/{id}`) a view hands to an anchor; `null` when `href` is not a
   project-scoped ADO URL. This is the **web** link, not the REST endpoint (`buildWorkItemUpdateUrl`).
-- `TRACKING_FIELDS` — the readonly array of System.* field reference names fetched for tree queries.
+- `TRACKING_FIELDS` — the readonly array of field reference names fetched for tree queries, including
+  `System.AreaPath` for in-view filtering.
 - `AdoRawTree` — `{ wiql, items, query? }` shape wrapping the raw REST bodies before parsing;
   `query` is the best-effort query-metadata body (may be absent when that read fails).
 - `AdoTreeUrls` — `{ wiqlUrl, batchUrl, queryUrl }` shape `buildAdoTreeUrls` returns.

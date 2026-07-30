@@ -164,6 +164,7 @@ function createFixtureFeatures(bob: TrackedUser, carol: TrackedUser, alice: Trac
       state: "Active",
       priority: 1,
       assignedTo: bob,
+      areaPath: "Project\\Platform\\API",
       iterationPath: "Project\\Sprint 1",
       sprintName: "Sprint 1",
       createdDate: "2026-01-15T09:00:00Z",
@@ -186,6 +187,7 @@ function createFixtureFeatures(bob: TrackedUser, carol: TrackedUser, alice: Trac
           state: "New",
           priority: 2,
           assignedTo: carol,
+          areaPath: "Project\\Experience\\API",
           iterationPath: "Project\\Sprint 2",
           sprintName: "Sprint 2",
           createdDate: "2026-01-20T10:00:00Z",
@@ -210,6 +212,7 @@ function createFixtureFeatures(bob: TrackedUser, carol: TrackedUser, alice: Trac
       state: "New",
       priority: 0,
       assignedTo: null,
+      areaPath: "Project\\Migration",
       iterationPath: "Project\\Sprint 2",
       sprintName: "Sprint 2",
       createdDate: "2026-01-18T11:00:00Z",
@@ -243,6 +246,7 @@ function createFixtureTree(): TrackedWorkItem {
     state: "In Progress",
     priority: 2,
     assignedTo: alice,
+    areaPath: "Project",
     iterationPath: "Project\\Sprint 1",
     sprintName: "Sprint 1",
     createdDate: "2026-01-10T08:00:00Z",
@@ -1266,6 +1270,67 @@ describe("ProjectTrackingView — sprint filter", () => {
 
     const pills = root.querySelectorAll(".awesomeado-tracking__sprint-pill");
     expect(pills.length).toBe(0);
+  });
+});
+
+describe("ProjectTrackingView — area path filter", () => {
+  it("offers shortest distinct labels and filters by the selected full path", async () => {
+    const epic = createFixtureTree();
+    const services = createFakeServices({
+      loadTree: async () => ({ isTreeQuery: true, roots: [epic], error: null }),
+    });
+    const root = projectTrackingView.render({
+      doc: document,
+      queryId: "q1",
+      properties: {},
+      services,
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    root.querySelector<HTMLButtonElement>(".awesomeado-area-filter__trigger")!.click();
+    const rows = [...root.querySelectorAll<HTMLElement>(".awesomeado-area-filter__option")];
+    expect(rows.map((row) => row.textContent)).toContain("Platform › API");
+    expect(rows.map((row) => row.textContent)).toContain("Experience › API");
+
+    rows
+      .find((row) => row.title === "Project\\Platform\\API")!
+      .querySelector<HTMLInputElement>("input")!
+      .click();
+
+    const titles = [...root.querySelectorAll(".awesomeado-tracking__item-title")].map(
+      (title) => title.textContent,
+    );
+    expect(titles).toContain("User Authentication");
+    expect(titles).not.toContain("Data Migration");
+    expect(titles).not.toContain("Login UI");
+  });
+
+  it("omits paths contributed only by items hidden by the resolved-age window", async () => {
+    const epic = createFixtureTree();
+    const agedResolvedItem = epic.children[1]!;
+    agedResolvedItem.state = "Closed";
+    agedResolvedItem.stateChangeDate = "2026-07-01T08:00:00Z";
+    const services = createFakeServices({
+      loadTree: async () => ({ isTreeQuery: true, roots: [epic], error: null }),
+    });
+    const root = projectTrackingView.render({
+      doc: document,
+      queryId: "q1",
+      properties: {},
+      services,
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    root.querySelector<HTMLButtonElement>(".awesomeado-area-filter__trigger")!.click();
+    const offeredPaths = [
+      ...root.querySelectorAll<HTMLElement>(".awesomeado-area-filter__option"),
+    ].map((row) => row.title);
+
+    expect(offeredPaths).not.toContain("Project\\Migration");
+    expect(offeredPaths).toContain("Project\\Platform\\API");
+    expect(offeredPaths).toContain("Project\\Experience\\API");
   });
 });
 
@@ -2894,6 +2959,7 @@ function createItem(overrides: Partial<TrackedWorkItem> & { id: number }): Track
     state: "Active",
     priority: null,
     assignedTo: null,
+    areaPath: null,
     iterationPath: "Project\\Sprint 1",
     sprintName: "Sprint 1",
     createdDate: "2026-01-10T08:00:00Z",

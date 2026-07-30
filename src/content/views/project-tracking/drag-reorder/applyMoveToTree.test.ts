@@ -14,6 +14,7 @@ function item(id: number, importance: number, children: TrackedWorkItem[] = []):
     state: "Active",
     priority: null,
     assignedTo: null,
+    areaPath: null,
     iterationPath: null,
     sprintName: null,
     createdDate: "",

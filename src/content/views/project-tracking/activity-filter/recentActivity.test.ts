@@ -23,6 +23,7 @@ function trackedItem(createdDate: string, changedDate: string): TrackedWorkItem 
     state: "New",
     priority: null,
     assignedTo: null,
+    areaPath: null,
     iterationPath: null,
     sprintName: null,
     createdDate,

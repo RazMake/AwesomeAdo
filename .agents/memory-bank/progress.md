@@ -20,6 +20,9 @@ This is a flattened snapshot of what exists now, not a build log.
   hover and `Ctrl+Shift` emphasis across each row and its open details, re-striped in visible tree
   order after outline changes. Options imports only `content/views/viewCatalog` (scoped §6
   exception, ADR-027, lint-enforced).
+- **Area-path filtering** (`common/view-common/control/AreaPathFilter` + Project Tracking): the live
+  tree hydrates `System.AreaPath`; a compact themed header popup selects full paths using shortest
+  unique display suffixes, and the session-scoped selection narrows the board without persisting.
 - **Markdown authoring** (`common/view-common/control/TextEditor`): shared bold/italic/link shortcuts
   and keyboard-driven ADO `@`-mention insertion across note/comment and description editors; inline
   notes and New notes activity omit configured marker-comment prefixes while View all stays complete.

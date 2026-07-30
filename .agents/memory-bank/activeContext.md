@@ -28,7 +28,8 @@ The extension is feature-complete for its current scope:
   descriptions and notes — rendered as allowlist-rebuilt DOM, with attachment images and
   `@`-mentions; ADR-044), plus `TextEditor` (the one themed in-place editor — one-line or multi-line
   Markdown — behind every note, title and description edit; multi-line editors own bold/italic/link
-  shortcuts and typed `@<localId>` identity suggestions, ADR-051), `MarkerPill` (the theme-owned
+  shortcuts and typed `@<localId>` identity suggestions, ADR-051), `AreaPathFilter` (the compact
+  themed full-path multi-select with shortest unique suffix labels, ADR-053), `MarkerPill` (the theme-owned
   semantic pill for a recognized condition — blocked / blocked-by-another-team / interrupt — shared by
   the tagging commands and the board's filter row) and `ItemContextMenu` (the shared
   per-item right-click menu: Copy Item ID / Copy ADO Url / Open in ADO, the last accented, then a
@@ -62,7 +63,8 @@ The extension is feature-complete for its current scope:
   `ITeamIterationsLoader`, `IUserDirectory`); PST date/ETA math lives in `common/datetime`. `EnhancedViewSurface` takes the
   services once at the content composition root and forwards them per render. Project Tracking renders a
   single-root tree (validates: tree query, exactly one root, root is the first configured type), titles
-  the page with the epic (in its type color), shows the epic's assignee as TechLead, a sprint dropdown +
+  the page with the epic (in its type color), shows the epic's assignee as TechLead, a compact area-path
+  multi-select, a sprint dropdown +
   on/off filter toggle (pills when off; clicking one offers the other current/future sprints with the
   dropdown's relation styling and moves the item through the shared write queue), per-item expand/collapse,
   and staged header expansion controls:

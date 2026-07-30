@@ -62,6 +62,8 @@ export interface ProjectTrackingHeaderOptions {
   eta: HTMLElement | null;
   /** The sprint picker control element, pinned to the right of the controls band. */
   sprintPicker: HTMLElement;
+  /** The compact area-path filter, grouped with the sprint picker on the right. */
+  areaPathFilter: HTMLElement;
   /**
    * The write-queue status indicator, mounted in the tile's top-right corner beside the ordering
    * indicator so it reports in-flight saves without disturbing the title band. Null/omitted simply
@@ -418,9 +420,18 @@ export function renderProjectTrackingHeader(
   bandButtons.append(expandAllButton, collapseAllButton, refreshButton.element);
   mainRow.append(bandButtons);
 
-  // Pin the sprint picker to the right edge of the same band, aligned with the +/− buttons.
-  options.sprintPicker.style.marginLeft = "auto";
-  mainRow.append(options.sprintPicker);
+  // Keep the two narrowing controls together at the right edge. The area selector stays compact
+  // while the sprint picker grows with its current label, so the group remains easy to scan.
+  const filters = doc.createElement("div");
+  filters.className = "awesomeado-tracking__header-filters";
+  filters.style.cssText = [
+    "display:flex",
+    "align-items:center",
+    "gap:8px",
+    "margin-left:auto",
+  ].join(";");
+  filters.append(options.areaPathFilter, options.sprintPicker);
+  mainRow.append(filters);
 
   header.append(mainRow);
 

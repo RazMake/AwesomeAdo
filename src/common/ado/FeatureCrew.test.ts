@@ -33,6 +33,7 @@ function item(
     state: "Active",
     priority: null,
     assignedTo,
+    areaPath: null,
     iterationPath: null,
     sprintName: null,
     createdDate: "2024-01-01T00:00:00Z",

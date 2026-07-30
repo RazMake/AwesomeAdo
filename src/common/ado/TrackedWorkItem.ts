@@ -29,6 +29,8 @@ export interface TrackedWorkItem {
   /** The numeric Azure DevOps priority, or null when the process does not provide one. */
   priority: number | null;
   assignedTo: TrackedUser | null;
+  /** The full Azure DevOps area path, or null when the process did not return one. */
+  areaPath: string | null;
   iterationPath: string | null;
   sprintName: string | null;
   /** ISO 8601 timestamp when the item was created. */

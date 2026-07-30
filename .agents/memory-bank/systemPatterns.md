@@ -102,6 +102,12 @@ identity reference rather than display text. Project Tracking's inline note glan
 activity index omit source text beginning with configured marker `commentTag` prefixes; View all
 notes remains complete. See ADR-051.
 
+`control/AreaPathFilter` is the shared compact full-path multi-select. Callers exchange complete ADO
+area paths with it; the control alone derives shortest unique suffix labels by growing an ambiguous
+leaf one parent at a time. Project Tracking offers only paths represented by descendants that survive
+the resolved-age rule, then keeps its selection in `BoardSession`, where it composes as an AND-ed
+filter group without turning a transient reading position into synced configuration. See ADR-053.
+
 ### `src/common/ordering`
 
 `ItemOrdering` — the single definition of what "most important first" / "a–z" / "by ETA" mean:
