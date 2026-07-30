@@ -9,6 +9,19 @@ we hit, why they happened, and the exact fix so nobody re-derives them.
 agent-tool-local memory (it does not clone or transfer between machines/agents). Record new findings
 here so every agent, teammate, and clone sees them.
 
+## A popup reopened during repaint snapped back to its trigger's top-left
+
+- SYMPTOM: after dragging a rolled-up child to a new position, its popup stayed open but moved from
+  its correctly adjusted location to the top-left corner of the child-count chip.
+- ROOT CAUSE: the successful write repainted the board and rebuilt `ChildItemsBadge` with
+  `initiallyOpen`. The control opened synchronously while its new root was still detached, so
+  `popupHost` measured a zero-size box and correctly skipped viewport/clipping correction. The raw
+  `position:absolute; left:0; top:100%` anchor then became visible once the tree was mounted.
+- FIX / RULE: any popup automatically restored across a repaint must open only after its rebuilt
+  trigger is connected. `ChildItemsBadge` queues the auto-open to a microtask, verifies
+  `root.isConnected`, and lets `popupHost` run the same measured placement used by the initial click.
+  Geometry-dependent integration tests must mount the rendered root before asserting that reopen.
+
 ## One unknown `workitemsbatch` field rejected the WHOLE tree and looked like an empty query
 
 - SYMPTOM: Project Tracking said the query returned no items even though ADO's query showed items;

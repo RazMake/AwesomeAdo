@@ -75,9 +75,10 @@ halves of the view — its configuration and its renderer.
     The binding's `orderingPolicy` remains the order every board opens on. The glyph doubles as the
     drag-reorder status light: it turns a heavily-transparent red whenever dragging is unavailable,
     and its tooltip says why.
-  - **Drag to reorder**: while the board is ordered **by importance**, a row's title is a drag handle
-    (the pointer shows `grab` over it and nowhere else). Dragging shows a themed insertion line where
-    the row would land; dropping it under a different parent also washes that parent's children
+  - **Drag to reorder**: while the board is ordered **by importance**, a tree row's title and each
+    rolled-up child's popup title are drag handles (the pointer shows `grab` over them and nowhere
+    else). Dragging shows a themed insertion line where the item would land; dropping a tree row
+    under a different parent also washes that parent's children
     container so the re-parent is visible before the mouse is released. Dropping persists the move
     through the shared write queue: the item is re-ranked with ADO's **own** backlog-order endpoint
     (which owns the rank arithmetic) and, when the parent changed, its `System.Parent` link is
@@ -98,6 +99,8 @@ halves of the view — its configuration and its renderer.
     resolved/Done column) drops off the board once its **state** last changed more than `days` days
     ago — so re-reading or re-tagging finished work does not bring it back. It stays visible while an
     unresolved item still sits beneath it, and an item ADO returned no state-change date for is never
+    hidden. A completed item's ETA is green when that state change happened on or before the ETA's
+    Pacific calendar day; a late or undated completion uses the same neutral color as "No ETA".
     aged out. The rollup badge applies the same rule, so a hidden child is not still counted there.
   - **Sprint filter**: uses the reusable `SprintPicker` control, populated from the shared sprint
     window (`services.loadSprintWindow()` → the configured team's iterations around the current one,
@@ -148,8 +151,11 @@ halves of the view — its configuration and its renderer.
     completed column; clicking it moves the child to the completed column, or — for a child already
     there — back onto the **in-progress** column (board position 1). All three controls behave
     exactly as they do in a tree row: they persist through the board's shared write queue and only
-    reflect what it commits. A type that routes no state onto the target column leaves the tick where
-    it was and says so in the diagnostics log.
+    reflect what it commits. While ordered by importance, the title is also a drag handle for
+    reordering these children; the tree's themed insertion line previews the landing between popup
+    rows. After Azure DevOps accepts a reorder, the popup stays open on the newly ordered rows so
+    another child can be moved immediately. A type that routes no state onto the target column leaves
+    the tick where it was and says so in the diagnostics log.
   - **Indentation**: 70% less than before (~7px vs 24px) with a discrete themed vertical guide line
     showing parent-child relationships (low-alpha neutral border).
   - **Description panel**: toggles below each row; displays "Created on: <date>, Last Modified on:

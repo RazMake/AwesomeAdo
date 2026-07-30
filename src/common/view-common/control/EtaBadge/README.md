@@ -12,6 +12,8 @@ interface EtaBadgeOptions {
   eta: string | null;
   /** The reference point (current time) for countdown calculation. */
   now: Date;
+  /** Completion timestamp for completed items; omit for active items. */
+  completedAt?: string | null;
   /**
    * When provided, the badge is editable: clicking opens a date picker (plus a Clear button while an
    * ETA is set). Picking a date calls this with an ISO timestamp; Clear calls it with `null`. The
@@ -23,6 +25,8 @@ interface EtaBadgeOptions {
 interface EtaBadgeHandle extends HTMLElement {
   /** Update the displayed ETA (or `null` to show "No ETA") after a committed write. */
   setEta(eta: string | null): void;
+  /** Update completion context after a committed status change; omit the value for an active item. */
+  setCompletedAt(completedAt: string | null | undefined): void;
 }
 
 function renderEtaBadge(doc: Document, options: EtaBadgeOptions): EtaBadgeHandle;
@@ -38,6 +42,10 @@ When an ETA is set, the badge shows **"ETA MM/DD/YYYY"** with a severity color r
 - **Distant** (>30 days remaining): muted
 
 Hover displays a countdown tooltip (e.g., "in 2 weeks 3 days" or "overdue by 3 days").
+
+When `completedAt` is supplied, the badge uses completion outcome instead of current urgency: green
+when the item completed on or before its ETA day, and the same neutral color as an unset ETA when it
+completed late or its completion date is unknown. The comparison uses Pacific calendar days.
 
 When no ETA is set (`null` or empty string), the badge displays **"No ETA"** in a muted color, dimmed
 further with opacity so it reads as fainter than any row that carries a real date. This

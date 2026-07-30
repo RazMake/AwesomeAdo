@@ -11,6 +11,11 @@ export interface EtaBadgeOptions {
   /** The reference point (current time) for countdown calculation. */
   now: Date;
   /**
+   * The completion timestamp when the owning item is completed. Omit for active items; null means
+   * the item is completed but its completion time is unknown.
+   */
+  completedAt?: string | null;
+  /**
    * When provided, the badge becomes editable: it shows a hand cursor and clicking opens a small
    * date-picker popup. Picking a date calls this with the chosen date as an ISO timestamp; the popup
    * also offers a Clear button (only while an ETA is set) that calls this with `null`. Omit it for a
@@ -31,10 +36,28 @@ export interface EtaBadgeOptions {
 export interface EtaBadgeHandle extends HTMLElement {
   /** Update the displayed ETA (or `null` to show "No ETA") after a committed write. */
   setEta(eta: string | null): void;
+  /** Update completion context after a committed status change; omit the value for an active item. */
+  setCompletedAt(completedAt: string | null | undefined): void;
 }
 
 // Muted, theme-aware color for the "No ETA" placeholder — reads on both light and dark ADO themes.
 const NO_ETA_COLOR = "var(--text-secondary-color)";
+const ON_TIME_COMPLETION_COLOR = "var(--completion-foreground)";
+
+/** Completed work is green only when its completion day did not pass its ETA day. */
+function completedEtaColor(eta: string, completedAt: string | null | undefined): string {
+  if (!completedAt) {
+    return NO_ETA_COLOR;
+  }
+  const completedDate = new Date(completedAt);
+  if (Number.isNaN(completedDate.getTime())) {
+    return NO_ETA_COLOR;
+  }
+  const atCompletion = describeEtaCountdown(eta, completedDate);
+  return atCompletion.text && atCompletion.severity !== "overdue"
+    ? ON_TIME_COMPLETION_COLOR
+    : NO_ETA_COLOR;
+}
 
 // Popup chrome is drawn with fixed low-alpha greys rather than a neutral palette token. Theme
 // neutrals are intentionally subtle surface washes, while these outlines must stay distinct from
@@ -179,6 +202,7 @@ export function renderEtaBadge(doc: Document, options: EtaBadgeOptions): EtaBadg
   // The currently-displayed ETA, tracked as mutable state because the popup is rebuilt each time it
   // opens (it must pre-fill the date input and decide whether to offer Clear from the latest value).
   let currentEta = options.eta;
+  let currentCompletedAt = options.completedAt;
 
   // Root holds the badge's color/title/severity/weight (so callers and tests read them off the
   // returned element); position:relative anchors the popup. The visible text lives in a child
@@ -218,12 +242,13 @@ export function renderEtaBadge(doc: Document, options: EtaBadgeOptions): EtaBadg
       return;
     }
     const countdown = describeEtaCountdown(eta, now);
+    const completed = currentCompletedAt !== undefined;
     textNode.textContent = `ETA ${formatPstDate(eta)}`;
-    root.style.color = countdown.color;
+    root.style.color = completed ? completedEtaColor(eta, currentCompletedAt) : countdown.color;
     root.title = countdown.text;
     root.dataset.severity = countdown.severity;
     // An overdue ETA reads bold so a slipped date is unmissable among the other rows.
-    if (countdown.severity === "overdue") {
+    if (!completed && countdown.severity === "overdue") {
       root.style.fontWeight = "bold";
     }
   };
@@ -245,6 +270,10 @@ export function renderEtaBadge(doc: Document, options: EtaBadgeOptions): EtaBadg
 
   root.setEta = (eta) => {
     applyState(eta);
+  };
+  root.setCompletedAt = (completedAt) => {
+    currentCompletedAt = completedAt;
+    applyState(currentEta);
   };
   return root;
 }

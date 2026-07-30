@@ -32,6 +32,9 @@ const badge = renderChildItemsBadge(document, {
 
 - **`children: ChildItemDescriptor[]`** — The direct children summarized by the badge and listed in
   its popup. `children.length` is the denominator of "completed / total".
+- **`initiallyOpen?: boolean`** — Opens the popup as soon as the badge is rendered. Defaults to
+  `false`; useful when a caller replaces the badge while preserving an in-progress interaction. The
+  automatic open waits until the rebuilt badge is mounted so the popup keeps its measured alignment.
 - **`completedCount: number`** — How many children are completed (the numerator). Completion is a
   board-column decision the **caller** owns, so it is passed in rather than derived here.
 - **`color?: string | null`** — The color the badge's discrete tint derives from (hex, with or
@@ -59,6 +62,9 @@ const badge = renderChildItemsBadge(document, {
   owning view can offer the same per-item menu here as on its own rows (typically
   [`ItemContextMenu`](../ItemContextMenu/README.md)). The badge stays menu-agnostic: it reports the
   gesture and the caller decides what it opens. Omitted leaves the browser's own menu alone.
+- **`onRowReady?: (row: HTMLElement, title: HTMLElement) => void`** — Called after the popup row is
+  assembled, so the owning view can add behavior such as drag-to-reorder while keeping item identity
+  and persistence outside this domain-agnostic control.
 
 ### `renderChildItemsBadge(doc, options): HTMLElement`
 

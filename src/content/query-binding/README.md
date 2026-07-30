@@ -24,7 +24,9 @@ Lines it records use the log source **`content/query-binding`**.
 
 ### `BindingMenu.ts`
 
-- **`BindingMenu`** — self-contained popup menu anchored to a trigger element, themed to match ADO.
+- **`BindingMenu`** — self-contained popup menu anchored to a trigger element. Its rounded shell and
+  inset rows match the shared item right-click menu, and it pins the selected AwesomeADO theme
+  because it is mounted outside the enhanced-view host.
 - **`MenuEntry`** = **`MenuItem`** | **`MenuSeparator`** — the entry shapes the controller passes in
   to describe the menu contents.
 

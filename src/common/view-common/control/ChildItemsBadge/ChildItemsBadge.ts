@@ -46,12 +46,19 @@ export interface ChildItemDescriptor {
    * what (if anything) it opens. Omitted leaves the browser's own menu alone.
    */
   onContextMenu?: (event: MouseEvent) => void;
+  /**
+   * Called after the popup row is assembled, so the owning view may add domain-specific behavior
+   * such as drag-to-reorder without putting work-item identity or persistence into this control.
+   */
+  onRowReady?: (row: HTMLElement, title: HTMLElement) => void;
 }
 
 /** Options for rendering a child-items badge. */
 export interface ChildItemsBadgeOptions {
   /** The direct children summarized by the badge and listed in its popup. */
   children: ChildItemDescriptor[];
+  /** Whether the popup opens immediately when the badge is rendered. Defaults to false. */
+  initiallyOpen?: boolean;
   /**
    * How many of `children` are completed (the numerator of "completed / total"). Completion is a
    * board-column decision the caller owns, so it is passed in rather than derived here.
@@ -165,7 +172,7 @@ function tintFromColor(color: string | null | undefined): {
  * (the caller decides whether to show it at all).
  */
 export function renderChildItemsBadge(doc: Document, options: ChildItemsBadgeOptions): HTMLElement {
-  const { children, completedCount, color } = options;
+  const { children, completedCount, color, initiallyOpen = false } = options;
 
   // Root container: position:relative so the popup anchors to it.
   const root = doc.createElement("span");
@@ -196,12 +203,22 @@ export function renderChildItemsBadge(doc: Document, options: ChildItemsBadgeOpt
 
   // The popup lifecycle (open/close, outside-click and Escape dismissal) is owned by the shared host
   // so it is not reimplemented per control; the badge is both the trigger and the anchor.
-  createPopupHost({
+  const popupHost = createPopupHost({
     doc,
     trigger: badge,
     mountInto: root,
     buildPopup: () => buildPopup(doc, children),
   });
+  if (initiallyOpen) {
+    // A reorder rebuilds the board while this control is detached. Opening synchronously gives the
+    // popup host a zero-size box, so it cannot restore the viewport-aware alignment used on the
+    // first click and leaves the popup pinned to the chip's top-left corner instead.
+    queueMicrotask(() => {
+      if (root.isConnected && !popupHost.isOpen) {
+        popupHost.toggle();
+      }
+    });
+  }
 
   return root;
 }
@@ -307,6 +324,8 @@ function renderChildRow(doc: Document, child: ChildItemDescriptor): HTMLElement 
     child.eta.classList.add("awesomeado-child-items__eta");
     row.append(firstLineSlot(doc, child.eta));
   }
+
+  child.onRowReady?.(row, title.element);
 
   return row;
 }

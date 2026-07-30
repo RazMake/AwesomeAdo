@@ -83,6 +83,54 @@ describe("renderEtaBadge - rendering and severity", () => {
   });
 });
 
+describe("renderEtaBadge - completed items", () => {
+  it.each([
+    ["before", "2026-07-20T18:00:00-07:00"],
+    ["on", "2026-07-21T23:00:00-07:00"],
+  ])("renders an ETA green when completed %s its day", (_timing, completedAt) => {
+    const badge = renderEtaBadge(document, {
+      eta: "2026-07-21T00:00:00Z",
+      now,
+      completedAt,
+    });
+
+    expect(badge.style.color).toBe("var(--completion-foreground)");
+    expect(badge.style.fontWeight).toBe("normal");
+  });
+
+  it("renders a late completion in the same neutral color as an unset ETA", () => {
+    const badge = renderEtaBadge(document, {
+      eta: "2026-07-21T00:00:00Z",
+      now,
+      completedAt: "2026-07-22T08:00:00-07:00",
+    });
+
+    expect(badge.style.color).toBe("var(--text-secondary-color)");
+    expect(badge.style.fontWeight).toBe("normal");
+  });
+
+  it("renders a completion with no known date in the neutral color", () => {
+    const badge = renderEtaBadge(document, {
+      eta: "2026-07-21T00:00:00Z",
+      now,
+      completedAt: null,
+    });
+
+    expect(badge.style.color).toBe("var(--text-secondary-color)");
+  });
+
+  it("updates completion color in place after a committed status change", () => {
+    const badge = renderEtaBadge(document, { eta: "2026-08-10T00:00:00-07:00", now });
+    expect(badge.style.color).toBe("var(--eta-upcoming)");
+
+    badge.setCompletedAt("2026-07-24T12:00:00Z");
+    expect(badge.style.color).toBe("var(--completion-foreground)");
+
+    badge.setCompletedAt(undefined);
+    expect(badge.style.color).toBe("var(--eta-upcoming)");
+  });
+});
+
 describe("renderEtaBadge - editing interactions", () => {
   it("uses a default cursor and stays read-only when no onChange is provided", () => {
     const badge = renderEtaBadge(document, { eta: "2026-07-26T00:00:00Z", now });

@@ -588,7 +588,8 @@
 
 ## ADR-041: Drag-to-reorder is depth-fixed, importance-only, and ranked against unfiltered siblings
 
-- Decision: a row may only be dropped at the depth it came from; the ordering glyph is the status
+- Decision: a tree row or rolled-up child popup row may only be dropped at the depth it came from;
+  both use the same themed insertion-line preview and persistence path. The ordering glyph is the status
   light that says when dragging is unavailable (heavily-transparent red plus the reason in its
   tooltip); the affordance exists only under `MANUAL_ORDERING_POLICY` and only when a team is
   configured; and `previousId`/`nextId` are computed from the level's **full** sibling list, not the
@@ -602,6 +603,11 @@
 - Consequence: the tree renderer takes the **parent item** rather than a bare list, because a level's
   identity (which item a dropped row becomes a child of, plus its full sibling order) is what a drag
   needs and a list alone cannot supply.
+- Consequence: `ChildItemsBadge` exposes the assembled popup row and title through `onRowReady`, so
+  Project Tracking can register hidden-depth children with the same controller without moving work
+  item identity or persistence into the shared, domain-agnostic control. A one-shot parent id in
+  `BoardSession` reopens that popup after the accepted move repaints the tree, then clears itself so
+  unrelated repaints never resurrect a popup the reader closed.
 - Consequence: the move is persist-then-reflect like every other control on the board — the tree is
   not touched until ADO accepts it — so there is no rollback path to get wrong.
 

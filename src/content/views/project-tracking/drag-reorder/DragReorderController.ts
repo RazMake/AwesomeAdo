@@ -111,6 +111,9 @@ export class DragReorderController {
       this.indicator.clear();
       return;
     }
+    // A popup row lives inside its owning tree row. Once the inner row claims a legal target, do not
+    // let the bubbled event reach that different-depth outer row and immediately clear this preview.
+    event.stopPropagation();
     // Without preventDefault the browser treats the element as a non-target and shows the "no drop"
     // cursor, so this is what makes the row droppable at all.
     event.preventDefault();
@@ -130,6 +133,7 @@ export class DragReorderController {
     if (plan === null) {
       return;
     }
+    event.stopPropagation();
     event.preventDefault();
     // One line per completed drop (not per dragover, which fires continuously): the signals that
     // decided the landing plus the outcome, so "why did it end up there?" is answerable from the log.

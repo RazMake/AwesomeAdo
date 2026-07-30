@@ -117,6 +117,20 @@ describe("renderChildItemsBadge - badge and popup rendering", () => {
     expect(rows).toHaveLength(2);
   });
 
+  it("waits until the rebuilt badge is mounted before reopening its popup", async () => {
+    const root = renderChildItemsBadge(document, {
+      children: [childOf()],
+      completedCount: 0,
+      initiallyOpen: true,
+    });
+
+    expect(popupOf(root)).toBeNull();
+    document.body.append(root);
+    await Promise.resolve();
+
+    expect(popupOf(root)).not.toBeNull();
+  });
+
   it("sizes the popup from its rows, not from the badge it is anchored inside", () => {
     const root = openPopup({ children: [childOf()], completedCount: 0 });
 
@@ -128,6 +142,15 @@ describe("renderChildItemsBadge - badge and popup rendering", () => {
 });
 
 describe("renderChildItemsBadge - row content", () => {
+  it("hands the assembled row and title to caller-owned behavior", () => {
+    const onRowReady = vi.fn();
+    const root = openPopup({ children: [childOf({ onRowReady })], completedCount: 0 });
+
+    const row = popupOf(root)!.querySelector<HTMLElement>(".awesomeado-child-items__row")!;
+    const title = row.querySelector<HTMLElement>(".awesomeado-child-items__title")!;
+    expect(onRowReady).toHaveBeenCalledWith(row, title);
+  });
+
   it("slots in the assignee control the caller built for each child", () => {
     const root = renderChildItemsBadge(document, {
       children: [childOf()],

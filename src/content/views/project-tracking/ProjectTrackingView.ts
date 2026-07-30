@@ -581,6 +581,8 @@ interface TreeRenderOptions {
   mentionNames: ReadonlyMap<string, string>;
   /** The color the rolled-up child badge tints from; null leaves it a neutral chip. */
   minorChildColor: string | null;
+  /** Consumes the one rolled-up child popup that should reopen after its successful reorder. */
+  reopenMinorChildPopup: (parentId: number) => boolean;
   /**
    * Registers each row for drag-to-reorder, or null when reordering is unavailable this pass (any
    * ordering other than importance, or no configured team to rank against). Null is what leaves the
@@ -892,9 +894,12 @@ function createRowControls(
           if (result.ok && result.rev !== undefined) {
             item.state = primaryState;
             item.rev = result.rev;
+            item.stateChangeDate = options.context.services.now().toISOString();
             // Reflect the new Status label and re-tint to its board-column ordinal so the badge's
-            // color tracks the label (the badge owns its own coloring).
+            // color tracks the label (the badge owns its own coloring). Repaint as well because ETA
+            // color and resolved-age visibility both depend on the item's completion transition.
             stateBadge.setStatus(column, boardColumnOrdinal(column, boardColumns));
+            options.repaint();
           }
         });
     },
@@ -1094,6 +1099,7 @@ function createItemEtaBadge(
   doc: Document,
   item: TrackedWorkItem,
   typeMap: Map<string, TypeCatalogEntry>,
+  boardColumns: string[],
   queue: WorkItemWriteQueue,
   now: Date,
 ): EtaBadgeHandle {
@@ -1115,7 +1121,10 @@ function createItemEtaBadge(
           });
       }
     : undefined;
-  badge.handle = renderEtaBadge(doc, { eta: item.eta, now, onChange });
+  const completion = isCompleted(item, typeMap, boardColumns)
+    ? { completedAt: item.stateChangeDate || null }
+    : {};
+  badge.handle = renderEtaBadge(doc, { eta: item.eta, now, onChange, ...completion });
   return badge.handle;
 }
 
@@ -1171,6 +1180,7 @@ function toggleMinorChildDone(
       }
       child.state = target;
       child.rev = result.rev;
+      child.stateChangeDate = options.context.services.now().toISOString();
       return next;
     });
 }
@@ -1258,24 +1268,44 @@ function itemMenuTarget(item: TrackedWorkItem, options: TreeRenderOptions): Item
 function describeMinorChild(
   child: TrackedWorkItem,
   options: TreeRenderOptions,
+  parentId: number,
+  siblingIds: readonly number[],
 ): ChildItemDescriptor {
   const { doc, typeMap, queue, context, boardColumns } = options;
   const url = itemUrl(doc, child.id);
+  const eta = createItemEtaBadge(doc, child, typeMap, boardColumns, queue, context.services.now());
   return {
     // Tagged like a tree row: a rolled-up child is the ONLY place its assignee appears, so hiding
     // the crew pill here hid which crew owns that work entirely — and left the popup the one place
     // a person could not be retagged.
     assignee: createItemAssignee(child, options.chip, true),
     done: isCompleted(child, typeMap, boardColumns),
-    onToggleDone: (next) => toggleMinorChildDone(child, options, next),
+    onToggleDone: (next) =>
+      toggleMinorChildDone(child, options, next).then((completed) => {
+        eta.setCompletedAt(completed ? child.stateChangeDate || null : undefined);
+        return completed;
+      }),
     title: child.title,
     titleColor: typeColorOf(child.type, typeMap),
-    eta: createItemEtaBadge(doc, child, typeMap, queue, context.services.now()),
+    eta,
     url,
     // A rolled-up child is a work item like any other, so it answers the right-click with the same
     // menu a tree row does — otherwise the deepest level of the board would be the one place those
     // commands were unavailable.
     onContextMenu: (event) => options.contextMenu.openAt(event, itemMenuTarget(child, options)),
+    onRowReady:
+      options.dragReorder === null
+        ? undefined
+        : (row, title) =>
+            options.dragReorder?.register({
+              id: child.id,
+              depth: MAX_ROW_DEPTH + 1,
+              parentId,
+              siblingIds,
+              handle: title,
+              row,
+              wrapper: row,
+            }),
   };
 }
 
@@ -1297,10 +1327,14 @@ function createMinorChildrenBadge(
   const children = orderTrackedItems(item.children, options.orderingPolicy);
   if (children.length === 0) return null;
 
-  const descriptors = children.map((child) => describeMinorChild(child, options));
+  const siblingIds = children.map((child) => child.id);
+  const descriptors = children.map((child) =>
+    describeMinorChild(child, options, item.id, siblingIds),
+  );
 
   const badge = renderChildItemsBadge(options.doc, {
     children: descriptors,
+    initiallyOpen: options.reopenMinorChildPopup(item.id),
     // Counted off the very same per-child answer the rows tick their checkboxes from, so the badge
     // can never report a total the list it opens disagrees with.
     completedCount: descriptors.filter((descriptor) => descriptor.done).length,
@@ -1500,7 +1534,7 @@ function createRowRightControls(
   options: TreeRenderOptions,
   showsChildRows: boolean,
 ): { inline: HTMLElement[]; eta: HTMLElement | null } {
-  const { doc, context, typeMap, queue, showSprintPills } = options;
+  const { doc, context, typeMap, boardColumns, queue, showSprintPills } = options;
   const inline: HTMLElement[] = [];
 
   inline.push(createRowAssignee(item, options));
@@ -1518,7 +1552,14 @@ function createRowRightControls(
     }
   }
 
-  const etaBadge = createItemEtaBadge(doc, item, typeMap, queue, context.services.now());
+  const etaBadge = createItemEtaBadge(
+    doc,
+    item,
+    typeMap,
+    boardColumns,
+    queue,
+    context.services.now(),
+  );
   // Pinned to the far right of the row, kept on one line. A FIXED font-size keeps every ETA the
   // same size across the whole tree: the nested rows shrink 10% per depth (childrenContainer's
   // font-size:90% compounds), which would otherwise render deeper ETAs progressively smaller.
@@ -1731,6 +1772,8 @@ interface BoardSession {
   sprint: { selectedName: string | null; filterActive: boolean } | null;
   /** The order the reader picked this session, or null while the binding's configured order applies. */
   orderingPolicy: OrderingPolicy | null;
+  /** One-shot parent id whose rolled-up child popup reopens after a successful reorder repaint. */
+  reopenMinorChildPopupId: number | null;
 }
 
 /** A fresh session: nothing collapsed, nothing filtered, no pick that overrides the binding. */
@@ -1743,6 +1786,7 @@ function createBoardSession(): BoardSession {
     selectedMarkers: new Set<WorkItemMarker>(),
     sprint: null,
     orderingPolicy: null,
+    reopenMinorChildPopupId: null,
   };
 }
 
@@ -1839,6 +1883,7 @@ function renderHeader(
   root: TrackedWorkItem,
   context: DataDrivenViewContext,
   typeMap: Map<string, TypeCatalogEntry>,
+  boardColumns: string[],
   sprintWindow: SprintWindow,
   session: BoardSession,
   chipContext: AssigneeChipContext,
@@ -1880,7 +1925,7 @@ function renderHeader(
     titleColor: typeColorOf(root.type, typeMap),
     onTitleContextMenu: boardControls.onTitleContextMenu,
     techLead,
-    eta: createItemEtaBadge(doc, root, typeMap, queue, context.services.now()),
+    eta: createItemEtaBadge(doc, root, typeMap, boardColumns, queue, context.services.now()),
     sprintPicker: sprintPickerHandle.element,
     orderingPicker: boardControls.orderingPicker,
     writeQueueStatus: boardControls.writeQueueStatus,
@@ -2186,6 +2231,13 @@ function createBoardTreeRenderer(params: BoardTreeRendererParams): () => void {
       notesSinceIso: boardNotesSince(params.context),
       mentionNames: params.context.services.mentionDirectory.knownNames(),
       minorChildColor: params.metrics.minorChildColor,
+      reopenMinorChildPopup: (parentId) => {
+        if (params.session.reopenMinorChildPopupId !== parentId) {
+          return false;
+        }
+        params.session.reopenMinorChildPopupId = null;
+        return true;
+      },
       // Manual drag order only means anything while the board is showing the manual rank; under any
       // other policy a dropped row would be re-sorted straight back out of the slot it landed in.
       dragReorder: orderingPolicy === MANUAL_ORDERING_POLICY ? params.dragReorder : null,
@@ -2397,9 +2449,10 @@ function persistMove(params: {
   team: string;
   queue: WorkItemWriteQueue;
   services: EnhancedViewServices;
+  session: BoardSession;
   repaint: () => void;
 }): void {
-  const { root, move, queue, services, repaint } = params;
+  const { root, move, queue, services, session, repaint } = params;
   const moved = findTrackedItem(root, move.id);
   if (moved === null) {
     // The board is showing a tree that no longer contains the dragged item; writing a rev from a
@@ -2407,6 +2460,8 @@ function persistMove(params: {
     services.logger.error(`Drag-reorder aborted: item ${move.id} is not in the rendered tree.`);
     return;
   }
+  const movedDepth = trackedItemDepth(root, move.id);
+  const reopensMinorChildPopup = movedDepth !== null && movedDepth > MAX_ROW_DEPTH;
   void queue
     .enqueueReorder({
       id: move.id,
@@ -2434,9 +2489,26 @@ function persistMove(params: {
         return;
       }
       if (applyMoveToTree(root, move, result.order ?? null)) {
+        if (reopensMinorChildPopup) {
+          session.reopenMinorChildPopupId = move.parentId;
+        }
         repaint();
       }
     });
+}
+
+/** The item's rendered tree depth, where the root itself is -1; null when the item is absent. */
+function trackedItemDepth(root: TrackedWorkItem, id: number, depth = -1): number | null {
+  if (root.id === id) {
+    return depth;
+  }
+  for (const child of root.children) {
+    const found = trackedItemDepth(child, id, depth + 1);
+    if (found !== null) {
+      return found;
+    }
+  }
+  return null;
 }
 
 /** The item with `id` at or below `root`, or null when this tree does not hold it. */
@@ -2520,12 +2592,13 @@ function createBoardReordering(params: {
   services: EnhancedViewServices;
   queue: WorkItemWriteQueue;
   doc: Document;
+  session: BoardSession;
   repaint: () => void;
 }): {
   controller: DragReorderController | null;
   dragReorderUnavailable: (policy: OrderingPolicy) => string | null;
 } {
-  const { root, services, queue, doc, repaint } = params;
+  const { root, services, queue, doc, session, repaint } = params;
   // Backlog rank is per-team in Azure DevOps, so without a configured team there is no backlog to
   // rank a dragged item against — the board says so on the ordering glyph instead of offering a
   // handle that would fail on every drop.
@@ -2536,7 +2609,7 @@ function createBoardReordering(params: {
         ? null
         : new DragReorderController(
             doc,
-            (move) => persistMove({ root, move, team, queue, services, repaint }),
+            (move) => persistMove({ root, move, team, queue, services, session, repaint }),
             services.logger,
           ),
     dragReorderUnavailable: (policy) => {
@@ -2608,6 +2681,7 @@ function createBoardCore(params: {
     services,
     queue: writes,
     doc,
+    session: params.session,
     repaint: () => repaint(),
   });
 
@@ -2776,6 +2850,7 @@ function mountBoardHeader(params: {
     root,
     context,
     typeMap,
+    core.metrics.boardColumns,
     sprintWindow,
     session,
     core.chipContext,

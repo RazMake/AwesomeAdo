@@ -1530,6 +1530,10 @@ describe("ProjectTrackingView — status writes", () => {
     expect(firstBadge.childNodes[0]?.textContent).toBe("Done");
     // ...and re-tints to that column's ordinal ("Done" is position 3 → green), so color tracks label.
     expect(firstBadge.style.background).toBe("var(--status-green-background)");
+    // The repaint also treats the newly completed item as resolved today, before its August ETA.
+    expect(
+      root.querySelector<HTMLElement>(".awesomeado-tracking__row .awesomeado-eta")?.style.color,
+    ).toBe("var(--completion-foreground)");
   });
 });
 
@@ -3352,6 +3356,82 @@ describe("ProjectTrackingView — rollup popup rows", () => {
   });
 });
 
+describe("ProjectTrackingView — rollup popup reordering", () => {
+  it("reorders rolled-up children with the tree's insertion-line preview", async () => {
+    const moves: Parameters<EnhancedViewServices["reorderItem"]>[0][] = [];
+    const root = await renderDeepBoard({
+      reorderItem: async (request) => {
+        moves.push(request);
+        return { ok: true, order: 300 };
+      },
+    });
+    document.body.append(root);
+    await turnSprintFilterOff(root);
+    rollupBadgeOf(root).click();
+
+    const rows = [...root.querySelectorAll<HTMLElement>(".awesomeado-child-items__row")];
+    const firstTitle = rows[0]!.querySelector<HTMLElement>(".awesomeado-child-items__title")!;
+    firstTitle.dispatchEvent(new Event("dragstart", { bubbles: true }));
+    Object.assign(rows[2]!, {
+      getBoundingClientRect: () => ({ top: 40, height: 20, bottom: 60 }) as DOMRect,
+    });
+    const preview = new Event("dragover", { bubbles: true, cancelable: true });
+    Object.assign(preview, { clientY: 55 });
+    rows[2]!.dispatchEvent(preview);
+
+    expect(preview.defaultPrevented).toBe(true);
+    expect(root.querySelector(".awesomeado-tracking__drop-line")?.previousElementSibling).toBe(
+      rows[2],
+    );
+
+    const drop = new Event("drop", { bubbles: true, cancelable: true });
+    Object.assign(drop, { clientY: 55 });
+    rows[2]!.dispatchEvent(drop);
+
+    await vi.waitFor(() =>
+      expect(moves).toEqual([
+        {
+          id: 4,
+          rev: 1,
+          parentId: 3,
+          currentParentId: 3,
+          previousId: 6,
+          nextId: 0,
+          siblingIds: [5, 6, 4],
+          team: "team-guid",
+        },
+      ]),
+    );
+
+    await vi.waitFor(() =>
+      expect(
+        [...root.querySelectorAll<HTMLElement>(".awesomeado-child-items__title-text")].map(
+          (title) => title.textContent,
+        ),
+      ).toEqual(["Style the form", "Drop the old form", "Wire the form"]),
+    );
+
+    const reopenedRows = [...root.querySelectorAll<HTMLElement>(".awesomeado-child-items__row")];
+    expect(reopenedRows).toHaveLength(3);
+
+    const reopenedFirstTitle = reopenedRows[0]!.querySelector<HTMLElement>(
+      ".awesomeado-child-items__title",
+    )!;
+    reopenedFirstTitle.dispatchEvent(new Event("dragstart", { bubbles: true }));
+    Object.assign(reopenedRows[2]!, {
+      getBoundingClientRect: () => ({ top: 40, height: 20, bottom: 60 }) as DOMRect,
+    });
+    const secondDrop = new Event("drop", { bubbles: true, cancelable: true });
+    Object.assign(secondDrop, { clientY: 55 });
+    reopenedRows[2]!.dispatchEvent(secondDrop);
+
+    await vi.waitFor(() => {
+      expect(moves).toHaveLength(2);
+      expect(root.querySelectorAll(".awesomeado-child-items__row")).toHaveLength(3);
+    });
+  });
+});
+
 describe("ProjectTrackingView — rollup popup completion writes", () => {
   it("moves a rolled-up child to the completed column when its checkbox is ticked", async () => {
     const writes: WorkItemFieldWriteRequest[] = [];
@@ -3373,6 +3453,7 @@ describe("ProjectTrackingView — rollup popup completion writes", () => {
     await vi.waitFor(() =>
       expect(checkOfChildRow(root, 1).getAttribute("aria-checked")).toBe("true"),
     );
+    expect(etaColorOfChildRow(root, 1)).toBe("var(--completion-foreground)");
   });
 
   it("reopens a completed rolled-up child onto the in-progress column", async () => {
@@ -3447,6 +3528,12 @@ describe("ProjectTrackingView — rollup popup completion writes", () => {
 const checkOfChildRow = (root: HTMLElement, index: number): HTMLButtonElement =>
   [...root.querySelectorAll<HTMLButtonElement>(".awesomeado-child-items__check")][index]!;
 
+/** The rendered ETA color of the rolled-up child popup row at `index`. */
+const etaColorOfChildRow = (root: HTMLElement, index: number): string | undefined =>
+  checkOfChildRow(root, index)
+    .closest(".awesomeado-child-items__row")
+    ?.querySelector<HTMLElement>(".awesomeado-eta")?.style.color;
+
 /** Renders a board over `tree` with the given binding properties, and waits for its async load. */
 async function renderBoardForTree(
   tree: TrackedWorkItem,
@@ -3507,6 +3594,26 @@ function epicOverRolledUpTasks(tasks: TrackedWorkItem[]): TrackedWorkItem {
     }),
   ]);
 }
+
+describe("ProjectTrackingView — completed ETA", () => {
+  it("colors completed ETAs green only when resolved on or before the ETA day", async () => {
+    const resolvedJuly23 = "2026-07-23T12:00:00Z";
+    const root = await renderBoardForTree(
+      epicOver([
+        resolvedFeature(2, "On time", resolvedJuly23, { eta: "2026-07-23T00:00:00Z" }),
+        resolvedFeature(3, "Late", resolvedJuly23, { eta: "2026-07-22T00:00:00Z" }),
+      ]),
+    );
+    const rows = [...root.querySelectorAll<HTMLElement>(".awesomeado-tracking__row")];
+    const etaColorFor = (title: string): string | undefined =>
+      rows
+        .find((row) => row.querySelector(".awesomeado-tracking__item-title")?.textContent === title)
+        ?.querySelector<HTMLElement>(".awesomeado-eta")?.style.color;
+
+    expect(etaColorFor("On time")).toBe("var(--completion-foreground)");
+    expect(etaColorFor("Late")).toBe("var(--text-secondary-color)");
+  });
+});
 
 describe("ProjectTrackingView — resolved item window", () => {
   it("hides an item resolved longer ago than the configured window", async () => {

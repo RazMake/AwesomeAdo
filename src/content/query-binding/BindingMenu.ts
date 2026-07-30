@@ -1,3 +1,8 @@
+import type { Theme } from "../../common/settings/ExtensionSettings";
+import { THEME_COLOR_VARIABLES } from "../../common/view-common/themes/ThemeDefinition";
+import { resolveTheme } from "../../common/view-common/themes/themes";
+import { detectAdoTheme } from "../ado-probe/AdoThemeProbe";
+
 /** A selectable row in the popup menu. */
 export interface MenuItem {
   readonly kind: "item";
@@ -17,6 +22,9 @@ export type MenuEntry = MenuItem | MenuSeparator;
 const MENU_ID = "awesomeado-button-menu";
 // Above ADO's own top bar and any overlay it paints, matching the button's own stacking.
 const MENU_Z_INDEX = "2147483647";
+const MENU_RADIUS_PX = 10;
+const MENU_PADDING_PX = 4;
+const ROW_RADIUS_PX = MENU_RADIUS_PX - MENU_PADDING_PX;
 
 /**
  * A small popup menu anchored under a trigger element.
@@ -26,17 +34,24 @@ const MENU_Z_INDEX = "2147483647";
  * transient — opened on demand and dismissed on selection, an outside click, Escape, or when the
  * viewport shifts — so it needs no persistence observer the way the always-present button does.
  *
- * Styling is self-contained but reads ADO's theme tokens so the menu follows the account's light or
- * dark theme instead of taking the enhanced view's extension-selected palette.
+ * Styling is self-contained and pins the selected AwesomeADO palette because the menu is mounted
+ * outside the enhanced-view host that normally supplies those theme roles.
  */
 export class BindingMenu {
   private menu: HTMLElement | undefined;
   private anchor: HTMLElement | undefined;
+  private theme: Theme = "auto";
 
   constructor(private readonly doc: Document) {}
 
   get isOpen(): boolean {
     return this.menu?.isConnected ?? false;
+  }
+
+  /** Apply the selected AwesomeADO theme, updating an open menu in place. */
+  applyTheme(theme: Theme): void {
+    this.theme = theme;
+    this.applyThemeToMenu();
   }
 
   /** Replace any open menu with one built from `entries`, aligned under `anchor`. */
@@ -51,6 +66,7 @@ export class BindingMenu {
     }
     this.menu = menu;
     this.anchor = anchor;
+    this.applyThemeToMenu();
     (this.doc.body ?? this.doc.documentElement).append(menu);
     this.position();
     // Capture so a click that also lands on an ADO handler still dismisses the menu first.
@@ -88,10 +104,10 @@ export class BindingMenu {
     label.textContent = item.label;
     row.append(check, label);
     row.addEventListener("mouseenter", () => {
-      row.style.backgroundColor = "var(--palette-neutral-8)";
+      row.style.backgroundColor = "var(--control-background-hover)";
     });
     row.addEventListener("mouseleave", () => {
-      row.style.backgroundColor = "inherit";
+      row.style.backgroundColor = "transparent";
     });
     row.addEventListener("click", () => {
       this.close();
@@ -104,7 +120,7 @@ export class BindingMenu {
     const line = this.doc.createElement("div");
     line.setAttribute("role", "separator");
     line.style.cssText =
-      "height:0;margin:4px 0;border-top-width:1px;border-top-style:solid;border-top-color:var(--component-menu-separator-color)";
+      "height:0;margin:4px 0;border-top-width:1px;border-top-style:solid;border-top-color:var(--control-border-strong);opacity:0.7";
     return line;
   }
 
@@ -112,15 +128,15 @@ export class BindingMenu {
     menu.style.cssText = [
       "position:fixed",
       `z-index:${MENU_Z_INDEX}`,
-      "min-width:200px",
-      "padding:4px 0",
-      "background:var(--callout-background-color, var(--background-color))",
+      "min-width:160px",
+      "width:max-content",
+      "max-width:calc(100vw - 16px)",
+      `padding:${MENU_PADDING_PX}px`,
+      "background:var(--callout-background-color)",
       "color:var(--text-primary-color)",
-      "border-width:1px",
-      "border-style:solid",
-      "border-color:var(--component-menu-separator-color)",
-      "border-radius:4px",
-      "box-shadow:0 4px 12px var(--palette-black-alpha-30)",
+      "border:1px solid var(--control-border-strong)",
+      `border-radius:${MENU_RADIUS_PX}px`,
+      "box-shadow:0 2px 8px var(--shadow-subtle)",
       'font:13px "Segoe UI", system-ui, sans-serif',
     ].join(";");
   }
@@ -132,15 +148,30 @@ export class BindingMenu {
       "gap:8px",
       "width:100%",
       "box-sizing:border-box",
-      "padding:6px 12px",
-      "background-color:inherit",
+      "padding:6px 10px",
+      "background-color:transparent",
       "border:none",
+      `border-radius:${ROW_RADIUS_PX}px`,
       "color:inherit",
       "font:inherit",
+      "font-size:12px",
+      "line-height:1.6",
       "text-align:left",
       "white-space:nowrap",
       "cursor:pointer",
     ].join(";");
+  }
+
+  private applyThemeToMenu(): void {
+    if (!this.menu) {
+      return;
+    }
+    const adoTheme = this.theme === "auto" ? detectAdoTheme(this.doc) : null;
+    const resolved = resolveTheme(this.theme, adoTheme);
+    for (const variable of THEME_COLOR_VARIABLES) {
+      this.menu.style.setProperty(variable, resolved.colors[variable]);
+    }
+    this.menu.style.setProperty("color-scheme", resolved.colorScheme);
   }
 
   private position(): void {

@@ -9,7 +9,9 @@ and decisions are retained (see `systemPatterns.md` and `decisions.md`).
 The extension is feature-complete for its current scope:
 
 - Per-query bindings (bind/unbind, view types, per-query properties) with a synced store.
-- Top-bar "Enhance with AwesomeADO" button and menu on single-query routes.
+- Top-bar "Enhance with AwesomeADO" button and menu on single-query routes. The button follows ADO's
+  command-bar chrome; the rounded popup matches the item right-click menu and follows the selected
+  AwesomeADO theme.
 - Enhanced-view surface (`src/content/query-page/EnhancedViewSurface`) mounts the bound view's own
   DOM in place of ADO's page and reversibly restores it; it resolves the active view through the
   enhanced-view registry and re-attaches itself if ADO redraws the page.
@@ -19,7 +21,8 @@ The extension is feature-complete for its current scope:
   `src/common/view-common`. Options imports only `content/views/viewCatalog` (config) — a scoped,
   lint-enforced §6 exception (ADR-027) so it still never bundles view DOM. Shared per-view building
   blocks live in `common/view-common/control/**`: `renderViewScaffold` (placeholder shell) plus the reusable controls
-  `DateLabel` (PST date + time-on-hover), `EtaBadge` (ETA date + countdown, colored by urgency),
+  `DateLabel` (PST date + time-on-hover), `EtaBadge` (ETA date + countdown, colored by urgency for
+  active items and by on-time/late outcome for completed items),
   `AssignedTo` (assignee label + inline directory-search picker), `ItemTypeIcon` (the ADO type icon,
   sized in `em` to the title it precedes, dimmable), and `MarkdownText` (author-written content —
   descriptions and notes — rendered as allowlist-rebuilt DOM, with attachment images and
@@ -143,9 +146,10 @@ The extension is feature-complete for its current scope:
   session-long memo is what keeps the count proportional to people rather than mentions. The
   board paints first and repaints when names arrive (`BoardHandle.repaint`); a notes panel awaits the
   resolve before building its rows.
-  Rows can also be **dragged to reorder** (ADR-040/041): the title is the drag handle, a themed
-  insertion line shows the landing spot and a wash names the destination parent when the drop also
-  re-parents. `content/views/project-tracking/drag-reorder` decides and previews the move (pure
+  Rows and rolled-up children in their popup can also be **dragged to reorder** (ADR-040/041): the
+  title is the drag handle, a themed insertion line shows the landing spot and a wash names the
+  destination parent when a tree-row drop also re-parents; a rolled-up child popup reopens on its
+  newly ordered rows after each accepted move. `content/views/project-tracking/drag-reorder` decides and previews the move (pure
   `movePlacement` for the placement math, `applyMoveToTree` for the model); persistence goes through
   `EnhancedViewServices.reorderItem` → `MessagingWorkItemReorderWriter` → the background worker, which
   re-points the `System.LinkTypes.Hierarchy-Reverse` link under a `/rev` test and then PATCHes the

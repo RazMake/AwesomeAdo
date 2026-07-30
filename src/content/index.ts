@@ -372,9 +372,10 @@ const actions: QueryMenuActions = {
   },
 };
 
+const bindingMenu = new BindingMenu(document);
 const bindingController = new QueryBindingController(
   new BindingButton(document, chrome.runtime.getURL("icons/icon.svg"), "Enhance with AwesomeADO"),
-  new BindingMenu(document),
+  bindingMenu,
   actions,
   location.href,
   sessionActiveViews,
@@ -384,6 +385,7 @@ const bindingController = new QueryBindingController(
 const observation = store.observe((settings) => {
   latestSettings = settings;
   controller.applySettings(settings);
+  bindingMenu.applyTheme(settings.theme);
   // The menu's check marks resolve a bound query's default presentation from this same setting.
   bindingController.applyDefaultView(settings.defaultView);
   // Incomplete ADO settings force bound queries back to ADO's view, so the menu hides the swap

@@ -70,13 +70,16 @@ describe("BindingMenu - rendering", () => {
     const node = menuNode()!;
     expect(node.querySelectorAll('[role="menuitem"]')).toHaveLength(3);
     expect(node.querySelectorAll('[role="separator"]')).toHaveLength(1);
-    expect(node.style.background).toBe("var(--callout-background-color, var(--background-color))");
+    expect(node.style.background).toBe("var(--callout-background-color)");
     expect(node.style.color).toBe("var(--text-primary-color)");
-    expect(node.style.borderColor).toBe("var(--component-menu-separator-color)");
-    expect(node.style.boxShadow).toBe("0 4px 12px var(--palette-black-alpha-30)");
+    expect(node.style.border).toContain("var(--control-border-strong)");
+    expect(node.style.borderRadius).toBe("10px");
+    expect(node.style.padding).toBe("4px");
+    expect(node.style.boxShadow).toBe("0 2px 8px var(--shadow-subtle)");
     expect(node.querySelector<HTMLElement>('[role="separator"]')?.style.borderTopColor).toBe(
-      "var(--component-menu-separator-color)",
+      "var(--control-border-strong)",
     );
+    expect(menuItems()[0]?.style.borderRadius).toBe("6px");
     expect(menuItems().map((item) => item.textContent)).toEqual([
       "Sprint View",
       "Standard View",
@@ -113,10 +116,34 @@ describe("BindingMenu - interaction", () => {
     const item = menuItems()[0]!;
 
     item.dispatchEvent(new MouseEvent("mouseenter"));
-    expect(item.style.backgroundColor).toBe("var(--palette-neutral-8)");
+    expect(item.style.backgroundColor).toBe("var(--control-background-hover)");
 
     item.dispatchEvent(new MouseEvent("mouseleave"));
-    expect(item.style.backgroundColor).toBe("inherit");
+    expect(item.style.backgroundColor).toBe("transparent");
+  });
+});
+
+describe("BindingMenu - theming", () => {
+  it("pins the selected AwesomeADO theme onto the menu", () => {
+    menu.applyTheme("blue");
+    menu.open(makeAnchor(), [{ kind: "item", label: "Options", onSelect: vi.fn() }]);
+
+    const node = menuNode();
+    expect(node?.style.getPropertyValue("--text-primary-color")).toBe("#10233b");
+    expect(node?.style.getPropertyValue("--callout-background-color")).toBe("#ffffff");
+    expect(node?.style.getPropertyValue("color-scheme")).toBe("light");
+  });
+
+  it("re-themes an open menu without rebuilding it", () => {
+    menu.applyTheme("dark");
+    menu.open(makeAnchor(), [{ kind: "item", label: "Options", onSelect: vi.fn() }]);
+    const node = menuNode();
+
+    menu.applyTheme("light");
+
+    expect(menuNode()).toBe(node);
+    expect(node?.style.getPropertyValue("--text-primary-color")).toBe("#1f1f1f");
+    expect(node?.style.getPropertyValue("color-scheme")).toBe("light");
   });
 });
 

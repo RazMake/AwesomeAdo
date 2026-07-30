@@ -368,6 +368,7 @@ semantic color may live in a consumer.
 New reusable, theme-aware controls live under `src/common/view-common/control/<Control>/` — the sole
 DOM-bearing code allowed under `common/` (AGENTS.md §11) — so every view shares one correctly-themed
 implementation instead of re-inlining light-only styles. This is a standing review gate: a control
-that hard-codes a fixed non-theme color is a defect, not a style nit. The ADO-header binding controls
-are the exception: they intentionally consume ADO's own tokens because they live outside the themed
-overlay.
+that hard-codes a fixed non-theme color is a defect, not a style nit. The injected top-bar BUTTON is
+the exception: it consumes ADO's own tokens because it belongs to ADO's command bar. Its popup menu
+is an AwesomeADO surface; because it mounts outside the themed overlay, `BindingMenu` pins the
+selected concrete palette directly onto the popup.
