@@ -658,6 +658,19 @@ describe("ProjectTrackingView — expand & collapse", () => {
       expect(glyph?.textContent).toBe("▼\uFE0E");
       expect(glyph?.style.fontSize).toBe("8px");
     });
+
+    const notes = root.querySelectorAll<HTMLButtonElement>(".awesomeado-tracking__notes-toggle");
+    notes.forEach((toggle) => expect(toggle.getAttribute("aria-expanded")).toBe("false"));
+  });
+
+  it("expands every notes panel when all parent rows are already expanded", async () => {
+    const root = await renderOutlineBoard(createFixtureTree());
+
+    (root.querySelector(".awesomeado-tracking__expand-all") as HTMLButtonElement).click();
+
+    const notes = root.querySelectorAll<HTMLButtonElement>(".awesomeado-tracking__notes-toggle");
+    expect(notes.length).toBeGreaterThan(0);
+    notes.forEach((toggle) => expect(toggle.getAttribute("aria-expanded")).toBe("true"));
   });
 });
 
@@ -727,6 +740,29 @@ describe("ProjectTrackingView — the outline survives a repaint", () => {
     // collapse-all has to record what it did for the same reason a single toggle does.
     const repainted = root.querySelector(".awesomeado-tracking__twisty") as HTMLButtonElement;
     expect(repainted.getAttribute("aria-expanded")).toBe("false");
+  });
+});
+
+describe("ProjectTrackingView — staged collapse", () => {
+  it("collapses notes and descriptions before collapsing parent rows", async () => {
+    const root = await renderOutlineBoard(createFixtureTree());
+    const note = root.querySelector(".awesomeado-tracking__notes-toggle") as HTMLButtonElement;
+    const description = root.querySelector(".awesomeado-tracking__describe") as HTMLButtonElement;
+    const twisty = root.querySelector(".awesomeado-tracking__twisty") as HTMLButtonElement;
+    const collapseAll = root.querySelector(
+      ".awesomeado-tracking__collapse-all",
+    ) as HTMLButtonElement;
+    note.click();
+    description.click();
+
+    collapseAll.click();
+
+    expect(note.getAttribute("aria-expanded")).toBe("false");
+    expect(description.getAttribute("aria-expanded")).toBe("false");
+    expect(twisty.getAttribute("aria-expanded")).toBe("true");
+
+    collapseAll.click();
+    expect(twisty.getAttribute("aria-expanded")).toBe("false");
   });
 });
 

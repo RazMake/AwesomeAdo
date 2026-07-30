@@ -32,10 +32,12 @@ Renders a single subtle-filled tile with these bands:
    [`renderEtaBadge`](../../../../common/view-common/control/EtaBadge/README.md) so the view owns its
    read/write wiring).
 
-The `+`/`−` buttons are vertically centered against the two-line title/tech-lead block. Refresh shares
-that band and that styling but carries a wider left margin: `+`/`−` only rearrange what is already on
-screen, while refresh discards the board's data and re-reads it, so sitting them flush would read as
-one three-button group and invite the mis-click.
+The `+`/`−` buttons are vertically centered against the two-line title/tech-lead block. `+` opens all
+parent rows first; when every parent is already open, its next click opens every visible item's notes.
+`−` closes any open notes and descriptions first; only a click made after all row details are closed
+collapses the parent rows. Refresh shares that band and styling but carries a wider left margin:
+`+`/`−` only rearrange what is already on screen, while refresh discards the board's data and re-reads
+it, so sitting them flush would read as one three-button group and invite the mis-click.
 
 ### Options
 
@@ -54,7 +56,7 @@ one three-button group and invite the mis-click.
 ### Handle
 
 `renderProjectTrackingHeader` returns `{ element, expandAllButton, collapseAllButton, refreshButton }`.
-The view mounts `element`, wires the two band buttons to the tree's twisties, and wires
+The view mounts `element`, wires the two band buttons to the tree's twisties and row details, and wires
 `refreshButton.element` to its own re-read.
 
 `refreshButton` is a `RefreshButtonHandle` — `{ element, setBusy(busy), setFailed(failed) }` — because

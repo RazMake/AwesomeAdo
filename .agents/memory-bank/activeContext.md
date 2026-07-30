@@ -60,7 +60,8 @@ The extension is feature-complete for its current scope:
   services once at the content composition root and forwards them per render. Project Tracking renders a
   single-root tree (validates: tree query, exactly one root, root is the first configured type), titles
   the page with the epic (in its type color), shows the epic's assignee as TechLead, a sprint dropdown +
-  on/off filter toggle (pills when off), per-item expand/collapse, an editable `PriorityBadge`
+  on/off filter toggle (pills when off), per-item expand/collapse, and staged header expansion controls:
+  `+` opens parent rows before notes, while `−` closes notes/descriptions before parent rows. An editable `PriorityBadge`
   immediately after Status (all priorities share one gray background, with a darker solid fill/edge
   on dark themes; P0/P1 use literal, unmixed red/orange text selected per scheme, later priorities
   use primary text; all labels are extra-bold with compact padding and close row spacing; popup

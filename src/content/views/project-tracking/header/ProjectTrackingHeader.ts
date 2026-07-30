@@ -12,8 +12,9 @@
  *   Title                         + −    ⟳                          Sprint Picker
  *   TechLead  ETA
  *
- * The `+`/`−` expand-all / collapse-all buttons are vertically centred against the two-line
- * title/tech-lead block; the sprint picker sits on that same band but pinned to the right edge. The
+ * The `+`/`−` expansion buttons are vertically centred against the two-line title/tech-lead block;
+ * the view opens parents before notes and closes row details before parents. The sprint picker sits
+ * on that same band but pinned to the right edge. The
  * refresh button shares that band and that styling but is separated by a wider gap, because it is a
  * different KIND of action: `+`/`−` only rearrange what is already on screen, while refresh throws
  * the board's data away and re-reads it from Azure DevOps. The
@@ -101,9 +102,9 @@ export interface ProjectTrackingHeaderHandle {
    * nobody uses any more.
    */
   setTitle(title: string): void;
-  /** The expand-all ("+") button; the view wires it to open every twisty. */
+  /** The expand ("+") button; the view wires its staged parent-then-notes behavior. */
   expandAllButton: HTMLButtonElement;
-  /** The collapse-all ("−") button; the view wires it to close every twisty. */
+  /** The collapse ("−") button; the view wires its staged details-then-parents behavior. */
   collapseAllButton: HTMLButtonElement;
   /** The refresh ("⟳") button; the view wires it to re-read the board's data from Azure DevOps. */
   refreshButton: RefreshButtonHandle;

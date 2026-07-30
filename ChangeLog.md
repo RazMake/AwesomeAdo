@@ -5,6 +5,8 @@ Major.Minor with a CI build number to form Major.Minor.Build.
 
 ## Next Version
 
+- **The Project Tracking `+` and `−` controls now include item notes and descriptions.** `+` first opens every parent row; when the whole outline is already open, its next click opens the notes under every visible item. `−` works inward-out: it first closes any open notes and descriptions while leaving the outline in place, and only collapses the parent rows once those item details are already closed.
+
 - **Every Project Tracking item now shows and edits its priority.** A compact, extra-bold priority chip sits close beside Status. Every priority uses the same gray background: the subtle existing wash on light themes and a darker solid fill and edge on dark themes. Only the bright, high-contrast text changes: P0 is unmixed red, P1 is unmixed orange, and later priorities use the theme's primary text color. Clicking it opens the other priorities as chips formatted exactly like those in the board, leaving out the value the item already has; choosing one saves it directly to Azure DevOps. Priority is now read and written through Azure DevOps' actual `Microsoft.VSTS.Common.Priority` field, so loading it cannot make an otherwise populated query look empty. If Azure DevOps rejects a tree or item-batch read, the board shows a load error and Diagnostics records the failed stage and HTTP status instead of reporting that the query returned no items.
 
 - **The View all notes popup now has a close button.** The button stays in the top-right corner of the discussion, so it can be dismissed directly without reaching for Escape or clicking outside it.

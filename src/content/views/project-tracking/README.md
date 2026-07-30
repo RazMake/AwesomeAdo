@@ -42,7 +42,9 @@ halves of the view — its configuration and its renderer.
        the sticky header — which would otherwise shove the whole board down and back on every edit.
     3. Title + controls: the root item's title (colored by type) with the expand-all/collapse-all
        (`+`/`−`) buttons beside it, the refresh (`⟳`) button spaced apart from that pair, and the
-       sprint picker pinned to the right edge of the same band.
+       sprint picker pinned to the right edge of the same band. `+` opens all parent rows before a
+       later click opens every visible item's notes. `−` closes open notes and descriptions before a
+       later click collapses the parent rows.
     4. Tech Lead + ETA: "TechLead:" label + root's Assigned To, followed by the root's editable ETA
        badge (click to pick a date or clear it, when the root type has an ETA field configured).
   - **Refresh**: `⟳` re-reads the whole board — the tree and the sprint window — from Azure DevOps

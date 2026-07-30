@@ -328,7 +328,7 @@ function renderDescription(
   item: TrackedWorkItem,
   typeColor: string | null,
   mentionNames: ReadonlyMap<string, string>,
-): { panel: HTMLElement; toggleButton: HTMLButtonElement } {
+): { panel: HTMLElement; toggleButton: HTMLButtonElement; expansion: ExpansionControl } {
   const hasDescription = item.description.trim().length > 0;
   const toggleButton = doc.createElement("button");
   toggleButton.className = "awesomeado-tracking__describe";
@@ -366,7 +366,7 @@ function renderDescription(
   descText.style.color = "var(--text-primary-color, #323130)";
   panel.append(descText);
 
-  const apply = (expanded: boolean): void => {
+  const setExpanded = (expanded: boolean): void => {
     const emphasis = contentEmphasis(expanded, hasDescription);
     toggleButton.setAttribute("aria-expanded", expanded ? "true" : "false");
     toggleButton.title = describeToggleTitle(expanded);
@@ -374,13 +374,20 @@ function renderDescription(
     toggleButton.style.filter = describeDiscFilter(emphasis);
     panel.style.display = expanded ? "block" : "none";
   };
-  apply(false);
+  setExpanded(false);
 
   toggleButton.addEventListener("click", () => {
-    apply(toggleButton.getAttribute("aria-expanded") !== "true");
+    setExpanded(toggleButton.getAttribute("aria-expanded") !== "true");
   });
 
-  return { panel, toggleButton };
+  return {
+    panel,
+    toggleButton,
+    expansion: {
+      isExpanded: () => toggleButton.getAttribute("aria-expanded") === "true",
+      setExpanded,
+    },
+  };
 }
 
 /**
@@ -555,6 +562,10 @@ interface TreeRenderOptions {
   repaint: () => void;
   /** Collects every expandable row rendered in this pass so expand-all/collapse-all can drive them. */
   expandableRows: ExpandableRow[];
+  /** Collects each notes toggle so the header controls can open or close row discussions. */
+  noteExpansions: ExpansionControl[];
+  /** Collects each description toggle so collapse-all can close row details before the outline. */
+  descriptionExpansions: ExpansionControl[];
   /**
    * The rows the user has collapsed, by work item id.
    *
@@ -606,6 +617,12 @@ interface TreeRenderOptions {
 interface ExpandableRow {
   id: number;
   twisty: HTMLButtonElement;
+}
+
+/** A row detail surface that the row itself and the board-wide controls can drive consistently. */
+interface ExpansionControl {
+  isExpanded(): boolean;
+  setExpanded(expanded: boolean): void;
 }
 
 /**
@@ -917,7 +934,12 @@ function createTitleControls(
   item: TrackedWorkItem,
   typeMap: Map<string, TypeCatalogEntry>,
   mentionNames: ReadonlyMap<string, string>,
-): { titleSpan: HTMLElement; descButton: HTMLButtonElement; descPanel: HTMLElement } {
+): {
+  titleSpan: HTMLElement;
+  descButton: HTMLButtonElement;
+  descPanel: HTMLElement;
+  descriptionExpansion: ExpansionControl;
+} {
   const titleSpan = doc.createElement("span");
   titleSpan.className = "awesomeado-tracking__item-title";
   titleSpan.textContent = item.title;
@@ -930,12 +952,11 @@ function createTitleControls(
     titleSpan.style.color = itemColor;
   }
 
-  const { panel: descPanel, toggleButton: descButton } = renderDescription(
-    doc,
-    item,
-    itemColor,
-    mentionNames,
-  );
+  const {
+    panel: descPanel,
+    toggleButton: descButton,
+    expansion: descriptionExpansion,
+  } = renderDescription(doc, item, itemColor, mentionNames);
   // The ? disc leads the row's controls, ahead of the type icon and the title, so every row's disc
   // sits in the same column instead of at whatever point that row's title happens to end on.
   // vertical-align:middle keeps it centered on the text line.
@@ -943,7 +964,7 @@ function createTitleControls(
   descButton.style.verticalAlign = "middle";
   descButton.style.margin = "0 4px";
 
-  return { titleSpan, descButton, descPanel };
+  return { titleSpan, descButton, descPanel, descriptionExpansion };
 }
 
 /**
@@ -967,7 +988,7 @@ function createTitleControls(
 function createItemNotes(
   item: TrackedWorkItem,
   options: TreeRenderOptions,
-): { toggle: HTMLElement; panel: HTMLElement } {
+): { toggle: HTMLElement; panel: HTMLElement; expansion: ExpansionControl } {
   const { doc, typeMap, context } = options;
   const services = context.services;
   const startsExpanded = options.expandedNoteIds.has(item.id);
@@ -1017,25 +1038,31 @@ function createItemNotes(
     },
   });
 
-  const apply = (expanded: boolean): void => {
-    toggle.setAttribute("aria-expanded", expanded ? "true" : "false");
-    toggle.title = notesToggleTitle(expanded);
-    icon.setEmphasis(contentEmphasis(expanded, hasNotes));
-    notes.setExpanded(expanded);
-  };
-  apply(startsExpanded);
-
-  toggle.addEventListener("click", () => {
-    const expanded = toggle.getAttribute("aria-expanded") !== "true";
+  const setExpanded = (expanded: boolean): void => {
     if (expanded) {
       options.expandedNoteIds.add(item.id);
     } else {
       options.expandedNoteIds.delete(item.id);
     }
-    apply(expanded);
+    toggle.setAttribute("aria-expanded", expanded ? "true" : "false");
+    toggle.title = notesToggleTitle(expanded);
+    icon.setEmphasis(contentEmphasis(expanded, hasNotes));
+    notes.setExpanded(expanded);
+  };
+  setExpanded(startsExpanded);
+
+  toggle.addEventListener("click", () => {
+    setExpanded(toggle.getAttribute("aria-expanded") !== "true");
   });
 
-  return { toggle, panel: notes.element };
+  return {
+    toggle,
+    panel: notes.element,
+    expansion: {
+      isExpanded: () => toggle.getAttribute("aria-expanded") === "true",
+      setExpanded,
+    },
+  };
 }
 
 /**
@@ -1463,13 +1490,15 @@ function renderRow(
   );
   row.append(gutter);
 
-  const { titleSpan, descButton, descPanel } = createTitleControls(
+  const { titleSpan, descButton, descPanel, descriptionExpansion } = createTitleControls(
     doc,
     item,
     typeMap,
     options.mentionNames,
   );
   const notes = createItemNotes(item, options);
+  options.descriptionExpansions.push(descriptionExpansion);
+  options.noteExpansions.push(notes.expansion);
   const { inline, eta } = createRowRightControls(item, options, showsChildRows);
 
   // Status and priority badges, ? disc, type icon, title and assignee share ONE inline-flow block so
@@ -1781,8 +1810,10 @@ function wireExpandCollapseButtons(
   collapseAll: HTMLButtonElement,
   rows: ExpandableRow[],
   collapsedIds: Set<number>,
+  noteExpansions: ExpansionControl[],
+  descriptionExpansions: ExpansionControl[],
 ): void {
-  const setAllExpanded = (expanded: boolean) => () => {
+  const setAllRowsExpanded = (expanded: boolean): void => {
     for (const { id, twisty } of rows) {
       // Recorded as well as applied: a repaint right after the click would otherwise undo it.
       rememberExpanded(collapsedIds, id, expanded);
@@ -1790,8 +1821,22 @@ function wireExpandCollapseButtons(
     }
   };
 
-  expandAll.onclick = setAllExpanded(true);
-  collapseAll.onclick = setAllExpanded(false);
+  expandAll.onclick = () => {
+    if (rows.some(({ twisty }) => twisty.getAttribute("aria-expanded") !== "true")) {
+      setAllRowsExpanded(true);
+      return;
+    }
+    for (const expansion of noteExpansions) expansion.setExpanded(true);
+  };
+
+  collapseAll.onclick = () => {
+    const details = [...noteExpansions, ...descriptionExpansions];
+    if (details.some((expansion) => expansion.isExpanded())) {
+      for (const expansion of details) expansion.setExpanded(false);
+      return;
+    }
+    setAllRowsExpanded(false);
+  };
 }
 
 /**
@@ -1995,6 +2040,8 @@ function createBoardTreeRenderer(params: BoardTreeRendererParams): () => void {
   const renderTreeContent = (): void => {
     const filterOn = sprintPickerHandle.isFilterActive();
     const expandableRows: ExpandableRow[] = [];
+    const noteExpansions: ExpansionControl[] = [];
+    const descriptionExpansions: ExpansionControl[] = [];
     const properties = params.context.properties;
     const orderingPolicy = params.currentOrderingPolicy();
     // Every element from the previous pass is about to be discarded, so the controller's row map is
@@ -2043,6 +2090,8 @@ function createBoardTreeRenderer(params: BoardTreeRendererParams): () => void {
       // filter pills the board should be offering.
       repaint: () => params.repaintBoard(),
       expandableRows,
+      noteExpansions,
+      descriptionExpansions,
       collapsedIds,
       expandedNoteIds,
       // Rebuilt per pass for the same reason the resolved-age filter is: "the last N weeks" moves
@@ -2060,7 +2109,14 @@ function createBoardTreeRenderer(params: BoardTreeRendererParams): () => void {
     // children downward rather than repeating the epic as the top row.
     treeContainer.append(...renderTree(root, options, 0));
 
-    wireExpandCollapseButtons(expandAll, collapseAll, expandableRows, collapsedIds);
+    wireExpandCollapseButtons(
+      expandAll,
+      collapseAll,
+      expandableRows,
+      collapsedIds,
+      noteExpansions,
+      descriptionExpansions,
+    );
   };
 
   return renderTreeContent;
