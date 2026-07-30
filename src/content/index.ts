@@ -286,6 +286,7 @@ const trackingServices: EnhancedViewServices = {
       icon: t.icon,
       etaField: t.etaField ?? null,
       columns: t.columns.map((c) => ({ column: c.column, states: [...c.states] })),
+      children: [...(t.children ?? [])],
     })),
   getBoardColumns: () => [...(latestSettings?.boardColumns ?? [])],
   // Copied out of the latest synced snapshot rather than handed the live object, so a view can never

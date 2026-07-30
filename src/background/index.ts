@@ -896,6 +896,7 @@ function buildReorderConfig(
     previousId: message.previousId,
     nextId: message.nextId,
     reparent: message.parentId !== message.currentParentId,
+    typeName: message.typeName,
   };
 }
 

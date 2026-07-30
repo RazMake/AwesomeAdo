@@ -301,11 +301,13 @@ board's filters and the tagging commands all share one interpretation of the fie
 ### `IWorkItemReorderWriter.ts`
 
 - `WorkItemReorderRequest` —
-  `{ id, rev, parentId, currentParentId, previousId, nextId, siblingIds, team }`; the request to move
+  `{ id, rev, parentId, currentParentId, previousId, nextId, siblingIds, type?, team }`; the request to move
   an item. Position is named as the two siblings it lands **between** (`0` = start / end / no parent)
   rather than as a rank, because ADO owns the rank arithmetic — and naming neighbours survives a stale
   board, where two independently-computed ranks would collide. `siblingIds` is the destination level
   in its **post-drop** order, which the rank fallback needs when ADO declines to rank the item.
+  `type`, when present, is the destination parent's default child type and is applied atomically with
+  the parent link.
 - `WorkItemReorderResult` — `{ ok, order?, rev?, reparented?, ranks?, error? }`; `order` is the rank
   ADO assigned (so a caller can refresh its model without re-reading the tree), `rev` the item's new
   rev when the re-parent patch ran, `reparented` whether the hierarchy link actually changed (reported

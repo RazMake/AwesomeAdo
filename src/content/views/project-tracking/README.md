@@ -78,15 +78,19 @@ halves of the view — its configuration and its renderer.
   - **Drag to reorder**: while the board is ordered **by importance**, a tree row's title and each
     rolled-up child's popup title are drag handles (the pointer shows `grab` over them and nowhere
     else). Dragging shows a themed insertion line where the item would land; dropping a tree row
-    under a different parent also washes that parent's children
+    under a different parent uses a different themed insertion color and washes that parent's children
     container so the re-parent is visible before the mouse is released. Dropping persists the move
     through the shared write queue: the item is re-ranked with ADO's **own** backlog-order endpoint
     (which owns the rank arithmetic) and, when the parent changed, its `System.Parent` link is
-    re-pointed first under a `/rev` test so a concurrent edit is rejected rather than overwritten.
+    re-pointed under a `/rev` test. The item is converted to the destination parent's configured
+    default child type in that same JSON Patch, so the parent and type either both land or neither
+    does.
     See [`drag-reorder`](./drag-reorder/README.md).
-    - A row can only land at its **own level**: an item never becomes a child of a row it was a peer
-      of, so a parent is only ever reordered among its own siblings while a leaf may move to any
-      parent at its depth.
+    - A row may stay at its level or move one level: dragging a child between its parent's peers
+      promotes it under their parent, while dragging a leaf among another item's children demotes it
+      at the exact position targeted. A parent that still has children cannot be demoted.
+    - Dragging a rolled-up child outside its popup closes the popup and continues the same hierarchy
+      move against the tree.
     - Rank is computed against the level's **full** sibling list, so a move made while the sprint or
       tag filter hides rows still lands where the user aimed once the filter comes off.
     - Persist-then-reflect like every other control here: the row does not move until ADO accepts it,

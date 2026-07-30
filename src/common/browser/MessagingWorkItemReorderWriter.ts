@@ -44,6 +44,9 @@ export class MessagingWorkItemReorderWriter implements IWorkItemReorderWriter {
       siblingIds: [...request.siblingIds],
       team: request.team,
     };
+    if (request.type !== undefined) {
+      message.typeName = request.type;
+    }
 
     try {
       const response = await this.send(message);

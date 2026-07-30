@@ -5,6 +5,8 @@ Major.Minor with a CI build number to form Major.Minor.Build.
 
 ## Next Version
 
+- **Project Tracking items can now move up and down the hierarchy while you drag them.** Drag a child between its parent's peers to promote it, or drag a leaf parent among another item's children to demote it at the exact position you target; a parent that still owns children is protected from demotion. Changing parent also converts the item to that parent's configured default child type in the same Azure DevOps revision, so type and hierarchy cannot split. Dragging a rolled-up child out of its popup closes the popup and continues the move on the tree. Same-parent ordering and parent changes now use different colors from the selected AwesomeADO theme.
+
 - **The menu under the AwesomeADO top-bar button now matches the item right-click menu and follows your selected theme.** Its rounded shell, inset command highlights, border, and shadow now use the same visual shape as the Project Tracking menu. Dark, Light, Blue, and Follow Azure DevOps are applied directly to the popup, so it no longer inherits a mismatched Azure DevOps palette when your AwesomeADO theme differs.
 
 - **Rolled-up child items can now be reordered directly in their popup.** With Project Tracking ordered by importance, grab a child by its title and drag it between its siblings; the same themed insertion line used by the tree shows exactly where it will land, and the new order is saved to Azure DevOps through the board's existing write queue. The popup stays open after each saved move, already showing the new order and retaining its original measured alignment instead of snapping to the child-count chip's corner, so several children can be arranged without reopening it every time.

@@ -28,6 +28,7 @@ const FIXTURE_TYPES: TypeCatalogEntry[] = [
     color: "ff6b6b",
     icon: "epic.svg",
     etaField: "Custom.EpicETA",
+    children: ["Feature"],
     columns: [
       { column: "Active", states: ["Active", "New"] },
       { column: "Done", states: ["Closed"] },
@@ -38,6 +39,7 @@ const FIXTURE_TYPES: TypeCatalogEntry[] = [
     color: "6bcf7f",
     icon: "feature.svg",
     etaField: "Custom.FeatureETA",
+    children: ["Story"],
     columns: [
       { column: "Active", states: ["Active"] },
       { column: "Done", states: ["Closed"] },
@@ -48,6 +50,7 @@ const FIXTURE_TYPES: TypeCatalogEntry[] = [
     color: "4fc3f7",
     icon: "story.svg",
     etaField: null,
+    children: [],
     columns: [
       { column: "Active", states: ["Active", "New"] },
       { column: "Done", states: ["Closed"] },
@@ -2784,14 +2787,36 @@ describe("ProjectTrackingView — techlead tag", () => {
 
 /** The four-level type catalog (Epic → Feature → Story → Task) the rollup tests need. */
 const DEEP_TYPES: TypeCatalogEntry[] = [
-  { name: "Epic", color: "ff6b6b", icon: "epic.svg", etaField: null, columns: [] },
-  { name: "Feature", color: "6bcf7f", icon: "feature.svg", etaField: null, columns: [] },
-  { name: "Story", color: "4fc3f7", icon: "story.svg", etaField: null, columns: [] },
+  {
+    name: "Epic",
+    color: "ff6b6b",
+    icon: "epic.svg",
+    etaField: null,
+    columns: [],
+    children: ["Feature"],
+  },
+  {
+    name: "Feature",
+    color: "6bcf7f",
+    icon: "feature.svg",
+    etaField: null,
+    columns: [],
+    children: ["Story"],
+  },
+  {
+    name: "Story",
+    color: "4fc3f7",
+    icon: "story.svg",
+    etaField: null,
+    columns: [],
+    children: ["Task"],
+  },
   {
     name: "Task",
     color: "F2CB1D",
     icon: "https://ado/task.svg",
     etaField: "Custom.TaskETA",
+    children: [],
     columns: [
       { column: "Active", states: ["Active", "New"] },
       { column: "Done", states: ["Closed"] },
@@ -3356,7 +3381,7 @@ describe("ProjectTrackingView — rollup popup rows", () => {
   });
 });
 
-describe("ProjectTrackingView — rollup popup reordering", () => {
+describe("ProjectTrackingView — same-parent popup reordering", () => {
   it("reorders rolled-up children with the tree's insertion-line preview", async () => {
     const moves: Parameters<EnhancedViewServices["reorderItem"]>[0][] = [];
     const root = await renderDeepBoard({
@@ -3369,61 +3394,40 @@ describe("ProjectTrackingView — rollup popup reordering", () => {
     await turnSprintFilterOff(root);
     rollupBadgeOf(root).click();
 
-    const rows = [...root.querySelectorAll<HTMLElement>(".awesomeado-child-items__row")];
-    const firstTitle = rows[0]!.querySelector<HTMLElement>(".awesomeado-child-items__title")!;
-    firstTitle.dispatchEvent(new Event("dragstart", { bubbles: true }));
-    Object.assign(rows[2]!, {
-      getBoundingClientRect: () => ({ top: 40, height: 20, bottom: 60 }) as DOMRect,
+    dragPopupChild(root, 0, 2, (preview, target) => {
+      expect(preview.defaultPrevented).toBe(true);
+      expect(root.querySelector(".awesomeado-tracking__drop-line")?.previousElementSibling).toBe(
+        target,
+      );
     });
-    const preview = new Event("dragover", { bubbles: true, cancelable: true });
-    Object.assign(preview, { clientY: 55 });
-    rows[2]!.dispatchEvent(preview);
 
-    expect(preview.defaultPrevented).toBe(true);
-    expect(root.querySelector(".awesomeado-tracking__drop-line")?.previousElementSibling).toBe(
-      rows[2],
-    );
-
-    const drop = new Event("drop", { bubbles: true, cancelable: true });
-    Object.assign(drop, { clientY: 55 });
-    rows[2]!.dispatchEvent(drop);
-
+    await vi.waitFor(() => expect(moves).toEqual([ROLLUP_REORDER_REQUEST]));
     await vi.waitFor(() =>
-      expect(moves).toEqual([
-        {
-          id: 4,
-          rev: 1,
-          parentId: 3,
-          currentParentId: 3,
-          previousId: 6,
-          nextId: 0,
-          siblingIds: [5, 6, 4],
-          team: "team-guid",
-        },
+      expect(popupChildTitles(root)).toEqual([
+        "Style the form",
+        "Drop the old form",
+        "Wire the form",
       ]),
     );
 
-    await vi.waitFor(() =>
-      expect(
-        [...root.querySelectorAll<HTMLElement>(".awesomeado-child-items__title-text")].map(
-          (title) => title.textContent,
-        ),
-      ).toEqual(["Style the form", "Drop the old form", "Wire the form"]),
-    );
+    expect(root.querySelectorAll(".awesomeado-child-items__row")).toHaveLength(3);
+  });
 
-    const reopenedRows = [...root.querySelectorAll<HTMLElement>(".awesomeado-child-items__row")];
-    expect(reopenedRows).toHaveLength(3);
-
-    const reopenedFirstTitle = reopenedRows[0]!.querySelector<HTMLElement>(
-      ".awesomeado-child-items__title",
-    )!;
-    reopenedFirstTitle.dispatchEvent(new Event("dragstart", { bubbles: true }));
-    Object.assign(reopenedRows[2]!, {
-      getBoundingClientRect: () => ({ top: 40, height: 20, bottom: 60 }) as DOMRect,
+  it("accepts another popup reorder after repainting the first move", async () => {
+    const moves: Parameters<EnhancedViewServices["reorderItem"]>[0][] = [];
+    const root = await renderDeepBoard({
+      reorderItem: async (request) => {
+        moves.push(request);
+        return { ok: true, order: 300 };
+      },
     });
-    const secondDrop = new Event("drop", { bubbles: true, cancelable: true });
-    Object.assign(secondDrop, { clientY: 55 });
-    reopenedRows[2]!.dispatchEvent(secondDrop);
+    document.body.append(root);
+    await turnSprintFilterOff(root);
+    rollupBadgeOf(root).click();
+
+    dragPopupChild(root, 0, 2);
+    await vi.waitFor(() => expect(moves).toHaveLength(1));
+    dragPopupChild(root, 0, 2);
 
     await vi.waitFor(() => {
       expect(moves).toHaveLength(2);
@@ -3431,6 +3435,106 @@ describe("ProjectTrackingView — rollup popup reordering", () => {
     });
   });
 });
+
+describe("ProjectTrackingView — popup hierarchy changes", () => {
+  it("promotes a popup child between parents and converts it to the destination child type", async () => {
+    const moves: Parameters<EnhancedViewServices["reorderItem"]>[0][] = [];
+    const root = await renderDeepBoard({
+      reorderItem: async (request) => {
+        moves.push(request);
+        return { ok: true, order: 2, reparented: true, rev: 2 };
+      },
+    });
+    document.body.append(root);
+    await turnSprintFilterOff(root);
+    rollupBadgeOf(root).click();
+
+    const popupTitle = root.querySelector<HTMLElement>(".awesomeado-child-items__title")!;
+    const storyTitle = [
+      ...root.querySelectorAll<HTMLElement>(".awesomeado-tracking__item-title"),
+    ].find((title) => title.textContent === "Login UI")!;
+    const storyRow = storyTitle.closest<HTMLElement>(".awesomeado-tracking__row")!;
+    Object.assign(storyRow, {
+      getBoundingClientRect: () => ({ top: 40, height: 20, bottom: 60 }) as DOMRect,
+    });
+    popupTitle.dispatchEvent(new Event("dragstart", { bubbles: true }));
+    const preview = new Event("dragover", { bubbles: true, cancelable: true });
+    Object.assign(preview, { clientY: 45 });
+    storyRow.dispatchEvent(preview);
+
+    expect(root.querySelector(".awesomeado-child-items__popup")).toBeNull();
+    expect(
+      root.querySelector<HTMLElement>(".awesomeado-tracking__drop-line")?.dataset.dropKind,
+    ).toBe("reparent");
+
+    const drop = new Event("drop", { bubbles: true, cancelable: true });
+    Object.assign(drop, { clientY: 45 });
+    storyRow.dispatchEvent(drop);
+
+    await vi.waitFor(() =>
+      expect(moves).toEqual([
+        {
+          id: 4,
+          rev: 1,
+          parentId: 2,
+          currentParentId: 3,
+          previousId: 0,
+          nextId: 3,
+          siblingIds: [4, 3],
+          type: "Story",
+          team: "team-guid",
+        },
+      ]),
+    );
+    await vi.waitFor(() =>
+      expect(
+        [...root.querySelectorAll<HTMLElement>(".awesomeado-tracking__item-title")].map(
+          (title) => title.textContent,
+        ),
+      ).toContain("Wire the form"),
+    );
+  });
+});
+
+const ROLLUP_REORDER_REQUEST = {
+  id: 4,
+  rev: 1,
+  parentId: 3,
+  currentParentId: 3,
+  previousId: 6,
+  nextId: 0,
+  siblingIds: [5, 6, 4],
+  team: "team-guid",
+} as const;
+
+/** Titles currently shown by the rolled-up child popup. */
+const popupChildTitles = (root: HTMLElement): Array<string | null> =>
+  [...root.querySelectorAll<HTMLElement>(".awesomeado-child-items__title-text")].map(
+    (title) => title.textContent,
+  );
+
+/** Drags one popup child after another, exposing the preview before completing the drop. */
+function dragPopupChild(
+  root: HTMLElement,
+  sourceIndex: number,
+  targetIndex: number,
+  onPreview: (preview: Event, target: HTMLElement) => void = () => undefined,
+): void {
+  const rows = [...root.querySelectorAll<HTMLElement>(".awesomeado-child-items__row")];
+  const source = rows[sourceIndex]!.querySelector<HTMLElement>(".awesomeado-child-items__title")!;
+  const target = rows[targetIndex]!;
+  source.dispatchEvent(new Event("dragstart", { bubbles: true }));
+  Object.assign(target, {
+    getBoundingClientRect: () => ({ top: 40, height: 20, bottom: 60 }) as DOMRect,
+  });
+  const preview = new Event("dragover", { bubbles: true, cancelable: true });
+  Object.assign(preview, { clientY: 55 });
+  target.dispatchEvent(preview);
+  onPreview(preview, target);
+  const drop = new Event("drop", { bubbles: true, cancelable: true });
+  Object.assign(drop, { clientY: 55 });
+  target.dispatchEvent(drop);
+}
 
 describe("ProjectTrackingView — rollup popup completion writes", () => {
   it("moves a rolled-up child to the completed column when its checkbox is ticked", async () => {

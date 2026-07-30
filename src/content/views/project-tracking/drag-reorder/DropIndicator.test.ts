@@ -74,6 +74,20 @@ describe("DropIndicator - the insertion line", () => {
     expect(layoutOf(container)).toEqual(["row", "row", "line"]);
   });
 
+  it("uses different themed marker roles for reordering and changing parent", () => {
+    const { first } = buildLevel();
+    const indicator = new DropIndicator(document);
+
+    indicator.show(first, "before", { reparenting: false, parentContainer: null });
+    const line = document.querySelector<HTMLElement>(".awesomeado-tracking__drop-line")!;
+    expect(line.dataset.dropKind).toBe("reorder");
+    expect(line.style.background).toBe("var(--communication-background)");
+
+    indicator.show(first, "after", { reparenting: true, parentContainer: first.parentElement });
+    expect(line.dataset.dropKind).toBe("reparent");
+    expect(line.style.background).toBe("var(--success-foreground)");
+  });
+
   it("shows nothing for a wrapper that is not in the document", () => {
     const orphan = document.createElement("div");
 
@@ -115,9 +129,7 @@ describe("DropIndicator - the re-parent wash", () => {
     expect(isWashed(destination)).toBe(true);
     expect(destination.style.getPropertyValue("outline")).toContain("dashed");
     expect(destination.style.getPropertyValue("background")).toBe("var(--palette-neutral-4)");
-    expect(destination.style.getPropertyValue("outline")).toContain(
-      "var(--communication-background)",
-    );
+    expect(destination.style.getPropertyValue("outline")).toContain("var(--success-foreground)");
     expect(isWashed(container)).toBe(false);
   });
 

@@ -569,8 +569,9 @@
   `writeField`. Position is expressed as the two siblings the item lands **between** (`previousId`/
   `nextId`, with `0` as ADO's start/end/no-parent sentinel) plus its `parentId` — never as a rank.
   The background worker runs two MAIN-world calls in order: re-point the
-  `System.LinkTypes.Hierarchy-Reverse` link under a `/rev` test (skipped when the parent is
-  unchanged), then PATCH the team-scoped `_apis/work/workitemsorder` endpoint.
+  `System.LinkTypes.Hierarchy-Reverse` link under a `/rev` test and apply any destination type in the
+  same JSON Patch (skipped when the parent is unchanged), then PATCH the team-scoped
+  `_apis/work/workitemsorder` endpoint.
 - Rationale: a re-parent changes the item's **links** and its rank lives behind a team-scoped backlog
   endpoint, so neither is a `/fields/` patch — folding it into `IWorkItemFieldWriter` would have
   widened a deliberately closed "update one field on one item" operation into one that can
@@ -586,16 +587,20 @@
   (`WORK_ITEMS_ORDER_API_VERSION`) instead of dragging the shared `ADO_API_VERSION` onto a preview
   contract.
 
-## ADR-041: Drag-to-reorder is depth-fixed, importance-only, and ranked against unfiltered siblings
+## ADR-041: Drag-to-reorder supports adjacent levels and ranks against unfiltered siblings
 
-- Decision: a tree row or rolled-up child popup row may only be dropped at the depth it came from;
-  both use the same themed insertion-line preview and persistence path. The ordering glyph is the status
+- Decision: a tree row or rolled-up child popup row may stay at its depth or move one adjacent level.
+  Dropping a child between rows one level above promotes it under their parent; dropping a leaf among
+  rows one level below demotes it under their parent at the targeted position. A source with children
+  cannot be demoted. Any changed parent requires its configured default child type, written in the
+  same `/rev`-guarded JSON Patch as the hierarchy link. Same-parent and changed-parent drops use
+  distinct themed marker roles. A popup closes when its drag reaches a legal external target. The ordering glyph is the status
   light that says when dragging is unavailable (heavily-transparent red plus the reason in its
   tooltip); the affordance exists only under `MANUAL_ORDERING_POLICY` and only when a team is
   configured; and `previousId`/`nextId` are computed from the level's **full** sibling list, not the
   rows the active sprint/tag filters leave on screen.
-- Rationale: depth-fixed keeps a parent from becoming a peer's child by accident while still allowing
-  a leaf to move between parents at its own level. Under a derived policy (title, ETA) a dropped row
+- Rationale: limiting hierarchy changes to one level and allowing only leaf demotion prevents an
+  implicit subtree move while still making hierarchy corrections deliberate. Under a derived policy (title, ETA) a dropped row
   would be re-sorted straight back out of its slot, so offering the handle would be a lie — and
   backlog rank is per-team in ADO, so without a team a move would rank against a guess. Ranking
   against only the visible rows would place the item relative to whatever the filter happened to

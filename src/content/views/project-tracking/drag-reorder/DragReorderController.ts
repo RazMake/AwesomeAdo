@@ -7,10 +7,14 @@ import { resolveMove, type DropSide, type ResolvedMove } from "./movePlacement";
 export interface DraggableRow {
   /** The work item the row shows. */
   id: number;
-  /** How deep the row sits (0 = the root's children), used to keep a drop at its own level. */
+  /** How deep the row sits (0 = the root's children). */
   depth: number;
+  /** Whether this item currently owns children; a parent cannot be demoted with them attached. */
+  hasChildren: boolean;
   /** The item's current parent; `0` for the top level. */
   parentId: number;
+  /** The default work-item type accepted by this row's parent. */
+  destinationType: string | null;
   /**
    * The FULL sibling list of this row's level in board order — every sibling, including those the
    * active filters hide. Rank is computed against this list so a filtered board still places the
@@ -23,6 +27,10 @@ export interface DraggableRow {
   row: HTMLElement;
   /** The row plus its description panel and children, i.e. the element the insertion line slots against. */
   wrapper: HTMLElement;
+  /** Popup surface the source belongs to, when leaving it should dismiss that popup. */
+  dragSurface?: HTMLElement;
+  /** Dismisses the source popup after the drag reaches a legal target outside it. */
+  onLeaveSurface?: () => void;
 }
 
 /** A resolved drop, ready to be persisted. */
@@ -31,6 +39,8 @@ export interface PlannedMove extends ResolvedMove {
   id: number;
   /** The parent it came from, so the persistence layer can skip an unnecessary link patch. */
   currentParentId: number;
+  /** The type required by the destination parent, when changing hierarchy level/parent. */
+  type?: string;
 }
 
 // The drag session's payload. Held in the controller rather than in `dataTransfer` because the drop
@@ -39,6 +49,7 @@ export interface PlannedMove extends ResolvedMove {
 // has to decide whether the drop is legal.
 interface DragSession {
   source: DraggableRow;
+  leftSurface: boolean;
 }
 
 /**
@@ -91,7 +102,7 @@ export class DragReorderController {
   }
 
   private startDrag(event: Event, row: DraggableRow): void {
-    this.session = { source: row };
+    this.session = { source: row, leftSurface: false };
     row.handle.style.cursor = "grabbing";
     // Dim the row being moved so the insertion line reads as "the new home" rather than as a second
     // copy of a row that still looks settled where it was.
@@ -111,6 +122,7 @@ export class DragReorderController {
       this.indicator.clear();
       return;
     }
+    this.leaveSourceSurface(target);
     // A popup row lives inside its owning tree row. Once the inner row claims a legal target, do not
     // let the bubbled event reach that different-depth outer row and immediately clear this preview.
     event.stopPropagation();
@@ -125,6 +137,20 @@ export class DragReorderController {
       reparenting: plan.move.parentId !== plan.move.currentParentId,
       parentContainer: target.wrapper.parentElement,
     });
+  }
+
+  private leaveSourceSurface(target: DraggableRow): void {
+    const session = this.session;
+    if (
+      session === null ||
+      session.leftSurface ||
+      session.source.dragSurface === undefined ||
+      session.source.dragSurface.contains(target.row)
+    ) {
+      return;
+    }
+    session.leftSurface = true;
+    session.source.onLeaveSurface?.();
   }
 
   private completeDrop(event: Event, target: DraggableRow): void {
@@ -148,16 +174,16 @@ export class DragReorderController {
   /**
    * Work out what dropping on `target` right now would mean, or null when the drop is not allowed.
    *
-   * Two rules make a drop illegal, and both are enforced here so the preview and the drop can never
-   * disagree: a row may only land at its OWN level (an item never becomes a child of a row it was a
-   * peer of), and a drop that would leave the item exactly where it already sits is not a move.
+   * Drops may stay at the same depth or move one level at a time. Demoting a parent that still owns
+   * children is refused because moving those descendants implicitly would be a different operation.
+   * A drop that reproduces the current placement is also refused.
    */
   private planDrop(
     event: Event,
     target: DraggableRow,
   ): { move: PlannedMove; side: DropSide } | null {
     const source = this.session?.source;
-    if (source === undefined || source.depth !== target.depth || source.id === target.id) {
+    if (source === undefined || !allowsDrop(source, target)) {
       return null;
     }
     const side = dropSide(event, target.row);
@@ -173,7 +199,15 @@ export class DragReorderController {
     if (placement === null) {
       return null;
     }
-    return { move: { ...placement, id: source.id, currentParentId: source.parentId }, side };
+    const move: PlannedMove = {
+      ...placement,
+      id: source.id,
+      currentParentId: source.parentId,
+    };
+    if (source.parentId !== placement.parentId && target.destinationType !== null) {
+      move.type = target.destinationType;
+    }
+    return { move, side };
   }
 
   private endSession(): void {
@@ -185,6 +219,18 @@ export class DragReorderController {
     }
     this.session = null;
   }
+}
+
+/** Whether a source may enter the target level without implicitly moving a subtree. */
+function allowsDrop(source: DraggableRow, target: DraggableRow): boolean {
+  const depthChange = target.depth - source.depth;
+  if (source.id === target.id || Math.abs(depthChange) > 1) {
+    return false;
+  }
+  if (depthChange > 0 && source.hasChildren) {
+    return false;
+  }
+  return source.parentId === target.parentId || target.destinationType !== null;
 }
 
 /**

@@ -31,6 +31,8 @@ export interface WorkItemReorderRequest {
    * written by hand in that case is derived from the level the user ended up with.
    */
   siblingIds: readonly number[];
+  /** The destination parent's default child type, applied atomically with a changed parent link. */
+  type?: string;
   /** The team whose backlog order is being changed (ADO ranks per team). */
   team: string;
 }

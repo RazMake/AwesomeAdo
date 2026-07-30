@@ -50,7 +50,11 @@ export interface ChildItemDescriptor {
    * Called after the popup row is assembled, so the owning view may add domain-specific behavior
    * such as drag-to-reorder without putting work-item identity or persistence into this control.
    */
-  onRowReady?: (row: HTMLElement, title: HTMLElement) => void;
+  onRowReady?: (
+    row: HTMLElement,
+    title: HTMLElement,
+    dragContext: { surface: HTMLElement; close: () => void },
+  ) => void;
 }
 
 /** Options for rendering a child-items badge. */
@@ -207,7 +211,7 @@ export function renderChildItemsBadge(doc: Document, options: ChildItemsBadgeOpt
     doc,
     trigger: badge,
     mountInto: root,
-    buildPopup: () => buildPopup(doc, children),
+    buildPopup: (close) => buildPopup(doc, children, close),
   });
   if (initiallyOpen) {
     // A reorder rebuilds the board while this control is detached. Opening synchronously gives the
@@ -227,7 +231,11 @@ export function renderChildItemsBadge(doc: Document, options: ChildItemsBadgeOpt
  * Builds the popup shell and fills it with one row per child. Extracted so the render function stays
  * focused on the badge itself and its open/close lifecycle.
  */
-function buildPopup(doc: Document, children: ChildItemDescriptor[]): HTMLElement {
+function buildPopup(
+  doc: Document,
+  children: ChildItemDescriptor[],
+  close: () => void,
+): HTMLElement {
   const popup = doc.createElement("div");
   popup.className = "awesomeado-child-items__popup";
   // Theme-aware colors come from the complete palette pinned by the extension host.
@@ -257,7 +265,7 @@ function buildPopup(doc: Document, children: ChildItemDescriptor[]): HTMLElement
   ].join(";");
 
   children.forEach((child) => {
-    popup.append(renderChildRow(doc, child));
+    popup.append(renderChildRow(doc, child, { surface: popup, close }));
   });
 
   return popup;
@@ -285,7 +293,11 @@ function firstLineSlot(doc: Document, content: HTMLElement): HTMLElement {
  * Renders one child row: a completion checkbox, the caller's assignee picker, the title in its type
  * color (trailed by the glyph that opens the item in ADO), and the caller's ETA control.
  */
-function renderChildRow(doc: Document, child: ChildItemDescriptor): HTMLElement {
+function renderChildRow(
+  doc: Document,
+  child: ChildItemDescriptor,
+  dragContext: { surface: HTMLElement; close: () => void },
+): HTMLElement {
   const row = doc.createElement("div");
   row.className = "awesomeado-child-items__row";
   row.style.cssText = [
@@ -325,7 +337,7 @@ function renderChildRow(doc: Document, child: ChildItemDescriptor): HTMLElement 
     row.append(firstLineSlot(doc, child.eta));
   }
 
-  child.onRowReady?.(row, title.element);
+  child.onRowReady?.(row, title.element, dragContext);
 
   return row;
 }

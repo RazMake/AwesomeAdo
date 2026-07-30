@@ -59,6 +59,14 @@ function makeWriter(reply: () => Promise<ReorderWorkItemResponse | undefined>): 
 }
 
 describe("MessagingWorkItemReorderWriter - success", () => {
+  it("forwards a destination type with the hierarchy move", async () => {
+    const { writer, sent } = makeWriter(() => Promise.resolve({ ok: true }));
+
+    await writer.reorder({ ...REQUEST, type: "Feature" });
+
+    expect(sent[0]?.typeName).toBe("Feature");
+  });
+
   it("sends the whole request as one reorder message", async () => {
     const { writer, sent } = makeWriter(() => Promise.resolve({ ok: true }));
 

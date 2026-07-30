@@ -146,15 +146,18 @@ The extension is feature-complete for its current scope:
   session-long memo is what keeps the count proportional to people rather than mentions. The
   board paints first and repaints when names arrive (`BoardHandle.repaint`); a notes panel awaits the
   resolve before building its rows.
-  Rows and rolled-up children in their popup can also be **dragged to reorder** (ADR-040/041): the
-  title is the drag handle, a themed insertion line shows the landing spot and a wash names the
-  destination parent when a tree-row drop also re-parents; a rolled-up child popup reopens on its
-  newly ordered rows after each accepted move. `content/views/project-tracking/drag-reorder` decides and previews the move (pure
+  Rows and rolled-up children in their popup can also be **dragged to reorder or change hierarchy
+  level** (ADR-040/041): the title is the drag handle, and distinct themed markers distinguish a
+  same-parent reorder from a changed parent. Dragging a rolled-up child out closes its popup and
+  continues against the tree; same-parent popup reordering reopens on the newly ordered rows after
+  each accepted move. `content/views/project-tracking/drag-reorder` decides and previews the move (pure
   `movePlacement` for the placement math, `applyMoveToTree` for the model); persistence goes through
   `EnhancedViewServices.reorderItem` → `MessagingWorkItemReorderWriter` → the background worker, which
-  re-points the `System.LinkTypes.Hierarchy-Reverse` link under a `/rev` test and then PATCHes the
+  re-points the `System.LinkTypes.Hierarchy-Reverse` link under a `/rev` test, changes the item to the
+  destination parent's default child type in that same patch, and then PATCHes the
   team-scoped `_apis/work/workitemsorder` endpoint (`common/ado/reorderWorkItems`,
-  `reorderWorkItemInPage`). Drops are depth-fixed, offered only under `MANUAL_ORDERING_POLICY` and
+  `reorderWorkItemInPage`). Drops may stay at the current level or move one adjacent level; demotion
+  is allowed only for a source with no children. Dragging is offered only under `MANUAL_ORDERING_POLICY` and
   only with a configured team (the ordering glyph turns faint red with the reason otherwise), ranked
   against the level's **unfiltered** sibling list, and persist-then-reflect on the board's single
   `WorkItemWriteQueue` — which now serializes field writes and moves together (`enqueueReorder`)

@@ -185,6 +185,23 @@ describe("reorderWorkItemInPage - re-parenting", () => {
 });
 
 describe("reorderWorkItemInPage - the link patch it builds", () => {
+  it("changes type in the same guarded patch as the parent link", async () => {
+    const { calls } = stubFetch({
+      [RELATIONS_URL]: relations([{ rel: PARENT_LINK_TYPE }]),
+      [ITEM_URL]: reply({ rev: 6 }),
+      [ORDER_URL]: reply(ORDER_BODY),
+    });
+
+    await reorderWorkItemInPage(config({ reparent: true, typeName: "Feature" }));
+
+    expect(patchOps(calls)).toEqual([
+      { op: "test", path: "/rev", value: 5 },
+      { op: "remove", path: "/relations/0" },
+      { op: "add", path: "/relations/-", value: { rel: PARENT_LINK_TYPE, url: PARENT_LINK_URL } },
+      { op: "add", path: "/fields/System.WorkItemType", value: "Feature" },
+    ]);
+  });
+
   it("adds the new link without a remove when the item had no parent", async () => {
     const { calls } = stubFetch({
       [RELATIONS_URL]: relations([{ rel: "System.LinkTypes.Related" }]),

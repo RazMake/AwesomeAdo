@@ -572,10 +572,11 @@ messages the background worker, which runs the calls in the ADO tab's MAIN world
 ### `WorkItemReorderRequest.ts` — the content→background message contract
 
 - `REORDER_WORK_ITEM_MESSAGE` / `ReorderWorkItemMessage`
-  (`{ type, id, rev, parentId, currentParentId, previousId, nextId, team }`) — the move. Position is
+  (`{ type, id, rev, parentId, currentParentId, previousId, nextId, siblingIds, typeName?, team }`) — the move. Position is
   named as the two siblings the item lands **between** (`0` means start of the list / end of the list
   / no parent) rather than as a rank, because ADO owns the rank arithmetic. `team` is required
-  because backlog order is per-team in ADO.
+  because backlog order is per-team in ADO. `typeName`, when present, is written in the same guarded
+  patch as the hierarchy link.
 - `ReorderWorkItemResponse` (`{ ok, order?, rev?, error?, detail? }`) — the worker's reply; `order` is
   the rank ADO assigned and `rev` the item's new System.Rev when the re-parent patch ran. `detail`
   carries the raw body ADO returned with a rejected request (truncated), kept separate from `error`
@@ -608,6 +609,7 @@ const result = await writer.reorder({
   previousId,
   nextId,
   siblingIds,
+  type: destinationType,
   team,
 });
 ```
@@ -622,7 +624,7 @@ diagnostics log is exported into bug reports. Constructed only in the compositio
 The self-contained function the **background worker** injects into the ADO tab's MAIN world to move
 an item. It runs up to two calls, in this order:
 
-1. **Re-parent** (skipped when `config.reparent` is false): GET the item with `$expand=relations` to
+1. **Re-parent and convert type** (skipped when `config.reparent` is false): GET the item with `$expand=relations` to
    find the index of its `System.LinkTypes.Hierarchy-Reverse` link — JSON Patch can only remove a link
    by index — then PATCH `test /rev` + `remove` the old link + `add` the new one. A `null`
    `parentLinkUrl` removes the parent without adding one.

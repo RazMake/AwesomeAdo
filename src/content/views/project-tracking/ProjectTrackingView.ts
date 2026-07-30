@@ -1269,6 +1269,7 @@ function describeMinorChild(
   child: TrackedWorkItem,
   options: TreeRenderOptions,
   parentId: number,
+  destinationType: string | null,
   siblingIds: readonly number[],
 ): ChildItemDescriptor {
   const { doc, typeMap, queue, context, boardColumns } = options;
@@ -1296,15 +1297,19 @@ function describeMinorChild(
     onRowReady:
       options.dragReorder === null
         ? undefined
-        : (row, title) =>
+        : (row, title, dragContext) =>
             options.dragReorder?.register({
               id: child.id,
               depth: MAX_ROW_DEPTH + 1,
+              hasChildren: child.children.length > 0,
               parentId,
+              destinationType,
               siblingIds,
               handle: title,
               row,
               wrapper: row,
+              dragSurface: dragContext.surface,
+              onLeaveSurface: dragContext.close,
             }),
   };
 }
@@ -1328,8 +1333,9 @@ function createMinorChildrenBadge(
   if (children.length === 0) return null;
 
   const siblingIds = children.map((child) => child.id);
+  const destinationType = options.typeMap.get(item.type)?.children?.[0] ?? null;
   const descriptors = children.map((child) =>
-    describeMinorChild(child, options, item.id, siblingIds),
+    describeMinorChild(child, options, item.id, destinationType, siblingIds),
   );
 
   const badge = renderChildItemsBadge(options.doc, {
@@ -1730,7 +1736,9 @@ function renderTree(
     options.dragReorder?.register({
       id: item.id,
       depth,
+      hasChildren: item.children.length > 0,
       parentId: parent.id,
+      destinationType: options.typeMap.get(parent.type)?.children?.[0] ?? null,
       siblingIds,
       handle: title,
       row: line,
@@ -2471,6 +2479,7 @@ function persistMove(params: {
       previousId: move.previousId,
       nextId: move.nextId,
       siblingIds: move.siblingIds,
+      type: move.type,
       team: params.team,
     })
     .then((result) => {
@@ -2487,6 +2496,9 @@ function persistMove(params: {
       // send the same rejected request again on the next drag.
       if (!result.ok && result.reparented !== true) {
         return;
+      }
+      if (move.type !== undefined) {
+        moved.type = move.type;
       }
       if (applyMoveToTree(root, move, result.order ?? null)) {
         if (reopensMinorChildPopup) {

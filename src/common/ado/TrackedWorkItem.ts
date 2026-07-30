@@ -93,4 +93,6 @@ export interface TypeCatalogEntry {
   etaField: string | null;
   /** The board columns and their routed ADO states; columns[i].states[0] is the primary state for that column. */
   columns: TrackedTypeColumn[];
+  /** Allowed child types in priority order; the first is the default for a hierarchy move. */
+  children?: string[];
 }

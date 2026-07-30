@@ -148,7 +148,11 @@ describe("renderChildItemsBadge - row content", () => {
 
     const row = popupOf(root)!.querySelector<HTMLElement>(".awesomeado-child-items__row")!;
     const title = row.querySelector<HTMLElement>(".awesomeado-child-items__title")!;
-    expect(onRowReady).toHaveBeenCalledWith(row, title);
+    expect(onRowReady).toHaveBeenCalledWith(
+      row,
+      title,
+      expect.objectContaining({ surface: expect.any(HTMLElement), close: expect.any(Function) }),
+    );
   });
 
   it("slots in the assignee control the caller built for each child", () => {

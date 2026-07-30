@@ -26,6 +26,8 @@ export interface ReorderWorkItemConfig {
   nextId: number;
   /** False when the item keeps its current parent, so the link patch is skipped entirely. */
   reparent: boolean;
+  /** The destination type to apply in the same revision as the parent link. */
+  typeName?: string;
 }
 
 /**
@@ -96,9 +98,7 @@ export function reorderWorkItemInPage(
   function applyOrder(newRev: number | undefined): Promise<ReorderWorkItemResponse> {
     const move = { ids: [id], parentId, previousId, nextId };
     return patch(config.orderUrl, "application/json", move).then((response) => {
-      if (!response.ok) {
-        return failResponse("order", response);
-      }
+      if (!response.ok) return failResponse("order", response);
       return response.json().then((json) => {
         const body = Array.isArray(json) ? json : (json as { value?: unknown }).value;
         const entries = (Array.isArray(body) ? body : []) as { id?: number; order?: number }[];
@@ -131,14 +131,15 @@ export function reorderWorkItemInPage(
       { op: "test", path: "/rev", value: config.rev },
       ...(existing >= 0 ? [{ op: "remove", path: "/relations/" + String(existing) }] : []),
       ...(parentLinkUrl !== null ? [{ op: "add", path: "/relations/-", value: newLink }] : []),
+      ...(config.typeName !== undefined
+        ? [{ op: "add", path: "/fields/System.WorkItemType", value: config.typeName }]
+        : []),
     ];
   }
 
   function patchItem(operations: unknown[]): Promise<ReorderWorkItemResponse> {
     return patch(config.itemUrl, "application/json-patch+json", operations).then((response) => {
-      if (!response.ok) {
-        return failResponse("reparent", response);
-      }
+      if (!response.ok) return failResponse("reparent", response);
       return response.json().then((json) => {
         const newRev = (json as { rev?: unknown }).rev;
         reparented = true;

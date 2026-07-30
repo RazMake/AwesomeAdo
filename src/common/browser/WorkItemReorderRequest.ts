@@ -32,6 +32,8 @@ export interface ReorderWorkItemMessage {
    * worker cannot derive it: only the board knows the tree.
    */
   siblingIds: number[];
+  /** The destination parent's default child type, when the hierarchy move also converts the item. */
+  typeName?: string;
   /** The team whose backlog order is being changed (ADO ranks per team). */
   team: string;
 }
@@ -175,12 +177,24 @@ function detailProblem(candidate: Partial<ReorderWorkItemMessage>): string | nul
   if (typeof candidate.team !== "string" || candidate.team.trim().length === 0) {
     return "team is missing or blank (no team is configured in AwesomeADO options)";
   }
+  const typeProblem = workItemTypeProblem(candidate.typeName);
+  if (typeProblem !== null) {
+    return typeProblem;
+  }
   // The sibling order is what the hand-written ranking falls back to, and every entry becomes a URL
   // the worker then calls with the user's session, so it is validated as strictly as the ids above.
   if (!Array.isArray(candidate.siblingIds) || !candidate.siblingIds.every(isWorkItemId)) {
     return "siblingIds is not an array of positive integer work item ids";
   }
   return null;
+}
+
+/** Why an optional destination type cannot name an ADO work-item type. */
+function workItemTypeProblem(value: unknown): string | null {
+  if (value === undefined || (typeof value === "string" && value.trim().length > 0)) {
+    return null;
+  }
+  return `typeName ${describeValue(value)} is not a non-blank work item type`;
 }
 
 /**

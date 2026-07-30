@@ -120,6 +120,14 @@ describe("isReorderWorkItemMessage - rev and team", () => {
     expect(isReorderWorkItemMessage(message({ team: 7 }))).toBe(false);
   });
 
+  it("accepts an omitted destination type and rejects a blank or non-string one", () => {
+    expect(isReorderWorkItemMessage(message({ typeName: undefined }))).toBe(true);
+    expect(isReorderWorkItemMessage(message({ typeName: "Feature" }))).toBe(true);
+    expect(isReorderWorkItemMessage(message({ typeName: "" }))).toBe(false);
+    expect(isReorderWorkItemMessage(message({ typeName: "   " }))).toBe(false);
+    expect(isReorderWorkItemMessage(message({ typeName: 7 }))).toBe(false);
+  });
+
   it("rejects sibling ids that are not all real work item ids", () => {
     // Every entry becomes a URL the worker calls with the user's session, so `0` — fine as a
     // "no parent" sentinel elsewhere — cannot name a sibling to rank.

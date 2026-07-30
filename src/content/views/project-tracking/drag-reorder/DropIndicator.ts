@@ -55,6 +55,10 @@ export class DropIndicator {
     } else {
       container.insertBefore(this.line, rowWrapper.nextSibling);
     }
+    this.line.dataset.dropKind = options.reparenting ? "reparent" : "reorder";
+    this.line.style.background = options.reparenting
+      ? "var(--success-foreground)"
+      : "var(--communication-background)";
     this.applyWash(options.reparenting ? options.parentContainer : null);
   }
 
@@ -77,7 +81,7 @@ export class DropIndicator {
       // A discrete tint plus a dashed accent edge: enough to name the destination without competing
       // with the insertion line for attention.
       container.style.setProperty("background", "var(--palette-neutral-4)");
-      container.style.setProperty("outline", "1px dashed var(--communication-background)");
+      container.style.setProperty("outline", "1px dashed var(--success-foreground)");
       container.style.setProperty("border-radius", "3px");
     }
     this.washed = container;

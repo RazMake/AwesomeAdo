@@ -10,16 +10,17 @@ place in the hierarchy.
 
 - **`new DragReorderController(doc, onMove, logger)`** — turns rows into a drag surface.
   - **`register(row: DraggableRow)`** — makes one row draggable by its `handle` and a drop target for
-    rows at its own level. A row that is never registered is never draggable, so the caller alone
+    rows at its own or an adjacent level. A row that is never registered is never draggable, so the caller alone
     decides when reordering is offered.
   - **`reset()`** — abandons any drag still in flight. Call it before a repaint; the previous pass's
     registrations need no undoing because their elements are discarded with it.
-- **`DraggableRow`** — what one row tells the controller: its `id`, `depth`, `parentId`, the level's
-  **full unfiltered** `siblingIds` in board order, and three elements — the `handle` (the title), the
+- **`DraggableRow`** — what one row tells the controller: its `id`, `depth`, `hasChildren`,
+  `parentId`, the parent's default `destinationType`, the level's **full unfiltered** `siblingIds` in board order, and three elements — the `handle` (the title), the
   `row` line box (whose midpoint decides above/below), and the `wrapper` the insertion line slots
-  against.
+  against. Popup rows also provide their `dragSurface` and `onLeaveSurface`, so reaching a legal
+  target outside the popup dismisses it without ending the drag.
 - **`PlannedMove`** — a resolved drop: `{ id, currentParentId, parentId, previousId, nextId,
-siblingIds }`, handed to `onMove` for the caller to persist.
+siblingIds, type? }`, handed to `onMove` for the caller to persist.
 
 ### `movePlacement.ts`
 
@@ -46,7 +47,8 @@ siblingIds }`, handed to `onMove` for the caller to persist.
 
 - **`new DropIndicator(doc)`** with **`show(wrapper, side, { reparenting, parentContainer })`** and
   **`clear()`** — the insertion line, plus the wash that names the destination when the drop also
-  changes parent.
+  changes parent. Same-parent ordering uses the theme accent; reparenting uses the theme success
+  color, so the marker communicates which operation will happen without fixed light-only colors.
 
 ## Usage guidance
 
@@ -59,7 +61,8 @@ The controller decides and previews; it never writes. Persist the `PlannedMove` 
 `applyMoveToTree` and repaint **after** Azure DevOps accepts it — the board is persist-then-reflect
 throughout, so a rejected move must leave the item visibly where it started.
 
-Two rules are enforced for you, so the preview and the drop can never disagree: a row may only land
-at its **own depth** (an item never becomes a child of a row it was a peer of, and an item with
-children is only ever reordered among its own siblings), and a drop that reproduces the item's
-current placement is reported as no move at all.
+Hierarchy changes move one level at a time. Dropping a child between rows one level above promotes it
+under their parent; dropping a leaf among rows one level below demotes it under their parent at the
+exact targeted position. A source that still owns children cannot be demoted. Any changed parent also
+requires the destination parent's configured default child type; without one, the drop is refused.
+A drop that reproduces the item's current placement is reported as no move at all.

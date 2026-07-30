@@ -62,9 +62,10 @@ const badge = renderChildItemsBadge(document, {
   owning view can offer the same per-item menu here as on its own rows (typically
   [`ItemContextMenu`](../ItemContextMenu/README.md)). The badge stays menu-agnostic: it reports the
   gesture and the caller decides what it opens. Omitted leaves the browser's own menu alone.
-- **`onRowReady?: (row: HTMLElement, title: HTMLElement) => void`** — Called after the popup row is
-  assembled, so the owning view can add behavior such as drag-to-reorder while keeping item identity
-  and persistence outside this domain-agnostic control.
+- **`onRowReady?: (row, title, dragContext) => void`** — Called after the popup row is assembled, so
+  the owning view can add behavior such as drag-to-reorder while keeping item identity and
+  persistence outside this domain-agnostic control. `dragContext` supplies the popup `surface` and
+  its `close()` function for a drag that leaves the popup.
 
 ### `renderChildItemsBadge(doc, options): HTMLElement`
 

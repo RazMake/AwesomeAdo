@@ -73,6 +73,7 @@ function buildBoard(): Board {
     siblingIds: number[],
     container: HTMLElement,
     top: number,
+    hasChildren = false,
   ): void => {
     const wrapper = document.createElement("div");
     const row = document.createElement("div");
@@ -81,12 +82,22 @@ function buildBoard(): Board {
     wrapper.append(row);
     container.append(wrapper);
     row.getBoundingClientRect = () => ({ top, height: 20, bottom: top + 20 }) as DOMRect;
-    const descriptor: DraggableRow = { id, depth, parentId, siblingIds, handle, row, wrapper };
+    const descriptor: DraggableRow = {
+      id,
+      depth,
+      hasChildren,
+      parentId,
+      destinationType: depth === 1 ? "Feature" : "User Story",
+      siblingIds,
+      handle,
+      row,
+      wrapper,
+    };
     controller.register(descriptor);
     rows.set(id, descriptor);
   };
 
-  add(1, 1, 10, [1, 2, 3], containerA, 0);
+  add(1, 1, 10, [1, 2, 3], containerA, 0, true);
   add(2, 1, 10, [1, 2, 3], containerA, 20);
   add(3, 1, 10, [1, 2, 3], containerA, 40);
   add(4, 1, 20, [4, 5], containerB, 100);
@@ -216,10 +227,27 @@ describe("DragReorderController - previewing a drop", () => {
 
     expect(layoutOf(board.containerA)).toEqual(["row", "row", "line", "row"]);
   });
+
+  it("closes a popup once the dragged child reaches a legal target outside it", () => {
+    const board = buildBoard();
+    const source = board.rows.get(6)!;
+    const surface = source.wrapper.parentElement!;
+    let closes = 0;
+    source.dragSurface = surface;
+    source.onLeaveSurface = () => {
+      closes += 1;
+    };
+    startDrag(board, 6);
+
+    dragOver(board, 2, 25);
+    dragOver(board, 3, 45);
+
+    expect(closes).toBe(1);
+  });
 });
 
 describe("DragReorderController - drops it refuses", () => {
-  it("shows nothing and refuses the drop for a row at a different depth", () => {
+  it("refuses to demote a parent that still has children", () => {
     const board = buildBoard();
     startDrag(board, 1);
 
@@ -229,6 +257,17 @@ describe("DragReorderController - drops it refuses", () => {
     expect(anyLine()).toBeNull();
     expect(event.defaultPrevented).toBe(false);
     expect(board.moves).toEqual([]);
+  });
+
+  it("refuses a drop more than one hierarchy level away", () => {
+    const board = buildBoard();
+    board.rows.get(6)!.depth = 3;
+    startDrag(board, 2);
+
+    const { event } = dragOver(board, 6, 205);
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(anyLine()).toBeNull();
   });
 
   it("shows nothing when the pointer is over the dragged row itself", () => {
@@ -272,7 +311,7 @@ describe("DragReorderController - drops it refuses", () => {
   });
 });
 
-describe("DragReorderController - completing a drop", () => {
+describe("DragReorderController - completing a same-level drop", () => {
   it("reports the resolved placement for a move within one parent", () => {
     const board = buildBoard();
     startDrag(board, 1);
@@ -292,7 +331,15 @@ describe("DragReorderController - completing a drop", () => {
     drop(board, 4, 105);
 
     expect(board.moves).toEqual([
-      { id: 1, currentParentId: 10, parentId: 20, previousId: 0, nextId: 4, siblingIds: [1, 4, 5] },
+      {
+        id: 1,
+        currentParentId: 10,
+        parentId: 20,
+        previousId: 0,
+        nextId: 4,
+        siblingIds: [1, 4, 5],
+        type: "Feature",
+      },
     ]);
   });
 
@@ -326,6 +373,46 @@ describe("DragReorderController - completing a drop", () => {
 
     expect(anyLine()).toBeNull();
     expect(board.rows.get(1)!.wrapper.style.opacity).toBe("");
+  });
+});
+
+describe("DragReorderController - completing a hierarchy drop", () => {
+  it("promotes an item between the rows one level above it", () => {
+    const board = buildBoard();
+    startDrag(board, 6);
+
+    drop(board, 2, 25);
+
+    expect(board.moves).toEqual([
+      {
+        id: 6,
+        currentParentId: 1,
+        parentId: 10,
+        previousId: 1,
+        nextId: 2,
+        siblingIds: [1, 6, 2, 3],
+        type: "Feature",
+      },
+    ]);
+  });
+
+  it("demotes a leaf at the exact position targeted among the new parent's children", () => {
+    const board = buildBoard();
+    startDrag(board, 2);
+
+    drop(board, 6, 215);
+
+    expect(board.moves).toEqual([
+      {
+        id: 2,
+        currentParentId: 10,
+        parentId: 1,
+        previousId: 6,
+        nextId: 0,
+        siblingIds: [6, 2],
+        type: "User Story",
+      },
+    ]);
   });
 });
 
