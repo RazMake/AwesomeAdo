@@ -2994,13 +2994,20 @@ function createDeepTree(): TrackedWorkItem {
         id: 2,
         type: "Feature",
         title: "User Authentication",
+        areaPath: "Project\\Platform\\API",
         children: [
           createItem({
             id: 3,
             type: "Story",
             title: "Login UI",
+            areaPath: "Project\\Experience\\API",
             children: [
-              createItem({ id: 4, title: "Wire the form", state: "Closed" }),
+              createItem({
+                id: 4,
+                title: "Wire the form",
+                state: "Closed",
+                areaPath: "Project\\Migration",
+              }),
               createItem({
                 id: 5,
                 title: "Style the form",
@@ -3178,6 +3185,7 @@ describe("ProjectTrackingView — the item right-click menu", () => {
       "Update title",
       "Update description",
       "Move to another sprint\u203A",
+      "Change area path\u203A",
       "View all notes",
       "Tag with Blocked (internal)",
       "Tag with Blocked by another team",
@@ -3300,6 +3308,23 @@ describe("ProjectTrackingView — the item's own menu commands", () => {
     // The Feature sits on Sprint 1 (the current one), so only the next sprint is a move.
     expect(options.map((option) => option.textContent)).toEqual(["Next - Sprint 2"]);
   });
+
+  it("offers the filter's area-path labels except the item's current path", async () => {
+    const { root } = await renderRecordingBoard();
+    await turnSprintFilterOff(root);
+
+    rightClick(root.querySelector(".awesomeado-tracking__row")!);
+    commandNamed(root, "Change area path").click();
+
+    const options = [
+      ...root.querySelectorAll<HTMLButtonElement>(".awesomeado-item-menu__submenu button"),
+    ];
+    expect(options.map((option) => [option.textContent, option.title])).toEqual([
+      ["Experience \u203A API", "Project\\Experience\\API"],
+      ["Migration", "Project\\Migration"],
+    ]);
+    expect(options.map((option) => option.title)).not.toContain("Project\\Platform\\API");
+  });
 });
 
 describe("ProjectTrackingView — moving an item and reading its discussion", () => {
@@ -3316,6 +3341,26 @@ describe("ProjectTrackingView — moving an item and reading its discussion", ()
       id: 2,
       field: "System.IterationPath",
       value: "Project\\Sprint 2",
+    });
+  });
+
+  it("changes the item's area path through the serialized field writer", async () => {
+    const { root, writes } = await renderRecordingBoard();
+    await turnSprintFilterOff(root);
+
+    rightClick(root.querySelector(".awesomeado-tracking__row")!);
+    commandNamed(root, "Change area path").click();
+    const destination = [
+      ...root.querySelectorAll<HTMLButtonElement>(".awesomeado-item-menu__submenu button"),
+    ].find((option) => option.title === "Project\\Migration")!;
+    destination.click();
+    await settleWrites();
+
+    expect(writes[0]).toMatchObject({
+      id: 2,
+      field: "System.AreaPath",
+      value: "Project\\Migration",
+      baseValue: "Project\\Platform\\API",
     });
   });
 

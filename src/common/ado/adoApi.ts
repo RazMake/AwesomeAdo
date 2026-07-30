@@ -47,6 +47,14 @@ export const ADO_CONNECTION_DATA_API_VERSION = "7.1-preview.1";
 export const ASSIGNED_TO_FIELD = "System.AssignedTo";
 
 /**
+ * The reference name of Azure DevOps' area-path field.
+ *
+ * The Project Tracking filter reads this field and its item menu writes it. Naming it once keeps
+ * those two surfaces on the same server value while they share the same display labels.
+ */
+export const AREA_PATH_FIELD = "System.AreaPath";
+
+/**
  * The reference name of Azure DevOps' numeric Priority field.
  *
  * Priority is part of the Common field namespace, not System. Keeping the read and write on this

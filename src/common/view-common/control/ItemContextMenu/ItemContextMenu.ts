@@ -10,6 +10,8 @@ import { createPopupHost, type PopupHost } from "../popupHost/popupHost";
  */
 export interface ItemContextMenuCommand {
   label: string;
+  /** Tooltip for the command row; useful when its compact label abbreviates a full value. */
+  title?: string;
   /**
    * Builds the row's visible content instead of rendering `label` as plain text — for a command that
    * has to SHOW the thing it acts on (a colored condition pill) rather than name it, because the
@@ -347,6 +349,7 @@ function renderCustomCommand(
   close: () => void,
 ): HTMLElement {
   const row = renderCommandRow(doc, command.label, command.renderLabel?.(doc));
+  row.title = command.title ?? "";
   for (const [property, value] of command.declarations ?? []) {
     row.style.setProperty(property, value);
   }

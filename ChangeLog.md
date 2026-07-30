@@ -5,6 +5,8 @@ Major.Minor with a CI build number to form Major.Minor.Build.
 
 ## Next Version
 
+- **Project Tracking can now change an item's area path from its right-click menu.** **Change area path** opens a submenu containing every area path from the board's existing Area filter except the item's current one. The compact names match the filter exactly, ambiguous leaves gain the same parent segments, and hovering a choice shows its complete Azure DevOps path. A choice is saved through the board's serialized write queue and appears only after Azure DevOps accepts it.
+
 - **Project Tracking can now filter by Azure DevOps area path from its header.** The compact **Area** button opens a themed checkbox list and lights up with the number of selected paths. It always filters with the complete Azure DevOps path, while keeping labels short: a unique leaf shows by itself, and only ambiguous names gain enough parent folders to tell them apart. Paths represented only by resolved items that have aged off the board are omitted, multiple checked paths are combined, matching descendants keep their ancestors visible, and the selection survives an in-place Refresh without becoming a saved query setting.
 
 - **Project Tracking rows are now easier to scan.** Items use subtle alternating backgrounds from the selected AwesomeADO theme, and the sequence stays alternating as branches expand or collapse. Hovering a row adds a themed highlight; hold **Ctrl+Shift** while hovering when you need a stronger visual marker. If that item has notes or its description open, the stronger highlight covers those panels too and stays visible as the pointer moves through them.

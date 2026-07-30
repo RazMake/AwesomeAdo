@@ -37,11 +37,13 @@ The extension is feature-complete for its current scope:
   command may also carry `separatorBefore` to group the caller's own list and `renderLabel` to draw
   its label as nodes rather than text, with `label` then used as the row's `aria-label`; one
   instance per view, opened at the pointer through a zero-size viewport-fixed anchor handed to
-  `popupHost` as its trigger). Project Tracking supplies four through
+  `popupHost` as its trigger). Project Tracking supplies five through
   `content/views/project-tracking/item-commands`: Update title, Update description (written with
   `multilineFormat: "Markdown"`, which `WorkItemFieldWriteRequest` now carries into a second
   `/multilineFieldsFormat/<field>` patch op), Move to another sprint (current + future entries of the
-  sprint window, minus the item's own), and View all notes (`NotesPanel` with `showAllInWindow`) —
+  sprint window, minus the item's own), Change area path (the header filter's eligible full paths,
+  labelled identically and minus the item's own), and View all notes (`NotesPanel` with
+  `showAllInWindow`) —
   plus, in their own separated group from `item-commands/MarkerCommands`, Tag with / Clear for the
   two blocked markers (a mandatory reason and `System.Tags` written as ONE patch — the reason rides
   along as a `System.History` op via `WorkItemFieldWriteRequest.comment`, because a separately posted

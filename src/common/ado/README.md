@@ -220,7 +220,7 @@ response-parsing logic, kept pure so they are unit-testable without a browser.
   (`{base}/{project}/_workitems/edit/{id}`) a view hands to an anchor; `null` when `href` is not a
   project-scoped ADO URL. This is the **web** link, not the REST endpoint (`buildWorkItemUpdateUrl`).
 - `TRACKING_FIELDS` — the readonly array of field reference names fetched for tree queries, including
-  `System.AreaPath` for in-view filtering.
+  `AREA_PATH_FIELD` (`System.AreaPath`) for in-view filtering and item-menu changes.
 - `AdoRawTree` — `{ wiql, items, query? }` shape wrapping the raw REST bodies before parsing;
   `query` is the best-effort query-metadata body (may be absent when that read fails).
 - `AdoTreeUrls` — `{ wiqlUrl, batchUrl, queryUrl }` shape `buildAdoTreeUrls` returns.

@@ -265,6 +265,12 @@ describe("createItemContextMenu with the caller's own commands", () => {
     expect(command(3).style.color).toBe("rgb(1, 2, 3)");
   });
 
+  it("shows a caller-supplied tooltip for an abbreviated command label", () => {
+    openWithCommands([{ label: "Platform \u203A API", title: "Project\\Platform\\API" }]);
+
+    expect(command(3).title).toBe("Project\\Platform\\API");
+  });
+
   it("leaves a command that cannot run in place, dimmed, saying why", () => {
     openWithCommands([{ label: "Move", disabledReason: "No other sprint.", run: vi.fn() }]);
 

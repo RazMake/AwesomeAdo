@@ -106,7 +106,10 @@ notes remains complete. See ADR-051.
 area paths with it; the control alone derives shortest unique suffix labels by growing an ambiguous
 leaf one parent at a time. Project Tracking offers only paths represented by descendants that survive
 the resolved-age rule, then keeps its selection in `BoardSession`, where it composes as an AND-ed
-filter group without turning a transient reading position into synced configuration. See ADR-053.
+filter group without turning a transient reading position into synced configuration. Its item menu's
+**Change area path** command receives that same eligible list, computes labels before omitting the
+item's current path, exposes each full path as a tooltip, and persists `System.AreaPath` through the
+board's shared write queue. See ADR-053.
 
 ### `src/common/ordering`
 

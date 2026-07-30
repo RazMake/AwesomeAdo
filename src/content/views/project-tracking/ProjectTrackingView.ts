@@ -547,6 +547,8 @@ interface TreeRenderOptions {
   contextMenu: ItemContextMenu;
   /** The team's sprint window, so an item's menu can offer the sprints it may move to. */
   sprintWindow: SprintWindow;
+  /** The same full paths offered by the header's area-path filter. */
+  areaPaths: readonly string[];
   /**
    * Repaints the board after a menu command changed what a row shows — the FILTER ROW as well as the
    * tree, because a command can change which pills exist at all (flagging an item is what makes its
@@ -1330,6 +1332,7 @@ function menuTargetFor(params: {
   context: DataDrivenViewContext;
   queue: WorkItemWriteQueue;
   sprintWindow: SprintWindow;
+  areaPaths: readonly string[];
   onChanged: () => void;
 }): ItemContextMenuTarget {
   const { doc, item, context } = params;
@@ -1347,6 +1350,7 @@ function menuTargetFor(params: {
       ...buildItemCommands({
         ...target,
         sprintWindow: params.sprintWindow,
+        areaPaths: params.areaPaths,
         notesSinceIso: boardNotesSince(context),
       }),
       // Asked for explicitly, under their own rule: this board is where a team tracks what is stuck,
@@ -1365,6 +1369,7 @@ function itemMenuTarget(item: TrackedWorkItem, options: TreeRenderOptions): Item
     context: options.context,
     queue: options.queue,
     sprintWindow: options.sprintWindow,
+    areaPaths: options.areaPaths,
     onChanged: options.repaint,
   });
 }
@@ -1956,15 +1961,31 @@ function collectAreaPaths(
   return [...paths].sort((left, right) => left.localeCompare(right));
 }
 
+/** Resolve the one eligible path list shared by the header filter and every item menu. */
+function collectBoardAreaPaths(
+  root: TrackedWorkItem,
+  context: DataDrivenViewContext,
+  typeMap: Map<string, TypeCatalogEntry>,
+  boardColumns: string[],
+): string[] {
+  return collectAreaPaths(
+    root,
+    createResolvedWindowFilter(
+      typeMap,
+      boardColumns,
+      hideResolvedAfterDays(context.properties),
+      context.services.now(),
+    ),
+  );
+}
+
 /** Build the shared full-path selector and keep stale refresh selections from hiding every row. */
 function renderAreaPathControls(
   context: DataDrivenViewContext,
-  root: TrackedWorkItem,
+  areaPaths: readonly string[],
   session: BoardSession,
-  isResolvedPastWindow: (item: TrackedWorkItem) => boolean,
   onChange: () => void,
 ): AreaPathFilterHandle {
-  const areaPaths = collectAreaPaths(root, isResolvedPastWindow);
   for (const selected of [...session.selectedAreaPaths]) {
     if (!areaPaths.includes(selected)) session.selectedAreaPaths.delete(selected);
   }
@@ -2057,6 +2078,7 @@ function renderHeader(
   typeMap: Map<string, TypeCatalogEntry>,
   boardColumns: string[],
   sprintWindow: SprintWindow,
+  areaPaths: readonly string[],
   session: BoardSession,
   chipContext: AssigneeChipContext,
   boardControls: HeaderBoardControls,
@@ -2075,14 +2097,8 @@ function renderHeader(
   const sprintPickerHandle = renderSprintControls(doc, sprintWindow, session);
   const areaPathFilter = renderAreaPathControls(
     context,
-    root,
+    areaPaths,
     session,
-    createResolvedWindowFilter(
-      typeMap,
-      boardColumns,
-      hideResolvedAfterDays(context.properties),
-      context.services.now(),
-    ),
     boardControls.onAreaPathChange,
   );
   const techLead = createTechLeadGroup(root, chipContext);
@@ -2317,6 +2333,8 @@ interface BoardTreeRendererParams {
   contextMenu: ItemContextMenu;
   /** The team's sprint window, so an item's menu can offer the sprints it may move to. */
   sprintWindow: SprintWindow;
+  /** The same full paths offered by the header's area-path filter. */
+  areaPaths: readonly string[];
   fieldWrites: WorkItemWriteQueue;
   metrics: BoardMetrics;
   expandAll: HTMLButtonElement;
@@ -2404,6 +2422,7 @@ function createBoardTreeRenderer(params: BoardTreeRendererParams): () => void {
       chip: params.chipContext,
       contextMenu: params.contextMenu,
       sprintWindow: params.sprintWindow,
+      areaPaths: params.areaPaths,
       // Self-referencing so a menu command repaints through the very renderer it was built inside;
       // the reference resolves at call time, long after this assignment completes. It goes through
       // the whole-board repaint rather than this pass alone, because a command can also change which
@@ -2954,6 +2973,8 @@ function mountBoardBody(params: {
   contextMenu: ItemContextMenu;
   /** The team's sprint window, forwarded to the tree so an item's menu can offer sprint moves. */
   sprintWindow: SprintWindow;
+  /** The full paths shared by the header filter and every item menu. */
+  areaPaths: readonly string[];
   core: BoardCore;
   expandAll: HTMLButtonElement;
   collapseAll: HTMLButtonElement;
@@ -2987,6 +3008,7 @@ function mountBoardBody(params: {
     chipContext: params.chipContext,
     contextMenu: params.contextMenu,
     sprintWindow: params.sprintWindow,
+    areaPaths: params.areaPaths,
     fieldWrites: core.writes,
     metrics: core.metrics,
     expandAll: params.expandAll,
@@ -3033,6 +3055,7 @@ function mountBoardHeader(params: {
   context: DataDrivenViewContext;
   typeMap: Map<string, TypeCatalogEntry>;
   sprintWindow: SprintWindow;
+  areaPaths: readonly string[];
   session: BoardSession;
   core: BoardCore;
   folderPath: QueryFolderCrumb[];
@@ -3048,6 +3071,7 @@ function mountBoardHeader(params: {
     typeMap,
     core.metrics.boardColumns,
     sprintWindow,
+    params.areaPaths,
     session,
     core.chipContext,
     {
@@ -3063,6 +3087,7 @@ function mountBoardHeader(params: {
             context,
             queue: core.writes,
             sprintWindow,
+            areaPaths: params.areaPaths,
             onChanged: params.onRootChanged,
           }),
         ),
@@ -3100,6 +3125,7 @@ function renderBoard(params: RenderBoardParams): BoardHandle {
     onTagAssign: params.onTagAssign,
   });
   const { chipContext, writeStatus } = core;
+  const areaPaths = collectBoardAreaPaths(root, context, typeMap, core.metrics.boardColumns);
 
   // Late-bound because the root's own commands have to repaint the tree AND re-label the header, and
   // neither exists until after the call below that consumes this handler.
@@ -3115,6 +3141,7 @@ function renderBoard(params: RenderBoardParams): BoardHandle {
       context,
       typeMap,
       sprintWindow,
+      areaPaths,
       session,
       core,
       folderPath,
@@ -3136,6 +3163,7 @@ function renderBoard(params: RenderBoardParams): BoardHandle {
     chipContext,
     contextMenu,
     sprintWindow,
+    areaPaths,
     core,
     expandAll,
     collapseAll,

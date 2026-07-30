@@ -8,6 +8,7 @@ beneath the three every item menu carries (Copy Item ID / Copy ADO Url / Open in
 | **Update title**           | Opens a one-line editor on `System.Title`                                            |
 | **Update description**     | Opens a Markdown editor on `System.Description`, and saves the field as Markdown     |
 | **Move to another sprint** | A submenu of the current sprint and every future one, writing `System.IterationPath` |
+| **Change area path**       | A submenu of the board's other area paths, writing `System.AreaPath`                 |
 | **View all notes**         | The item's whole discussion inside the Updates window — read, correct, add           |
 
 Under a **second** rule, the marker flags (`buildMarkerCommands`):
@@ -36,6 +37,7 @@ contextMenu.openAt(event, {
     ...buildItemCommands({
       ...target,
       sprintWindow,
+      areaPaths,
       notesSinceIso: noteWindowStart(services.now(), updatesWindowWeeks(properties)),
     }),
     // Opt-in: a view with no notion of "stuck work" simply never asks for these.
@@ -55,6 +57,7 @@ contextMenu.openAt(event, {
 | `queue`         | The board's single `WorkItemWriteQueue`, so these edits cannot race the row controls on `System.Rev`.           |
 | `onChanged`     | Repaints the board, so a changed title, sprint or flag shows without a re-read.                                 |
 | `sprintWindow`  | (editing commands) The team's sprint window; the move submenu is built from its current and future entries.     |
+| `areaPaths`     | (editing commands) The same eligible full paths offered by the board's area-path filter.                        |
 | `notesSinceIso` | (editing commands) Start of the binding's **Updates window (weeks)** — how far back **View all notes** reaches. |
 
 ## Behaviour
@@ -70,6 +73,11 @@ contextMenu.openAt(event, {
   rewrites history rather than plans it. The sprint the item is already on is left out too: it is not
   a move, and listing it invites the click that does nothing. With nothing left to offer, the command
   stays visible but inert and says so.
+- **Area-path names match the filter.** The submenu uses the filter's full eligible path list and
+  its shortest-unique-suffix naming rule. Labels are disambiguated before the item's current path is
+  omitted, so a remaining option cannot become shorter than the same path in the filter. Hovering a
+  destination shows its full path; choosing one writes `System.AreaPath` through the board's shared
+  queue and repaints only after Azure DevOps accepts it.
 - **A description is saved as Markdown.** The write carries the field's storage format, because a
   multiline field left on ADO's default (`Html`) stores Markdown source verbatim — asterisks and all.
   The editor opens on the field's stored **source**, whatever that is, since that is what the save

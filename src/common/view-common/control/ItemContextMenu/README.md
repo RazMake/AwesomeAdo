@@ -64,6 +64,7 @@ Exactly one of `run`, `panel` and `submenu` gives a command its behaviour.
 | Field             | Meaning                                                                                                                                                          |
 | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `label`           | The row's text — and, when `renderLabel` is given, the name the row is announced by.                                                                             |
+| `title`           | Optional tooltip for a compact label whose complete value still needs to be available.                                                                           |
 | `renderLabel`     | `(doc) => Node[]` — builds the row's visible content instead of plain text, for a command that has to **show** the thing it acts on (a colored condition pill).  |
 | `separatorBefore` | Draws a rule above the row, splitting the caller's own list into groups that answer different questions.                                                         |
 | `run`             | `() => void` — runs the command and closes the menu.                                                                                                             |

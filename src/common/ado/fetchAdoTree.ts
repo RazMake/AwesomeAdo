@@ -1,6 +1,12 @@
 import type { QueryFolderCrumb, WorkItemTreeResult } from "./IWorkItemTreeLoader";
 import type { TrackedUser, TrackedWorkItem } from "./TrackedWorkItem";
-import { ADO_API_VERSION, ASSIGNED_TO_FIELD, IMPORTANCE_FIELD, PRIORITY_FIELD } from "./adoApi";
+import {
+  ADO_API_VERSION,
+  AREA_PATH_FIELD,
+  ASSIGNED_TO_FIELD,
+  IMPORTANCE_FIELD,
+  PRIORITY_FIELD,
+} from "./adoApi";
 import { resolveAdoProjectContext } from "./fetchAdoMetadata";
 import { parseWorkItemTags } from "./workItemTags";
 
@@ -49,7 +55,7 @@ export const TRACKING_FIELDS: readonly string[] = [
   "System.State",
   PRIORITY_FIELD,
   ASSIGNED_TO_FIELD,
-  "System.AreaPath",
+  AREA_PATH_FIELD,
   "System.IterationPath",
   "System.CreatedDate",
   "System.CreatedBy",
@@ -447,7 +453,7 @@ function hydrateTrackedWorkItem(
     state: readString("System.State"),
     priority: parsePriority(field(PRIORITY_FIELD)),
     assignedTo: parseIdentity(field(ASSIGNED_TO_FIELD)),
-    areaPath: parseOptionalString(field("System.AreaPath")),
+    areaPath: parseOptionalString(field(AREA_PATH_FIELD)),
     iterationPath: iterationPathStr,
     sprintName: sprintLeaf(iterationPathStr),
     createdDate: readString("System.CreatedDate"),

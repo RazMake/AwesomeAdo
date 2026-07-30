@@ -23,6 +23,8 @@ This is a flattened snapshot of what exists now, not a build log.
 - **Area-path filtering** (`common/view-common/control/AreaPathFilter` + Project Tracking): the live
   tree hydrates `System.AreaPath`; a compact themed header popup selects full paths using shortest
   unique display suffixes, and the session-scoped selection narrows the board without persisting.
+  The item right-click menu reuses the same eligible paths and labels to change `System.AreaPath`,
+  omitting the item's current value and showing complete paths as tooltips.
 - **Markdown authoring** (`common/view-common/control/TextEditor`): shared bold/italic/link shortcuts
   and keyboard-driven ADO `@`-mention insertion across note/comment and description editors; inline
   notes and New notes activity omit configured marker-comment prefixes while View all stays complete.

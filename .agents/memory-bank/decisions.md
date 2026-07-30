@@ -965,3 +965,10 @@ nodeMatchesChange`). Copied here, that makes an activity pill drag in items belo
   would turn a quick narrowing action into a synced setting and force an unnecessary board reload.
   Applying the always-on resolved-age rule while collecting options prevents a choice that can never
   reveal an item, while ignoring interactive filters keeps those independent controls composable.
+- Amendment (item changes): Project Tracking's item right-click menu receives the exact eligible
+  full-path list already supplied to the header filter. **Change area path** computes shortest unique
+  labels against that complete list before omitting the target item's current path, so removing one
+  colliding value cannot make the submenu call a path something different from the filter. Each row
+  keeps the full path as its tooltip and value, and the selected `System.AreaPath` is persisted through
+  the board's existing `WorkItemWriteQueue` with the current path as `baseValue`; the model repaints
+  only after the write commits.

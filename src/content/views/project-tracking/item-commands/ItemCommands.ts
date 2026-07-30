@@ -1,4 +1,6 @@
+import { AREA_PATH_FIELD } from "../../../../common/ado/adoApi";
 import type { SprintWindow, SprintWindowEntry } from "../../../../common/ado/sprintWindow";
+import { shortestUniqueAreaPathLabels } from "../../../../common/view-common/control/AreaPathFilter/AreaPathFilter";
 import type { ItemContextMenuCommand } from "../../../../common/view-common/control/ItemContextMenu/ItemContextMenu";
 import { sprintRelationDeclarations } from "../../../../common/view-common/control/SprintPicker/SprintPicker";
 import { renderTextEditor } from "../../../../common/view-common/control/TextEditor/TextEditor";
@@ -16,6 +18,8 @@ import {
 export interface ItemCommandsOptions extends ItemCommandTarget {
   /** The board's sprint window; "Move to another sprint" offers the current one and everything after. */
   sprintWindow: SprintWindow;
+  /** The same full area paths offered by the board's area-path filter. */
+  areaPaths: readonly string[];
   /** ISO 8601 start of the Updates window — how far back "View all notes" reaches. */
   notesSinceIso: string;
 }
@@ -59,6 +63,7 @@ export function buildItemCommands(options: ItemCommandsOptions): ItemContextMenu
     updateTitleCommand(options),
     updateDescriptionCommand(options),
     moveToSprintCommand(options),
+    changeAreaPathCommand(options),
     viewAllNotesCommand(options),
   ];
 }
@@ -185,6 +190,39 @@ export function buildSprintMoveCommands(options: SprintMoveOptions): ItemContext
           if (!ok) return;
           options.item.iterationPath = entry.path;
           options.item.sprintName = entry.name;
+          options.onChanged();
+        });
+      },
+    }));
+}
+
+/** Offers every filter area except the item's current one, using the filter's exact labels. */
+function changeAreaPathCommand(options: ItemCommandsOptions): ItemContextMenuCommand {
+  const destinations = (): ItemContextMenuCommand[] => buildAreaPathChangeCommands(options);
+  return {
+    label: "Change area path",
+    disabledReason:
+      destinations().length === 0 ? "No other area path is available on this board." : null,
+    submenu: destinations,
+  };
+}
+
+/** Builds live destinations after labels have been disambiguated against the full filter list. */
+function buildAreaPathChangeCommands(options: ItemCommandsOptions): ItemContextMenuCommand[] {
+  const labels = shortestUniqueAreaPathLabels(options.areaPaths);
+  return [...labels]
+    .filter(([path]) => path !== options.item.areaPath)
+    .map(([path, label]) => ({
+      label,
+      title: path,
+      run: () => {
+        void writeField(options, {
+          field: AREA_PATH_FIELD,
+          value: path,
+          baseValue: options.item.areaPath,
+        }).then((ok) => {
+          if (!ok) return;
+          options.item.areaPath = path;
           options.onChanged();
         });
       },

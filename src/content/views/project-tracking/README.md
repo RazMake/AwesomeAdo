@@ -119,7 +119,9 @@ halves of the view — its configuration and its renderer.
     by full path values, while their labels use only the shortest unique suffix (`API`, or
     `Platform › API` when the leaf is ambiguous). Selected paths OR together and AND with the sprint,
     crew-tag, activity, marker, and resolved-window filters. Ancestors of matching descendants remain
-    visible, and the selection survives an in-place Refresh.
+    visible, and the selection survives an in-place Refresh. Every item's right-click menu also has
+    **Change area path**, using this exact eligible path list and these exact labels, omitting only
+    that item's current path and showing the full path in each destination's tooltip.
   - **Tree rows**: the tree renders only **two levels below the root** — the root's children and
     their children. Each row shows twisty (when it has child rows), editable Status badge, editable
     Priority chip immediately after it, description toggle ("?" button), type icon (the notes toggle), title
