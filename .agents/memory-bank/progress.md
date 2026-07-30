@@ -16,8 +16,10 @@ This is a flattened snapshot of what exists now, not a build log.
 - **Views** (`src/content/views`, contracts in `src/common/view-common`): per-view folders each
   holding a `ViewType` config (in the `VIEW_TYPES` catalog) and an `EnhancedView` renderer (in the
   `ENHANCED_VIEWS` registry), a shared placeholder shell (`renderViewScaffold`), and `sprint` /
-  `project-tracking` views. Options imports only `content/views/viewCatalog` (scoped §6 exception,
-  ADR-027, lint-enforced).
+  `project-tracking` views. Project Tracking rows use theme-owned alternating backgrounds with
+  hover and `Ctrl+Shift` emphasis across each row and its open details, re-striped in visible tree
+  order after outline changes. Options imports only `content/views/viewCatalog` (scoped §6
+  exception, ADR-027, lint-enforced).
 - **Markdown authoring** (`common/view-common/control/TextEditor`): shared bold/italic/link shortcuts
   and keyboard-driven ADO `@`-mention insertion across note/comment and description editors; inline
   notes and New notes activity omit configured marker-comment prefixes while View all stays complete.

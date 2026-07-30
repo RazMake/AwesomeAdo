@@ -583,6 +583,8 @@ interface TreeRenderOptions {
   minorChildColor: string | null;
   /** Consumes the one rolled-up child popup that should reopen after its successful reorder. */
   reopenMinorChildPopup: (parentId: number) => boolean;
+  /** Reassigns zebra stripes after a branch changes which rows are visible. */
+  restripeRows: () => void;
   /**
    * Registers each row for drag-to-reorder, or null when reordering is unavailable this pass (any
    * ordering other than importance, or no configured team to rank against). Null is what leaves the
@@ -615,6 +617,103 @@ interface ExpansionControl {
  * single badge on the deepest row instead of extending the outline.
  */
 const MAX_ROW_DEPTH = 1;
+const ITEM_WRAPPER_CLASS = "awesomeado-tracking__item";
+const CHILDREN_CLASS = "awesomeado-tracking__children";
+
+/** Whether every ancestor branch between one item and the tree is currently open. */
+function isRenderedRowVisible(row: HTMLElement, treeContainer: HTMLElement): boolean {
+  for (let ancestor = row.parentElement; ancestor && ancestor !== treeContainer;) {
+    if (ancestor.classList.contains(CHILDREN_CLASS) && ancestor.style.display === "none") {
+      return false;
+    }
+    ancestor = ancestor.parentElement;
+  }
+  return true;
+}
+
+/** Keeps zebra-striping based on visible reading order rather than nested DOM sibling positions. */
+function restripeVisibleRows(treeContainer: HTMLElement): void {
+  let visibleIndex = 0;
+  for (const row of treeContainer.querySelectorAll<HTMLElement>(`.${ITEM_WRAPPER_CLASS}`)) {
+    if (!isRenderedRowVisible(row, treeContainer)) {
+      delete row.dataset.rowStripe;
+      continue;
+    }
+    row.dataset.rowStripe = visibleIndex % 2 === 0 ? "base" : "alternate";
+    visibleIndex += 1;
+  }
+}
+
+/** The board-scoped style sheet for striped rows and pointer emphasis. */
+function createItemRowStyle(doc: Document): HTMLStyleElement {
+  const style = doc.createElement("style");
+  style.textContent = `
+.${ITEM_WRAPPER_CLASS}[data-row-stripe="base"] > .awesomeado-tracking__row {
+  background-color: var(--item-row-background);
+}
+.${ITEM_WRAPPER_CLASS}[data-row-stripe="alternate"] > .awesomeado-tracking__row {
+  background-color: var(--item-row-alternate-background);
+}
+.${ITEM_WRAPPER_CLASS} > .awesomeado-tracking__row:hover {
+  background-color: var(--item-row-hover-background);
+}
+.awesomeado-tracking--modifier-highlight .${ITEM_WRAPPER_CLASS}:has(
+  > .awesomeado-tracking__row:hover,
+  > .awesomeado-tracking__description:hover,
+  > .awesomeado-notes:hover
+) > .awesomeado-tracking__row,
+.awesomeado-tracking--modifier-highlight .${ITEM_WRAPPER_CLASS}:has(
+  > .awesomeado-tracking__row:hover,
+  > .awesomeado-tracking__description:hover,
+  > .awesomeado-notes:hover
+) > .awesomeado-tracking__description,
+.awesomeado-tracking--modifier-highlight .${ITEM_WRAPPER_CLASS}:has(
+  > .awesomeado-tracking__row:hover,
+  > .awesomeado-tracking__description:hover,
+  > .awesomeado-notes:hover
+) > .awesomeado-notes {
+  background-color: var(--item-row-emphasis-background);
+}`;
+  return style;
+}
+
+interface ModifierHighlightTracker {
+  register(root: HTMLElement): void;
+}
+
+const MODIFIER_HIGHLIGHT_TRACKERS = new WeakMap<Document, ModifierHighlightTracker>();
+
+/** Shares one document-level modifier listener across every Project Tracking view in that document. */
+function modifierHighlightTracker(doc: Document): ModifierHighlightTracker {
+  const existing = MODIFIER_HIGHLIGHT_TRACKERS.get(doc);
+  if (existing) return existing;
+
+  const roots = new Set<HTMLElement>();
+  let active = false;
+  const apply = (next: boolean): void => {
+    active = next;
+    for (const root of roots) {
+      if (!root.isConnected) {
+        roots.delete(root);
+        continue;
+      }
+      root.classList.toggle("awesomeado-tracking--modifier-highlight", active);
+    }
+  };
+  const onKey = (event: KeyboardEvent): void => apply(event.ctrlKey && event.shiftKey);
+  doc.addEventListener("keydown", onKey);
+  doc.addEventListener("keyup", onKey);
+  doc.defaultView?.addEventListener("blur", () => apply(false));
+
+  const tracker: ModifierHighlightTracker = {
+    register: (root) => {
+      roots.add(root);
+      root.classList.toggle("awesomeado-tracking--modifier-highlight", active);
+    },
+  };
+  MODIFIER_HIGHLIGHT_TRACKERS.set(doc, tracker);
+  return tracker;
+}
 
 /**
  * How far the "completed" board column sits from the end of the board order. The last column is the
@@ -1659,7 +1758,7 @@ function renderRow(
   }
 
   const childrenContainer = doc.createElement("div");
-  childrenContainer.className = "awesomeado-tracking__children";
+  childrenContainer.className = CHILDREN_CLASS;
   // Each depth reads 10% smaller than its parent (90% compounds down the tree). The vertical guide
   // line is drawn ONLY under the top-level parents (depth 0); margin-left ~= half the twisty width so
   // the line sits centered under the parent's expand/collapse triangle.
@@ -1670,10 +1769,11 @@ function renderRow(
   childrenContainer.style.cssText = childrenStyles.join(";");
 
   const rowWrapper = doc.createElement("div");
+  rowWrapper.className = ITEM_WRAPPER_CLASS;
   rowWrapper.append(row, descPanel, notes.panel, childrenContainer);
 
   if (twisty) {
-    wireTwisty(twisty, childrenContainer, item.id, options.collapsedIds);
+    wireTwisty(twisty, childrenContainer, item.id, options.collapsedIds, options.restripeRows);
   }
 
   return { row: rowWrapper, childrenContainer, twisty, line: row, title: titleSpan };
@@ -1690,12 +1790,14 @@ function wireTwisty(
   childrenContainer: HTMLElement,
   id: number,
   collapsedIds: Set<number>,
+  restripeRows: () => void,
 ): void {
   setTwistyExpanded(twisty, childrenContainer, !collapsedIds.has(id));
   twisty.addEventListener("click", () => {
     const expanded = twisty.getAttribute("aria-expanded") !== "true";
     rememberExpanded(collapsedIds, id, expanded);
     setTwistyExpanded(twisty, childrenContainer, expanded);
+    restripeRows();
   });
 }
 
@@ -1952,6 +2054,7 @@ function wireExpandCollapseButtons(
   collapsedIds: Set<number>,
   noteExpansions: ExpansionControl[],
   descriptionExpansions: ExpansionControl[],
+  restripeRows: () => void,
 ): void {
   const setAllRowsExpanded = (expanded: boolean): void => {
     for (const { id, twisty } of rows) {
@@ -1959,6 +2062,7 @@ function wireExpandCollapseButtons(
       rememberExpanded(collapsedIds, id, expanded);
       setTwistyExpanded(twisty, childrenContainerOf(twisty), expanded);
     }
+    restripeRows();
   };
 
   expandAll.onclick = () => {
@@ -2246,6 +2350,7 @@ function createBoardTreeRenderer(params: BoardTreeRendererParams): () => void {
         params.session.reopenMinorChildPopupId = null;
         return true;
       },
+      restripeRows: () => restripeVisibleRows(treeContainer),
       // Manual drag order only means anything while the board is showing the manual rank; under any
       // other policy a dropped row would be re-sorted straight back out of the slot it landed in.
       dragReorder: orderingPolicy === MANUAL_ORDERING_POLICY ? params.dragReorder : null,
@@ -2255,6 +2360,7 @@ function createBoardTreeRenderer(params: BoardTreeRendererParams): () => void {
     // The epic is already summarized in the header (title + TechLead), so the tree lists its
     // children downward rather than repeating the epic as the top row.
     treeContainer.append(...renderTree(root, options, 0));
+    restripeVisibleRows(treeContainer);
 
     wireExpandCollapseButtons(
       expandAll,
@@ -2263,6 +2369,7 @@ function createBoardTreeRenderer(params: BoardTreeRendererParams): () => void {
       collapsedIds,
       noteExpansions,
       descriptionExpansions,
+      options.restripeRows,
     );
   };
 
@@ -2893,6 +3000,7 @@ function renderBoard(params: RenderBoardParams): BoardHandle {
   // Trim the top padding to 2px so the header card sits close to the top of the view; the sides and
   // bottom keep the board's shared edge padding.
   board.style.cssText = `padding:2px ${BOARD_EDGE_PADDING_PX}px ${BOARD_EDGE_PADDING_PX}px`;
+  board.append(createItemRowStyle(doc));
 
   // One menu for the whole board: only one context menu can ever be open, and its pointer anchor has
   // to outlive the rows a repaint throws away — so it is mounted on the board rather than in the tree
@@ -3408,6 +3516,7 @@ export const projectTrackingView: EnhancedView = {
   render: (context) => {
     const root = context.doc.createElement("section");
     root.className = "awesomeado-view awesomeado-tracking";
+    modifierHighlightTracker(context.doc).register(root);
     // Trim the top padding to 2px so the (sticky) header card sits close to the top ADO bar; the
     // sides and bottom use the board's shared edge padding. The board below adds its own matching
     // top padding.

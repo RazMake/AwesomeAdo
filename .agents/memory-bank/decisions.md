@@ -933,3 +933,16 @@ nodeMatchesChange`). Copied here, that makes an activity pill drag in items belo
   non-marker comment. Hitting `MAX_NOTE_ACTIVITY_PAGES` is reported as incomplete, never as an
   authoritative null date. URLs remain worker-built from the sender tab; prefixes cannot widen the
   closed operation.
+
+## ADR-052: Project Tracking stripes visible rows in reading order
+
+- Decision: Project Tracking assigns its two row backgrounds in visible depth-first order and
+  reassigns them whenever a branch expands or collapses. The row, alternate, hover, and emphasized
+  hover colors are required roles in every concrete AwesomeADO theme. Holding `Ctrl+Shift` marks the
+  rendered view for the emphasized hover treatment through one shared modifier tracker per document;
+  that treatment groups the hovered row with its direct open notes and description panels, never its
+  nested child rows.
+- Rationale: tree rows are nested inside per-parent child containers, so CSS `:nth-child` restarts at
+  every depth and counts hidden branches; it cannot keep the visible outline alternating through an
+  expansion. Explicit visible-order parity makes the reading sequence stable, while theme-owned roles
+  preserve tuned contrast independently in Dark, Light, and Blue.

@@ -598,6 +598,66 @@ const childrenOf = (twisty: HTMLElement): HTMLElement =>
     .closest(".awesomeado-tracking__row")
     ?.parentElement?.querySelector(".awesomeado-tracking__children") as HTMLElement;
 
+/** The stripe sequence currently assigned to visible item wrappers. */
+const visibleRowStripes = (root: HTMLElement): string[] =>
+  [...root.querySelectorAll<HTMLElement>("[data-row-stripe]")].map(
+    (row) => row.dataset.rowStripe ?? "",
+  );
+
+describe("ProjectTrackingView — row backgrounds", () => {
+  it("keeps visible rows alternately striped as branches collapse and expand", async () => {
+    const root = await renderOutlineBoard(
+      createItem({
+        id: 1,
+        type: "Epic",
+        children: [
+          createItem({
+            id: 2,
+            type: "Feature",
+            children: [createItem({ id: 3, type: "Story" })],
+          }),
+          createItem({ id: 4, type: "Feature" }),
+        ],
+      }),
+    );
+
+    expect(visibleRowStripes(root)).toEqual(["base", "alternate", "base"]);
+    const twisty = root.querySelector(".awesomeado-tracking__twisty") as HTMLButtonElement;
+    twisty.click();
+    expect(visibleRowStripes(root)).toEqual(["base", "alternate"]);
+
+    twisty.click();
+    expect(visibleRowStripes(root)).toEqual(["base", "alternate", "base"]);
+    expect(root.querySelector("style")?.textContent).toContain("--item-row-hover-background");
+  });
+
+  it("strengthens the row and its expanded details while Ctrl+Shift is held", async () => {
+    const root = await renderOutlineBoard(createFixtureTree());
+    document.body.append(root);
+    const item = root.querySelector<HTMLElement>(".awesomeado-tracking__item")!;
+    item.querySelector<HTMLButtonElement>(".awesomeado-tracking__notes-toggle")!.click();
+    item.querySelector<HTMLButtonElement>(".awesomeado-tracking__describe")!.click();
+
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Shift", ctrlKey: true, shiftKey: true }),
+    );
+    expect(root.classList.contains("awesomeado-tracking--modifier-highlight")).toBe(true);
+    expect(item.querySelector<HTMLElement>(":scope > .awesomeado-notes")?.style.display).toBe(
+      "block",
+    );
+    expect(
+      item.querySelector<HTMLElement>(":scope > .awesomeado-tracking__description")?.style.display,
+    ).toBe("block");
+    const styles = root.querySelector("style")?.textContent ?? "";
+    expect(styles).toContain("> .awesomeado-notes");
+    expect(styles).toContain("> .awesomeado-tracking__description");
+
+    document.dispatchEvent(new KeyboardEvent("keyup", { key: "Shift", ctrlKey: true }));
+    expect(root.classList.contains("awesomeado-tracking--modifier-highlight")).toBe(false);
+    root.remove();
+  });
+});
+
 describe("ProjectTrackingView — expand & collapse", () => {
   it("should toggle twisty to collapse and expand children", async () => {
     const root = await renderOutlineBoard(createFixtureTree());

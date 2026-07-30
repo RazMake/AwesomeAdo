@@ -5,6 +5,8 @@ Major.Minor with a CI build number to form Major.Minor.Build.
 
 ## Next Version
 
+- **Project Tracking rows are now easier to scan.** Items use subtle alternating backgrounds from the selected AwesomeADO theme, and the sequence stays alternating as branches expand or collapse. Hovering a row adds a themed highlight; hold **Ctrl+Shift** while hovering when you need a stronger visual marker. If that item has notes or its description open, the stronger highlight covers those panels too and stays visible as the pointer moves through them.
+
 - **Project Tracking items can now move up and down the hierarchy while you drag them.** Drag a child between its parent's peers to promote it, or drag a leaf parent among another item's children to demote it at the exact position you target; a parent that still owns children is protected from demotion. Changing parent also converts the item to that parent's configured default child type in the same Azure DevOps revision, so type and hierarchy cannot split. Dragging a rolled-up child out of its popup closes the popup and continues the move on the tree. Same-parent ordering and parent changes now use different colors from the selected AwesomeADO theme.
 
 - **The menu under the AwesomeADO top-bar button now matches the item right-click menu and follows your selected theme.** Its rounded shell, inset command highlights, border, and shadow now use the same visual shape as the Project Tracking menu. Dark, Light, Blue, and Follow Azure DevOps are applied directly to the popup, so it no longer inherits a mismatched Azure DevOps palette when your AwesomeADO theme differs.

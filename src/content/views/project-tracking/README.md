@@ -124,6 +124,11 @@ halves of the view — its configuration and its renderer.
     sprint omitted and each destination highlighted on hover or focus), and ETA badge (right-aligned;
     editable — click to pick a date or clear it when the item's type has an ETA field configured).
     Clicking the twisty expands/collapses that node's children.
+    Visible rows use subtle alternating backgrounds from the resolved AwesomeADO theme. The board
+    reassigns the sequence in depth-first reading order whenever a branch opens or closes, so nested
+    rows never break the alternation. Hovering a row applies a stronger themed wash; holding
+    `Ctrl+Shift` while hovering strengthens it again for deliberate visual tracking and extends that
+    emphasis through the item's open notes and description panels.
     Rows open expanded, and a row you collapse **stays** collapsed across every repaint — a
     drag-reorder, a re-sort, a sprint or tag filter change — because each pass builds new elements
     and the closed rows are remembered by work item id outside the DOM.

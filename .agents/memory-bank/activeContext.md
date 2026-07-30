@@ -105,7 +105,10 @@ The extension is feature-complete for its current scope:
   item row also renders the static amber/red pill for either blocked condition it carries, immediately
   after Assigned To and before its sprint pill; an item carrying both tags shows both pills.
   Each row's title is preceded by its work item **type icon** (`ItemTypeIcon`), which doubles as the
-  item's notes toggle — muted closed, bright open. Opening it mounts
+  item's notes toggle — muted closed, bright open. Rows use theme-owned alternating backgrounds in
+  visible depth-first order; branch expansion/collapse re-stripes the outline, pointer hover
+  highlights the row, and `Ctrl+Shift` strengthens that highlight across the row plus its open notes
+  and description panels. Opening the icon mounts
   `content/views/project-tracking/notes` (`NotesPanel` + `NoteRow` + `NoteComposer` + `NoteEditor`):
   the item's ADO Discussion, fetched on FIRST open only (ADR-043), "+ Add note" above a newest-first
   list, and the two most recent days that have non-marker notes shown in full; the explicit View all
