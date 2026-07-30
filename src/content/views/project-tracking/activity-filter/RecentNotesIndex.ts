@@ -95,6 +95,16 @@ export class RecentNotesIndex {
     return answer !== undefined && answer.newestNoteAt >= sinceMs;
   }
 
+  /** Drop answers for items no longer present after a manual tree refresh. */
+  retain(workItemIds: ReadonlySet<number>): void {
+    for (const workItemId of this.known.keys()) {
+      if (!workItemIds.has(workItemId)) this.known.delete(workItemId);
+    }
+    for (const workItemId of this.failures.keys()) {
+      if (!workItemIds.has(workItemId)) this.failures.delete(workItemId);
+    }
+  }
+
   /**
    * Read the newest-comment date of every item under `root` whose answer is missing or out of date,
    * and skip the rest. Safe to call on every repaint — it is a no-op once the board is covered.

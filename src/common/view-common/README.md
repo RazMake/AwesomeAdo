@@ -40,7 +40,9 @@ renderer.
 
 ### `EnhancedView.ts` — the renderer contract
 
-- `EnhancedView` — `{ id, render(context) }`; `id` matches the owning `ViewType.id`.
+- `EnhancedView` — `{ id, render(context), dispose?(root) }`; `id` matches the owning `ViewType.id`.
+  A renderer that registers its root with document-scoped listeners implements `dispose`; the
+  content surface calls it before replacing or restoring that root.
 - `EnhancedViewContext` — `{ doc, queryId, properties, services? }`, everything a view needs to render,
   injected so a renderer never reaches for a global. `services` is optional: present for data-driven
   views (carrying the tree loader, user directory, type catalog, sprint window, clock, logger), absent

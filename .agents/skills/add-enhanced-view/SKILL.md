@@ -77,9 +77,13 @@ export const <viewCamel>View: EnhancedView = {
   `<viewCamel>ViewType` and add it to `VIEW_TYPES`.
 - Renderer in
   [`src/content/views/enhancedViewRegistry.ts`](../../../src/content/views/enhancedViewRegistry.ts):
-  import `<viewCamel>View` and add it to `ENHANCED_VIEWS`.
+  add the id and resolve the renderer either eagerly (small views) or through a cached loader (large
+  views). A deferred renderer also needs its own ESM entry in `scripts/build.mjs`, a matching
+  `web_accessible_resources` entry in `src/manifest.json`, and a required-artifact entry in
+  `scripts/package.mjs`.
 
-Keep the two lists in the same order so the config and its renderer stay aligned.
+The registry parity test must prove every catalog id is recognized. Keep only small renderers eager;
+host-wide content injection means every eager import is parsed on every ADO page.
 
 ### 4. Document the folder — `src/content/views/<view>/README.md`
 

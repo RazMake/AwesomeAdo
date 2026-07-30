@@ -38,6 +38,8 @@ export interface NotesPanelOptions {
   /** ISO 8601 start of the binding's Updates window; nothing older is fetched or shown. */
   sinceIso: string;
   services: NotesPanelServices;
+  /** Data shared by rebuilt panels for the same item, so a board repaint does not refetch it. */
+  state?: NotesPanelState;
   /**
    * Called with the number of notes actually inside the Updates window, whenever that becomes known
    * or changes (after the first load, and after a note is added).
@@ -75,6 +77,23 @@ export interface NotesPanelHandle {
   isExpanded(): boolean;
 }
 
+/** Note data that outlives one rendered panel while the Project Tracking session remains open. */
+export interface NotesPanelState {
+  notes: WorkItemNote[];
+  currentUser: NoteAuthor | null;
+  /** Whether a successful or currently-running fetch has claimed this state. */
+  loaded: boolean;
+  /** Shared so a replacement panel can await the read its predecessor already started. */
+  loading?: Promise<void>;
+  /** Why the last fetch failed, so the panel can report it without pretending the list is empty. */
+  error?: string;
+}
+
+/** Create the session-owned state for one work item's notes panel. */
+export function createNotesPanelState(): NotesPanelState {
+  return { notes: [], currentUser: null, loaded: false };
+}
+
 /**
  * One work item's notes: the "+ Add note" link, then the notes themselves, newest first.
  *
@@ -100,7 +119,8 @@ export function renderNotesPanel(options: NotesPanelOptions): NotesPanelHandle {
     "color:var(--text-primary-color)",
   ].join(";");
 
-  const state: PanelState = { notes: [], currentUser: null, loaded: false, expanded: false };
+  const state = options.state ?? createNotesPanelState();
+  let expanded = false;
 
   const list = doc.createElement("div");
   list.className = "awesomeado-notes__list";
@@ -124,13 +144,13 @@ export function renderNotesPanel(options: NotesPanelOptions): NotesPanelHandle {
   };
 
   element.append(...(options.onlyCommentPrefix === undefined ? [composer] : []), list);
-  const setExpanded = (expanded: boolean): void => {
-    if (state.expanded === expanded) {
+  const setExpanded = (nextExpanded: boolean): void => {
+    if (expanded === nextExpanded) {
       // Only a real flip is acted on (and logged): the board repaints often, and a panel told again
       // what it already is would both refire the fetch and flood the bounded diagnostics log.
       return;
     }
-    state.expanded = expanded;
+    expanded = nextExpanded;
     element.style.display = expanded ? "block" : "none";
     const fetching = expanded && !state.loaded;
     services.logger.info(
@@ -140,28 +160,26 @@ export function renderNotesPanel(options: NotesPanelOptions): NotesPanelHandle {
     if (fetching) {
       state.loaded = true;
       showStatus(doc, list, "Loading notes…");
-      void loadNotes(options, state).then(render);
+      const loading = state.loading ?? loadNotes(options, state);
+      state.loading = loading;
+      void loading.then(render).finally(() => {
+        if (state.loading === loading) state.loading = undefined;
+      });
+    } else if (expanded && state.loading !== undefined) {
+      showStatus(doc, list, "Loading notes…");
+      void state.loading.then(render);
+    } else if (expanded) {
+      render();
     }
   };
 
-  return { element, setExpanded, isExpanded: () => state.expanded };
-}
-
-/** What the panel knows between renders. */
-interface PanelState {
-  notes: WorkItemNote[];
-  currentUser: NoteAuthor | null;
-  /** Whether the fetch has been started; a second expand must not refire it. */
-  loaded: boolean;
-  expanded: boolean;
-  /** Why the fetch failed, so the panel can say so instead of claiming there is nothing to read. */
-  error?: string;
+  return { element, setExpanded, isExpanded: () => expanded };
 }
 
 /** The rows an expanded panel shows: the notes inside its window, or a single explanatory line. */
 function renderRows(
   options: NotesPanelOptions,
-  state: PanelState,
+  state: NotesPanelState,
   rerender: () => void,
 ): HTMLElement[] {
   const { doc } = options;
@@ -218,7 +236,7 @@ function notesForSurface(
  */
 async function submitNote(
   options: NotesPanelOptions,
-  state: PanelState,
+  state: NotesPanelState,
   noteId: number | null,
   text: string,
 ): Promise<boolean> {
@@ -259,7 +277,7 @@ function finish(ok: boolean, rerender: () => void): boolean {
 }
 
 /** Read the item's notes into the panel's state; a failure is recorded, never thrown at the row. */
-async function loadNotes(options: NotesPanelOptions, state: PanelState): Promise<void> {
+async function loadNotes(options: NotesPanelOptions, state: NotesPanelState): Promise<void> {
   const result = await options.services.noteLoader.loadNotes({
     workItemId: options.workItemId,
     sinceIso: options.sinceIso,

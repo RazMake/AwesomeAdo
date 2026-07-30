@@ -97,7 +97,7 @@ import {
   itemHasMarker,
 } from "./marker-filter/markerPresence";
 import { renderMarkerReasonsPill } from "./marker-reasons/MarkerReasonsPill";
-import { renderNotesPanel } from "./notes/NotesPanel";
+import { createNotesPanelState, renderNotesPanel, type NotesPanelState } from "./notes/NotesPanel";
 import { markerCommentPrefixes } from "./notes/markerNotes";
 import {
   hideResolvedAfterDays,
@@ -577,6 +577,8 @@ interface TreeRenderOptions {
    * asked for.
    */
   expandedNoteIds: Set<number>;
+  /** Loaded discussion data retained when filter/order repaints replace a row's DOM. */
+  notePanelStates: Map<number, NotesPanelState>;
   /**
    * ISO 8601 start of the binding's Updates window — the oldest note any panel on this pass will
    * fetch. Computed per pass, not per board, so a board left open overnight moves its window with
@@ -692,6 +694,7 @@ function createItemRowStyle(doc: Document): HTMLStyleElement {
 
 interface ModifierHighlightTracker {
   register(root: HTMLElement): void;
+  unregister(root: HTMLElement): void;
 }
 
 const MODIFIER_HIGHLIGHT_TRACKERS = new WeakMap<Document, ModifierHighlightTracker>();
@@ -722,6 +725,10 @@ function modifierHighlightTracker(doc: Document): ModifierHighlightTracker {
     register: (root) => {
       roots.add(root);
       root.classList.toggle("awesomeado-tracking--modifier-highlight", active);
+    },
+    unregister: (root) => {
+      roots.delete(root);
+      root.classList.remove("awesomeado-tracking--modifier-highlight");
     },
   };
   MODIFIER_HIGHLIGHT_TRACKERS.set(doc, tracker);
@@ -1122,11 +1129,17 @@ function createItemNotes(
   ].join(";");
   toggle.append(icon.element);
 
+  let panelState = options.notePanelStates.get(item.id);
+  if (panelState === undefined) {
+    panelState = createNotesPanelState();
+    options.notePanelStates.set(item.id, panelState);
+  }
   const notes = renderNotesPanel({
     doc,
     workItemId: item.id,
     sinceIso: options.notesSinceIso,
     services,
+    state: panelState,
     onNoteCountKnown: (count) => {
       hasNotes = count > 0;
       // Written back to the model so a later repaint seeds from the truth rather than from ADO's
@@ -1888,6 +1901,10 @@ interface BoardSession {
   collapsedIds: Set<number>;
   /** Rows whose notes panel the reader opened; everything absent renders closed. */
   expandedNoteIds: Set<number>;
+  /** One state object per item, shared by every replacement panel rendered for that item. */
+  notePanelStates: Map<number, NotesPanelState>;
+  /** Discussion-date index retained across refreshes and revalidated by comment count. */
+  recentNotes: RecentNotesIndex;
   /** The active tag filter (OR across the entries; empty = everyone). `null` is the untagged bucket. */
   selectedTags: Set<string | null>;
   /** Full area paths selected in the header (OR across entries; empty = every area). */
@@ -1905,10 +1922,16 @@ interface BoardSession {
 }
 
 /** A fresh session: nothing collapsed, nothing filtered, no pick that overrides the binding. */
-function createBoardSession(): BoardSession {
+function createBoardSession(services: EnhancedViewServices): BoardSession {
   return {
     collapsedIds: new Set<number>(),
     expandedNoteIds: new Set<number>(),
+    notePanelStates: new Map<number, NotesPanelState>(),
+    recentNotes: new RecentNotesIndex(
+      services.noteActivity,
+      services.logger,
+      markerCommentPrefixes(services.markerTags()),
+    ),
     selectedTags: new Set<string | null>(),
     selectedAreaPaths: new Set<string>(),
     selectedActivity: new Set<RecentActivityKind>(),
@@ -2371,7 +2394,7 @@ function createBoardTreeRenderer(params: BoardTreeRendererParams): () => void {
   // Same reason, opposite default, for the opened discussions: a notes panel fetches when it opens,
   // so the rows that were OPENED are what has to survive — recording the closed ones would make every
   // newly-rendered row start by loading a discussion nobody asked to see.
-  const { collapsedIds, expandedNoteIds, selectedTags } = params.session;
+  const { collapsedIds, expandedNoteIds, notePanelStates, selectedTags } = params.session;
   const { selectedAreaPaths, selectedActivity, selectedMarkers } = params.session;
 
   const renderTreeContent = (): void => {
@@ -2433,6 +2456,7 @@ function createBoardTreeRenderer(params: BoardTreeRendererParams): () => void {
       descriptionExpansions,
       collapsedIds,
       expandedNoteIds,
+      notePanelStates,
       // Rebuilt per pass for the same reason the resolved-age filter is: "the last N weeks" moves
       // with the clock, so a board left open must not keep fetching against the window it opened on.
       notesSinceIso: boardNotesSince(params.context),
@@ -2985,11 +3009,7 @@ function mountBoardBody(params: {
   // Asked through the bulk activity reader, not the per-item note loader: the pill needs one date per
   // item, and answering it through the loader cost a credentialed round-trip and up to 200 rendered
   // comments per row. The filter row owns repainting once a read lands (see `createFilterRowRenderer`).
-  const recentNotes = new RecentNotesIndex(
-    context.services.noteActivity,
-    context.services.logger,
-    markerCommentPrefixes(context.services.markerTags()),
-  );
+  const recentNotes = session.recentNotes;
 
   // Late-bound because the two halves are built in a cycle: the tree renderer hands menu commands a
   // whole-board repaint, and the filter row is built ON the tree renderer. Reassigned below, once
@@ -3427,6 +3447,7 @@ function renderLoadedBoard(params: RenderLoadedBoardParams): BoardHandle | null 
   if (treeRoot === null) {
     return null;
   }
+  retainBoardCaches(session, treeRoot);
 
   const types = services.getTypes();
   const typeMap = new Map(types.map((t) => [t.name, t]));
@@ -3479,6 +3500,22 @@ function renderLoadedBoard(params: RenderLoadedBoardParams): BoardHandle | null 
   // resolved roster then paints the assignee tags and fills the tag filter panel.
   crewSync?.seed([treeRoot]);
   return board;
+}
+
+/** Keep session caches bounded to the work items still returned by the refreshed query. */
+function retainBoardCaches(session: BoardSession, root: TrackedWorkItem): void {
+  const workItemIds = new Set<number>();
+  const pending = [root];
+  while (pending.length > 0) {
+    const item = pending.pop();
+    if (item === undefined) break;
+    workItemIds.add(item.id);
+    pending.push(...item.children);
+  }
+  for (const workItemId of session.notePanelStates.keys()) {
+    if (!workItemIds.has(workItemId)) session.notePanelStates.delete(workItemId);
+  }
+  session.recentNotes.retain(workItemIds);
 }
 
 /** Renders the load-failure scaffold when the tree read rejects; the error is logged first. */
@@ -3545,7 +3582,7 @@ function captureScroll(element: HTMLElement): () => void {
  */
 function startProjectTrackingBoard(context: DataDrivenViewContext, root: HTMLElement): void {
   const services = context.services;
-  const session = createBoardSession();
+  const session = createBoardSession(services);
   let board: BoardHandle | null = null;
   let refreshing = false;
   // Set when a re-read failed: the board on screen is still truthful, just older than the reader
@@ -3624,6 +3661,7 @@ function startProjectTrackingBoard(context: DataDrivenViewContext, root: HTMLEle
  */
 export const projectTrackingView: EnhancedView = {
   id: projectTrackingViewType.id,
+  dispose: (root) => modifierHighlightTracker(root.ownerDocument).unregister(root),
   render: (context) => {
     const root = context.doc.createElement("section");
     root.className = "awesomeado-view awesomeado-tracking";

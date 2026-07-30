@@ -3,7 +3,12 @@ import { describe, expect, it, vi } from "vitest";
 import type { NoteAuthor, WorkItemNote } from "../../../../common/ado/WorkItemNote";
 import { normalizeMarkerTags } from "../../../../common/settings/ExtensionSettings";
 
-import { renderNotesPanel, type NotesPanelHandle } from "./NotesPanel";
+import {
+  createNotesPanelState,
+  renderNotesPanel,
+  type NotesPanelHandle,
+  type NotesPanelState,
+} from "./NotesPanel";
 
 const WORK_ITEM_ID = 42;
 const SINCE = "2026-07-10T00:00:00Z";
@@ -53,6 +58,7 @@ function mountPanel(
     editResult?: { ok: boolean; note?: WorkItemNote };
     mentionNames?: Map<string, string>;
     showAllInWindow?: boolean;
+    state?: NotesPanelState;
   } = {},
 ) {
   const loadNotes = vi.fn(() =>
@@ -83,6 +89,7 @@ function mountPanel(
       markerTags: () => normalizeMarkerTags(undefined),
       logger: { info, error },
     },
+    state: overrides.state,
     showAllInWindow: overrides.showAllInWindow,
   });
   return { handle, loadNotes, addNote, editNote, resolveNames, info, error };
@@ -137,6 +144,19 @@ describe("renderNotesPanel — fetching on first open", () => {
 
     expect(loadNotes).toHaveBeenCalledTimes(1);
     expect(rowsOf(handle)).toHaveLength(1);
+  });
+
+  it("reuses a session-owned cache when a board repaint creates a replacement panel", async () => {
+    const state = createNotesPanelState();
+    const first = mountPanel({ state, notes: [createNote({ id: 1 })] });
+    await expand(first.handle);
+
+    const replacement = mountPanel({ state });
+    await expand(replacement.handle);
+
+    expect(first.loadNotes).toHaveBeenCalledTimes(1);
+    expect(replacement.loadNotes).not.toHaveBeenCalled();
+    expect(rowsOf(replacement.handle)).toHaveLength(1);
   });
 
   it("ignores being told again what it already is, so a repaint neither refetches nor floods the log", () => {

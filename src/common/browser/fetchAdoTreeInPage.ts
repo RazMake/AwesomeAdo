@@ -10,8 +10,8 @@ import type { AdoRawTree } from "../ado/fetchAdoTree";
  * session is a fetch running in the ADO tab's MAIN (page) world. This function is therefore injected
  * verbatim via `chrome.scripting.executeScript({ world: "MAIN", func })`, which serializes it with
  * `Function.prototype.toString`. It must not reference any import, module-scoped variable, or build
- * helper — only its parameters and page globals (`fetch`, `Promise`, `Array`, `Set`). Promise
- * chaining (not async/await) avoids any transpiler helper being hoisted out of the function body.
+ * helper — only its parameters and page globals (`fetch`, `setTimeout`, `Promise`, `Array`, `Set`).
+ * Promise chaining (not async/await) avoids any transpiler helper being hoisted out of the body.
  */
 export function fetchAdoTreeInPage(
   wiqlUrl: string,
@@ -21,86 +21,88 @@ export function fetchAdoTreeInPage(
 ): Promise<AdoRawTree> {
   // Bound the ids-to-hydrate and batch-page counts so a misbehaving/huge query can never turn this
   // into an unbounded number of page-world fetches.
-  const [MAX_IDS, PAGE_SIZE, MAX_BATCH_PAGES] = [10000, 200, 100];
+  const [MAX_IDS, PAGE_SIZE, MAX_PAGES, CONCURRENCY, MAX_ATTEMPTS] = [10000, 200, 100, 4, 3];
 
   // Keep transport failures as data because this injected function has no logger of its own. The
   // content-side loader logs the stage/status after the worker returns it; swallowing it here would
   // turn a rejected batch into the indistinguishable and incorrect conclusion "query has no items".
-  const readJson = (url: string, init: RequestInit, stage: "wiql" | "batch"): Promise<unknown> =>
+  // prettier-ignore
+  const readJson = (
+    url: string,
+    init: RequestInit,
+    stage: "wiql" | "batch",
+    attempt = 1,
+  ): Promise<unknown> =>
     fetch(url, init).then(
-      (response) =>
-        response.ok
-          ? response.json().catch(() => Promise.reject({ stage, status: response.status }))
-          : Promise.reject({ stage, status: response.status }),
-      () => Promise.reject({ stage, status: 0 }),
+      (response) => {
+        const retryable = response.status === 408 || response.status === 429 || response.status >= 500;
+        if (!response.ok && retryable && attempt < MAX_ATTEMPTS) {
+          return new Promise<void>((resolve) => setTimeout(resolve, attempt * 100))
+            .then(() => readJson(url, init, stage, attempt + 1));
+        }
+        return response.ok ? response.json().catch(() => Promise.reject({ stage, status: response.status }))
+          : Promise.reject({ stage, status: response.status });
+      },
+      () => attempt < MAX_ATTEMPTS
+        ? new Promise<void>((resolve) => setTimeout(resolve, attempt * 100))
+            .then(() => readJson(url, init, stage, attempt + 1))
+        : Promise.reject({ stage, status: 0 }),
     );
 
   // Collect the work-item ids to hydrate from the WIQL body. Defined inline (not imported) because
   // this whole function is serialized and injected into the ADO MAIN world. A tree query carries both
   // endpoints of every parent/child edge (an item can be a target in one relation and a source in
   // another, so both sides are collected); a flat query lists its items directly.
+  // prettier-ignore
   const collectIds = (wiql: unknown): number[] => {
-    const ids = new Set<number>();
-    const addId = (endpoint: unknown): void => {
-      const id = (endpoint as { id?: unknown } | null)?.id;
-      if (typeof id === "number") ids.add(id);
-    };
     const relations = (wiql as { workItemRelations?: unknown } | null)?.workItemRelations;
     const workItems = (wiql as { workItems?: unknown } | null)?.workItems;
-    if (Array.isArray(relations)) {
-      for (const relation of relations) {
-        if (typeof relation !== "object" || relation === null) continue;
+    const endpoints = Array.isArray(relations)
+      ? relations.flatMap((relation) => {
+        if (typeof relation !== "object" || relation === null) return [];
         const { source, target } = relation as { source?: unknown; target?: unknown };
-        addId(target);
-        // source === null marks the relation's target as a root, so there is no source id to add.
-        if (source !== null) addId(source);
-      }
-    } else if (Array.isArray(workItems)) {
-      for (const item of workItems) addId(item);
-    }
-    return Array.from(ids).slice(0, MAX_IDS);
+        return source === null ? [target] : [target, source];
+      })
+      : Array.isArray(workItems) ? workItems : [];
+    const ids = endpoints.map((endpoint) => (endpoint as { id?: unknown } | null)?.id)
+      .filter((id): id is number => typeof id === "number");
+    return Array.from(new Set(ids)).slice(0, MAX_IDS);
   };
 
   // The query's metadata (for its folder `path`) is an independent, best-effort read: it must never
   // block or fail the tree load, so it runs in parallel and degrades to `null` on any error.
-  const queryMeta = fetch(queryUrl, {
-    credentials: "include",
-    headers: { Accept: "application/json" },
-  })
-    .then((response) => (response.ok ? response.json() : null))
-    .catch(() => null);
+  const readInit: RequestInit = { credentials: "include", headers: { Accept: "application/json" } };
+  const queryMeta = readJson(queryUrl, readInit, "wiql").catch(() => null);
 
-  const tree = readJson(
-    wiqlUrl,
-    { credentials: "include", headers: { Accept: "application/json" } },
-    "wiql",
-  )
+  // prettier-ignore
+  const tree = readJson(wiqlUrl, readInit, "wiql")
     .then((wiql) => {
       const idList = collectIds(wiql);
       if (idList.length === 0) return { wiql, items: [] };
 
-      const items: unknown[] = [];
-      const readBatchPage = (start: number, pagesLeft: number): Promise<void> => {
-        const pageIds = idList.slice(start, start + PAGE_SIZE);
-        return readJson(
-          batchUrl,
-          {
-            method: "POST",
-            credentials: "include",
-            headers: { "Content-Type": "application/json", Accept: "application/json" },
-            body: JSON.stringify({ ids: pageIds, fields: fields }),
-          },
-          "batch",
-        ).then((body) => {
+      const pageCount = Math.min(Math.ceil(idList.length / PAGE_SIZE), MAX_PAGES);
+      const pages = Array.from({ length: pageCount }, (_, page) => idList.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE));
+      const answers: unknown[][] = [];
+      let nextPage = 0;
+      const drain = (): Promise<void> => {
+        const pageIndex = nextPage++;
+        const pageIds = pages[pageIndex];
+        if (pageIds === undefined) return Promise.resolve();
+        const init = {
+          method: "POST", credentials: "include" as RequestCredentials,
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({ ids: pageIds, fields: fields }),
+        };
+        return readJson(batchUrl, init, "batch").then((body) => {
           const page = body as { value?: unknown };
-          if (Array.isArray(page.value)) items.push(...page.value);
-          const nextStart = start + PAGE_SIZE;
-          if (nextStart >= idList.length || pagesLeft <= 1) return undefined;
-          return readBatchPage(nextStart, pagesLeft - 1);
+          answers[pageIndex] = Array.isArray(page.value) ? page.value : [];
+          return drain();
         });
       };
 
-      return readBatchPage(0, MAX_BATCH_PAGES).then(() => ({ wiql, items }));
+      const laneCount = Math.min(CONCURRENCY, pages.length);
+      return Promise.all(Array.from({ length: laneCount }, drain))
+        .then(() => ({ wiql, items: answers.flat() }));
     })
     .catch((error: unknown) => {
       const candidate = error as { stage?: unknown; status?: unknown } | null;

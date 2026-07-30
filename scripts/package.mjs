@@ -20,6 +20,7 @@ const REQUIRED_DIST_FILES = [
   "manifest.json",
   "background/service-worker.js",
   "content/awesomeado-content.js",
+  "content/project-tracking.js",
   "options/options.js",
   "options/options.html",
 ];

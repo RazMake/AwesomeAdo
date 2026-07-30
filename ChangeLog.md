@@ -5,6 +5,10 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ## Next Version
 
+- Makes Project Tracking open and refresh faster by loading its renderer only when needed, fetching
+  work-item batches concurrently with transient retry, and reusing discussion activity already read
+  during the board session.
+
 ## 0.1
 
 - Initial public release for Chrome and Microsoft Edge, supporting hosted Azure DevOps at

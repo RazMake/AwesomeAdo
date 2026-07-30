@@ -23,8 +23,10 @@ Lines it records use the log source **`content/query-page`**.
   solving page coverage itself. Given an `EnhancedViewRequest` (`viewId`, `queryId`, `properties`) it
   resolves the view through the [enhanced-view registry](../views/README.md) and renders it; given
   `null` — or a `viewId` this build does not know — it restores ADO's own page. It re-attaches the
-  style and host if ADO's post-load re-render drops them, and only mutates the DOM; it makes no
-  decision about _when_ or _which_ view to show.
+  style and host if ADO's post-load re-render drops them, disposes renderer-owned registrations when
+  replacing a root, and only mutates the DOM; it makes no decision about _when_ or _which_ view to
+  show. A deferred renderer leaves ADO visible while its bundle loads, and a request generation
+  guard prevents a late import from replacing a newer navigation.
 
 ### `QueryPageController.ts`
 

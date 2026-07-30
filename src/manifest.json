@@ -32,7 +32,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["icons/icon.svg"],
+      "resources": ["icons/icon.svg", "content/project-tracking.js"],
       "matches": ["https://dev.azure.com/*", "https://*.visualstudio.com/*"]
     }
   ]

@@ -986,3 +986,20 @@ nodeMatchesChange`). Copied here, that makes an activity pill drag in items belo
   cosmetic iteration, and leaves an initial release reading like an internal build log. Base-version
   headings also match the release validator and the official `vMajor.Minor` release contract while
   CI remains free to assign the `Build` component.
+
+## ADR-055: Defer heavy view code and retain server reads at board-session scope
+
+- Decision: The classic host-wide content script keeps only eager renderers it needs immediately.
+  Project Tracking is built as a web-accessible ESM entry, resolved through a cached registry on
+  first use, and store builds minify every bundle. `EnhancedViewSurface` leaves ADO visible while a
+  deferred renderer loads, rejects stale resolutions by request generation, and calls an optional
+  renderer `dispose(root)` hook before removing its DOM.
+- Decision: Project Tracking owns loaded and in-flight note-panel state plus `RecentNotesIndex` in
+  `BoardSession`, so DOM repaints and manual refreshes reuse reads. Refresh prunes cache entries for
+  ids absent from the new tree. Tree hydration preserves 200-id paging but reads through four bounded
+  lanes; network, 408, 429, and 5xx responses receive at most three attempts with bounded backoff.
+- Rationale: Route gating prevents API and DOM work on unrelated ADO pages but does not prevent the
+  browser from parsing an eagerly bundled board. Replacement DOM is also the wrong lifetime for
+  server data: filtering, ordering, and refresh should not refetch unchanged discussions. Bounded
+  concurrency removes serial network latency without overwhelming ADO, while finite transient retry
+  avoids surfacing brief service failures as permanent load errors.

@@ -129,11 +129,43 @@ describe("fetchAdoTreeInPage - paging and flat queries", () => {
     expect(batchIdCounts).toEqual([200, 50]);
     expect(result.items).toHaveLength(250);
   });
+
+  it("hydrates at most four batch pages concurrently while preserving page order", async () => {
+    const workItems = Array.from({ length: 1000 }, (_, index) => ({ id: index + 1 }));
+    const pending: Array<{ ids: number[]; resolve: (response: Response) => void }> = [];
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (url === WIQL_URL) return Promise.resolve(jsonResponse({ queryType: "flat", workItems }));
+      if (url === QUERY_URL) return Promise.resolve(jsonResponse(QUERY_META));
+      const { ids } = parseBatchBody(init);
+      return new Promise<Response>((resolve) => pending.push({ ids, resolve }));
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const resultPromise = fetchAdoTreeInPage(WIQL_URL, BATCH_URL, FIELDS, QUERY_URL);
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(pending).toHaveLength(4);
+
+    pending[0]!.resolve(jsonResponse({ value: pending[0]!.ids.map((id) => ({ id })) }));
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(pending).toHaveLength(5);
+    for (const request of pending.slice(1)) {
+      request.resolve(jsonResponse({ value: request.ids.map((id) => ({ id })) }));
+    }
+
+    const result = await resultPromise;
+    expect(result.items).toEqual(workItems);
+  });
 });
 
 describe("fetchAdoTreeInPage - failure handling", () => {
   it("resolves to no wiql and no items when the WIQL response is not ok, without calling the batch endpoint", async () => {
-    const fetchMock = vi.fn(() => Promise.resolve(jsonResponse(null, false)));
+    const fetchMock = vi.fn(() => Promise.resolve(jsonResponse(null, false, 400)));
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     const result = await fetchAdoTreeInPage(WIQL_URL, BATCH_URL, FIELDS, QUERY_URL);
@@ -142,7 +174,7 @@ describe("fetchAdoTreeInPage - failure handling", () => {
     expect(result).toEqual({
       wiql: null,
       items: [],
-      failure: { stage: "wiql", status: 500 },
+      failure: { stage: "wiql", status: 400 },
       query: null,
     });
     // Only the WIQL and (best-effort) query-metadata reads run; the batch endpoint is never hit.
@@ -164,6 +196,41 @@ describe("fetchAdoTreeInPage - failure handling", () => {
     });
   });
 
+  it("retries a transient WIQL failure twice before succeeding", async () => {
+    const workItems = [{ id: 7 }];
+    let wiqlAttempts = 0;
+    const timeoutMock = vi
+      .spyOn(globalThis, "setTimeout")
+      .mockImplementation((handler: TimerHandler) => {
+        if (typeof handler === "function") handler();
+        return 0 as unknown as ReturnType<typeof setTimeout>;
+      });
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (url === QUERY_URL) return Promise.resolve(jsonResponse(QUERY_META));
+      if (url === WIQL_URL) {
+        wiqlAttempts += 1;
+        return Promise.resolve(
+          wiqlAttempts < 3
+            ? jsonResponse(null, false, 503)
+            : jsonResponse({ queryType: "flat", workItems }),
+        );
+      }
+      const { ids } = parseBatchBody(init);
+      return Promise.resolve(jsonResponse({ value: ids.map((id) => ({ id })) }));
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const result = await fetchAdoTreeInPage(WIQL_URL, BATCH_URL, FIELDS, QUERY_URL);
+
+    expect(wiqlAttempts).toBe(3);
+    expect(result.items).toEqual(workItems);
+    expect(timeoutMock).toHaveBeenNthCalledWith(1, expect.any(Function), 100);
+    expect(timeoutMock).toHaveBeenNthCalledWith(2, expect.any(Function), 200);
+    timeoutMock.mockRestore();
+  });
+});
+
+describe("fetchAdoTreeInPage - hydration failure handling", () => {
   it("resolves with the wiql body and no items when there are zero ids to hydrate, without calling the batch endpoint", async () => {
     const wiqlBody = { queryType: "flat", workItems: [] };
     const fetchMock = vi.fn(() => Promise.resolve(jsonResponse(wiqlBody)));
@@ -190,7 +257,7 @@ describe("fetchAdoTreeInPage - failure handling", () => {
       }
       batchCallCount += 1;
       if (batchCallCount === 1) {
-        return Promise.resolve(jsonResponse(null, false));
+        return Promise.resolve(jsonResponse(null, false, 400));
       }
       const { ids } = parseBatchBody(init);
       return Promise.resolve(jsonResponse({ value: ids.map((id) => ({ id })) }));
@@ -199,11 +266,11 @@ describe("fetchAdoTreeInPage - failure handling", () => {
 
     const result = await fetchAdoTreeInPage(WIQL_URL, BATCH_URL, FIELDS, QUERY_URL);
 
-    expect(batchCallCount).toBe(1);
+    expect(batchCallCount).toBe(2);
     expect(result).toEqual({
       wiql: null,
       items: [],
-      failure: { stage: "batch", status: 500 },
+      failure: { stage: "batch", status: 400 },
       query: QUERY_META,
     });
   });

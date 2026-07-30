@@ -15,8 +15,9 @@ This is a flattened snapshot of what exists now, not a build log.
   contract, composition factory.
 - **Views** (`src/content/views`, contracts in `src/common/view-common`): per-view folders each
   holding a `ViewType` config (in the `VIEW_TYPES` catalog) and an `EnhancedView` renderer (in the
-  `ENHANCED_VIEWS` registry), a shared placeholder shell (`renderViewScaffold`), and `sprint` /
-  `project-tracking` views. Project Tracking rows use theme-owned alternating backgrounds with
+  eager/lazy enhanced-view registry), a shared placeholder shell (`renderViewScaffold`), and
+  `sprint` / `project-tracking` views. Project Tracking ships as an on-demand ESM renderer; store
+  builds minify it and the always-loaded runtime. Project Tracking rows use theme-owned alternating backgrounds with
   hover and `Ctrl+Shift` emphasis across each row and its open details, re-striped in visible tree
   order after outline changes. Options imports only `content/views/viewCatalog` (scoped §6
   exception, ADR-027, lint-enforced).
@@ -33,7 +34,8 @@ This is a flattened snapshot of what exists now, not a build log.
 - **Navigation** (`src/common/navigation`): `AdoHost` single-source host matching, query-route and
   identity parsing, navigation + theme + query-name message contracts, `NavigationNotifier`.
 - **Browser isolation** (`src/common/browser`): `ChromeSyncStorage`, the two ADO tab readers, and
-  the shared `observeStorageKeys` / `requestFromTab` helpers.
+  the shared `observeStorageKeys` / `requestFromTab` helpers. Query tree hydration uses four bounded
+  batch lanes and three-attempt transient retry.
 - **Logging** (`src/common/logging`): device-local ring-buffer log store, `ILoggerFactory` /
   `LoggerFactory` minting source-tagged `Logger`s (source is the emitting class name, a free-form
   string), `createLoggerFactory` / `createLogging` composition. Diagnostics decisions log their

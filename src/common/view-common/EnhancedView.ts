@@ -175,4 +175,6 @@ export interface EnhancedView {
    * its lifecycle, so a view returns a fresh element each call and never caches document-scoped state.
    */
   render(context: EnhancedViewContext): HTMLElement;
+  /** Release document-scoped registrations before the surface removes a rendered root. */
+  dispose?(root: HTMLElement): void;
 }

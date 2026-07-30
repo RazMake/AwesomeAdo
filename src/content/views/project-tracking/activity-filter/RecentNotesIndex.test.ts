@@ -212,6 +212,37 @@ describe("RecentNotesIndex — what it re-reads", () => {
     await settle();
     expect(reader.asked).toHaveLength(2);
   });
+
+  it("forgets a known answer when refresh removes the item", async () => {
+    const reader = fakeReader(datesEverything);
+    const index = new RecentNotesIndex(reader, fakeLogger());
+
+    index.ensureProbed(item(1, 0, [item(2, 1)]));
+    await settle();
+    index.retain(new Set([1]));
+    index.ensureProbed(item(1, 0, [item(2, 1)]));
+    await settle();
+
+    expect(reader.asked).toEqual([[2], [2]]);
+  });
+
+  it("forgets a failed answer when refresh removes the item", async () => {
+    let reads = 0;
+    const reader = fakeReader((request) => {
+      reads++;
+      return reads === 1 ? { activity: [], error: "network" } : datesEverything(request);
+    });
+    const index = new RecentNotesIndex(reader, fakeLogger());
+
+    index.ensureProbed(item(1, 0, [item(2, 1)]));
+    await settle();
+    index.retain(new Set([1]));
+    index.ensureProbed(item(1, 0, [item(2, 1)]));
+    await settle();
+
+    expect(reader.asked).toEqual([[2], [2]]);
+    expect(index.hasRecentNote(item(2, 1), WINDOW_START)).toBe(true);
+  });
 });
 
 describe("RecentNotesIndex — what it reports", () => {

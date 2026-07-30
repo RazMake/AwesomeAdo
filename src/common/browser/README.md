@@ -286,8 +286,10 @@ The self-contained function the **background worker** injects into the ADO tab's
 `chrome.scripting.executeScript`) to serve a `LoadQueryTreeMessage`. Like `fetchAdoRawInPage`, it is
 serialized with `Function.prototype.toString`, so it references only its parameters and page globals.
 It runs the WIQL query (`_apis/wit/wiql/{id}`), collects the work-item ids from the result, pages the
-`_apis/wit/workitemsbatch` endpoint (200 ids per page) to hydrate the requested `fields`, and returns
-the raw `{ wiql, items }` (`AdoRawTree`) for `parseTrackedTree` to normalize. The URLs are built by
+`_apis/wit/workitemsbatch` endpoint (200 ids per page, at most four pages in flight) to hydrate the
+requested `fields`, and returns the raw `{ wiql, items }` (`AdoRawTree`) in id-page order for
+`parseTrackedTree` to normalize. Transport, 408, 429, and 5xx failures retry up to three attempts
+with bounded backoff; permanent client errors fail immediately. The URLs are built by
 `buildAdoTreeUrls` (in `common/ado/fetchAdoTree`) from the sender's own trusted tab URL, keeping the
 worker a closed "load this query's tree" operation rather than a fetch-any-URL proxy.
 

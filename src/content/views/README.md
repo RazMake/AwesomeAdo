@@ -11,15 +11,16 @@ building blocks every view can reuse live in [`shared/`](./shared/README.md).
 ```
 content/views/
   viewCatalog.ts            the ordered list of view CONFIGS (ViewType)
-  enhancedViewRegistry.ts   the ordered list of view RENDERERS (EnhancedView)
+  enhancedViewRegistry.ts   the eager/lazy renderer registry (EnhancedView)
   sprint/                   sprintViewType.ts (config) + SprintView.ts (renderer)
   project-tracking/         projectTrackingViewType.ts + ProjectTrackingView.ts
 ```
 
-Every entry in `VIEW_TYPES` has a matching entry (by id) in `ENHANCED_VIEWS`, pinned by
+Every entry in `VIEW_TYPES` has a matching id in `enhancedViewRegistry`, pinned by
 `enhancedViewRegistry.test.ts`. `VIEW_TYPES` order **is** user-visible — it is the order the options
-page offers the views in, pinned by `viewCatalog.test.ts`. `ENHANCED_VIEWS` order is not: renderers
-are resolved by id lookup, so the registry is a set, and nothing should fail if it is reordered.
+page offers the views in, pinned by `viewCatalog.test.ts`. Sprint is available synchronously;
+Project Tracking is resolved once from its web-accessible ESM bundle and cached for the session, so
+its much larger renderer does not parse on every ADO page.
 
 ## The one cross-layer import (an intentional, scoped exception)
 
@@ -46,10 +47,12 @@ as an ADR in `.agents/memory-bank/decisions.md`. Because `viewCatalog` imports o
 - `VIEW_TYPES` — every `ViewType`, in picker order. The **only** module options may import from here.
 - `getViewType(id)` — look up a config by stored id, or `undefined` for an unknown id.
 
-### `enhancedViewRegistry.ts` — the ordered list of renderers (content only)
+### `enhancedViewRegistry.ts` — renderer resolution (content only)
 
-- `ENHANCED_VIEWS` — every `EnhancedView`, mirroring `VIEW_TYPES`.
-- `getEnhancedView(id)` — resolve a binding's view id to its renderer, or `undefined`.
+- `enhancedViewRegistry` — the runtime registry; `has(id)` recognizes configured ids, `getLoaded(id)`
+  returns a renderer already available, and `load(id)` resolves and caches a deferred renderer.
+- `createEnhancedViewRegistry(loader?)` — creates an isolated registry; tests inject a deterministic
+  Project Tracking loader through it.
 
 ## Adding a view
 
@@ -60,6 +63,7 @@ A new view is a folder plus two one-line registrations. See the **`add-enhanced-
 1. Add `views/<view>/<view>ViewType.ts` exporting a `ViewType` (its config).
 2. Add `views/<view>/<view>View.ts` exporting an `EnhancedView` that renders
    [`renderViewScaffold`](../../common/view-common/control/ViewScaffold/README.md) with the view's title and one line of body copy.
-3. Register the config in `viewCatalog.ts` (`VIEW_TYPES`) and the renderer in
-   `enhancedViewRegistry.ts` (`ENHANCED_VIEWS`) — same order in both.
+3. Register the config in `viewCatalog.ts` (`VIEW_TYPES`) and its eager or deferred loader in
+   `enhancedViewRegistry.ts`; add a separate build entry and web-accessible resource for a deferred
+   renderer.
 4. Add a `README.md` to the new folder.

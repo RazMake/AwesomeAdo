@@ -165,9 +165,10 @@ Split into component subfolders (each with its own `README.md`):
 - `ado-probe/` — `AdoThemeProbe` / `AdoQueryNameProbe` read the rendered theme / query name from the
   DOM, only when the options page asks for them.
 - `views/` — the concrete enhanced views, each whole in one folder (`<view>/` = `ViewType` config +
-  `EnhancedView` renderer). `viewCatalog.ts` (configs) and `enhancedViewRegistry.ts` (renderers)
-  mirror each other in order; `shared/` holds per-view building blocks (today `renderViewScaffold`);
-  `sprint` and `project-tracking` are the reference views. **Scoped §6 exception (ADR-027):** options
+  `EnhancedView` renderer). `viewCatalog.ts` owns configs; `enhancedViewRegistry.ts` resolves eager
+  and deferred renderers by id. Sprint is eager; Project Tracking is a separately built,
+  web-accessible ESM module cached after first use. `shared/` holds per-view building blocks (today
+  `renderViewScaffold`); `sprint` and `project-tracking` are the reference views. **Scoped §6 exception (ADR-027):** options
   may import only `views/viewCatalog` (view config), enforced by an `import-x/no-restricted-paths`
   lint zone.
 
@@ -237,6 +238,12 @@ extension in a real browser.
 
 - Host-wide injection on `dev.azure.com`/`*.visualstudio.com` is required to catch ADO's SPA
   navigation into and out of Query routes within one tab.
+- The always-loaded content runtime excludes Project Tracking's renderer. Store builds minify both
+  artifacts; the renderer is imported only after a bound Project Tracking request and cached for the
+  tab session. The surface leaves ADO visible while it loads and ignores stale resolutions.
+- Project Tracking keeps note-panel and recent-note data in `BoardSession`, not replaceable row DOM;
+  refresh prunes ids absent from the new tree. Tree hydration reads 200-id pages with four lanes and
+  retries transient failures at most three times.
 - To stay light on non-query pages, all heavy work is gated behind a parsed query id:
   `EnhancedViewSurface` mounts only when `QueryPageController.shouldEnhance()` is true, and
   `BindingButton`'s `MutationObserver` is created only when `QueryBindingController` sees a query id.

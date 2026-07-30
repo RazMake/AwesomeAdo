@@ -57,6 +57,9 @@ halves of the view — its configuration and its renderer.
       and sprint filters, this session's ordering pick, and the scroll position all survive. An
       **untouched** sprint picker re-seeds from the freshly loaded window instead, so a board left
       open across a sprint boundary follows the new current sprint.
+    - **Reuses discussion reads**: loaded note panels, in-flight note requests, and the New notes
+      activity index live in the board session rather than replacement row DOM. Repaints and refreshes
+      reuse them; a refresh prunes entries for work items no longer returned by the query.
     - **Keeps the board on failure.** A failed re-read is recorded in the log and reported on the
       button itself (which turns red and says the board is showing older data) rather than replacing
       a truthful-if-older board with "Could not load this query.". Pressing the button in that state

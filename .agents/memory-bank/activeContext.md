@@ -14,7 +14,9 @@ The extension is feature-complete for its current scope:
   AwesomeADO theme.
 - Enhanced-view surface (`src/content/query-page/EnhancedViewSurface`) mounts the bound view's own
   DOM in place of ADO's page and reversibly restores it; it resolves the active view through the
-  enhanced-view registry and re-attaches itself if ADO redraws the page.
+  enhanced-view registry and re-attaches itself if ADO redraws the page. Sprint is eager; Project
+  Tracking is a separately built ESM renderer loaded and cached on first use. A generation guard
+  drops stale imports, and renderer disposal releases document-scoped root registrations.
 - Enhanced views live under `src/content/views/**`, each whole in its own folder: the **config**
   (`ViewType` in `viewCatalog.ts`) beside the **renderer** (`EnhancedView` in
   `enhancedViewRegistry.ts`). The pure contracts (`ViewType`, `EnhancedView`) live in
@@ -80,7 +82,8 @@ The extension is feature-complete for its current scope:
   Created/Last-Modified metadata, inline assignee change, and a right-aligned ETA. A header **`⟳`
   refresh** button re-reads the tree + sprint window and repaints in place (ADR-047): the reader's
   transient state lives in a view-owned `BoardSession` (collapsed ids, opened note ids, tag
-  selection, sprint pick, session ordering pick) plus a captured scroll offset, so a refresh keeps
+  selection, sprint pick, session ordering pick, note-panel data/in-flight reads, and the
+  `RecentNotesIndex`) plus a captured scroll offset, so a refresh keeps
   their place; it awaits `WorkItemWriteQueue.whenIdle()` first, keeps the board and reports on the
   button when the re-read fails, and never touches ADO's own hidden grid (ADR-029). The tree is capped at
   **two levels below the root** (`MAX_ROW_DEPTH = 1`); the level under the last rendered row is rolled up
@@ -129,7 +132,8 @@ The extension is feature-complete for its current scope:
   **live** from Azure DevOps (ADR-033): the content-side `MessagingWorkItemTreeLoader` (`common/browser`)
   asks the background worker — over the `AdoTreeRequest` message contract — to run a credentialed
   MAIN-world WIQL + `workitemsbatch` fetch (`fetchAdoTreeInPage`, ADR-028), then parses the raw bodies
-  with `parseTrackedTree`. The sprint dropdown is now **live** too: `loadSprintWindow` reads the
+  with `parseTrackedTree`. Hydration pages run through four bounded lanes and transient reads retry
+  up to three attempts with backoff. The sprint dropdown is now **live** too: `loadSprintWindow` reads the
   configured team's iterations via the content-side `MessagingTeamIterationsLoader` (`common/browser`,
   same background/MAIN-world pattern over the `AdoIterationsRequest` contract +
   `fetchAdoIterationsInPage`), then `buildSprintWindow` (`common/ado/sprintWindow`, reusable across any

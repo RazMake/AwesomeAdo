@@ -8,6 +8,7 @@ import { createVersion } from "./version.mjs";
 
 const watch = process.argv.includes("--watch");
 const outdir = "dist";
+const storeBuild = Boolean(process.env.STORE_BUILD);
 
 const pkg = JSON.parse(await readFile("package.json", "utf8"));
 const { full: fullVersion } = createVersion(pkg, process.env.BUILD_NUMBER);
@@ -37,10 +38,27 @@ const options = {
   bundle: true,
   format: "iife",
   target: "chrome106",
+  minify: storeBuild,
   // Store builds ship without source maps; dev/CI builds keep them for breakpoints.
-  sourcemap: process.env.STORE_BUILD ? false : "linked",
+  sourcemap: storeBuild ? false : "linked",
   logLevel: "info",
   plugins: [copyPlugin],
+};
+
+// Classic manifest content scripts cannot themselves be ESM entries, so the large optional view is
+// emitted separately and loaded by URL through the registry's dynamic import.
+/** @type {import("esbuild").BuildOptions} */
+const projectTrackingOptions = {
+  entryPoints: {
+    "content/project-tracking": "src/content/views/project-tracking/ProjectTrackingView.ts",
+  },
+  outdir,
+  bundle: true,
+  format: "esm",
+  target: "chrome106",
+  minify: storeBuild,
+  sourcemap: storeBuild ? false : "linked",
+  logLevel: "info",
 };
 
 async function copyStatic() {
@@ -57,11 +75,14 @@ async function copyStatic() {
 await rm(outdir, { recursive: true, force: true });
 
 if (watch) {
-  const ctx = await context(options);
+  const [mainContext, projectTrackingContext] = await Promise.all([
+    context(options),
+    context(projectTrackingOptions),
+  ]);
   console.warn("esbuild: starting watch");
-  await ctx.watch();
+  await Promise.all([mainContext.watch(), projectTrackingContext.watch()]);
   console.warn("esbuild: watching for changes");
 } else {
-  await build(options);
+  await Promise.all([build(options), build(projectTrackingOptions)]);
   console.warn(`esbuild: built AwesomeADO ${fullVersion}`);
 }

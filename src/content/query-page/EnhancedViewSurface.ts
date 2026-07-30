@@ -1,9 +1,9 @@
 import type { Theme } from "../../common/settings/ExtensionSettings";
-import type { EnhancedViewServices } from "../../common/view-common/EnhancedView";
+import type { EnhancedView, EnhancedViewServices } from "../../common/view-common/EnhancedView";
 import { THEME_COLOR_VARIABLES } from "../../common/view-common/themes/ThemeDefinition";
 import { resolveTheme } from "../../common/view-common/themes/themes";
 import { detectAdoTheme } from "../ado-probe/AdoThemeProbe";
-import { getEnhancedView } from "../views/enhancedViewRegistry";
+import { enhancedViewRegistry, type EnhancedViewRegistry } from "../views/enhancedViewRegistry";
 
 const STYLE_ID = "awesomeado-enhanced-view-style";
 const HOST_ID = "awesomeado-enhanced-view";
@@ -73,6 +73,10 @@ export class EnhancedViewSurface {
   // changed view id, query, or property value re-renders — refresh() runs on every settings,
   // bindings, and navigation event and must not rebuild the DOM each time.
   private signature: string | undefined;
+  private renderedView: EnhancedView | undefined;
+  private renderedRoot: HTMLElement | undefined;
+  // Invalidates an in-flight lazy renderer whenever navigation/settings select another request.
+  private requestGeneration = 0;
   // The user's chosen theme, pinned onto the host so every control it hosts re-themes at once. Held
   // here (not read per render) so a re-attach after ADO redraws the page restores it, and so a theme
   // change while a view is showing is applied immediately without a rebuild. "auto" = Follow ADO,
@@ -87,22 +91,52 @@ export class EnhancedViewSurface {
   constructor(
     private readonly doc: Document,
     private readonly services?: EnhancedViewServices,
+    private readonly views: EnhancedViewRegistry = enhancedViewRegistry,
   ) {}
 
   /** Show `request`'s view, or restore ADO's own page when `request` is null or its view is unknown. */
   apply(request: EnhancedViewRequest | null): void {
-    const view = request ? getEnhancedView(request.viewId) : undefined;
+    const generation = ++this.requestGeneration;
     // A binding to a view this build does not know (e.g. written by a newer version) leaves ADO's
     // own page in place rather than blanking to nothing — the safest forward-compatible fallback.
-    if (!request || !view) {
+    if (!request || !this.views.has(request.viewId)) {
       this.restore();
       return;
     }
 
     const signature = `${request.viewId}\u0000${request.queryId}\u0000${JSON.stringify(request.properties)}`;
+    const view = this.views.getLoaded(request.viewId);
+    if (view === undefined) {
+      // Keep ADO visible while the optional bundle downloads; a blank overlay is worse than a brief
+      // continuation of the native query page on a slow connection.
+      this.restore();
+      void this.views.load(request.viewId).then(
+        (loadedView) => {
+          if (generation !== this.requestGeneration || loadedView === undefined) return;
+          this.show(request, loadedView, signature);
+        },
+        (error: unknown) => {
+          if (generation !== this.requestGeneration) return;
+          if (this.services) {
+            this.services.logger.error(`Could not load enhanced view ${request.viewId}`, error);
+          } else {
+            console.error(
+              `[content/query-page] Could not load enhanced view ${request.viewId}`,
+              error,
+            );
+          }
+          this.restore();
+        },
+      );
+      return;
+    }
+    this.show(request, view, signature);
+  }
+
+  private show(request: EnhancedViewRequest, view: EnhancedView, signature: string): void {
     this.mount();
     if (signature !== this.signature || (this.host && this.host.childElementCount === 0)) {
-      this.renderView(request);
+      this.renderView(request, view);
       this.signature = signature;
     }
     this.keepMounted();
@@ -148,6 +182,7 @@ export class EnhancedViewSurface {
     this.observedMain = undefined;
     this.style?.remove();
     this.style = undefined;
+    this.disposeRenderedView();
     this.host?.remove();
     this.host = undefined;
     this.signature = undefined;
@@ -239,22 +274,31 @@ export class EnhancedViewSurface {
     }
   }
 
-  private renderView(request: EnhancedViewRequest): void {
-    const view = getEnhancedView(request.viewId);
-    if (!view || !this.host) {
+  private renderView(request: EnhancedViewRequest, view: EnhancedView): void {
+    if (!this.host) {
       return;
     }
     // Replace any previously rendered view wholesale, so swapping the active view never stacks
     // stale DOM. textContent = "" is the cheapest reliable clear.
+    this.disposeRenderedView();
     this.host.textContent = "";
-    this.host.append(
-      view.render({
-        doc: this.doc,
-        queryId: request.queryId,
-        properties: request.properties,
-        services: this.services,
-      }),
-    );
+    const root = view.render({
+      doc: this.doc,
+      queryId: request.queryId,
+      properties: request.properties,
+      services: this.services,
+    });
+    this.renderedView = view;
+    this.renderedRoot = root;
+    this.host.append(root);
+  }
+
+  private disposeRenderedView(): void {
+    if (this.renderedView && this.renderedRoot) {
+      this.renderedView.dispose?.(this.renderedRoot);
+    }
+    this.renderedView = undefined;
+    this.renderedRoot = undefined;
   }
 
   // Azure DevOps re-renders its page tree after load and silently drops foreign nodes, so a one-time

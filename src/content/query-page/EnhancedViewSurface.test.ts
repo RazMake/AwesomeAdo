@@ -1,7 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { normalizeMarkerTags } from "../../common/settings/ExtensionSettings";
-import type { EnhancedViewServices } from "../../common/view-common/EnhancedView";
+import type { EnhancedView, EnhancedViewServices } from "../../common/view-common/EnhancedView";
+import {
+  createEnhancedViewRegistry,
+  type EnhancedViewRegistry,
+} from "../views/enhancedViewRegistry";
+import { projectTrackingView } from "../views/project-tracking/ProjectTrackingView";
+import { sprintView } from "../views/sprint/SprintView";
 
 import { EnhancedViewSurface, type EnhancedViewRequest } from "./EnhancedViewSurface";
 
@@ -22,6 +28,13 @@ const styleEl = (): HTMLElement | null => document.getElementById(STYLE_ID);
 const hostEl = (): HTMLElement | null => document.getElementById(HOST_ID);
 const titleText = (): string | null =>
   document.querySelector(`#${HOST_ID} .awesomeado-view__title`)?.textContent ?? null;
+
+const loadedRegistry: EnhancedViewRegistry = {
+  ids: [sprintView.id, projectTrackingView.id],
+  has: (id) => id === sprintView.id || id === projectTrackingView.id,
+  getLoaded: (id) => (id === sprintView.id ? sprintView : projectTrackingView),
+  load: (id) => Promise.resolve(id === sprintView.id ? sprintView : projectTrackingView),
+};
 
 // Shared across the sibling describes below so each split group reuses one setup with zero
 // duplication (jscpd threshold is 0).
@@ -113,6 +126,7 @@ describe("EnhancedViewSurface - rendering", () => {
   });
 
   it("shows different text for a different view type", () => {
+    surface = new EnhancedViewSurface(document, undefined, loadedRegistry);
     surface.apply(sprint);
     expect(titleText()).toBe("Sprint View");
 
@@ -157,6 +171,28 @@ describe("EnhancedViewSurface - rendering", () => {
     expect(hostEl()).toBeNull();
   });
 
+  it("does not let a stale lazy renderer replace a newer request", async () => {
+    let resolveTracking: ((view: typeof projectTrackingView) => void) | undefined;
+    const registry = createEnhancedViewRegistry(
+      () =>
+        new Promise((resolve) => {
+          resolveTracking = resolve;
+        }),
+    );
+    surface = new EnhancedViewSurface(document, undefined, registry);
+
+    surface.apply(tracking);
+    expect(hostEl()).toBeNull();
+    surface.apply(sprint);
+    resolveTracking?.(projectTrackingView);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(titleText()).toBe("Sprint View");
+  });
+});
+
+describe("EnhancedViewSurface - restoration", () => {
   it("restores ADO by removing both the style and the host", () => {
     surface.apply(sprint);
     expect(styleEl()).toBeTruthy();
@@ -165,6 +201,31 @@ describe("EnhancedViewSurface - rendering", () => {
     surface.apply(null);
     expect(styleEl()).toBeNull();
     expect(hostEl()).toBeNull();
+  });
+
+  it("disposes a renderer's root before restoring ADO", () => {
+    let disposedRoot: HTMLElement | undefined;
+    const disposableView: EnhancedView = {
+      id: "disposable",
+      render: (context) => context.doc.createElement("section"),
+      dispose: (root) => {
+        disposedRoot = root;
+      },
+    };
+    const registry: EnhancedViewRegistry = {
+      ids: [disposableView.id],
+      has: (id) => id === disposableView.id,
+      getLoaded: () => disposableView,
+      load: () => Promise.resolve(disposableView),
+    };
+    surface = new EnhancedViewSurface(document, undefined, registry);
+    surface.apply({ viewId: disposableView.id, queryId: "q1", properties: {} });
+    const renderedRoot = hostEl()?.firstElementChild;
+
+    surface.apply(null);
+
+    expect(disposedRoot).toBe(renderedRoot);
+    expect(disposedRoot?.isConnected).toBe(false);
   });
 });
 
@@ -241,7 +302,7 @@ describe("EnhancedViewSurface - keep-alive", () => {
       currentTeam: () => null,
       openDiagnosticsLog: () => {},
     };
-    const surfaceWithServices = new EnhancedViewSurface(document, fakeServices);
+    const surfaceWithServices = new EnhancedViewSurface(document, fakeServices, loadedRegistry);
 
     // The surface with services should still apply/restore correctly.
     surfaceWithServices.apply(sprint);

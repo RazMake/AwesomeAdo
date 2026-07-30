@@ -4316,6 +4316,27 @@ describe("ProjectTrackingView - notes toggle, once a panel has been opened", () 
   });
 });
 
+describe("ProjectTrackingView - notes cache across repaints", () => {
+  it("reuses the loaded discussion when ordering repaints every row", async () => {
+    const loadNotes = vi.fn(async () => ({
+      notes: [fixtureNote(1, "2026-07-24T09:00:00Z")],
+      currentUser: null,
+      error: null,
+    }));
+    const root = await renderNotesBoard({}, { noteLoader: { loadNotes } });
+    notesToggleOf(root).click();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    pickOrderingPolicy(root, "title");
+    await Promise.resolve();
+
+    expect(loadNotes).toHaveBeenCalledTimes(1);
+    expect(root.querySelectorAll(".awesomeado-note")).toHaveLength(1);
+  });
+});
+
 describe("ProjectTrackingView — @-mentions in descriptions", () => {
   const ADA = "11111111-2222-3333-4444-555555555555";
 
