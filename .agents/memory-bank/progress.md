@@ -44,6 +44,8 @@ This is a flattened snapshot of what exists now, not a build log.
   Vitest with ≥ 85% coverage on `src/**`, and workflow schema validation.
 - **Tooling**: VS Code tasks/launch, husky `pre-commit`/`pre-push`, esbuild build, packaging, and a
   GitHub Actions CI/release pipeline with changelog-validated versioning.
+- **Marketplace source material**: public privacy policy; Chrome/Edge listing, disclosure,
+  permission-justification, and certification text; and a validated 128x128 listing icon.
 
 ## Pending (owned outside the coding agents)
 
@@ -51,4 +53,8 @@ This is a flattened snapshot of what exists now, not a build log.
   binding/unbinding, enhanced ↔ standard toggling, SPA navigation, persistence, and cross-device
   sync.
 - **Release-trust activation** (org owner): organization controls, release baseline, and store
-  credentials for the first official `v0.1` release.
+  credentials for the first official `v0.1` release. The current repository owner is a personal
+  account, but the workflow explicitly requires organization-owned tag rulesets; choose a repository
+  transfer or a deliberate personal-repository trust-model change first.
+- **Marketplace visuals and items** (developer): create both initial store listings. Chrome still
+  needs a 1280x800 screenshot and 440x280 small promotional tile; Edge permits omitting them.

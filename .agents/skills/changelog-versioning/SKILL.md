@@ -10,9 +10,10 @@ Read [AGENTS.md](../../../AGENTS.md) before proceeding. Mandatory rules are in
 
 ## Proposing a changelog bullet
 
-Every logical user-visible change proposes one bullet for `## Next Version` in `ChangeLog.md`.
-Parallel workers **return** the bullet in their §4.1 response; they do not write to `ChangeLog.md`
-directly (only the serial coordinator edits shared files). Format:
+Every logical user-visible change proposes changelog input for `## Next Version` in `ChangeLog.md`.
+Parallel workers **return** the proposed input in their §4.1 response; they do not write to
+`ChangeLog.md` directly (only the serial coordinator edits shared files). Internal-only work returns
+`None`. Format:
 
 ```markdown
 ## Next Version
@@ -20,7 +21,18 @@ directly (only the serial coordinator edits shared files). Format:
 - <concise description of what changed and why it matters to users or operators>
 ```
 
-Do not combine multiple independent changes in one bullet.
+Write release notes at the level users experience them:
+
+- Use one bullet per coherent capability or meaningful fix.
+- Combine related implementation changes and minor UX rearrangements into the capability they
+  support; do not mirror development chronology.
+- Keep independent user-visible outcomes as separate bullets.
+- Exclude refactors, tests, tooling, and internal architecture unless users or operators experience
+  a changed outcome.
+- For an initial release, summarize the finished product rather than listing each development step.
+
+The serial coordinator may merge, rewrite, or omit worker proposals to enforce this release-level
+shape.
 
 ## Version scheme
 
@@ -49,6 +61,8 @@ Maximum Build component: 65 535. Bump Major or Minor before that limit.
 
 Before creating a release:
 
+- Keep `## Next Version` as the staging section and use `Major.Minor` headings for released
+  sections, never the full `Major.Minor.Build` package version.
 - `ChangeLog.md` must contain exactly one `## <base>` section (e.g., `## 0.1`) with at least one
   `- ` bullet before the next `## ` heading.
 - `package.json` version must be `Major.Minor.Patch` (e.g., `0.1.0`).

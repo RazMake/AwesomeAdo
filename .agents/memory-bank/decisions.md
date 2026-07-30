@@ -972,3 +972,17 @@ nodeMatchesChange`). Copied here, that makes an activity pill drag in items belo
   keeps the full path as its tooltip and value, and the selected `System.AreaPath` is persisted through
   the board's existing `WorkItemWriteQueue` with the current path as `baseValue`; the model repaints
   only after the write commits.
+
+## ADR-054: Changelog entries describe release outcomes, not development chronology
+
+- Decision: `## Next Version` stages unreleased notes, and released headings use the developer-owned
+  `Major.Minor` base rather than the full CI-generated package version. The changelog uses one bullet
+  per coherent user-visible capability or meaningful fix. Related implementation changes and minor
+  UX rearrangements are consolidated into that outcome; refactors, tests, tooling, and internal
+  architecture are omitted unless users or operators experience a changed result. An initial release
+  summarizes the finished product instead of preserving its development history.
+- Rationale: Store customers and operators need a scannable account of what a release enables or
+  fixes. Mirroring every implementation step makes meaningful changes harder to find, overstates
+  cosmetic iteration, and leaves an initial release reading like an internal build log. Base-version
+  headings also match the release validator and the official `vMajor.Minor` release contract while
+  CI remains free to assign the `Build` component.

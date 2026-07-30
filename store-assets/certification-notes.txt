@@ -1,0 +1,21 @@
+AwesomeADO runs only on hosted Azure DevOps at https://dev.azure.com/* and
+https://*.visualstudio.com/*. It requires an Azure DevOps account with access to a project and a saved
+Tree of work items query. No credentials are included in this submission.
+
+Suggested test flow:
+
+1. Sign in to a hosted Azure DevOps organization and open a saved query at a single-query URL.
+2. Confirm the AwesomeADO button appears in the Azure DevOps command bar.
+3. Open AwesomeADO Options and configure the current team, at least one area path, board columns, and
+   a work item type mapping.
+4. Bind the saved query to Project Tracking.
+5. Return to the query and confirm the Project Tracking board loads the query tree.
+6. Exercise filters and expand a work item's description or discussion.
+7. Use an inline control on a test work item and confirm the change appears in Azure DevOps.
+8. Switch to Azure DevOps' standard view from the AwesomeADO menu and then switch back.
+9. Open Options > Diagnostics to inspect or clear the device-local activity log.
+
+Sprint View is intentionally included as a preview placeholder in this release. Project Tracking is
+the functional enhanced view.
+
+The extension uses no remotely hosted code, analytics, advertising, or developer-operated backend.

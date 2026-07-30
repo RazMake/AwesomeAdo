@@ -211,5 +211,11 @@ The extension is feature-complete for its current scope:
 
 - Authenticated in-browser validation in Edge and Chrome for Testing (load, toggle, SPA nav,
   persistence, sync).
-- Release-trust activation for the first official `v0.1` release (org controls, baseline, store
-  credentials).
+- Marketplace submission setup: the privacy policy, listing/disclosure/certification text, and
+  128x128 listing icon are ready; Chrome still requires a 1280x800 screenshot and 440x280 small
+  promotional tile. Both initial store items and their API credentials remain developer-owned.
+- Release-trust activation for the first official `v0.1` release. Live `main` still carries the
+  disabled baseline marker, and the public repository is owned by the personal `RazMake` account
+  while the workflow requires organization-owned tag rulesets. The developer must choose between
+  transferring the repository to an organization and adapting the trust model for a personal
+  repository before the release gate can pass.

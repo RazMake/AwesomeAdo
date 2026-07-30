@@ -289,9 +289,17 @@ These are **non-negotiable**.
 - The **developer** owns `Major.Minor` and `versionBuildOffset`.
 - **CI** computes `Build = github.run_number - versionBuildOffset`. Full version: `Major.Minor.Build`.
 - Initial version base: `0.1`.
-- Every logical change proposes a bullet for `## Next Version` in `ChangeLog.md`. Parallel workers
-  return the bullet in their §4.1 response; the serial coordinator consolidates and writes bullets
-  at wave barriers.
+- `## Next Version` is the staging section; released section headings use `Major.Minor`, never the
+  full `Major.Minor.Build` package version.
+- Changelog entries describe **user-visible release outcomes**, not implementation chronology. Use
+  one bullet per coherent capability or meaningful fix; consolidate related work and minor UX
+  rearrangements into that capability's bullet.
+- Exclude refactors, tests, tooling, and internal architecture unless they change what users or
+  operators experience. An initial-release section summarizes the finished product rather than its
+  development history.
+- Every logical user-visible change proposes changelog input for `## Next Version`; internal-only
+  work returns `None`. Parallel workers return that input in their §4.1 response, and the serial
+  coordinator consolidates it into release-level bullets at wave barriers.
 - When the developer bumps Major or Minor:
   1. Set `versionBuildOffset` to the latest CI workflow run number visible before the bump.
   2. Rename `## Next Version` to `## X.Y`.

@@ -1,0 +1,19 @@
+storage
+Stores AwesomeADO configuration and query bindings in browser sync storage so the user's setup can
+persist and follow the user's browser account. Stores a bounded troubleshooting log in device-local
+extension storage.
+
+webNavigation
+Detects top-frame navigation into, out of, and between Azure DevOps Query routes, including Azure
+DevOps single-page navigation, so AwesomeADO can attach or remove its controls at the correct time.
+AwesomeADO does not build or retain a general browsing history.
+
+scripting
+Runs fixed, packaged functions in the current Azure DevOps tab's MAIN world so user-requested Azure
+DevOps API reads and writes can use the tab's existing signed-in session. The extension does not load
+or execute remote code.
+
+Host access: https://dev.azure.com/* and https://*.visualstudio.com/*
+Limits the content script and Azure DevOps API operations to hosted Azure DevOps organizations. This
+access is required to recognize Query pages, render enhanced views, read work items and discussions,
+and submit changes explicitly requested by the user. No other sites are accessed.

@@ -1,0 +1,37 @@
+Dashboard data categories to select
+
+- Personally identifiable information: AwesomeADO reads Azure DevOps display names, account names or
+  email addresses, profile images, and user identifiers for assignees, authors, and project members.
+- Personal communications: AwesomeADO reads and, when the user requests it, writes work item
+  descriptions and Azure DevOps discussion comments.
+- Website content: AwesomeADO reads Azure DevOps query results, work item fields, project metadata,
+  descriptions, tags, and discussions to render its enhanced views.
+- Web history: AwesomeADO processes supported Azure DevOps URLs and query identifiers to recognize the
+  active Query route. It does not build, retain, or transmit a general browsing history.
+
+Storage and transmission
+
+- Extension configuration and query bindings are stored in browser sync storage. The browser provider
+  may synchronize them to the user's other signed-in browser instances.
+- A bounded diagnostics log is stored only in device-local extension storage.
+- Azure DevOps data is sent only to the hosted Azure DevOps organization the user is visiting, to
+  provide reads and changes requested through AwesomeADO.
+- No data is sent to the AwesomeADO developer, analytics providers, advertising networks, or data
+  brokers.
+
+Remote code
+
+Select: No, I am not using remote code.
+
+Limited-use certifications
+
+Certify that AwesomeADO:
+
+- does not sell or transfer user data to third parties outside approved uses;
+- does not use or transfer user data for purposes unrelated to its single purpose;
+- does not use or transfer user data to determine creditworthiness or for lending; and
+- limits human access because the developer does not receive user data.
+
+Do not select health information, financial and payment information, authentication information,
+location, or user activity unless the store dashboard's current definitions materially differ from
+the behavior described above.

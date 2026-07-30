@@ -1,0 +1,24 @@
+AwesomeADO enhances saved Azure DevOps queries with configurable, per-query work-tracking views.
+
+The Project Tracking view turns a tree query into a focused board while keeping Azure DevOps as the
+source of truth. Browse work by sprint, area path, Feature Crew, recent activity, and blocker markers;
+order items by importance, title, or ETA; expand discussions and descriptions; and see compact child
+rollups without leaving the query.
+
+Use inline controls to update status, priority, assignee, ETA, sprint, area path, title, description,
+and blocker markers. You can also edit Azure DevOps discussions, use Markdown and @mentions, and drag
+items to reorder them or change their place in the configured hierarchy. Changes are written directly
+to the Azure DevOps organization you are signed in to.
+
+Each saved query can have its own AwesomeADO binding and settings. Switch temporarily between the
+enhanced view and Azure DevOps' standard view, or disable an enhancement without changing the query
+itself. Configuration can sync through browser sync storage and can also be exported and imported by
+the user.
+
+AwesomeADO includes Dark, Light, Blue, and Follow Azure DevOps themes, plus a device-local Diagnostics
+log for troubleshooting. The extension has no advertising, analytics, or developer-operated data
+service.
+
+The current release includes Sprint View as a preview placeholder; Project Tracking is the functional
+enhanced view. AwesomeADO supports hosted Azure DevOps at dev.azure.com and *.visualstudio.com. It does
+not support on-premises Azure DevOps Server.
