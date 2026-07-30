@@ -135,5 +135,10 @@ describe("RECENT_ACTIVITY_FILTERS", () => {
       "Newly updated",
       "New notes",
     ]);
+    expect(RECENT_ACTIVITY_FILTERS.map((filter) => filter.background)).toEqual([
+      "var(--activity-created-background)",
+      "var(--activity-updated-background)",
+      "var(--activity-notes-background)",
+    ]);
   });
 });

@@ -43,6 +43,10 @@ describe("renderActivityFilterPills", () => {
     expect(created?.getAttribute("aria-pressed")).toBe("false");
     expect(updated?.getAttribute("aria-pressed")).toBe("true");
     expect(updated?.classList.contains("awesomeado-activity-pill--selected")).toBe(true);
+    expect(updated?.style.color).toBe("var(--activity-foreground)");
+    expect(updated?.style.background).toBe("var(--activity-updated-background)");
+    expect(updated?.getAttribute("style")).toContain("var(--tag-selected-border)");
+    expect(created?.getAttribute("style")).toContain("var(--activity-created-background)");
   });
 
   it("lights an unlit pill and reports the caller's own set back", () => {

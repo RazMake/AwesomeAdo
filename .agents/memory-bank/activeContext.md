@@ -25,8 +25,8 @@ The extension is feature-complete for its current scope:
   descriptions and notes — rendered as allowlist-rebuilt DOM, with attachment images and
   `@`-mentions; ADR-044), plus `TextEditor` (the one themed in-place editor — one-line or multi-line
   Markdown — behind every note, title and description edit; multi-line editors own bold/italic/link
-  shortcuts and typed `@<localId>` identity suggestions, ADR-051), `MarkerPill` (the fixed-color pill for a
-  recognized condition — amber blocked / red blocked-by-another-team / violet interrupt — shared by
+  shortcuts and typed `@<localId>` identity suggestions, ADR-051), `MarkerPill` (the theme-owned
+  semantic pill for a recognized condition — blocked / blocked-by-another-team / interrupt — shared by
   the tagging commands and the board's filter row) and `ItemContextMenu` (the shared
   per-item right-click menu: Copy Item ID / Copy ADO Url / Open in ADO, the last accented, then a
   rule and whatever commands the CALLER supplies for that item as `run` / `panel` / `submenu`; a
@@ -65,7 +65,7 @@ The extension is feature-complete for its current scope:
   and staged header expansion controls:
   `+` opens parent rows before notes, while `−` closes notes/descriptions before parent rows. An editable `PriorityBadge`
   immediately after Status (all priorities share one gray background, with a darker solid fill/edge
-  on dark themes; P0/P1 use literal, unmixed red/orange text selected per scheme, later priorities
+  on dark themes; P0/P1 use theme-owned, unmixed red/orange text, later priorities
   split at P2: P2 keeps extra-bold but uses a restrained scheme-aware gray while P3+ uses muted secondary text at normal weight;
   all labels use compact padding and close row spacing; popup
   options reuse the same chip format and omit the current value; reads and writes share

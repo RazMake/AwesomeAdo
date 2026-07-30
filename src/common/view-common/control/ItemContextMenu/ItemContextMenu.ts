@@ -107,14 +107,11 @@ const MENU_Z_INDEX = 2147483647;
 /**
  * The wash the command under the pointer takes, and the menu's own edge.
  *
- * Fixed translucent greys, NOT `--palette-neutral-4` / `--palette-neutral-20`: those variables are
- * intentionally subtle surface washes, while the highlighted command and menu edge must be told
- * apart from their surface on every palette. Grey at a low alpha composites the other way on both,
- * darkening a light surface and lightening a dark one. Same rule as the AssignedTo result highlight,
- * the EtaBadge popup chrome and the rollup checkbox's frame.
+ * Dedicated control roles keep the highlighted command and menu edge distinct from their surface
+ * on every palette.
  */
-const ROW_HOVER_BACKGROUND = "rgba(128,128,128,0.28)";
-const MENU_BORDER = "1px solid rgba(128,128,128,0.5)";
+const ROW_HOVER_BACKGROUND = "var(--control-background-hover)";
+const MENU_BORDER = "1px solid var(--control-border-strong)";
 
 /**
  * The menu surface's corner radius, the inset its rows sit in, and the rows' own radius.
@@ -137,13 +134,9 @@ const WINDOW_MARGIN_PX = 8;
  * rather than in the theme's text color — colour is what separates "this changes tabs" from the two
  * commands that quietly fill the clipboard and leave you where you are.
  *
- * One fixed blue cannot carry that on every theme: the shade that reads on a light surface goes
- * muddy on a dark one. `light-dark()` picks per surface, which works because the view host always
- * declares a concrete `color-scheme`. The flat blue is assigned FIRST as the fallback, so an engine
- * that cannot parse `light-dark()` drops only the second assignment and still gets an accent.
+ * The theme's accent role keeps this command distinct on every concrete palette.
  */
-const OPEN_COMMAND_COLOR = "rgb(0,120,212)";
-const OPEN_COMMAND_COLOR_BY_SCHEME = "light-dark(rgb(0,90,158), rgb(96,175,255))";
+const OPEN_COMMAND_COLOR = "var(--open-command-foreground)";
 
 /**
  * One command row. Every command is a `<button>`, including the one that opens a tab: an `<a>` would
@@ -176,7 +169,7 @@ function renderCommandRow(doc: Document, label: string, content?: Node[]): HTMLB
     "font:inherit",
     "font-size:12px",
     "line-height:1.6",
-    "color:var(--text-primary-color, #323130)",
+    "color:var(--text-primary-color)",
     "white-space:nowrap",
     "cursor:pointer",
   ].join(";");
@@ -252,7 +245,6 @@ function renderOpenCommand(
 ): HTMLButtonElement {
   const row = renderCommandRow(doc, OPEN_LABEL);
   row.style.color = OPEN_COMMAND_COLOR;
-  row.style.color = OPEN_COMMAND_COLOR_BY_SCHEME;
   if (url === null) {
     return makeInert(row);
   }
@@ -282,10 +274,10 @@ function buildMenu(
     "top:100%",
     "left:0",
     "margin-top:4px",
-    "background:var(--callout-background-color, var(--background-color, #fff))",
+    "background:var(--callout-background-color)",
     `border:${MENU_BORDER}`,
     `border-radius:${MENU_RADIUS_PX}px`,
-    "box-shadow:0 2px 8px rgba(0,0,0,0.15)",
+    "box-shadow:0 2px 8px var(--shadow-subtle)",
     "min-width:160px",
     // Sized from its OWN rows, not shrink-to-fit. The menu is absolutely positioned inside a
     // zero-width anchor, so "available width" is nothing at all: it collapsed onto the 160px floor
@@ -331,7 +323,7 @@ function renderSeparator(doc: Document): HTMLElement {
   const rule = doc.createElement("div");
   rule.className = "awesomeado-item-menu__separator";
   rule.setAttribute("role", "separator");
-  // The same fixed grey the menu's own edge uses, for the same Follow-ADO reason.
+  // The separator shares the menu edge role so the two groups read as one surface.
   rule.style.cssText = [
     "height:0",
     `border-top:${MENU_BORDER}`,
@@ -431,10 +423,10 @@ function renderSubmenu(
       "position:absolute",
       "left:100%",
       `top:-${SUBMENU_TOP_OFFSET_PX}px`,
-      "background:var(--callout-background-color, var(--background-color, #fff))",
+      "background:var(--callout-background-color)",
       `border:${MENU_BORDER}`,
       `border-radius:${MENU_RADIUS_PX}px`,
-      "box-shadow:0 2px 8px rgba(0,0,0,0.15)",
+      "box-shadow:0 2px 8px var(--shadow-subtle)",
       "min-width:160px",
       // Same reason as the menu itself: a flyout of sprint labels is far wider than its floor.
       "width:max-content",

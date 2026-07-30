@@ -78,11 +78,11 @@ function buildReasonsPopup(options: MarkerReasonsPillOptions): HTMLElement {
     "white-space:normal",
     "text-align:left",
     "font-size:11px",
-    "background:var(--callout-background-color, var(--background-color, #fff))",
-    "border:1px solid rgba(128,128,128,0.45)",
+    "background:var(--callout-background-color)",
+    "border:1px solid var(--control-border-emphasis)",
     "border-radius:3px",
-    "box-shadow:0 4px 12px rgba(0,0,0,0.18)",
-    "color:var(--text-primary-color, #323130)",
+    "box-shadow:0 4px 12px var(--popup-shadow-strong)",
+    "color:var(--text-primary-color)",
   ].join(";");
 
   const notes = renderNotesPanel({

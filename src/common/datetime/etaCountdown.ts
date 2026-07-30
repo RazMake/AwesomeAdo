@@ -12,7 +12,7 @@ export interface EtaCountdown {
   text: string;
   /** The severity bucket this ETA falls into, based on the day delta. */
   severity: EtaSeverity;
-  /** The hex color for this severity (no # prefix). */
+  /** The theme color role for this severity. */
   color: string;
 }
 
@@ -22,10 +22,10 @@ export interface EtaCountdown {
 // upcoming: 7 <= delta <= 27
 // distant: delta >= 28
 const SEVERITY_COLORS: Record<EtaSeverity, string> = {
-  overdue: "#d13438",
-  soon: "#ca5010",
-  upcoming: "#c19c00",
-  distant: "#8a8886",
+  overdue: "var(--eta-overdue)",
+  soon: "var(--eta-soon)",
+  upcoming: "var(--eta-upcoming)",
+  distant: "var(--eta-distant)",
 };
 
 /**
@@ -35,11 +35,11 @@ const SEVERITY_COLORS: Record<EtaSeverity, string> = {
  * Returns a human text, severity bucket, and color. Deterministic: same inputs always yield the same result.
  *
  * Examples (assume now = 2026-07-24T10:00:00-07:00 PST):
- * - targetIso = "2026-07-21" (3 days ago) → { text: "overdue by 3 days", severity: "overdue", color: "#d13438" }
- * - targetIso = "2026-07-24" (today) → { text: "due today", severity: "soon", color: "#ca5010" }
- * - targetIso = "2026-07-26" (2 days) → { text: "in 2 days", severity: "soon", color: "#ca5010" }
- * - targetIso = "2026-08-10" (17 days) → { text: "in 2 weeks 3 days", severity: "upcoming", color: "#c19c00" }
- * - targetIso = "invalid" → { text: "", severity: "distant", color: "#8a8886" }
+ * - targetIso = "2026-07-21" (3 days ago) → { text: "overdue by 3 days", severity: "overdue", color: "var(--eta-overdue)" }
+ * - targetIso = "2026-07-24" (today) → { text: "due today", severity: "soon", color: "var(--eta-soon)" }
+ * - targetIso = "2026-07-26" (2 days) → { text: "in 2 days", severity: "soon", color: "var(--eta-soon)" }
+ * - targetIso = "2026-08-10" (17 days) → { text: "in 2 weeks 3 days", severity: "upcoming", color: "var(--eta-upcoming)" }
+ * - targetIso = "invalid" → { text: "", severity: "distant", color: "var(--eta-distant)" }
  *
  * @param targetIso The target date (ISO 8601); its PST midnight is compared to now's PST midnight.
  * @param now The reference point (current time); injected so tests control the baseline.

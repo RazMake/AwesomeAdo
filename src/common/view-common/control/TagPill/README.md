@@ -30,13 +30,13 @@ const toggle = renderTagPill(document, {
 - **`interactive?: boolean`** — When `true`, renders a `<button>` filter toggle; otherwise a static
   `<span>` label.
 - **`selected?: boolean`** — When interactive, whether this pill is part of the active filter
-  (full-strength + white ring vs. dimmed).
+  (full-strength + themed ring vs. dimmed).
 - **`onToggle?: () => void`** — When interactive, called on click.
 
 ### `renderTagPill(doc, options): HTMLElement`
 
 Renders the pill. A real tag gets a bright, deterministic per-tag color (same tag → same color); the
-untagged pill gets a fixed grey.
+untagged pill gets the theme's neutral tag background.
 
 ### `tagPillBackground(tag): string`
 
@@ -50,5 +50,5 @@ The literal (`"??"`) shown for a missing tag.
 
 - **Deterministic color:** the tag's hue is derived from a small string hash, so the palette is
   unbounded (teams invent their own tags) yet stable across loads.
-- **Theme-agnostic:** bright HSL fills and white text read on light, dark, and Follow-ADO themes; the
-  untagged pill uses a fixed grey rather than a theme token.
+- **Theme-aware framing:** real tag hues remain runtime-generated data, while text, the selected ring,
+  and the untagged background come from the active theme.

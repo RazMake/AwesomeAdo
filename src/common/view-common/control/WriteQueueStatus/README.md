@@ -95,10 +95,9 @@ Renders the indicator.
 - **Stylesheet-free SMIL spinner:** The spinner is a self-contained inline SVG animated via
   `<animateTransform>` (SMIL), so it spins deterministically without any `@keyframes` or injected
   CSS. The stroke uses `currentColor` to inherit the themed accent text color.
-- **Theme-aware:** Every color is an ADO CSS custom property with a literal fallback — the saving
-  text uses `var(--communication-foreground, var(--text-primary-color, #323130))` and the failed chip
-  `var(--palette-error-background, #c50f1f)` with `var(--text-on-communication-background, #ffffff)`
-  — so both states read on light, dark, blue and "Follow ADO" alike.
+- **Theme-aware:** Every color is a role in the complete AwesomeADO theme contract. Saving uses
+  `--communication-foreground`; failure uses `--palette-error-background`,
+  `--text-on-communication-background`, `--write-status-border`, and `--write-status-shadow`.
 - **Robust counts:** Negative and non-finite counts are normalized to idle **where they enter** the
   control, not at render time, so a bad value cannot latch and silently suppress a later pulse.
 - **HTML injection safety:** The label is set via `textContent`, never `innerHTML`.

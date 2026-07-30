@@ -14,9 +14,8 @@ export interface RecentActivityFilter {
   kind: RecentActivityKind;
   label: string;
   /**
-   * The pill's fill. Fixed colors rather than theme tokens for the same reason the untagged tag pill
-   * uses one: under "Follow ADO" a surface token can collapse into the page color and erase the pill
-   * — and these three have to stay distinguishable from each other on every theme.
+   * The pill's semantic theme role. The three dedicated roles keep the activities distinguishable
+   * without making this control own palette values.
    */
   background: string;
   /** Completed with the window ("… in the last 24 hours") to explain what the pill narrows to. */
@@ -31,19 +30,19 @@ export const RECENT_ACTIVITY_FILTERS: readonly RecentActivityFilter[] = [
   {
     kind: "created",
     label: "Newly created",
-    background: "hsl(140, 55%, 34%)",
+    background: "var(--activity-created-background)",
     describes: "Items created",
   },
   {
     kind: "updated",
     label: "Newly updated",
-    background: "hsl(210, 60%, 40%)",
+    background: "var(--activity-updated-background)",
     describes: "Items changed",
   },
   {
     kind: "notes",
     label: "New notes",
-    background: "hsl(280, 45%, 44%)",
+    background: "var(--activity-notes-background)",
     describes: "Items that gained a discussion note",
   },
 ];

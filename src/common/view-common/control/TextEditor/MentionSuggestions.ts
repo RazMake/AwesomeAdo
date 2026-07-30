@@ -221,7 +221,7 @@ class MentionSuggestionController implements MentionSuggestions {
   private paintHighlight(): void {
     this.rows.forEach((row, index) => {
       const selected = index === this.highlighted;
-      row.style.background = selected ? "rgba(128,128,128,0.28)" : "transparent";
+      row.style.background = selected ? "var(--control-background-hover)" : "transparent";
       row.setAttribute("aria-selected", selected ? "true" : "false");
     });
     this.rows[this.highlighted]?.scrollIntoView?.({ block: "nearest" });
@@ -351,10 +351,10 @@ function buildPopup(doc: Document): PopupParts {
     "max-width:min(320px, 100%)",
     "padding:4px",
     "z-index:1001",
-    "background:var(--callout-background-color, var(--background-color, #fff))",
-    "border:1px solid rgba(128,128,128,0.45)",
+    "background:var(--callout-background-color)",
+    "border:1px solid var(--control-border-strong)",
     "border-radius:3px",
-    "box-shadow:0 2px 8px rgba(0,0,0,0.15)",
+    "box-shadow:0 2px 8px var(--shadow-subtle)",
   ].join(";");
 
   const list = doc.createElement("ul");

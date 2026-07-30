@@ -9,20 +9,25 @@ interface MarkerPillPaint {
 /**
  * How each recognized condition is painted, everywhere it is shown.
  *
- * FIXED colors, deliberately not theme tokens: a marker pill is a *warning*, and its whole job is to
- * be told apart from the surface it sits on. Under "Follow ADO" the neutral tokens fall through to
- * ADO's own surface colors, which is exactly what the pill must not blend into — the same trap the
- * context menu's hover wash and the rollup checkbox's frame document. The three hues are also chosen
- * to survive a dark surface AND a light one without changing, so one pill means one thing on every
- * theme.
+ * Dedicated semantic theme roles keep each warning distinct from its surface and let future themes
+ * tune contrast without changing this control.
  *
  * Text color is per-hue rather than always white: white on the amber "blocked" fill is the one
  * combination here that drops under a readable contrast ratio, so that pill carries near-black.
  */
 const MARKER_PILL_PAINT: Record<WorkItemMarker, MarkerPillPaint> = {
-  blocked: { background: "rgb(214,126,20)", color: "#1a1a1a" },
-  blockedByOtherTeam: { background: "rgb(196,43,43)", color: "#ffffff" },
-  interrupt: { background: "rgb(124,58,183)", color: "#ffffff" },
+  blocked: {
+    background: "var(--marker-blocked-background)",
+    color: "var(--marker-blocked-foreground)",
+  },
+  blockedByOtherTeam: {
+    background: "var(--marker-other-background)",
+    color: "var(--marker-other-foreground)",
+  },
+  interrupt: {
+    background: "var(--marker-interrupt-background)",
+    color: "var(--marker-interrupt-foreground)",
+  },
 };
 
 /** How a marker names itself: the same wording the options page labels its row with. */
@@ -120,7 +125,7 @@ function asFilterToggle(
     "cursor:pointer",
     // The border is always present so toggling changes only color, never the pill's size — the same
     // dim/full-strength language the tag and activity pills beside it use.
-    selected ? "border:2px solid #fff" : "border:2px solid transparent",
+    selected ? "border:2px solid var(--tag-selected-border)" : "border:2px solid transparent",
     selected ? "opacity:1" : "opacity:0.55",
   ];
 }

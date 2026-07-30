@@ -52,7 +52,7 @@ export function renderBreadcrumbs(doc: Document, options: BreadcrumbsOptions): H
     "flex-wrap:wrap",
     "gap:4px",
     "font-size:10px",
-    "color:var(--text-secondary-color, #8a8886)",
+    "color:var(--text-secondary-color)",
   ].join(";");
 
   segments.forEach((segment, index) => {
@@ -78,7 +78,7 @@ export function renderBreadcrumbs(doc: Document, options: BreadcrumbsOptions): H
     // Themed foreground so the trail reads on both light and dark themes; only a real link is styled
     // (and hinted) as clickable.
     segmentEl.style.cssText = [
-      "color:var(--communication-foreground, #0078d4)",
+      "color:var(--communication-foreground)",
       "text-decoration:none",
       isLink ? "cursor:pointer" : "cursor:default",
     ].join(";");

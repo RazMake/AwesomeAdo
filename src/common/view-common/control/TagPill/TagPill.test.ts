@@ -52,8 +52,7 @@ describe("renderTagPill", () => {
   it("marks the selected interactive pill and rings it", () => {
     const pill = renderTagPill(document, { tag: "Alpha", interactive: true, selected: true });
     expect(pill.classList.contains("awesomeado-tag-pill--selected")).toBe(true);
-    // jsdom's CSSOM normalizes `#fff` → `rgb(255, 255, 255)`, so assert against the normalized form.
-    expect(pill.style.cssText).toContain("border: 2px solid rgb(255, 255, 255)");
+    expect(pill.style.cssText).toContain("border: 2px solid var(--tag-selected-border)");
   });
 
   it("dims an unselected interactive pill", () => {
@@ -69,7 +68,7 @@ describe("renderTagPill", () => {
 
   it("colors real tags brightly and the untagged pill grey", () => {
     expect(tagPillBackground("Alpha")).toContain("hsl(");
-    expect(tagPillBackground(null)).toContain("128,128,128");
-    expect(tagPillBackground("")).toContain("128,128,128");
+    expect(tagPillBackground(null)).toBe("var(--untagged-background)");
+    expect(tagPillBackground("")).toBe("var(--untagged-background)");
   });
 });

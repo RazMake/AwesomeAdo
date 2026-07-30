@@ -10,7 +10,7 @@ describe("renderEtaBadge - rendering and severity", () => {
     const badge = renderEtaBadge(document, { eta: null, now });
 
     expect(badge.textContent).toBe("No ETA");
-    expect(badge.style.color).toBe("var(--text-secondary-color, #8a8886)");
+    expect(badge.style.color).toBe("var(--text-secondary-color)");
     expect(badge.title).toBe("");
   });
 
@@ -28,7 +28,7 @@ describe("renderEtaBadge - rendering and severity", () => {
     const badge = renderEtaBadge(document, { eta: "", now });
 
     expect(badge.textContent).toBe("No ETA");
-    expect(badge.style.color).toBe("var(--text-secondary-color, #8a8886)");
+    expect(badge.style.color).toBe("var(--text-secondary-color)");
   });
 
   it("renders the ETA date with severity color for overdue", () => {
@@ -36,7 +36,7 @@ describe("renderEtaBadge - rendering and severity", () => {
     const badge = renderEtaBadge(document, { eta: "2026-07-21T00:00:00-07:00", now });
 
     expect(badge.textContent).toContain("ETA 07/21/2026");
-    expect(badge.style.color).toBe("rgb(209, 52, 56)"); // #d13438 as rgb
+    expect(badge.style.color).toBe("var(--eta-overdue)");
     expect(badge.dataset.severity).toBe("overdue");
     expect(badge.title).toContain("overdue");
   });
@@ -46,7 +46,7 @@ describe("renderEtaBadge - rendering and severity", () => {
     const badge = renderEtaBadge(document, { eta: "2026-07-26T00:00:00-07:00", now });
 
     expect(badge.textContent).toContain("ETA 07/26/2026");
-    expect(badge.style.color).toBe("rgb(202, 80, 16)"); // #ca5010 as rgb
+    expect(badge.style.color).toBe("var(--eta-soon)");
     expect(badge.dataset.severity).toBe("soon");
     expect(badge.title).toContain("in 2 days");
   });
@@ -56,7 +56,7 @@ describe("renderEtaBadge - rendering and severity", () => {
     const badge = renderEtaBadge(document, { eta: "2026-08-10T00:00:00-07:00", now });
 
     expect(badge.textContent).toContain("ETA 08/10/2026");
-    expect(badge.style.color).toBe("rgb(193, 156, 0)"); // #c19c00 as rgb
+    expect(badge.style.color).toBe("var(--eta-upcoming)");
     expect(badge.dataset.severity).toBe("upcoming");
     expect(badge.title).toContain("in 2 weeks 3 days");
   });
@@ -66,7 +66,7 @@ describe("renderEtaBadge - rendering and severity", () => {
     const badge = renderEtaBadge(document, { eta: "2026-09-12T00:00:00-07:00", now });
 
     expect(badge.textContent).toContain("ETA 09/12/2026");
-    expect(badge.style.color).toBe("rgb(138, 136, 134)"); // #8a8886 as rgb
+    expect(badge.style.color).toBe("var(--eta-distant)");
     expect(badge.dataset.severity).toBe("distant");
   });
 
@@ -192,8 +192,7 @@ describe("renderEtaBadge - editing interactions", () => {
 });
 
 describe("renderEtaBadge - popup chrome", () => {
-  // Theme neutrals are surface washes, so these assert that outline chrome carries its own stronger
-  // resolved color instead.
+  // jsdom does not decompose var-based border shorthands, so assert their source declarations.
   const openPopup = (eta: string | null): HTMLElement => {
     const badge = renderEtaBadge(document, { eta, now, onChange: () => {} });
     document.body.append(badge);
@@ -201,15 +200,13 @@ describe("renderEtaBadge - popup chrome", () => {
     return badge;
   };
 
-  it("borders the popup and the date input with a self-contained color", () => {
+  it("borders the popup and date input with the strong control border role", () => {
     const badge = openPopup(null);
 
     const popup = badge.querySelector<HTMLElement>(".awesomeado-eta__popup");
     const input = badge.querySelector<HTMLElement>(".awesomeado-eta__date");
     for (const element of [popup, input]) {
-      expect(element!.style.borderStyle).toBe("solid");
-      expect(element!.style.borderColor).not.toContain("var(");
-      expect(element!.style.borderColor).not.toBe("");
+      expect(element!.style.cssText).toContain("var(--control-border-strong)");
     }
 
     badge.remove();
@@ -219,15 +216,13 @@ describe("renderEtaBadge - popup chrome", () => {
     const badge = openPopup("2026-08-10T00:00:00-07:00");
 
     const clear = badge.querySelector<HTMLButtonElement>(".awesomeado-eta__clear")!;
-    expect(clear.style.borderStyle).toBe("solid");
-    expect(clear.style.borderColor).not.toContain("var(");
-    expect(clear.style.borderColor).not.toBe("");
+    expect(clear.style.cssText).toContain("var(--control-border)");
 
     const resting = clear.style.background;
-    expect(resting).not.toBe("");
+    expect(resting).toBe("var(--control-background-subtle)");
 
     clear.dispatchEvent(new MouseEvent("mouseenter"));
-    expect(clear.style.background).not.toBe(resting);
+    expect(clear.style.background).toBe("var(--control-background-hover)");
 
     clear.dispatchEvent(new MouseEvent("mouseleave"));
     expect(clear.style.background).toBe(resting);

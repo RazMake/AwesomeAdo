@@ -65,16 +65,16 @@ function buildStatusPopup(
 ): HTMLElement {
   const popup = doc.createElement("div");
   popup.className = "awesomeado-status__popup";
-  // Theme-aware colors: use ADO custom properties with fallbacks.
+  // Theme-aware colors come from the complete palette pinned by the extension host.
   popup.style.cssText = [
     "position:absolute",
     "top:100%",
     "left:0",
     "margin-top:4px",
-    "background:var(--callout-background-color, var(--background-color, #fff))",
-    "border:1px solid var(--palette-neutral-20, #ddd)",
+    "background:var(--callout-background-color)",
+    "border:1px solid var(--palette-neutral-20)",
     "border-radius:3px",
-    "box-shadow:0 2px 8px rgba(0,0,0,0.15)",
+    "box-shadow:0 2px 8px var(--shadow-subtle)",
     "min-width:150px",
     "max-width:300px",
     "padding:4px 0",
@@ -110,7 +110,7 @@ function buildStatusPopup(
 
       // Hover highlight uses ADO theme token.
       row.addEventListener("mouseenter", () => {
-        row.style.boxShadow = "inset 0 0 0 999px var(--palette-neutral-4, rgba(128,128,128,0.12))";
+        row.style.boxShadow = "inset 0 0 0 999px var(--palette-neutral-4)";
       });
       row.addEventListener("mouseleave", () => {
         row.style.boxShadow = "none";
@@ -156,7 +156,7 @@ export function renderStatusBadge(doc: Document, options: StatusBadgeOptions): S
     const { background, textColor, borderColor } = colorsForOrdinal(forOrdinal);
     badge.style.background = background;
     badge.style.color = textColor;
-    badge.style.border = `1px solid ${borderColor}`;
+    badge.style.borderColor = borderColor;
   };
 
   // Size every badge to one identical width so the column reads as a clean grid. Base it on the
@@ -170,6 +170,8 @@ export function renderStatusBadge(doc: Document, options: StatusBadgeOptions): S
   const badgeWidthCh = Math.max(ownWidestLength, minWidthCh ?? 0) + 3;
   badge.style.cssText = [
     `cursor:${isInteractive ? "pointer" : "default"}`,
+    "border-width:1px",
+    "border-style:solid",
     "border-radius:3px",
     "padding:3px 8px",
     "font-size:10px",
@@ -228,8 +230,10 @@ export function renderStatusBadge(doc: Document, options: StatusBadgeOptions): S
  * same-hue text color for the terminal states.
  */
 interface OrdinalColor {
-  /** The background hue; rendered as a low-alpha tint so it reads on any ADO theme. */
-  rgb: { r: number; g: number; b: number };
+  /** The themed background for this workflow position. */
+  background: string;
+  /** The stronger themed edge for this workflow position. */
+  border: string;
   /** Same-hue text color for terminal states, or null to use the theme's primary text. */
   contrastText: string | null;
 }
@@ -243,18 +247,38 @@ interface OrdinalColor {
  * on any theme without fighting the page.
  */
 const ORDINAL_COLORS: readonly OrdinalColor[] = [
-  { rgb: { r: 128, g: 128, b: 128 }, contrastText: null }, // 1st — gray
-  { rgb: { r: 0, g: 120, b: 212 }, contrastText: null }, // 2nd — blue
-  { rgb: { r: 224, g: 168, b: 0 }, contrastText: null }, // 3rd — yellow
-  { rgb: { r: 16, g: 124, b: 16 }, contrastText: "rgb(30,140,45)" }, // 4th — green
-  { rgb: { r: 197, g: 15, b: 31 }, contrastText: "rgb(224,60,60)" }, // 5th — red
+  {
+    background: "var(--status-neutral-background)",
+    border: "var(--status-neutral-border)",
+    contrastText: null,
+  },
+  {
+    background: "var(--status-blue-background)",
+    border: "var(--status-blue-border)",
+    contrastText: null,
+  },
+  {
+    background: "var(--status-yellow-background)",
+    border: "var(--status-yellow-border)",
+    contrastText: null,
+  },
+  {
+    background: "var(--status-green-background)",
+    border: "var(--status-green-border)",
+    contrastText: "var(--status-green-foreground)",
+  },
+  {
+    background: "var(--status-red-background)",
+    border: "var(--status-red-border)",
+    contrastText: "var(--status-red-foreground)",
+  },
 ];
 
 /** The neutral themed chip used when a state has no known board-column ordinal. */
 const NEUTRAL_COLORS = {
-  background: "var(--palette-neutral-4, rgba(128,128,128,0.12))",
-  textColor: "var(--text-primary-color, #323130)",
-  borderColor: "var(--palette-neutral-20, #ddd)",
+  background: "var(--control-background-subtle)",
+  textColor: "var(--text-primary-color)",
+  borderColor: "var(--control-border)",
 } as const;
 
 /**
@@ -274,10 +298,9 @@ function colorsForOrdinal(ordinal: number | undefined): {
   }
 
   const color = ORDINAL_COLORS[Math.min(ordinal, ORDINAL_COLORS.length - 1)]!;
-  const { r, g, b } = color.rgb;
   return {
-    background: `rgba(${r},${g},${b},0.2)`,
-    textColor: color.contrastText ?? "var(--text-primary-color, #323130)",
-    borderColor: `rgba(${r},${g},${b},0.4)`,
+    background: color.background,
+    textColor: color.contrastText ?? "var(--text-primary-color)",
+    borderColor: color.border,
   };
 }

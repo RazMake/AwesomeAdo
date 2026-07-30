@@ -19,21 +19,21 @@ export interface PriorityBadgeHandle extends HTMLElement {
 }
 
 /** The host declares color-scheme, so dark chips can be deeper without changing the light paint. */
-const CHIP_BACKGROUND = "light-dark(rgba(200, 200, 200, 0.18), rgb(39, 39, 39))";
-const CHIP_BORDER = "light-dark(rgba(172, 172, 172, 0.5), rgb(54, 54, 54))";
+const CHIP_BACKGROUND = "var(--priority-background)";
+const CHIP_BORDER = "var(--priority-border)";
 
 /** P0/P1 keep alert colors, P2 uses primary text, and lower priorities recede. */
 function textColorForPriority(priority: number | null): string {
   if (priority === 0) {
-    return "light-dark(rgb(182, 1, 25), rgb(255, 32, 54))";
+    return "var(--priority-critical-foreground)";
   }
   if (priority === 1) {
-    return "light-dark(rgb(210, 146, 7), rgb(255, 167, 72))";
+    return "var(--priority-high-foreground)";
   }
   if (priority === 2) {
-    return "light-dark(rgb(76, 76, 76), rgb(200, 200, 200))";
+    return "var(--priority-medium-foreground)";
   }
-  return "var(--text-secondary-color, #8a8886)";
+  return "var(--text-secondary-color)";
 }
 
 function fontWeightForPriority(priority: number | null): string {
@@ -81,10 +81,10 @@ function buildPriorityPopup(
     "top:100%",
     "left:0",
     "margin-top:4px",
-    "background:var(--callout-background-color, var(--background-color, #fff))",
-    "border:1px solid var(--palette-neutral-20, #ddd)",
+    "background:var(--callout-background-color)",
+    "border:1px solid var(--palette-neutral-20)",
     "border-radius:3px",
-    "box-shadow:0 2px 8px rgba(0,0,0,0.15)",
+    "box-shadow:0 2px 8px var(--shadow-subtle)",
     "padding:4px",
     "z-index:1000",
     "display:flex",

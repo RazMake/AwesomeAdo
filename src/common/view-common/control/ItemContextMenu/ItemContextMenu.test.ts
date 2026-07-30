@@ -157,18 +157,15 @@ describe("createItemContextMenu commands", () => {
     openMenu();
     const copyId = command(0);
     copyId.dispatchEvent(new MouseEvent("mouseenter"));
-    expect(copyId.style.backgroundColor).not.toBe("transparent");
-    // A neutral palette token would resolve to ADO's OWN surface color under "Follow ADO" — the very
-    // color the menu is painted with — and the highlight would vanish on that theme.
-    expect(copyId.style.backgroundColor).not.toContain("var(");
+    expect(copyId.style.backgroundColor).toBe("var(--control-background-hover)");
     copyId.dispatchEvent(new MouseEvent("mouseleave"));
     expect(copyId.style.backgroundColor).toBe("transparent");
   });
 
-  it("draws the menu's own edge without a neutral palette token either", () => {
+  it("draws the menu edge with the strong control border role", () => {
     openMenu();
     const menuSurface = mount.querySelector<HTMLElement>(".awesomeado-item-menu");
-    expect(menuSurface?.style.border).not.toContain("var(");
+    expect(menuSurface?.style.border).toContain("var(--control-border-strong)");
   });
 });
 

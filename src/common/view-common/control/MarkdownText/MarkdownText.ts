@@ -31,25 +31,8 @@ const MENTION_TOKEN = new RegExp(MENTION_TOKEN_PATTERN, "g");
 /** The label shown for a mention whose GUID no directory answer resolved. */
 const UNRESOLVED_MENTION = "mention";
 
-/**
- * The purple a mention is written in when `color-mix` is unavailable.
- *
- * Deliberately NOT the communication accent every link in this control uses: a mention names a
- * person, not a destination, and wearing the link color made it read as a link that refused to open.
- * Exported because the EDITOR paints the mentions in its own field with it — a person must look the
- * same while they are being written as they do once the text is rendered.
- */
-export const MENTION_COLOR_FALLBACK = "#8a63d2";
-
-/**
- * The purple a mention is written in, nudged toward the surrounding theme's own polarity so it stays
- * legible on the light, dark, blue and "Follow ADO" themes rather than reading well on only one.
- *
- * Paired with the plain purple above as a classic CSS fallback: Chromium below 111 (the manifest
- * still admits 106) drops this declaration as invalid and keeps the flat purple, which is a slightly
- * worse match for the theme rather than no color at all.
- */
-export const MENTION_COLOR = `color-mix(in srgb, var(--text-primary-color, #323130) 25%, ${MENTION_COLOR_FALLBACK})`;
+export const MENTION_COLOR = "var(--mention-themed-foreground)";
+export const MENTION_COLOR_FALLBACK = "var(--mention-foreground)";
 
 /**
  * Renders Markdown / ADO rich text as safe, theme-aware DOM.
@@ -111,12 +94,12 @@ function styleRenderedContent(root: HTMLElement): void {
     ].join(";");
   }
   for (const link of root.querySelectorAll<HTMLElement>("a")) {
-    link.style.color = "var(--communication-foreground, #6b9fff)";
+    link.style.color = "var(--communication-foreground)";
   }
   for (const code of root.querySelectorAll<HTMLElement>("code")) {
     code.style.cssText = [
       "font-family:monospace",
-      "background:rgba(128,128,128,0.18)",
+      "background:var(--control-background-muted)",
       "border-radius:3px",
       "padding:0 3px",
     ].join(";");
@@ -125,7 +108,7 @@ function styleRenderedContent(root: HTMLElement): void {
     quote.style.cssText = [
       "margin:4px 0",
       "padding-left:8px",
-      "border-left:2px solid rgba(128,128,128,0.45)",
+      "border-left:2px solid var(--control-border-strong)",
     ].join(";");
   }
   // ADO descriptions arrive as a stack of paragraphs; the browser default margin between them turns

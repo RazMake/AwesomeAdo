@@ -9,8 +9,8 @@ import type { DropSide } from "./movePlacement";
  *   changing parent, which the line alone cannot convey (a line above the first child of another
  *   parent looks identical to a line below the last child of the previous one).
  *
- * Every color is a themed CSS custom property with a literal fallback, so the indicator reads on
- * light, dark, blue, and "Follow ADO" alike rather than being a light-theme-only accent.
+ * Every color is a themed CSS custom property, so the indicator reads on light, dark, blue, and
+ * "Follow ADO" alike rather than being a light-theme-only accent.
  */
 export class DropIndicator {
   private readonly line: HTMLElement;
@@ -29,10 +29,10 @@ export class DropIndicator {
       "margin:1px 0",
       "border-radius:1px",
       "pointer-events:none",
-      "background:var(--communication-background, #0078d4)",
+      "background:var(--communication-background)",
       // A soft halo so the 2px line stays visible against a dark surface, where a hairline of the
       // accent color alone can disappear into the background.
-      "box-shadow:0 0 0 1px var(--palette-neutral-8, rgba(128,128,128,0.16))",
+      "box-shadow:0 0 0 1px var(--palette-neutral-8)",
     ].join(";");
   }
 
@@ -76,8 +76,8 @@ export class DropIndicator {
     if (container !== null) {
       // A discrete tint plus a dashed accent edge: enough to name the destination without competing
       // with the insertion line for attention.
-      container.style.setProperty("background", "var(--palette-neutral-4, rgba(128,128,128,0.08))");
-      container.style.setProperty("outline", "1px dashed var(--communication-background, #0078d4)");
+      container.style.setProperty("background", "var(--palette-neutral-4)");
+      container.style.setProperty("outline", "1px dashed var(--communication-background)");
       container.style.setProperty("border-radius", "3px");
     }
     this.washed = container;

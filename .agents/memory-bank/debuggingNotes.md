@@ -346,15 +346,12 @@ outside of its immediate parent.` — every single time, for the same item, with
 - `StatusBadge` control DISPLAYS the mapped column (Status), NOT the raw ADO State. `onChange` writes
   the chosen column's primary ADO State.
 
-## RULE: every enhanced-view control follows the ADO theme (ADR-034 / systemPatterns #13)
+## RULE: every enhanced-view control follows the resolved AwesomeADO theme (ADR-034 / systemPatterns #13)
 
-- NON-NEGOTIABLE. No control may hard-code a light-only palette (`#fff` bg, `#333`/`#666` text,
-  `#ddd`-only borders). Style from ADO theme CSS vars WITH a literal fallback: surfaces
-  `var(--callout-background-color, var(--background-color, #fff))`; text `var(--text-primary-color,…)`
-  / `var(--text-secondary-color,…)`; borders `var(--palette-neutral-20,…)` /
-  `var(--component-menu-separator-color, rgba(128,128,128,0.35))`. Mirror
-  `BindingMenu`/`AssignedTo`/`EnhancedViewSurface` tokens. Status/state color = MUTED low-alpha tint
-  over themed surface (not solid fill). Decorative guide lines = discrete theme-derived neutral.
+- NON-NEGOTIABLE. Every fixed presentation or semantic color belongs to the complete contract in
+  `common/view-common/themes`; consumers use `var(--role)` without literal color fallbacks. Runtime
+  ADO metadata colors and generated tag hues remain data, while their fixed blend endpoints and
+  framing are theme roles. Status colors are muted ordinal roles. Decorative guides use theme roles.
   Reusable theme-aware controls live in `src/common/view-common/control/<Control>/` (sole DOM allowed
   under `common/`, AGENTS.md §11).
 
@@ -370,7 +367,7 @@ outside of its immediate parent.` — every single time, for the same item, with
   for the view subtree only; ADO's surviving chrome keeps ADO's own theme. `applyThemeToHost()` is
   re-called from `ensureHost()`
   every mount because cssText (`HOST_OVERLAY_CSS`) is only assigned on host CREATE, so a re-attach
-  after ADO redraws would otherwise lose the custom props. host bg = `var(--background-color,#fff)`
+  after ADO redraws would otherwise lose the custom props. host bg = `var(--background-color)`
   resolves to the pinned value on the same element. `QueryPageController.applySettings` forwards
   `settings.theme` via `surface.applyTheme(theme)` EVERY settings change (a theme flip re-themes the
   open view WITHOUT rebuild; `applyTheme` does not touch signature/DOM). Test surface spies MUST add
@@ -831,10 +828,8 @@ id(s); … (guid, guid)` with the unresolved ids. If the id IS listed as "did no
   surrounding form).
 - jsdom does NOT implement `Element.scrollIntoView`; call it as `row?.scrollIntoView?.(…)` or the
   keyboard tests throw.
-- The row highlight must NOT use `var(--palette-neutral-4, …)`: under "Follow ADO" that token
-  resolves to ADO's own surface color — the very color the popup is painted with — so the
-  highlighted row vanished on that theme. Fixed grey `rgba(128,128,128,0.28)` instead (darkens a
-  light popup, lightens a dark one). Same class of bug as the EtaBadge popup borders.
+- The row highlight must use the dedicated `--control-background-hover` role rather than a generic
+  surface neutral. Every concrete theme owns that contrast; the control owns no fallback color.
 
 ## Identity search found nobody outside the Feature Crew
 
@@ -950,16 +945,14 @@ id(s); … (guid, guid)` with the unresolved ids. If the id IS listed as "did no
   theme sets those to its own translucent neutrals, but under Follow ADO they fall through to ADO's
   values, which are the surface colors this popup is already painted with — frame and fill vanish
   into the background.
-- FIX: fixed translucent greys (`rgba(128,128,128,0.55)` border, `rgba(128,128,128,0.14)` fill).
-  Grey composites the other way on both — darkens a light surface, lightens a dark one.
+- FIX: dedicated `--control-border-emphasis` and `--control-background-muted` roles preserve the
+  tuned contrast while moving the values into each concrete theme.
 - RULE OF THUMB: a neutral token is fine for a wash ON a surface, but NEVER for something that must
   be DISTINGUISHABLE FROM that surface (borders of a chip on a popup, a row highlight, a checkbox
   frame). Prior instances: the AssignedTo row highlight, and the EtaBadge popup borders.
-- FOURTH instance (`ItemContextMenu`, the item right-click menu): its hover wash was copied from
-  `ChildItemsBadge`'s `var(--palette-neutral-4, …)` row hover, so the highlighted command was
-  invisible under Follow ADO. Fixed to `rgba(128,128,128,0.28)` (the AssignedTo highlight alpha) plus
-  a `rgba(128,128,128,0.5)` border. NOTE: `ChildItemsBadge` and `OrderingPicker` still use the token
-  for THEIR row hover and have the same latent bug — do not copy that line into a new control.
+- FOURTH instance (`ItemContextMenu`, the item right-click menu): its hover wash was copied from a
+  generic surface neutral. It now uses `--control-background-hover` plus
+  `--control-border-strong`; new controls should reuse those roles for the same contrast need.
 - Geometry note for that checkbox: the tick is two borders of a rotated box, so rotation costs a
   factor of √2 — its bounding box is `(arm + stroke + stem + stroke) / √2`. Keep that under the box's
   INNER size (edge − 2 × border) or the check touches the frame. It self-centers with

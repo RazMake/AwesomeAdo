@@ -248,7 +248,7 @@ function buildMetaLine(
   // Muted text color from ADO theme so the meta line reads on both light and dark themes.
   meta.style.cssText = [
     "font-size:11px",
-    "color:var(--text-secondary-color, #8a8886)",
+    "color:var(--text-secondary-color)",
     "margin-bottom:8px",
   ].join(";");
 
@@ -271,8 +271,8 @@ function buildMetaLine(
   return { container: meta, dateElements: 2 };
 }
 
-const DESCRIBE_DISC_NEUTRAL = "light-dark(rgb(246, 246, 246), rgb(58, 58, 58))";
-const DESCRIBE_DISC_NEUTRAL_ACTIVE = "light-dark(rgb(235, 235, 235), rgb(128, 128, 128))";
+const DESCRIBE_DISC_NEUTRAL = "var(--description-neutral-background)";
+const DESCRIBE_DISC_NEUTRAL_ACTIVE = "var(--description-neutral-active-background)";
 
 /**
  * The disc's fill: the item's own type color, but only once there is a description to promise.
@@ -287,7 +287,7 @@ function describeDiscColor(emphasis: ItemTypeIconEmphasis, typeColor: string | n
   }
   const lightStrength = emphasis.loud ? 24 : 14;
   const darkStrength = emphasis.loud ? 80 : 50;
-  return `light-dark(color-mix(in srgb, ${typeColor} ${lightStrength}%, white), color-mix(in srgb, ${typeColor} ${darkStrength}%, black))`;
+  return `light-dark(color-mix(in srgb, ${typeColor} ${lightStrength}%, var(--type-tint-background)), color-mix(in srgb, ${typeColor} ${darkStrength}%, var(--type-tint-background)))`;
 }
 
 /**
@@ -319,14 +319,14 @@ function renderDescription(
   // the column.
   toggleButton.style.cssText = [
     "cursor:pointer",
-    "border:1px solid var(--palette-neutral-20, rgba(255,255,255,0.6))",
+    "border:1px solid var(--palette-neutral-20)",
     "border-radius:50%",
     "width:16px",
     "height:16px",
     "font-size:10px",
     "font-weight:bold",
     "line-height:1",
-    "color:light-dark(var(--text-secondary-color, #605e5c), var(--text-on-communication-background, #fff))",
+    "color:light-dark(var(--text-secondary-color), var(--text-on-communication-background))",
     "padding:0",
     "margin:1px",
     "display:inline-flex",
@@ -346,7 +346,7 @@ function renderDescription(
   descText.classList.add("awesomeado-tracking__desc-text");
   // Themed primary text color for description text; the control itself owns the rest of the look.
   descText.style.fontSize = "11px";
-  descText.style.color = "var(--text-primary-color, #323130)";
+  descText.style.color = "var(--text-primary-color)";
   panel.append(descText);
 
   const setExpanded = (expanded: boolean): void => {
@@ -839,7 +839,7 @@ function createRowControls(
       "display:inline-flex",
       "align-items:center",
       "justify-content:center",
-      "color:var(--text-primary-color, #323130)",
+      "color:var(--text-primary-color)",
     ].join(";");
     // The glyph is deliberately small; it lives in its own span so the button box can stay a full
     // line tall (for centering) without enlarging the triangle.
@@ -1360,11 +1360,15 @@ function createRowBlockedMarkerPills(
 
 // A low-alpha neutral wash changes direction with the surface beneath it, so an option remains
 // distinct on both light and dark themes without replacing its sprint-relation text color.
-const SPRINT_OPTION_HIGHLIGHT = "rgba(128,128,128,0.28)";
+const SPRINT_OPTION_HIGHLIGHT = "var(--control-background-hover)";
 
 /** Keeps pointer and keyboard navigation equally visible in the sprint popup. */
 function setSprintOptionHighlighted(choice: HTMLButtonElement, highlighted: boolean): void {
-  choice.style.backgroundColor = highlighted ? SPRINT_OPTION_HIGHLIGHT : "transparent";
+  if (highlighted) {
+    choice.style.backgroundColor = SPRINT_OPTION_HIGHLIGHT;
+  } else {
+    choice.style.removeProperty("background-color");
+  }
 }
 
 /** Builds the direct sprint choices shown when the row's current-sprint chip is clicked. */
@@ -1385,10 +1389,10 @@ function buildSprintPillPopup(
     "display:flex",
     "flex-direction:column",
     "align-items:stretch",
-    "background:var(--callout-background-color, var(--background-color, #fff))",
-    "border:1px solid rgba(128,128,128,0.5)",
+    "background:var(--callout-background-color)",
+    "border:1px solid var(--control-border-strong)",
     "border-radius:6px",
-    "box-shadow:0 2px 8px rgba(0,0,0,0.15)",
+    "box-shadow:0 2px 8px var(--shadow-subtle)",
     "z-index:1000",
   ].join(";");
 
@@ -1412,8 +1416,8 @@ function buildSprintPillPopup(
       "padding:4px 8px",
       "border:0",
       "border-radius:3px",
-      "background:transparent",
-      "color:var(--text-primary-color, #323130)",
+      "background:none",
+      "color:var(--text-primary-color)",
       "font:inherit",
       "text-align:left",
       "white-space:nowrap",
@@ -1454,14 +1458,14 @@ function createRowSprintPill(item: TrackedWorkItem, options: TreeRenderOptions):
   pill.style.cssText = [
     "display:inline-flex",
     "align-items:center",
-    "background:rgba(128,128,128,0.12)",
+    "background:var(--control-background-subtle)",
     "border:0",
     "border-radius:6px",
     "padding:4px 6px",
     "font:inherit",
     "font-size:10px",
     "line-height:1",
-    "color:var(--text-secondary-color, #8a8886)",
+    "color:var(--text-secondary-color)",
     "white-space:nowrap",
     "cursor:pointer",
     "opacity:0.75",
@@ -1611,11 +1615,10 @@ function renderRow(
   childrenContainer.className = "awesomeado-tracking__children";
   // Each depth reads 10% smaller than its parent (90% compounds down the tree). The vertical guide
   // line is drawn ONLY under the top-level parents (depth 0); margin-left ~= half the twisty width so
-  // the line sits centered under the parent's expand/collapse triangle. A fixed mid-grey keeps it
-  // visible even under "Follow ADO", where ADO's --palette-neutral-20 is too faint to show.
+  // the line sits centered under the parent's expand/collapse triangle.
   const childrenStyles = ["padding-left:2px", "margin-left:10px", "font-size:90%"];
   if (depth === 0) {
-    childrenStyles.push("border-left:1px solid rgba(128,128,128,0.45)");
+    childrenStyles.push("border-left:1px solid var(--control-border-emphasis)");
   }
   childrenContainer.style.cssText = childrenStyles.join(";");
 
@@ -2214,7 +2217,7 @@ function renderFiltersLabel(doc: Document): HTMLElement {
   label.style.cssText = [
     "font-size:11px",
     "font-weight:600",
-    "color:var(--text-secondary-color, #8a8886)",
+    "color:var(--text-secondary-color)",
     "margin-right:2px",
   ].join(";");
   return label;
@@ -3327,7 +3330,7 @@ export const projectTrackingView: EnhancedView = {
       "min-height:100%",
       "box-sizing:border-box",
       "font-family:inherit",
-      "color:var(--text-primary-color, inherit)",
+      "color:var(--text-primary-color)",
       "text-align:left",
       `padding:2px ${BOARD_EDGE_PADDING_PX}px ${BOARD_EDGE_PADDING_PX}px`,
     ].join(";");
@@ -3359,7 +3362,7 @@ export const projectTrackingView: EnhancedView = {
     loading.style.cssText = [
       "padding:16px 0",
       "text-align:center",
-      "color:var(--text-secondary-color, #8a8886)",
+      "color:var(--text-secondary-color)",
     ].join(";");
     root.append(loading);
 

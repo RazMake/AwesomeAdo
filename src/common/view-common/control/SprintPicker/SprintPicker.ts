@@ -91,11 +91,9 @@ function populateSprintSelect(
   }
 }
 
-// Past sprints read in a warm amber that stays legible on both the light and dark ADO themes (the
-// theme variables carry no "past/history" color, so this is a fixed tuned tone). Future sprints
-// borrow the theme's own accent foreground so they match whatever palette ADO is rendering.
-const PAST_SPRINT_COLOR = "#c26c1d";
-const FUTURE_SPRINT_COLOR = "var(--communication-foreground, #0078d4)";
+// Past sprints use the theme's history role; future sprints use its communication foreground.
+const PAST_SPRINT_COLOR = "var(--sprint-past-foreground)";
+const FUTURE_SPRINT_COLOR = "var(--communication-foreground)";
 
 /**
  * The style declarations that express a sprint's position in time: past = amber, future = theme
@@ -148,9 +146,9 @@ function applyRelationStyle(option: HTMLOptionElement, relation: SprintRelation 
 }
 
 const SELECT_BASE_STYLE = [
-  "background:var(--background-color, #fff)",
-  "color:var(--text-primary-color, #323130)",
-  "border:1px solid rgba(128,128,128,0.5)",
+  "background:var(--background-color)",
+  "color:var(--text-primary-color)",
+  "border:1px solid var(--control-border-strong)",
   "border-radius:6px",
   "padding:4px 8px",
   // Deliberately the font longhands instead of the `font` shorthand: the shorthand resets
@@ -209,11 +207,9 @@ export function renderSprintPicker(
   const updateButtonStyle = () => {
     // Active = clearly LIT UP with the accent (background + matching border + on-accent text/icon),
     // not a faint tint, so "filter on" is obvious. Inactive stays transparent with a visible border.
-    const bg = active ? "var(--communication-background, #0078d4)" : "transparent";
-    const fg = active
-      ? "var(--text-on-communication-background, #fff)"
-      : "var(--text-primary-color, #323130)";
-    const border = active ? "var(--communication-background, #0078d4)" : "rgba(128,128,128,0.5)";
+    const bg = active ? "var(--communication-background)" : "transparent";
+    const fg = active ? "var(--text-on-communication-background)" : "var(--text-primary-color)";
+    const border = active ? "var(--communication-background)" : "var(--control-border-strong)";
     button.style.cssText = [
       `background:${bg}`,
       `color:${fg}`,

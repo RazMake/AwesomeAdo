@@ -909,16 +909,16 @@ describe("ProjectTrackingView — the description disc's shade", () => {
   }
 
   // The Feature type's configured color (6bcf7f), which is what the disc must borrow.
-  const FEATURE_COLOR = "rgb(107, 207, 127)";
-  const COLLAPSED_FEATURE_COLOR = `light-dark(color-mix(in srgb, ${FEATURE_COLOR} 14%, white), color-mix(in srgb, ${FEATURE_COLOR}, black))`;
-  const EXPANDED_FEATURE_COLOR = `light-dark(color-mix(in srgb, ${FEATURE_COLOR} 24%, white), color-mix(in srgb, ${FEATURE_COLOR} 80%, black))`;
+  const FEATURE_COLOR = "#6bcf7f";
+  const COLLAPSED_FEATURE_COLOR = `light-dark(color-mix(in srgb, ${FEATURE_COLOR} 14%, var(--type-tint-background)), color-mix(in srgb, ${FEATURE_COLOR} 50%, var(--type-tint-background)))`;
+  const EXPANDED_FEATURE_COLOR = `light-dark(color-mix(in srgb, ${FEATURE_COLOR} 24%, var(--type-tint-background)), color-mix(in srgb, ${FEATURE_COLOR} 80%, var(--type-tint-background)))`;
 
   it("uses an almost-white neutral fill on light themes when there is no description", async () => {
     const disc = await discOver("   ");
 
     // Whitespace is not a description: a disc promising text that turns out to be blank is worse
     // than one that never promised any.
-    expect(disc.style.background).toBe("light-dark(rgb(246, 246, 246), rgb(58, 58, 58))");
+    expect(disc.style.background).toBe("var(--description-neutral-background)");
     // The tooltip names the ACTION, not the state: the panel still carries the created/modified
     // line, so the disc is worth pressing on this row too.
     expect(disc.title).toBe("Show description");
@@ -949,7 +949,7 @@ describe("ProjectTrackingView — the description disc's shade", () => {
 
     // The type color is the board's "there is something written here" signal; an open but empty
     // panel must not spend it on nothing.
-    expect(disc.style.background).toBe("light-dark(rgb(235, 235, 235), rgb(128, 128, 128))");
+    expect(disc.style.background).toBe("var(--description-neutral-active-background)");
   });
 
   it("centers the question mark in a fixed circle without native button padding", async () => {
@@ -1238,7 +1238,7 @@ describe("ProjectTrackingView — status badge", () => {
     // The first row (Feature, ADO State "Active") maps to the "Active" board column (ordinal 1),
     // so its chip carries the blue ordinal tint keyed off that position.
     const firstChip = root.querySelector<HTMLElement>(".awesomeado-status__badge");
-    expect(firstChip?.style.background.replace(/\s/g, "")).toContain("rgba(0,120,212,0.2)");
+    expect(firstChip?.style.background).toBe("var(--status-blue-background)");
   });
 
   it("should call writeField when status badge is changed", async () => {
@@ -1529,7 +1529,7 @@ describe("ProjectTrackingView — status writes", () => {
     // After the write commits, the badge shows the new Status label ("Done")...
     expect(firstBadge.childNodes[0]?.textContent).toBe("Done");
     // ...and re-tints to that column's ordinal ("Done" is position 3 → green), so color tracks label.
-    expect(firstBadge.style.background.replace(/\s/g, "")).toContain("rgba(16,124,16,0.2)");
+    expect(firstBadge.style.background).toBe("var(--status-green-background)");
   });
 });
 
@@ -1762,17 +1762,17 @@ describe("ProjectTrackingView — interactive sprint pills", () => {
       ...root.querySelectorAll<HTMLButtonElement>(".awesomeado-tracking__sprint-option"),
     ];
     expect(choices.map((choice) => choice.textContent)).toEqual(["Next - Sprint 2"]);
-    expect(choices[0]?.style.color).toBe("var(--communication-foreground, #0078d4)");
+    expect(choices[0]?.style.color).toContain("var(--communication-foreground");
 
     choices[0]!.dispatchEvent(new MouseEvent("mouseenter"));
-    expect(choices[0]?.style.backgroundColor).toBe("rgba(128, 128, 128, 0.28)");
+    expect(choices[0]?.style.backgroundColor).toBe("var(--control-background-hover)");
     choices[0]!.dispatchEvent(new MouseEvent("mouseleave"));
-    expect(choices[0]?.style.backgroundColor).toBe("transparent");
+    expect(choices[0]?.style.backgroundColor).toBe("");
 
     choices[0]!.dispatchEvent(new FocusEvent("focus"));
-    expect(choices[0]?.style.backgroundColor).toBe("rgba(128, 128, 128, 0.28)");
+    expect(choices[0]?.style.backgroundColor).toBe("var(--control-background-hover)");
     choices[0]!.dispatchEvent(new FocusEvent("blur"));
-    expect(choices[0]?.style.backgroundColor).toBe("transparent");
+    expect(choices[0]?.style.backgroundColor).toBe("");
 
     choices[0]!.click();
     expect(root.querySelector(".awesomeado-tracking__sprint-popup")).toBeNull();
@@ -1924,8 +1924,7 @@ describe("ProjectTrackingView — themed layout", () => {
     expect(style).toMatch(/padding-left:\s*2px/);
     // Vertical guide line.
     expect(style).toContain("border-left");
-    // Self-contained grey guide color so it stays visible under "Follow ADO".
-    expect(style).toMatch(/rgba\(128,\s*128,\s*128,\s*0\.45\)/);
+    expect(style).toContain("var(--control-border-emphasis)");
   });
 });
 

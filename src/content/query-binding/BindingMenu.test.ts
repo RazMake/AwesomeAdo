@@ -70,6 +70,13 @@ describe("BindingMenu - rendering", () => {
     const node = menuNode()!;
     expect(node.querySelectorAll('[role="menuitem"]')).toHaveLength(3);
     expect(node.querySelectorAll('[role="separator"]')).toHaveLength(1);
+    expect(node.style.background).toBe("var(--callout-background-color, var(--background-color))");
+    expect(node.style.color).toBe("var(--text-primary-color)");
+    expect(node.style.borderColor).toBe("var(--component-menu-separator-color)");
+    expect(node.style.boxShadow).toBe("0 4px 12px var(--palette-black-alpha-30)");
+    expect(node.querySelector<HTMLElement>('[role="separator"]')?.style.borderTopColor).toBe(
+      "var(--component-menu-separator-color)",
+    );
     expect(menuItems().map((item) => item.textContent)).toEqual([
       "Sprint View",
       "Standard View",
@@ -106,10 +113,10 @@ describe("BindingMenu - interaction", () => {
     const item = menuItems()[0]!;
 
     item.dispatchEvent(new MouseEvent("mouseenter"));
-    expect(item.style.backgroundColor).not.toBe("transparent");
+    expect(item.style.backgroundColor).toBe("var(--palette-neutral-8)");
 
     item.dispatchEvent(new MouseEvent("mouseleave"));
-    expect(item.style.backgroundColor).toBe("transparent");
+    expect(item.style.backgroundColor).toBe("inherit");
   });
 });
 

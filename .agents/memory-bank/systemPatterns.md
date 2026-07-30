@@ -350,22 +350,24 @@ layer. The MAIN-world bridge and real ADO reads/writes are composition-root/brow
 **Every** UI control an enhanced view renders — badges, pills, buttons, twisties, dropdowns, popups,
 panels, the status control, the sprint picker, expand/collapse affordances — MUST follow the selected
 AwesomeADO theme (Dark / Light / Blue). `Follow Azure DevOps` detects only ADO's dark/light polarity
-and resolves it to AwesomeADO's matching concrete theme; Blue is manual. No control may hard-code a
-light-only palette as its only value.
+and resolves it to AwesomeADO's matching concrete theme; Blue is manual. No fixed presentation or
+semantic color may live in a consumer.
 
 - Theme definitions live independently in `common/view-common/themes/<name>Theme.ts` and satisfy one
   complete CSS-variable contract. `themes.ts` is the only concrete-theme registry; settings values,
   the options selector, options colors, and the enhanced-view host derive from it.
-- Controls continue reading the shared ADO-compatible CSS custom-property names, but the enhanced-view
-  host always pins the resolved concrete theme's values. Options consumes the same definition through
-  its options-specific variables, so the two surfaces cannot drift.
-- A control that encodes a **status/state color** (the work-item state control) derives the hue from the
-  ADO state color but renders it **muted/discrete** (low-alpha tint over the themed surface, not a solid
-  fill) so it reads on any theme and never fights the page.
+- Consumers read only CSS roles from that complete contract, without literal color fallbacks. The
+  enhanced-view host pins every role; Options consumes the same definition, so the surfaces cannot
+  drift. ADO/data-derived hues remain runtime inputs, but every fixed blend endpoint and frame is a
+  theme role.
+- Status colors are keyed by global board-column ordinal and use theme-owned, muted background,
+  border, and terminal-foreground roles.
 - Decorative lines/guides (e.g. the child-indent guide) use a **discrete, theme-derived neutral**
   (low-alpha `currentColor` or a neutral palette token), never a fixed grey.
 
 New reusable, theme-aware controls live under `src/common/view-common/control/<Control>/` — the sole
 DOM-bearing code allowed under `common/` (AGENTS.md §11) — so every view shares one correctly-themed
 implementation instead of re-inlining light-only styles. This is a standing review gate: a control
-that hard-codes non-theme colors is a defect, not a style nit.
+that hard-codes a fixed non-theme color is a defect, not a style nit. The ADO-header binding controls
+are the exception: they intentionally consume ADO's own tokens because they live outside the themed
+overlay.

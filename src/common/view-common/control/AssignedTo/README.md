@@ -90,7 +90,7 @@ accepts it, so a rejected write can never leave a name on screen that was never 
 - **Name-only display:** Shows only the user's display name as clickable text, with no avatar or visual padding box.
 - **Instant suggestions:** The people already on the project are offered with no network round-trip,
   which is the common case for a reassignment.
-- **Theme-aware:** Uses Azure DevOps CSS custom properties (`--callout-background-color`, `--palette-neutral-20`, `--palette-neutral-4`) with fallbacks, so it adapts to light/dark themes.
+- **Theme-aware:** Uses the complete CSS-variable palette pinned by the resolved AwesomeADO theme.
 - **Out-of-order response guard:** Ignores stale search results if a newer query has already been issued.
 - **Never scrolls sideways:** The result list is `overflow-x: hidden` and each row's display name and
   directory address are clipped with an ellipsis on a single line. A directory address is one

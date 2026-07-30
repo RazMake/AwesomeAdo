@@ -17,10 +17,10 @@ describe("renderPriorityBadge", () => {
     );
 
     expect(new Set(chips.map((chip) => chip.style.background))).toEqual(
-      new Set(["light-dark(rgba(200, 200, 200, 0.18), rgb(39, 39, 39))"]),
+      new Set(["var(--priority-background)"]),
     );
     expect(new Set(chips.map((chip) => chip.style.border))).toEqual(
-      new Set(["1px solid light-dark(rgba(172, 172, 172, 0.5), rgb(54, 54, 54))"]),
+      new Set(["1px solid var(--priority-border)"]),
     );
   });
 
@@ -31,14 +31,12 @@ describe("renderPriorityBadge", () => {
     const p3 = chipOf(renderPriorityBadge(document, { priority: 3 }));
     const p4 = chipOf(renderPriorityBadge(document, { priority: 4 }));
 
-    expect(p0.style.color).toBe("light-dark(rgb(182, 1, 25), rgb(255, 32, 54))");
-    expect(p1.style.color).toBe("light-dark(rgb(210, 146, 7), rgb(255, 167, 72))");
+    expect(p0.style.color).toBe("var(--priority-critical-foreground)");
+    expect(p1.style.color).toBe("var(--priority-high-foreground)");
     expect(p0.style.color).not.toContain("color-mix");
     expect(p1.style.color).not.toContain("color-mix");
-    expect(p2.style.color).toBe("light-dark(rgb(76, 76, 76), rgb(200, 200, 200))");
-    expect(
-      [p3, p4].every((chip) => chip.style.color === "var(--text-secondary-color, #8a8886)"),
-    ).toBe(true);
+    expect(p2.style.color).toBe("var(--priority-medium-foreground)");
+    expect([p3, p4].every((chip) => chip.style.color === "var(--text-secondary-color)")).toBe(true);
     expect([p0, p1, p2].every((chip) => chip.style.fontWeight === "800")).toBe(true);
     expect([p3, p4].every((chip) => chip.style.fontWeight === "400")).toBe(true);
     expect([p0, p1, p2, p3, p4].every((chip) => chip.style.fontSize === "11px")).toBe(true);
@@ -77,9 +75,7 @@ describe("renderPriorityBadge", () => {
 
     badge.setPriority(1);
     expect(chipOf(badge).textContent).toContain("P1");
-    expect(chipOf(badge).style.background).toBe(
-      "light-dark(rgba(200, 200, 200, 0.18), rgb(39, 39, 39))",
-    );
-    expect(chipOf(badge).style.color).toBe("light-dark(rgb(210, 146, 7), rgb(255, 167, 72))");
+    expect(chipOf(badge).style.background).toBe("var(--priority-background)");
+    expect(chipOf(badge).style.color).toBe("var(--priority-high-foreground)");
   });
 });

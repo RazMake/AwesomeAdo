@@ -74,9 +74,7 @@ function buildAssignedRoot(
     "align-items:center",
     // Snug gap so the tag pill sits close to the name and to the chip's edge (keeps the chip short).
     "gap:4px",
-    // A very faint fixed-grey fill (not a theme token) so the control reads as a subtle chip on every
-    // theme, including Follow ADO where surface tokens can collapse into the page color.
-    "background:rgba(128,128,128,0.12)",
+    "background:var(--control-background-subtle)",
     "border-radius:6px",
     // The chip carries NO border, so to stand the same 18px tall as the (bordered) status badge it
     // sits beside — and stay vertically centered with it on a tree row — its vertical padding (4px)
@@ -100,7 +98,7 @@ function buildAssignedRoot(
     "font-size:10px",
     "line-height:1",
     // Slightly muted (secondary) so the assignee reads as supporting detail, not a primary heading.
-    "color:var(--text-secondary-color, #8a8886)",
+    "color:var(--text-secondary-color)",
   ].join(";");
 
   root.append(nameButton);
@@ -116,9 +114,7 @@ const SPINNER_CLASS = "awesomeado-assigned__spinner";
  *
  * The rule lives INSIDE the popup (not in `document.head`) so it is created and discarded with the
  * popup it belongs to, and so it still applies if this control is ever mounted inside a shadow root.
- * Its colors are fixed low-alpha greys rather than palette tokens: under "Follow ADO" those tokens
- * resolve to the surface the popup is already painted with, which is how the old text-only status
- * could be there and still be missed.
+ * Its colors use dedicated spinner roles so the ring stays distinct from the popup surface.
  */
 function buildSearchSpinner(doc: Document): { spinner: HTMLElement; style: HTMLStyleElement } {
   const style = doc.createElement("style");
@@ -131,8 +127,8 @@ function buildSearchSpinner(doc: Document): { spinner: HTMLElement; style: HTMLS
     "flex:0 0 auto",
     "width:10px",
     "height:10px",
-    "border:2px solid rgba(128,128,128,0.35)",
-    "border-top-color:rgba(128,128,128,0.95)",
+    "border:2px solid var(--spinner-track)",
+    "border-top-color:var(--spinner-head)",
     "border-radius:50%",
   ].join(";");
   return { spinner, style };
@@ -151,16 +147,16 @@ function buildPickerPopup(doc: Document): {
 } {
   const popup = doc.createElement("div");
   popup.className = "awesomeado-assigned__popup";
-  // Theme-aware colors: use ADO custom properties with fallbacks.
+  // Theme-aware colors come from properties pinned by the extension host.
   popup.style.cssText = [
     "position:absolute",
     "top:100%",
     "left:0",
     "margin-top:4px",
-    "background:var(--callout-background-color, var(--background-color, #fff))",
-    "border:1px solid var(--palette-neutral-20, #ddd)",
+    "background:var(--callout-background-color)",
+    "border:1px solid var(--palette-neutral-20)",
     "border-radius:3px",
-    "box-shadow:0 2px 8px rgba(0,0,0,0.15)",
+    "box-shadow:0 2px 8px var(--shadow-subtle)",
     "min-width:200px",
     "max-width:300px",
     "padding:8px",
@@ -174,7 +170,7 @@ function buildPickerPopup(doc: Document): {
   searchInput.style.cssText = [
     "width:100%",
     "box-sizing:border-box",
-    "border:1px solid var(--palette-neutral-20, #ddd)",
+    "border:1px solid var(--palette-neutral-20)",
     "border-radius:3px",
     "padding:4px 8px",
     "font:inherit",
@@ -223,16 +219,8 @@ function buildPickerPopup(doc: Document): {
   return { popup, searchInput, resultsList, statusText, spinner };
 }
 
-/**
- * The fill worn by the one result row that Enter would commit.
- *
- * A fixed low-alpha grey, not `--palette-neutral-4`: under "Follow ADO" that token resolves to ADO's
- * own surface color, which is what the popup is already painted with — so the highlighted row was
- * indistinguishable from the rest of the list on exactly the theme most people run. Grey at this
- * alpha darkens a light popup and lightens a dark one, so the highlight reads on every theme (the
- * same self-contained fix the ETA picker's chrome uses).
- */
-const HIGHLIGHT_BACKGROUND = "rgba(128,128,128,0.28)";
+/** The fill worn by the one result row that Enter would commit. */
+const HIGHLIGHT_BACKGROUND = "var(--control-background-hover)";
 
 /**
  * The declarations that keep one line of a result row on a single line, clipped with an ellipsis.
@@ -297,10 +285,7 @@ function buildResultRow(doc: Document, user: TrackedUser, showTags: boolean): HT
   if (user.uniqueName !== null && user.uniqueName.length > 0) {
     const unique = doc.createElement("span");
     unique.className = "awesomeado-assigned__result-unique";
-    unique.style.cssText = truncatedLine(
-      "font-size:10px",
-      "color:var(--text-secondary-color, #8a8886)",
-    );
+    unique.style.cssText = truncatedLine("font-size:10px", "color:var(--text-secondary-color)");
     unique.textContent = user.uniqueName;
     unique.title = user.uniqueName;
     identity.append(unique);
@@ -729,7 +714,7 @@ function buildTagAddRow(
     "flex:1 1 auto",
     "min-width:0",
     "box-sizing:border-box",
-    "border:1px solid var(--palette-neutral-20, #ddd)",
+    "border:1px solid var(--palette-neutral-20)",
     "border-radius:3px",
     "padding:2px 6px",
     "font:inherit",
@@ -742,7 +727,7 @@ function buildTagAddRow(
   addButton.textContent = "Add";
   addButton.style.cssText = [
     "cursor:pointer",
-    "border:1px solid var(--palette-neutral-20, #ddd)",
+    "border:1px solid var(--palette-neutral-20)",
     "border-radius:3px",
     "background:transparent",
     "padding:2px 8px",
@@ -811,10 +796,10 @@ function buildTagEditor(
     "top:100%",
     "left:0",
     "margin-top:4px",
-    "background:var(--callout-background-color, var(--background-color, #fff))",
-    "border:1px solid var(--palette-neutral-20, #ddd)",
+    "background:var(--callout-background-color)",
+    "border:1px solid var(--palette-neutral-20)",
     "border-radius:3px",
-    "box-shadow:0 2px 8px rgba(0,0,0,0.15)",
+    "box-shadow:0 2px 8px var(--shadow-subtle)",
     "min-width:180px",
     "max-width:260px",
     "padding:8px",

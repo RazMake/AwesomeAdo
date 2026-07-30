@@ -100,7 +100,6 @@ toggles a popup with one row per child:
 - **Dismissal parity with `StatusBadge`:** the popup closes on an outside click, a second badge
   click, or Escape.
 - **Theme-aware:** the tint is a low-alpha wash of the supplied hue (so it reads on light, dark, and
-  Follow-ADO alike), and the rest uses ADO custom properties (`--callout-background-color`,
-  `--palette-neutral-4`, `--palette-neutral-20`, `--text-primary-color`) with fallbacks. The
-  completion checkbox is the deliberate exception: it uses fixed translucent greys, because its box
-  has to stay visible against the popup surface that the neutral tokens resolve to under Follow ADO.
+  Follow-ADO alike), while fixed chrome comes from the complete AwesomeADO theme contract. The
+  completion checkbox uses dedicated control border, fill, and completion roles so it remains
+  distinct from the popup surface.

@@ -78,9 +78,9 @@ function renderActivityPill(
     "line-height:1.4",
     "white-space:nowrap",
     "cursor:pointer",
-    "color:#fff",
+    "color:var(--activity-foreground)",
     `background:${filter.background}`,
-    selected ? "border:2px solid #fff" : "border:2px solid transparent",
+    selected ? "border:2px solid var(--tag-selected-border)" : "border:2px solid transparent",
     selected ? "opacity:1" : "opacity:0.55",
   ].join(";");
 

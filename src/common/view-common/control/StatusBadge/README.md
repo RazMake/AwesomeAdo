@@ -55,7 +55,11 @@ Renders a status badge showing the current state with a position-specific tint.
 ## Features
 
 - **Position-consistent color:** Color is keyed off the state's global board-column ordinal — 1st gray, 2nd blue, 3rd yellow, 4th green, 5th red — so the same board column reads identically for every work-item type. Positions beyond the fifth reuse the terminal (red) color. Each dropdown row is colored by its own column's ordinal.
-- **Contrasting terminal text:** The first three positions carry the theme's primary text; the 4th (green) and 5th (red) positions use a brightness-contrasted same-hue text (`rgb(30,140,45)` / `rgb(224,60,60)`) so a "done" or "removed" state stands out. Backgrounds are discrete low-alpha tints so each hue reads on any theme.
-- **Neutral fallback:** An unknown ordinal (omitted or negative — e.g. a raw ADO State mapping to no board column) uses a neutral themed chip: background `var(--palette-neutral-4, rgba(128,128,128,0.12))`, text `var(--text-primary-color, #323130)`, border `var(--palette-neutral-20, #ddd)`.
-- **Theme-aware:** The dropdown popup uses ADO CSS custom properties (`--callout-background-color`, `--palette-neutral-20`, `--palette-neutral-4`) with fallbacks, so it adapts to light/dark themes.
+- **Contrasting terminal text:** The first three positions carry the theme's primary text; the 4th
+  (green) and 5th (red) positions use dedicated same-hue foreground roles so a "done" or "removed"
+  state stands out. Each ordinal's background and stronger border are separate theme roles.
+- **Neutral fallback:** An unknown ordinal (omitted or negative — e.g. a raw ADO State mapping to no
+  board column) uses `--control-background-subtle`, `--text-primary-color`, and `--control-border`.
+- **Theme-aware:** The popup and every ordinal color read the complete variable set pinned by the
+  resolved AwesomeADO theme.
 - **HTML injection safety:** State and column labels are inserted as `textContent`, not `innerHTML`.

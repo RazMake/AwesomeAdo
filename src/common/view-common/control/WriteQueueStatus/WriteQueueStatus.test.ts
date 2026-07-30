@@ -211,15 +211,12 @@ describe("renderWriteQueueStatus - failed writes", () => {
 });
 
 describe("renderWriteQueueStatus - the failed alert chip's paint", () => {
-  it("fills the chip with the themed error color and its literal fallback", () => {
+  it("fills the chip with the themed error color", () => {
     const handle = renderWriteQueueStatus(document);
 
     handle.setFailedCount(1);
 
-    // A lost edit is invisible on a persist-then-reflect board, so the chip has to be a solid fill
-    // that survives being glanced past — and it must land on themes ADO defines no token for.
-    expect(handle.element.style.background).toContain("--palette-error-background");
-    expect(handle.element.style.background).toContain("#c50f1f");
+    expect(handle.element.style.background).toBe("var(--palette-error-background)");
   });
 
   it("writes the chip's text in the on-communication foreground so it reads on that fill", () => {

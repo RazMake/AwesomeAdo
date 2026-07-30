@@ -99,8 +99,9 @@ function mentionRun(doc: Document, label: string): HTMLElement {
   // A rounded wash behind the name, not coloured glyphs: the field's own text is drawn on top of
   // this and keeps its colour, so the mention has to stand out from BEHIND the letters.
   run.style.cssText = [
-    `background:color-mix(in srgb, ${MENTION_COLOR_FALLBACK} 45%, transparent)`,
-    `outline:1px solid ${MENTION_COLOR}`,
+    "background:var(--mention-highlight)",
+    `outline:1px solid ${MENTION_COLOR_FALLBACK}`,
+    `outline-color:${MENTION_COLOR}`,
     "border-radius:3px",
   ].join(";");
   return run;

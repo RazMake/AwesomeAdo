@@ -406,22 +406,18 @@ describe("renderChildItemsBadge - row completion", () => {
     expect(checkboxOf(root).style.cursor).toBe("default");
   });
 
-  it("frames the checkbox in a theme-independent grey, so the box survives Follow-ADO", () => {
+  it("frames the checkbox with dedicated control roles", () => {
     const root = openPopup({ children: [childOf()], completedCount: 0 });
 
-    // A themed neutral token resolves to ADO's own surface color under Follow ADO — the very color
-    // this popup is painted with — which erased the box and left the tick floating.
-    expect(checkboxOf(root).style.borderColor).not.toContain("--palette");
-    expect(checkboxOf(root).style.background).not.toContain("--palette");
+    expect(checkboxOf(root).style.borderColor).toBe("var(--control-border-emphasis)");
+    expect(checkboxOf(root).style.background).toBe("var(--control-background-muted)");
   });
 
-  it("picks the tick's green from the surface it is drawn on", () => {
+  it("uses the completion role for the tick", () => {
     const root = openPopup({ children: [childOf({ done: true })], completedCount: 1 });
 
-    // One fixed green cannot pop on both a light and a dark surface, and a 3px stroke has little
-    // area to make its case with, so the shade follows the host's declared color-scheme.
     const tick = popupOf(root)!.querySelector<HTMLElement>(".awesomeado-child-items__tick")!;
-    expect(tick.style.borderColor).toContain("light-dark(");
+    expect(tick.style.cssText).toContain("var(--completion-foreground)");
   });
 
   it("asks the caller to persist the opposite of the child's current completion", async () => {

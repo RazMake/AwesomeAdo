@@ -62,6 +62,7 @@ describe("BindingButton - placement", () => {
     expect(menubar.firstElementChild).toBe(injected);
     // Styled like ADO's native command buttons (a rounded square, not a floating circle).
     expect(injected?.style.borderRadius).toBe("2px");
+    expect(injected?.style.backgroundColor).toBe("inherit");
     expect(injected?.style.position).not.toBe("fixed");
   });
 
@@ -102,6 +103,7 @@ describe("BindingButton - placement", () => {
     expect(injected?.parentElement).toBe(document.body);
     // Fixed overlay so it stays visible above ADO's own top bar even without an anchor.
     expect(injected?.style.position).toBe("fixed");
+    expect(injected?.style.boxShadow).toBe("0 1px 4px var(--palette-black-alpha-30)");
   });
 });
 
@@ -123,10 +125,10 @@ describe("BindingButton - interaction", () => {
     const injected = document.querySelector<HTMLButtonElement>("#awesomeado-enhance-button");
 
     injected?.dispatchEvent(new MouseEvent("mouseenter"));
-    expect(injected?.style.backgroundColor).not.toBe("transparent");
+    expect(injected?.style.backgroundColor).toBe("var(--palette-neutral-8)");
 
     injected?.dispatchEvent(new MouseEvent("mouseleave"));
-    expect(injected?.style.backgroundColor).toBe("transparent");
+    expect(injected?.style.backgroundColor).toBe("inherit");
   });
 
   it("does not inject a second button when already shown", () => {

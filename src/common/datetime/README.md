@@ -30,8 +30,9 @@ deterministically in any engine.
 - `EtaCountdown` — `{ text, severity, color }`; describes how far away (or overdue) a target date is.
 - `describeEtaCountdown(targetIso, now)` — computes the ETA countdown from `now` to the target's PST
   midnight; returns a human text (`"overdue by 3 days"` / `"due today"` / `"in 2 weeks 3 days"`),
-  the severity bucket, and the severity's color (hex string). Returns `{ text: "", severity: "distant",
-color: "#8a8886" }` for invalid input. Deterministic: same inputs always produce the same result.
+  the severity bucket, and the severity's theme color role. Returns
+  `{ text: "", severity: "distant", color: "var(--eta-distant)" }` for invalid input.
+  Deterministic: same inputs always produce the same result.
 
 ## Usage guidance
 
@@ -39,5 +40,5 @@ color: "#8a8886" }` for invalid input. Deterministic: same inputs always produce
   and apply the PST timezone.
 - `describeEtaCountdown` compares whole PST calendar days (ignoring time-of-day), so midnight-to-midnight
   determines "today" vs. "tomorrow". Inject `now` so tests control the reference point.
-- The severity buckets are fixed: `overdue` (past target) = `#d13438`, `soon` (0–6 days) = `#ca5010`,
-  `upcoming` (7–27 days) = `#c19c00`, `distant` (28+ days) = `#8a8886`.
+- The severity buckets are fixed while their paint comes from the active theme: `--eta-overdue`,
+  `--eta-soon`, `--eta-upcoming`, and `--eta-distant`.

@@ -59,6 +59,8 @@ describe("DropIndicator - the insertion line", () => {
     const line = lineIn(container)!;
     expect(line.getAttribute("aria-hidden")).toBe("true");
     expect(line.style.pointerEvents).toBe("none");
+    expect(line.style.background).toBe("var(--communication-background)");
+    expect(line.style.boxShadow).toContain("var(--palette-neutral-8)");
   });
 
   it("moves the one line rather than adding another as the pointer travels", () => {
@@ -112,6 +114,10 @@ describe("DropIndicator - the re-parent wash", () => {
 
     expect(isWashed(destination)).toBe(true);
     expect(destination.style.getPropertyValue("outline")).toContain("dashed");
+    expect(destination.style.getPropertyValue("background")).toBe("var(--palette-neutral-4)");
+    expect(destination.style.getPropertyValue("outline")).toContain(
+      "var(--communication-background)",
+    );
     expect(isWashed(container)).toBe(false);
   });
 

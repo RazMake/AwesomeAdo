@@ -54,7 +54,8 @@ describe("EnhancedViewSurface - mounting", () => {
     // visibility (not display:none) so the landmark stays measurable for the overlay to track.
     expect(style?.textContent).toContain("visibility: hidden");
     expect(style?.textContent).not.toContain("body > *");
-    expect(style?.textContent).toContain("background: var(--background-color, #fff)");
+    expect(style?.textContent).toContain("background: var(--background-color)");
+    expect(hostEl()?.style.background).toBe("var(--background-color)");
   });
 
   it("pins the host to ADO's content region so the breadcrumb bar and left rail both stay visible", () => {

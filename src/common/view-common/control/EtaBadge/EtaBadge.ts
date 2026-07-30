@@ -34,18 +34,18 @@ export interface EtaBadgeHandle extends HTMLElement {
 }
 
 // Muted, theme-aware color for the "No ETA" placeholder — reads on both light and dark ADO themes.
-const NO_ETA_COLOR = "var(--text-secondary-color, #8a8886)";
+const NO_ETA_COLOR = "var(--text-secondary-color)";
 
 // Popup chrome is drawn with fixed low-alpha greys rather than a neutral palette token. Theme
 // neutrals are intentionally subtle surface washes, while these outlines must stay distinct from
 // the surface on every palette. The same self-contained contrast rule is used by the tracking header
 // and sprint picker.
-const POPUP_BORDER = "1px solid rgba(128,128,128,0.5)";
-const CLEAR_BORDER = "1px solid rgba(128,128,128,0.35)";
-const CLEAR_BACKGROUND = "rgba(128,128,128,0.12)";
+const POPUP_BORDER = "1px solid var(--control-border-strong)";
+const CLEAR_BORDER = "1px solid var(--control-border)";
+const CLEAR_BACKGROUND = "var(--control-background-subtle)";
 // Hover feedback for Clear: the same grey at a stronger alpha, so the affordance is visible on any
 // theme without picking a per-theme highlight color.
-const CLEAR_HOVER_BACKGROUND = "rgba(128,128,128,0.28)";
+const CLEAR_HOVER_BACKGROUND = "var(--control-background-hover)";
 
 const PICKER_STYLE_ID = "awesomeado-eta-picker-style";
 
@@ -89,10 +89,10 @@ function buildEtaPopup(
     "display:flex",
     "align-items:center",
     "gap:6px",
-    "background:var(--callout-background-color, var(--background-color, #fff))",
+    "background:var(--callout-background-color)",
     `border:${POPUP_BORDER}`,
     "border-radius:3px",
-    "box-shadow:0 2px 8px rgba(0,0,0,0.15)",
+    "box-shadow:0 2px 8px var(--shadow-subtle)",
     "padding:6px",
     "z-index:1000",
   ].join(";");
@@ -108,7 +108,7 @@ function buildEtaPopup(
   }
   input.style.cssText = [
     "font:inherit",
-    "color:var(--text-primary-color, #323130)",
+    "color:var(--text-primary-color)",
     // Deliberately transparent rather than an --input-background token: that token is not one the
     // view pins, so on a pinned dark theme over a light ADO page it painted the field white and hid
     // the browser's own calendar button. Sitting on the popup's themed surface keeps it legible.
@@ -138,7 +138,7 @@ function buildEtaPopup(
     clear.style.cssText = [
       "cursor:pointer",
       "font:inherit",
-      "color:var(--text-primary-color, #323130)",
+      "color:var(--text-primary-color)",
       `background:${CLEAR_BACKGROUND}`,
       `border:${CLEAR_BORDER}`,
       "border-radius:3px",

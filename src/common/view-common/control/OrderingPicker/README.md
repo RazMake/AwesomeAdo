@@ -60,7 +60,8 @@ when a view can only honour a manual drag under one policy, the same indicator h
 rows silently stop responding with no explanation on screen.
 
 - Available → the normal muted secondary color, `data-drag-reorder="available"`.
-- Unavailable → a heavily-transparent red (`var(--status-error-text, #c50f1f)` at `0.25` opacity),
+- Unavailable → the theme's heavily-transparent error text (`var(--status-error-text)` at `0.25`
+  opacity),
   `data-drag-reorder="unavailable"`, and the reason appended to the `title`/`aria-label`. The
   transparency is deliberate: reordering being off is worth noticing but is not an error to fix, so
   it must not read as an alarm in a header the user looks at all day. Hover still reaches full

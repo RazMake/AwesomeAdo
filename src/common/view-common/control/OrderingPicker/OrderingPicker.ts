@@ -43,18 +43,17 @@ function describe(policy: OrderingPolicy): string {
   return `Ordering: ${labelOf(policy)}`;
 }
 
-// How the glyph looks in each of its two states. Both are themed custom properties with literal
-// fallbacks so they read on light, dark, blue and "Follow ADO" alike (ADR-034).
+// How the glyph looks in each of its two states. Both colors are pinned by every theme.
 //
 // The unavailable state is a deliberately WEAK warning: reordering by hand is off, which is worth
 // noticing but is not an error the user has to fix. Red names the condition; the heavy transparency
 // keeps it from reading as an alarm in a header the user looks at all day.
 const GLYPH_AVAILABLE: GlyphAppearance = {
-  color: "var(--text-secondary-color, #8a8886)",
+  color: "var(--text-secondary-color)",
   opacity: "0.7",
 };
 const GLYPH_UNAVAILABLE: GlyphAppearance = {
-  color: "var(--status-error-text, #c50f1f)",
+  color: "var(--status-error-text)",
   opacity: "0.25",
 };
 
@@ -84,7 +83,7 @@ function renderPolicyRow(doc: Document, option: (typeof ORDERING_POLICIES)[numbe
     "width:calc(100% - 8px)",
     "text-align:left",
     "font:inherit",
-    "color:var(--text-primary-color, #323130)",
+    "color:var(--text-primary-color)",
     "white-space:nowrap",
   ].join(";");
 
@@ -94,7 +93,7 @@ function renderPolicyRow(doc: Document, option: (typeof ORDERING_POLICIES)[numbe
   row.append(mark, doc.createTextNode(option.label));
 
   row.addEventListener("mouseenter", () => {
-    row.style.backgroundColor = "var(--palette-neutral-4, rgba(128,128,128,0.12))";
+    row.style.backgroundColor = "var(--palette-neutral-4)";
   });
   row.addEventListener("mouseleave", () => {
     row.style.backgroundColor = "transparent";
@@ -118,10 +117,10 @@ function buildOrderingPopup(
     "top:100%",
     "left:0",
     "margin-top:4px",
-    "background:var(--callout-background-color, var(--background-color, #fff))",
-    "border:1px solid var(--palette-neutral-20, rgba(128,128,128,0.35))",
+    "background:var(--callout-background-color)",
+    "border:1px solid var(--palette-neutral-20)",
     "border-radius:3px",
-    "box-shadow:0 2px 8px rgba(0,0,0,0.15)",
+    "box-shadow:0 2px 8px var(--shadow-subtle)",
     "min-width:200px",
     "padding:4px 0",
     "font-size:12px",

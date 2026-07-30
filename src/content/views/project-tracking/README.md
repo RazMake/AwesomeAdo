@@ -184,8 +184,9 @@ halves of the view — its configuration and its renderer.
     the item's ADO Discussion. See that folder for the fetch-on-first-open behaviour, the Updates
     window, the two-day rule, and who may edit what.
   - **Theme compliance**: EVERY control (badges, pills, buttons, twisties, the header panel, the
-    guide line) follows the ADO theme via CSS custom properties with literal fallbacks, never
-    hard-coded light-only colors as the sole value (ADR-034, principle #13).
+    guide line) follows the pinned AwesomeADO theme via CSS custom properties without literal color
+    fallbacks. Work-item type colors remain runtime data supplied by ADO; formulas derived from them
+    blend toward the theme's background role (ADR-034, principle #13).
   - **Feature Crew reconcile**: on load the view collects everyone assigned across the tree and asks
     `services.featureCrew` to reconcile the project's Feature Crew roster (see
     [`common/ado/FeatureCrew`](../../../common/ado) and

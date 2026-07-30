@@ -439,16 +439,13 @@ describe("renderAssignedTo - picker keyboard", () => {
     expect(highlightedName(control)).toBe("Ada Lovelace");
   });
 
-  it("paints the highlight with a self-contained grey so it reads under 'Follow ADO'", () => {
+  it("paints the highlight with the control hover role", () => {
     const { control } = openTaggedPicker();
 
-    // A --palette-neutral-* token resolves to ADO's own surface color on that theme, which is what
-    // the popup is already painted with, leaving the highlighted row invisible.
     const highlighted = control.querySelector<HTMLButtonElement>(
       ".awesomeado-assigned__result button",
     )!;
-    expect(highlighted.style.background).toContain("rgba(128, 128, 128");
-    expect(highlighted.style.background).not.toContain("palette-neutral");
+    expect(highlighted.style.background).toBe("var(--control-background-hover)");
   });
 
   it("re-highlights the top row after the list is filtered", () => {

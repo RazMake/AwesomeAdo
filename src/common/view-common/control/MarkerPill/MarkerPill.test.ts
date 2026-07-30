@@ -17,14 +17,14 @@ describe("renderMarkerPill", () => {
     expect(pill.tagName).toBe("SPAN");
     expect(pill.textContent).toBe("Blocked (internal)");
     expect(pill.dataset.marker).toBe("blocked");
-    expect(pill.style.background).toContain("rgb(214, 126, 20)");
+    expect(pill.style.background).toBe("var(--marker-blocked-background)");
   });
 
-  it("paints the other-team marker red with white text", () => {
+  it("paints the other-team marker with its semantic roles", () => {
     const pill = renderMarkerPill(document, { marker: "blockedByOtherTeam" });
 
-    expect(pill.style.background).toContain("rgb(196, 43, 43)");
-    expect(pill.style.color).toBe("rgb(255, 255, 255)");
+    expect(pill.style.background).toBe("var(--marker-other-background)");
+    expect(pill.style.color).toBe("var(--marker-other-foreground)");
   });
 
   it("shows the configured Azure DevOps tag as the tooltip", () => {

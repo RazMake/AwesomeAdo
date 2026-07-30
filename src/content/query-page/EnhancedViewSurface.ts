@@ -26,7 +26,7 @@ const HOST_OVERLAY_CSS = [
   "bottom:0",
   "z-index:1000",
   "overflow:auto",
-  "background:var(--background-color, #fff)",
+  "background:var(--background-color)",
 ].join(";");
 
 /** What to paint: which view, for which query, with which resolved per-query property values. */
@@ -209,11 +209,10 @@ export class EnhancedViewSurface {
       // Hiding the ADO content landmark (not every body child) keeps the top breadcrumb bar visible
       // while replacing the query surface below it. `visibility:hidden` (not `display:none`) leaves
       // the landmark occupying its box so its live position/size stays measurable for the overlay to
-      // track. The blank backdrop paints ADO's own `--background-color` token so the enhanced view
-      // follows the account's light/dark theme; the #fff fallback covers an un-themed or still-loading
-      // page.
+      // track. Both the ADO backdrop and the host use the same semantic background token; the host
+      // pins it to the resolved extension theme without introducing a second literal palette here.
       style.textContent =
-        'html, body { background: var(--background-color, #fff) !important; } [role="main"] { visibility: hidden !important; }';
+        'html, body { background: var(--background-color) !important; } [role="main"] { visibility: hidden !important; }';
       this.style = style;
     }
     if (!this.style.isConnected) {

@@ -9,9 +9,9 @@ const SEARCH_BOX_SELECTORS = [
   'input[placeholder^="Search" i]',
 ];
 
-// Semi-transparent grey chosen to read as a subtle highlight on both the light and dark ADO themes
-// (like ADO's own top-bar icon buttons) without needing to know which theme is active.
-const HOVER_BACKGROUND = "rgba(128,128,128,0.2)";
+// This button belongs to ADO's top bar, so its hover follows ADO's own neutral palette rather than
+// the extension-selected palette pinned only inside the enhanced-view overlay.
+const HOVER_BACKGROUND = "var(--palette-neutral-8)";
 
 // ADO's top-bar command menubar (the icon-button group on the right of the header). The button
 // joins this group so it reads as one of ADO's own command buttons and, crucially, sits inside a
@@ -140,14 +140,14 @@ export class BindingButton {
   }
 
   // Mirror ADO's own top-bar buttons, which light up with a subtle background on hover. The button
-  // keeps a transparent background otherwise so it blends into the top bar. Handlers ride on the
-  // button node itself, so they survive the persistence observer re-inserting the same node.
+  // inherits the top bar's background otherwise. Handlers ride on the button node itself, so they
+  // survive the persistence observer re-inserting the same node.
   private wireHoverEffect(button: HTMLButtonElement): void {
     button.addEventListener("mouseenter", () => {
       button.style.backgroundColor = HOVER_BACKGROUND;
     });
     button.addEventListener("mouseleave", () => {
-      button.style.backgroundColor = "transparent";
+      button.style.backgroundColor = "inherit";
     });
   }
 
@@ -181,7 +181,7 @@ export class BindingButton {
       "padding:6px",
       "width:32px",
       "height:32px",
-      "background:transparent",
+      "background-color:inherit",
       "border:none",
       // ADO's command buttons use a 2px-rounded square rather than a circle.
       "border-radius:2px",
@@ -210,6 +210,6 @@ export class BindingButton {
     button.style.right = "12px";
     // Above ADO's own top bar and any overlay it paints.
     button.style.zIndex = "2147483647";
-    button.style.boxShadow = "0 1px 4px rgba(0,0,0,0.3)";
+    button.style.boxShadow = "0 1px 4px var(--palette-black-alpha-30)";
   }
 }

@@ -97,7 +97,7 @@ export function renderNotesPanel(options: NotesPanelOptions): NotesPanelHandle {
     "margin-top:4px",
     // Aligns the notes under the row's content block rather than under its tree gutter.
     "padding-left:39px",
-    "color:var(--text-primary-color, #323130)",
+    "color:var(--text-primary-color)",
   ].join(";");
 
   const state: PanelState = { notes: [], currentUser: null, loaded: false, expanded: false };

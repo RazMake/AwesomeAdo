@@ -438,8 +438,10 @@
   is manual. Each complete palette lives in its own `common/view-common/themes/<name>Theme.ts` module
   and never imports or extends another theme. One registry derives the setting type and accepted
   values, populates the options selector, and supplies the palette used by both options and enhanced
-  views. Controls read the shared ADO-compatible variables pinned on the view host; semantic status
-  colors remain muted/discrete, and reusable controls remain under `view-common/control`.
+  views. Every fixed presentation and semantic color is a role in the complete contract; consumers
+  use no literal color fallback. ADO/data-derived hues remain runtime inputs, with fixed blend
+  endpoints and framing supplied by the theme. Semantic status colors remain muted/discrete, and
+  reusable controls remain under `view-common/control`.
 - Rationale: Hard-coded light-only palettes (`#fff` fills, `#333`/`#666` text, `#ddd`-only borders) are
   invisible or jarring on the dark theme. A complete shared variable contract keeps every control
   coherent, while standalone definitions prevent a new theme from changing or inheriting hidden

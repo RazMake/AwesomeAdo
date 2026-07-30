@@ -33,7 +33,7 @@ export function renderViewScaffold(doc: Document, content: ViewScaffoldContent):
     "padding:32px",
     "text-align:center",
     "font-family:inherit",
-    "color:var(--text-primary-color, inherit)",
+    "color:var(--text-primary-color)",
   ].join(";");
 
   const heading = doc.createElement("h1");

@@ -40,7 +40,7 @@ export interface NoteRowOptions {
  * declaration as invalid and inherits the panel's untinted color — today's appearance, not a broken
  * one.
  */
-const NOTE_TEXT_COLOR = "color-mix(in srgb, var(--text-primary-color, #323130) 72%, #b5892c)";
+const NOTE_TEXT_COLOR = "color-mix(in srgb, var(--text-primary-color) 72%, var(--note-foreground))";
 
 /**
  * How far a wrapped note line sits in from the note's own left edge, in pixels.
@@ -155,7 +155,7 @@ function createAuthor(doc: Document, options: NoteRowOptions): HTMLElement {
     // Clear of the descenders, so the dashes stay legible as dashes rather than merging into the g's
     // and y's a display name is full of.
     "text-underline-offset:2px",
-    "color:var(--communication-foreground, #6b9fff)",
+    "color:var(--communication-foreground)",
   ].join(";");
   trigger.addEventListener("click", () => openEditor(doc, trigger, options));
   return trigger;

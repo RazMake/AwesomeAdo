@@ -95,18 +95,13 @@ const VIEWPORT_INSET_PX = 24;
 /**
  * The checkbox box: its edge length and the frame drawn around the tick.
  *
- * A translucent GREY frame and fill rather than the themed neutral tokens every other surface here
- * uses. Under "Follow ADO" those tokens resolve to ADO's OWN surface colors — the very colors this
- * popup is painted with — so the box collapsed into the background and left the tick floating with
- * no visible room around it, while every pinned theme (which pins its own neutrals) drew it fine.
- * Grey composites the other way on both, darkening a light surface and lightening a dark one, so the
- * box keeps the same inset around its tick on every theme. Same class of bug as the AssignedTo row
- * highlight.
+ * Dedicated control roles keep the frame and fill distinct from the popup surface, including when
+ * Follow ADO supplies neutral palette values that otherwise collapse into that surface.
  */
 const CHECKBOX_SIZE_PX = 18;
 const CHECKBOX_BORDER_PX = 1.5;
-const CHECKBOX_BORDER_COLOR = "rgba(128,128,128,0.55)";
-const CHECKBOX_FILL = "rgba(128,128,128,0.14)";
+const CHECKBOX_BORDER_COLOR = "var(--control-border-emphasis)";
+const CHECKBOX_FILL = "var(--control-background-muted)";
 
 /**
  * The tick: a check drawn as two borders of a flattened box rotated onto its corner, so it needs no
@@ -124,22 +119,15 @@ const TICK_STROKE_PX = 3;
  * `currentColor`: green reads as "finished" at a glance even when the struck-through title beside it
  * has been dimmed.
  *
- * One fixed green cannot carry it, though — the shade that pops against a dark surface washes out on
- * a light one and vice versa, and this is a 3px stroke rather than a block of text, so it has far
- * less area to make its case with. `light-dark()` picks per surface, which works on every theme
- * because the view host always declares a concrete `color-scheme` (pinned for a chosen theme,
- * detected from ADO for "Follow ADO"). `TICK_COLOR` is set first as the plain fallback: a browser
- * that cannot parse `light-dark()` drops only the later declaration and still draws the board's
- * shared "done" green.
+ * A dedicated completion role keeps the narrow stroke legible on each concrete theme.
  */
-const ROW_HOVER_BACKGROUND = "var(--palette-neutral-4, rgba(128,128,128,0.12))";
-const TICK_COLOR = "rgb(30,140,45)";
-const TICK_COLOR_BY_SCHEME = "light-dark(rgb(21,128,38), rgb(70,205,90))";
+const ROW_HOVER_BACKGROUND = "var(--palette-neutral-4)";
+const TICK_COLOR = "var(--completion-foreground)";
 
 /** The neutral themed chip used when no usable color is supplied. */
 const NEUTRAL_TINT = {
-  background: "var(--palette-neutral-4, rgba(128,128,128,0.12))",
-  borderColor: "var(--palette-neutral-20, #ddd)",
+  background: "var(--palette-neutral-4)",
+  borderColor: "var(--palette-neutral-20)",
 } as const;
 
 /**
@@ -195,7 +183,7 @@ export function renderChildItemsBadge(doc: Document, options: ChildItemsBadgeOpt
     "cursor:pointer",
     `border:1px solid ${tint.borderColor}`,
     `background:${tint.background}`,
-    "color:var(--text-primary-color, #323130)",
+    "color:var(--text-primary-color)",
     "border-radius:3px",
     "padding:3px 8px",
     "font:inherit",
@@ -225,16 +213,16 @@ export function renderChildItemsBadge(doc: Document, options: ChildItemsBadgeOpt
 function buildPopup(doc: Document, children: ChildItemDescriptor[]): HTMLElement {
   const popup = doc.createElement("div");
   popup.className = "awesomeado-child-items__popup";
-  // Theme-aware colors: ADO custom properties with fallbacks.
+  // Theme-aware colors come from the complete palette pinned by the extension host.
   popup.style.cssText = [
     "position:absolute",
     "top:100%",
     "left:0",
     "margin-top:4px",
-    "background:var(--callout-background-color, var(--background-color, #fff))",
-    "border:1px solid var(--palette-neutral-20, #ddd)",
+    "background:var(--callout-background-color)",
+    "border:1px solid var(--palette-neutral-20)",
     `border-radius:${POPUP_RADIUS_PX}px`,
-    "box-shadow:0 2px 8px rgba(0,0,0,0.15)",
+    "box-shadow:0 2px 8px var(--shadow-subtle)",
     "min-width:240px",
     // Sized from its own content, NOT left to shrink-to-fit. The popup is absolutely positioned
     // inside the badge's root, so "available width" is that root's ~30px box: the popup collapsed
@@ -411,7 +399,9 @@ function renderDoneCheckbox(
     `height:${CHECKBOX_SIZE_PX}px`,
     "padding:0",
     "position:relative",
-    `border:${CHECKBOX_BORDER_PX}px solid ${CHECKBOX_BORDER_COLOR}`,
+    `border-width:${CHECKBOX_BORDER_PX}px`,
+    "border-style:solid",
+    `border-color:${CHECKBOX_BORDER_COLOR}`,
     "border-radius:4px",
     `background:${CHECKBOX_FILL}`,
     interactive ? "cursor:pointer" : "cursor:default",
@@ -430,9 +420,9 @@ function renderDoneCheckbox(
     "top:46%",
     `width:${TICK_ARM_PX}px`,
     `height:${TICK_STEM_PX}px`,
-    `border:solid ${TICK_COLOR}`,
+    "border-style:solid",
+    `border-color:${TICK_COLOR}`,
     // Overrides the line above where supported; dropped whole where it is not, leaving the fallback.
-    `border-color:${TICK_COLOR_BY_SCHEME}`,
     `border-width:0 ${TICK_STROKE_PX}px ${TICK_STROKE_PX}px 0`,
     "transform:translate(-50%,-50%) rotate(45deg)",
   ].join(";");

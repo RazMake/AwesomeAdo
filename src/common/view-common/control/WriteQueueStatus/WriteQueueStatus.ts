@@ -57,14 +57,12 @@ function failedRowStyle(): string {
     "font-weight:600",
     "padding:3px 8px",
     "border-radius:3px",
-    // Themed error fill with a literal fallback, so it reads on light, dark, blue and "Follow ADO"
-    // alike (ADR-034) instead of relying on a token ADO may not define.
-    "background:var(--palette-error-background, #c50f1f)",
-    "color:var(--text-on-communication-background, #ffffff)",
+    "background:var(--palette-error-background)",
+    "color:var(--text-on-communication-background)",
     // A dark hairline plus a shadow lifts the chip off whatever surface the header tile is painted
     // in, including a themed error background close to the tile's own color.
-    "border:1px solid rgba(0,0,0,0.35)",
-    "box-shadow:0 1px 4px rgba(0,0,0,0.35)",
+    "border:1px solid var(--write-status-border)",
+    "box-shadow:0 1px 4px var(--write-status-shadow)",
     // The chip is dismissible, so it has to look clickable.
     "cursor:pointer",
   );
@@ -216,9 +214,7 @@ function paintQuiet(parts: StatusParts, pending: number): void {
   }
 
   // Busy → accent-colored inline row so "saving" reads as an active state on any theme.
-  root.style.cssText = visibleRowStyle(
-    "color:var(--communication-foreground, var(--text-primary-color, #323130))",
-  );
+  root.style.cssText = visibleRowStyle("color:var(--communication-foreground)");
   parts.label.textContent = `Saving ${pending} ${pluralizeChanges(pending)}\u2026`;
 }
 

@@ -42,8 +42,8 @@ Hover displays a countdown tooltip (e.g., "in 2 weeks 3 days" or "overdue by 3 d
 When no ETA is set (`null` or empty string), the badge displays **"No ETA"** in a muted color, dimmed
 further with opacity so it reads as fainter than any row that carries a real date. This
 muted text is **theme-aware** via CSS variable `--text-secondary-color`, ensuring it adapts to light
-or dark themes. The severity colors remain **semantic** (fixed color values) to maintain consistent
-urgency signaling across all themes.
+or dark themes. Severity paint comes from the theme's `--eta-*` semantic roles, preserving consistent
+urgency meaning while allowing each concrete palette to tune contrast.
 
 ### Editing (when `onChange` is provided)
 

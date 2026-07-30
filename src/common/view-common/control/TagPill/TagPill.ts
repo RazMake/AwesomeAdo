@@ -36,13 +36,12 @@ function hueForTag(tag: string): number {
 
 /**
  * The background color a tag pill wears: a bright, saturated fill unique to the tag, or a neutral
- * grey for the untagged "??" bucket. White text sits legibly on both.
+ * themed neutral for the untagged "??" bucket. The theme also supplies the shared foreground.
  */
 export function tagPillBackground(tag: string | null): string {
   if (tag === null || tag.length === 0) {
-    // A fixed mid-grey (not a theme token) so the "no tag yet" pill reads the same on every theme,
-    // including Follow ADO where surface tokens can collapse into the page color.
-    return "rgba(128,128,128,0.75)";
+    // Untagged is a semantic state, so its fill is selected by the active theme.
+    return "var(--untagged-background)";
   }
   return `hsl(${hueForTag(tag)}, 75%, 42%)`;
 }
@@ -64,7 +63,7 @@ function baseTagPillStyles(normalized: string | null): string[] {
     "font-weight:600",
     "line-height:1.6",
     "white-space:nowrap",
-    "color:#fff",
+    "color:var(--tag-foreground)",
     `background:${tagPillBackground(normalized)}`,
   ];
 }
@@ -72,7 +71,7 @@ function baseTagPillStyles(normalized: string | null): string[] {
 /**
  * Turn a pill into an interactive filter toggle: a hand cursor, an always-present 2px border (so
  * selecting/deselecting never shifts the pill's size — only its color changes), and a dim/full-
- * strength look so the selected (white-ringed) pills pop, plus the click handler.
+ * strength look so the selected (ringed) pills pop, plus the click handler.
  */
 function applyInteractiveTagPill(
   pill: HTMLElement,
@@ -82,7 +81,9 @@ function applyInteractiveTagPill(
 ): void {
   (pill as HTMLButtonElement).type = "button";
   styles.push("cursor:pointer");
-  styles.push(selected ? "border:2px solid #fff" : "border:2px solid transparent");
+  styles.push(
+    selected ? "border:2px solid var(--tag-selected-border)" : "border:2px solid transparent",
+  );
   styles.push(selected ? "opacity:1" : "opacity:0.55");
   pill.addEventListener("click", () => onToggle?.());
 }

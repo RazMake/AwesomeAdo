@@ -158,7 +158,7 @@ function renderBandButton(
     button.setAttribute("aria-label", label);
   }
   // Subtle themed affordance: neutral fill + a clearly visible rounded border so it reads as a button
-  // on any theme (ADO's --palette-neutral-20 is too faint under the pinned themes, so use a fixed grey).
+  // on any theme.
   // Flex centring (rather than padding) is what keeps a glyph optically centred in the fixed square
   // whatever size it is drawn at, so each button can size its own glyph independently.
   button.style.cssText = [
@@ -169,11 +169,11 @@ function renderBandButton(
     "display:inline-flex",
     "align-items:center",
     "justify-content:center",
-    `border:${BAND_BUTTON_BORDER_PX}px solid rgba(128,128,128,0.5)`,
+    `border:${BAND_BUTTON_BORDER_PX}px solid var(--control-border-strong)`,
     "border-radius:6px",
     "padding:0",
-    "background:var(--palette-neutral-4, rgba(128,128,128,0.08))",
-    "color:var(--text-primary-color, #323130)",
+    "background:var(--palette-neutral-4)",
+    "color:var(--text-primary-color)",
     "font-size:14px",
     "font-weight:bold",
     "line-height:1",
@@ -187,18 +187,8 @@ const REFRESH_BUSY_LABEL = "Refreshing…";
 const REFRESH_FAILED_LABEL =
   "Couldn't refresh — this board is showing older data. Click for details.";
 
-/**
- * The refresh icon's colour while all is well.
- *
- * A fixed vivid green rather than a theme token: ADO ships no success colour every pinned theme
- * defines, and this one is picked to stay bright against a light AND a dark surface. It is
- * deliberately a step brighter than the "done" green the status chips use — those sit inside a
- * tinted chip that already carries them, while this is a bare stroke on the header's own surface and
- * has to catch the eye as the board's one destructive-ish action. Green also separates refresh from
- * the `+`/`−` pair beside it at a glance, and leaves the failed state's error red as the only tint
- * that means "look at me".
- */
-const REFRESH_IDLE_COLOR = "rgb(0,200,83)";
+/** The theme's success ink keeps the refresh icon distinct from the adjacent neutral controls. */
+const REFRESH_IDLE_COLOR = "var(--success-foreground)";
 
 /**
  * The gap left between the refresh icon and the button's border, in pixels.
@@ -279,10 +269,10 @@ function renderRefreshButton(doc: Document): RefreshButtonHandle {
     element.style.cursor = busy ? "default" : "pointer";
     // A failure is reported in the theme's error color rather than by swapping the icon, so the
     // button still reads as the same control the reader just pressed.
-    element.style.color = failed ? "var(--palette-error-text, #a4262c)" : REFRESH_IDLE_COLOR;
+    element.style.color = failed ? "var(--palette-error-text)" : REFRESH_IDLE_COLOR;
     element.style.borderColor = failed
-      ? "var(--palette-error-text, #a4262c)"
-      : "rgba(128,128,128,0.5)";
+      ? "var(--palette-error-text)"
+      : "var(--control-border-strong)";
     const label = busy ? REFRESH_BUSY_LABEL : failed ? REFRESH_FAILED_LABEL : REFRESH_IDLE_LABEL;
     element.title = label;
     element.setAttribute("aria-label", label);
@@ -350,9 +340,7 @@ export function renderProjectTrackingHeader(
   const header = doc.createElement("div");
   header.className = "awesomeado-tracking__header";
   // Read as a raised "card" on any theme. The callout surface plus a border and elevation shadow
-  // keeps the tile visible even where its fill approaches the page background. The border is a fixed
-  // grey rather than the deliberately subtle --palette-neutral-20 surface token, for the same reason
-  // the +/- band buttons use a fixed grey.
+  // keeps the tile visible even where its fill approaches the page background.
   // Pinned to the top of the scroll container (position:sticky + top:0) so the project title,
   // sprint picker, and expand/collapse controls stay reachable while the board's items scroll under
   // it. The card's fill is an OPAQUE surface (--callout-background-color), which is required for a
@@ -363,10 +351,10 @@ export function renderProjectTrackingHeader(
     "flex-direction:column",
     "gap:8px",
     "padding:8px 16px",
-    "background:var(--callout-background-color, var(--palette-neutral-4, rgba(128,128,128,0.08)))",
-    "border:1px solid rgba(128,128,128,0.35)",
+    "background:var(--callout-background-color)",
+    "border:1px solid var(--control-border)",
     "border-radius:6px",
-    "box-shadow:0 1px 3px var(--palette-neutral-20, rgba(0,0,0,0.12))",
+    "box-shadow:0 1px 3px var(--palette-neutral-20)",
     "margin-bottom:16px",
     "position:sticky",
     "top:0",

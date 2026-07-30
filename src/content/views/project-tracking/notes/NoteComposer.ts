@@ -37,7 +37,7 @@ export function renderNoteComposer(doc: Document, options: NoteComposerOptions):
     "font:inherit",
     "font-size:11px",
     "opacity:0.75",
-    "color:var(--communication-foreground, #6b9fff)",
+    "color:var(--communication-foreground)",
   ].join(";");
 
   const close = (): void => {

@@ -172,7 +172,7 @@ describe("renderOrderingPicker - drag-reorder status", () => {
     const trigger = triggerOf(renderMounted("importance"));
 
     expect(trigger.dataset.dragReorder).toBe("available");
-    expect(trigger.style.color).toBe("var(--text-secondary-color, #8a8886)");
+    expect(trigger.style.color).toBe("var(--text-secondary-color)");
     expect(trigger.style.opacity).toBe("0.7");
   });
 
@@ -180,7 +180,7 @@ describe("renderOrderingPicker - drag-reorder status", () => {
     const trigger = triggerOf(renderWithReorderRule("importance", onlyUnderImportance));
 
     expect(trigger.dataset.dragReorder).toBe("available");
-    expect(trigger.style.color).toBe("var(--text-secondary-color, #8a8886)");
+    expect(trigger.style.color).toBe("var(--text-secondary-color)");
     expect(trigger.style.opacity).toBe("0.7");
     expect(trigger.title).toBe("Ordering: By Importance (most important first)");
   });
@@ -189,7 +189,7 @@ describe("renderOrderingPicker - drag-reorder status", () => {
     const trigger = triggerOf(renderWithReorderRule("title", onlyUnderImportance));
 
     expect(trigger.dataset.dragReorder).toBe("unavailable");
-    expect(trigger.style.color).toBe("var(--status-error-text, #c50f1f)");
+    expect(trigger.style.color).toBe("var(--status-error-text)");
     expect(trigger.style.opacity).toBe("0.25");
   });
 

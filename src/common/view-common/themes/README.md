@@ -14,6 +14,11 @@ The shared theme definitions used by both the options page and enhanced views.
 only to the registered Dark or Light definition based on ADO's detected color scheme; Blue is always
 selected manually.
 
+Every fixed presentation color and semantic color used by Options or an enhanced view belongs to
+this contract. Consumers reference roles without literal color fallbacks. Runtime colors supplied by
+ADO metadata (such as work-item type colors), generated tag hues, and parsed RGB input remain data;
+the theme supplies any fixed colors used to combine with or frame that data.
+
 ## Adding A Theme
 
 1. Add one self-contained `<name>Theme.ts` definition satisfying `ThemeDefinition`.

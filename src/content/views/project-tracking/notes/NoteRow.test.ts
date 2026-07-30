@@ -109,6 +109,7 @@ describe("renderNoteRow — what one note shows", () => {
     // Asserted on the raw attribute: the mix has to stay anchored to the theme token, since that is
     // what keeps it legible on light and dark alike rather than only wherever it was eyeballed.
     expect(row.getAttribute("style")).toContain("--text-primary-color");
+    expect(row.getAttribute("style")).toContain("--note-foreground");
   });
 
   it("reads on one line, with wrapped lines hanging in under the name", () => {

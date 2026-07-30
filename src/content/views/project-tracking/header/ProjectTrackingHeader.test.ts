@@ -325,16 +325,20 @@ describe("renderProjectTrackingHeader - refresh button", () => {
   it("reports a failed re-read on the button itself, and clears it again", () => {
     const { refreshButton } = renderProjectTrackingHeader(document, baseOptions());
     const idleColor = refreshButton.element.style.color;
+    expect(idleColor).toBe("var(--success-foreground)");
+    expect(refreshButton.element.style.borderColor).toBe("var(--control-border-strong)");
 
     refreshButton.setFailed(true);
     // Reported in place rather than by adding a chip: the band's height is pinned, so growing one
     // would shove the whole board down at the worst possible moment.
     expect(refreshButton.element.title).toContain("older data");
-    expect(refreshButton.element.style.color).not.toBe(idleColor);
+    expect(refreshButton.element.style.color).toBe("var(--palette-error-text)");
+    expect(refreshButton.element.style.borderColor).toBe("var(--palette-error-text)");
     expect(refreshButton.element.disabled).toBe(false);
 
     refreshButton.setFailed(false);
     expect(refreshButton.element.title).toContain("Refresh");
     expect(refreshButton.element.style.color).toBe(idleColor);
+    expect(refreshButton.element.style.borderColor).toBe("var(--control-border-strong)");
   });
 });

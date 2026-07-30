@@ -77,7 +77,7 @@ export function renderTextEditor(doc: Document, options: TextEditorOptions): HTM
 
   const failure = doc.createElement("span");
   failure.className = "awesomeado-text-editor__error";
-  failure.style.cssText = ["display:none", "font-size:11px", "color:#d13438"].join(";");
+  failure.style.cssText = ["display:none", "font-size:11px", "color:var(--error)"].join(";");
 
   const submit = createButton(doc, options.submitLabel, true);
   const cancel = createButton(doc, "Cancel", false);
@@ -254,10 +254,10 @@ function createField(
   const styles = [
     "width:100%",
     ...FIELD_TEXT_STYLE,
-    "border-color:var(--palette-neutral-20, rgba(128,128,128,0.45))",
+    "border-color:var(--palette-neutral-20)",
     "border-radius:3px",
-    "background:var(--callout-background-color, rgba(128,128,128,0.08))",
-    "color:var(--text-primary-color, #323130)",
+    "background:var(--callout-background-color)",
+    "color:var(--text-primary-color)",
   ];
 
   let input: HTMLInputElement | HTMLTextAreaElement;
@@ -294,12 +294,10 @@ function createButton(doc: Document, label: string, primary: boolean): HTMLButto
     "padding:2px 8px",
     "border-radius:3px",
     primary
-      ? "border:1px solid var(--communication-background, #0078d4)"
-      : "border:1px solid var(--palette-neutral-20, rgba(128,128,128,0.45))",
-    primary ? "background:var(--communication-background, #0078d4)" : "background:transparent",
-    primary
-      ? "color:var(--text-on-communication-background, #fff)"
-      : "color:var(--text-primary-color, #323130)",
+      ? "border:1px solid var(--communication-background)"
+      : "border:1px solid var(--palette-neutral-20)",
+    primary ? "background:var(--communication-background)" : "background:transparent",
+    primary ? "color:var(--text-on-communication-background)" : "color:var(--text-primary-color)",
   ].join(";");
   return button;
 }

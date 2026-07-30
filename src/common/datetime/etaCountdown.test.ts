@@ -14,7 +14,7 @@ describe("describeEtaCountdown - overdue (delta < 0)", () => {
     expect(result).toEqual({
       text: "overdue by 1 day",
       severity: "overdue",
-      color: "#d13438",
+      color: "var(--eta-overdue)",
     });
   });
 
@@ -24,7 +24,7 @@ describe("describeEtaCountdown - overdue (delta < 0)", () => {
     expect(result).toEqual({
       text: "overdue by 3 days",
       severity: "overdue",
-      color: "#d13438",
+      color: "var(--eta-overdue)",
     });
   });
 
@@ -34,7 +34,7 @@ describe("describeEtaCountdown - overdue (delta < 0)", () => {
     expect(result).toEqual({
       text: "overdue by 30 days",
       severity: "overdue",
-      color: "#d13438",
+      color: "var(--eta-overdue)",
     });
   });
 });
@@ -46,7 +46,7 @@ describe("describeEtaCountdown - due today (delta === 0)", () => {
     expect(result).toEqual({
       text: "due today",
       severity: "soon",
-      color: "#ca5010",
+      color: "var(--eta-soon)",
     });
   });
 
@@ -56,7 +56,7 @@ describe("describeEtaCountdown - due today (delta === 0)", () => {
     expect(result).toEqual({
       text: "due today",
       severity: "soon",
-      color: "#ca5010",
+      color: "var(--eta-soon)",
     });
   });
 });
@@ -68,7 +68,7 @@ describe("describeEtaCountdown - soon (0 < delta <= 6)", () => {
     expect(result).toEqual({
       text: "in 1 day",
       severity: "soon",
-      color: "#ca5010",
+      color: "var(--eta-soon)",
     });
   });
 
@@ -78,7 +78,7 @@ describe("describeEtaCountdown - soon (0 < delta <= 6)", () => {
     expect(result).toEqual({
       text: "in 2 days",
       severity: "soon",
-      color: "#ca5010",
+      color: "var(--eta-soon)",
     });
   });
 
@@ -88,7 +88,7 @@ describe("describeEtaCountdown - soon (0 < delta <= 6)", () => {
     expect(result).toEqual({
       text: "in 6 days",
       severity: "soon",
-      color: "#ca5010",
+      color: "var(--eta-soon)",
     });
   });
 });
@@ -100,7 +100,7 @@ describe("describeEtaCountdown - upcoming (7 <= delta <= 27)", () => {
     expect(result).toEqual({
       text: "in 1 week",
       severity: "upcoming",
-      color: "#c19c00",
+      color: "var(--eta-upcoming)",
     });
   });
 
@@ -110,7 +110,7 @@ describe("describeEtaCountdown - upcoming (7 <= delta <= 27)", () => {
     expect(result).toEqual({
       text: "in 1 week 1 day",
       severity: "upcoming",
-      color: "#c19c00",
+      color: "var(--eta-upcoming)",
     });
   });
 
@@ -120,7 +120,7 @@ describe("describeEtaCountdown - upcoming (7 <= delta <= 27)", () => {
     expect(result).toEqual({
       text: "in 2 weeks 3 days",
       severity: "upcoming",
-      color: "#c19c00",
+      color: "var(--eta-upcoming)",
     });
   });
 
@@ -130,7 +130,7 @@ describe("describeEtaCountdown - upcoming (7 <= delta <= 27)", () => {
     expect(result).toEqual({
       text: "in 3 weeks",
       severity: "upcoming",
-      color: "#c19c00",
+      color: "var(--eta-upcoming)",
     });
   });
 
@@ -140,7 +140,7 @@ describe("describeEtaCountdown - upcoming (7 <= delta <= 27)", () => {
     expect(result).toEqual({
       text: "in 3 weeks 6 days",
       severity: "upcoming",
-      color: "#c19c00",
+      color: "var(--eta-upcoming)",
     });
   });
 });
@@ -152,7 +152,7 @@ describe("describeEtaCountdown - distant (delta >= 28)", () => {
     expect(result).toEqual({
       text: "in 4 weeks",
       severity: "distant",
-      color: "#8a8886",
+      color: "var(--eta-distant)",
     });
   });
 
@@ -162,7 +162,7 @@ describe("describeEtaCountdown - distant (delta >= 28)", () => {
     expect(result).toEqual({
       text: "in 8 weeks 2 days",
       severity: "distant",
-      color: "#8a8886",
+      color: "var(--eta-distant)",
     });
   });
 
@@ -172,7 +172,7 @@ describe("describeEtaCountdown - distant (delta >= 28)", () => {
     expect(result).toEqual({
       text: "in 52 weeks",
       severity: "distant",
-      color: "#8a8886",
+      color: "var(--eta-distant)",
     });
   });
 });
@@ -183,7 +183,7 @@ describe("describeEtaCountdown - invalid input", () => {
     expect(result).toEqual({
       text: "",
       severity: "distant",
-      color: "#8a8886",
+      color: "var(--eta-distant)",
     });
   });
 
@@ -192,7 +192,7 @@ describe("describeEtaCountdown - invalid input", () => {
     expect(result).toEqual({
       text: "",
       severity: "distant",
-      color: "#8a8886",
+      color: "var(--eta-distant)",
     });
   });
 
@@ -201,7 +201,7 @@ describe("describeEtaCountdown - invalid input", () => {
     expect(result).toEqual({
       text: "",
       severity: "distant",
-      color: "#8a8886",
+      color: "var(--eta-distant)",
     });
   });
 });
@@ -237,7 +237,7 @@ describe("describeEtaCountdown - PST timezone handling", () => {
     expect(result).toEqual({
       text: "in 1 day",
       severity: "soon",
-      color: "#ca5010",
+      color: "var(--eta-soon)",
     });
   });
 
@@ -249,7 +249,7 @@ describe("describeEtaCountdown - PST timezone handling", () => {
     expect(result).toEqual({
       text: "in 1 day",
       severity: "soon",
-      color: "#ca5010",
+      color: "var(--eta-soon)",
     });
   });
 });

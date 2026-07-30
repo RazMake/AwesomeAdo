@@ -26,8 +26,8 @@ const MENU_Z_INDEX = "2147483647";
  * transient — opened on demand and dismissed on selection, an outside click, Escape, or when the
  * viewport shifts — so it needs no persistence observer the way the always-present button does.
  *
- * Styling is self-contained but reads ADO's theme tokens (with hard fallbacks) so the menu follows
- * the account's light or dark theme instead of clashing with it.
+ * Styling is self-contained but reads ADO's theme tokens so the menu follows the account's light or
+ * dark theme instead of taking the enhanced view's extension-selected palette.
  */
 export class BindingMenu {
   private menu: HTMLElement | undefined;
@@ -88,10 +88,10 @@ export class BindingMenu {
     label.textContent = item.label;
     row.append(check, label);
     row.addEventListener("mouseenter", () => {
-      row.style.backgroundColor = "rgba(128,128,128,0.18)";
+      row.style.backgroundColor = "var(--palette-neutral-8)";
     });
     row.addEventListener("mouseleave", () => {
-      row.style.backgroundColor = "transparent";
+      row.style.backgroundColor = "inherit";
     });
     row.addEventListener("click", () => {
       this.close();
@@ -104,7 +104,7 @@ export class BindingMenu {
     const line = this.doc.createElement("div");
     line.setAttribute("role", "separator");
     line.style.cssText =
-      "height:0;margin:4px 0;border-top:1px solid var(--component-menu-separator-color, rgba(128,128,128,0.35))";
+      "height:0;margin:4px 0;border-top-width:1px;border-top-style:solid;border-top-color:var(--component-menu-separator-color)";
     return line;
   }
 
@@ -114,11 +114,13 @@ export class BindingMenu {
       `z-index:${MENU_Z_INDEX}`,
       "min-width:200px",
       "padding:4px 0",
-      "background:var(--callout-background-color, var(--background-color, #fff))",
-      "color:var(--text-primary-color, #1f1f1f)",
-      "border:1px solid var(--component-menu-separator-color, rgba(128,128,128,0.35))",
+      "background:var(--callout-background-color, var(--background-color))",
+      "color:var(--text-primary-color)",
+      "border-width:1px",
+      "border-style:solid",
+      "border-color:var(--component-menu-separator-color)",
       "border-radius:4px",
-      "box-shadow:0 4px 12px rgba(0,0,0,0.28)",
+      "box-shadow:0 4px 12px var(--palette-black-alpha-30)",
       'font:13px "Segoe UI", system-ui, sans-serif',
     ].join(";");
   }
@@ -131,7 +133,7 @@ export class BindingMenu {
       "width:100%",
       "box-sizing:border-box",
       "padding:6px 12px",
-      "background:transparent",
+      "background-color:inherit",
       "border:none",
       "color:inherit",
       "font:inherit",

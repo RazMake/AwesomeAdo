@@ -274,9 +274,7 @@ describe("renderMarkdownText", () => {
     expect(mention.style.fontWeight).toBe("700");
     expect(mention.style.textDecoration).toBe("none");
     expect(mention.style.color).not.toBe(link.style.color);
-    // Whichever of the two color declarations the browser kept, both are built on the same purple,
-    // so a mention is never left wearing the surrounding prose's color.
-    expect(mention.style.color.toLowerCase()).toContain("8a63d2");
+    expect(mention.style.color).toBe("var(--mention-themed-foreground)");
   });
 
   it("escapes a display name that itself contains markup", () => {

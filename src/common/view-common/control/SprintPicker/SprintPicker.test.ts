@@ -252,7 +252,7 @@ describe("renderSprintPicker - relative-time option styling", () => {
     const past = styledOptions()[0]!;
 
     expect(past.dataset.relation).toBe("past");
-    expect(past.style.cssText).toContain("rgb(194, 108, 29)");
+    expect(past.style.cssText).toContain("var(--sprint-past-foreground)");
     expect(past.style.cssText).not.toContain("font-weight");
   });
 
@@ -300,7 +300,7 @@ describe("renderSprintPicker - collapsed select styling", () => {
     const select = renderSelect("Sprint 1");
 
     expect(select.dataset.relation).toBe("past");
-    expect(select.style.cssText).toContain("rgb(194, 108, 29)");
+    expect(select.style.cssText).toContain("var(--sprint-past-foreground)");
   });
 
   it("bolds the select when the current sprint is selected", () => {

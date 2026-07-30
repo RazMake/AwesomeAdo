@@ -81,7 +81,7 @@ function renderPanelHeading(doc: Document, item: TrackedWorkItem, withTitle: boo
     title.style.cssText = [
       "font-size:12px",
       "font-weight:600",
-      "color:var(--text-primary-color, #323130)",
+      "color:var(--text-primary-color)",
     ].join(";");
     heading.append(title);
   }
@@ -102,7 +102,7 @@ function renderIdLink(doc: Document, id: number): HTMLElement {
   element.style.cssText = [
     "font-size:11px",
     "font-weight:600",
-    `color:var(--communication-foreground, #0078d4)`,
+    "color:var(--communication-foreground)",
     "text-decoration:none",
   ].join(";");
   if (url !== null) {

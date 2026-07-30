@@ -11,10 +11,6 @@ afterEach(() => {
 const chipOf = (badge: HTMLElement): HTMLElement =>
   badge.querySelector<HTMLElement>(".awesomeado-status__badge")!;
 
-/** Whitespace-insensitive contains, so `rgb(30, 140, 45)` matches `rgb(30,140,45)`. */
-const containsColor = (cssValue: string, needle: string): boolean =>
-  cssValue.replace(/\s/g, "").includes(needle.replace(/\s/g, ""));
-
 describe("renderStatusBadge - colors and text", () => {
   it("renders the state text", () => {
     const badge = renderStatusBadge(document, { state: "In Progress" });
@@ -25,47 +21,48 @@ describe("renderStatusBadge - colors and text", () => {
   it("uses a neutral themed background when no ordinal is provided", () => {
     const badge = renderStatusBadge(document, { state: "In Progress" });
 
-    expect(chipOf(badge).style.background).toContain("var(--palette-neutral-4");
+    expect(chipOf(badge).style.background).toBe("var(--control-background-subtle)");
   });
 
   it("uses a neutral themed background when the ordinal is negative (maps to no column)", () => {
     const badge = renderStatusBadge(document, { state: "Custom", ordinal: -1 });
 
-    expect(chipOf(badge).style.background).toContain("var(--palette-neutral-4");
+    expect(chipOf(badge).style.background).toBe("var(--control-background-subtle)");
   });
 
   it("colors the 1st position (ordinal 0) gray", () => {
     const badge = renderStatusBadge(document, { state: "Queue", ordinal: 0 });
 
-    expect(containsColor(chipOf(badge).style.background, "rgba(128,128,128,0.2)")).toBe(true);
+    expect(chipOf(badge).style.background).toBe("var(--status-neutral-background)");
   });
 
   it("colors the 2nd position (ordinal 1) blue", () => {
     const badge = renderStatusBadge(document, { state: "Active", ordinal: 1 });
 
-    expect(containsColor(chipOf(badge).style.background, "rgba(0,120,212,0.2)")).toBe(true);
+    expect(chipOf(badge).style.background).toBe("var(--status-blue-background)");
+    expect(chipOf(badge).style.borderColor).toBe("var(--status-blue-border)");
   });
 
   it("colors the 3rd position (ordinal 2) yellow", () => {
     const badge = renderStatusBadge(document, { state: "Waiting", ordinal: 2 });
 
-    expect(containsColor(chipOf(badge).style.background, "rgba(224,168,0,0.2)")).toBe(true);
+    expect(chipOf(badge).style.background).toBe("var(--status-yellow-background)");
   });
 
   it("colors the 4th position (ordinal 3) green with a contrasting green text", () => {
     const badge = renderStatusBadge(document, { state: "Done", ordinal: 3 });
 
     const chip = chipOf(badge);
-    expect(containsColor(chip.style.background, "rgba(16,124,16,0.2)")).toBe(true);
-    expect(containsColor(chip.style.color, "rgb(30,140,45)")).toBe(true);
+    expect(chip.style.background).toBe("var(--status-green-background)");
+    expect(chip.style.color).toBe("var(--status-green-foreground)");
   });
 
   it("colors the 5th position (ordinal 4) red with a contrasting red text", () => {
     const badge = renderStatusBadge(document, { state: "Removed", ordinal: 4 });
 
     const chip = chipOf(badge);
-    expect(containsColor(chip.style.background, "rgba(197,15,31,0.2)")).toBe(true);
-    expect(containsColor(chip.style.color, "rgb(224,60,60)")).toBe(true);
+    expect(chip.style.background).toBe("var(--status-red-background)");
+    expect(chip.style.color).toBe("var(--status-red-foreground)");
   });
 
   it("colors a position identically regardless of the state label (consistent across types)", () => {
@@ -85,7 +82,7 @@ describe("renderStatusBadge - colors and text", () => {
   it("clamps positions beyond the fifth to the terminal (red) color", () => {
     const badge = renderStatusBadge(document, { state: "Extra", ordinal: 7 });
 
-    expect(containsColor(chipOf(badge).style.background, "rgba(197,15,31,0.2)")).toBe(true);
+    expect(chipOf(badge).style.background).toBe("var(--status-red-background)");
   });
 });
 
@@ -158,8 +155,8 @@ describe("renderStatusBadge - opening the state popup", () => {
     expect(rows[0]?.textContent).toBe("Active");
     expect(rows[1]?.textContent).toBe("Resolved");
     // Each row is colored by its own board-column ordinal, not the current state's.
-    expect(containsColor(rows[0]?.style.background ?? "", "rgba(0,120,212,0.2)")).toBe(true);
-    expect(containsColor(rows[1]?.style.background ?? "", "rgba(16,124,16,0.2)")).toBe(true);
+    expect(rows[0]?.style.background).toBe("var(--status-blue-background)");
+    expect(rows[1]?.style.background).toBe("var(--status-green-background)");
   });
 
   it("selecting a row calls onChange with primaryState and column, then closes the popup", () => {
@@ -311,14 +308,14 @@ describe("renderStatusBadge - option list and safety", () => {
     });
 
     const chip = chipOf(badge);
-    expect(containsColor(chip.style.background, "rgba(0,120,212,0.2)")).toBe(true);
+    expect(chip.style.background).toBe("var(--status-blue-background)");
 
     badge.setStatus("Done", 3);
 
     expect(chip.textContent).toContain("Done");
     // The caret is preserved after a relabel.
     expect(chip.textContent).toContain("▾");
-    expect(containsColor(chip.style.background, "rgba(16,124,16,0.2)")).toBe(true);
+    expect(chip.style.background).toBe("var(--status-green-background)");
   });
 });
 
@@ -330,7 +327,7 @@ describe("renderStatusBadge - setStatus and sizing", () => {
 
     const chip = chipOf(badge);
     expect(chip.textContent).toContain("Custom");
-    expect(chip.style.background).toContain("var(--palette-neutral-4");
+    expect(chip.style.background).toBe("var(--control-background-subtle)");
   });
 
   it("sizes every badge to the shared minWidthCh so a column reads as one uniform width", () => {
