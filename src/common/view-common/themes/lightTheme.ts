@@ -41,7 +41,7 @@ export const LIGHT_THEME = {
     "--control-background-hover": "rgba(128,128,128,0.28)",
     "--item-row-background": "#ffffff",
     "--item-row-alternate-background": "#f7f7f7",
-    "--item-row-hover-background": "#e9eef4",
+    "--item-row-hover-background": "#f0f3f6",
     "--item-row-emphasis-background": "#d5e9f8",
     "--spinner-track": "rgba(128,128,128,0.35)",
     "--spinner-head": "rgba(128,128,128,0.95)",

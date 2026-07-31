@@ -353,6 +353,23 @@ describe("EnhancedViewSurface - theming", () => {
     }
   });
 
+  it("follows ADO when its theme changes after the view is mounted", async () => {
+    document.body.style.setProperty("--background-color", "rgb(32, 32, 32)");
+    try {
+      surface.applyTheme("auto");
+      surface.apply(sprint);
+      expect(hostEl()?.style.getPropertyValue("color-scheme")).toBe("dark");
+
+      document.body.style.setProperty("--background-color", "rgb(255, 255, 255)");
+      await flushMutations();
+
+      expect(hostEl()?.style.getPropertyValue("color-scheme")).toBe("light");
+      expect(hostEl()?.style.getPropertyValue("--background-color")).toBe("#ffffff");
+    } finally {
+      document.body.style.removeProperty("--background-color");
+    }
+  });
+
   it("restores the pinned theme after ADO's re-render drops and re-attaches the host", async () => {
     surface.applyTheme("dark");
     surface.apply(sprint);

@@ -17,9 +17,11 @@ This is a flattened snapshot of what exists now, not a build log.
   holding a `ViewType` config (in the `VIEW_TYPES` catalog) and an `EnhancedView` renderer (in the
   eager/lazy enhanced-view registry), a shared placeholder shell (`renderViewScaffold`), and
   `sprint` / `project-tracking` views. Project Tracking ships as an on-demand ESM renderer; store
-  builds minify it and the always-loaded runtime. Project Tracking rows use theme-owned alternating backgrounds with
-  hover and `Ctrl+Shift` emphasis across each row and its open details, re-striped in visible tree
-  order after outline changes. Options imports only `content/views/viewCatalog` (scoped §6
+  builds minify it and the always-loaded runtime. Project Tracking rows use theme-owned alternating
+  backgrounds, with subtle hover and stronger `Ctrl+Shift` emphasis filling each row and its open details as one
+  continuous surface while excluding child rows. Their unchanged total spacing is balanced toward
+  the bottom of each item, and they are re-striped in visible tree order after outline changes.
+  Options imports only `content/views/viewCatalog` (scoped §6
   exception, ADR-027, lint-enforced).
 - **Area-path filtering** (`common/view-common/control/AreaPathFilter` + Project Tracking): the live
   tree hydrates `System.AreaPath`; a compact themed header popup selects full paths using shortest

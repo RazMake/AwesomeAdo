@@ -633,6 +633,7 @@ interface ExpansionControl {
  */
 const MAX_ROW_DEPTH = 1;
 const ITEM_WRAPPER_CLASS = "awesomeado-tracking__item";
+const ITEM_SURFACE_CLASS = "awesomeado-tracking__item-surface";
 const CHILDREN_CLASS = "awesomeado-tracking__children";
 
 /** Whether every ancestor branch between one item and the tree is currently open. */
@@ -662,31 +663,22 @@ function restripeVisibleRows(treeContainer: HTMLElement): void {
 /** The board-scoped style sheet for striped rows and pointer emphasis. */
 function createItemRowStyle(doc: Document): HTMLStyleElement {
   const style = doc.createElement("style");
+  // Half the former row padding trails the whole surface instead, preserving item height while
+  // leaving breathing room below whichever description or notes section is last.
   style.textContent = `
-.${ITEM_WRAPPER_CLASS}[data-row-stripe="base"] > .awesomeado-tracking__row {
+.${ITEM_WRAPPER_CLASS} > .${ITEM_SURFACE_CLASS} {
+  padding-bottom: 4px;
+}
+.${ITEM_WRAPPER_CLASS}[data-row-stripe="base"] > .${ITEM_SURFACE_CLASS} {
   background-color: var(--item-row-background);
 }
-.${ITEM_WRAPPER_CLASS}[data-row-stripe="alternate"] > .awesomeado-tracking__row {
+.${ITEM_WRAPPER_CLASS}[data-row-stripe="alternate"] > .${ITEM_SURFACE_CLASS} {
   background-color: var(--item-row-alternate-background);
 }
-.${ITEM_WRAPPER_CLASS} > .awesomeado-tracking__row:hover {
+.${ITEM_WRAPPER_CLASS} > .${ITEM_SURFACE_CLASS}:hover {
   background-color: var(--item-row-hover-background);
 }
-.awesomeado-tracking--modifier-highlight .${ITEM_WRAPPER_CLASS}:has(
-  > .awesomeado-tracking__row:hover,
-  > .awesomeado-tracking__description:hover,
-  > .awesomeado-notes:hover
-) > .awesomeado-tracking__row,
-.awesomeado-tracking--modifier-highlight .${ITEM_WRAPPER_CLASS}:has(
-  > .awesomeado-tracking__row:hover,
-  > .awesomeado-tracking__description:hover,
-  > .awesomeado-notes:hover
-) > .awesomeado-tracking__description,
-.awesomeado-tracking--modifier-highlight .${ITEM_WRAPPER_CLASS}:has(
-  > .awesomeado-tracking__row:hover,
-  > .awesomeado-tracking__description:hover,
-  > .awesomeado-notes:hover
-) > .awesomeado-notes {
+.awesomeado-tracking--modifier-highlight .${ITEM_WRAPPER_CLASS} > .${ITEM_SURFACE_CLASS}:hover {
   background-color: var(--item-row-emphasis-background);
 }`;
   return style;
@@ -882,8 +874,8 @@ function setTwistyExpanded(
 
 /** Locates the children container of the row a twisty belongs to (null when the row has none). */
 function childrenContainerOf(twisty: HTMLElement): HTMLElement | null {
-  const rowWrapper = twisty.closest(".awesomeado-tracking__row")?.parentElement;
-  const container = rowWrapper?.querySelector(".awesomeado-tracking__children");
+  const rowWrapper = twisty.closest<HTMLElement>(`.${ITEM_WRAPPER_CLASS}`);
+  const container = rowWrapper?.querySelector(`:scope > .${CHILDREN_CLASS}`);
   return container instanceof HTMLElement ? container : null;
 }
 
@@ -1736,7 +1728,7 @@ function renderRow(
   // reads at the vertical center of the row's FIRST line. align-items:flex-start top-aligns the
   // fixed gutter, the content block (which wraps the title internally) and the ETA, and because those
   // three share the same first-line box height their vertical centers coincide with the first line.
-  row.style.cssText = ["display:flex", "align-items:flex-start", "gap:8px", "padding:4px 0"].join(
+  row.style.cssText = ["display:flex", "align-items:flex-start", "gap:8px", "padding:2px 0"].join(
     ";",
   );
   // Wired on the row itself (not the wrapper) so a right-click lands on the item whose LINE is under
@@ -1799,7 +1791,10 @@ function renderRow(
 
   const rowWrapper = doc.createElement("div");
   rowWrapper.className = ITEM_WRAPPER_CLASS;
-  rowWrapper.append(row, descPanel, notes.panel, childrenContainer);
+  const itemSurface = doc.createElement("div");
+  itemSurface.className = ITEM_SURFACE_CLASS;
+  itemSurface.append(row, descPanel, notes.panel);
+  rowWrapper.append(itemSurface, childrenContainer);
 
   if (twisty) {
     wireTwisty(twisty, childrenContainer, item.id, options.collapsedIds, options.restripeRows);

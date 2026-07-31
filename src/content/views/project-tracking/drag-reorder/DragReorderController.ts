@@ -117,6 +117,11 @@ export class DragReorderController {
   }
 
   private previewDrop(event: Event, target: DraggableRow): void {
+    if (this.isPopupEventBubblingToTree(event, target)) {
+      this.indicator.clear();
+      event.stopPropagation();
+      return;
+    }
     const plan = this.planDrop(event, target);
     if (plan === null) {
       this.indicator.clear();
@@ -154,6 +159,10 @@ export class DragReorderController {
   }
 
   private completeDrop(event: Event, target: DraggableRow): void {
+    if (this.isPopupEventBubblingToTree(event, target)) {
+      event.stopPropagation();
+      return;
+    }
     const plan = this.planDrop(event, target);
     this.endSession();
     if (plan === null) {
@@ -208,6 +217,18 @@ export class DragReorderController {
       move.type = target.destinationType;
     }
     return { move, side };
+  }
+
+  /** Prevents a popup event from bubbling into its owning tree row and becoming a hierarchy move. */
+  private isPopupEventBubblingToTree(event: Event, target: DraggableRow): boolean {
+    const surface = this.session?.source.dragSurface;
+    const eventTarget = event.target as Node | null;
+    return (
+      surface !== undefined &&
+      eventTarget !== null &&
+      surface.contains(eventTarget) &&
+      !surface.contains(target.row)
+    );
   }
 
   private endSession(): void {

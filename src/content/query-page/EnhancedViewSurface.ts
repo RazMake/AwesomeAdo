@@ -59,6 +59,8 @@ export class EnhancedViewSurface {
   private style: HTMLStyleElement | undefined;
   private host: HTMLElement | undefined;
   private observer: MutationObserver | undefined;
+  private themeObserver: MutationObserver | undefined;
+  private observedThemeBody: HTMLElement | undefined;
   // Watches ADO's content landmark so the overlay follows it live (e.g. when the collapsible left
   // rail changes width). Undefined when unsupported (older engines / jsdom) — the re-attach observer
   // then drives the sync instead.
@@ -152,6 +154,7 @@ export class EnhancedViewSurface {
     if (this.host) {
       this.applyThemeToHost();
     }
+    this.syncAdoThemeObservation();
   }
 
   // Pin the palette onto the host element itself so its tokens win over ADO's inherited ones for the
@@ -177,6 +180,9 @@ export class EnhancedViewSurface {
     // Stop re-attaching before removing, otherwise the observer would immediately put them back.
     this.observer?.disconnect();
     this.observer = undefined;
+    this.themeObserver?.disconnect();
+    this.themeObserver = undefined;
+    this.observedThemeBody = undefined;
     this.resizeObserver?.disconnect();
     this.resizeObserver = undefined;
     this.observedMain = undefined;
@@ -269,9 +275,33 @@ export class EnhancedViewSurface {
     // the custom properties would otherwise be lost, and the host may have been rebuilt/re-attached
     // since the last theme change.
     this.applyThemeToHost();
+    this.syncAdoThemeObservation();
     if (!this.host.isConnected) {
       (this.doc.body ?? this.doc.documentElement).append(this.host);
     }
+  }
+
+  // ADO switches themes by changing root/body classes and the CSS tokens those classes supply. The
+  // setting itself does not change, so Follow ADO needs this narrow observer to re-resolve live.
+  private syncAdoThemeObservation(): void {
+    const body = this.doc.body ?? undefined;
+    if (this.theme !== "auto" || !this.host) {
+      this.themeObserver?.disconnect();
+      this.themeObserver = undefined;
+      this.observedThemeBody = undefined;
+      return;
+    }
+    if (this.themeObserver && this.observedThemeBody === body) {
+      return;
+    }
+    this.themeObserver?.disconnect();
+    this.themeObserver = new MutationObserver(() => this.applyThemeToHost());
+    const options: MutationObserverInit = { attributes: true, attributeFilter: ["class", "style"] };
+    this.themeObserver.observe(this.doc.documentElement, options);
+    if (body) {
+      this.themeObserver.observe(body, options);
+    }
+    this.observedThemeBody = body;
   }
 
   private renderView(request: EnhancedViewRequest, view: EnhancedView): void {
@@ -317,6 +347,8 @@ export class EnhancedViewSurface {
       // the ResizeObserver at the current landmark and re-align the overlay. Cheap: it only writes on
       // a real change.
       this.trackContentRegion();
+      // ADO can replace the body during navigation; move the narrow theme observer to the new body.
+      this.syncAdoThemeObservation();
     });
     this.observer.observe(this.doc.documentElement, { childList: true, subtree: true });
   }

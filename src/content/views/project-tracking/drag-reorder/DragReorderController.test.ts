@@ -244,6 +244,26 @@ describe("DragReorderController - previewing a drop", () => {
 
     expect(closes).toBe(1);
   });
+
+  it("does not treat a bubbled event inside a popup as a tree reparent", () => {
+    const board = buildBoard();
+    const source = board.rows.get(6)!;
+    const surface = source.wrapper.parentElement!;
+    board.rows.get(1)!.row.append(surface);
+    let closes = 0;
+    source.dragSurface = surface;
+    source.onLeaveSurface = () => {
+      closes += 1;
+    };
+    startDrag(board, 6);
+
+    dragOver(board, 6, 205);
+    drop(board, 6, 205);
+
+    expect(anyLine()).toBeNull();
+    expect(board.moves).toEqual([]);
+    expect(closes).toBe(0);
+  });
 });
 
 describe("DragReorderController - drops it refuses", () => {

@@ -78,7 +78,7 @@ export const DARK_THEME = {
     "--control-background-hover": "rgba(128,128,128,0.28)",
     "--item-row-background": "#1f1f1f",
     "--item-row-alternate-background": "#242424",
-    "--item-row-hover-background": "#303030",
+    "--item-row-hover-background": "#292929",
     "--item-row-emphasis-background": "#243f55",
     "--spinner-track": "rgba(128,128,128,0.35)",
     "--spinner-head": "rgba(128,128,128,0.95)",

@@ -115,9 +115,11 @@ The extension is feature-complete for its current scope:
   after Assigned To and before its sprint pill; an item carrying both tags shows both pills.
   Each row's title is preceded by its work item **type icon** (`ItemTypeIcon`), which doubles as the
   item's notes toggle — muted closed, bright open. Rows use theme-owned alternating backgrounds in
-  visible depth-first order; branch expansion/collapse re-stripes the outline, pointer hover
-  highlights the row, and `Ctrl+Shift` strengthens that highlight across the row plus its open notes
-  and description panels. Opening the icon mounts
+  visible depth-first order; branch expansion/collapse re-stripes the outline, subtle pointer hover
+  highlights one continuous item surface across the row plus its open notes and description panels
+  while excluding child rows, and `Ctrl+Shift` strengthens that same complete surface. Existing
+  inter-item spacing is balanced toward the bottom of each surface so its final panel has breathing
+  room. Opening the icon mounts
   `content/views/project-tracking/notes` (`NotesPanel` + `NoteRow` + `NoteComposer` + `NoteEditor`):
   the item's ADO Discussion, fetched on FIRST open only (ADR-043), "+ Add note" above a newest-first
   list, and the two most recent days that have non-marker notes shown in full; the explicit View all

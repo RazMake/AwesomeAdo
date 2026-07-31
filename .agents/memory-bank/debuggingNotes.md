@@ -9,6 +9,42 @@ we hit, why they happened, and the exact fix so nobody re-derives them.
 agent-tool-local memory (it does not clone or transfer between machines/agents). Record new findings
 here so every agent, teammate, and clone sees them.
 
+## Expand-all and collapse-all changed arrows but not child rows
+
+- SYMPTOM: Project Tracking's header buttons changed every twisty's glyph and `aria-expanded`, but
+  the child rows stayed in their previous visible state. Individual twisties still worked.
+- ROOT CAUSE: the item-hover refactor inserted an `item-surface` around each row and its details,
+  leaving the children container as that surface's sibling. The header buttons re-located children
+  from the row's immediate parent, which was now the surface, while individual twisties retained a
+  direct reference to the correct container.
+- FIX / RULE: locate a twisty's owning `awesomeado-tracking__item`, then select only its direct
+  `awesomeado-tracking__children`. Bulk-control tests must assert the child container's `display`
+  state as well as the glyph and ARIA metadata; metadata-only assertions accepted this broken UI.
+
+## Follow ADO stayed dark after Azure DevOps switched to Light
+
+- SYMPTOM: an already-mounted enhanced view stayed on AwesomeADO's Dark palette after Azure DevOps
+  switched to its Light theme.
+- ROOT CAUSE: `EnhancedViewSurface` resolved `auto` only when the synced AwesomeADO setting changed
+  or the overlay mounted. Azure DevOps changes root/body classes and their CSS tokens, but the
+  AwesomeADO setting remains `auto`, so neither path ran again.
+- FIX / RULE: while `auto` is active, observe only `class`/`style` changes on ADO's root and body and
+  re-resolve the concrete palette. Do not observe the whole subtree's attributes: view controls
+  change their own classes/styles frequently, which would add churn and can make theme writes
+  self-triggering. Disconnect the theme observer for concrete themes and when the surface restores.
+
+## A popup reorder immediately previewed a hierarchy change
+
+- SYMPTOM: grabbing a rolled-up child immediately showed the reparenting marker instead of keeping
+  the drag in the child popup for same-parent ordering.
+- ROOT CAUSE: the popup is nested inside its owning tree row. A no-op `dragover` on the grabbed popup
+  row was not claimed by that row, so it bubbled into the outer tree row and the shared controller
+  legally interpreted the same event as a one-level promotion.
+- FIX / RULE: when a popup drag event originated inside `dragSurface`, an outer target outside that
+  surface must stop the bubbled event without planning a move. A real event whose target is outside
+  the popup still closes it and continues as a hierarchy drag. Regression tests must nest the popup
+  surface inside the owning row; sibling-only fixtures cannot expose this propagation path.
+
 ## The release workflow requires an organization, but the repository is personal-account owned
 
 - SYMPTOM: successful `main` CI runs are followed by skipped Release runs even when release variables

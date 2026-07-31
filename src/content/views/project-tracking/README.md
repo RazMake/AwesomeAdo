@@ -139,9 +139,11 @@ halves of the view — its configuration and its renderer.
     Clicking the twisty expands/collapses that node's children.
     Visible rows use subtle alternating backgrounds from the resolved AwesomeADO theme. The board
     reassigns the sequence in depth-first reading order whenever a branch opens or closes, so nested
-    rows never break the alternation. Hovering a row applies a stronger themed wash; holding
-    `Ctrl+Shift` while hovering strengthens it again for deliberate visual tracking and extends that
-    emphasis through the item's open notes and description panels.
+    rows never break the alternation. Hovering anywhere in an item's title, open description, or
+    open notes applies one continuous, subtle themed wash without including its child rows. Holding
+    `Ctrl+Shift` while hovering clearly strengthens that same complete item surface for deliberate visual
+    tracking. The surface keeps the existing distance between items while reserving more of that
+    space below the item's final visible row, so descriptions and notes do not end against the edge.
     Rows open expanded, and a row you collapse **stays** collapsed across every repaint — a
     drag-reorder, a re-sort, a sprint or tag filter change — because each pass builds new elements
     and the closed rows are remembered by work item id outside the DOM.

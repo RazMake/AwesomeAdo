@@ -939,9 +939,12 @@ nodeMatchesChange`). Copied here, that makes an activity pill drag in items belo
 - Decision: Project Tracking assigns its two row backgrounds in visible depth-first order and
   reassigns them whenever a branch expands or collapses. The row, alternate, hover, and emphasized
   hover colors are required roles in every concrete AwesomeADO theme. Holding `Ctrl+Shift` marks the
-  rendered view for the emphasized hover treatment through one shared modifier tracker per document;
-  that treatment groups the hovered row with its direct open notes and description panels, never its
-  nested child rows.
+  rendered view for the emphasized hover treatment through one shared modifier tracker per document.
+  Each item owns one visual surface containing its row, direct open notes, and description panels;
+  normal hover and emphasized hover paint that complete surface continuously, while the nested child
+  container remains outside it. Normal hover stays close to each theme's row stripes; modifier
+  emphasis remains the deliberately stronger tracking signal. The surface preserves the existing total vertical spacing but moves
+  half of the row's former padding below the final visible panel.
 - Rationale: tree rows are nested inside per-parent child containers, so CSS `:nth-child` restarts at
   every depth and counts hidden branches; it cannot keep the visible outline alternating through an
   expansion. Explicit visible-order parity makes the reading sequence stable, while theme-owned roles

@@ -599,8 +599,8 @@ async function renderOutlineBoard(tree: TrackedWorkItem): Promise<HTMLElement> {
 /** The children container belonging to a twisty's own row. */
 const childrenOf = (twisty: HTMLElement): HTMLElement =>
   twisty
-    .closest(".awesomeado-tracking__row")
-    ?.parentElement?.querySelector(".awesomeado-tracking__children") as HTMLElement;
+    .closest(".awesomeado-tracking__item")
+    ?.querySelector(":scope > .awesomeado-tracking__children") as HTMLElement;
 
 /** The stripe sequence currently assigned to visible item wrappers. */
 const visibleRowStripes = (root: HTMLElement): string[] =>
@@ -635,26 +635,40 @@ describe("ProjectTrackingView — row backgrounds", () => {
     expect(root.querySelector("style")?.textContent).toContain("--item-row-hover-background");
   });
 
-  it("strengthens the row and its expanded details while Ctrl+Shift is held", async () => {
+  it("highlights the full item surface without highlighting its children", async () => {
     const root = await renderOutlineBoard(createFixtureTree());
     document.body.append(root);
     const item = root.querySelector<HTMLElement>(".awesomeado-tracking__item")!;
+    const surface = item.querySelector<HTMLElement>(":scope > .awesomeado-tracking__item-surface")!;
+    const children = item.querySelector<HTMLElement>(":scope > .awesomeado-tracking__children")!;
     item.querySelector<HTMLButtonElement>(".awesomeado-tracking__notes-toggle")!.click();
     item.querySelector<HTMLButtonElement>(".awesomeado-tracking__describe")!.click();
+
+    expect(surface.querySelector(":scope > .awesomeado-tracking__row")).not.toBeNull();
+    expect(surface.querySelector(":scope > .awesomeado-notes")).not.toBeNull();
+    expect(surface.querySelector(":scope > .awesomeado-tracking__description")).not.toBeNull();
+    expect(surface.contains(children)).toBe(false);
 
     document.dispatchEvent(
       new KeyboardEvent("keydown", { key: "Shift", ctrlKey: true, shiftKey: true }),
     );
     expect(root.classList.contains("awesomeado-tracking--modifier-highlight")).toBe(true);
-    expect(item.querySelector<HTMLElement>(":scope > .awesomeado-notes")?.style.display).toBe(
+    expect(surface.querySelector<HTMLElement>(":scope > .awesomeado-notes")?.style.display).toBe(
       "block",
     );
     expect(
-      item.querySelector<HTMLElement>(":scope > .awesomeado-tracking__description")?.style.display,
+      surface.querySelector<HTMLElement>(":scope > .awesomeado-tracking__description")?.style
+        .display,
     ).toBe("block");
     const styles = root.querySelector("style")?.textContent ?? "";
-    expect(styles).toContain("> .awesomeado-notes");
-    expect(styles).toContain("> .awesomeado-tracking__description");
+    expect(styles).toContain(
+      ".awesomeado-tracking__item > .awesomeado-tracking__item-surface:hover",
+    );
+    expect(styles).toContain("padding-bottom: 4px");
+    expect(
+      surface.querySelector<HTMLElement>(":scope > .awesomeado-tracking__row")?.style.padding,
+    ).toBe("2px 0px");
+    expect(styles).not.toContain(".awesomeado-tracking__children:hover");
 
     document.dispatchEvent(new KeyboardEvent("keyup", { key: "Shift", ctrlKey: true }));
     expect(root.classList.contains("awesomeado-tracking--modifier-highlight")).toBe(false);
@@ -719,6 +733,7 @@ describe("ProjectTrackingView — expand & collapse", () => {
     twisties.forEach((tw) => {
       expect(tw.getAttribute("aria-expanded")).toBe("true");
       expect(tw.textContent).toBe("▼\uFE0E");
+      expect(childrenOf(tw).style.display).toBe("block");
       // The glyph must stay inside its own small-font span: writing the button's textContent would
       // drop the span and leave the triangle at the button's much larger inherited size.
       const glyph = tw.querySelector<HTMLElement>(".awesomeado-tracking__twisty-glyph");
@@ -868,6 +883,7 @@ describe("ProjectTrackingView — collapse all & description", () => {
     twisties.forEach((tw) => {
       expect(tw.getAttribute("aria-expanded")).toBe("false");
       expect(tw.textContent).toBe("▶\uFE0E");
+      expect(childrenOf(tw).style.display).toBe("none");
       const glyph = tw.querySelector<HTMLElement>(".awesomeado-tracking__twisty-glyph");
       expect(glyph?.textContent).toBe("▶\uFE0E");
       expect(glyph?.style.fontSize).toBe("8px");

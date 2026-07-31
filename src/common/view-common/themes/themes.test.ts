@@ -21,6 +21,16 @@ describe("theme registry", () => {
       expect(theme.colors[variable]).toBeTruthy();
     }
   });
+
+  it("keeps ordinary item hover highlights discrete in every palette", () => {
+    expect(
+      CONCRETE_THEMES.map(({ id, colors }) => [id, colors["--item-row-hover-background"]]),
+    ).toEqual([
+      ["dark", "#292929"],
+      ["light", "#f0f3f6"],
+      ["blue", "#deebf7"],
+    ]);
+  });
 });
 
 describe("resolveTheme", () => {

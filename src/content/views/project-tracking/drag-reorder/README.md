@@ -17,8 +17,9 @@ place in the hierarchy.
 - **`DraggableRow`** — what one row tells the controller: its `id`, `depth`, `hasChildren`,
   `parentId`, the parent's default `destinationType`, the level's **full unfiltered** `siblingIds` in board order, and three elements — the `handle` (the title), the
   `row` line box (whose midpoint decides above/below), and the `wrapper` the insertion line slots
-  against. Popup rows also provide their `dragSurface` and `onLeaveSurface`, so reaching a legal
-  target outside the popup dismisses it without ending the drag.
+  against. Popup rows also provide their `dragSurface` and `onLeaveSurface`: drag events remain local
+  while the pointer is inside that surface, then reaching a legal tree target outside it dismisses
+  the popup without ending the drag.
 - **`PlannedMove`** — a resolved drop: `{ id, currentParentId, parentId, previousId, nextId,
 siblingIds, type? }`, handed to `onMove` for the caller to persist.
 

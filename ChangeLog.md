@@ -5,6 +5,10 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ## Next Version
 
+- Fixes the Project Tracking expand-all and collapse-all buttons so they show and hide child rows,
+  not just update their arrows.
+- Fixes Follow Azure DevOps so an open enhanced view switches between Dark and Light when Azure
+  DevOps changes theme.
 - Makes Project Tracking open and refresh faster by loading its renderer only when needed, fetching
   work-item batches concurrently with transient retry, and reusing discussion activity already read
   during the board session.
@@ -12,6 +16,11 @@ builds use the repository's `Major.Minor.Build` release versioning.
   later priorities.
 - Adds a clearer maximize/restore button to the View all notes popup, expanding the discussion to a
   ten-pixel inset inside the enhanced view while leaving Azure DevOps' top and left bars visible.
+- Fixes rolled-up child dragging so items reorder inside their popup and enter hierarchy-changing
+  mode only after being dragged onto the tree outside it.
+- Makes Project Tracking highlights fill the hovered item's title, description, and notes without
+  gaps or spillover onto its child items, using a subtler normal hover and stronger `Ctrl+Shift`
+  highlight, and balances the existing item spacing so expanded content has room below its last row.
 
 ## 0.1
 

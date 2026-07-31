@@ -81,7 +81,7 @@ export const BLUE_THEME = {
     "--control-background-subtle": "rgba(128,128,128,0.12)",
     "--item-row-background": "#eef4fb",
     "--item-row-alternate-background": "#e4eef9",
-    "--item-row-hover-background": "#d7e5f4",
+    "--item-row-hover-background": "#deebf7",
     "--item-row-emphasis-background": "#c2dced",
     "--control-border-emphasis": "rgba(128,128,128,0.55)",
     "--control-border-strong": "rgba(128,128,128,0.5)",
