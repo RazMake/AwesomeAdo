@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { IQueryBindingStore } from "../bindings/IQueryBindingStore";
 import type { QueryBindings } from "../bindings/QueryBinding";
 import type { ILogger } from "../logging/ILogger";
-import { DEFAULT_SETTINGS } from "../settings/ExtensionSettings";
+import { DEFAULT_SETTINGS, type ExtensionSettings } from "../settings/ExtensionSettings";
 import type { ISettingsStore } from "../settings/ISettingsStore";
 
 import { exportConfig } from "./AwesomeAdoConfig";
@@ -18,13 +18,28 @@ const bindings: QueryBindings = {
   query: { view: "sprint", properties: { weeks: "2" } },
 };
 
-function makeHarness(sourceId: number | null = 42, currentBindings: QueryBindings = {}) {
+function withoutPrimaryWork(settings: ExtensionSettings): ExtensionSettings {
+  return {
+    ...settings,
+    workItemTypes: settings.workItemTypes.map((type) => {
+      const legacyType = { ...type };
+      delete legacyType.isPrimaryWork;
+      return legacyType;
+    }),
+  };
+}
+
+function makeHarness(
+  sourceId: number | null = 42,
+  currentBindings: QueryBindings = {},
+  currentSettings = DEFAULT_SETTINGS,
+) {
   const sourceStore: TeamConfigSourceStore = {
     read: vi.fn(async () => sourceId),
     write: vi.fn(async () => {}),
   };
   const settingsStore: ISettingsStore = {
-    read: vi.fn(async () => DEFAULT_SETTINGS),
+    read: vi.fn(async () => currentSettings),
     write: vi.fn(async () => {}),
     observe: vi.fn(() => ({ ready: Promise.resolve(), unsubscribe: vi.fn() })),
   };
@@ -145,15 +160,76 @@ describe("TeamConfigSynchronizer pull", () => {
   });
 });
 
+describe("TeamConfigSynchronizer Primary Work pull", () => {
+  it("preserves classification from the authoritative description", async () => {
+    const harness = makeHarness();
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      workItemTypes: [
+        { name: "Epic", color: "", icon: "", columns: [], children: ["User Story"] },
+        { name: "User Story", color: "", icon: "", columns: [], isPrimaryWork: true },
+      ],
+    };
+    vi.mocked(harness.reader.read).mockResolvedValue({
+      ok: true,
+      text: exportConfig(settings, bindings),
+    });
+
+    await harness.synchronizer.pull();
+
+    expect(harness.settingsStore.write).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workItemTypes: [
+          expect.objectContaining({ name: "Epic" }),
+          expect.objectContaining({ name: "User Story", isPrimaryWork: true }),
+        ],
+      }),
+    );
+  });
+
+  it("keeps local classification when a legacy payload predates the setting", async () => {
+    const currentSettings = {
+      ...DEFAULT_SETTINGS,
+      workItemTypes: [
+        { name: "Epic", color: "", icon: "", columns: [], children: ["User Story"] },
+        { name: "User Story", color: "", icon: "", columns: [], isPrimaryWork: true },
+      ],
+    };
+    const harness = makeHarness(42, {}, currentSettings);
+    vi.mocked(harness.reader.read).mockResolvedValue({
+      ok: true,
+      text: JSON.stringify({
+        awesomeAdoConfigVersion: 1,
+        settings: withoutPrimaryWork(currentSettings),
+        enhancedQueries: bindings,
+      }),
+    });
+
+    await harness.synchronizer.pull();
+
+    expect(harness.settingsStore.write).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workItemTypes: [
+          expect.objectContaining({ name: "Epic" }),
+          expect.objectContaining({ name: "User Story", isPrimaryWork: true }),
+        ],
+      }),
+    );
+  });
+});
+
 describe("TeamConfigSynchronizer publish", () => {
   it("publishes the current full configuration", async () => {
     const harness = makeHarness();
     vi.mocked(harness.bindingStore.read).mockResolvedValue(bindings);
-    const writer: TeamConfigWriter = { write: vi.fn(async () => ({ ok: true as const })) };
+    const writer: TeamConfigWriter = {
+      write: vi.fn(async () => ({ ok: true as const, workItemUrl: "https://ado/item/42" })),
+    };
 
     await expect(harness.synchronizer.publish(writer)).resolves.toEqual({
       status: "published",
       workItemId: 42,
+      workItemUrl: "https://ado/item/42",
       bindingCount: 1,
     });
     expect(writer.write).toHaveBeenCalledOnce();

@@ -13,10 +13,10 @@ import { normalizeWorkItemId } from "./TeamConfigSourceStore";
 export const CONFIG_FILE_NAME = "AwesomeADO.config";
 
 /**
- * Format version stamped into every exported file. It is not used to gate imports today, but a
- * newer build can branch on it to migrate an older file instead of silently misreading it.
+ * Format version stamped into every exported file. Version 2 makes the nested Primary Work
+ * classification authoritative; version 1 payloads can predate that field and are migrated.
  */
-export const CONFIG_FORMAT_VERSION = 1;
+export const CONFIG_FORMAT_VERSION = 2;
 
 /**
  * The on-disk shape of an exported `AwesomeADO.config` file.
@@ -42,6 +42,8 @@ export interface ImportedConfig {
    * than being reset to a default the file never asked for.
    */
   settings: Partial<ExtensionSettings>;
+  /** Whether the payload can authoritatively replace Primary Work classification. */
+  hasPrimaryWorkClassification: boolean;
   /** Every binding the file described usably. Bindings are replaced wholesale, so this is the set. */
   enhancedQueries: QueryBindings;
   /** Absent for older files and shared payloads, so the current trusted source is preserved. */
@@ -141,6 +143,10 @@ export function importConfig(text: string): ImportedConfig {
   const teamConfigSource = importTeamConfigWorkItemId(raw.teamConfigWorkItemId);
   return {
     settings: settings.accepted,
+    hasPrimaryWorkClassification: carriesPrimaryWorkClassification(
+      raw.awesomeAdoConfigVersion,
+      raw.settings.workItemTypes,
+    ),
     enhancedQueries: normalizeBindings(raw.enhancedQueries),
     teamConfigWorkItemId: teamConfigSource.accepted,
     problems: [
@@ -150,6 +156,39 @@ export function importConfig(text: string): ImportedConfig {
       ...teamConfigSource.problems,
     ],
   };
+}
+
+/** Merge a parsed payload with current settings, migrating legacy Primary Work omissions. */
+export function mergeImportedSettings(
+  current: ExtensionSettings,
+  imported: ImportedConfig,
+): Partial<ExtensionSettings> {
+  const importedTypes = imported.settings.workItemTypes;
+  if (imported.hasPrimaryWorkClassification || importedTypes === undefined) {
+    return imported.settings;
+  }
+  const primaryWork = new Set(
+    current.workItemTypes
+      .filter((type) => type.isPrimaryWork === true)
+      .map((type) => type.name.toLowerCase()),
+  );
+  const workItemTypes = importedTypes.map((type) =>
+    primaryWork.has(type.name.toLowerCase()) ? { ...type, isPrimaryWork: true } : type,
+  );
+  return {
+    ...imported.settings,
+    workItemTypes: normalizeSettings({ ...current, workItemTypes }).workItemTypes,
+  };
+}
+
+function carriesPrimaryWorkClassification(version: unknown, workItemTypes: unknown): boolean {
+  if (typeof version === "number" && Number.isInteger(version) && version >= 2) {
+    return true;
+  }
+  return (
+    Array.isArray(workItemTypes) &&
+    workItemTypes.some((entry) => isRecord(entry) && Object.hasOwn(entry, "isPrimaryWork"))
+  );
 }
 
 function importTeamConfigWorkItemId(value: unknown): {
@@ -317,7 +356,8 @@ function isWorkItemType(value: unknown): boolean {
     isRecord(value) &&
     isFilledString(value.name) &&
     (value.columns === undefined || isStateMapping(value.columns)) &&
-    (value.children === undefined || isStringList(value.children))
+    (value.children === undefined || isStringList(value.children)) &&
+    (value.isPrimaryWork === undefined || typeof value.isPrimaryWork === "boolean")
   );
 }
 

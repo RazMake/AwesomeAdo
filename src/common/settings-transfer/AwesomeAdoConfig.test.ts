@@ -9,6 +9,7 @@ import {
   exportCompactConfig,
   exportConfig,
   importConfig,
+  mergeImportedSettings,
   type AwesomeAdoConfig,
 } from "./AwesomeAdoConfig";
 
@@ -33,6 +34,17 @@ const sampleBindings: QueryBindings = {
     name: "Roadmap",
   },
 };
+
+function withoutPrimaryWork(settings: ExtensionSettings): ExtensionSettings {
+  return {
+    ...settings,
+    workItemTypes: settings.workItemTypes.map((type) => {
+      const legacyType = { ...type };
+      delete legacyType.isPrimaryWork;
+      return legacyType;
+    }),
+  };
+}
 
 describe("exportConfig", () => {
   it("names the export file AwesomeADO.config", () => {
@@ -203,6 +215,38 @@ describe("importConfig - salvaging what a file does offer", () => {
 
     expect(imported.settings).toEqual({ theme: "blue" });
     expect(imported.problems).toEqual([expect.stringContaining("newer than this version")]);
+  });
+});
+
+describe("importConfig - Primary Work migration", () => {
+  it("distinguishes legacy omission from an authoritative clear", () => {
+    const current: ExtensionSettings = {
+      ...DEFAULT_SETTINGS,
+      workItemTypes: [
+        { name: "Epic", color: "", icon: "", columns: [], children: ["User Story"] },
+        { name: "User Story", color: "", icon: "", columns: [], isPrimaryWork: true },
+      ],
+    };
+    const settingsWithoutClassification = withoutPrimaryWork(current);
+    const legacy = importConfig(
+      JSON.stringify({
+        awesomeAdoConfigVersion: 1,
+        settings: settingsWithoutClassification,
+        enhancedQueries: {},
+      }),
+    );
+    const currentFormat = importConfig(
+      JSON.stringify({
+        awesomeAdoConfigVersion: CONFIG_FORMAT_VERSION,
+        settings: settingsWithoutClassification,
+        enhancedQueries: {},
+      }),
+    );
+
+    expect(mergeImportedSettings(current, legacy).workItemTypes?.[1]?.isPrimaryWork).toBe(true);
+    expect(mergeImportedSettings(current, currentFormat).workItemTypes?.[1]?.isPrimaryWork).toBe(
+      undefined,
+    );
   });
 });
 

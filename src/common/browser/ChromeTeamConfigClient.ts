@@ -1,4 +1,4 @@
-import { buildWorkItemUpdateUrl } from "../ado/fetchAdoTree";
+import { buildWorkItemUpdateUrl, buildWorkItemUrl } from "../ado/fetchAdoTree";
 import type {
   TeamConfigReader,
   TeamConfigReadResult,
@@ -48,15 +48,18 @@ export class ChromeTeamConfigClient implements TeamConfigReader, TeamConfigWrite
       isWriteTeamConfigResponse,
       (detail): TeamConfigWriteResult => ({ ok: false, error: detail }),
       "publish",
+      (response, target) =>
+        response.ok ? { ...response, workItemUrl: target.workItemUrl } : response,
     );
   }
 
   private async execute<T>(
     workItemId: number,
-    inject: (target: { tabId: number; url: string }) => Promise<unknown>,
+    inject: (target: TeamConfigTarget) => Promise<unknown>,
     isResponse: (value: unknown) => value is T,
     failure: (detail: string) => T,
     action: "read" | "publish",
+    accept: (response: T, target: TeamConfigTarget) => T = (response) => response,
   ): Promise<T> {
     const target = await this.target(workItemId);
     if (typeof target === "string") {
@@ -65,19 +68,28 @@ export class ChromeTeamConfigClient implements TeamConfigReader, TeamConfigWrite
     try {
       const response = await inject(target);
       return isResponse(response)
-        ? response
+        ? accept(response, target)
         : failure(`Azure DevOps returned no valid ${action} response.`);
     } catch (error) {
       return failure(`Could not ${action} the configuration item: ${String(error)}`);
     }
   }
 
-  private async target(workItemId: number): Promise<{ tabId: number; url: string } | string> {
+  private async target(workItemId: number): Promise<TeamConfigTarget | string> {
     const context = await readCurrentAdoQueryContext();
     if (context === null) {
       return NO_QUERY_ERROR;
     }
     const url = buildWorkItemUpdateUrl(context.url, workItemId);
-    return url === null ? NO_QUERY_ERROR : { tabId: context.tabId, url };
+    const workItemUrl = buildWorkItemUrl(context.url, workItemId);
+    return url === null || workItemUrl === null
+      ? NO_QUERY_ERROR
+      : { tabId: context.tabId, url, workItemUrl };
   }
+}
+
+interface TeamConfigTarget {
+  tabId: number;
+  url: string;
+  workItemUrl: string;
 }

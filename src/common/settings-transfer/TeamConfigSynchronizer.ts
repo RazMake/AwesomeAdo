@@ -2,12 +2,18 @@ import type { IQueryBindingStore } from "../bindings/IQueryBindingStore";
 import type { ILogger } from "../logging/ILogger";
 import type { ISettingsStore } from "../settings/ISettingsStore";
 
-import { ConfigImportError, exportCompactConfig, importConfig } from "./AwesomeAdoConfig";
+import {
+  ConfigImportError,
+  exportCompactConfig,
+  importConfig,
+  mergeImportedSettings,
+} from "./AwesomeAdoConfig";
 import type { TeamConfigSourceStore } from "./TeamConfigSourceStore";
 
 export type TeamConfigReadResult = { ok: true; text: string | null } | { ok: false; error: string };
 
-export type TeamConfigWriteResult = { ok: true } | { ok: false; error: string };
+export type TeamConfigWriteResult =
+  { ok: true; workItemUrl?: string } | { ok: false; error: string };
 
 export interface TeamConfigReader {
   read(workItemId: number): Promise<TeamConfigReadResult>;
@@ -22,7 +28,7 @@ export type TeamConfigSyncResult =
   | { status: "empty"; workItemId: number }
   | { status: "unchanged"; workItemId: number; bindingCount: number }
   | { status: "updated"; workItemId: number; bindingCount: number }
-  | { status: "published"; workItemId: number; bindingCount: number }
+  | { status: "published"; workItemId: number; workItemUrl?: string; bindingCount: number }
   | { status: "failed"; workItemId: number | null; error: string };
 
 /** Pulls and publishes one authoritative full configuration without trusting it to choose its source. */
@@ -66,7 +72,12 @@ export class TeamConfigSynchronizer {
       this.logger.info(
         `Published team configuration from work item ${workItemId}: ${bindingCount} binding(s).`,
       );
-      return { status: "published", workItemId, bindingCount };
+      return {
+        status: "published",
+        workItemId,
+        workItemUrl: result.workItemUrl,
+        bindingCount,
+      };
     } catch (error) {
       this.logger.error("Could not publish team configuration", error);
       return { status: "failed", workItemId, error: describeError(error) };
@@ -95,14 +106,15 @@ export class TeamConfigSynchronizer {
         this.settingsStore.read(),
         this.bindingStore.read(),
       ]);
-      const nextSettings = { ...currentSettings, ...imported.settings };
+      const settingsUpdate = mergeImportedSettings(currentSettings, imported);
+      const nextSettings = { ...currentSettings, ...settingsUpdate };
       const nextText = exportCompactConfig(nextSettings, imported.enhancedQueries);
       const bindingCount = Object.keys(imported.enhancedQueries).length;
       if (nextText === exportCompactConfig(currentSettings, currentBindings)) {
         return { status: "unchanged", workItemId, bindingCount };
       }
       await Promise.all([
-        this.settingsStore.write(imported.settings),
+        this.settingsStore.write(settingsUpdate),
         this.bindingStore.replaceAll(imported.enhancedQueries),
       ]);
       this.logger.info(

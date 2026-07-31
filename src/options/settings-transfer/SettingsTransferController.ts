@@ -5,6 +5,7 @@ import {
   ConfigImportError,
   exportConfig,
   importConfig,
+  mergeImportedSettings,
 } from "../../common/settings-transfer/AwesomeAdoConfig";
 import type { TeamConfigSourceStore } from "../../common/settings-transfer/TeamConfigSourceStore";
 
@@ -105,9 +106,9 @@ export class SettingsTransferController {
       return;
     }
     try {
-      const { settings, enhancedQueries, teamConfigWorkItemId, problems } = importConfig(
-        await file.text(),
-      );
+      const imported = importConfig(await file.text());
+      const settings = mergeImportedSettings(await this.settingsStore.read(), imported);
+      const { enhancedQueries, teamConfigWorkItemId, problems } = imported;
       // Persist whatever the file offered. Settings arrive as a partial, so a value the file omitted
       // or got wrong keeps what the user has today; bindings are replaced wholesale so the file is
       // authoritative about which queries are enhanced.

@@ -63,6 +63,17 @@ const sampleBindings: QueryBindings = {
 
 const sampleSettings: ExtensionSettings = { ...DEFAULT_SETTINGS, theme: "dark" };
 
+function withoutPrimaryWork(settings: ExtensionSettings): ExtensionSettings {
+  return {
+    ...settings,
+    workItemTypes: settings.workItemTypes.map((type) => {
+      const legacyType = { ...type };
+      delete legacyType.isPrimaryWork;
+      return legacyType;
+    }),
+  };
+}
+
 interface Harness {
   controller: SettingsTransferController;
   settingsStore: FakeSettingsStore;
@@ -273,6 +284,31 @@ describe("SettingsTransferController import", () => {
 
     expect(h.elements.status.textContent).toContain("Exported");
     expect(h.elements.status.classList.contains("card__hint--error")).toBe(false);
+  });
+});
+
+describe("SettingsTransferController Primary Work migration", () => {
+  it("preserves classification when a legacy file predates it", async () => {
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      workItemTypes: [
+        { name: "Epic", color: "", icon: "", columns: [], children: ["User Story"] },
+        { name: "User Story", color: "", icon: "", columns: [], isPrimaryWork: true },
+      ],
+    };
+    const h = setup({ settings });
+    chooseFile(
+      h.elements.fileInput,
+      JSON.stringify({
+        awesomeAdoConfigVersion: 1,
+        settings: withoutPrimaryWork(settings),
+        enhancedQueries: {},
+      }),
+    );
+
+    await flush();
+
+    expect(h.settingsStore.written?.workItemTypes?.[1]?.isPrimaryWork).toBe(true);
   });
 });
 

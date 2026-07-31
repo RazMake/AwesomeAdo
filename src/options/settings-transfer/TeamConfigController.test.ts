@@ -57,7 +57,10 @@ function makeHarness(initialSource: number | null = null) {
     })),
   };
   const writer: TeamConfigWriter = {
-    write: vi.fn(async () => ({ ok: true as const })),
+    write: vi.fn(async () => ({
+      ok: true as const,
+      workItemUrl: "https://dev.azure.com/Contoso/Project/_workitems/edit/42",
+    })),
   };
   const logger: ILogger = { info: vi.fn(), error: vi.fn() };
   const elements = makeElements();
@@ -190,6 +193,23 @@ describe("TeamConfigController connection", () => {
 });
 
 describe("TeamConfigController publishing", () => {
+  it("links the published work item ID to Azure DevOps", async () => {
+    const harness = makeHarness(42);
+    await harness.controller.init();
+
+    harness.elements.publishButton.click();
+    await flush();
+
+    const link = harness.elements.status.querySelector("a");
+    expect(harness.elements.status.textContent).toBe(
+      "Published 0 enhanced queries to work item 42.",
+    );
+    expect(link?.textContent).toBe("42");
+    expect(link?.href).toBe("https://dev.azure.com/Contoso/Project/_workitems/edit/42");
+    expect(link?.target).toBe("_blank");
+    expect(link?.rel).toBe("noopener noreferrer");
+  });
+
   it("shows a publish conflict only in the tile and keeps the connection active", async () => {
     const harness = makeHarness(42);
     vi.mocked(harness.writer.write).mockResolvedValue({ ok: false, error: "HTTP 412" });

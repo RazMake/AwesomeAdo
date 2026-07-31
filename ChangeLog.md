@@ -16,6 +16,8 @@ builds use the repository's `Major.Minor.Build` release versioning.
   queue; and refresh that reloads both query items and the selected sprint's team roster.
 - Refines enhanced-view filters with compact pills aligned to Project Tracking's user tags and a
   larger gap between full-opacity filter families in Sprint View and Project Tracking.
+- Keeps Primary Work classification intact through team configuration pull and publish, and links a
+  successful publish's work item ID directly to the item in Azure DevOps.
 
 ## 0.1
 

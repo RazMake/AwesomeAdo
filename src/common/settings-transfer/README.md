@@ -13,12 +13,15 @@ it to buttons and the two stores lives in `src/options/settings-transfer`.
 ### `AwesomeAdoConfig.ts`
 
 - `CONFIG_FILE_NAME` — `"AwesomeADO.config"`, the proposed download name.
-- `CONFIG_FORMAT_VERSION` — the format version stamped into every export.
+- `CONFIG_FORMAT_VERSION` — the format version stamped into every export. Version 2 makes Primary
+  Work classification authoritative; version 1 imports preserve the current classifications when
+  the older payload contains no such field.
 - `AwesomeAdoConfig` — the on-disk file shape: `{ awesomeAdoConfigVersion, settings, enhancedQueries }`.
 - `ConfigImportError` — an `Error` carrying `problems: readonly string[]`, every fault in one throw.
-- `ImportedConfig` — what an import yields: `{ settings, enhancedQueries, problems }`, where
-  `settings` is a **`Partial<ExtensionSettings>`** holding only the settings the file supplied
-  usably, and `problems` lists everything the file got wrong.
+- `ImportedConfig` — what an import yields:
+  `{ settings, hasPrimaryWorkClassification, enhancedQueries, problems }`, where `settings` is a
+  **`Partial<ExtensionSettings>`** holding only the settings the file supplied usably, the Primary
+  Work signal controls legacy migration, and `problems` lists everything the file got wrong.
 - `exportConfig(settings, enhancedQueries, teamConfigWorkItemId?)` — serialize to the exact indented
   JSON text written to the file. Values pass through the same normalizers used on storage reads, so
   an export is always a clean snapshot. The optional trusted source ID is included in file exports.
@@ -31,6 +34,8 @@ it to buttons and the two stores lives in `src/options/settings-transfer`.
   wrong keeps whatever the user has configured today. Throws `ConfigImportError` only when the file
   yields nothing at all (not JSON, not an object, or missing a whole section), so importing an
   unrelated file cannot wipe settings to defaults.
+- `mergeImportedSettings(current, imported)` — apply legacy migrations that need current local
+  context, including preserving Primary Work when a version 1 payload predates that field.
 
 A non-empty `problems` list is a **failure to report**, not a footnote: the caller logs it and says
 so, because a partly applied file must never read like a clean load.
@@ -50,11 +55,13 @@ and `TeamConfigSynchronizer` never applies a source ID found in a remote payload
   work item id.
 - `createTeamConfigSourceStore(logger?)` — composition factory backed by `ChromeSyncStorage`.
 - `TeamConfigReader` / `TeamConfigWriter` — focused transport contracts for Description reads and
-  revision-guarded publishes.
+  revision-guarded publishes. A successful publish can carry the canonical work item web URL for the
+  options status link.
 - `TeamConfigSynchronizer` — pulls through `importConfig`, refuses partial/invalid remote files,
   reports an empty Description as connected but not yet published without changing local settings,
   replaces settings and bindings only when the normalized snapshot changed, and publishes the current
-  full `exportCompactConfig` snapshot. Concurrent pulls share one in-flight operation.
+  full `exportCompactConfig` snapshot. Work-item type settings include their Primary Work
+  classification in both directions. Concurrent pulls share one in-flight operation.
 
 Connected content scripts pull when a saved query opens. Publishing is always an explicit options
 action: local edits never become team edits automatically. The source work item and shared queries

@@ -47,6 +47,18 @@ here so every agent, teammate, and clone sees them.
   Publish uses `exportCompactConfig` so Description contains one-line JSON without indentation;
   file Export remains intentionally human-readable.
 
+## Primary Work classification and team configuration
+
+- Live comparison on 2026-07-31 confirmed `settings.workItemTypes` in synced storage and work item
+  `7679519`'s published Description both retained `isPrimaryWork: true` for User Story and Bug.
+- The loss case is a legacy format-1 payload that predates `isPrimaryWork`: importing its otherwise
+  complete `workItemTypes` setting would normalize every missing flag to unchecked and replace local
+  classification. Format 2 makes the field authoritative. A format-1 list with no classification
+  property preserves current Primary Work by type name; a legacy list carrying any such property is
+  treated as aware, and format 2 can authoritatively clear every checkbox.
+- Keep team-pull and file-import regression tests at their store-write boundaries; testing only the
+  settings normalizer does not prove transfer migrations retain the setting.
+
 ## Expand-all and collapse-all changed arrows but not child rows
 
 - SYMPTOM: Project Tracking's header buttons changed every twisty's glyph and `aria-expanded`, but

@@ -6,7 +6,7 @@ import {
   type TeamConfigWriter,
 } from "../../common/settings-transfer/TeamConfigSynchronizer";
 
-import { renderTransferStatus } from "./transferStatus";
+import { renderLinkedTransferStatus, renderTransferStatus } from "./transferStatus";
 
 export interface TeamConfigElements {
   workItemId: HTMLInputElement;
@@ -140,6 +140,15 @@ export class TeamConfigController {
     }
     const queryCount = `${result.bindingCount} enhanced quer${result.bindingCount === 1 ? "y" : "ies"}`;
     if (result.status === "published") {
+      if (result.workItemUrl !== undefined) {
+        this.setLinkedStatus(
+          `Published ${queryCount} to work item `,
+          String(result.workItemId),
+          result.workItemUrl,
+          ".",
+        );
+        return;
+      }
       this.setStatus(`Published ${queryCount} to work item ${result.workItemId}.`);
       return;
     }
@@ -165,6 +174,18 @@ export class TeamConfigController {
       return;
     }
     renderTransferStatus(this.elements.status, message, failed);
+  }
+
+  private setLinkedStatus(
+    beforeLink: string,
+    linkText: string,
+    url: string,
+    afterLink: string,
+  ): void {
+    if (this.disposed) {
+      return;
+    }
+    renderLinkedTransferStatus(this.elements.status, beforeLink, linkText, url, afterLink);
   }
 }
 

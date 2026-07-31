@@ -24,6 +24,7 @@ const ADO_TAB = {
   url: "https://dev.azure.com/Contoso/Project/_queries/query/11111111-1111-1111-1111-111111111111",
 };
 const ITEM_URL = "https://dev.azure.com/Contoso/_apis/wit/workitems/42?api-version=7.1";
+const ITEM_WEB_URL = "https://dev.azure.com/Contoso/Project/_workitems/edit/42";
 
 describe("ChromeTeamConfigClient", () => {
   let chromeMock: MockChrome;
@@ -61,7 +62,10 @@ describe("ChromeTeamConfigClient", () => {
     chromeMock.query.mockResolvedValue([ADO_TAB]);
     chromeMock.executeScript.mockResolvedValue([{ result: { ok: true } }]);
 
-    await expect(client.write(42, "config")).resolves.toEqual({ ok: true });
+    await expect(client.write(42, "config")).resolves.toEqual({
+      ok: true,
+      workItemUrl: ITEM_WEB_URL,
+    });
     expect(chromeMock.executeScript).toHaveBeenCalledWith({
       target: { tabId: 7 },
       world: "MAIN",
