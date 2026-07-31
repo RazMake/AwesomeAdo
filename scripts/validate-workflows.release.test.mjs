@@ -8,6 +8,11 @@ import { validateWorkflowFiles } from "./validate-workflows.mjs";
 
 // Use the committed CI workflow — no CI fixture code lives in this file.
 const ciYaml = readFileSync(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8");
+const committedReleaseYaml = readFileSync(
+  new URL("../.github/workflows/release.yml", import.meta.url),
+  "utf8",
+);
+const codeowners = readFileSync(new URL("../.github/CODEOWNERS", import.meta.url), "utf8");
 
 // Compact canonical Release fixture.
 // Permissions are listed contents-first (distinct from validate-workflows.test.mjs fixture).
@@ -68,6 +73,32 @@ describe("validateWorkflowFiles — Release canonical fixture", () => {
   it("accepts the canonical Release workflow without error", () => {
     const result = runWithRelease(canonicalReleaseYaml);
     assert.ok("validated" in result);
+  });
+
+  it("pins both tag-policy checks to repository-owned rulesets", () => {
+    const release = yaml.parse(committedReleaseYaml);
+    const runs = Object.values(release.jobs)
+      .flatMap((job) => job.steps)
+      .filter((step) =>
+        [
+          "Verify owner-controlled version tag policy",
+          "Verify version tag and protected environment policy",
+        ].includes(step.name),
+      )
+      .map((step) => String(step.run));
+
+    assert.equal(runs.length, 2);
+    for (const run of runs) {
+      assert.match(run, /\.source_type == "Repository"/);
+      assert.match(run, /\.source == \$repository/);
+      assert.doesNotMatch(run, /\.source_type == "Organization"|\.conditions\.repository_name/);
+    }
+  });
+
+  it("assigns release-sensitive paths to the personal repository owner", () => {
+    assert.match(codeowners, /^\/\.github\/release-baseline\.json @RazMake$/m);
+    assert.match(codeowners, /^\/\.github\/workflows\/ @RazMake$/m);
+    assert.doesNotMatch(codeowners, /@RazMake\//);
   });
 });
 

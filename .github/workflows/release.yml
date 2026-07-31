@@ -427,7 +427,7 @@ jobs:
             count="$(jq --arg name "$ruleset_name" \
               '[.[] | select(.name == $name)] | length' <<<"$rulesets")"
             if [[ "$count" != "1" ]]; then
-              echo "expected exactly one $ruleset_name organization ruleset" >&2
+              echo "expected exactly one $ruleset_name repository ruleset" >&2
               exit 1
             fi
           done
@@ -443,28 +443,24 @@ jobs:
             "repos/$GITHUB_REPOSITORY/rulesets/$creation_id?includes_parents=true")"
           immutable="$(gh api \
             "repos/$GITHUB_REPOSITORY/rulesets/$immutable_id?includes_parents=true")"
-          jq -e --arg repo_name "${GITHUB_REPOSITORY#*/}" '
+          jq -e --arg repository "$GITHUB_REPOSITORY" '
             .name == "release-app-version-tag-creation" and
-            .source_type == "Organization" and
+            .source_type == "Repository" and
+            .source == $repository and
             .target == "tag" and
             .enforcement == "active" and
             .current_user_can_bypass == "never" and
-            .conditions.repository_name.include == [$repo_name] and
-            .conditions.repository_name.exclude == [] and
-            .conditions.repository_name.protected == true and
             .conditions.ref_name.include == ["refs/tags/v*"] and
             .conditions.ref_name.exclude == [] and
             [.rules[].type] == ["creation"]
           ' <<<"$creation" >/dev/null
-          jq -e --arg repo_name "${GITHUB_REPOSITORY#*/}" '
+          jq -e --arg repository "$GITHUB_REPOSITORY" '
             .name == "immutable-version-tags" and
-            .source_type == "Organization" and
+            .source_type == "Repository" and
+            .source == $repository and
             .target == "tag" and
             .enforcement == "active" and
             .current_user_can_bypass == "never" and
-            .conditions.repository_name.include == [$repo_name] and
-            .conditions.repository_name.exclude == [] and
-            .conditions.repository_name.protected == true and
             .conditions.ref_name.include == ["refs/tags/v*"] and
             .conditions.ref_name.exclude == [] and
             ([.rules[].type] | sort) == ["deletion", "update"] and
@@ -828,28 +824,24 @@ jobs:
           fi
           creation="$(gh api "repos/$GITHUB_REPOSITORY/rulesets/$creation_id?includes_parents=true")"
           immutable="$(gh api "repos/$GITHUB_REPOSITORY/rulesets/$immutable_id?includes_parents=true")"
-          jq -e --arg repo_name "${GITHUB_REPOSITORY#*/}" '
+          jq -e --arg repository "$GITHUB_REPOSITORY" '
             .name == "release-app-version-tag-creation" and
-            .source_type == "Organization" and
+            .source_type == "Repository" and
+            .source == $repository and
             .target == "tag" and
             .enforcement == "active" and
             .current_user_can_bypass == "never" and
-            .conditions.repository_name.include == [$repo_name] and
-            .conditions.repository_name.exclude == [] and
-            .conditions.repository_name.protected == true and
             .conditions.ref_name.include == ["refs/tags/v*"] and
             .conditions.ref_name.exclude == [] and
             [.rules[].type] == ["creation"]
           ' <<<"$creation" >/dev/null
-          jq -e --arg repo_name "${GITHUB_REPOSITORY#*/}" '
+          jq -e --arg repository "$GITHUB_REPOSITORY" '
             .name == "immutable-version-tags" and
-            .source_type == "Organization" and
+            .source_type == "Repository" and
+            .source == $repository and
             .target == "tag" and
             .enforcement == "active" and
             .current_user_can_bypass == "never" and
-            .conditions.repository_name.include == [$repo_name] and
-            .conditions.repository_name.exclude == [] and
-            .conditions.repository_name.protected == true and
             .conditions.ref_name.include == ["refs/tags/v*"] and
             .conditions.ref_name.exclude == [] and
             ([.rules[].type] | sort) == ["deletion", "update"] and

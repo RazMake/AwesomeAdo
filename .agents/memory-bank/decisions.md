@@ -1026,3 +1026,20 @@ Markdown` in one `/rev`-guarded JSON Patch. The PATCH is not retried; a concurre
   viewer uses, including another team with access. Keeping the locator outside the payload preserves
   the user's trust decision, while full replacement makes removing a binding centrally remove it
   for every connected client on its next query open.
+
+## ADR-057: Version-tag trust is repository-owned on the personal GitHub account
+
+- Decision: the release workflow remains on the personal `RazMake/AwesomeAdo` repository and accepts
+  only its two repository-owned tag rulesets. Both policy checks require
+  `source_type == "Repository"`, `source == GITHUB_REPOSITORY`, active enforcement, exact
+  `refs/tags/v*` conditions, and the existing exact creation/update/deletion rule shapes. The
+  organization-only `conditions.repository_name` assertions are removed.
+- Rationale: repository rulesets provide the same scoped creation and immutability controls for a
+  public personal repository. Requiring an organization did not strengthen the checked tag rules;
+  it only made the release gate impossible for the repository's actual owner type. Pinning `source`
+  to the full repository name prevents an inherited or unrelated ruleset from satisfying the gate.
+- Consequence: no repository transfer or URL migration is part of release setup. The release GitHub
+  App is the only bypass actor on the creation ruleset; the immutable update/deletion ruleset has no
+  bypass. Release-sensitive CODEOWNERS entries name the personal owner `@RazMake`, not an
+  organization team. The baseline stays disabled until these repository controls and all other
+  release trust inputs are configured.

@@ -61,9 +61,8 @@ This is a flattened snapshot of what exists now, not a build log.
 - **Authenticated browser validation** (developer): load in Edge and Chrome for Testing; verify
   binding/unbinding, enhanced ↔ standard toggling, SPA navigation, persistence, and cross-device
   sync.
-- **Release-trust activation** (org owner): organization controls, release baseline, and store
-  credentials for the first official `v0.1` release. The current repository owner is a personal
-  account, but the workflow explicitly requires organization-owned tag rulesets; choose a repository
-  transfer or a deliberate personal-repository trust-model change first.
+- **Release-trust activation** (developer): configure the personal repository's two repository-owned
+  tag rulesets, release App, immutable-release policy, protected store environment, baseline
+  variables, and store credentials for the first official `v0.1` release (ADR-057).
 - **Marketplace visuals and items** (developer): create both initial store listings. Chrome still
   needs a 1280x800 screenshot and 440x280 small promotional tile; Edge permits omitting them.

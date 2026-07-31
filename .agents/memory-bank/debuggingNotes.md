@@ -59,7 +59,7 @@ here so every agent, teammate, and clone sees them.
   the popup still closes it and continues as a hierarchy drag. Regression tests must nest the popup
   surface inside the owning row; sibling-only fixtures cannot expose this propagation path.
 
-## The release workflow requires an organization, but the repository is personal-account owned
+## The release workflow originally rejected the personal-account repository
 
 - SYMPTOM: successful `main` CI runs are followed by skipped Release runs even when release variables
   or secrets are believed to be configured.
@@ -67,14 +67,14 @@ here so every agent, teammate, and clone sees them.
   tracked `.github/release-baseline.json` on `main` is still `disabled`; no active tag rulesets or
   releases are publicly visible. The available token cannot read Actions variables or secrets, so
   their presence is not independently known.
-- ROOT BLOCKER: `release.yml` accepts only two exact tag rulesets whose `source_type` is
-  `Organization` and whose repository-name condition targets AwesomeAdo. A repository owned by the
-  personal `RazMake` account cannot satisfy that assertion, regardless of correctly configured
-  variables or secrets.
-- REQUIRED DECISION: either transfer the repository to an organization and configure the workflow's
-  organization rulesets there, or deliberately redesign and revalidate the trust model to accept
-  repository-owned rulesets. Do not merely enable the baseline marker: the next release run would
-  fail at the ruleset check.
+- ROOT BLOCKER: `release.yml` accepted only tag rulesets whose `source_type` was `Organization` and
+  whose organization-only repository-name condition targeted AwesomeAdo. A personal repository can
+  create repository rulesets, but it cannot produce that API shape.
+- FIX / RULE (ADR-057): both release policy checks require `source_type == "Repository"`,
+  `source == "$GITHUB_REPOSITORY"`, and the exact tag ref conditions/rules. Repository rulesets have
+  only `conditions.ref_name`; never restore `conditions.repository_name` to this workflow.
+- ACTIVATION ORDER: configure both repository rulesets and the release App before establishing the
+  baseline marker. Pushing only the marker still fails at the next missing trust control.
 
 ## A popup reopened during repaint snapped back to its trigger's top-left
 
