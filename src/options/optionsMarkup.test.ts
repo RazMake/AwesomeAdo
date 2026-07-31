@@ -28,6 +28,13 @@ const REQUIRED_ELEMENT_IDS: readonly string[] = [
   "settings-import",
   "settings-import-file",
   "settings-transfer-status",
+  // Team configuration
+  "team-config-work-item-id",
+  "team-config-connect",
+  "team-config-pull",
+  "team-config-publish",
+  "team-config-disconnect",
+  "team-config-status",
   // Azure DevOps configuration
   "ado-organization",
   "ado-project",
@@ -76,6 +83,14 @@ function loadOptionsDocument(): Document {
   return new DOMParser().parseFromString(html, "text/html");
 }
 
+function requiredElement(doc: Document, id: string): HTMLElement {
+  const element = doc.getElementById(id);
+  if (element === null) {
+    throw new Error(`Missing required test element #${id}`);
+  }
+  return element;
+}
+
 describe("options.html element contract", () => {
   it("declares every id the options composition root resolves", () => {
     const doc = loadOptionsDocument();
@@ -95,5 +110,27 @@ describe("options.html element contract", () => {
     );
 
     expect(duplicated).toEqual([]);
+  });
+
+  it("groups configuration sharing controls and preserves their distinct guidance", () => {
+    const doc = loadOptionsDocument();
+    const card = requiredElement(doc, "configuration-sharing");
+    const connect = requiredElement(doc, "team-config-connect");
+    const disconnect = requiredElement(doc, "team-config-disconnect");
+    const publish = requiredElement(doc, "team-config-publish");
+    const actions = connect.closest(".log-toolbar");
+    const guidance = card.textContent.replace(/\s+/g, " ");
+
+    expect(card.querySelector("h2")?.textContent).toBe("Configuration Sharing");
+    expect(card.querySelector("h3")).toBeNull();
+    expect(card.querySelectorAll(".configuration-sharing__section")).toHaveLength(2);
+    expect(card.querySelector("#settings-export")).not.toBeNull();
+    expect(card.querySelector("#team-config-work-item-id")).not.toBeNull();
+    expect(guidance).toContain("Import replaces your current configuration");
+    expect(guidance).toContain("Once connected, the configuration is pulled automatically");
+    expect(publish.textContent.trim()).toBe("Publish Config");
+    expect(connect.classList.contains("button--connect")).toBe(true);
+    expect(disconnect.classList.contains("button--danger")).toBe(true);
+    expect(actions?.classList.contains("team-config-actions")).toBe(true);
   });
 });

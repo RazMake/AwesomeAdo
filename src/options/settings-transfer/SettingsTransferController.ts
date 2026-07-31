@@ -6,6 +6,9 @@ import {
   exportConfig,
   importConfig,
 } from "../../common/settings-transfer/AwesomeAdoConfig";
+import type { TeamConfigSourceStore } from "../../common/settings-transfer/TeamConfigSourceStore";
+
+import { renderTransferStatus } from "./transferStatus";
 
 /** The options-page elements the controller drives. Passed in so the controller stays testable. */
 export interface SettingsTransferElements {
@@ -30,17 +33,10 @@ const defaultReportError: ReportError = (error) =>
   console.error("AwesomeADO could not transfer settings", error);
 
 /**
- * Marks the status line as a failure. A failed import otherwise differs from a successful one by
- * wording alone, on a line the user has already learned to read as "done" — so the colour, not the
- * sentence, is what makes a rejected file impossible to mistake for a loaded one.
- */
-const STATUS_ERROR_CLASS = "card__hint--error";
-
-/**
- * Binds the Appearance panel's Import/Export controls to BOTH the settings store and the query
- * binding store, so a single file captures and restores the user's entire configuration — every
- * setting plus every enhanced-query binding. Import replaces bindings wholesale (via `replaceAll`)
- * so the imported file is authoritative rather than merged into whatever was already saved.
+ * Binds the Appearance panel's Import/Export controls to the settings, query-binding, and team
+ * source stores, so one file captures and restores the user's entire configuration. Import replaces
+ * bindings wholesale (via `replaceAll`) so the file is authoritative rather than merged into
+ * whatever was already saved.
  *
  * Like the Diagnostics log export, the download/file-read uses ambient browser APIs (`Blob`, `URL`,
  * the file input) directly; only `chrome.*` is injected, and that reaches this controller through
@@ -52,6 +48,7 @@ export class SettingsTransferController {
   constructor(
     private readonly settingsStore: ISettingsStore,
     private readonly bindingStore: IQueryBindingStore,
+    private readonly teamConfigSourceStore: TeamConfigSourceStore,
     private readonly elements: SettingsTransferElements,
     private readonly reportError: ReportError = defaultReportError,
     private readonly onImported: OnImported = () => {},
@@ -76,12 +73,16 @@ export class SettingsTransferController {
 
   private async export(): Promise<void> {
     try {
-      // Both stores are the source of truth; read them together so the file is a consistent snapshot.
-      const [settings, enhancedQueries] = await Promise.all([
+      // Read all stores together so the file is one consistent snapshot.
+      const [settings, enhancedQueries, teamConfigWorkItemId] = await Promise.all([
         this.settingsStore.read(),
         this.bindingStore.read(),
+        this.teamConfigSourceStore.read(),
       ]);
-      this.download(CONFIG_FILE_NAME, exportConfig(settings, enhancedQueries));
+      this.download(
+        CONFIG_FILE_NAME,
+        exportConfig(settings, enhancedQueries, teamConfigWorkItemId),
+      );
       this.setStatus(`Exported your configuration to ${CONFIG_FILE_NAME}.`);
     } catch (error: unknown) {
       this.fail("export your configuration", error);
@@ -104,14 +105,20 @@ export class SettingsTransferController {
       return;
     }
     try {
-      const { settings, enhancedQueries, problems } = importConfig(await file.text());
+      const { settings, enhancedQueries, teamConfigWorkItemId, problems } = importConfig(
+        await file.text(),
+      );
       // Persist whatever the file offered. Settings arrive as a partial, so a value the file omitted
       // or got wrong keeps what the user has today; bindings are replaced wholesale so the file is
       // authoritative about which queries are enhanced.
-      await Promise.all([
+      const writes: Promise<void>[] = [
         this.settingsStore.write(settings),
         this.bindingStore.replaceAll(enhancedQueries),
-      ]);
+      ];
+      if (teamConfigWorkItemId !== undefined) {
+        writes.push(this.teamConfigSourceStore.write(teamConfigWorkItemId));
+      }
+      await Promise.all(writes);
       // The page is showing the configuration the file just replaced, so tell it to re-read before
       // reporting success: leaving it stale would both hide the import and let the next edit save
       // the old values back over it.
@@ -162,8 +169,7 @@ export class SettingsTransferController {
     if (this.disposed) {
       return;
     }
-    this.elements.status.textContent = message;
-    this.elements.status.classList.toggle(STATUS_ERROR_CLASS, failed);
+    renderTransferStatus(this.elements.status, message, failed);
   }
 
   private fail(action: string, error: unknown): void {

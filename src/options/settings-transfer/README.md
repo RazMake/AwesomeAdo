@@ -1,8 +1,9 @@
 # `options/settings-transfer`
 
-Wires the Appearance tab's **Import / Export** controls to both the settings store and the query
-binding store, so one file captures and restores the user's whole configuration. The file format
-and the pure serialize/parse logic live in
+Wires the Appearance tab's **Configuration Sharing** card to both the settings store and the query
+binding store. Its Import / Export controls capture and restore the user's whole configuration, and
+its Team configuration controls share that same configuration through an Azure DevOps work item. The
+file format and the pure serialize/parse logic live in
 [`common/settings-transfer`](../../common/settings-transfer/README.md); this controller is only the
 options-page glue.
 
@@ -12,8 +13,8 @@ options-page glue.
 
 - `SettingsTransferElements` — the elements the controller drives: `exportButton`, `importButton`,
   the hidden `fileInput`, and a `status` line.
-- `new SettingsTransferController(settingsStore, bindingStore, elements, reportError?, onImported?)`
-  — construct with the two store abstractions.
+- `new SettingsTransferController(settingsStore, bindingStore, teamConfigSourceStore, elements,
+reportError?, onImported?)` — construct with all three store abstractions.
   - `init()` — attach the click/change listeners.
   - `dispose()` — detach them and stop updating status.
   - `onImported` — called once both stores have been written, so the composition root can tell the
@@ -21,7 +22,8 @@ options-page glue.
     to re-read them. Without it those sections keep showing — and on the next edit re-save — the
     configuration the file just replaced. It is not called when a file is rejected outright.
 
-**Export** reads both stores, builds the `AwesomeADO.config` JSON, and downloads it. **Import** opens
+**Export** reads all three stores, builds the `AwesomeADO.config` JSON (including the trusted team
+configuration work item ID), and downloads it. **Import** opens
 the hidden file input, reads the chosen file, applies every setting and binding the file supplies
 usably — settings as a partial (so a value the file omitted or got wrong keeps what the user has
 today) and bindings via **`replaceAll`**, so the file is authoritative about which queries are
@@ -36,3 +38,18 @@ your configuration." scrolled by.
 Like the Diagnostics log export, the download and file read use ambient browser APIs (`Blob`, `URL`,
 the file input) directly; only `chrome.*` is injected, and that reaches the controller through the
 injected store abstractions.
+
+### `TeamConfigController.ts`
+
+Drives the Team configuration subsection of Configuration Sharing on Appearance:
+
+- **Connect** validates and saves the trusted work item id, then applies its full Description. Once
+  connected, that button reads **Connected** and stays disabled until Disconnect is used.
+- **Pull Now** refreshes settings and bindings immediately.
+- **Publish Config** explicitly replaces Description with the current full snapshot.
+- **Disconnect** stops future automatic pulls without deleting the last configuration already
+  applied locally.
+
+Successful pulls notify the same options-page reload callback as file import, so read-once sections
+cannot display or later re-save stale values. Publish conflicts and malformed remote configuration
+remain connected but surface as failures in both the card and Diagnostics.

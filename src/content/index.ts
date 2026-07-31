@@ -40,6 +40,10 @@ import {
   type SendNoteActivityRequest,
 } from "../common/browser/MessagingNoteActivityReader";
 import {
+  MessagingTeamConfigReader,
+  type SendTeamConfigRequest,
+} from "../common/browser/MessagingTeamConfigReader";
+import {
   MessagingTeamIterationsLoader,
   type SendIterationsRequest,
 } from "../common/browser/MessagingTeamIterationsLoader";
@@ -72,6 +76,10 @@ import {
   type ReadNoteActivityResponse,
 } from "../common/browser/NoteActivityRequest";
 import {
+  type ReadTeamConfigMessage,
+  type ReadTeamConfigResponse,
+} from "../common/browser/TeamConfigRequest";
+import {
   type UpdateWorkItemFieldMessage,
   type UpdateWorkItemFieldResponse,
 } from "../common/browser/WorkItemFieldRequest";
@@ -87,7 +95,7 @@ import {
 } from "../common/browser/WorkItemReorderRequest";
 import { createLoggerFactory } from "../common/logging/createLogger";
 import { type AdoThemeResponse, isAdoThemeRequest } from "../common/navigation/AdoContext";
-import { isAdoNavigationMessage } from "../common/navigation/AdoQueryRoute";
+import { isAdoNavigationMessage, isAdoQueryUrl } from "../common/navigation/AdoQueryRoute";
 import type { ExtensionSettings } from "../common/settings/ExtensionSettings";
 import {
   DEFAULT_SETTINGS,
@@ -95,6 +103,8 @@ import {
   normalizeMarkerTags,
 } from "../common/settings/ExtensionSettings";
 import { createSettingsStore } from "../common/settings/createSettingsStore";
+import { TeamConfigSynchronizer } from "../common/settings-transfer/TeamConfigSynchronizer";
+import { createTeamConfigSourceStore } from "../common/settings-transfer/createTeamConfigSourceStore";
 import type { EnhancedViewServices } from "../common/view-common/EnhancedView";
 
 import { SessionActiveViewOverrides } from "./active-view/SessionActiveViewOverrides";
@@ -339,6 +349,24 @@ const controller = new QueryPageController(
 
 const bindingStore = createQueryBindingStore(loggers.forSource("common/bindings"));
 
+const teamConfigSourceStore = createTeamConfigSourceStore(
+  loggers.forSource("common/settings-transfer"),
+);
+const sendTeamConfigRequest: SendTeamConfigRequest = (message) =>
+  chrome.runtime.sendMessage<ReadTeamConfigMessage, ReadTeamConfigResponse | undefined>(message);
+const teamConfig = new TeamConfigSynchronizer(
+  teamConfigSourceStore,
+  new MessagingTeamConfigReader(sendTeamConfigRequest),
+  store,
+  bindingStore,
+  loggers.forSource("common/settings-transfer"),
+);
+const pullTeamConfigForQuery = (url: string): void => {
+  if (isAdoQueryUrl(url)) {
+    void teamConfig.pull();
+  }
+};
+
 const actions: QueryMenuActions = {
   openOptions() {
     logger.info("Top-bar menu: open Options");
@@ -408,10 +436,13 @@ void bindingObservation.ready.catch((error: unknown) => {
   logger.error("Could not read synced query bindings", error);
 });
 
+pullTeamConfigForQuery(location.href);
+
 chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {
   if (isAdoNavigationMessage(message)) {
     controller.navigate(message.url);
     bindingController.navigate(message.url);
+    pullTeamConfigForQuery(message.url);
     return;
   }
   // The options page asks this ADO tab which theme it is rendering so it can resolve "auto".

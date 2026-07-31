@@ -32,7 +32,12 @@ This is a flattened snapshot of what exists now, not a build log.
   and keyboard-driven ADO `@`-mention insertion across note/comment and description editors; inline
   notes and New notes activity omit configured marker-comment prefixes while View all stays complete.
 - **Settings transfer** (`src/common/settings-transfer` + `src/options/settings-transfer`):
-  `AwesomeADO.config` export/import of the whole configuration, wired to the Appearance tab.
+  `AwesomeADO.config` export/import and Azure DevOps work-item sharing of the whole configuration,
+  grouped in the Appearance tab's Configuration Sharing card.
+- **Team configuration sharing** (`common/settings-transfer`, `common/browser`, and Options): one
+  same-organization ADO work item Description is the permissioned full-config source; clients
+  automatically pull it on saved-query entry and editors explicitly publish with revision conflict
+  protection.
 - **Navigation** (`src/common/navigation`): `AdoHost` single-source host matching, query-route and
   identity parsing, navigation + theme + query-name message contracts, `NavigationNotifier`.
 - **Browser isolation** (`src/common/browser`): `ChromeSyncStorage`, the two ADO tab readers, and

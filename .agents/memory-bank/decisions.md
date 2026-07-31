@@ -1006,3 +1006,23 @@ nodeMatchesChange`). Copied here, that makes an activity pill drag in items belo
   server data: filtering, ordering, and refresh should not refetch unchanged discussions. Bounded
   concurrency removes serial network latency without overwhelming ADO, while finite transient retry
   avoids surfacing brief service failures as permanent load errors.
+
+## ADR-056: Team configuration is authoritative in one ADO work item Description
+
+- Decision: a team shares the full existing `AwesomeADO.config` payload through `System.Description`
+  on one Azure DevOps work item in the same organization as its queries. The item id is a separate
+  synced trust anchor (`teamConfig.workItemId`), never part of what a pull may use to redirect itself.
+  User-selected file export/import includes that ID for backup and restore, but the compact payload
+  published to Description omits it and a remote pull never writes the source store.
+  Connected clients pull on saved-query entry and can pull explicitly in Options. A normalized
+  unchanged snapshot is a no-op; a malformed or partially valid snapshot is rejected wholesale.
+- Decision: publishing is explicit, never triggered by an ordinary local edit. It reads the current
+  work item revision and sends Description plus `/multilineFieldsFormat/System.Description =
+Markdown` in one `/rev`-guarded JSON Patch. The PATCH is not retried; a concurrent publisher gets
+  a visible conflict and must pull before deliberately trying again. Idempotent GETs receive at most
+  three attempts with bounded backoff.
+- Rationale: browser sync is user-scoped and file import cannot propagate additions or deletions.
+  An ADO work item is already permissioned, versioned, and readable through the session every query
+  viewer uses, including another team with access. Keeping the locator outside the payload preserves
+  the user's trust decision, while full replacement makes removing a binding centrally remove it
+  for every connected client on its next query open.

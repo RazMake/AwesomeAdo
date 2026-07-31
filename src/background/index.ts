@@ -78,6 +78,12 @@ import {
   type ReadNoteActivityResponse,
 } from "../common/browser/NoteActivityRequest";
 import {
+  isReadTeamConfigMessage,
+  isReadTeamConfigResponse,
+  READ_TEAM_CONFIG_MESSAGE,
+  type ReadTeamConfigResponse,
+} from "../common/browser/TeamConfigRequest";
+import {
   isUpdateWorkItemFieldMessage,
   type UpdateWorkItemFieldMessage,
   type UpdateWorkItemFieldResponse,
@@ -117,6 +123,7 @@ import {
 import { fetchAdoIterationsInPage } from "../common/browser/fetchAdoIterationsInPage";
 import { fetchAdoTreeInPage } from "../common/browser/fetchAdoTreeInPage";
 import { fetchNoteActivityInPage } from "../common/browser/fetchNoteActivityInPage";
+import { fetchTeamConfigInPage } from "../common/browser/fetchTeamConfigInPage";
 import { fetchWorkItemNotesInPage } from "../common/browser/fetchWorkItemNotesInPage";
 import { findFeatureCrewInPage } from "../common/browser/findFeatureCrewInPage";
 import { readWorkItemRanksInPage } from "../common/browser/readWorkItemRanksInPage";
@@ -572,6 +579,57 @@ function describeError(error: unknown): string {
 function firstScriptResult(results: { result?: unknown }[]): unknown {
   return results[0]?.result ?? null;
 }
+
+const readTeamConfig = async (
+  workItemId: number,
+  tabId: number,
+  tabUrl: string,
+): Promise<ReadTeamConfigResponse> => {
+  const url = buildWorkItemUpdateUrl(tabUrl, workItemId);
+  if (url === null) {
+    return { ok: false, error: "not a supported ADO URL" };
+  }
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: "MAIN",
+      func: fetchTeamConfigInPage,
+      args: [url],
+    });
+    const response = firstScriptResult(results);
+    if (!isReadTeamConfigResponse(response)) {
+      logger.error(`Team configuration work item ${workItemId} returned no valid response.`);
+      return { ok: false, error: "no valid response" };
+    }
+    if (!response.ok) {
+      logger.error(`Could not read team configuration work item ${workItemId}: ${response.error}`);
+    }
+    return response;
+  } catch (error) {
+    logger.error(`Could not read team configuration work item ${workItemId}`, error);
+    return { ok: false, error: `injection failed: ${String(error)}` };
+  }
+};
+
+chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
+  if (!claimsMessageType(message, READ_TEAM_CONFIG_MESSAGE)) {
+    return undefined;
+  }
+  if (!isReadTeamConfigMessage(message)) {
+    logger.error("Rejected malformed team configuration read request.");
+    sendResponse({ ok: false, error: "invalid work item id" } satisfies ReadTeamConfigResponse);
+    return undefined;
+  }
+  const tabId = sender.tab?.id;
+  const tabUrl = sender.tab?.url;
+  if (tabId === undefined || tabUrl === undefined) {
+    logger.error(`Cannot read team configuration work item ${message.workItemId}: no sender tab.`);
+    sendResponse({ ok: false, error: "no sender tab" } satisfies ReadTeamConfigResponse);
+    return undefined;
+  }
+  void readTeamConfig(message.workItemId, tabId, tabUrl).then(sendResponse);
+  return true;
+});
 
 chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
   if (!isReconcileFeatureCrewMessage(message)) {

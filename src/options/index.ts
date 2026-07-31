@@ -11,8 +11,11 @@ import {
 import { createQueryBindingStore } from "../common/bindings/createQueryBindingStore";
 import { ChromeAdoMetadataReader } from "../common/browser/ChromeAdoMetadataReader";
 import { ChromeAdoTabReader } from "../common/browser/ChromeAdoTabReader";
+import { ChromeTeamConfigClient } from "../common/browser/ChromeTeamConfigClient";
 import { createLogging } from "../common/logging/createLogger";
 import { createSettingsStore } from "../common/settings/createSettingsStore";
+import { TeamConfigSynchronizer } from "../common/settings-transfer/TeamConfigSynchronizer";
+import { createTeamConfigSourceStore } from "../common/settings-transfer/createTeamConfigSourceStore";
 
 import {
   AzureDevOpsController,
@@ -33,6 +36,10 @@ import {
   SettingsTransferController,
   type SettingsTransferElements,
 } from "./settings-transfer/SettingsTransferController";
+import {
+  TeamConfigController,
+  type TeamConfigElements,
+} from "./settings-transfer/TeamConfigController";
 import { TabsController } from "./shell/TabsController";
 
 // One logger factory + backing store shared by the whole options page: controllers record through
@@ -102,6 +109,18 @@ const settingsStore = createSettingsStore(loggers.forSource("common/settings"));
 // the same synced list without competing subscriptions.
 const bindingStore = createQueryBindingStore(loggers.forSource("common/bindings"));
 
+const teamConfigSourceStore = createTeamConfigSourceStore(
+  loggers.forSource("common/settings-transfer"),
+);
+const teamConfigClient = new ChromeTeamConfigClient();
+const teamConfigSynchronizer = new TeamConfigSynchronizer(
+  teamConfigSourceStore,
+  teamConfigClient,
+  settingsStore,
+  bindingStore,
+  loggers.forSource("common/settings-transfer"),
+);
+
 // One tab reader shared by the controllers that read from the active ADO tab: the Appearance panel
 // resolves "auto" from its theme, and the Query Bindings picker asks it which query that tab is on.
 const adoTabReader = new ChromeAdoTabReader();
@@ -112,6 +131,11 @@ const adoTabReader = new ChromeAdoTabReader();
 // they are registered here and re-read on demand. Without that the page keeps showing (and the next
 // edit re-saves) the configuration the file just replaced.
 const reloadAfterImport: (() => void)[] = [];
+const reloadImportedConfiguration = (): void => {
+  for (const reload of reloadAfterImport) {
+    reload();
+  }
+};
 
 if (themeSelect && defaultViewSelect) {
   const elements: OptionsElements = {
@@ -145,17 +169,56 @@ if (settingsExportButton && settingsImportButton && settingsImportFile && settin
   const transfer = new SettingsTransferController(
     settingsStore,
     bindingStore,
+    teamConfigSourceStore,
     transferElements,
     report,
-    () => {
-      for (const reload of reloadAfterImport) {
-        reload();
-      }
-    },
+    reloadImportedConfiguration,
   );
   transfer.init();
 } else {
   report(new Error("The options page is missing the import/export controls and cannot load them."));
+}
+
+const teamConfigWorkItemId = document.querySelector<HTMLInputElement>("#team-config-work-item-id");
+const teamConfigConnect = document.querySelector<HTMLButtonElement>("#team-config-connect");
+const teamConfigPull = document.querySelector<HTMLButtonElement>("#team-config-pull");
+const teamConfigPublish = document.querySelector<HTMLButtonElement>("#team-config-publish");
+const teamConfigDisconnect = document.querySelector<HTMLButtonElement>("#team-config-disconnect");
+const teamConfigStatus = document.querySelector<HTMLElement>("#team-config-status");
+
+if (
+  teamConfigWorkItemId &&
+  teamConfigConnect &&
+  teamConfigPull &&
+  teamConfigPublish &&
+  teamConfigDisconnect &&
+  teamConfigStatus
+) {
+  const teamConfigElements: TeamConfigElements = {
+    workItemId: teamConfigWorkItemId,
+    connectButton: teamConfigConnect,
+    pullButton: teamConfigPull,
+    publishButton: teamConfigPublish,
+    disconnectButton: teamConfigDisconnect,
+    status: teamConfigStatus,
+  };
+  const teamConfigController = new TeamConfigController(
+    teamConfigSourceStore,
+    teamConfigSynchronizer,
+    teamConfigClient,
+    teamConfigElements,
+    report,
+    reloadImportedConfiguration,
+  );
+  reloadAfterImport.push(() => {
+    void teamConfigController.reload().catch(report);
+  });
+  void teamConfigController.init().catch((error: unknown) => {
+    teamConfigController.dispose();
+    report(error);
+  });
+} else {
+  report(new Error("The options page is missing the team configuration controls."));
 }
 
 const adoOrganization = document.querySelector<HTMLElement>("#ado-organization");

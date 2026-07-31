@@ -5,6 +5,7 @@ import type { QueryBindings } from "../../common/bindings/QueryBinding";
 import { DEFAULT_SETTINGS, type ExtensionSettings } from "../../common/settings/ExtensionSettings";
 import type { ISettingsStore } from "../../common/settings/ISettingsStore";
 import { exportConfig } from "../../common/settings-transfer/AwesomeAdoConfig";
+import type { TeamConfigSourceStore } from "../../common/settings-transfer/TeamConfigSourceStore";
 
 import {
   SettingsTransferController,
@@ -33,6 +34,14 @@ class FakeBindingStore implements IQueryBindingStore {
   observe = vi.fn(() => ({ ready: Promise.resolve(), unsubscribe: vi.fn() }));
 }
 
+class FakeTeamConfigSourceStore implements TeamConfigSourceStore {
+  constructor(private current: number | null) {}
+  read = vi.fn(async () => this.current);
+  write = vi.fn(async (workItemId: number | null) => {
+    this.current = workItemId;
+  });
+}
+
 function makeElements(): SettingsTransferElements {
   return {
     exportButton: document.createElement("button"),
@@ -58,6 +67,7 @@ interface Harness {
   controller: SettingsTransferController;
   settingsStore: FakeSettingsStore;
   bindingStore: FakeBindingStore;
+  teamConfigSourceStore: FakeTeamConfigSourceStore;
   elements: SettingsTransferElements;
   downloaded: { name: string; blobs: Blob[] };
   errors: unknown[];
@@ -65,9 +75,16 @@ interface Harness {
   imported: () => number;
 }
 
-function setup(overrides?: { settings?: ExtensionSettings; bindings?: QueryBindings }): Harness {
+function setup(overrides?: {
+  settings?: ExtensionSettings;
+  bindings?: QueryBindings;
+  teamConfigWorkItemId?: number | null;
+}): Harness {
   const settingsStore = new FakeSettingsStore(overrides?.settings ?? sampleSettings);
   const bindingStore = new FakeBindingStore(overrides?.bindings ?? sampleBindings);
+  const teamConfigSourceStore = new FakeTeamConfigSourceStore(
+    overrides?.teamConfigWorkItemId === undefined ? 42 : overrides.teamConfigWorkItemId,
+  );
   const elements = makeElements();
   const errors: unknown[] = [];
   const downloaded = { name: "", blobs: [] as Blob[] };
@@ -89,6 +106,7 @@ function setup(overrides?: { settings?: ExtensionSettings; bindings?: QueryBindi
   const controller = new SettingsTransferController(
     settingsStore,
     bindingStore,
+    teamConfigSourceStore,
     elements,
     (error) => errors.push(error),
     () => {
@@ -100,6 +118,7 @@ function setup(overrides?: { settings?: ExtensionSettings; bindings?: QueryBindi
     controller,
     settingsStore,
     bindingStore,
+    teamConfigSourceStore,
     elements,
     downloaded,
     errors,
@@ -130,9 +149,11 @@ describe("SettingsTransferController export", () => {
     const parsed = JSON.parse(await h.downloaded.blobs[0]!.text()) as {
       settings: ExtensionSettings;
       enhancedQueries: QueryBindings;
+      teamConfigWorkItemId: number;
     };
     expect(parsed.settings.theme).toBe("dark");
     expect(parsed.enhancedQueries).toEqual(sampleBindings);
+    expect(parsed.teamConfigWorkItemId).toBe(42);
     expect(h.elements.status.textContent).toContain("Exported");
   });
 
@@ -164,6 +185,7 @@ describe("SettingsTransferController import", () => {
     const text = exportConfig(
       { ...DEFAULT_SETTINGS, theme: "blue" },
       { q: { view: "sprint", properties: {} } },
+      99,
     );
 
     chooseFile(h.elements.fileInput, text);
@@ -173,12 +195,22 @@ describe("SettingsTransferController import", () => {
     expect(h.settingsStore.written?.theme).toBe("blue");
     expect(h.bindingStore.replaceAll).toHaveBeenCalledTimes(1);
     expect(h.bindingStore.replaced).toEqual({ q: { view: "sprint", properties: {} } });
+    expect(h.teamConfigSourceStore.write).toHaveBeenCalledWith(99);
     expect(h.elements.status.textContent).toContain("Imported");
     expect(h.elements.status.classList.contains("card__hint--error")).toBe(false);
     // The page is told to re-read, so the sections that load once still show the imported values.
     expect(h.imported()).toBe(1);
     // Input is reset so re-selecting the same file re-fires change.
     expect(h.elements.fileInput.value).toBe("");
+  });
+
+  it("preserves the connection when importing an older file without a work item ID", async () => {
+    const h = setup();
+
+    chooseFile(h.elements.fileInput, exportConfig(DEFAULT_SETTINGS, {}));
+    await flush();
+
+    expect(h.teamConfigSourceStore.write).not.toHaveBeenCalled();
   });
 
   it("imports what it can and reports in red what the file got wrong", async () => {

@@ -140,6 +140,20 @@ red, never a footnote under a success message. This is the one place normalizati
 NOT silent — the normalizers repair storage so a running extension is never stopped by a stale
 value, but an import is the user's own file, which they can fix.
 
+Team sharing reuses that exact full-config schema as compact JSON through one Azure DevOps work
+item's Description. ADO may return that multiline field with HTML entities even when authored as
+Markdown, including entity-encoded JSON with no element wrapper. `fetchTeamConfigInPage` trusts the
+raw value only when `JSON.parse` succeeds; otherwise it converts an inert HTML body's text content
+back to JSON text and decodes entities before `importConfig` parses it.
+The trusted work item id is persisted separately under `teamConfig.workItemId`, so downloaded JSON
+cannot redirect a client to a different source. `TeamConfigSynchronizer` rejects partial remote
+data, replaces both stores only when the normalized snapshot changed, and coalesces concurrent
+pulls. A successful item read with an empty Description is a neutral connected/unpublished outcome:
+it neither logs an error nor changes local configuration. Content pulls on saved-query entry through
+the background/MAIN-world bridge; Options pulls
+or explicitly publishes through the current ADO query tab. Publish reads the current revision and
+writes Description plus its Markdown format in one `/rev`-guarded JSON Patch (ADR-056).
+
 ### `src/common/navigation`
 
 - `AdoHost` — the single source of truth for "which URLs are hosted ADO": `isSupportedAdoHost`, the
@@ -182,8 +196,9 @@ Split into component subfolders (each with its own `README.md`):
   setting and a single writer keeps them in sync) + the reusable `AutocompleteInput` and
   `createTypeLabel`.
 - `query-bindings/` — `QueryBindingsController` (bind/edit/delete query mappings).
-- `settings-transfer/` — `SettingsTransferController` (Appearance-tab import/export of the whole
-  configuration, spanning both stores).
+- `settings-transfer/` — `SettingsTransferController` and `TeamConfigController` (the Appearance
+  tab's unified Configuration Sharing card: file import/export plus Azure DevOps work-item sharing
+  of the whole configuration, spanning both stores).
 - `diagnostics/` — `DiagnosticsController` + the reusable `MultiSelectFilter` (never logs — it renders
   the store it observes).
 - `alerts/` — `StatusReporter` (logs under `options/alerts`) + `ConfigurationBannerController`.

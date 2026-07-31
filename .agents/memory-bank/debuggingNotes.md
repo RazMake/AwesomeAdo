@@ -9,6 +9,20 @@ we hit, why they happened, and the exact fix so nobody re-derives them.
 agent-tool-local memory (it does not clone or transfer between machines/agents). Record new findings
 here so every agent, teammate, and clone sees them.
 
+## Team configuration Description was "not valid JSON" after a successful publish
+
+- SYMPTOM: Pull logged `ConfigImportError: The selected file is not valid JSON` even though Publish
+  had written a valid serialized configuration to the configured work item.
+- ROOT CAUSE: Azure DevOps can return a multiline `System.Description` with HTML entities even when
+  `/multilineFieldsFormat/System.Description` was set to Markdown. The live API returned
+  `{&quot;awesomeAdoConfigVersion&quot;:...}` without an HTML element wrapper. A prefix check mistook its
+  opening `{` for proof that it was already JSON and skipped entity decoding.
+- FIX / RULE: `fetchTeamConfigInPage` first unwraps an optional Markdown code fence and accepts text
+  unchanged only when `JSON.parse` actually succeeds; otherwise it parses the value as inert HTML and returns
+  `body.textContent`, which removes ADO's wrapper and decodes entities before `importConfig`. Team
+  Publish uses `exportCompactConfig` so Description contains one-line JSON without indentation;
+  file Export remains intentionally human-readable.
+
 ## Expand-all and collapse-all changed arrows but not child rows
 
 - SYMPTOM: Project Tracking's header buttons changed every twisty's glyph and `aria-expanded`, but

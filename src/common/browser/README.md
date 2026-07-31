@@ -17,6 +17,15 @@ race-safe protocol both stores use to observe synced storage; `onStorageAreaChan
 change-event filter both storage adapters reuse; and `requestFromTab`, the best-effort round-trip
 `ChromeAdoTabReader` uses to ask a tab's content script a question.
 
+Team configuration uses the same isolation boundary. `ChromeTeamConfigClient` injects
+`fetchTeamConfigInPage` / `writeTeamConfigInPage` into the current ADO query tab for options-page
+Pull and Publish. A content script uses `MessagingTeamConfigReader`; the background worker derives
+the work item REST URL from that sender tab and injects the same read function. Description GETs
+retry transient failures up to three attempts. A successful GET with no Description returns a
+successful empty read; non-empty text is decoded for the settings-transfer parser. Publishing sends
+one `/rev`-guarded JSON Patch that sets both `System.Description` and its Markdown format, and never
+retries the PATCH.
+
 ## Public API
 
 ### `IBrowserSyncStorage` (interface)

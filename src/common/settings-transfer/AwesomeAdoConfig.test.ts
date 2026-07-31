@@ -6,6 +6,7 @@ import { DEFAULT_SETTINGS, type ExtensionSettings } from "../settings/ExtensionS
 import {
   CONFIG_FILE_NAME,
   CONFIG_FORMAT_VERSION,
+  exportCompactConfig,
   exportConfig,
   importConfig,
   type AwesomeAdoConfig,
@@ -49,6 +50,21 @@ describe("exportConfig", () => {
 
   it("produces indented JSON so an exported file is human-readable", () => {
     expect(exportConfig(sampleSettings, sampleBindings)).toContain("\n  ");
+  });
+
+  it("produces compact JSON for the team configuration work item", () => {
+    const compact = exportCompactConfig(sampleSettings, sampleBindings);
+
+    expect(compact).not.toContain("\n");
+    expect(compact).toBe(JSON.stringify(JSON.parse(compact)));
+    expect(JSON.parse(compact)).not.toHaveProperty("teamConfigWorkItemId");
+  });
+
+  it("includes the trusted team configuration work item in a file export", () => {
+    const text = exportConfig(sampleSettings, sampleBindings, 12345);
+
+    expect(JSON.parse(text)).toHaveProperty("teamConfigWorkItemId", 12345);
+    expect(importConfig(text).teamConfigWorkItemId).toBe(12345);
   });
 
   it("normalizes values so an export is always a clean snapshot", () => {

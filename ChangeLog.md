@@ -5,6 +5,12 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ## Next Version
 
+- Adds team configuration sharing through an Azure DevOps work item, with automatic full-config
+  pulls that decode Azure DevOps' stored Description format when saved queries open and explicit
+  conflict-aware publishing from Options. File import/export and team sharing now sit together under
+  Configuration Sharing, with clearer automatic-pull guidance and distinct connection actions; an
+  empty Description shows a neutral connected status until the first publish, invalid content and
+  item failures remain visible errors, and file export/import preserves the configured work item ID.
 - Fixes the Project Tracking expand-all and collapse-all buttons so they show and hide child rows,
   not just update their arrows.
 - Fixes Follow Azure DevOps so an open enhanced view switches between Dark and Light when Azure

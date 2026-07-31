@@ -7,6 +7,8 @@ import {
   type ExtensionSettings,
 } from "../settings/ExtensionSettings";
 
+import { normalizeWorkItemId } from "./TeamConfigSourceStore";
+
 /** File name proposed to the user when exporting, and expected (by convention) when importing. */
 export const CONFIG_FILE_NAME = "AwesomeADO.config";
 
@@ -19,15 +21,17 @@ export const CONFIG_FORMAT_VERSION = 1;
 /**
  * The on-disk shape of an exported `AwesomeADO.config` file.
  *
- * It carries the user's ENTIRE configuration: every extension setting (theme, default view, current
- * team, sprint counts, area paths, board columns, work item types, marker tags) plus every
- * enhanced-query binding (which queries are enhanced and each query's per-view property values).
- * Import restores all of it.
+ * A file export carries the user's ENTIRE configuration: every extension setting (theme, default
+ * view, current team, sprint counts, area paths, board columns, work item types, marker tags), every
+ * enhanced-query binding, and the optional team configuration work item ID. The compact payload
+ * published to that work item deliberately omits its own ID.
  */
 export interface AwesomeAdoConfig {
   awesomeAdoConfigVersion: number;
   settings: ExtensionSettings;
   enhancedQueries: QueryBindings;
+  /** Trusted team configuration source included by file export, never by the shared payload. */
+  teamConfigWorkItemId?: number | null;
 }
 
 /** The normalized configuration an import yields, ready to persist to the two stores. */
@@ -40,6 +44,8 @@ export interface ImportedConfig {
   settings: Partial<ExtensionSettings>;
   /** Every binding the file described usably. Bindings are replaced wholesale, so this is the set. */
   enhancedQueries: QueryBindings;
+  /** Absent for older files and shared payloads, so the current trusted source is preserved. */
+  teamConfigWorkItemId?: number | null;
   /** Everything the file got wrong, in words the user can act on. Empty means it imported cleanly. */
   problems: readonly string[];
 }
@@ -67,13 +73,37 @@ export class ConfigImportError extends Error {
  * Values pass through the same normalizers used on read, so an export is always a clean, current
  * snapshot even if storage still holds a value written by an older build.
  */
-export function exportConfig(settings: ExtensionSettings, enhancedQueries: QueryBindings): string {
+export function exportConfig(
+  settings: ExtensionSettings,
+  enhancedQueries: QueryBindings,
+  teamConfigWorkItemId?: number | null,
+): string {
+  return serializeConfig(settings, enhancedQueries, teamConfigWorkItemId, 2);
+}
+
+/** Serialize the full configuration without presentation whitespace for an ADO work item field. */
+export function exportCompactConfig(
+  settings: ExtensionSettings,
+  enhancedQueries: QueryBindings,
+): string {
+  return serializeConfig(settings, enhancedQueries);
+}
+
+function serializeConfig(
+  settings: ExtensionSettings,
+  enhancedQueries: QueryBindings,
+  teamConfigWorkItemId?: number | null,
+  space?: number,
+): string {
   const config: AwesomeAdoConfig = {
     awesomeAdoConfigVersion: CONFIG_FORMAT_VERSION,
     settings: normalizeSettings(settings),
     enhancedQueries: normalizeBindings(enhancedQueries),
   };
-  return JSON.stringify(config, null, 2);
+  if (teamConfigWorkItemId !== undefined) {
+    config.teamConfigWorkItemId = normalizeWorkItemId(teamConfigWorkItemId);
+  }
+  return JSON.stringify(config, null, space);
 }
 
 /**
@@ -108,15 +138,38 @@ export function importConfig(text: string): ImportedConfig {
     ]);
   }
   const settings = importSettings(raw.settings);
+  const teamConfigSource = importTeamConfigWorkItemId(raw.teamConfigWorkItemId);
   return {
     settings: settings.accepted,
     enhancedQueries: normalizeBindings(raw.enhancedQueries),
+    teamConfigWorkItemId: teamConfigSource.accepted,
     problems: [
       ...collectVersionProblems(raw.awesomeAdoConfigVersion),
       ...settings.problems,
       ...collectQueryProblems(raw.enhancedQueries),
+      ...teamConfigSource.problems,
     ],
   };
+}
+
+function importTeamConfigWorkItemId(value: unknown): {
+  accepted?: number | null;
+  problems: string[];
+} {
+  if (value === undefined) {
+    return { problems: [] };
+  }
+  if (value === null) {
+    return { accepted: null, problems: [] };
+  }
+  const workItemId = normalizeWorkItemId(value);
+  return workItemId === null
+    ? {
+        problems: [
+          'The setting "teamConfigWorkItemId" was skipped; expected a positive work item ID.',
+        ],
+      }
+    : { accepted: workItemId, problems: [] };
 }
 
 /**

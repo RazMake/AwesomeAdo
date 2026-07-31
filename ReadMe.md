@@ -20,8 +20,13 @@ Behaviour is configured from a themeable, tabbed options page:
 - **Query Bindings** — bind individual Azure DevOps queries to an enhanced view. Open it from a
   query's AwesomeADO button to bind that query, or pick from the queries you have open. Each bound
   query can be given its own view, saved, or deleted (unbound).
+- **Team configuration** — connect to a shared Azure DevOps work item whose Description holds the
+  full AwesomeADO configuration. Connected users pull additions, changes, and removals whenever a
+  saved query opens; an editor explicitly publishes the current configuration from Options.
 
-Both the theme and default-view choices sync across the user's devices via `chrome.storage.sync`.
+Personal storage follows the user's browser account via `chrome.storage.sync`. Team configuration
+is shared through a work item in the same Azure DevOps organization, so cross-team viewers need its
+id, read access to it, and the extension installed.
 
 ## Prerequisites
 

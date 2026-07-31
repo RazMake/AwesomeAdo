@@ -98,6 +98,16 @@
         color: var(--text-muted);
         font-size: 13px;
       }
+      .configuration-sharing__section {
+        margin-top: 14px;
+      }
+      .configuration-sharing__section + .configuration-sharing__section {
+        padding-top: 16px;
+        border-top: 1px solid var(--border);
+      }
+      .team-config-actions {
+        margin-top: 12px;
+      }
       /* A failed (or only partly applied) import differs from a clean one by wording alone, on a
          line the reader has already learned to skim as "done" — so the colour is what makes it
          land. Same red as the page-level .status and .banner--error. */
@@ -715,6 +725,11 @@
         padding: 8px 16px;
         cursor: pointer;
       }
+      .button--connect {
+        background: var(--surface-hover);
+        color: var(--accent);
+        border: 1px solid var(--accent);
+      }
       .button--danger {
         background: transparent;
         color: var(--error);
@@ -1028,25 +1043,81 @@
           </div>
         </div>
 
-        <div class="card">
-          <h2 class="card__title">Import / Export configuration</h2>
-          <p class="card__hint">
-            Export saves <strong>everything</strong> to an <code>AwesomeADO.config</code> file: your
-            theme, default view, current team name, sprint counts, area paths, board columns, work
-            item types, and every enhanced query (which queries are enhanced and each one's view
-            settings). Import replaces your current configuration with the contents of a file you
-            previously exported.
-          </p>
-          <div class="log-toolbar">
-            <button type="button" class="button button--subtle" id="settings-export">
-              Export…
-            </button>
-            <button type="button" class="button button--subtle" id="settings-import">
-              Import…
-            </button>
-            <input type="file" id="settings-import-file" accept=".config,application/json" hidden />
+        <div class="card" id="configuration-sharing">
+          <h2 class="card__title">Configuration Sharing</h2>
+
+          <div class="configuration-sharing__section">
+            <p class="card__hint">
+              Export saves <strong>everything</strong> to an <code>AwesomeADO.config</code> file:
+              your theme, default view, current team name, sprint counts, area paths, board columns,
+              work item types, team configuration work item ID, and every enhanced query (which
+              queries are enhanced and each one's view settings). Import replaces your current
+              configuration with the contents of a file you previously exported.
+            </p>
+            <div class="log-toolbar">
+              <button type="button" class="button button--subtle" id="settings-export">
+                Export…
+              </button>
+              <button type="button" class="button button--subtle" id="settings-import">
+                Import…
+              </button>
+              <input
+                type="file"
+                id="settings-import-file"
+                accept=".config,application/json"
+                hidden
+              />
+            </div>
+            <p
+              id="settings-transfer-status"
+              class="card__hint"
+              role="status"
+              aria-live="polite"
+            ></p>
           </div>
-          <p id="settings-transfer-status" class="card__hint" role="status" aria-live="polite"></p>
+
+          <div class="configuration-sharing__section">
+            <p class="card__hint">
+              Keep the full configuration in an Azure DevOps work item's Description. Everyone who
+              connects to that item automatically pulls additions, changes, and removals when they
+              open a saved query. Publishing replaces the Description with your current
+              configuration.
+              <strong>Note:</strong> Once connected, the configuration is pulled automatically
+              whenever you open a saved query; use Pull Now only when you want to refresh
+              immediately.
+            </p>
+            <div class="field">
+              <label for="team-config-work-item-id">Configuration work item ID</label>
+              <input
+                type="number"
+                id="team-config-work-item-id"
+                min="1"
+                step="1"
+                inputmode="numeric"
+                placeholder="123456"
+              />
+            </div>
+            <div class="log-toolbar team-config-actions">
+              <button type="button" class="button button--connect" id="team-config-connect">
+                Connect
+              </button>
+              <button type="button" class="button button--subtle" id="team-config-pull" disabled>
+                Pull Now
+              </button>
+              <button type="button" class="button button--subtle" id="team-config-publish" disabled>
+                Publish Config
+              </button>
+              <button
+                type="button"
+                class="button button--danger"
+                id="team-config-disconnect"
+                disabled
+              >
+                Disconnect
+              </button>
+            </div>
+            <p id="team-config-status" class="card__hint" role="status" aria-live="polite"></p>
+          </div>
         </div>
       </section>
 
