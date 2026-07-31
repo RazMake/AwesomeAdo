@@ -249,25 +249,33 @@ describe("Sprint View filters", () => {
     expect(root.querySelectorAll(".awesomeado-sprint__item")).toHaveLength(1);
     expect(root.querySelector(".awesomeado-sprint__item")?.textContent).toContain("Apps item");
   });
+});
 
-  it("offers only ancestors of items shown in the selected sprint", async () => {
-    const shownChild = item(3, "Shown child");
+describe("Sprint View Project filter", () => {
+  it("offers only configured parents of primary work that lead to shown sprint items", async () => {
+    const shownChild = item(4, "Shown child", { type: "Task" });
+    const primaryWork = item(3, "Primary work", {
+      children: [shownChild],
+    });
     const otherSprintChild = item(5, "Other sprint child", {
       iterationPath: "Project\\Sprint 2",
       sprintName: "Sprint 2",
     });
     const shownParent = item(2, "Shown parent", {
+      type: "Feature",
       iterationPath: "Project\\Backlog",
       sprintName: "Backlog",
-      children: [shownChild],
+      children: [primaryWork],
     });
-    const otherParent = item(4, "Other parent", {
+    const otherParent = item(6, "Other parent", {
+      type: "Feature",
       iterationPath: "Project\\Backlog",
       sprintName: "Backlog",
       children: [otherSprintChild],
     });
     const roots = [
       item(1, "Portfolio", {
+        type: "Epic",
         iterationPath: "Project\\Backlog",
         sprintName: "Backlog",
         children: [shownParent, otherParent],
@@ -275,11 +283,24 @@ describe("Sprint View filters", () => {
     ];
     const root = await render({
       loadTree: async () => ({ isTreeQuery: true, roots, error: null }),
+      getTypes: () => [
+        { ...services().getTypes()[0]!, name: "Epic", color: "112233", children: ["Feature"] },
+        { ...services().getTypes()[0]!, name: "Feature", color: "445566", children: ["Story"] },
+        {
+          ...services().getTypes()[0]!,
+          name: "Story",
+          isPrimaryWork: true,
+          children: ["Task"],
+        },
+        { ...services().getTypes()[0]!, name: "Task", children: [] },
+      ],
     });
 
     root.querySelector<HTMLButtonElement>(".awesomeado-hierarchy-filter__trigger")!.click();
     const options = root.querySelectorAll<HTMLElement>(".awesomeado-hierarchy-filter__option");
     expect([...options].map((option) => option.dataset.itemId)).toEqual(["", "1", "2"]);
+    expect(options[1]?.style.color).toBe("rgb(17, 34, 51)");
+    expect(options[2]?.style.color).toBe("rgb(68, 85, 102)");
 
     const parentRadio = root.querySelector<HTMLInputElement>(
       '.awesomeado-hierarchy-filter__option[data-item-id="2"] input',
@@ -287,10 +308,18 @@ describe("Sprint View filters", () => {
     parentRadio.checked = true;
     parentRadio.dispatchEvent(new Event("change"));
 
-    expect(root.querySelectorAll(".awesomeado-sprint__item")).toHaveLength(1);
-    expect(root.querySelector(".awesomeado-sprint__item")?.textContent).toContain("Shown child");
+    const shownTitles = [...root.querySelectorAll(".awesomeado-sprint__item")].map(
+      (row) => row.textContent,
+    );
+    expect(shownTitles).toHaveLength(2);
+    expect(shownTitles).toEqual([
+      expect.stringContaining("Primary work"),
+      expect.stringContaining("Shown child"),
+    ]);
   });
+});
 
+describe("Sprint View work-item filters", () => {
   it("filters the queue from a marker pill", async () => {
     const root = await render();
     root.querySelector<HTMLButtonElement>('[data-marker="blocked"]')!.click();

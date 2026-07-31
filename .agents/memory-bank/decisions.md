@@ -1076,3 +1076,10 @@ Markdown` in one `/rev`-guarded JSON Patch. The PATCH is not retried; a concurre
   an open Project Tracking view redraws immediately after a Primary-work edit. Theme and routing
   settings stay outside that fingerprint: theme changes recolor the existing DOM, while default-view
   changes continue through the controller's ordinary show/restore decision.
+- Amendment: Sprint View's Project filter offers only query ancestors whose configured types are
+  strict ancestors of a Primary-work type, recursively through the hierarchy. A choice must also lead
+  to work surviving the sprint and other active filters. Primary-work items and implementation details
+  are not projects, even when the query nests eligible work beneath them. Choices carry their type
+  color and raw title into the shared hierarchy control. That control searches titles by
+  case-insensitive substring while retaining each match's visible ancestor stack, and expands toward
+  the viewport margin before truncating labels with a full-text tooltip.

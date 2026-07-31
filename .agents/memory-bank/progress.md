@@ -30,7 +30,9 @@ This is a flattened snapshot of what exists now, not a build log.
 - **Sprint View step 1** (`content/views/sprint`): accepts flat or tree queries; loads the selected
   sprint's capacity roster; renders an always-active Sprint selector plus Lane, Project, refresh,
   write-queue, team, marker, and recent-activity controls; and filters a minimal item queue. Project
-  choices are limited to ancestor chains of currently eligible sprint work. Team and
+  choices are limited to planning-parent types above Primary work on ancestor chains of currently
+  eligible sprint work, colored by type and searchable by title without dropping matching parents;
+  long labels use available viewport width before truncating. Team and
   marker pills use compact counters, with one total per marker tag except Interrupt's waiting /
   accepted split; every pill matches Project Tracking's Feature Crew tag scale, Unassigned is
   derived from the loaded work, and refresh replaces both items and

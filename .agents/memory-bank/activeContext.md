@@ -70,7 +70,11 @@ The extension is feature-complete for its current scope:
   gap in both views. The
   sprint picker omits its filter toggle because Sprint View is always constrained to the selected
   iteration. Refresh reloads the query, sprint window, and
-  selected iteration capacity together. `project-tracking` is a **data-driven tree board**. Adding a
+  selected iteration capacity together. Its Project dropdown contains only eligible query ancestors
+  whose configured types are strict ancestors of Primary-work types; Primary-work and
+  implementation-detail types are not project choices. It colors choices by type, grows to the
+  viewport margin before truncating long labels, and searches item titles while retaining matching
+  ancestor chains. `project-tracking` is a **data-driven tree board**. Adding a
   view is a folder plus two registrations — see the `add-enhanced-view` skill.
 - Data-driven views depend on an injected `EnhancedViewServices` (optional field on
   `EnhancedViewContext`): `loadTree`, `userDirectory`, `getTypes`, `getBoardColumns`, `markerTags`,

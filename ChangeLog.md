@@ -12,8 +12,10 @@ builds use the repository's `Major.Minor.Build` release versioning.
   immediately when the hierarchy setting changes.
 - Adds the first Sprint View workflow: an always-active sprint selector, Lane, Project,
   team-capacity, marker, and recent activity filters; concise tag totals with waiting/accepted
-  Interrupt counts; parent-only Project choices relevant to the visible work; a filtered work-item
-  queue; and refresh that reloads both query items and the selected sprint's team roster.
+  Interrupt counts; Project choices limited to planning parents of Primary work relevant to the
+  visible work, with type colors, responsive long-title handling, and hierarchy-preserving title
+  search; a filtered work-item queue; and refresh that reloads both query items and the selected
+  sprint's team roster.
 - Refines enhanced-view filters with compact pills aligned to Project Tracking's user tags and a
   larger gap between full-opacity filter families in Sprint View and Project Tracking.
 - Keeps Primary Work classification intact through team configuration pull and publish, and links a

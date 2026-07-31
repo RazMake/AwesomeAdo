@@ -4,10 +4,12 @@ import { createPopupHost } from "../popupHost/popupHost";
 export interface HierarchyFilterOption {
   id: number;
   label: string;
+  /** Raw work-item title used by quick search, without its type prefix. */
+  title: string;
+  /** Work-item type color. */
+  color: string;
   /** Zero-based tree depth; child rows are indented under their parent. */
   depth: number;
-  /** Optional full-chain tooltip. */
-  title?: string;
 }
 
 export interface HierarchyFilterOptions {
@@ -56,10 +58,12 @@ function renderPopup(params: {
     "top:100%",
     "left:0",
     "margin-top:4px",
-    "min-width:260px",
-    "max-width:min(440px,calc(100vw - 16px))",
+    "box-sizing:border-box",
+    "width:max-content",
+    "min-width:min(260px,calc(100vw - 16px))",
+    "max-width:calc(100vw - 16px)",
     "max-height:320px",
-    "overflow:auto",
+    "overflow:hidden",
     "padding:8px",
     "background:var(--callout-background-color)",
     "color:var(--text-primary-color)",
@@ -70,14 +74,34 @@ function renderPopup(params: {
     "z-index:1000",
   ].join(";");
 
+  const search = params.doc.createElement("input");
+  search.type = "search";
+  search.className = "awesomeado-hierarchy-filter__search";
+  search.placeholder = "Find a project";
+  search.setAttribute("aria-label", "Find a project by title");
+  search.style.cssText = [
+    "box-sizing:border-box",
+    "width:100%",
+    "margin-bottom:6px",
+    "padding:5px 7px",
+    "color:var(--text-primary-color)",
+    "background:var(--control-background-muted)",
+    "border:1px solid var(--control-border-strong)",
+    "border-radius:4px",
+    "font:inherit",
+  ].join(";");
+
+  const list = params.doc.createElement("div");
+  list.className = "awesomeado-hierarchy-filter__list";
+  list.style.cssText = "max-height:260px;overflow:auto";
+
   const clear = renderRow(params.doc, null, "All projects", 0, params.selectedId === null, () => {
     params.select(null);
     params.close();
   });
   clear.style.fontWeight = "600";
-  popup.append(clear);
-  for (const item of params.items) {
-    popup.append(
+  const renderItems = (): void => {
+    const rows = matchingItems(params.items, search.value).map((item) =>
       renderRow(
         params.doc,
         item.id,
@@ -88,11 +112,38 @@ function renderPopup(params: {
           params.select(item.id);
           params.close();
         },
-        item.title,
+        item.color,
       ),
     );
-  }
+    list.replaceChildren(clear, ...rows);
+  };
+  search.addEventListener("input", renderItems);
+  renderItems();
+  popup.append(search, list);
   return popup;
+}
+
+/** Match item titles while retaining their visible ancestor chain. */
+function matchingItems(
+  items: readonly HierarchyFilterOption[],
+  searchText: string,
+): HierarchyFilterOption[] {
+  const query = searchText.trim().toLocaleLowerCase();
+  if (query.length === 0) return [...items];
+
+  const ancestors: (HierarchyFilterOption | undefined)[] = [];
+  const visibleIds = new Set<number>();
+  for (const item of items) {
+    ancestors.length = item.depth;
+    if (item.title.toLocaleLowerCase().includes(query)) {
+      for (const ancestor of ancestors) {
+        if (ancestor !== undefined) visibleIds.add(ancestor.id);
+      }
+      visibleIds.add(item.id);
+    }
+    ancestors[item.depth] = item;
+  }
+  return items.filter((item) => visibleIds.has(item.id));
 }
 
 /** Build one indented radio row. */
@@ -103,7 +154,7 @@ function renderRow(
   depth: number,
   checked: boolean,
   onSelect: () => void,
-  title?: string,
+  color?: string,
 ): HTMLElement {
   const label = doc.createElement("label");
   label.className = "awesomeado-hierarchy-filter__option";
@@ -112,18 +163,20 @@ function renderRow(
     "display:flex",
     "align-items:center",
     "gap:8px",
+    "box-sizing:border-box",
+    "width:100%",
+    "min-width:0",
     "padding:6px 8px",
     "border-radius:4px",
     "cursor:pointer",
-    "white-space:nowrap",
   ].join(";");
   label.style.paddingLeft = `${8 + depth * 18}px`;
-  if (title !== undefined) label.title = title;
+  if (color !== undefined) label.style.color = color;
   const radio = doc.createElement("input");
   radio.type = "radio";
   radio.name = "awesomeado-project-filter";
   radio.checked = checked;
-  radio.style.cssText = "margin:0;accent-color:var(--communication-background)";
+  radio.style.cssText = "flex:0 0 auto;margin:0;accent-color:var(--communication-background)";
   radio.addEventListener("change", () => {
     if (radio.checked) onSelect();
   });
@@ -133,7 +186,19 @@ function renderRow(
   label.addEventListener("mouseleave", () => {
     label.style.background = "transparent";
   });
-  label.append(radio, doc.createTextNode(labelText));
+  const text = doc.createElement("span");
+  text.className = "awesomeado-hierarchy-filter__label";
+  text.textContent = labelText;
+  text.title = labelText;
+  text.style.cssText = [
+    "display:block",
+    "flex:1 1 auto",
+    "min-width:0",
+    "overflow:hidden",
+    "text-overflow:ellipsis",
+    "white-space:nowrap",
+  ].join(";");
+  label.append(radio, text);
   return label;
 }
 
@@ -187,6 +252,7 @@ export function renderHierarchyFilter(
     interactive: options.items.length > 0,
     buildPopup: (close) =>
       renderPopup({ doc, items: options.items, selectedId, select: changed, close }),
+    onOpened: (popup) => popup.querySelector<HTMLInputElement>("input[type=search]")?.focus(),
   });
 
   return {

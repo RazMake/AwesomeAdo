@@ -182,16 +182,51 @@ async function loadSprintData(
 function hierarchyOptions(
   items: readonly DisplayItem[],
   shownItems: readonly DisplayItem[],
+  types: ReadonlyMap<string, TypeCatalogEntry>,
 ): HierarchyFilterOption[] {
   const parentIds = new Set(shownItems.flatMap(({ ancestorIds }) => ancestorIds));
+  const projectTypes = primaryWorkParentTypes([...types.values()]);
   return items
-    .filter(({ item }) => parentIds.has(item.id))
-    .map(({ item, depth, chain }) => ({
+    .filter(({ item }) => parentIds.has(item.id) && projectTypes.has(item.type))
+    .map(({ item, depth }) => ({
       id: item.id,
       label: `${item.type}: ${item.title}`,
+      title: item.title,
+      color: typeColor(types.get(item.type)?.color),
       depth,
-      title: chain.join(" / "),
     }));
+}
+
+function typeColor(color: string | undefined): string {
+  if (!color) return "var(--text-primary-color)";
+  return color.startsWith("#") ? color : `#${color}`;
+}
+
+function primaryWorkParentTypes(types: readonly TypeCatalogEntry[]): ReadonlySet<string> {
+  const descendants = new Set(
+    types.filter((type) => type.isPrimaryWork === true).map((type) => type.name),
+  );
+  const parents = new Set<string>();
+  let previousSize = -1;
+  while (previousSize !== descendants.size) {
+    previousSize = descendants.size;
+    for (const type of types) {
+      if (type.children?.some((child) => descendants.has(child))) {
+        parents.add(type.name);
+        descendants.add(type.name);
+      }
+    }
+  }
+  return parents;
+}
+
+function normalizeProjectSelection(
+  options: readonly HierarchyFilterOption[],
+  session: SprintSession,
+): void {
+  if (!options.some((option) => option.id === session.selectedParentId)) {
+    session.selectedParentId = null;
+  }
 }
 
 function areaPathsOf(items: readonly DisplayItem[]): string[] {
@@ -475,10 +510,8 @@ function renderBoard(
     context,
     session,
   );
-  const options = hierarchyOptions(allItems, shownWithoutProject);
-  if (!options.some((option) => option.id === session.selectedParentId)) {
-    session.selectedParentId = null;
-  }
+  const options = hierarchyOptions(allItems, shownWithoutProject, types);
+  normalizeProjectSelection(options, session);
   const base = baseQueue(allItems, session);
   const scoped = boardScope(allItems, session);
 
