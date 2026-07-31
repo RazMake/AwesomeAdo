@@ -465,7 +465,7 @@ jobs:
             .conditions.ref_name.exclude == [] and
             ([.rules[].type] | sort) == ["deletion", "update"] and
             ([.rules[] | select(.type == "update")] | length) == 1 and
-            ([.rules[] | select(.type == "update")][0].parameters.update_allows_fetch_and_merge == false)
+            (([.rules[] | select(.type == "update")][0].parameters.update_allows_fetch_and_merge // false) == false)
           ' <<<"$immutable" >/dev/null
 
       - name: Install exact pnpm
@@ -846,7 +846,7 @@ jobs:
             .conditions.ref_name.exclude == [] and
             ([.rules[].type] | sort) == ["deletion", "update"] and
             ([.rules[] | select(.type == "update")] | length) == 1 and
-            ([.rules[] | select(.type == "update")][0].parameters.update_allows_fetch_and_merge == false)
+            (([.rules[] | select(.type == "update")][0].parameters.update_allows_fetch_and_merge // false) == false)
           ' <<<"$immutable" >/dev/null
 
           environment="$(gh api \

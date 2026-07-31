@@ -9,6 +9,18 @@ we hit, why they happened, and the exact fix so nobody re-derives them.
 agent-tool-local memory (it does not clone or transfer between machines/agents). Record new findings
 here so every agent, teammate, and clone sees them.
 
+## Release validation rejected a correctly immutable tag ruleset
+
+- SYMPTOM: `Verify owner-controlled version tag policy` exited at its final `jq -e` check even though
+  `immutable-version-tags` was active and contained only update and deletion restrictions.
+- ROOT CAUSE: GitHub's detailed repository-ruleset response omits the update rule's `parameters`
+  object when `update_allows_fetch_and_merge` is disabled. Comparing the missing property directly
+  with `false` fails because jq reads it as `null`.
+- FIX / RULE: normalize the optional API property with
+  `(.parameters.update_allows_fetch_and_merge // false) == false`. This still rejects an explicit
+  `true` while accepting both representations of the disabled/default policy. The live payload on
+  2026-07-30 returned `{ "type": "update" }` with no `parameters` object.
+
 ## Team configuration Description was "not valid JSON" after a successful publish
 
 - SYMPTOM: Pull logged `ConfigImportError: The selected file is not valid JSON` even though Publish

@@ -91,6 +91,7 @@ describe("validateWorkflowFiles — Release canonical fixture", () => {
     for (const run of runs) {
       assert.match(run, /\.source_type == "Repository"/);
       assert.match(run, /\.source == \$repository/);
+      assert.match(run, /update_allows_fetch_and_merge \/\/ false/);
       assert.doesNotMatch(run, /\.source_type == "Organization"|\.conditions\.repository_name/);
     }
   });
