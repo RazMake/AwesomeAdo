@@ -151,8 +151,10 @@ two repository-owned tag rulesets; do not create organization rulesets or transf
 - `immutable-version-tags` contains only update and deletion restrictions, with fetch-and-merge
   disabled and no bypass actors.
 
-3. Enable immutable releases for the repository owner. Add a read token that can query that policy
-   as repository secret `IMMUTABLE_RELEASES_READ_TOKEN`.
+3. Under repository **Settings > General > Releases**, select **Enable release immutability**. Add a
+   token with repository Administration read access as repository secret
+   `IMMUTABLE_RELEASES_READ_TOKEN`. A personal repository reports this direct setting as
+   `enabled: true` and `enforced_by_owner: false`; owner enforcement is an organization-only policy.
 4. Create the `browser-extension-stores` environment. Disable administrator bypass, allow only the
    `main` branch, require at least one reviewer, and prevent self-review. A personal repository
    therefore needs another collaborator who can approve this environment.

@@ -1043,3 +1043,8 @@ Markdown` in one `/rev`-guarded JSON Patch. The PATCH is not retried; a concurre
   bypass. Release-sensitive CODEOWNERS entries name the personal owner `@RazMake`, not an
   organization team. The baseline stays disabled until these repository controls and all other
   release trust inputs are configured.
+- Amendment: a personal repository can enable immutable releases directly but cannot inherit an
+  organization-owner policy, so GitHub reports `enabled: true` and `enforced_by_owner: false`. The
+  publisher requires strict repository enablement when it starts and rechecks it immediately before
+  publishing an official release; it does not require the organization-only field. The existing
+  baseline version remains the identifier for this reviewed personal-owner control set.

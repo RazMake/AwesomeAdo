@@ -1052,8 +1052,8 @@ async function officialReleaseIsStale(fetchImpl, apiBase, token, base) {
 async function assertPolicyValidBeforePublish(fetchImpl, apiBase, policyToken) {
   const latestPolicy = await githubGet(fetchImpl, `${apiBase}/immutable-releases`, policyToken);
   const lp = /** @type {Record<string, unknown>} */ (latestPolicy);
-  if (lp.enabled !== true || lp.enforced_by_owner !== true) {
-    throw new Error("Immutable release policy no longer valid before publish");
+  if (lp.enabled !== true) {
+    throw new Error("Immutable release policy is no longer enabled before publish");
   }
 }
 
@@ -1185,7 +1185,7 @@ function officialBaseIsStale(releases, base) {
 }
 
 /**
- * Require the immutable release policy to be enabled and owner-enforced.
+ * Require the immutable release policy to be enabled.
  * @param {typeof globalThis.fetch} fetchImpl
  * @param {string} apiBase
  * @param {string} policyToken
@@ -1194,8 +1194,8 @@ function officialBaseIsStale(releases, base) {
 async function assertPolicyEnabled(fetchImpl, apiBase, policyToken) {
   const policy = await githubGet(fetchImpl, `${apiBase}/immutable-releases`, policyToken);
   const policyObj = /** @type {Record<string, unknown>} */ (policy);
-  if (policyObj.enabled !== true || policyObj.enforced_by_owner !== true) {
-    throw new Error("Immutable release policy must be enabled and enforced_by_owner");
+  if (policyObj.enabled !== true) {
+    throw new Error("Immutable release policy must be enabled");
   }
 }
 

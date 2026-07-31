@@ -21,6 +21,18 @@ here so every agent, teammate, and clone sees them.
   `true` while accepting both representations of the disabled/default policy. The live payload on
   2026-07-30 returned `{ "type": "update" }` with no `parameters` object.
 
+## Release publication required an impossible owner-enforced policy
+
+- SYMPTOM: `Publish immutable per-build prerelease` stopped with an owner-enforcement error after
+  all repository ruleset checks passed.
+- ROOT CAUSE: `RazMake/AwesomeAdo` is personal-account-owned. Its repository-level **Enable release
+  immutability** setting yields `{ enabled: true, enforced_by_owner: false }`; the second flag means
+  an organization owner imposed the policy and cannot be true for this repository.
+- FIX / RULE: require strict `enabled === true` at publisher entry and recheck it immediately before
+  an official draft is published. Do not require `enforced_by_owner` unless the repository moves to
+  an organization and the release trust model is deliberately revised. A 404 from the endpoint means
+  the read token lacks repository Administration read access or immutability is not enabled.
+
 ## Team configuration Description was "not valid JSON" after a successful publish
 
 - SYMPTOM: Pull logged `ConfigImportError: The selected file is not valid JSON` even though Publish

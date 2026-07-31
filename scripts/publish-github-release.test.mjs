@@ -76,6 +76,7 @@ const STATEFUL_FETCH_DEFAULTS = {
   officialReleases: [],
   buildReleases: [],
   immutablePolicyEnabled: true,
+  immutablePolicyOwnerEnforced: true,
   botId: 12345,
   existingDraftRelease: null,
   race422OnRef: false,
@@ -270,7 +271,7 @@ const GITHUB_ROUTES = [
     run: (/** @type {Record<string, any>} */ ctx) =>
       jsonResp({
         enabled: ctx.immutablePolicyEnabled,
-        enforced_by_owner: ctx.immutablePolicyEnabled,
+        enforced_by_owner: ctx.immutablePolicyOwnerEnforced,
       }),
   },
   {
@@ -594,6 +595,32 @@ describe("publishGitHubRelease — official release recovery", () => {
 });
 
 describe("publishGitHubRelease — policy failures", () => {
+  it("accepts repository-enabled immutability without organization-owner enforcement", async () => {
+    const dir = mktemp();
+    const { chrome, edge, metadata, storeAssets } = createArtifacts(dir, "0.1.1");
+    const { fetchImpl } = buildStatefulFetch({ immutablePolicyOwnerEnforced: false });
+
+    const result = await publishGitHubRelease({
+      kind: "official",
+      repository: REPO,
+      appSlug: APP_SLUG,
+      expectedSha: FAKE_SHA,
+      base: "0.1",
+      full: "0.1.1",
+      chromeArchive: chrome,
+      edgeArchive: edge,
+      metadataPath: metadata,
+      storeAssetsDirectory: storeAssets,
+      token: TOKEN,
+      policyToken: POLICY_TOKEN,
+      fetchImpl,
+    });
+
+    assert.equal(result.published_now, true);
+
+    await rm(dir, { recursive: true });
+  });
+
   it("rejects when immutable release policy is disabled", async () => {
     const dir = mktemp();
     const { chrome, edge, metadata } = createArtifacts(dir, "0.1.1");
