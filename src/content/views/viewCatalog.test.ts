@@ -50,8 +50,10 @@ describe("VIEW_TYPES", () => {
     expect(byKey.get("hours")).toMatchObject({ kind: "number", defaultValue: "24", min: 1 });
   });
 
-  it("keeps Sprint View property-free so it binds as-is", () => {
-    expect(getViewType("sprint")?.properties).toEqual([]);
+  it("gives Sprint View the shared recent-change window", () => {
+    expect(getViewType("sprint")?.properties).toEqual([
+      expect.objectContaining({ key: "hours", kind: "number", defaultValue: "24", min: 1 }),
+    ]);
   });
 });
 

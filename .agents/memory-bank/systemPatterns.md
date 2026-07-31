@@ -73,7 +73,10 @@ work; it is pure file movement and was deliberately not bundled with correctness
 factory. `workItemTypes` carries the type→child links; `normalizeSettings` is the **only** place the
 acyclic invariant is enforced (via `workItemHierarchy.reachesWorkItemType`, shared with the options
 picker), because both storage reads and config import funnel through it — so no consumer walking the
-hierarchy recursively has to defend against a loop.
+hierarchy recursively has to defend against a loop. A type may also carry `isPrimaryWork: true` for
+independently trackable delivery. The first/root type is always planning context, so normalization
+strips that flag from it; unchecked types above primary work are planning context and unchecked types
+below it are implementation details.
 
 ### `src/common/bindings`
 
@@ -110,6 +113,17 @@ filter group without turning a transient reading position into synced configurat
 **Change area path** command receives that same eligible list, computes labels before omitting the
 item's current path, exposes each full path as a tooltip, and persists `System.AreaPath` through the
 board's shared write queue. See ADR-053.
+
+`control/ActivityFilter` owns the shared recent-activity pill definitions, OR predicate, and
+session-scoped newest-discussion-date index. `control/MarkerPill/markerPresence` owns configured-tag
+matching. Shared filter pills and Project Tracking's row sprint pills use the compact Feature Crew
+tag geometry; count bubbles fit inside that scale. Sprint marker tags show one total except
+Interrupt, which distinguishes query work waiting outside the selected sprint from work accepted
+into it and collapses to one total when none are waiting. Every filter pill stays at full opacity, and
+`renderFilterPillFamilies` separates non-activity from recent-activity pills with `6px` inside each
+wrapping family and `16px` between families. Selected pills use their themed border. Sprint imports
+these shared modules directly; Project Tracking's legacy local paths are thin compatibility exports,
+preserving the eager Sprint / deferred Project Tracking bundle split.
 
 ### `src/common/ordering`
 
@@ -182,7 +196,10 @@ Split into component subfolders (each with its own `README.md`):
   `EnhancedView` renderer). `viewCatalog.ts` owns configs; `enhancedViewRegistry.ts` resolves eager
   and deferred renderers by id. Sprint is eager; Project Tracking is a separately built,
   web-accessible ESM module cached after first use. `shared/` holds per-view building blocks (today
-  `renderViewScaffold`); `sprint` and `project-tracking` are the reference views. **Scoped §6 exception (ADR-027):** options
+  `renderViewScaffold`). Sprint is a data-driven queue over flat or tree queries and loads the
+  selected iteration's capacity roster with its tree on every refresh. Its shared sprint picker
+  omits the optional filter toggle, keeping the view intrinsically scoped to one sprint; Project
+  Tracking retains the toggle for its broader board. **Scoped §6 exception (ADR-027):** options
   may import only `views/viewCatalog` (view config), enforced by an `import-x/no-restricted-paths`
   lint zone.
 
@@ -193,7 +210,8 @@ Split into component subfolders (each with its own `README.md`):
 - `appearance/` — `OptionsController` + the `theme` resolver (the Appearance panel).
 - `ado-config/` — `AzureDevOpsController` + `WorkItemTypesController` (which owns the ETA and
   `WorkItemHierarchyController` sections, because all three are stored on the one `workItemTypes`
-  setting and a single writer keeps them in sync) + the reusable `AutocompleteInput` and
+  setting and a single writer keeps them in sync; the hierarchy also classifies non-root types as
+  Primary work) + the reusable `AutocompleteInput` and
   `createTypeLabel`.
 - `query-bindings/` — `QueryBindingsController` (bind/edit/delete query mappings).
 - `settings-transfer/` — `SettingsTransferController` and `TeamConfigController` (the Appearance

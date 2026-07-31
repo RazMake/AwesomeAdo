@@ -9,6 +9,8 @@ export type SprintRelation = "past" | "current" | "future";
 
 /** One decorated sprint option in the picker, structurally usable as a `SprintPicker` option. */
 export interface SprintWindowEntry {
+  /** The iteration GUID used to read this sprint's capacity roster, when ADO supplied it. */
+  id?: string;
   /** The iteration path (stable id / option value). */
   path: string;
   /** The raw sprint name — what item iteration paths are matched against when filtering. */
@@ -69,6 +71,7 @@ export function buildSprintWindow(
   for (let index = start; index <= end; index += 1) {
     const iteration = iterations[index]!;
     entries.push({
+      ...(iteration.id === undefined ? {} : { id: iteration.id }),
       path: iteration.path,
       name: iteration.name,
       label: labelFor(iteration.name, index - anchor),

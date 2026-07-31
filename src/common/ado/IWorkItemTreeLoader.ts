@@ -15,9 +15,9 @@ export interface QueryFolderCrumb {
 /**
  * The result of loading a query's work-item tree.
  *
- * `isTreeQuery: false` means the query is flat (a direct list), so the loader returned nothing; a
- * tree-driven view should then show a "not a tree query" message. `error` is set when the fetch or
- * parse failed; the view should render the error instead of an empty tree.
+ * `isTreeQuery: false` means the query is flat (a direct list); its hydrated items are returned as
+ * childless roots so list-driven views can consume them. A tree-driven view should still show a
+ * "not a tree query" message. `error` is set when the fetch or parse failed.
  */
 export interface WorkItemTreeResult {
   isTreeQuery: boolean;

@@ -157,6 +157,11 @@ export class EnhancedViewSurface {
     this.syncAdoThemeObservation();
   }
 
+  /** Force the next valid request to rebuild because its injected settings-backed services changed. */
+  invalidate(): void {
+    this.signature = undefined;
+  }
+
   // Pin the palette onto the host element itself so its tokens win over ADO's inherited ones for the
   // whole view subtree, while ADO's surviving chrome (breadcrumb bar, left rail) keeps ADO's theme.
   // Follow ADO is resolved to one of our concrete palettes so every extension control stays coherent.

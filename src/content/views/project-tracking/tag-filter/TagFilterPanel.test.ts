@@ -27,6 +27,17 @@ describe("renderTagFilterPills", () => {
     expect(pills[1]?.classList.contains("awesomeado-tag-pill--selected")).toBe(true);
   });
 
+  it("keeps selected and unselected tags at full opacity", () => {
+    const pills = renderTagFilterPills(document, {
+      tags: ["Alpha", "Beta"],
+      selected: new Set(["Beta"]),
+      onChange: () => {},
+    });
+
+    expect(pills[0]?.style.opacity).toBe("1");
+    expect(pills[1]?.style.opacity).toBe("1");
+  });
+
   it("adds a tag to the selection when an unselected pill is clicked", () => {
     const selected = new Set<string | null>();
     let reported: Set<string | null> | null = null;

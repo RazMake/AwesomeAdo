@@ -108,6 +108,8 @@ export interface WorkItemType {
   /** The ADO icon URL for the type (already colored via its query string). */
   icon: string;
   columns: WorkItemColumn[];
+  /** Whether this type represents independently trackable delivery rather than context or detail. */
+  isPrimaryWork?: boolean;
   /**
    * The ADO date field this type surfaces as its "ETA" (e.g. `Microsoft.VSTS.Scheduling.TargetDate`),
    * or absent when the user has not set one. Configured per type — there is no global default — so a
@@ -425,6 +427,7 @@ function normalizeWorkItemType(raw: unknown): WorkItemType | null {
     color?: unknown;
     icon?: unknown;
     columns?: unknown;
+    isPrimaryWork?: unknown;
     etaField?: unknown;
     children?: unknown;
   };
@@ -436,6 +439,9 @@ function normalizeWorkItemType(raw: unknown): WorkItemType | null {
   const icon = normalizeIconUrl(candidate.icon);
   const columns = collectTypeColumns(candidate.columns);
   const type: WorkItemType = { name, color, icon, columns };
+  if (candidate.isPrimaryWork === true) {
+    type.isPrimaryWork = true;
+  }
   // The ETA field is optional and per-type, so store it only when set; a blank never bloats the map
   // (mirrors how bindings omit an absent name/active).
   const etaField = typeof candidate.etaField === "string" ? candidate.etaField.trim() : "";
@@ -494,6 +500,11 @@ export function normalizeWorkItemTypes(raw: unknown): WorkItemType[] {
     }
     seen.add(key);
     result.push(type);
+  }
+  // The top type represents the project/program context; allowing an imported root to classify
+  // itself as delivery would make the hierarchy's context boundary ambiguous.
+  if (result.length > 0) {
+    delete result[0]!.isPrimaryWork;
   }
   // Child links can only be judged against the whole list, so they are settled once it is complete.
   pruneChildReferences(result);

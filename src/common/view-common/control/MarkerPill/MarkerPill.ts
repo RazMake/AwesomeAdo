@@ -1,9 +1,16 @@
 import { WORK_ITEM_MARKERS, type WorkItemMarker } from "../../../settings/ExtensionSettings";
+import { filterPillStyle, renderFilterPillCount } from "../FilterPill/FilterPill";
 
 /** The fill and text color one marker's pill wears. */
 interface MarkerPillPaint {
   background: string;
   color: string;
+}
+
+/** Counts attached to an interactive marker filter. */
+export interface MarkerPillCounts {
+  total: number;
+  acceptedInSprint?: number;
 }
 
 /**
@@ -45,8 +52,8 @@ export interface MarkerPillOptions {
    */
   title?: string;
   /**
-   * When true the pill is an interactive filter toggle (a `<button>`): unselected pills read dimmed
-   * and selected pills read full-strength with a ring. When false (the default) it is a static
+   * When true the pill is an interactive filter toggle (a `<button>`): selected pills gain a ring
+   * while every pill stays at full opacity. When false (the default) it is a static
    * `<span>` label — what a menu command shows.
    */
   interactive?: boolean;
@@ -57,11 +64,12 @@ export interface MarkerPillOptions {
   /**
    * Makes the pill a `<button>` that OPENS something (the reasons behind it) rather than filtering.
    *
-   * Kept apart from `interactive` because the two say different things: a filter toggle is dimmed
-   * until it is on, whereas this one states a condition the item genuinely carries and so must keep
-   * reading at full strength — dimming it would claim the item is only half blocked.
+   * Kept apart from `interactive` because the two say different things: a filter toggle changes a
+   * selection, whereas this one states a condition the item genuinely carries and opens its reasons.
    */
   onActivate?: () => void;
+  /** Tag total, plus the accepted-in-sprint split used only by Interrupt. */
+  counts?: MarkerPillCounts;
 }
 
 /**
@@ -85,28 +93,73 @@ export function renderMarkerPill(doc: Document, options: MarkerPillOptions): HTM
     pill.title = options.title;
   }
 
-  const styles = [
-    "display:inline-flex",
-    "align-items:center",
-    "vertical-align:middle",
-    "border-radius:9px",
-    "padding:1px 8px",
-    "font-size:9px",
-    "font-weight:600",
-    "line-height:1.6",
-    "white-space:nowrap",
-    `color:${paint.color}`,
-    `background:${paint.background}`,
-  ];
+  const styles = interactive
+    ? [
+        filterPillStyle({
+          background: paint.background,
+          color: paint.color,
+          selected,
+        }),
+      ]
+    : [
+        "display:inline-flex",
+        "align-items:center",
+        "vertical-align:middle",
+        "border-radius:9px",
+        "padding:1px 8px",
+        "font-size:9px",
+        "font-weight:600",
+        "line-height:1.6",
+        "white-space:nowrap",
+        `color:${paint.color}`,
+        `background:${paint.background}`,
+      ];
 
   if (interactive) {
-    styles.push(...asFilterToggle(pill, selected, options.onToggle));
+    asFilterToggle(pill, selected, options.onToggle);
   } else if (activates) {
     styles.push(...asOpener(pill, options.onActivate));
   }
 
   pill.style.cssText = styles.join(";");
+  if (options.counts !== undefined) {
+    appendMarkerCounts(doc, pill, marker, options.counts);
+  }
   return pill;
+}
+
+function appendMarkerCounts(
+  doc: Document,
+  pill: HTMLElement,
+  marker: WorkItemMarker,
+  counts: MarkerPillCounts,
+): void {
+  const accepted = marker === "interrupt" ? counts.acceptedInSprint : undefined;
+  const unaccepted = accepted === undefined ? 0 : Math.max(0, counts.total - accepted);
+  if (accepted !== undefined && unaccepted > 0) {
+    pill.append(
+      markerCount(doc, unaccepted, "unaccepted", "Not yet accepted"),
+      markerCount(doc, accepted, "accepted", "Accepted in sprint", true),
+    );
+    return;
+  }
+  pill.append(markerCount(doc, counts.total, "total", "Items with this tag"));
+}
+
+function markerCount(
+  doc: Document,
+  value: number,
+  kind: string,
+  label: string,
+  accepted = false,
+): HTMLElement {
+  return renderFilterPillCount(doc, {
+    value,
+    kind,
+    label,
+    background: accepted ? "var(--communication-background)" : "var(--palette-neutral-20)",
+    color: accepted ? "var(--text-on-communication-background)" : "var(--text-primary-color)",
+  });
 }
 
 /** Turn the pill into the board's filter toggle, and return the styles that say whether it is on. */
@@ -114,20 +167,13 @@ function asFilterToggle(
   pill: HTMLElement,
   selected: boolean,
   onToggle: (() => void) | undefined,
-): string[] {
+): void {
   (pill as HTMLButtonElement).type = "button";
   pill.setAttribute("aria-pressed", selected ? "true" : "false");
   if (selected) {
     pill.classList.add("awesomeado-marker-pill--selected");
   }
   pill.addEventListener("click", () => onToggle?.());
-  return [
-    "cursor:pointer",
-    // The border is always present so toggling changes only color, never the pill's size — the same
-    // dim/full-strength language the tag and activity pills beside it use.
-    selected ? "border:2px solid var(--tag-selected-border)" : "border:2px solid transparent",
-    selected ? "opacity:1" : "opacity:0.55",
-  ];
 }
 
 /** Turn the pill into a button that opens what stands behind it, at full strength. */

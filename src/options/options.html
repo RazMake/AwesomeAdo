@@ -476,6 +476,18 @@
         background: var(--bg);
         min-width: 176px;
       }
+      .wit-child-row__primary-work,
+      .wit-primary-work-heading {
+        width: 104px;
+        min-width: 104px;
+        text-align: center !important;
+      }
+      .wit-child-row__primary-work input {
+        width: 16px;
+        height: 16px;
+        margin: 2px 0 0;
+        accent-color: var(--accent);
+      }
       .wit-child-row__children .combobox {
         flex: 1 1 140px;
         min-width: 110px;
@@ -1256,6 +1268,14 @@
         <div class="card">
           <h2 class="card__title">Work item type hierarchy</h2>
           <p class="card__hint">
+            Mark each independently trackable delivery type as <strong>Primary work</strong>. Types
+            above primary work provide <strong>Planning context</strong>; types below it are
+            <strong>Implementation details</strong>. For example, with Epic → Feature → User Story →
+            Task, Epic and Feature are planning context, User Story is primary work, and Task is an
+            implementation detail. The root always provides planning context, so it cannot be
+            selected.
+          </p>
+          <p class="card__hint">
             For each work item type, list the types that can be created underneath it. The rows
             follow the work item types configured above. Use <strong>+</strong> to pick a child —
             only types listed <em>below</em> this one are offered, so the hierarchy always runs
@@ -1272,6 +1292,7 @@
                 <thead>
                   <tr>
                     <th class="wit-corner" scope="col">Work item type</th>
+                    <th class="wit-corner wit-primary-work-heading" scope="col">Primary work</th>
                     <th class="wit-col" scope="col">Child work item types</th>
                   </tr>
                 </thead>

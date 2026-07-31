@@ -27,6 +27,13 @@ import {
   renderBreadcrumbs,
   type BreadcrumbSegment,
 } from "../../../../common/view-common/control/Breadcrumbs/Breadcrumbs";
+import {
+  renderHeaderButton,
+  renderRefreshButton,
+  type RefreshButtonHandle,
+} from "../../../../common/view-common/control/HeaderButtons/HeaderButtons";
+
+export type { RefreshButtonHandle } from "../../../../common/view-common/control/HeaderButtons/HeaderButtons";
 
 /** Everything the header tile needs to render, injected so the control never fetches ADO data. */
 export interface ProjectTrackingHeaderOptions {
@@ -80,18 +87,6 @@ export interface ProjectTrackingHeaderOptions {
  * The states are exposed as commands rather than inferred by the control, because only the view
  * knows when the fetch settled.
  */
-export interface RefreshButtonHandle {
-  /** The button to lay out and wire. */
-  element: HTMLButtonElement;
-  /** Show the re-read as in progress (also blocks a second click) or return to idle. */
-  setBusy(busy: boolean): void;
-  /**
-   * Mark the last re-read as failed, so the button reports that the board is showing stale data and
-   * invites the reader to the recorded cause; clearing it returns the button to plain "Refresh".
-   */
-  setFailed(failed: boolean): void;
-}
-
 /** The mounted header plus the board-wide controls the view still needs to wire to the tree. */
 export interface ProjectTrackingHeaderHandle {
   /** The header tile to mount at the top of the board. */
@@ -139,162 +134,6 @@ const REFRESH_BUTTON_GAP_PX = 24;
  * The value is the height the band already had (14px text + 5.6px padding + 1px border a side), so
  * fixing the size does not move the band.
  */
-const BAND_BUTTON_SIZE_PX = 27.2;
-
-/** The band button's border width, in pixels; subtracted when sizing a glyph to its inner box. */
-const BAND_BUTTON_BORDER_PX = 1;
-
-/** Builds one themed band button carrying the class the board's wiring queries by. */
-function renderBandButton(
-  doc: Document,
-  className: string,
-  glyph: string,
-  label?: string,
-): HTMLButtonElement {
-  const button = doc.createElement("button");
-  button.className = className;
-  button.type = "button";
-  button.textContent = glyph;
-  if (label !== undefined) {
-    button.title = label;
-    button.setAttribute("aria-label", label);
-  }
-  // Subtle themed affordance: neutral fill + a clearly visible rounded border so it reads as a button
-  // on any theme.
-  // Flex centring (rather than padding) is what keeps a glyph optically centred in the fixed square
-  // whatever size it is drawn at, so each button can size its own glyph independently.
-  button.style.cssText = [
-    "cursor:pointer",
-    "box-sizing:border-box",
-    `width:${BAND_BUTTON_SIZE_PX}px`,
-    `height:${BAND_BUTTON_SIZE_PX}px`,
-    "display:inline-flex",
-    "align-items:center",
-    "justify-content:center",
-    `border:${BAND_BUTTON_BORDER_PX}px solid var(--control-border-strong)`,
-    "border-radius:6px",
-    "padding:0",
-    "background:var(--palette-neutral-4)",
-    "color:var(--text-primary-color)",
-    "font-size:14px",
-    "font-weight:bold",
-    "line-height:1",
-  ].join(";");
-  return button;
-}
-
-/** What the refresh button says in each of its three states, so the tooltip is the only explanation. */
-const REFRESH_IDLE_LABEL = "Refresh — re-read this board from Azure DevOps";
-const REFRESH_BUSY_LABEL = "Refreshing…";
-const REFRESH_FAILED_LABEL =
-  "Couldn't refresh — this board is showing older data. Click for details.";
-
-/** The theme's success ink keeps the refresh icon distinct from the adjacent neutral controls. */
-const REFRESH_IDLE_COLOR = "var(--success-foreground)";
-
-/**
- * The gap left between the refresh icon and the button's border, in pixels.
- *
- * Just enough that the icon never appears to touch (or bleed through) the rounded border, while
- * still letting it fill the button — a thin circular arrow reads as far weaker than a bold `+`
- * unless it is drawn much bigger.
- */
-const REFRESH_GLYPH_INSET_PX = 2;
-
-const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
-
-/**
- * Builds the refresh icon as drawn geometry rather than as the ⟳ character.
- *
- * A text glyph is positioned by the font's baseline and side bearings, not by its ink, so it lands
- * visibly off-centre inside a square button — and there is no font-independent way to correct that,
- * because the offset differs per platform font. An SVG viewBox is centred by construction at any
- * size. The paths are stroked/filled in `currentColor` so the button's state colouring (idle green,
- * failed red) still reaches the icon without this function knowing about those states.
- */
-function renderRefreshIcon(doc: Document, sizePx: number): SVGSVGElement {
-  const svg = doc.createElementNS(SVG_NAMESPACE, "svg");
-  svg.setAttribute("viewBox", "0 0 24 24");
-  svg.setAttribute("width", `${sizePx}`);
-  svg.setAttribute("height", `${sizePx}`);
-  // The button already carries the accessible name, so the icon must not add a second one.
-  svg.setAttribute("aria-hidden", "true");
-  svg.setAttribute("focusable", "false");
-  svg.style.display = "block";
-
-  // A circle of r=8 about the viewBox centre, drawn clockwise and left open across a wide 100° arc on
-  // the right so the two ends read as clearly separate rather than as a closed ring. The radius is
-  // held back from the box edge to leave room for the arrowhead, whose base spans radially.
-  const arc = doc.createElementNS(SVG_NAMESPACE, "path");
-  arc.setAttribute("d", "M18.93 16A8 8 0 1 1 14.74 4.48");
-  arc.setAttribute("fill", "none");
-  arc.setAttribute("stroke", "currentColor");
-  arc.setAttribute("stroke-width", "3.5");
-  arc.setAttribute("stroke-linecap", "round");
-
-  // The arrowhead, based on the arc's end point and pointing along its direction of travel. Wider
-  // than the stroke so it still reads as a head now that the stroke itself is heavy.
-  const head = doc.createElementNS(SVG_NAMESPACE, "path");
-  head.setAttribute("d", "M13.37 8.24 16.11 0.72 19.81 6.33Z");
-  head.setAttribute("fill", "currentColor");
-
-  svg.append(arc, head);
-  return svg;
-}
-
-/**
- * Builds the refresh button and the two state commands the view drives it through.
- *
- * The failed state re-tints the button rather than adding a second element beside it: the header
- * band is a fixed-height row (see `TOP_ROW_MIN_HEIGHT_PX`), and growing a chip into it on failure
- * would shove the whole board down at the exact moment the reader is trying to work out what
- * changed.
- */
-function renderRefreshButton(doc: Document): RefreshButtonHandle {
-  const element = renderBandButton(doc, "awesomeado-tracking__refresh", "", REFRESH_IDLE_LABEL);
-  // Drawn as large as the shared square allows — the inner box less the border and a 1px breathing
-  // gap — so the icon fills the button the `+`/`−` pair sizes; the button itself keeps the band's size.
-  element.append(
-    renderRefreshIcon(
-      doc,
-      BAND_BUTTON_SIZE_PX - 2 * (BAND_BUTTON_BORDER_PX + REFRESH_GLYPH_INSET_PX),
-    ),
-  );
-  element.style.marginLeft = `${REFRESH_BUTTON_GAP_PX}px`;
-
-  let busy = false;
-  let failed = false;
-
-  const paint = (): void => {
-    element.disabled = busy;
-    element.style.opacity = busy ? "0.5" : "1";
-    element.style.cursor = busy ? "default" : "pointer";
-    // A failure is reported in the theme's error color rather than by swapping the icon, so the
-    // button still reads as the same control the reader just pressed.
-    element.style.color = failed ? "var(--palette-error-text)" : REFRESH_IDLE_COLOR;
-    element.style.borderColor = failed
-      ? "var(--palette-error-text)"
-      : "var(--control-border-strong)";
-    const label = busy ? REFRESH_BUSY_LABEL : failed ? REFRESH_FAILED_LABEL : REFRESH_IDLE_LABEL;
-    element.title = label;
-    element.setAttribute("aria-label", label);
-    element.setAttribute("aria-busy", busy ? "true" : "false");
-  };
-  paint();
-
-  return {
-    element,
-    setBusy: (next) => {
-      busy = next;
-      paint();
-    },
-    setFailed: (next) => {
-      failed = next;
-      paint();
-    },
-  };
-}
-
 /** Builds the stacked title (top) and TechLead + ETA (bottom) block that anchors the tile. */
 function renderInfoColumn(
   doc: Document,
@@ -329,6 +168,19 @@ function renderInfoColumn(
   info.append(techLeadRow);
 
   return { element: info, title: titleEl };
+}
+
+function renderHeaderFilters(doc: Document, options: ProjectTrackingHeaderOptions): HTMLElement {
+  const filters = doc.createElement("div");
+  filters.className = "awesomeado-tracking__header-filters";
+  filters.style.cssText = [
+    "display:flex",
+    "align-items:center",
+    "gap:8px",
+    "margin-left:auto",
+  ].join(";");
+  filters.append(options.areaPathFilter, options.sprintPicker);
+  return filters;
 }
 
 /**
@@ -410,9 +262,13 @@ export function renderProjectTrackingHeader(
   const info = renderInfoColumn(doc, options);
   mainRow.append(info.element);
 
-  const expandAllButton = renderBandButton(doc, "awesomeado-tracking__expand-all", "\uFF0B");
-  const collapseAllButton = renderBandButton(doc, "awesomeado-tracking__collapse-all", "\uFF0D");
-  const refreshButton = renderRefreshButton(doc);
+  const expandAllButton = renderHeaderButton(doc, "awesomeado-tracking__expand-all", "\uFF0B");
+  const collapseAllButton = renderHeaderButton(doc, "awesomeado-tracking__collapse-all", "\uFF0D");
+  const refreshButton = renderRefreshButton(
+    doc,
+    "awesomeado-tracking__refresh",
+    REFRESH_BUTTON_GAP_PX,
+  );
   const bandButtons = doc.createElement("div");
   bandButtons.style.cssText = ["display:flex", "align-items:center", "gap:8px"].join(";");
   // Refresh rides in the same container so it shares the band's vertical centring, but carries its
@@ -422,16 +278,7 @@ export function renderProjectTrackingHeader(
 
   // Keep the two narrowing controls together at the right edge. The area selector stays compact
   // while the sprint picker grows with its current label, so the group remains easy to scan.
-  const filters = doc.createElement("div");
-  filters.className = "awesomeado-tracking__header-filters";
-  filters.style.cssText = [
-    "display:flex",
-    "align-items:center",
-    "gap:8px",
-    "margin-left:auto",
-  ].join(";");
-  filters.append(options.areaPathFilter, options.sprintPicker);
-  mainRow.append(filters);
+  mainRow.append(renderHeaderFilters(doc, options));
 
   header.append(mainRow);
 

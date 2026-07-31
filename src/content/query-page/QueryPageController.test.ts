@@ -11,6 +11,7 @@ function makeSurfaceSpy(): EnhancedViewSurface {
   return {
     apply: vi.fn(),
     applyTheme: vi.fn(),
+    invalidate: vi.fn(),
   } as unknown as EnhancedViewSurface;
 }
 
@@ -63,18 +64,52 @@ beforeEach(() => {
   overrides = new SessionActiveViewOverrides();
 });
 
-describe("QueryPageController - routing", () => {
-  it("does not call the surface before settings arrive", () => {
-    makeController("https://dev.azure.com/org/_queries");
-    expect(surface.apply).not.toHaveBeenCalled();
-  });
-
+describe("QueryPageController - settings redraw", () => {
   it("forwards the chosen theme to the surface on every settings change", () => {
     const controller = makeController(queryUrl(GUID));
     controller.applySettings(settings({ theme: "blue" }));
     expect(surface.applyTheme).toHaveBeenCalledWith("blue");
     controller.applySettings(settings({ theme: "dark" }));
     expect(surface.applyTheme).toHaveBeenLastCalledWith("dark");
+  });
+
+  it("invalidates the rendered view when Primary work configuration changes", () => {
+    const controller = makeController(queryUrl(GUID));
+    controller.applySettings(settings());
+
+    controller.applySettings(
+      settings({
+        workItemTypes: CONFIGURED_ADO.workItemTypes?.map((type) => ({
+          ...type,
+          isPrimaryWork: true,
+        })),
+      }),
+    );
+
+    expect(surface.invalidate).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not invalidate for an equivalent settings snapshot", () => {
+    const controller = makeController(queryUrl(GUID));
+    controller.applySettings(settings());
+    controller.applySettings(settings());
+
+    expect(surface.invalidate).not.toHaveBeenCalled();
+  });
+
+  it("does not rebuild the view for a theme-only change", () => {
+    const controller = makeController(queryUrl(GUID));
+    controller.applySettings(settings({ theme: "blue" }));
+    controller.applySettings(settings({ theme: "dark" }));
+
+    expect(surface.invalidate).not.toHaveBeenCalled();
+  });
+});
+
+describe("QueryPageController - routing", () => {
+  it("does not call the surface before settings arrive", () => {
+    makeController("https://dev.azure.com/org/_queries");
+    expect(surface.apply).not.toHaveBeenCalled();
   });
 
   it("does not enhance an unbound query route even when defaultView is enhanced", () => {

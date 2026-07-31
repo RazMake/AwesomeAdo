@@ -10,8 +10,8 @@ export interface TagPillOptions {
   /** The tag text; `null` or an empty string renders the neutral "??" (no tag) pill. */
   tag: string | null;
   /**
-   * When true the pill is an interactive filter toggle (a `<button>`): unselected pills read dimmed
-   * and selected pills read full-strength with a ring, so the active filter is obvious at a glance.
+   * When true the pill is an interactive filter toggle (a `<button>`): selected pills gain a ring,
+   * while every pill stays at full opacity.
    * When false (the default) it is a static `<span>` label.
    */
   interactive?: boolean;
@@ -70,8 +70,8 @@ function baseTagPillStyles(normalized: string | null): string[] {
 
 /**
  * Turn a pill into an interactive filter toggle: a hand cursor, an always-present 2px border (so
- * selecting/deselecting never shifts the pill's size — only its color changes), and a dim/full-
- * strength look so the selected (ringed) pills pop, plus the click handler.
+ * selecting/deselecting never shifts the pill's size — only its color changes), plus the click
+ * handler. Opacity stays constant so it does not imply a disabled state.
  */
 function applyInteractiveTagPill(
   pill: HTMLElement,
@@ -84,7 +84,7 @@ function applyInteractiveTagPill(
   styles.push(
     selected ? "border:2px solid var(--tag-selected-border)" : "border:2px solid transparent",
   );
-  styles.push(selected ? "opacity:1" : "opacity:0.55");
+  styles.push("opacity:1");
   pill.addEventListener("click", () => onToggle?.());
 }
 

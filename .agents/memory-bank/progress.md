@@ -8,8 +8,9 @@ This is a flattened snapshot of what exists now, not a build log.
   forwarding + opening extension pages); content script (enhanced-view surface, top-bar button/menu,
   on-demand theme/query-name probes); options page (Appearance with import/export, Azure DevOps
   config, Query Bindings, Diagnostics with a component-filterable activity log).
-- **Settings** (`src/common/settings`): `theme` + `defaultView` model, `ISettingsStore` /
-  `BrowserSyncSettingsStore`, composition factory.
+- **Settings** (`src/common/settings`): normalized Azure DevOps configuration including work-item
+  hierarchy links and Primary work classification, plus `ISettingsStore` /
+  `BrowserSyncSettingsStore` and its composition factory.
 - **Bindings** (`src/common/bindings`): per-query binding model, `IQueryBindingStore` /
   `BrowserSyncQueryBindingStore` (with `bind`/`unbind`/`setActiveView`/`replaceAll`), open-page
   contract, composition factory.
@@ -17,12 +18,24 @@ This is a flattened snapshot of what exists now, not a build log.
   holding a `ViewType` config (in the `VIEW_TYPES` catalog) and an `EnhancedView` renderer (in the
   eager/lazy enhanced-view registry), a shared placeholder shell (`renderViewScaffold`), and
   `sprint` / `project-tracking` views. Project Tracking ships as an on-demand ESM renderer; store
-  builds minify it and the always-loaded runtime. Project Tracking rows use theme-owned alternating
+  builds minify it and the always-loaded runtime. Its hierarchy renders Primary work and planning
+  ancestors as rows while rolling implementation-detail children into compact badges, and an open
+  view redraws immediately when settings-backed configuration changes. Project
+  Tracking rows use theme-owned alternating
   backgrounds, with subtle hover and stronger `Ctrl+Shift` emphasis filling each row and its open details as one
   continuous surface while excluding child rows. Their unchanged total spacing is balanced toward
   the bottom of each item, and they are re-striped in visible tree order after outline changes.
   Options imports only `content/views/viewCatalog` (scoped §6
   exception, ADR-027, lint-enforced).
+- **Sprint View step 1** (`content/views/sprint`): accepts flat or tree queries; loads the selected
+  sprint's capacity roster; renders an always-active Sprint selector plus Lane, Project, refresh,
+  write-queue, team, marker, and recent-activity controls; and filters a minimal item queue. Project
+  choices are limited to ancestor chains of currently eligible sprint work. Team and
+  marker pills use compact counters, with one total per marker tag except Interrupt's waiting /
+  accepted split; every pill matches Project Tracking's Feature Crew tag scale, Unassigned is
+  derived from the loaded work, and refresh replaces both items and
+  capacity members. Both views keep filter pills at full opacity and distinguish non-activity from
+  recent-activity pills with a larger gap between wrapping families.
 - **Area-path filtering** (`common/view-common/control/AreaPathFilter` + Project Tracking): the live
   tree hydrates `System.AreaPath`; a compact themed header popup selects full paths using shortest
   unique display suffixes, and the session-scoped selection narrows the board without persisting.

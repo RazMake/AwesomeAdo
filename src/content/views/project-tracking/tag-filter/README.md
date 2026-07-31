@@ -21,10 +21,9 @@ people wearing any of the selected Feature Crew tags.
 - **`onChange: (selected) => void`** — Called after a toggle so the caller re-filters the tree and
   re-renders the pills.
 
-The pills are returned **loose**, not wrapped in a panel: they share the board's single wrapping
-filter row (`Filters:` label → tag pills → recent-activity pills), and a wrapper around this group
-would make it wrap independently of the rest of the row instead of flowing as one line. The board
-owns that row and re-renders it whole.
+The pills are returned **loose**, not wrapped in a panel, so the board can place them beside marker
+pills in the non-activity family. That family is separated from recent activity by the shared larger
+family gap.
 
 They are stateless about the selection: they reflect and mutate the caller's set rather than holding
 their own, so the tree and the pills never drift out of sync.

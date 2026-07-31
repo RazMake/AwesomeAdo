@@ -27,6 +27,8 @@ export interface SprintPickerOptions {
   sprints: SprintOption[];
   /** The sprint name to select initially (default = the current sprint the caller computed); falls back to the first sprint. */
   selectedName?: string | null;
+  /** Whether to render the filter toggle button. Defaults to true; false keeps filtering active. */
+  showFilterButton?: boolean;
   /** Whether the filter starts active. Default false. */
   filterActive?: boolean;
   /** Called when the filter toggle flips; carries the new active state and the currently selected sprint name (or null). */
@@ -184,9 +186,16 @@ export function renderSprintPicker(
   doc: Document,
   options: SprintPickerOptions,
 ): SprintPickerHandle {
-  const { sprints, selectedName, filterActive = false, onFilterToggle, onSprintChange } = options;
+  const {
+    sprints,
+    selectedName,
+    showFilterButton = true,
+    filterActive = false,
+    onFilterToggle,
+    onSprintChange,
+  } = options;
 
-  let active = filterActive;
+  let active = showFilterButton ? filterActive : true;
   const isEmpty = sprints.length === 0;
 
   // Root container: inline-flex row with button first, then select.
@@ -239,7 +248,10 @@ export function renderSprintPicker(
   populateSprintSelect(doc, select, sprints, selectedName);
   styleSelectForSelection(select, sprints);
 
-  root.append(button, select);
+  if (showFilterButton) {
+    root.append(button);
+  }
+  root.append(select);
 
   // Toggle filter on button click.
   button.addEventListener("click", () => {

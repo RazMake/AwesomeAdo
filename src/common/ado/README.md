@@ -47,10 +47,12 @@ response-parsing logic, kept pure so they are unit-testable without a browser.
   it as "worth opening", not as "has notes inside the Updates window". `tags` is `System.Tags`
   already split into a list (see `workItemTags.ts`), because every consumer asks "does it carry this
   tag?" rather than "what does the field say".
-- `TypeCatalogEntry` — `{ name, color, icon, etaField, columns }` for each work item type in the
-  hierarchy. `columns` is a `TrackedTypeColumn[]`: each column carries the board-column label (the
-  team's application state) plus the ADO state names routed onto it, with `states[0]` being the
-  primary state written back to ADO when a user moves an item into that column.
+- `TypeCatalogEntry` — `{ name, color, icon, isPrimaryWork, etaField, columns, children }` for each
+  work item type in the hierarchy. `isPrimaryWork` distinguishes independently trackable delivery
+  from planning context and implementation detail. `columns` is a `TrackedTypeColumn[]`: each column
+  carries the board-column label (the team's application state) plus the ADO state names routed onto
+  it, with `states[0]` being the primary state written back to ADO when a user moves an item into that
+  column.
 - `TrackedTypeColumn` — `{ column, states }` for one board column and its routed ADO states.
 
 ### `TeamIteration.ts`
@@ -79,6 +81,16 @@ response-parsing logic, kept pure so they are unit-testable without a browser.
 
 - `ITeamIterationsLoader` — loads a team's iterations in chronological order; the real implementation
   fetches from Azure DevOps, a test fake returns canned data.
+
+### `TeamCapacity.ts`
+
+- `SprintCapacityMember` - the normalized identity fields needed by a capacity-backed team pill.
+- `SprintCapacityResult` - a roster plus an explicit error, preserving the difference between an
+  empty sprint and a failed read.
+- `TeamCapacityLoader` - loads one configured team's roster for one iteration.
+- `buildAdoCapacityUrl(href, team, iterationId)` - builds the closed team/iteration-scoped capacity
+  URL.
+- `parseTeamCapacity(body)` - validates and deduplicates ADO capacity identities by id.
 
 ### `IWorkItemTreeLoader.ts`
 

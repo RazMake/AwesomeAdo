@@ -1,15 +1,28 @@
 # `content/views/sprint`
 
-The **Sprint View**: presents a bound query's work grouped by sprint. This folder holds both halves
-of the view — its configuration and its renderer.
+The **Sprint View** presents a bound query's work as a sprint-filtered queue. It accepts flat and
+tree queries and keeps its header/filter state for the lifetime of the mounted view.
 
 ## Public API
 
-- `sprintViewType.ts` → `sprintViewType: ViewType` — the view's config. Id `"sprint"`, label
-  `"Sprint View"`, and (for now) no properties, so a query can be bound to it as-is.
-- `SprintView.ts` → `sprintView: EnhancedView` — the renderer. Today it paints the shared
-  [`renderViewScaffold`](../../../common/view-common/control/ViewScaffold/README.md) placeholder with sprint-specific copy; the sprint
-  board grows in here later, reusing the shared view components.
+- `sprintViewType.ts` -> `sprintViewType: ViewType` - id `"sprint"`, label `"Sprint View"`, and the
+  recent-activity window in hours.
+- `SprintView.ts` -> `sprintView: EnhancedView` - loads the query tree, sprint window, and selected
+  iteration's capacity roster; renders the sprint, Lane, Project, refresh, write-queue, team,
+  marker, and recent-activity controls; and shows the filtered item queue.
+- `SprintHeader.ts` -> `renderSprintHeader` - assembles the sticky, theme-aware control card.
+
+Team pills come from the selected sprint's capacity roster. An **Unassigned** pill appears when the
+loaded queue contains unassigned work. Team pills report queue and active counts. Marker-tag pills
+report one selected-sprint total, except **Interrupt**: it reports not-yet-accepted work followed by
+accepted-in-sprint work, and collapses to one total when no interrupts are waiting for acceptance.
+The **Project** filter offers only ancestor chains of items surviving the selected sprint and other
+active filters; leaves and branches represented only by hidden work are omitted.
+All filter pills stay at full opacity; marker and recent-activity pills occupy separate wrapping
+families with a larger gap between them.
+Refresh reloads both work items and capacity, so the roster never outlives the sprint data it
+describes. Sprint View always filters to the selected sprint: its sprint picker omits the filter
+toggle because an unfiltered mode would contradict the view's purpose.
 
 Both are registered centrally: the config in `../viewCatalog.ts`, the renderer in
 `../enhancedViewRegistry.ts`.

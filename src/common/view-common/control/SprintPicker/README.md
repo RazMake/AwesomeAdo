@@ -43,6 +43,7 @@ Configuration for rendering the sprint picker.
 
 - **`sprints: SprintOption[]`** — The team's sprints, in display order.
 - **`selectedName?: string | null`** — The sprint name to select initially (default = the current sprint the caller computed); falls back to the first sprint if missing or not found.
+- **`showFilterButton?: boolean`** — Whether to render the filter toggle. Defaults to `true`; when `false`, filtering stays active and the dropdown remains enabled.
 - **`filterActive?: boolean`** — Whether the filter starts active. Default `false`.
 - **`onFilterToggle?: (active: boolean, selectedName: string | null) => void`** — Called when the filter toggle flips; carries the new active state and the currently selected sprint name (or `null` if no sprints).
 - **`onSprintChange?: (selectedName: string) => void`** — Called when the selected sprint changes.
@@ -57,11 +58,12 @@ A handle for controlling and querying the sprint picker state.
 
 ### `renderSprintPicker(doc: Document, options: SprintPickerOptions): SprintPickerHandle`
 
-Renders a sprint filter control = an **icon filter toggle button** (in front) + a **sprint dropdown**.
+Renders a sprint dropdown with an optional **icon filter toggle button** in front.
 
 - The **filter button** uses an inline SVG funnel icon (NOT text), is theme-styled, and reflects its active state via `aria-pressed` and a subtle themed "on" look (`var(--palette-neutral-8, …)` background when active, `transparent` when inactive).
 - The **dropdown** is a native `<select>` element populated with one `<option>` per sprint, theme-styled. It is **disabled while the filter is inactive** (picking a sprint has no effect until the funnel is toggled on) and becomes enabled once the filter is active.
 - Clicking the button toggles the filter active state, enables/disables the dropdown to match, and calls `onFilterToggle(active, selectedSprint())`.
+- With `showFilterButton: false`, the button is omitted, `isFilterActive()` stays `true`, and the dropdown remains enabled whenever sprint options exist.
 - Changing the select calls `onSprintChange(selectedName)`.
 - When `sprints` is empty, both the button and select are disabled, and `selectedSprint()` returns `null`.
 

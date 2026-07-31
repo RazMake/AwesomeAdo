@@ -164,6 +164,16 @@ describe("EnhancedViewSurface - rendering", () => {
     expect(hostEl()?.firstElementChild).not.toBe(firstNode);
   });
 
+  it("re-renders the same request after settings-backed services are invalidated", () => {
+    surface.apply(sprint);
+    const firstNode = hostEl()?.firstElementChild;
+
+    surface.invalidate();
+    surface.apply(sprint);
+
+    expect(hostEl()?.firstElementChild).not.toBe(firstNode);
+  });
+
   it("leaves ADO's own page in place for an unknown view id", () => {
     surface.apply({ viewId: "from-a-newer-build", queryId: "q1", properties: {} });
 
@@ -295,6 +305,7 @@ describe("EnhancedViewSurface - keep-alive", () => {
       getBoardColumns: () => [],
       markerTags: () => normalizeMarkerTags(undefined),
       loadSprintWindow: () => Promise.resolve({ entries: [], currentName: null }),
+      loadSprintCapacity: () => Promise.resolve({ members: [], error: null }),
       now: () => new Date(),
       logger: { info: () => {}, error: () => {} },
       writeField: () => Promise.resolve({ ok: true }),

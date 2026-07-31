@@ -91,6 +91,8 @@ export interface TypeCatalogEntry {
   name: string;
   color: string;
   icon: string;
+  /** Whether this type represents independently trackable delivery rather than context or detail. */
+  isPrimaryWork?: boolean;
   /** The reference name of the date field bound as this type's ETA; null when none. */
   etaField: string | null;
   /** The board columns and their routed ADO states; columns[i].states[0] is the primary state for that column. */

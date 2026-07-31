@@ -5,6 +5,18 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ## Next Version
 
+- Adds a Primary work classification to the work-item hierarchy, distinguishing independently
+  trackable delivery from planning context and implementation details while keeping the root as
+  context. Project Tracking shows Primary work and its planning ancestors as tree rows, while
+  implementation-detail children remain in the compact child-items badge, updating an open view
+  immediately when the hierarchy setting changes.
+- Adds the first Sprint View workflow: an always-active sprint selector, Lane, Project,
+  team-capacity, marker, and recent activity filters; concise tag totals with waiting/accepted
+  Interrupt counts; parent-only Project choices relevant to the visible work; a filtered work-item
+  queue; and refresh that reloads both query items and the selected sprint's team roster.
+- Refines enhanced-view filters with compact pills aligned to Project Tracking's user tags and a
+  larger gap between full-opacity filter families in Sprint View and Project Tracking.
+
 ## 0.1
 
 - Initial release for Chrome and Microsoft Edge, adding per-query enhancements to hosted Azure

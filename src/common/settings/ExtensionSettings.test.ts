@@ -432,6 +432,32 @@ describe("normalizeWorkItemTypes", () => {
       { name: "Task", color: "", icon: "", columns: [] },
     ]);
   });
+
+  it("keeps primary work on non-root types and always clears it from the root", () => {
+    expect(
+      normalizeWorkItemTypes([
+        { name: "Epic", columns: [], isPrimaryWork: true },
+        { name: "User Story", columns: [], isPrimaryWork: true },
+        { name: "Task", columns: [], isPrimaryWork: false },
+      ]),
+    ).toEqual([
+      { name: "Epic", color: "", icon: "", columns: [] },
+      { name: "User Story", color: "", icon: "", columns: [], isPrimaryWork: true },
+      { name: "Task", color: "", icon: "", columns: [] },
+    ]);
+  });
+
+  it("drops non-boolean primary-work values", () => {
+    expect(
+      normalizeWorkItemTypes([
+        { name: "Epic", columns: [] },
+        { name: "Story", columns: [], isPrimaryWork: "yes" },
+      ]),
+    ).toEqual([
+      { name: "Epic", color: "", icon: "", columns: [] },
+      { name: "Story", color: "", icon: "", columns: [] },
+    ]);
+  });
 });
 
 describe("normalizeWorkItemTypes - name dedup and column normalization", () => {

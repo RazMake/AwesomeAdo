@@ -18,6 +18,8 @@ export type SprintTimeFrame = "past" | "current" | "future";
  * `timeFrame` that anchors the "current" sprint.
  */
 export interface TeamIteration {
+  /** The iteration GUID used by team-capacity endpoints. Optional only for defensive/test inputs. */
+  id?: string;
   /** The iteration path (stable id, e.g. `Project\Sprint 5`). */
   path: string;
   /** The iteration's display name (the leaf of its path, e.g. `Sprint 5`). */
@@ -52,28 +54,25 @@ export function parseTeamIterations(body: unknown): TeamIteration[] {
   if (!Array.isArray(value)) {
     return [];
   }
-  const iterations: TeamIteration[] = [];
-  for (const entry of value) {
-    if (typeof entry !== "object" || entry === null) {
-      continue;
-    }
-    const { name, path, attributes } = entry as {
-      name?: unknown;
-      path?: unknown;
-      attributes?: unknown;
-    };
-    if (typeof name !== "string" || name.length === 0) {
-      continue;
-    }
-    iterations.push({
-      // ADO always returns a path, but fall back to the name so a malformed entry still yields a
-      // usable, distinct option id rather than being dropped.
-      path: typeof path === "string" && path.length > 0 ? path : name,
-      name,
-      timeFrame: readTimeFrame(attributes),
-    });
-  }
-  return iterations;
+  return value.map(parseTeamIteration).filter((entry): entry is TeamIteration => entry !== null);
+}
+
+function parseTeamIteration(entry: unknown): TeamIteration | null {
+  if (typeof entry !== "object" || entry === null) return null;
+  const { id, name, path, attributes } = entry as {
+    id?: unknown;
+    name?: unknown;
+    path?: unknown;
+    attributes?: unknown;
+  };
+  if (typeof name !== "string" || name.length === 0) return null;
+  return {
+    ...(typeof id === "string" && id.length > 0 ? { id } : {}),
+    // ADO always returns a path, but the name remains a usable option id for a malformed entry.
+    path: typeof path === "string" && path.length > 0 ? path : name,
+    name,
+    timeFrame: readTimeFrame(attributes),
+  };
 }
 
 /**

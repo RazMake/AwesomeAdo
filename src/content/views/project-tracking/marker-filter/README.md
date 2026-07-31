@@ -30,8 +30,8 @@ with one of the team's recognized conditions — **Blocked (internal)**, **Block
 - **`onChange: (selected) => void`** — Called after a toggle so the caller re-filters the tree and
   re-renders the pills.
 
-Like the tag pills beside them, they are returned **loose** rather than wrapped in a panel of their
-own — they share the board's single wrapping filter row — and they are stateless about the selection.
+Like the tag pills beside them, they are returned **loose** so the board can compose one
+non-activity family. They are stateless about the selection.
 
 ### `markerPresence.ts`
 

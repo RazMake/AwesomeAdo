@@ -125,8 +125,11 @@ halves of the view — its configuration and its renderer.
     visible, and the selection survives an in-place Refresh. Every item's right-click menu also has
     **Change area path**, using this exact eligible path list and these exact labels, omitting only
     that item's current path and showing the full path in each destination's tooltip.
-  - **Tree rows**: the tree renders only **two levels below the root** — the root's children and
-    their children. Each row shows twisty (when it has child rows), editable Status badge, editable
+  - **Tree rows**: the tree renders every configured **Primary work** type plus the planning-context
+    types above it. Marking the leaf type as Primary work therefore shows leaf items as rows; leaving
+    it unchecked keeps those implementation details in the child-items badge. Configurations saved
+    before Primary work existed retain the former two-level display. Each row shows twisty (when it
+    has child rows), editable Status badge, editable
     Priority chip immediately after it, description toggle ("?" button), type icon (the notes toggle), title
     (type-colored), Assigned To control (with the assignee's Feature
     Crew **tag pill**), an amber **Blocked (internal)** pill and/or red **Blocked by another team**
@@ -160,7 +163,8 @@ halves of the view — its configuration and its renderer.
     emphasized, with P2 at medium weight below the extra-bold P0 and P1; P3 and later use muted secondary text at normal weight. The compact label sits close
     to Status. Clicking it opens P0-P4 as identically formatted chips, omits the current value, and writes the selected
     `Microsoft.VSTS.Common.Priority` through the same serialized queue.
-  - **Rolled-up minor children**: the level below the last rendered row is summarized inline by
+  - **Rolled-up minor children**: implementation-detail children below the deepest Primary-work
+    level are summarized inline by
     [`ChildItemsBadge`](../../../common/view-common/control/ChildItemsBadge/README.md) — a
     "completed / total" chip (e.g. `1 / 3`) tinted with a discrete wash of the **last configured work
     item type's** color. "Completed" is the last board column _before_ Removed (Done), so an
@@ -227,11 +231,9 @@ halves of the view — its configuration and its renderer.
     roster's tags, which the board projects onto every assignee (`applyFeatureCrewTags`) so each
     Assigned To pill shows its color.
   - **Filter row**: one wrapping row sits between the header and the tree, introduced by a single
-    **`Filters:`** label (vertically centred against the pills it shares a line with). It holds the
-    [`tag-filter`](./tag-filter/README.md) pills first, then the
-    [`activity-filter`](./activity-filter/README.md) pills, then the
-    [`marker-filter`](./marker-filter/README.md) pills that close it; every pill is a direct
-    child of that one flex row, so a narrow window reflows them all as a single continuous line. The
+    **`Filters:`** label. Full-opacity pills form two wrapping families: Feature Crew
+    [`tag-filter`](./tag-filter/README.md) and [`marker-filter`](./marker-filter/README.md) pills
+    together, then [`activity-filter`](./activity-filter/README.md) pills after a larger gap. The
     board re-renders the row whole on any change.
     - **Tag pills**: once the Feature Crew roster resolves, one clickable pill per tag worn across
       the tree. Clicking pills narrows to items assigned to people wearing any of the selected tags

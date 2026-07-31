@@ -22,7 +22,7 @@ interface ExtensionSettings {
   pastSprintsCount: number; // sprints offered before the current one, 0..6 (default: 0)
   areaPaths: AreaPath[]; // pinned area paths, each { path, label }  (default: [])
   boardColumns: string[]; // mapping-table columns, fixed set of 5 (default: In Queue/In Progress/Waiting/Done/Removed)
-  workItemTypes: WorkItemType[]; // per-type board-column mapping + children (default: [])
+  workItemTypes: WorkItemType[]; // per-type board mapping + hierarchy/classification (default: [])
   markerTags: WorkItemMarkerTags; // per-condition ADO tag + comment token   (default: DEFAULT_MARKER_TAGS)
 }
 ```
@@ -43,7 +43,8 @@ value is missing or unrecognized. The focused helpers `normalizeFutureSprintsCou
 from `DEFAULT_BOARD_COLUMNS`), and `normalizeWorkItemTypes(raw)` (drops
 nameless/duplicate types and empty-state/duplicate columns, routes each state to a single column,
 keeps a trimmed per-type `etaField` only when set, and prunes every `children` link that names an
-unknown type or would close a cycle) are exported for the options UI so a stored value
+unknown type or would close a cycle; it also preserves `isPrimaryWork: true` only on non-root types)
+are exported for the options UI so a stored value
 and a freshly typed one derive the same default.
 `normalizeMarkerTags(raw)` (seeds the full `DEFAULT_MARKER_TAGS` for a never-set value, seeds only the
 missing markers from a partial object, and trims both tokens while honoring a deliberately blanked
@@ -125,7 +126,10 @@ unsubscribe();
   `Microsoft.VSTS.Scheduling.TargetDate`). It is per-type with no global default, and is omitted
   from storage when left blank. An entry may finally carry `children`: the types that can be created
   underneath it, in priority order, where the **first** is the one a view creates when the user adds
-  a child. It is omitted for a leaf, and the stored graph is always acyclic.
+  a child. It is omitted for a leaf, and the stored graph is always acyclic. `isPrimaryWork: true`
+  classifies a type as independently trackable delivery. Unchecked types above it provide planning
+  context; unchecked types below it are implementation details. The first/root type is always
+  planning context, so normalization removes `isPrimaryWork` from it.
 
 ### `workItemHierarchy.ts`
 

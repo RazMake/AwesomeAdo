@@ -122,6 +122,7 @@ function createFakeServices(overrides?: Partial<EnhancedViewServices>): Enhanced
       entries: [...FIXTURE_SPRINT_WINDOW.entries],
       currentName: FIXTURE_SPRINT_WINDOW.currentName,
     }),
+    loadSprintCapacity: async () => ({ members: [], error: null }),
     now: () => new Date("2026-07-24T12:00:00Z"),
     // A no-op logger by default: nothing here could read a recorded call, and a recorder no test can
     // reach is dead state. Tests that care about logging override this with their own.
@@ -1904,7 +1905,14 @@ describe("ProjectTrackingView — interactive sprint pills", () => {
     const { root, writes } = await renderRecordingBoard();
     await turnSprintFilterOff(root);
 
-    root.querySelector<HTMLButtonElement>(".awesomeado-tracking__sprint-pill-button")!.click();
+    const sprintPill = root.querySelector<HTMLButtonElement>(
+      ".awesomeado-tracking__sprint-pill-button",
+    )!;
+    expect(sprintPill.style.fontSize).toBe("9px");
+    expect(sprintPill.style.padding).toBe("1px 8px");
+    expect(sprintPill.style.borderRadius).toBe("9px");
+    expect(sprintPill.style.lineHeight).toBe("1.6");
+    sprintPill.click();
 
     const choices = [
       ...root.querySelectorAll<HTMLButtonElement>(".awesomeado-tracking__sprint-option"),
@@ -2499,11 +2507,11 @@ describe("ProjectTrackingView — tag filter pills", () => {
 
     const panel = root.querySelector(".awesomeado-tracking__filters");
     expect(panel).toBeTruthy();
-    const pills = [...(panel?.querySelectorAll(".awesomeado-tag-pill") ?? [])].map(
-      (p) => p.textContent,
-    );
+    const tagPills = [...(panel?.querySelectorAll<HTMLElement>(".awesomeado-tag-pill") ?? [])];
+    const pills = tagPills.map((pill) => pill.textContent);
     // Distinct tags first-seen, with the untagged "??" bucket last (carol has no tag).
     expect(pills).toEqual(["Core", "Platform", "??"]);
+    expect(tagPills.every((pill) => pill.style.opacity === "1")).toBe(true);
   });
 
   it("shows each assignee's tag pill in the tree rows after the crew resolves", async () => {
@@ -2948,6 +2956,7 @@ const DEEP_TYPES: TypeCatalogEntry[] = [
     name: "Story",
     color: "4fc3f7",
     icon: "story.svg",
+    isPrimaryWork: true,
     etaField: null,
     columns: [],
     children: ["Task"],
@@ -3073,15 +3082,60 @@ const rollupBadgeOf = (root: HTMLElement): HTMLElement =>
   )!;
 
 describe("ProjectTrackingView — rolled-up minor children", () => {
-  it("renders rows only two levels below the root", async () => {
+  it("renders planning context and primary work as rows", async () => {
     const root = await renderDeepBoard();
     await turnSprintFilterOff(root);
 
     const titles = [...root.querySelectorAll(".awesomeado-tracking__item-title")].map(
       (title) => title.textContent,
     );
-    // The Feature and its Story are rows; the Story's Tasks are rolled up, not listed.
+    // Feature is planning context above the primary Story; Tasks are implementation details.
     expect(titles).toEqual(["User Authentication", "Login UI"]);
+  });
+
+  it("renders leaf items as tree children when their type is primary work", async () => {
+    const root = await renderDeepBoard({
+      getTypes: () =>
+        DEEP_TYPES.map((type) => (type.name === "Task" ? { ...type, isPrimaryWork: true } : type)),
+    });
+    await turnSprintFilterOff(root);
+
+    const titles = [...root.querySelectorAll(".awesomeado-tracking__item-title")].map(
+      (title) => title.textContent,
+    );
+    expect(titles).toEqual([
+      "User Authentication",
+      "Login UI",
+      "Wire the form",
+      "Style the form",
+      "Drop the old form",
+    ]);
+    expect(root.querySelector(".awesomeado-tracking__minor-children")).toBeNull();
+  });
+
+  it("keeps non-primary leaf siblings in a badge beside primary child rows", async () => {
+    const tree = createDeepTree();
+    tree.children[0]!.children[0]!.children.push(
+      createItem({ id: 7, type: "Bug", title: "Legacy browser defect" }),
+    );
+    const taskType = { ...DEEP_TYPES[3]!, isPrimaryWork: true };
+    const root = await renderDeepBoard({
+      getTypes: () => [
+        ...DEEP_TYPES.slice(0, 2),
+        { ...DEEP_TYPES[2]!, children: ["Task", "Bug"] },
+        taskType,
+        { ...taskType, name: "Bug", isPrimaryWork: false },
+      ],
+      loadTree: async () => ({ isTreeQuery: true, roots: [tree], error: null }),
+    });
+    await turnSprintFilterOff(root);
+
+    const titles = [...root.querySelectorAll(".awesomeado-tracking__item-title")].map(
+      (title) => title.textContent,
+    );
+    expect(titles).toContain("Wire the form");
+    expect(titles).not.toContain("Legacy browser defect");
+    expect(rollupBadgeOf(root).textContent).toBe("0 / 1");
   });
 
   it("gives the deepest rendered row no twisty, since it has no child rows to expand", async () => {
@@ -4741,19 +4795,38 @@ async function settleActivityReads(): Promise<void> {
 }
 
 describe("ProjectTrackingView — recent-activity pills", () => {
-  it("puts every pill on one wrapping row introduced by a single 'Filters:' label", async () => {
-    const root = await renderBoardForTree(epicOverRecentActivity());
+  it("groups full-opacity pills by meaning with a larger gap between families", async () => {
+    const tree = epicOverRecentActivity();
+    tree.children[0]!.tags = ["Blocked"];
+    const root = await renderBoardForTree(tree);
 
     const row = root.querySelector<HTMLElement>(".awesomeado-tracking__filters")!;
+    const families = row.querySelector<HTMLElement>(".awesomeado-filter-pill-families")!;
+    const otherFamily = families.querySelector<HTMLElement>('[data-filter-pill-family="other"]')!;
+    const activityFamily = families.querySelector<HTMLElement>(
+      '[data-filter-pill-family="activity"]',
+    )!;
+    const activityPills = row.querySelectorAll<HTMLElement>(".awesomeado-activity-pill");
     expect(row.querySelector(".awesomeado-tracking__filters-label")?.textContent).toBe("Filters:");
-    expect(row.querySelectorAll(".awesomeado-activity-pill")).toHaveLength(3);
-    // One continuous line that reflows when the board is narrow, with the label centred against the
-    // taller pills it shares a line with.
+    expect(families.children).toHaveLength(2);
+    expect(families.style.gap).toBe("16px");
+    expect(otherFamily.style.gap).toBe("6px");
+    expect(activityFamily.style.gap).toBe("6px");
+    expect(activityFamily.querySelectorAll(".awesomeado-activity-pill")).toHaveLength(3);
+    expect(activityPills).toHaveLength(3);
+    for (const pill of activityPills) {
+      expect(pill.style.fontSize).toBe("9px");
+      expect(pill.style.padding).toBe("1px 8px");
+      expect(pill.style.borderRadius).toBe("9px");
+      expect(pill.style.lineHeight).toBe("1.6");
+      expect(pill.style.opacity).toBe("1");
+    }
+    // One continuous line that reflows when the board is narrow.
     expect(row.style.flexWrap).toBe("wrap");
     expect(row.style.alignItems).toBe("center");
   });
 
-  it("closes that row with the activity pills, after the tag pills", async () => {
+  it("places tags and markers together before the activity family", async () => {
     const services = createFakeServices({
       loadTree: async () => ({ isTreeQuery: true, roots: [createFixtureTree()], error: null }),
       featureCrew: {
@@ -4776,17 +4849,12 @@ describe("ProjectTrackingView — recent-activity pills", () => {
     await Promise.resolve();
 
     const row = root.querySelector(".awesomeado-tracking__filters")!;
-    const classes = [...row.children].map((child) => child.className);
-    expect(classes[0]).toBe("awesomeado-tracking__filters-label");
-    // "Whose is it?" reads before "what changed?", and the activity pills close the row.
-    expect(classes.findIndex((name) => name.startsWith("awesomeado-tag-pill"))).toBeLessThan(
-      classes.indexOf("awesomeado-activity-pill"),
-    );
-    expect(classes.slice(-3)).toEqual([
-      "awesomeado-activity-pill",
-      "awesomeado-activity-pill",
-      "awesomeado-activity-pill",
-    ]);
+    const families = row.querySelectorAll<HTMLElement>(".awesomeado-filter-pill-family");
+    expect(row.firstElementChild?.className).toBe("awesomeado-tracking__filters-label");
+    expect(families[0]?.dataset.filterPillFamily).toBe("other");
+    expect(families[0]?.querySelector(".awesomeado-tag-pill")).not.toBeNull();
+    expect(families[1]?.dataset.filterPillFamily).toBe("activity");
+    expect(families[1]?.querySelectorAll(".awesomeado-activity-pill")).toHaveLength(3);
   });
 });
 

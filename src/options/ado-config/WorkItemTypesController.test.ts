@@ -1102,6 +1102,12 @@ const addChild = (row: HTMLElement, name: string): void => {
   commit(row.querySelector<HTMLInputElement>('[data-role="child"]')!, name);
 };
 
+const setPrimaryWork = (row: HTMLElement, checked: boolean): void => {
+  const checkbox = row.querySelector<HTMLInputElement>('[data-role="primary-work"]')!;
+  checkbox.checked = checked;
+  checkbox.dispatchEvent(new Event("change", { bubbles: true }));
+};
+
 describe("WorkItemTypesController hierarchy section", () => {
   it("mirrors the table's types and order", () => {
     const { elements } = setup({ boardColumns: ["Active"] });
@@ -1137,6 +1143,21 @@ describe("WorkItemTypesController hierarchy section", () => {
       workItemTypes: [
         { name: "Bug", color: "CC293D", icon: "https://ado/bug", columns: [], children: ["Task"] },
         { name: "Task", color: "F2CB1D", icon: "", columns: [] },
+      ],
+    });
+  });
+
+  it("persists primary work on a non-root type", () => {
+    const { store, elements } = setup({ boardColumns: ["Active"] });
+    addTypeRow(elements, "Bug");
+    addTypeRow(elements, "Task");
+
+    setPrimaryWork(hierarchyRowFor(elements, "Task"), true);
+
+    expect(store.writeCalls.at(-1)).toEqual({
+      workItemTypes: [
+        { name: "Bug", color: "CC293D", icon: "https://ado/bug", columns: [] },
+        { name: "Task", color: "F2CB1D", icon: "", columns: [], isPrimaryWork: true },
       ],
     });
   });

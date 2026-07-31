@@ -55,10 +55,10 @@ describe("renderTagPill", () => {
     expect(pill.style.cssText).toContain("border: 2px solid var(--tag-selected-border)");
   });
 
-  it("dims an unselected interactive pill", () => {
+  it("keeps an unselected interactive pill at full opacity", () => {
     const pill = renderTagPill(document, { tag: "Alpha", interactive: true, selected: false });
     expect(pill.classList.contains("awesomeado-tag-pill--selected")).toBe(false);
-    expect(pill.style.cssText).toContain("opacity: 0.55");
+    expect(pill.style.opacity).toBe("1");
   });
 
   it("gives the same tag the same color and different tags different colors", () => {

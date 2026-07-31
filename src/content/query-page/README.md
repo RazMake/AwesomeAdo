@@ -26,7 +26,8 @@ Lines it records use the log source **`content/query-page`**.
   style and host if ADO's post-load re-render drops them, disposes renderer-owned registrations when
   replacing a root, and only mutates the DOM; it makes no decision about _when_ or _which_ view to
   show. A deferred renderer leaves ADO visible while its bundle loads, and a request generation
-  guard prevents a late import from replacing a newer navigation.
+  guard prevents a late import from replacing a newer navigation. `invalidate()` forces the next
+  valid request to rebuild when settings-backed services have changed.
 
 ### `QueryPageController.ts`
 
@@ -34,7 +35,9 @@ Lines it records use the log source **`content/query-page`**.
   `EnhancedViewSurface` accordingly. Reacts to `applySettings`, `applyBindings`, `navigate`, and
   `applyActiveViewOverride` (the composition root's nudge after this session's per-query switch
   changes), logging only when the conclusion changes (which view, or none — with the participating
-  signals) so repeated refreshes do not flood the bounded log.
+  signals) so repeated refreshes do not flood the bounded log. A settings snapshot that changes
+  view configuration (including work-item hierarchy and Primary work) invalidates the current render
+  before refresh; theme-only changes keep the existing root and update its palette in place.
 
 ## Usage guidance
 

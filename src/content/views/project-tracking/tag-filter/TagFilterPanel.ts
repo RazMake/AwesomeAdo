@@ -21,9 +21,7 @@ export interface TagFilterPanelOptions {
  * tags (an OR across the selection; an empty selection means "show everything"). Clicking a pill
  * toggles it. The "??" pill selects items assigned to people with no tag yet.
  *
- * Returns the pills LOOSE rather than wrapped in a panel of their own: they share one wrapping filter
- * row with the board's other pills, and a wrapper around this group would break that row into
- * segments that wrap independently instead of flowing as a single line.
+ * Returns the pills loose so the board can place them beside markers in its non-activity family.
  *
  * Stateless about the selection — it renders the caller's `selected` set and mutates it on toggle, so
  * the caller owns the single source of truth and re-renders both the pills and the tree from it.

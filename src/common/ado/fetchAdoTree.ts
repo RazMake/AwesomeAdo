@@ -225,8 +225,8 @@ export function buildWorkItemUpdateUrl(href: string, id: number): string | null 
 }
 
 /**
- * Parse the raw tree REST bodies into the normalized model.
- * - When the query is not a tree query (wiql.queryType !== "tree") → { isTreeQuery:false, roots:[], error:null }.
+ * Parse the raw query REST bodies into the normalized model.
+ * - A flat query becomes an ordered list of root nodes with no children and `isTreeQuery:false`.
  * - When the raw is missing/malformed (no usable wiql body) → { isTreeQuery:false, roots:[], error:"Could not load this query from Azure DevOps." }.
  * - Otherwise build the tree from wiql.workItemRelations: a relation with source===null is a ROOT (its target id);
  *   a relation with source!==null links parent=source.id → child=target.id (preserve encounter order).
@@ -260,12 +260,16 @@ export function parseTrackedTree(
     return loadFailure;
   }
 
-  const typedWiql = wiql as { queryType?: unknown; workItemRelations?: unknown };
+  const typedWiql = wiql as {
+    queryType?: unknown;
+    workItemRelations?: unknown;
+    workItems?: unknown;
+  };
 
-  // A well-formed body that is not a tree query is not an error: the view shows its "needs a tree
-  // query" message rather than a failure.
+  // Flat queries are useful to list-driven views even though tree-driven views still reject them via
+  // `isTreeQuery`. Preserve WIQL encounter order and hydrate each item as a childless root.
   if (typedWiql.queryType !== "tree") {
-    return { isTreeQuery: false, roots: [], error: null, folderPath };
+    return parseFlatQuery(typedWiql.workItems, raw.items, etaFieldByType, folderPath, loadFailure);
   }
 
   const relations = typedWiql.workItemRelations;
@@ -289,6 +293,23 @@ export function parseTrackedTree(
   }
 
   return { isTreeQuery: true, roots, error: null, folderPath };
+}
+
+function parseFlatQuery(
+  workItems: unknown,
+  hydratedItems: unknown,
+  etaFieldByType: ReadonlyMap<string, string>,
+  folderPath: QueryFolderCrumb[],
+  loadFailure: WorkItemTreeResult,
+): WorkItemTreeResult {
+  if (!Array.isArray(workItems)) return loadFailure;
+  const rootIds = workItems.map(readRelationEndpointId).filter((id): id is number => id !== null);
+  const itemsById = indexItemsById(hydratedItems);
+  if (rootIds.some((id) => !itemsById.has(id))) return loadFailure;
+  const roots = rootIds
+    .map((id) => buildNode(id, itemsById, new Map(), etaFieldByType, new Set(), 0))
+    .filter((item): item is TrackedWorkItem => item !== null);
+  return { isTreeQuery: false, roots, error: null, folderPath };
 }
 
 /** A tree must never quietly lose an item because one hydration page failed or was incomplete. */

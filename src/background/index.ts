@@ -4,6 +4,7 @@ import {
   FEATURE_CREW_STATE,
   FEATURE_CREW_TITLE,
 } from "../common/ado/FeatureCrew";
+import { buildAdoCapacityUrl } from "../common/ado/TeamCapacity";
 import { buildAdoIterationsUrl } from "../common/ado/TeamIteration";
 import { IMPORTANCE_FIELD } from "../common/ado/adoApi";
 import { buildAdoIdentitySearchRequest } from "../common/ado/fetchAdoIdentities";
@@ -45,6 +46,11 @@ import {
   type RevealBindingSettingsMessage,
   type RevealOptionsSectionMessage,
 } from "../common/bindings/BindingRequest";
+import {
+  isLoadSprintCapacityMessage,
+  type LoadSprintCapacityMessage,
+  type LoadSprintCapacityResponse,
+} from "../common/browser/AdoCapacityRequest";
 import {
   isResolveAdoIdentityNamesMessage,
   type ResolveAdoIdentityNamesMessage,
@@ -112,6 +118,10 @@ import {
   applyFeatureCrewInPage,
   type FeatureCrewApplyResult,
 } from "../common/browser/applyFeatureCrewInPage";
+import {
+  fetchAdoCapacityInPage,
+  type CapacityFetchOutcome,
+} from "../common/browser/fetchAdoCapacityInPage";
 import {
   fetchAdoIdentitiesInPage,
   type AdoIdentitySearchOutcome,
@@ -351,6 +361,46 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
   }
   void loadTeamIterations(message, tabId, tabUrl).then(sendResponse);
   // Keep the message channel open for the async fetch reply above.
+  return true;
+});
+
+// Sprint capacity is iteration-specific and team-scoped. As with iteration loading, the content
+// side supplies only identifiers while this worker derives the endpoint from the trusted sender tab.
+const loadSprintCapacity = async (
+  message: LoadSprintCapacityMessage,
+  tabId: number,
+  tabUrl: string,
+): Promise<LoadSprintCapacityResponse> => {
+  const capacityUrl = buildAdoCapacityUrl(tabUrl, message.team, message.iterationId);
+  if (capacityUrl === null) {
+    logger.info("Sprint capacity load skipped: project, team, or iteration is unavailable.");
+    return { raw: null, status: 0 };
+  }
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: "MAIN",
+      func: fetchAdoCapacityInPage,
+      args: [capacityUrl],
+    });
+    return (firstScriptResult(results) as CapacityFetchOutcome | null) ?? { raw: null, status: 0 };
+  } catch (error) {
+    logger.error("Could not load sprint capacity", error);
+    return { raw: null, status: 0 };
+  }
+};
+
+chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
+  if (!isLoadSprintCapacityMessage(message)) {
+    return undefined;
+  }
+  const { id: tabId, url: tabUrl } = sender.tab ?? {};
+  if (tabId === undefined || tabUrl === undefined) {
+    logger.error("Cannot load sprint capacity: message has no sender tab.");
+    sendResponse({ raw: null, status: 0 } satisfies LoadSprintCapacityResponse);
+    return undefined;
+  }
+  void loadSprintCapacity(message, tabId, tabUrl).then(sendResponse);
   return true;
 });
 

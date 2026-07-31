@@ -332,6 +332,18 @@ list is small and unpaged) and returns the raw body, or `null` on any non-ok/thr
 is built by `buildAdoIterationsUrl` (in `common/ado/TeamIteration`) from the sender's own trusted tab
 URL, keeping the worker a closed "read this team's iterations" operation.
 
+## Loading a sprint's capacity roster
+
+Sprint View loads team members from the selected iteration's capacity endpoint through the same
+content -> background -> MAIN-world boundary as iterations.
+
+- `AdoCapacityRequest.ts` defines and guards the closed `{ team, iterationId }` message.
+- `MessagingTeamCapacityLoader` sends the request, parses identities through `parseTeamCapacity`,
+  and logs failures without confusing them with a successful empty roster.
+- `fetchAdoCapacityInPage` performs the credentialed GET with up to three attempts for transient
+  network, 408, 429, and 5xx failures. Its URL is built from the trusted sender tab plus the typed
+  team and iteration identifiers; callers cannot supply an arbitrary URL.
+
 ## Searching Azure DevOps for people
 
 An assignee picker resolves names against ADO's own identity directory. That read is credentialed

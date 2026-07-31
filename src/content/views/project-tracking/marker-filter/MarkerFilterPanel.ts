@@ -21,9 +21,7 @@ export interface MarkerFilterPanelOptions {
  * pills form an **OR**; the group as a whole is **AND**ed with the crew-tag and recent-activity
  * groups, and an empty selection narrows nothing.
  *
- * Returned LOOSE rather than wrapped in a panel of their own: they share the board's single wrapping
- * filter row, and a wrapper around this group would break that row into segments that wrap
- * independently instead of flowing as one line — the same reason the two groups beside them are.
+ * Returned loose so the board can place them beside crew tags in its non-activity family.
  *
  * Stateless about the selection, like those groups: it renders the caller's set and mutates it on
  * toggle, so the caller stays the single source of truth for both the pills and the tree.

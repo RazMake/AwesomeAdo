@@ -52,11 +52,11 @@ describe("renderMarkerPill", () => {
     expect(onToggle).toHaveBeenCalledTimes(1);
   });
 
-  it("dims an unselected toggle without changing its size", () => {
+  it("keeps an unselected toggle at full opacity without changing its size", () => {
     const pill = renderMarkerPill(document, { marker: "blocked", interactive: true });
 
     expect(pill.getAttribute("aria-pressed")).toBe("false");
-    expect(pill.style.opacity).toBe("0.55");
+    expect(pill.style.opacity).toBe("1");
     expect(pill.style.border).toContain("transparent");
   });
 });

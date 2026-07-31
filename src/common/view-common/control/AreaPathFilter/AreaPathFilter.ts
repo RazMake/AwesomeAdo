@@ -3,6 +3,8 @@ import { createSvgCanvas } from "../svgIcon/svgIcon";
 
 /** Options for the compact area-path multi-select control. */
 export interface AreaPathFilterOptions {
+  /** Visible noun used by the trigger and popup. Defaults to `Area`. */
+  label?: string;
   /** Full Azure DevOps area paths offered by the control. */
   areaPaths: readonly string[];
   /** Full paths selected initially. Paths absent from `areaPaths` are ignored. */
@@ -103,10 +105,17 @@ function renderFilterIcon(doc: Document): SVGSVGElement {
 }
 
 /** Paint the trigger from the current selection without changing its fixed footprint. */
-function paintTrigger(trigger: HTMLButtonElement, count: HTMLElement, selectedCount: number): void {
+function paintTrigger(
+  trigger: HTMLButtonElement,
+  count: HTMLElement,
+  selectedCount: number,
+  label: string,
+): void {
   const active = selectedCount > 0;
   trigger.setAttribute("aria-pressed", String(active));
-  trigger.title = active ? `Area path filter: ${selectedCount} selected` : "Filter by area path";
+  trigger.title = active
+    ? `${label} filter: ${selectedCount} selected`
+    : `Filter by ${label.toLowerCase()}`;
   trigger.setAttribute("aria-label", trigger.title);
   trigger.style.background = active ? "var(--communication-background)" : "transparent";
   trigger.style.color = active
@@ -166,12 +175,13 @@ function renderPopup(params: {
   selected: ReadonlySet<string>;
   toggle(path: string, checked: boolean): void;
   clear(): void;
+  label: string;
 }): HTMLElement {
   const { doc, paths, labels, selected } = params;
   const popup = doc.createElement("div");
   popup.className = "awesomeado-area-filter__popup";
   popup.setAttribute("role", "dialog");
-  popup.setAttribute("aria-label", "Filter by area path");
+  popup.setAttribute("aria-label", `Filter by ${params.label.toLowerCase()}`);
   popup.style.cssText = [
     "position:absolute",
     "top:100%",
@@ -193,7 +203,7 @@ function renderPopup(params: {
   const heading = doc.createElement("div");
   heading.style.cssText = "display:flex;align-items:center;gap:12px;padding:0 4px 6px";
   const title = doc.createElement("strong");
-  title.textContent = "Area paths";
+  title.textContent = params.label;
   const clear = doc.createElement("button");
   clear.type = "button";
   clear.className = "awesomeado-area-filter__clear";
@@ -230,6 +240,7 @@ function renderPopup(params: {
 function renderAreaPathTrigger(
   doc: Document,
   disabled: boolean,
+  label: string,
 ): { root: HTMLElement; trigger: HTMLButtonElement; count: HTMLElement } {
   const root = doc.createElement("span");
   root.className = "awesomeado-area-filter";
@@ -258,7 +269,7 @@ function renderAreaPathTrigger(
     trigger.style.cursor = "default";
     trigger.style.opacity = "0.55";
   }
-  trigger.append(renderFilterIcon(doc), doc.createTextNode("Area"));
+  trigger.append(renderFilterIcon(doc), doc.createTextNode(label));
 
   const count = doc.createElement("span");
   count.className = "awesomeado-area-filter__count";
@@ -290,19 +301,20 @@ export function renderAreaPathFilter(
   doc: Document,
   options: AreaPathFilterOptions,
 ): AreaPathFilterHandle {
+  const label = options.label?.trim() || "Area";
   const paths = uniqueAreaPaths(options.areaPaths);
   const labels = shortestUniqueAreaPathLabels(paths);
   const selected = new Set(
     uniqueAreaPaths(options.selectedAreaPaths ?? []).filter((path) => paths.includes(path)),
   );
-  const { root, trigger, count } = renderAreaPathTrigger(doc, paths.length === 0);
+  const { root, trigger, count } = renderAreaPathTrigger(doc, paths.length === 0, label);
 
   const selectedValues = (): string[] => paths.filter((path) => selected.has(path));
   const changed = (): void => {
-    paintTrigger(trigger, count, selected.size);
+    paintTrigger(trigger, count, selected.size, label);
     options.onChange?.(selectedValues());
   };
-  paintTrigger(trigger, count, selected.size);
+  paintTrigger(trigger, count, selected.size, label);
 
   const popupHost = createPopupHost({
     doc,
@@ -315,6 +327,7 @@ export function renderAreaPathFilter(
         paths,
         labels,
         selected,
+        label,
         toggle: (path, checked) => {
           if (checked) selected.add(path);
           else selected.delete(path);
@@ -337,7 +350,7 @@ export function renderAreaPathFilter(
         if (paths.includes(path)) selected.add(path);
       }
       popupHost.close();
-      paintTrigger(trigger, count, selected.size);
+      paintTrigger(trigger, count, selected.size, label);
     },
   };
 }

@@ -44,6 +44,13 @@ describe("renderMarkerFilterPills", () => {
     expect(pills[1]!.getAttribute("aria-pressed")).toBe("false");
   });
 
+  it("keeps selected and unselected markers at full opacity", () => {
+    const { pills } = renderPills(["blocked", "blockedByOtherTeam"], ["blocked"]);
+
+    expect(pills[0]?.style.opacity).toBe("1");
+    expect(pills[1]?.style.opacity).toBe("1");
+  });
+
   it("adds a marker to the selection on click and reports the change", () => {
     const { pills, selection, onChange } = renderPills(["blocked"]);
 

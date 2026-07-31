@@ -172,6 +172,7 @@ export class WorkItemTypesController {
       if (entry.children) {
         this.hierarchy.setChildren(entry.name, entry.children);
       }
+      this.hierarchy.setPrimaryWork(entry.name, entry.isPrimaryWork === true);
       this.fillCellsFromEntry(row, entry.columns);
       this.refreshRow(row);
     }
@@ -949,6 +950,9 @@ export class WorkItemTypesController {
       const children = this.hierarchy.childrenFor(name);
       if (children.length > 0) {
         type.children = children;
+      }
+      if (this.hierarchy.isPrimaryWork(name)) {
+        type.isPrimaryWork = true;
       }
       result.push(type);
     }

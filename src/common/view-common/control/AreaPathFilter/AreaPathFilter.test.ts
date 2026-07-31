@@ -51,6 +51,20 @@ function openFilter(paths = ["Project\\Platform\\API", "Project\\Commerce\\API"]
 }
 
 describe("renderAreaPathFilter - popup", () => {
+  it("can present the same full-path selector as Lane", () => {
+    const handle = renderAreaPathFilter(document, {
+      label: "Lane",
+      areaPaths: ["Project\\Platform"],
+    });
+    document.body.append(handle.element);
+
+    const trigger = handle.element.querySelector<HTMLButtonElement>("button")!;
+    expect(trigger.textContent).toBe("Lane0");
+    expect(trigger.title).toBe("Filter by lane");
+    trigger.click();
+    expect(handle.element.querySelector("strong")?.textContent).toBe("Lane");
+  });
+
   it("shows one checkbox per distinct full path with shortest distinct labels", () => {
     const { handle } = openFilter();
     const rows = handle.element.querySelectorAll<HTMLElement>(".awesomeado-area-filter__option");

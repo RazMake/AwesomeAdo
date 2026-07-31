@@ -8,6 +8,10 @@ import {
 import type { ActiveView } from "../common/bindings/QueryBinding";
 import { createQueryBindingStore } from "../common/bindings/createQueryBindingStore";
 import {
+  type LoadSprintCapacityMessage,
+  type LoadSprintCapacityResponse,
+} from "../common/browser/AdoCapacityRequest";
+import {
   type ResolveAdoIdentityNamesMessage,
   type ResolveAdoIdentityNamesResponse,
 } from "../common/browser/AdoIdentityNamesRequest";
@@ -39,6 +43,10 @@ import {
   MessagingNoteActivityReader,
   type SendNoteActivityRequest,
 } from "../common/browser/MessagingNoteActivityReader";
+import {
+  MessagingTeamCapacityLoader,
+  type SendCapacityRequest,
+} from "../common/browser/MessagingTeamCapacityLoader";
 import {
   MessagingTeamConfigReader,
   type SendTeamConfigRequest,
@@ -179,6 +187,15 @@ const iterationsLoader = new MessagingTeamIterationsLoader(
   loggers.forSource("content/views"),
 );
 
+const sendCapacityRequest: SendCapacityRequest = (message) =>
+  chrome.runtime.sendMessage<LoadSprintCapacityMessage, LoadSprintCapacityResponse | undefined>(
+    message,
+  );
+const capacityLoader = new MessagingTeamCapacityLoader(
+  sendCapacityRequest,
+  loggers.forSource("content/views"),
+);
+
 // The roster write mirrors the tree read: the isolated content world cannot reach the credentialed
 // ADO REST API, so the writer messages the background worker (which runs the MAIN-world fetch).
 const sendReconcileRequest: SendReconcileRequest = (message) =>
@@ -294,6 +311,7 @@ const trackingServices: EnhancedViewServices = {
       name: t.name,
       color: t.color,
       icon: t.icon,
+      isPrimaryWork: t.isPrimaryWork === true,
       etaField: t.etaField ?? null,
       columns: t.columns.map((c) => ({ column: c.column, states: [...c.states] })),
       children: [...(t.children ?? [])],
@@ -315,6 +333,13 @@ const trackingServices: EnhancedViewServices = {
       pastCount: latestSettings?.pastSprintsCount ?? DEFAULT_SETTINGS.pastSprintsCount,
       futureCount: latestSettings?.futureSprintsCount ?? DEFAULT_SETTINGS.futureSprintsCount,
     });
+  },
+  loadSprintCapacity: (iterationId) => {
+    const team = latestSettings?.currentTeam ?? null;
+    if (team === null || team.id.trim().length === 0 || iterationId.trim().length === 0) {
+      return Promise.resolve({ members: [], error: null });
+    }
+    return capacityLoader.loadCapacity(team.id, iterationId);
   },
   now: () => new Date(),
   logger: loggers.forSource("content/views"),

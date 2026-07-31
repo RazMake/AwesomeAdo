@@ -65,7 +65,10 @@ This component does not log; it surfaces failures through the options page's sha
 
 - **`WorkItemHierarchyController`** — nested controller (owned by `WorkItemTypesController`) for the
   **Work item type hierarchy** section. It renders one row per committed type, listing the types that
-  may be created underneath it as removable, drag-reorderable chips; the **first** chip is the type a
+  may be created underneath it and a **Primary work** checkbox. Primary work means independently
+  trackable delivery; unchecked types above it are planning context and unchecked types below it are
+  implementation details. The root checkbox is always cleared and disabled. Child types are shown
+  as removable, drag-reorderable chips; the **first** chip is the type a
   view creates when the user adds a child. Each row's picker stays folded behind a **`+`** button and
   only unfolds when it is clicked. Because the table above is ordered parent-to-child, a row is only
   offered the types listed **below** it, minus any that would still loop back and minus its

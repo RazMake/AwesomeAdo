@@ -37,6 +37,7 @@ function makeElements(): WorkItemHierarchyElements {
 function setup(options?: {
   types?: readonly LabeledType[];
   seed?: Readonly<Record<string, readonly string[]>>;
+  primaryWork?: readonly string[];
 }): Harness {
   const elements = makeElements();
   let changes = 0;
@@ -46,6 +47,9 @@ function setup(options?: {
   controller.init();
   for (const [name, children] of Object.entries(options?.seed ?? {})) {
     controller.setChildren(name, children);
+  }
+  for (const name of options?.primaryWork ?? []) {
+    controller.setPrimaryWork(name, true);
   }
   controller.render(options?.types ?? TREE);
   return { elements, controller, changes: () => changes };
@@ -88,6 +92,10 @@ function addButton(row: HTMLElement): HTMLButtonElement {
 
 function comboboxOf(row: HTMLElement): HTMLElement {
   return row.querySelector<HTMLElement>(".combobox")!;
+}
+
+function primaryWork(row: HTMLElement): HTMLInputElement {
+  return row.querySelector<HTMLInputElement>('[data-role="primary-work"]')!;
 }
 
 /** Whether the row still offers the "+" that unfolds its child picker. */
@@ -200,6 +208,38 @@ describe("WorkItemHierarchyController rows", () => {
 
     expect(row.querySelector(".wit-type-label__icon")).toBeNull();
     expect(row.querySelector<HTMLElement>(".wit-type-label__name")!.textContent).toBe("Feature");
+  });
+
+  it("forces the root to planning context and disables its primary-work checkbox", () => {
+    const { elements, controller } = setup({ primaryWork: ["Epic"] });
+
+    expect(primaryWork(rowFor(elements, "Epic")).checked).toBe(false);
+    expect(primaryWork(rowFor(elements, "Epic")).disabled).toBe(true);
+    expect(controller.isPrimaryWork("Epic")).toBe(false);
+  });
+
+  it("renders and updates primary work for non-root types", () => {
+    const { elements, controller, changes } = setup({ primaryWork: ["User Story"] });
+    const story = primaryWork(rowFor(elements, "User Story"));
+
+    expect(story.checked).toBe(true);
+    expect(story.disabled).toBe(false);
+
+    story.checked = false;
+    story.dispatchEvent(new Event("change", { bubbles: true }));
+
+    expect(controller.isPrimaryWork("User Story")).toBe(false);
+    expect(changes()).toBe(1);
+  });
+
+  it("clears primary work when a checked type becomes the root", () => {
+    const { elements, controller } = setup({ primaryWork: ["User Story"] });
+
+    controller.render([STORY, EPIC, FEATURE, TASK]);
+
+    expect(primaryWork(rowFor(elements, "User Story")).checked).toBe(false);
+    expect(primaryWork(rowFor(elements, "User Story")).disabled).toBe(true);
+    expect(controller.isPrimaryWork("User Story")).toBe(false);
   });
 });
 

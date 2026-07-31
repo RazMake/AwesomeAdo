@@ -15,6 +15,7 @@ const ROLE_ATTRIBUTE = "data-role";
 const CHILD_ROLE = "child";
 const CHILD_REMOVE_ROLE = "child-remove";
 const CHILD_ADD_ROLE = "child-add";
+const PRIMARY_WORK_ROLE = "primary-work";
 
 const ROW_SELECTOR = ".wit-child-row";
 const CHILDREN_SELECTOR = ".wit-child-row__children";
@@ -52,6 +53,8 @@ export class WorkItemHierarchyController {
   // The child list per type, keyed by lowercased type name and held outside the DOM so a re-render
   // driven by the table above can never lose an order the user arranged.
   private readonly childrenByType = new Map<string, string[]>();
+  // Only checked values need state; unchecked means either planning context or implementation detail.
+  private readonly primaryWorkTypes = new Set<string>();
   // Each row's picker owns a searchable dropdown, keyed by its input so a removed row drops the
   // combobox out with the input (no manual bookkeeping).
   private readonly comboboxes = new WeakMap<HTMLInputElement, AutocompleteInput>();
@@ -96,6 +99,7 @@ export class WorkItemHierarchyController {
   /** Forget every child list; the stored settings are the source of truth on a fresh load. */
   reset(): void {
     this.childrenByType.clear();
+    this.primaryWorkTypes.clear();
   }
 
   /** Seed one type's stored children. Call before `render` while loading settings. */
@@ -103,20 +107,42 @@ export class WorkItemHierarchyController {
     this.childrenByType.set(name.toLowerCase(), [...children]);
   }
 
+  /** Seed whether one stored type represents independently trackable delivery. */
+  setPrimaryWork(name: string, isPrimaryWork: boolean): void {
+    const key = name.toLowerCase();
+    if (isPrimaryWork) {
+      this.primaryWorkTypes.add(key);
+    } else {
+      this.primaryWorkTypes.delete(key);
+    }
+  }
+
   /** A type's children in priority order (the first is its default child); empty for a leaf. */
   childrenFor(name: string): string[] {
     return [...(this.childrenByType.get(name.toLowerCase()) ?? [])];
+  }
+
+  /** Whether a type is classified as independently trackable primary work. */
+  isPrimaryWork(name: string): boolean {
+    return this.primaryWorkTypes.has(name.toLowerCase());
   }
 
   /** Rebuild the section from the committed types, dropping links to types that no longer exist. */
   render(types: readonly LabeledType[]): void {
     this.types = types;
     this.dropUnknownChildren();
+    this.dropUnknownPrimaryWork();
+    // The root represents the project/program context regardless of imported or previously ordered
+    // state, so moving a checked type to the top clears its classification before the owner saves.
+    const rootKey = types[0]?.name.toLowerCase();
+    if (rootKey !== undefined) {
+      this.primaryWorkTypes.delete(rootKey);
+    }
     const doc = this.elements.body.ownerDocument;
     this.disposeComboboxes();
     this.elements.body.replaceChildren();
-    for (const type of types) {
-      const row = this.createRow(doc, type);
+    for (const [index, type] of types.entries()) {
+      const row = this.createRow(doc, type, index === 0);
       this.elements.body.append(row);
       this.renderChildren(row);
     }
@@ -130,8 +156,19 @@ export class WorkItemHierarchyController {
     const target = event.target as HTMLElement;
     if (target.getAttribute(ROLE_ATTRIBUTE) === CHILD_ROLE) {
       this.commitChild(target as HTMLInputElement);
+    } else if (target.getAttribute(ROLE_ATTRIBUTE) === PRIMARY_WORK_ROLE) {
+      this.commitPrimaryWork(target as HTMLInputElement);
     }
   };
+
+  private commitPrimaryWork(input: HTMLInputElement): void {
+    const row = input.closest<HTMLElement>(ROW_SELECTOR);
+    if (row === null || input.disabled) {
+      return;
+    }
+    this.setPrimaryWork(this.keyOf(row), input.checked);
+    this.onChange();
+  }
 
   private commitChild(input: HTMLInputElement): void {
     const row = input.closest<HTMLElement>(ROW_SELECTOR);
@@ -284,15 +321,35 @@ export class WorkItemHierarchyController {
 
   // ── Rendering ───────────────────────────────────────────────────────────────
 
-  private createRow(doc: Document, type: LabeledType): HTMLElement {
+  private createRow(doc: Document, type: LabeledType, isRoot: boolean): HTMLElement {
     const row = doc.createElement("tr");
     row.className = "wit-child-row";
     row.dataset.typeName = type.name;
     const parent = doc.createElement("td");
     parent.className = "wit-child-row__parent";
     parent.append(createTypeLabel(doc, type));
-    row.append(parent, this.createChildrenCell(doc));
+    row.append(
+      parent,
+      this.createPrimaryWorkCell(doc, type.name, isRoot),
+      this.createChildrenCell(doc),
+    );
     return row;
+  }
+
+  private createPrimaryWorkCell(doc: Document, typeName: string, isRoot: boolean): HTMLElement {
+    const cell = doc.createElement("td");
+    cell.className = "wit-child-row__primary-work";
+    const checkbox = doc.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.setAttribute(ROLE_ATTRIBUTE, PRIMARY_WORK_ROLE);
+    checkbox.setAttribute("aria-label", `Treat ${typeName} as primary work`);
+    checkbox.checked = !isRoot && this.isPrimaryWork(typeName);
+    checkbox.disabled = isRoot;
+    checkbox.title = isRoot
+      ? "The root provides planning context and cannot be primary work."
+      : "Primary work is independently trackable delivery; leave planning context and implementation details unchecked.";
+    cell.append(checkbox);
+    return cell;
   }
 
   private createChildrenCell(doc: Document): HTMLElement {
@@ -508,6 +565,15 @@ export class WorkItemHierarchyController {
         );
       } else {
         this.childrenByType.delete(key);
+      }
+    }
+  }
+
+  private dropUnknownPrimaryWork(): void {
+    const known = new Set(this.types.map((type) => type.name.toLowerCase()));
+    for (const key of this.primaryWorkTypes) {
+      if (!known.has(key)) {
+        this.primaryWorkTypes.delete(key);
       }
     }
   }

@@ -49,6 +49,7 @@ import {
   renderEtaBadge,
   type EtaBadgeHandle,
 } from "../../../common/view-common/control/EtaBadge/EtaBadge";
+import { renderFilterPillFamilies } from "../../../common/view-common/control/FilterPill/FilterPill";
 import {
   createItemContextMenu,
   type ItemContextMenu,
@@ -126,6 +127,24 @@ function typeColorOf(typeName: string, typeMap: Map<string, TypeCatalogEntry>): 
 function lastTypeColor(types: TypeCatalogEntry[]): string | null {
   const color = types[types.length - 1]?.color ?? "";
   return color.length > 0 ? `#${color}` : null;
+}
+
+/** Types shown as rows: primary delivery plus every configured ancestor needed to reach it. */
+function primaryWorkTreeTypes(types: TypeCatalogEntry[]): ReadonlySet<string> {
+  const rowTypes = new Set(
+    types.filter((type) => type.isPrimaryWork === true).map((type) => type.name),
+  );
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const type of types) {
+      if (!rowTypes.has(type.name) && type.children?.some((child) => rowTypes.has(child))) {
+        rowTypes.add(type.name);
+        changed = true;
+      }
+    }
+  }
+  return rowTypes;
 }
 
 /**
@@ -596,6 +615,8 @@ interface TreeRenderOptions {
   mentionNames: ReadonlyMap<string, string>;
   /** The color the rolled-up child badge tints from; null leaves it a neutral chip. */
   minorChildColor: string | null;
+  /** Primary-work types and every planning-context type on a path above them. */
+  treeRowTypes: ReadonlySet<string>;
   /** Consumes the one rolled-up child popup that should reopen after its successful reorder. */
   reopenMinorChildPopup: (parentId: number) => boolean;
   /** Reassigns zebra stripes after a branch changes which rows are visible. */
@@ -626,11 +647,7 @@ interface ExpansionControl {
   setExpanded(expanded: boolean): void;
 }
 
-/**
- * How many levels below the root render as their own rows: the root's children (depth 0) and their
- * children (depth 1). Anything deeper is detail that buries the plan, so it is rolled up into a
- * single badge on the deepest row instead of extending the outline.
- */
+/** Legacy row depth used only for configurations saved before Primary work classification existed. */
 const MAX_ROW_DEPTH = 1;
 const ITEM_WRAPPER_CLASS = "awesomeado-tracking__item";
 const ITEM_SURFACE_CLASS = "awesomeado-tracking__item-surface";
@@ -1388,6 +1405,7 @@ function itemMenuTarget(item: TrackedWorkItem, options: TreeRenderOptions): Item
 function describeMinorChild(
   child: TrackedWorkItem,
   options: TreeRenderOptions,
+  depth: number,
   parentId: number,
   destinationType: string | null,
   siblingIds: readonly number[],
@@ -1420,7 +1438,7 @@ function describeMinorChild(
         : (row, title, dragContext) =>
             options.dragReorder?.register({
               id: child.id,
-              depth: MAX_ROW_DEPTH + 1,
+              depth,
               hasChildren: child.children.length > 0,
               parentId,
               destinationType,
@@ -1448,14 +1466,18 @@ function describeMinorChild(
 function createMinorChildrenBadge(
   item: TrackedWorkItem,
   options: TreeRenderOptions,
+  childDepth: number,
 ): HTMLElement | null {
-  const children = orderTrackedItems(item.children, options.orderingPolicy);
+  const children = orderTrackedItems(
+    item.children.filter((child) => !rendersAsTreeRow(child, options, childDepth)),
+    options.orderingPolicy,
+  );
   if (children.length === 0) return null;
 
   const siblingIds = children.map((child) => child.id);
   const destinationType = options.typeMap.get(item.type)?.children?.[0] ?? null;
   const descriptors = children.map((child) =>
-    describeMinorChild(child, options, item.id, destinationType, siblingIds),
+    describeMinorChild(child, options, childDepth, item.id, destinationType, siblingIds),
   );
 
   const badge = renderChildItemsBadge(options.doc, {
@@ -1618,13 +1640,15 @@ function createRowSprintPill(item: TrackedWorkItem, options: TreeRenderOptions):
   pill.style.cssText = [
     "display:inline-flex",
     "align-items:center",
+    "vertical-align:middle",
     "background:var(--control-background-subtle)",
     "border:0",
-    "border-radius:6px",
-    "padding:4px 6px",
-    "font:inherit",
-    "font-size:10px",
-    "line-height:1",
+    "border-radius:9px",
+    "padding:1px 8px",
+    "font-family:inherit",
+    "font-size:9px",
+    "font-weight:600",
+    "line-height:1.6",
     "color:var(--text-secondary-color)",
     "white-space:nowrap",
     "cursor:pointer",
@@ -1658,7 +1682,7 @@ function createRowSprintPill(item: TrackedWorkItem, options: TreeRenderOptions):
 function createRowRightControls(
   item: TrackedWorkItem,
   options: TreeRenderOptions,
-  showsChildRows: boolean,
+  childDepth: number,
 ): { inline: HTMLElement[]; eta: HTMLElement | null } {
   const { doc, context, typeMap, boardColumns, queue, showSprintPills } = options;
   const inline: HTMLElement[] = [];
@@ -1670,12 +1694,11 @@ function createRowRightControls(
     inline.push(createRowSprintPill(item, options));
   }
 
-  // The deepest rendered row carries its children as a rollup badge instead of an expandable branch.
-  if (!showsChildRows) {
-    const minorChildren = createMinorChildrenBadge(item, options);
-    if (minorChildren) {
-      inline.push(minorChildren);
-    }
+  // A type can allow sibling child types with different classifications, so a row may carry both
+  // an expandable primary-work branch and an implementation-detail rollup.
+  const minorChildren = createMinorChildrenBadge(item, options, childDepth);
+  if (minorChildren) {
+    inline.push(minorChildren);
   }
 
   const etaBadge = createItemEtaBadge(
@@ -1719,8 +1742,10 @@ function renderRow(
   title: HTMLElement;
 } {
   const { doc, typeMap } = options;
-  // Past the last rendered level a row's children become a rollup badge, not an expandable branch.
-  const showsChildRows = depth < MAX_ROW_DEPTH;
+  const childDepth = depth + 1;
+  const showsChildRows = item.children.some((child) =>
+    rendersAsTreeRow(child, options, childDepth),
+  );
 
   const row = doc.createElement("div");
   row.className = "awesomeado-tracking__row";
@@ -1754,7 +1779,7 @@ function renderRow(
   const notes = createItemNotes(item, options);
   options.descriptionExpansions.push(descriptionExpansion);
   options.noteExpansions.push(notes.expansion);
-  const { inline, eta } = createRowRightControls(item, options, showsChildRows);
+  const { inline, eta } = createRowRightControls(item, options, childDepth);
 
   // Status and priority badges, ? disc, type icon, title and assignee share ONE inline-flow block so
   // they read as a single line. Because they flow as inline content (not rigid flex items) they pack tightly and
@@ -1844,9 +1869,19 @@ function rememberExpanded(collapsedIds: Set<number>, id: number, expanded: boole
  * including the rows the active filters hide, so a filtered board still ranks a move where the user
  * aimed rather than relative to whatever happened to be on screen.
  *
- * Recursion stops at `MAX_ROW_DEPTH`: deeper items are summarized by the deepest row's rollup badge
- * (see `createMinorChildrenBadge`) instead of extending the outline.
+ * Primary work and the planning context above it render as rows. Implementation details below the
+ * deepest primary-work type are summarized by `createMinorChildrenBadge` instead.
  */
+function rendersAsTreeRow(
+  item: TrackedWorkItem,
+  options: TreeRenderOptions,
+  depth: number,
+): boolean {
+  return options.treeRowTypes.size === 0
+    ? depth <= MAX_ROW_DEPTH
+    : options.treeRowTypes.has(item.type);
+}
+
 function renderTree(
   parent: TrackedWorkItem,
   options: TreeRenderOptions,
@@ -1854,7 +1889,9 @@ function renderTree(
 ): HTMLElement[] {
   const ordered = orderTrackedItems(parent.children, options.orderingPolicy);
   const siblingIds = ordered.map((item) => item.id);
-  const visible = ordered.filter((item) => isVisibleUnderFilter(item, options.filter));
+  const visible = ordered.filter(
+    (item) => rendersAsTreeRow(item, options, depth) && isVisibleUnderFilter(item, options.filter),
+  );
   return visible.map((item) => {
     const { row, childrenContainer, twisty, line, title } = renderRow(item, options, depth);
     if (twisty) options.expandableRows.push({ id: item.id, twisty });
@@ -1871,7 +1908,7 @@ function renderTree(
       wrapper: row,
     });
 
-    if (depth < MAX_ROW_DEPTH) {
+    if (item.children.some((child) => rendersAsTreeRow(child, options, depth + 1))) {
       childrenContainer.append(...renderTree(item, options, depth + 1));
     }
 
@@ -2457,6 +2494,7 @@ function createBoardTreeRenderer(params: BoardTreeRendererParams): () => void {
       notesSinceIso: boardNotesSince(params.context),
       mentionNames: params.context.services.mentionDirectory.knownNames(),
       minorChildColor: params.metrics.minorChildColor,
+      treeRowTypes: params.metrics.treeRowTypes,
       reopenMinorChildPopup: (parentId) => {
         if (params.session.reopenMinorChildPopupId !== parentId) {
           return false;
@@ -2505,14 +2543,11 @@ function renderFiltersLabel(doc: Document): HTMLElement {
 }
 
 /**
- * The board's single filter row: the "Filters:" label, the Feature Crew tag pills, and the
- * recent-activity pills that close it.
+ * The board's filter row: the "Filters:" label, a tag/marker family, and an activity family.
  *
- * Rebuilt WHOLE on every change rather than kept as two independently-refreshed halves. Every pill
- * is a direct child of one wrapping flex row, so a narrow window reflows them as a single continuous
- * line; per-group wrappers would make each group wrap on its own and leave ragged gaps between them.
- * Rebuilding a handful of elements costs nothing, and it removes any chance of the two halves
- * disagreeing about the row they share.
+ * Rebuilt whole on every change so the families and tree cannot disagree. Each family wraps its own
+ * pills, and the larger gap between families carries the distinction that opacity cannot communicate
+ * without making an enabled filter look disabled.
  */
 function createFilterRowRenderer(params: {
   doc: Document;
@@ -2569,27 +2604,35 @@ function createFilterRowRenderer(params: {
       }
     }
 
+    const tagPills = renderTagFilterPills(doc, {
+      tags,
+      selected: selectedTags,
+      onChange: repaint,
+    });
+    const activityPills = renderActivityFilterPills(doc, {
+      selected: selectedActivity,
+      windowHours,
+      notesPending: recentNotes.isPending(),
+      onChange: () => {
+        logActivityFilterFlip(context, selectedActivity, windowHours);
+        repaint();
+      },
+    });
+    const markerPills = renderMarkerFilterPills(doc, {
+      markers,
+      markerTags,
+      selected: selectedMarkers,
+      onChange: () => {
+        logMarkerFilterFlip(context, selectedMarkers);
+        repaint();
+      },
+    });
     container.replaceChildren(
       renderFiltersLabel(doc),
-      ...renderTagFilterPills(doc, { tags, selected: selectedTags, onChange: repaint }),
-      ...renderActivityFilterPills(doc, {
-        selected: selectedActivity,
-        windowHours,
-        notesPending: recentNotes.isPending(),
-        onChange: () => {
-          logActivityFilterFlip(context, selectedActivity, windowHours);
-          repaint();
-        },
-      }),
-      ...renderMarkerFilterPills(doc, {
-        markers,
-        markerTags,
-        selected: selectedMarkers,
-        onChange: () => {
-          logMarkerFilterFlip(context, selectedMarkers);
-          repaint();
-        },
-      }),
+      renderFilterPillFamilies(doc, [
+        { name: "other", pills: [...tagPills, ...markerPills] },
+        { name: "activity", pills: activityPills },
+      ]),
     );
   };
 
@@ -2771,10 +2814,7 @@ function createBoardPanels(
 ): { filterRow: HTMLElement; treeContainer: HTMLElement } {
   const filterRow = doc.createElement("div");
   filterRow.className = "awesomeado-tracking__filters";
-  // ONE wrapping line for every pill on the board. `flex-wrap` lets a narrow window reflow them as a
-  // single continuous flow, and `align-items:center` centres the label against the pills it shares a
-  // line with — the pills are taller than the label's text box, so without it the word would sit on
-  // their top edge.
+  // The row wraps the label and family container; each family handles the pills inside it.
   filterRow.style.cssText = [
     "display:flex",
     "flex-wrap:wrap",
@@ -2893,6 +2933,8 @@ interface BoardMetrics {
   boardColumns: string[];
   /** The tint the rolled-up child badge wears; null leaves it a neutral chip. */
   minorChildColor: string | null;
+  /** Primary-work types and every planning-context type on a path above them. */
+  treeRowTypes: ReadonlySet<string>;
 }
 
 function createBoardCore(params: {
@@ -2929,6 +2971,7 @@ function createBoardCore(params: {
       // wears a discrete tint of the LAST configured type's color — it reads as "these are the Tasks"
       // without having to name the type on a badge that only has room for a count.
       minorChildColor: lastTypeColor(services.getTypes()),
+      treeRowTypes: primaryWorkTreeTypes(services.getTypes()),
     },
     chipContext: createChipContext(
       doc,

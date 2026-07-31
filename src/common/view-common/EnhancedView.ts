@@ -19,6 +19,7 @@ import type { IWorkItemNoteLoader } from "../ado/IWorkItemNoteLoader";
 import type { IWorkItemNoteWriter } from "../ado/IWorkItemNoteWriter";
 import type { WorkItemReorderRequest, WorkItemReorderResult } from "../ado/IWorkItemReorderWriter";
 import type { WorkItemTreeResult } from "../ado/IWorkItemTreeLoader";
+import type { SprintCapacityResult } from "../ado/TeamCapacity";
 import type { TypeCatalogEntry } from "../ado/TrackedWorkItem";
 import type { SprintWindow } from "../ado/sprintWindow";
 import type { ILogger } from "../logging/ILogger";
@@ -73,6 +74,8 @@ export interface EnhancedViewServices {
    * configured or the fetch fails.
    */
   loadSprintWindow(): Promise<SprintWindow>;
+  /** Load the configured team's capacity roster for one iteration GUID. */
+  loadSprintCapacity(iterationId: string): Promise<SprintCapacityResult>;
   /** The reference clock (injected so views can compute "now" deterministically). */
   now(): Date;
   /** The logger for view-level diagnostics. */

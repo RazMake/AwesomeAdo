@@ -49,6 +49,15 @@ describe("renderActivityFilterPills", () => {
     expect(created?.getAttribute("style")).toContain("var(--activity-created-background)");
   });
 
+  it("keeps selected and unselected activity pills at full opacity", () => {
+    const [created, updated] = renderPills({
+      selected: new Set<RecentActivityKind>(["updated"]),
+    });
+
+    expect(created?.style.opacity).toBe("1");
+    expect(updated?.style.opacity).toBe("1");
+  });
+
   it("lights an unlit pill and reports the caller's own set back", () => {
     const selected = new Set<RecentActivityKind>();
     let reported: Set<RecentActivityKind> | null = null;

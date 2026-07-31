@@ -30,7 +30,7 @@ const toggle = renderTagPill(document, {
 - **`interactive?: boolean`** — When `true`, renders a `<button>` filter toggle; otherwise a static
   `<span>` label.
 - **`selected?: boolean`** — When interactive, whether this pill is part of the active filter
-  (full-strength + themed ring vs. dimmed).
+  (themed ring vs. transparent border; opacity remains `1`).
 - **`onToggle?: () => void`** — When interactive, called on click.
 
 ### `renderTagPill(doc, options): HTMLElement`

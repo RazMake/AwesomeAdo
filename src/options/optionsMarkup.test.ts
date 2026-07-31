@@ -133,4 +133,17 @@ describe("options.html element contract", () => {
     expect(disconnect.classList.contains("button--danger")).toBe(true);
     expect(actions?.classList.contains("team-config-actions")).toBe(true);
   });
+
+  it("explains the hierarchy's primary-work classification", () => {
+    const doc = loadOptionsDocument();
+    const hierarchy = requiredElement(doc, "ado-wit-hierarchy").closest(".card")!;
+    const guidance = hierarchy.textContent.replace(/\s+/g, " ");
+
+    expect(hierarchy.querySelector(".wit-primary-work-heading")?.textContent).toBe("Primary work");
+    expect(guidance).toContain("Planning context");
+    expect(guidance).toContain("Primary work");
+    expect(guidance).toContain("Implementation details");
+    expect(guidance).toContain("User Story is primary work");
+    expect(guidance).toContain("The root always provides planning context");
+  });
 });

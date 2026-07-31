@@ -29,16 +29,20 @@ row.append(
 );
 ```
 
-| Option        | Meaning                                                                                 |
-| ------------- | --------------------------------------------------------------------------------------- |
-| `marker`      | Which condition the pill stands for; decides both its wording and its color.            |
-| `title`       | Tooltip — normally the Azure DevOps tag the team configured for this marker.            |
-| `interactive` | Renders a `<button>` toggle instead of a static `<span>` label (default `false`).       |
-| `selected`    | When interactive, whether the pill is part of the active filter (full strength + ring). |
-| `onToggle`    | When interactive, called on click; the caller flips its own selection and re-renders.   |
+| Option        | Meaning                                                                                |
+| ------------- | -------------------------------------------------------------------------------------- |
+| `marker`      | Which condition the pill stands for; decides both its wording and its color.           |
+| `title`       | Tooltip — normally the Azure DevOps tag the team configured for this marker.           |
+| `interactive` | Renders a `<button>` toggle instead of a static `<span>` label (default `false`).      |
+| `selected`    | When interactive, whether the pill is part of the active filter (themed ring).         |
+| `counts`      | Optional tag total and Interrupt accepted-in-sprint count, using shared pill geometry. |
+| `onToggle`    | When interactive, called on click; the caller flips its own selection and re-renders.  |
 
 `markerLabel(marker)` returns the same wording the options page labels the marker's row with, for
 callers that need the text alone (a tooltip, a log line).
+
+`markerPresence.ts` exports the shared `itemHasMarker`, `collectMarkersInUse`, and
+`createMarkerFilter` predicates so every view applies the same configured-tag semantics.
 
 ## Notes
 
@@ -49,3 +53,5 @@ callers that need the text alone (a tooltip, a log line).
   under a readable contrast ratio, so that pill carries near-black instead.
 - **The pill never reads settings.** It is told which marker to paint; the caller supplies the
   configured Azure DevOps tag as the tooltip.
+- **Count presentation follows marker semantics.** Normal markers show one tag total. Interrupt
+  shows not-yet-accepted and accepted-in-sprint counts when both groups exist, otherwise one total.

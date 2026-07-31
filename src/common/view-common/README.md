@@ -45,11 +45,12 @@ renderer.
   content surface calls it before replacing or restoring that root.
 - `EnhancedViewContext` — `{ doc, queryId, properties, services? }`, everything a view needs to render,
   injected so a renderer never reaches for a global. `services` is optional: present for data-driven
-  views (carrying the tree loader, user directory, type catalog, sprint window, clock, logger), absent
-  for placeholder views.
+  views (carrying the tree loader, user directory, type catalog, sprint window/capacity loaders,
+  clock, logger), absent for placeholder views.
 - `EnhancedViewServices` — the cross-view data/service singletons injected at the composition root:
   `loadTree`, `featureCrew`, `writeField`, `reorderItem`, `currentTeam`, `userDirectory`, `mentionDirectory`, `getTypes`,
-  `getBoardColumns`, `markerTags`, `loadSprintWindow`, `now`, `logger`, `openDiagnosticsLog`. `writeField` persists
+  `getBoardColumns`, `markerTags`, `loadSprintWindow`, `loadSprintCapacity`, `now`, `logger`,
+  `openDiagnosticsLog`. `writeField` persists
   a single work item
   field change (e.g.
   `System.State` or a type's ETA date field) back to Azure DevOps, using the item's last-known rev as
@@ -65,6 +66,8 @@ renderer.
   `loadSprintWindow` is the single shared entry point every sprint-filtering view uses to populate its
   sprint picker: it resolves the configured team's iterations around the current one, each labelled by
   its offset, plus the name to select by default.
+  `loadSprintCapacity(iterationId)` reads the configured team's capacity roster for one selected
+  iteration; Sprint View refreshes it together with the query tree.
   `getBoardColumns` returns the team's global board columns in order so a status's color can be keyed
   off its board-column position (identical for every work-item type).
   `markerTags` returns the team's own Azure DevOps tag and comment token for each recognized condition
@@ -86,6 +89,8 @@ view — regardless of which bundle renders it — reuses the same consistent pa
 
 | Control            | Folder                                                             | What it renders                                                                                   |
 | ------------------ | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
+| `ActivityFilter`   | [`control/ActivityFilter`](./control/ActivityFilter/README.md)     | Shared recent-activity pills, predicates, and discussion-date cache.                              |
+| `AreaPathFilter`   | [`control/AreaPathFilter`](./control/AreaPathFilter/README.md)     | A compact full-path multi-select with shortest unique labels and configurable noun.               |
 | `AssignedTo`       | [`control/AssignedTo`](./control/AssignedTo/README.md)             | The assignee's name as clickable text that opens a people picker popup.                           |
 | `Breadcrumbs`      | [`control/Breadcrumbs`](./control/Breadcrumbs/README.md)           | A trail of clickable segments separated by a glyph (a "you are here").                            |
 | `DateLabel`        | [`control/DateLabel`](./control/DateLabel/README.md)               | A `MM/DD/YYYY` PST date label with a full-timestamp hover tooltip.                                |

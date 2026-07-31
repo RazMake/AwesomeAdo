@@ -57,12 +57,24 @@ The extension is feature-complete for its current scope:
   refused and the field itself is unchanged (ADR-030 amendment) — a drag-reorder, the rank fallback
   and a note posted through the comments API all bump `System.Rev` without reporting the new one, so
   the board's cached rev goes stale on its own.
-  `sprint` is still a placeholder shell;
-  `project-tracking` is now a **data-driven tree board**. Adding a view is a folder plus two
-  registrations — see the `add-enhanced-view` skill.
+  `sprint` is now a **data-driven queue** for flat or tree queries: its sticky header composes the
+  sprint picker, Lane and Project filters, refresh, write-queue state, capacity-backed team pills,
+  marker filters, and recent-activity filters. The Project filter lists only ancestor chains of work
+  surviving the sprint and other active filters, without narrowing its own alternatives. Team pills
+  show queue + active counters; marker-tag
+  pills show one selected-sprint total except Interrupt, which splits not-yet-accepted from
+  accepted-in-sprint work and collapses to one total when none are waiting. Unassigned is derived
+  from loaded work. All pill families use Project Tracking's compact Feature
+  Crew tag scale, including Project Tracking's activity and row sprint pills. Every filter pill stays
+  at full opacity; non-activity and recent-activity pills use separate wrapping families with a larger
+  gap in both views. The
+  sprint picker omits its filter toggle because Sprint View is always constrained to the selected
+  iteration. Refresh reloads the query, sprint window, and
+  selected iteration capacity together. `project-tracking` is a **data-driven tree board**. Adding a
+  view is a folder plus two registrations — see the `add-enhanced-view` skill.
 - Data-driven views depend on an injected `EnhancedViewServices` (optional field on
   `EnhancedViewContext`): `loadTree`, `userDirectory`, `getTypes`, `getBoardColumns`, `markerTags`,
-  `loadSprintWindow`, `noteLoader`,
+  `loadSprintWindow`, `loadSprintCapacity`, `noteLoader`,
   `noteWriter`, `now`, `logger`
   (ADR-032). The normalized tree model + loader/directory contracts live in `common/ado`
   (`TrackedWorkItem`, `TrackedUser`, `TypeCatalogEntry`, `TeamIteration`, `IWorkItemTreeLoader`,
@@ -87,20 +99,25 @@ The extension is feature-complete for its current scope:
   selection, sprint pick, session ordering pick, note-panel data/in-flight reads, and the
   `RecentNotesIndex`) plus a captured scroll offset, so a refresh keeps
   their place; it awaits `WorkItemWriteQueue.whenIdle()` first, keeps the board and reports on the
-  button when the re-read fails, and never touches ADO's own hidden grid (ADR-029). The tree is capped at
-  **two levels below the root** (`MAX_ROW_DEPTH = 1`); the level under the last rendered row is rolled up
-  inline by the shared `ChildItemsBadge` control as a `completed / total` chip (completed = the last board
-  column before Removed) tinted from the last configured type's color, whose popup lists each child as
-  `{AssignedTo} {title} {ETA} {type icon → ADO}` and honors the active sprint/tag filters (ADR-035).
+  button when the re-read fails, and never touches ADO's own hidden grid (ADR-029). The tree renders
+  every Primary-work type and the planning-context types above it; implementation-detail children
+  below the deepest Primary-work level are rolled up inline by the shared `ChildItemsBadge` control
+  as a `completed / total` chip (completed = the last board column before Removed) tinted from the
+  last configured type's color, whose popup lists each child as
+  `{AssignedTo} {title} {ETA} {type icon → ADO}`. Mixed sibling types can show Primary-work rows and
+  an implementation-detail badge together. Configurations with no Primary-work flags retain the
+  legacy two-level display (ADR-035, ADR-058).
+  Settings-backed view configuration changes invalidate and redraw the open enhanced view through
+  `QueryPageController` / `EnhancedViewSurface`; theme-only changes continue to recolor the existing
+  DOM without rebuilding it.
   Three of the binding's per-query properties are now honored: `orderingPolicy` sorts every level of the
   tree (and the rollup popup) through `common/ordering`, `days` drops an item once its Status has
   sat in the resolved column (the one before Removed) longer than that window, aged from
   `stateChangeDate`, and `weeks` now bounds how far back each item's **notes** are fetched. `hours`
   is honored by the **recent-activity pills** (`content/views/project-tracking/activity-filter`,
-  ADR-048): _Newly created_ / _Newly updated_ / _New notes_ sit in the board's single wrapping
-  `Filters:` row (tag pills first, activity pills, then marker pills last — every pill a direct child
-  of one flex row so
-  it reflows as one line), OR together, and combine with the sprint and tag filters. The first two
+  ADR-048): _Newly created_ / _Newly updated_ / _New notes_ sit in the board's wrapping `Filters:`
+  row as a separate family after the tag/marker family, OR together, and combine with the sprint and
+  tag filters. The first two
   read `createdDate` / `changedDate` off
   the tree; the third is answered by `RecentNotesIndex`, which reads discussions on demand (only when
   the pill is lit, only where `noteCount > 0`, ≤6 in flight, once per board), pages to the newest note
@@ -192,8 +209,9 @@ The extension is feature-complete for its current scope:
   it; Pull Now and explicit conflict-aware Publish controls are available in Appearance. The trusted
   item id syncs separately, unchanged pulls do not rewrite storage, and Disconnect leaves the last
   pulled local snapshot intact.
-- Options page: Appearance (Dark/Light/Blue theme, Follow ADO dark/light resolution, default view + Configuration Sharing), Azure DevOps config, Query
-  Bindings manager, Diagnostics.
+- Options page: Appearance (Dark/Light/Blue theme, Follow ADO dark/light resolution, default view +
+  Configuration Sharing), Azure DevOps config (including hierarchy Primary work classification with
+  a context-only root), Query Bindings manager, Diagnostics.
 - SPA-aware navigation via the background service worker.
 - Device-local, source-tagged diagnostics log (`src/common/logging`): every line carries the
   component folder that owns the emitting code (e.g. `content/query-page`, `common/settings`,

@@ -5,9 +5,8 @@ inside the binding's **Recent changes window (hours)**.
 
 ## Behavior
 
-- Three pills: **Newly created**, **Newly updated**, **New notes**. They close the board's single
-  filter row, after the tag pills, and read a step larger than them because they are the board's
-  coarse "what changed?" switch rather than a per-row label.
+- Three pills: **Newly created**, **Newly updated**, **New notes**. They use the same compact geometry
+  and full opacity as the other pills, but sit in a separate family after a larger gap.
 - Lit pills form an **OR** (an item shows if it matches any of them), exactly like the tag filter.
   An empty selection leaves the board unnarrowed.
 - The window is named in each pill's tooltip ("Items created in the last 24 hours."), so "newly" is
@@ -57,9 +56,7 @@ worker, an injected MAIN-world script, two credentialed fetches), which drives e
 - **`notesPending: boolean`** — true while discussions are still being read; shown on the notes pill.
 - **`onChange: (selected) => void`** — called after a toggle so the caller re-filters the tree.
 
-The pills are returned **loose**, not wrapped in a panel: they share the board's single wrapping
-filter row (`Filters:` label → tag pills → these), and a wrapper around this group would make it
-wrap independently of the rest of the row instead of flowing as one line.
+The pills are returned **loose** so each view can place them in its shared activity family.
 
 ### `recentActivity.ts`
 

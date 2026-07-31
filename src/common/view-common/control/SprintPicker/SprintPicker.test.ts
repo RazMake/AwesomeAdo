@@ -121,6 +121,21 @@ describe("renderSprintPicker - default selection and empty state", () => {
 });
 
 describe("renderSprintPicker - filter enable state", () => {
+  it("can omit the filter button and keep sprint filtering active", () => {
+    const handle = renderSprintPicker(document, {
+      sprints: [{ path: "Team\\Sprint 1", name: "Sprint 1" }],
+      showFilterButton: false,
+      filterActive: false,
+    });
+
+    expect(handle.element.querySelector(".awesomeado-sprint-picker__button")).toBeNull();
+    expect(
+      handle.element.querySelector<HTMLSelectElement>(".awesomeado-sprint-picker__select")
+        ?.disabled,
+    ).toBe(false);
+    expect(handle.isFilterActive()).toBe(true);
+  });
+
   it("disables the select while the filter is inactive", () => {
     const handle = renderSprintPicker(document, {
       sprints: [{ path: "Team\\Sprint 1", name: "Sprint 1" }],

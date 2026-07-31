@@ -289,19 +289,43 @@ describe("parseTrackedTree - nested tree", () => {
   });
 });
 
-describe("parseTrackedTree - query shape guards", () => {
-  it("returns isTreeQuery:false for a flat query", () => {
+describe("parseTrackedTree - flat queries", () => {
+  it("hydrates flat-query items as ordered childless roots", () => {
     const raw: AdoRawTree = {
       wiql: {
         queryType: "flat",
         workItems: [{ id: 1 }, { id: 2 }],
       },
-      items: [],
+      items: [
+        {
+          id: 1,
+          rev: 2,
+          fields: {
+            "System.WorkItemType": "Feature",
+            "System.Title": "First",
+            "System.State": "Active",
+          },
+        },
+        {
+          id: 2,
+          rev: 3,
+          fields: {
+            "System.WorkItemType": "User Story",
+            "System.Title": "Second",
+            "System.State": "New",
+          },
+        },
+      ],
     };
     const result = parseTrackedTree(raw, new Map());
-    expect(result).toEqual({ isTreeQuery: false, roots: [], error: null, folderPath: [] });
+    expect(result.isTreeQuery).toBe(false);
+    expect(result.error).toBeNull();
+    expect(result.roots.map((item) => item.title)).toEqual(["First", "Second"]);
+    expect(result.roots.every((item) => item.children.length === 0)).toBe(true);
   });
+});
 
+describe("parseTrackedTree - query shape guards", () => {
   it("returns isTreeQuery:false with error for missing wiql", () => {
     const raw: AdoRawTree = {
       wiql: null,

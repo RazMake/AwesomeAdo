@@ -7,9 +7,23 @@ import type { IActiveViewOverrides } from "../active-view/IActiveViewOverrides";
 
 import type { EnhancedViewRequest, EnhancedViewSurface } from "./EnhancedViewSurface";
 
+/** Settings read through EnhancedViewServices; theme and routing are applied separately. */
+function viewConfigurationSignature(settings: ExtensionSettings): string {
+  return JSON.stringify({
+    currentTeam: settings.currentTeam,
+    futureSprintsCount: settings.futureSprintsCount,
+    pastSprintsCount: settings.pastSprintsCount,
+    areaPaths: settings.areaPaths,
+    boardColumns: settings.boardColumns,
+    workItemTypes: settings.workItemTypes,
+    markerTags: settings.markerTags,
+  });
+}
+
 /** Combines the current setting and URL so enhancement never leaks outside an ADO Query route. */
 export class QueryPageController {
   private settings: ExtensionSettings | undefined;
+  private viewConfigurationSignature: string | undefined;
   private bindings: QueryBindings | undefined;
   // The last conclusion handed to the surface, so the enhance/plain decision is logged only when it
   // actually changes — refresh() runs on every settings, bindings, and navigation event, and logging
@@ -24,6 +38,17 @@ export class QueryPageController {
   ) {}
 
   applySettings(settings: ExtensionSettings): void {
+    const nextViewConfigurationSignature = viewConfigurationSignature(settings);
+    if (
+      this.viewConfigurationSignature !== undefined &&
+      nextViewConfigurationSignature !== this.viewConfigurationSignature
+    ) {
+      this.surface.invalidate();
+      this.logger.info(
+        "Query page refresh: viewConfigurationChanged=true, outcome=redraw enhanced view",
+      );
+    }
+    this.viewConfigurationSignature = nextViewConfigurationSignature;
     this.settings = settings;
     // The chosen theme drives the whole enhanced view, not just whether it shows, so hand it to the
     // surface every settings change — a theme flip re-themes the open view without a rebuild.

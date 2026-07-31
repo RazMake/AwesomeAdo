@@ -450,6 +450,10 @@
 
 ## ADR-035: Project Tracking renders two child levels and rolls the rest into `ChildItemsBadge`
 
+> **Superseded in part by ADR-058.** Two levels remain only as the compatibility fallback for
+> configurations with no Primary-work classification. Classified hierarchies use the delivery
+> boundary described by ADR-058.
+
 - Decision: The Project Tracking tree renders at most **two levels below the root** (`MAX_ROW_DEPTH = 1`
   in `ProjectTrackingView`: the root's children at depth 0, theirs at depth 1). A row at the last
   rendered level gets **no twisty**; its children are summarized inline by the shared
@@ -1048,3 +1052,27 @@ Markdown` in one `/rev`-guarded JSON Patch. The PATCH is not retried; a concurre
   publisher requires strict repository enablement when it starts and rechecks it immediately before
   publishing an official release; it does not require the organization-only field. The existing
   baseline version remains the identifier for this reviewed personal-owner control set.
+
+## ADR-058: Hierarchy delivery classification uses Primary work
+
+- Decision: A configured work-item type may carry `isPrimaryWork: true`, shown in the hierarchy as a
+  **Primary work** checkbox. Primary work means independently trackable delivery. Unchecked levels
+  above it are **Planning context**; unchecked levels below it are **Implementation details**. The
+  first/root type is always planning context: its checkbox is disabled and normalization removes the
+  flag from imported or stored data.
+- Rationale: Azure DevOps calls every entity a work item, so “work item” cannot distinguish an Epic
+  from a User Story. A binary “context/work” label also misclassifies Task-like levels that support
+  delivery but do not stand on their own. Naming the positive boundary Primary work gives one useful
+  flag while position supplies the two unchecked meanings. In Epic → Feature → User Story → Task,
+  Epic and Feature are planning context, User Story is primary work, and Task is an implementation
+  detail.
+- Amendment: Project Tracking carries `isPrimaryWork` into its type catalog and renders every Primary
+  type plus the planning-context types on paths above one as tree rows. Direct children below that
+  boundary render in `ChildItemsBadge`; sibling child types may split between rows and a badge. A
+  Primary leaf therefore appears as child rows, while the same leaf left unchecked appears in the
+  badge. Configurations with no Primary flags retain ADR-035's two-level behavior for compatibility.
+- Amendment: `QueryPageController` fingerprints the settings consumed through
+  `EnhancedViewServices` and invalidates `EnhancedViewSurface` when that configuration changes, so
+  an open Project Tracking view redraws immediately after a Primary-work edit. Theme and routing
+  settings stay outside that fingerprint: theme changes recolor the existing DOM, while default-view
+  changes continue through the controller's ordinary show/restore decision.
