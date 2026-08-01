@@ -61,6 +61,7 @@ interface SprintSession {
   recentNotes: RecentNotesIndex;
   repaintQueuedOnNotes: boolean;
   expandedDoneIds: Set<number>;
+  openChildPopupIds: Set<number>;
 }
 
 interface LoadedSprintData {
@@ -72,6 +73,7 @@ interface LoadedSprintData {
 interface DisplayItem extends SprintBoardItem {
   item: TrackedWorkItem;
   parent: TrackedWorkItem | null;
+  ancestors: readonly TrackedWorkItem[];
   depth: number;
   ancestorIds: number[];
   chain: string[];
@@ -80,6 +82,83 @@ interface DisplayItem extends SprintBoardItem {
 interface SprintBoardHandle {
   refresh: RefreshButtonHandle;
   queueStatus: WriteQueueStatusHandle;
+}
+
+interface StickyHeaderObservation {
+  resizeObserver?: ResizeObserver;
+  stop(): void;
+}
+
+const stickyHeaderObservers = new WeakMap<HTMLElement, StickyHeaderObservation>();
+
+function stopObservingStickyHeader(root: HTMLElement): void {
+  stickyHeaderObservers.get(root)?.stop();
+  stickyHeaderObservers.delete(root);
+}
+
+function updateStickyColumnHeader(root: HTMLElement, boardHeader: HTMLElement): void {
+  const stickyTop = Number.parseFloat(
+    root.style.getPropertyValue("--awesomeado-sprint-column-header-top"),
+  );
+  const stickyViewportTop = (root.parentElement?.getBoundingClientRect().top ?? 0) + stickyTop;
+  const bounds = boardHeader.getBoundingClientRect();
+  const isSticky = bounds.top <= stickyViewportTop + 0.5 && bounds.bottom > stickyViewportTop;
+  boardHeader.toggleAttribute("data-stuck", isSticky);
+  for (const heading of boardHeader.querySelectorAll<HTMLElement>(
+    ".awesomeado-sprint__column-title",
+  )) {
+    const background = isSticky
+      ? heading.dataset.stickyBackground
+      : heading.dataset.restingBackground;
+    const opacity = isSticky ? heading.dataset.stickyOpacity : heading.dataset.restingOpacity;
+    if (background !== undefined) {
+      heading.style.setProperty("--sprint-column-header-background", background);
+    }
+    if (opacity !== undefined) {
+      heading.style.setProperty("--sprint-column-header-opacity", opacity);
+    }
+  }
+}
+
+function observeStickyHeader(root: HTMLElement): void {
+  stopObservingStickyHeader(root);
+  const header = root.querySelector<HTMLElement>(".awesomeado-sprint__header");
+  if (header === null) return;
+  const boardHeader = root.querySelector<HTMLElement>(".awesomeado-sprint__board-header");
+  if (boardHeader === null) return;
+  const scrollport = root.parentElement;
+  if (scrollport === null) return;
+  const updateHeader = (): void => updateStickyColumnHeader(root, boardHeader);
+  const updateOffset = (): void => {
+    const margin = Number.parseFloat(header.style.marginBottom) || 0;
+    root.style.setProperty(
+      "--awesomeado-sprint-column-header-top",
+      `${header.offsetHeight + margin}px`,
+    );
+    root.style.setProperty(
+      "--awesomeado-sprint-board-header-height",
+      `${boardHeader.offsetHeight}px`,
+    );
+    updateStickyColumnHeader(root, boardHeader);
+  };
+  updateOffset();
+  scrollport.addEventListener("scroll", updateHeader);
+  root.ownerDocument.defaultView?.addEventListener("resize", updateHeader);
+  const ResizeObserverConstructor = root.ownerDocument.defaultView?.ResizeObserver;
+  const resizeObserver =
+    ResizeObserverConstructor === undefined
+      ? undefined
+      : new ResizeObserverConstructor(updateOffset);
+  resizeObserver?.observe(header);
+  resizeObserver?.observe(boardHeader);
+  stickyHeaderObservers.set(root, {
+    resizeObserver,
+    stop: () => {
+      resizeObserver?.disconnect();
+      scrollport.removeEventListener("scroll", updateHeader);
+      root.ownerDocument.defaultView?.removeEventListener("resize", updateHeader);
+    },
+  });
 }
 
 interface SprintWriteState {
@@ -131,6 +210,7 @@ function createSession(context: DataDrivenViewContext): SprintSession {
     ),
     repaintQueuedOnNotes: false,
     expandedDoneIds: new Set<number>(),
+    openChildPopupIds: new Set<number>(),
   };
 }
 
@@ -140,16 +220,17 @@ function flattenItems(roots: readonly TrackedWorkItem[]): DisplayItem[] {
     item: TrackedWorkItem,
     depth: number,
     ancestorIds: number[],
+    ancestors: TrackedWorkItem[],
     chain: string[],
     parent: TrackedWorkItem | null,
   ): void => {
     const nextChain = [...chain, item.title];
-    result.push({ item, parent, depth, ancestorIds, chain: nextChain });
+    result.push({ item, parent, ancestors, depth, ancestorIds, chain: nextChain });
     for (const child of item.children) {
-      visit(child, depth + 1, [...ancestorIds, item.id], nextChain, item);
+      visit(child, depth + 1, [...ancestorIds, item.id], [...ancestors, item], nextChain, item);
     }
   };
-  for (const root of roots) visit(root, 0, [], [], null);
+  for (const root of roots) visit(root, 0, [], [], [], null);
   return result;
 }
 
@@ -634,6 +715,14 @@ function renderBoard(
       boardColumns: context.services.getBoardColumns(),
       writes,
       expandedDoneIds: session.expandedDoneIds,
+      openChildPopupIds: session.openChildPopupIds,
+      team: context.services.currentTeam(),
+      assigneeSuggestions: () =>
+        data.teamMembers.members.map(({ displayName, uniqueName, imageUrl }) => ({
+          displayName,
+          uniqueName,
+          imageUrl,
+        })),
       onItemChanged: repaint,
     }),
   );
@@ -703,9 +792,11 @@ function startSprintView(context: DataDrivenViewContext, root: HTMLElement): voi
     board = rendered.handle;
     board.refresh.setFailed(refreshFailed);
     root.replaceChildren(rendered.element);
+    queueMicrotask(() => observeStickyHeader(root));
   };
 
   const showLoading = (): void => {
+    stopObservingStickyHeader(root);
     const loading = context.doc.createElement("div");
     loading.className = "awesomeado-sprint__loading";
     loading.textContent = "Loading spring data...";
@@ -795,4 +886,5 @@ export const sprintView: EnhancedView = {
     startSprintView(dataContext, root);
     return root;
   },
+  dispose: stopObservingStickyHeader,
 };

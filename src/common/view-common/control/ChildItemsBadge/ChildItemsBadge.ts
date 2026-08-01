@@ -63,6 +63,8 @@ export interface ChildItemsBadgeOptions {
   children: ChildItemDescriptor[];
   /** Whether the popup opens immediately when the badge is rendered. Defaults to false. */
   initiallyOpen?: boolean;
+  /** Reports popup open/close changes so an owning draggable surface can suspend its drag handle. */
+  onOpenChange?: (open: boolean) => void;
   /**
    * How many of `children` are completed (the numerator of "completed / total"). Completion is a
    * board-column decision the caller owns, so it is passed in rather than derived here.
@@ -176,7 +178,7 @@ function tintFromColor(color: string | null | undefined): {
  * (the caller decides whether to show it at all).
  */
 export function renderChildItemsBadge(doc: Document, options: ChildItemsBadgeOptions): HTMLElement {
-  const { children, completedCount, color, initiallyOpen = false } = options;
+  const { children, completedCount, color, initiallyOpen = false, onOpenChange } = options;
 
   // Root container: position:relative so the popup anchors to it.
   const root = doc.createElement("span");
@@ -212,6 +214,8 @@ export function renderChildItemsBadge(doc: Document, options: ChildItemsBadgeOpt
     trigger: badge,
     mountInto: root,
     buildPopup: (close) => buildPopup(doc, children, close),
+    onOpened: () => onOpenChange?.(true),
+    onClosed: () => onOpenChange?.(false),
   });
   if (initiallyOpen) {
     // A reorder rebuilds the board while this control is detached. Opening synchronously gives the

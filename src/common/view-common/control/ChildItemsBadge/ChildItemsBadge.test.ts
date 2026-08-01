@@ -117,6 +117,16 @@ describe("renderChildItemsBadge - badge and popup rendering", () => {
     expect(rows).toHaveLength(2);
   });
 
+  it("reports popup open and close state", () => {
+    const onOpenChange = vi.fn();
+    const root = openPopup({ children: [childOf()], completedCount: 0, onOpenChange });
+
+    expect(onOpenChange).toHaveBeenLastCalledWith(true);
+    badgeOf(root).click();
+
+    expect(onOpenChange).toHaveBeenLastCalledWith(false);
+  });
+
   it("waits until the rebuilt badge is mounted before reopening its popup", async () => {
     const root = renderChildItemsBadge(document, {
       children: [childOf()],

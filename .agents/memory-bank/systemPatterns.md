@@ -125,6 +125,11 @@ wrapping family and `16px` between families. Selected pills use their themed bor
 these shared modules directly; Project Tracking's legacy local paths are thin compatibility exports,
 preserving the eager Sprint / deferred Project Tracking bundle split.
 
+`control/DragReorder` owns the DOM controller, themed insertion indicator, and pure neighbour-based
+placement math shared by Project Tracking rows and Sprint direct-child popups. Views register only
+the rows they permit to move and retain ownership of persistence and model mutation. Project
+Tracking's legacy drag-reorder paths are compatibility exports; its tree mutation remains local.
+
 ### `src/common/ordering`
 
 `ItemOrdering` — the single definition of what "most important first" / "a–z" / "by ETA" mean:
@@ -200,9 +205,21 @@ Split into component subfolders (each with its own `README.md`):
   configured team's complete paged roster before executing its tree on every refresh. The original
   saved WIQL loads independently and is rewritten with the selected sprint's current-iteration
   offset; results retain team-assigned or unassigned work plus their parent chains. Its first four
-  configured application-state columns use theme-owned neutral/blue/amber/green paint; area paths
-  form rows. Only explicitly configured Primary-work types become cards; each card delegates its
-  direct-child progress and level-one popup to the shared `ChildItemsBadge`. Cards are
+  configured application-state columns use quiet theme-owned neutral/blue/amber/green fills with
+  high-contrast semantic titles that stay lightly tinted at rest and gain 90%-opaque themed
+  backings only while pinned over scrolling cards below the sticky control header; area paths form
+  rows whose names and per-row item counts stick vertically until the next row pushes them away. No
+  table-wide total is shown. Only explicitly
+  configured Primary-work types become cards; each card delegates its
+  direct-child progress and level-one popup to the shared `ChildItemsBadge`; ID and the tag-free
+  shared `AssignedTo` control occupy the top corners in both card sizes. ETA and child progress share
+  the row below the title, aligned left and right. Assigned To and ETA are read-only while a Done card
+  is compact and become editable when it expands. Cards within each lane/state cell and direct child
+  rows are ordered by the shared manual backlog-rank policy. Child rows use editable shared Assigned
+  To and ETA controls and title-handle sibling reorder; opening their popup suspends the owning card's
+  drag source until every dismissal path closes it. Parent context uses a clickable type icon/title;
+  its popup lists ancestors from the root down to the immediate parent with type-derived colors and
+  shared ETA controls. Cards are
   persist-then-reflect draggable: a cross-column drop writes the destination
   type mapping's primary ADO state, a cross-lane drop writes `System.AreaPath`, and a diagonal move
   sends both in one revision-guarded patch. Lane and Project

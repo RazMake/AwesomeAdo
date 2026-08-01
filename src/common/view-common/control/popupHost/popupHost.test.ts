@@ -92,6 +92,28 @@ describe("createPopupHost - open and toggle", () => {
     expect(onOpened).toHaveBeenCalledTimes(1);
     expect(document.activeElement).toBe(input);
   });
+
+  it("reports each close regardless of how the popup is dismissed", () => {
+    const trigger = document.createElement("button");
+    const mountInto = document.createElement("div");
+    mountInto.append(trigger);
+    document.body.append(mountInto);
+    const onClosed = vi.fn();
+    createPopupHost({
+      doc: document,
+      trigger,
+      mountInto,
+      buildPopup: () => document.createElement("div"),
+      onClosed,
+    });
+
+    trigger.click();
+    trigger.click();
+    trigger.click();
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+
+    expect(onClosed).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("createPopupHost - dismissal and lifecycle", () => {

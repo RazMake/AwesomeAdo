@@ -143,7 +143,10 @@ async function render(overrides: Partial<EnhancedViewServices> = {}): Promise<HT
     properties: {},
     services: services(overrides),
   });
-  document.body.append(root);
+  const host = document.createElement("div");
+  host.style.overflow = "auto";
+  host.append(root);
+  document.body.append(host);
   await vi.waitFor(() => expect(root.querySelector(".awesomeado-sprint__header")).not.toBeNull());
   return root;
 }
@@ -228,16 +231,28 @@ function workCardTree(): TrackedWorkItem[] {
   const queuedChild = item(4, "Queued child", { type: "Task", children: [grandchild] });
   const doneChild = item(5, "Done child", { type: "Task", state: "Done" });
   return [
-    item(1, "Parent feature", {
-      type: "Feature",
-      iterationPath: "Project\\Backlog",
-      sprintName: "Backlog",
+    item(0, "Program epic", {
+      type: "Epic",
+      eta: "2026-08-24T12:00:00Z",
       children: [
-        item(2, "A long queued title that wraps onto another line", {
-          tags: ["Blocked", "Unrecognized"],
-          children: [queuedChild],
+        item(1, "Parent feature", {
+          type: "Feature",
+          eta: "2026-08-17T12:00:00Z",
+          iterationPath: "Project\\Backlog",
+          sprintName: "Backlog",
+          children: [
+            item(2, "A long queued title that wraps onto another line", {
+              eta: "2026-08-10T12:00:00Z",
+              tags: ["Blocked", "Unrecognized"],
+              children: [queuedChild],
+            }),
+            item(3, "Completed story", {
+              state: "Done",
+              eta: "2026-07-30T12:00:00Z",
+              children: [doneChild],
+            }),
+          ],
         }),
-        item(3, "Completed story", { state: "Done", children: [doneChild] }),
       ],
     }),
   ];
@@ -252,24 +267,165 @@ function workCardTypes() {
   return [
     {
       ...story,
+      name: "Epic",
+      color: "#b04717",
+      isPrimaryWork: false,
+      etaField: "Custom.EpicETA",
+      children: ["Feature"],
+      columns,
+    },
+    {
+      ...story,
       name: "Feature",
       color: "#654ea3",
       isPrimaryWork: false,
+      etaField: "Custom.FeatureETA",
       children: ["Story"],
       columns,
     },
-    { ...story, color: "#0078d4", children: ["Task"], columns },
-    { ...story, name: "Task", color: "#f2cb1d", isPrimaryWork: false, children: ["Subtask"] },
+    {
+      ...story,
+      color: "#0078d4",
+      etaField: "Custom.StoryETA",
+      children: ["Task"],
+      columns,
+    },
+    {
+      ...story,
+      name: "Task",
+      color: "#f2cb1d",
+      isPrimaryWork: false,
+      etaField: "Custom.TaskETA",
+      children: ["Subtask"],
+    },
     { ...story, name: "Subtask", isPrimaryWork: false, children: [] },
   ];
 }
 
-function expectWorkCards(root: HTMLElement): void {
+function expectStickyColumnHeader(root: HTMLElement, headings: readonly HTMLElement[]): void {
+  const boardHeader = root.querySelector<HTMLElement>(".awesomeado-sprint__board-header")!;
+  expect(boardHeader.style.position).toBe("sticky");
+  expect(boardHeader.style.top).toBe("var(--awesomeado-sprint-column-header-top,0px)");
+  expect(boardHeader.style.background).toBe("transparent");
+  const laneHeading = root.querySelector<HTMLElement>(".awesomeado-sprint__lane-heading")!;
+  expect(laneHeading.textContent).toBe("");
+  expect(laneHeading.style.background).toBe("var(--background-color)");
+  expect(laneHeading.style.borderTopLeftRadius).toBe("3px");
+  expect(root.querySelector<HTMLElement>(".awesomeado-sprint__filters")!.style.position).toBe("");
+  expect(root.style.getPropertyValue("--awesomeado-sprint-column-header-top")).toBe("12px");
+  root.parentElement!.getBoundingClientRect = () => ({ top: 48 }) as DOMRect;
+  boardHeader.getBoundingClientRect = () => ({ top: 60, bottom: 92 }) as unknown as DOMRect;
+  root.parentElement!.dispatchEvent(new Event("scroll"));
+  expect(boardHeader.hasAttribute("data-stuck")).toBe(true);
   expect(
-    [...root.querySelectorAll(".awesomeado-sprint__column-title")].map(
-      (heading) => heading.textContent,
+    headings.map((heading) => heading.style.getPropertyValue("--sprint-column-header-background")),
+  ).toEqual([
+    "linear-gradient(var(--status-neutral-background),var(--status-neutral-background)),var(--background-color)",
+    "linear-gradient(var(--status-blue-background),var(--status-blue-background)),var(--background-color)",
+    "linear-gradient(var(--status-yellow-background),var(--status-yellow-background)),var(--background-color)",
+    "linear-gradient(var(--status-green-background),var(--status-green-background)),var(--background-color)",
+  ]);
+  expect(
+    headings.map((heading) => heading.style.getPropertyValue("--sprint-column-header-opacity")),
+  ).toEqual(Array.from({ length: 4 }, () => "0.9"));
+}
+
+function expectBoardScrolling(root: HTMLElement): void {
+  const scroller = root.querySelector<HTMLElement>(".awesomeado-sprint__board-scroller")!;
+  const headerGrid = root.querySelector<HTMLElement>(".awesomeado-sprint__board-header-grid")!;
+  scroller.scrollLeft = 48;
+  scroller.dispatchEvent(new Event("scroll"));
+  expect(headerGrid.style.transform).toBe("translateX(-48px)");
+  const lane = root.querySelector<HTMLElement>(".awesomeado-sprint__lane")!;
+  expect(lane.style.position).toBe("sticky");
+  expect(lane.style.left).toBe("");
+  expect(lane.style.marginBottom).toBe("1px");
+  expect(lane.style.top).toBe(
+    "calc(var(--awesomeado-sprint-column-header-top,0px) + var(--awesomeado-sprint-board-header-height,0px))",
+  );
+  expect(lane.style.borderTop).toBe("");
+  expect(lane.style.borderRight).toBe("1px solid var(--control-border)");
+  expect(lane.style.borderBottom).toBe("");
+  expect(lane.style.boxShadow).toBe("");
+  expect(lane.closest(".awesomeado-sprint__lane-row")).not.toBeNull();
+  expect(lane.querySelector(".awesomeado-sprint__lane-name")?.textContent).toBe("Platform");
+  expect(lane.querySelector(".awesomeado-sprint__lane-count")?.textContent).toBe("2 items");
+  expect(lane.querySelector<HTMLElement>(".awesomeado-sprint__lane-name")!.style.fontSize).toBe(
+    "13.2px",
+  );
+  expect(lane.querySelector<HTMLElement>(".awesomeado-sprint__lane-count")!.style.opacity).toBe(
+    "0.65",
+  );
+  expect(root.querySelector<HTMLElement>(".awesomeado-sprint__lane-grid")!.style.transform).toBe(
+    "translateX(-48px)",
+  );
+}
+
+function expectParentHierarchyPopup(card: HTMLElement): void {
+  const parent = card.querySelector<HTMLElement>(".awesomeado-sprint-card__parent")!;
+  expect(parent.querySelector(".awesomeado-type-icon")).not.toBeNull();
+  expect(parent.querySelector(".awesomeado-sprint-card__parent-title")?.textContent).toBe(
+    "Parent feature",
+  );
+  const trigger = parent.querySelector<HTMLButtonElement>(
+    ".awesomeado-sprint-card__parent-trigger",
+  )!;
+  expect(trigger.style.color).toBe("color-mix(in srgb, #654ea3 62%, var(--text-primary-color))");
+  expect(parent.style.marginTop).toBe("3px");
+  expect(card.textContent).not.toContain("Parent:");
+  expect(card.textContent).not.toContain("#1");
+  trigger.click();
+  const rows = [...parent.querySelectorAll<HTMLElement>(".awesomeado-sprint-card__parent-row")];
+  expect(rows.map((row) => row.dataset.itemId)).toEqual(["0", "1"]);
+  expect(rows.map((row) => row.textContent)).toEqual([
+    "Program epicETA 08/24/2026",
+    "Parent featureETA 08/17/2026",
+  ]);
+  expect(
+    rows.map(
+      (row) =>
+        row.querySelector<HTMLElement>(".awesomeado-sprint-card__parent-identity")!.style.color,
     ),
-  ).toEqual(CUSTOM_COLUMNS.slice(0, 4));
+  ).toEqual([
+    "color-mix(in srgb, #b04717 62%, var(--text-primary-color))",
+    "color-mix(in srgb, #654ea3 62%, var(--text-primary-color))",
+  ]);
+}
+
+function expectWorkCards(root: HTMLElement): void {
+  const headings = [...root.querySelectorAll<HTMLElement>(".awesomeado-sprint__column-title")];
+  expect(headings.map((heading) => heading.textContent)).toEqual(CUSTOM_COLUMNS.slice(0, 4));
+  expect(headings.map((heading) => heading.style.color)).toEqual([
+    "var(--status-neutral-foreground)",
+    "var(--status-blue-foreground)",
+    "var(--status-yellow-foreground)",
+    "var(--status-green-foreground)",
+  ]);
+  expect(headings.map((heading) => heading.style.background)).toEqual(
+    Array.from({ length: 4 }, () => "transparent"),
+  );
+  const backdrops = headings.map((heading) =>
+    heading.querySelector<HTMLElement>(".awesomeado-sprint__column-title-backdrop")!,
+  );
+  expect(backdrops.map((backdrop) => backdrop.style.background)).toEqual(
+    Array.from({ length: 4 }, () => "var(--sprint-column-header-background)"),
+  );
+  expect(backdrops.map((backdrop) => backdrop.style.opacity)).toEqual(
+    Array.from({ length: 4 }, () => "var(--sprint-column-header-opacity)"),
+  );
+  expect(
+    headings.map((heading) => heading.style.getPropertyValue("--sprint-column-header-background")),
+  ).toEqual([
+    "color-mix(in srgb,var(--status-neutral-background) 75%,transparent)",
+    "color-mix(in srgb,var(--status-blue-background) 75%,transparent)",
+    "color-mix(in srgb,var(--status-yellow-background) 75%,transparent)",
+    "color-mix(in srgb,var(--status-green-background) 75%,transparent)",
+  ]);
+  expect(
+    headings.map((heading) => heading.style.getPropertyValue("--sprint-column-header-opacity")),
+  ).toEqual(Array.from({ length: 4 }, () => "1"));
+  expectStickyColumnHeader(root, headings);
+  expectBoardScrolling(root);
   const queued = root.querySelector<HTMLElement>('[data-item-id="2"]')!;
   expect(queued.dataset.size).toBe("large");
   expect(
@@ -277,14 +433,25 @@ function expectWorkCards(root: HTMLElement): void {
       (card) => card.draggable,
     ),
   ).toBe(true);
-  expect(queued.textContent).toContain("#2");
-  expect(queued.textContent).toContain("Alice");
+  const meta = queued.querySelector<HTMLElement>(".awesomeado-sprint-card__meta")!;
+  expect(queued.firstElementChild).toBe(meta);
+  expect(meta.querySelector(".awesomeado-sprint-card__id")?.textContent).toBe("#2");
+  expect(meta.querySelector(".awesomeado-assigned__name")?.textContent).toBe("Alice");
+  expect(meta.querySelector(".awesomeado-tag-pill")).toBeNull();
   expect(queued.textContent).toContain("Blocked");
   expect(queued.textContent).not.toContain("Unrecognized");
-  expect(queued.textContent).toContain("Parent feature");
+  const title = queued.querySelector(".awesomeado-sprint-card__title")!;
+  const footer = queued.querySelector<HTMLElement>(".awesomeado-sprint-card__footer")!;
+  expect(title.nextElementSibling).toBe(footer);
+  expect(footer.firstElementChild?.textContent).toBe("ETA 08/10/2026");
+  expect(footer.lastElementChild?.textContent).toBe("0 / 1");
+  expect(footer.lastElementChild?.getAttribute("style")).toContain("margin-left: auto");
+  expectParentHierarchyPopup(queued);
   expect(queued.style.getPropertyValue("--sprint-item-type-color")).toBe("#0078d4");
   expect(root.querySelectorAll(".awesomeado-sprint__item")).toHaveLength(2);
-  for (const id of [1, 4, 5]) expect(root.querySelector(`[data-item-id="${id}"]`)).toBeNull();
+  for (const id of [0, 1, 4, 5]) {
+    expect(root.querySelector(`.awesomeado-sprint__item[data-item-id="${id}"]`)).toBeNull();
+  }
 }
 
 function expectDirectChildBadge(root: HTMLElement): void {
@@ -299,12 +466,30 @@ function expectDirectChildBadge(root: HTMLElement): void {
 function expectCompactDoneCard(root: HTMLElement): void {
   const done = root.querySelector<HTMLElement>('[data-item-id="3"]')!;
   const details = done.querySelector<HTMLElement>(".awesomeado-sprint-card__details")!;
+  const meta = done.querySelector<HTMLElement>(".awesomeado-sprint-card__meta")!;
   expect(done.dataset.size).toBe("compact");
+  expect(done.firstElementChild).toBe(meta);
+  expect(meta.querySelector(".awesomeado-sprint-card__id")?.textContent).toBe("#3");
+  expect(meta.querySelector(".awesomeado-assigned__name")?.textContent).toBe("Alice");
+  expect(done.querySelector(".awesomeado-sprint-card__eta")?.textContent).toBe("ETA 07/30/2026");
   expect(done.querySelector(".awesomeado-child-items__badge")?.textContent).toBe("1 / 1");
   expect(details.style.display).toBe("none");
+  const assignee = done.querySelector<HTMLButtonElement>(".awesomeado-assigned__name")!;
+  const eta = done.querySelector<HTMLElement>(".awesomeado-sprint-card__eta")!;
+  assignee.click();
+  eta.querySelector<HTMLElement>(".awesomeado-eta__label")!.click();
+  expect(assignee.disabled).toBe(true);
+  expect(eta.getAttribute("aria-disabled")).toBe("true");
+  expect(done.querySelector(".awesomeado-assigned__popup")).toBeNull();
+  expect(done.querySelector(".awesomeado-eta__popup")).toBeNull();
   done.click();
   expect(done.dataset.size).toBe("large");
   expect(details.style.display).toBe("flex");
+  expect(assignee.disabled).toBe(false);
+  expect(eta.getAttribute("aria-disabled")).toBe("false");
+  done.querySelector<HTMLButtonElement>(".awesomeado-sprint-card__parent-trigger")!.click();
+  expect(done.dataset.size).toBe("large");
+  expect(done.querySelector(".awesomeado-sprint-card__parent-popup")).not.toBeNull();
 }
 
 async function verifyWorkCardRendering(): Promise<void> {
@@ -324,6 +509,213 @@ describe("Sprint View board", () => {
     "renders only work-flagged cards and direct children in the shared badge",
     verifyWorkCardRendering,
   );
+
+  it("persists assignee and ETA changes through the card controls", async () => {
+    const writeField = vi
+      .fn<EnhancedViewServices["writeField"]>()
+      .mockResolvedValueOnce({ ok: true, rev: 2 })
+      .mockResolvedValueOnce({ ok: true, rev: 3 });
+    const root = await render({
+      loadTree: async () => ({ isTreeQuery: false, roots: [item(1, "Editable")], error: null }),
+      getTypes: () =>
+        services()
+          .getTypes()
+          .map((type) => ({ ...type, etaField: "Custom.StoryETA" })),
+      writeField,
+    });
+
+    const assignee = root.querySelector<HTMLElement>(".awesomeado-sprint-card__assignee")!;
+    const assigneeName = assignee.querySelector<HTMLButtonElement>(".awesomeado-assigned__name")!;
+    expect(assignee.style.overflow).toBe("visible");
+    expect(assigneeName.style.textOverflow).toBe("ellipsis");
+    assigneeName.click();
+    expect(assignee.querySelector<HTMLElement>(".awesomeado-assigned__popup")!.style.position).toBe(
+      "absolute",
+    );
+    const bob = [
+      ...root.querySelectorAll<HTMLButtonElement>(".awesomeado-assigned__results button"),
+    ].find((button) => button.textContent?.includes("Bob"))!;
+    bob.click();
+    await vi.waitFor(() => expect(writeField).toHaveBeenCalledTimes(1));
+    expect(writeField).toHaveBeenNthCalledWith(1, {
+      id: 1,
+      rev: 1,
+      field: "System.AssignedTo",
+      value: "bob@example.com",
+    });
+
+    root.querySelector<HTMLElement>(".awesomeado-sprint-card__eta .awesomeado-eta__label")!.click();
+    const date = root.querySelector<HTMLInputElement>(".awesomeado-eta__date")!;
+    date.value = "2026-08-14";
+    date.dispatchEvent(new Event("change"));
+    await vi.waitFor(() => expect(writeField).toHaveBeenCalledTimes(2));
+    expect(writeField).toHaveBeenNthCalledWith(2, {
+      id: 1,
+      rev: 2,
+      field: "Custom.StoryETA",
+      value: "2026-08-14T12:00:00Z",
+    });
+  });
+});
+
+describe("Sprint View rank ordering", () => {
+  it("orders cards and child popup rows by backlog rank", async () => {
+    const parent = item(10, "Parent", {
+      importance: 1,
+      children: [
+        item(12, "Later child", { type: "Task", importance: 20 }),
+        item(11, "Earlier child", { type: "Task", importance: 10 }),
+      ],
+    });
+    const laterCard = item(2, "Later card", { importance: 20 });
+    const earlierCard = item(1, "Earlier card", { importance: 10 });
+    const root = await render({
+      loadTree: async () => ({
+        isTreeQuery: false,
+        roots: [laterCard, parent, earlierCard],
+        error: null,
+      }),
+      getTypes: workCardTypes,
+    });
+
+    const cards = [...root.querySelectorAll<HTMLElement>(".awesomeado-sprint__item")];
+    expect(cards.map((card) => card.dataset.itemId)).toEqual(["10", "1", "2"]);
+    cards[0]!.querySelector<HTMLButtonElement>(".awesomeado-child-items__badge")!.click();
+    expect(
+      [...cards[0]!.querySelectorAll(".awesomeado-child-items__title-text")].map(
+        (title) => title.textContent,
+      ),
+    ).toEqual(["Earlier child", "Later child"]);
+  });
+});
+
+async function verifyChildFieldEditing(): Promise<void> {
+  const writeField = vi
+    .fn<EnhancedViewServices["writeField"]>()
+    .mockResolvedValueOnce({ ok: true, rev: 2 })
+    .mockResolvedValueOnce({ ok: true, rev: 3 });
+  const parent = item(10, "Parent", {
+    children: [item(11, "Editable child", { type: "Task" })],
+  });
+  const root = await render({
+    loadTree: async () => ({ isTreeQuery: true, roots: [parent], error: null }),
+    getTypes: workCardTypes,
+    writeField,
+  });
+  root.querySelector<HTMLButtonElement>(".awesomeado-child-items__badge")!.click();
+  const popup = root.querySelector<HTMLElement>(".awesomeado-child-items__popup")!;
+  popup.querySelector<HTMLButtonElement>(".awesomeado-assigned__name")!.click();
+  const bob = [
+    ...popup.querySelectorAll<HTMLButtonElement>(".awesomeado-assigned__results button"),
+  ].find((button) => button.textContent?.includes("Bob"))!;
+  bob.click();
+  await vi.waitFor(() => expect(writeField).toHaveBeenCalledTimes(1));
+  expect(writeField).toHaveBeenNthCalledWith(1, {
+    id: 11,
+    rev: 1,
+    field: "System.AssignedTo",
+    value: "bob@example.com",
+  });
+  await vi.waitFor(() =>
+    expect(root.querySelector(".awesomeado-child-items__popup")).not.toBeNull(),
+  );
+  root.querySelector<HTMLElement>(".awesomeado-child-items__popup .awesomeado-eta__label")!.click();
+  const date = root.querySelector<HTMLInputElement>(
+    ".awesomeado-child-items__popup input[type=date]",
+  )!;
+  date.value = "2026-08-21";
+  date.dispatchEvent(new Event("change"));
+  await vi.waitFor(() => expect(writeField).toHaveBeenCalledTimes(2));
+  expect(writeField).toHaveBeenNthCalledWith(2, {
+    id: 11,
+    rev: 2,
+    field: "Custom.TaskETA",
+    value: "2026-08-21T12:00:00Z",
+  });
+}
+
+async function verifyChildDragReorder(): Promise<void> {
+  const reorderItem = vi.fn<EnhancedViewServices["reorderItem"]>().mockResolvedValue({
+    ok: true,
+    ranks: [
+      { id: 12, rank: 0 },
+      { id: 11, rank: 1 },
+    ],
+  });
+  const parent = item(10, "Parent", {
+    children: [
+      item(11, "Earlier child", { type: "Task", importance: 10 }),
+      item(12, "Later child", { type: "Task", importance: 20 }),
+    ],
+  });
+  const root = await render({
+    loadTree: async () => ({ isTreeQuery: true, roots: [parent], error: null }),
+    getTypes: workCardTypes,
+    reorderItem,
+  });
+  const card = root.querySelector<HTMLElement>('[data-item-id="10"]')!;
+  card.querySelector<HTMLButtonElement>(".awesomeado-child-items__badge")!.click();
+  const titles = [...card.querySelectorAll<HTMLElement>(".awesomeado-child-items__title")];
+  const rows = [...card.querySelectorAll<HTMLElement>(".awesomeado-child-items__row")];
+  drag(titles[1]!, rows[0]!);
+  await vi.waitFor(() => expect(reorderItem).toHaveBeenCalledOnce());
+  expect(reorderItem).toHaveBeenCalledWith({
+    id: 12,
+    rev: 1,
+    parentId: 10,
+    currentParentId: 10,
+    previousId: 0,
+    nextId: 11,
+    siblingIds: [12, 11],
+    team: "team-id",
+  });
+  await vi.waitFor(() =>
+    expect(
+      [...root.querySelectorAll(".awesomeado-child-items__title-text")].map(
+        (title) => title.textContent,
+      ),
+    ).toEqual(["Later child", "Earlier child"]),
+  );
+}
+
+async function verifyChildPopupCardDragLifecycle(): Promise<void> {
+  const root = await render({
+    loadTree: async () => ({ isTreeQuery: true, roots: workCardTree(), error: null }),
+    getTypes: workCardTypes,
+  });
+  const card = root.querySelector<HTMLElement>('[data-item-id="3"]')!;
+  const badge = card.querySelector<HTMLButtonElement>(".awesomeado-child-items__badge")!;
+  expect(card.draggable).toBe(true);
+  badge.click();
+  expect(card.draggable).toBe(false);
+  expect(
+    card.querySelector<HTMLButtonElement>(
+      ".awesomeado-child-items__popup .awesomeado-assigned__name",
+    )!.disabled,
+  ).toBe(true);
+  expect(
+    card
+      .querySelector(".awesomeado-child-items__popup .awesomeado-eta")
+      ?.getAttribute("aria-disabled"),
+  ).toBe("true");
+  badge.click();
+  expect(card.draggable).toBe(true);
+  card.querySelector<HTMLElement>(".awesomeado-sprint-card__title")!.click();
+  badge.click();
+  expect(card.draggable).toBe(false);
+  expect(
+    card.querySelector<HTMLButtonElement>(
+      ".awesomeado-child-items__popup .awesomeado-assigned__name",
+    )!.disabled,
+  ).toBe(false);
+  document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+  expect(card.draggable).toBe(true);
+}
+
+describe("Sprint View child panel", () => {
+  it("edits the child assignee and ETA", verifyChildFieldEditing);
+  it("persists child title drag order by rank", verifyChildDragReorder);
+  it("suspends card dragging and follows compact editability", verifyChildPopupCardDragLifecycle);
 });
 
 describe("Sprint View board drag and drop", () => {
@@ -555,7 +947,7 @@ describe("Sprint View filters", () => {
     expect(root.querySelectorAll(".awesomeado-sprint__item")).toHaveLength(1);
     expect(root.querySelector(".awesomeado-sprint__item")?.textContent).toContain("Apps item");
     expect(
-      [...root.querySelectorAll(".awesomeado-sprint__lane")].map((lane) => lane.textContent),
+      [...root.querySelectorAll(".awesomeado-sprint__lane-name")].map((lane) => lane.textContent),
     ).toEqual(["Apps"]);
   });
 });

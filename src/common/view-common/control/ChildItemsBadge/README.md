@@ -35,6 +35,8 @@ const badge = renderChildItemsBadge(document, {
 - **`initiallyOpen?: boolean`** — Opens the popup as soon as the badge is rendered. Defaults to
   `false`; useful when a caller replaces the badge while preserving an in-progress interaction. The
   automatic open waits until the rebuilt badge is mounted so the popup keeps its measured alignment.
+- **`onOpenChange?: (open: boolean) => void`** — Reports every popup open and close, including
+  outside-click and Escape dismissal, so an owning draggable surface can suspend its drag handle.
 - **`completedCount: number`** — How many children are completed (the numerator). Completion is a
   board-column decision the **caller** owns, so it is passed in rather than derived here.
 - **`color?: string | null`** — The color the badge's discrete tint derives from (hex, with or

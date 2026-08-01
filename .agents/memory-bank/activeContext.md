@@ -63,10 +63,21 @@ The extension is feature-complete for its current scope:
   Lane dropdown derives full paths from loaded work but offers only represented leaves, omitting
   any path that is an ancestor of another offered path. The
   rendered table shows only matching exact-path lanes and uses the user's first four application-state
-  labels with theme-owned Queue/Active/Waiting/Done colors. Queue through Waiting use tall cards;
+  labels with high-contrast theme-owned Queue/Active/Waiting/Done title colors over quieter fills;
+  their light resting tints become 90%-opaque backdrops only while cards scroll beneath them.
+  its horizontally synchronized column titles stay pinned below the sticky control header while
+  filter pills scroll beneath them. Each lane's name and per-lane item count stick vertically until
+  the next lane pushes them away; there is no table-wide total. Queue through Waiting use tall cards;
   Done cards start compact and expand on activation. Only explicitly configured Primary-work types
-  render as cards. Cards expose title, ID, assignee, type color, and a shared completed/total badge
-  whose popup lists their direct children only; tall cards add immediate parent plus recognized marker tags. Dragging across columns
+  render as cards. Cards expose title, ID, a tag-free shared assignee control, type color, and ETA;
+  their row below the title aligns ETA left and the shared completed/total child badge right. Both
+  sizes put ID and assignee in their top corners; compact Done cards keep assignee and ETA read-only
+  until expanded. Cards in each lane/state cell and rows in each direct-child popup are ordered by
+  backlog rank. Child rows expose editable shared Assigned To and ETA controls plus sibling-only
+  title drag ordering; an open popup suspends its owning card's drag source until close. Lane names
+  are emphasized while their item counts remain visually secondary. Tall cards add recognized marker tags and a clickable immediate-parent type
+  icon/title whose popup lists the type-colored ancestor chain from root to immediate parent with ETA
+  controls. Dragging across columns
   changes state, across lanes changes `System.AreaPath`, and diagonally changes both atomically. The
   Project filter lists only ancestor chains of work
   surviving the sprint and other active filters, without narrowing its own alternatives. Team pills

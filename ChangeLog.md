@@ -16,9 +16,20 @@ builds use the repository's `Major.Minor.Build` release versioning.
   parents of Primary work relevant to the visible work, with type colors, responsive long-title
   handling, and hierarchy-preserving title search; clickable query-folder breadcrumbs; and a
   filtered lane-by-state card table using configured column labels and themed Queue, Active,
-  Waiting, and Done colors. Only configured Primary-work types render as cards; cards show type
-  color, title, ID, assignee, and a completed/total badge that opens their direct children. Tall
-  cards add recognized markers and immediate parent context, while compact Done cards expand on demand.
+  Waiting, and Done colors, with high-contrast column titles that gain a 90%-opaque themed
+  backing only while cards scroll beneath them, over quieter column fills and
+  per-lane names and item counts that remain visible while scrolling through a lane, then yield to
+  the next lane. Only configured Primary-work types render as cards; cards show type color, title,
+  top-corner ID and tag-free assignee, plus ETA and a right-aligned completed/total badge below the
+  title. Assignee and ETA stay read-only while Done cards are compact, then become editable when
+  expanded; the assignee picker stays aligned under its right-aligned card control. Cards within a
+  lane and state column, plus each card's direct-child popup, follow backlog-rank order. Child rows
+  use the same editable Assigned To and ETA controls as Project Tracking and can be dragged to persist
+  sibling rank; opening that popup suspends movement of its owning card until the popup closes. Lane
+  names are larger for scanning while their item counts are more muted. Tall cards
+  add recognized markers and a clickable immediate-parent title whose
+  popup shows the full type-colored ancestor chain from root to immediate parent with ETA controls, while compact Done cards
+  expand on demand.
   Dragging a card changes its application state or area-path lane, with diagonal moves committed as
   one atomic Azure DevOps revision. Initial load, refresh, and sprint changes now page the configured team's
   complete roster before executing an offset-adjusted copy of the saved WIQL, keep only team-assigned

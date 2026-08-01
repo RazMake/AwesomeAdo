@@ -9,6 +9,40 @@ we hit, why they happened, and the exact fix so nobody re-derives them.
 agent-tool-local memory (it does not clone or transfer between machines/agents). Record new findings
 here so every agent, teammate, and clone sees them.
 
+## A clipped popup host became viewport-fixed and misaligned inside a transformed ancestor
+
+- SYMPTOM: Sprint's Assigned To picker opened far above and to the right of its card control.
+- VERIFIED LIVE (2026-08-01): the Sprint-specific style put `overflow:hidden` on the relatively
+  positioned Assigned To root. `popupHost` correctly treated that narrow root as a clipping ancestor
+  and escaped the 200px picker to `position:fixed`, but a transformed board ancestor established a
+  fixed-position containing block, so viewport coordinates resolved against the wrong origin.
+- FIX / RULE: never put clipping overflow on an element that also hosts a popup. Keep the host
+  overflow-visible and apply ellipsis to the trigger text itself. This preserves truncation while
+  allowing the popup to remain absolutely positioned under its control.
+
+## A 100%-opaque sticky header was transparent because its base CSS token did not exist
+
+- SYMPTOM: Sprint column titles remained transparent while sticky even after their backing was
+  increased to 100% opacity; scrolling cards were visible through the titles.
+- VERIFIED LIVE (2026-08-01): `--control-background` resolved to an empty string. Applying the stored
+  sticky value made computed `background-image` equal `none` and `background-color` transparent.
+- ROOT CAUSE: `--control-background` is not part of `ThemeDefinition` and none of AwesomeADO's themes
+  defines it. An unresolved `var()` invalidated the entire layered `background` declaration,
+  including the semantic status tint before it. After that token was fixed, the title still appeared
+  opaque because its sticky `board-header` ancestor painted a solid `--background-color` immediately
+  behind it; changing the child's alpha could not reveal the cards beneath that ancestor. Finally,
+  stuck-state detection compared the header's viewport coordinate with a scrollport-relative inset.
+  Because the enhanced-view scroller begins below ADO's top chrome, `data-stuck` never activated and
+  the configured sticky background was never selected.
+- FIX / RULE: Sprint surfaces derive their backing from required theme token `--background-color`.
+  Each title owns a separate backdrop containing the fully composed theme color; one
+  `STICKY_HEADER_OPACITY` value applies directly to that backdrop while the label stays crisp. The
+  sticky ancestor stays transparent, and stuck detection adds the Sprint root's direct parent
+  scrollport viewport top to the CSS inset. Observer installation is deferred one microtask after
+  paint so the Sprint root is mounted before binding directly to that scrollport. Before tuning alpha,
+  inspect the full live paint stack: verify every custom property resolves, no ancestor supplies an
+  opaque backing, and the actual scroll event activates `data-stuck`.
+
 ## Query-definition HTTP 0 can be a stale in-memory MV3 worker
 
 - SYMPTOM: Sprint View stops at `Could not load query definition (HTTP 0)` while the iterations read

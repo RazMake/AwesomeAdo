@@ -26,6 +26,8 @@ export interface PopupHostOptions {
    * moved into it, since focusing an element that is still detached silently does nothing.
    */
   onOpened?: (popup: HTMLElement) => void;
+  /** Called after an open popup is removed, regardless of which dismissal path closed it. */
+  onClosed?: () => void;
   /** When false the trigger click is not wired (a read-only control). Defaults to true. */
   interactive?: boolean;
   /**
@@ -261,6 +263,7 @@ export function createPopupHost(options: PopupHostOptions): PopupHost {
     mountInto,
     buildPopup,
     onOpened,
+    onClosed,
     interactive = true,
     dismissOnFieldEscape = true,
   } = options;
@@ -322,6 +325,7 @@ export function createPopupHost(options: PopupHostOptions): PopupHost {
     doc.removeEventListener("pointerdown", handleOutsidePointer, true);
     doc.removeEventListener("keydown", handleKeydown, true);
     doc.removeEventListener("scroll", handleOutsideScroll, true);
+    onClosed?.();
   };
 
   const toggle = (): void => {

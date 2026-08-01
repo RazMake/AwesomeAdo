@@ -4,6 +4,10 @@ Drag-to-reorder for the Project Tracking tree: grabbing a row's title and droppi
 in the board changes the item's manual backlog rank and, when it lands under a different parent, its
 place in the hierarchy.
 
+The generic controller, placement math, and indicator now live in
+`common/view-common/control/DragReorder`; this folder keeps compatibility exports beside Project
+Tracking's tree-specific mutation helpers.
+
 ## Public API
 
 ### `DragReorderController.ts`

@@ -1110,9 +1110,13 @@ Markdown` in one `/rev`-guarded JSON Patch. The PATCH is not retried; a concurre
   and green fills. Queue, Active, and Waiting cards are tall; Done cards start compact and expand on
   click or keyboard activation. Only types explicitly marked `isPrimaryWork` render as cards. Every
   card shows wrapped title, ID, assignee, a type-colored edge, and the shared completed/total badge;
-  that badge lists only the item's direct children. Tall cards also show the immediate parent and
-  only the three configured marker conditions.
-- Decision: every card is draggable. A destination column resolves through that work-item type's
+  that badge lists only the item's direct children. Cards inside one lane/state cell and child rows
+  use the shared manual backlog-rank order. Child rows carry editable shared Assigned To and ETA
+  controls and persist sibling title-drag moves through the board's write queue. Opening a child
+  popup disables its owning card as a drag source until trigger, Escape, outside-pointer, or action
+  dismissal closes it. Tall cards also show the immediate parent and only the three configured marker
+  conditions.
+- Decision: every card is draggable while its child popup is closed. A destination column resolves through that work-item type's
   configured ordinal to its primary ADO state; a destination lane supplies the full
   `System.AreaPath`. Drops are persist-then-reflect through the per-view `WorkItemWriteQueue`. A
   diagonal drop carries state and area as one bounded `WorkItemFieldWriteRequest` with

@@ -31,10 +31,20 @@ This is a flattened snapshot of what exists now, not a build log.
   team's complete paged member roster before executing an offset-adjusted copy of the original WIQL;
   retains only team members' or unassigned work plus parent chains; and renders clickable query-folder breadcrumbs plus an always-active Sprint
   selector, Lane, Project, refresh, write-queue, team, marker, and recent-activity controls; and
-  filters a lane-by-state card table. It uses configured labels and theme-owned colors for Queue,
-  Active, Waiting, and Done; only Primary-work types render as cards, and the shared child-items
-  badge lists each card's direct children. Tall cards show recognized tags and immediate parent
-  context, while compact Done cards expand on demand. Cards drag across columns and area-path lanes through the
+  filters a lane-by-state card table. It uses configured labels with high-contrast theme-owned colors
+  for Queue, Active, Waiting, and Done over quieter fills; the synchronized column titles stay
+  lightly tinted at rest and gain 90%-opaque backdrops while cards scroll beneath them below
+  the sticky controls while filter pills scroll beneath them. Per-lane names and item counts stick
+  vertically until the next lane pushes them away, with no table-wide total. Only Primary-work types
+  render as cards, and the shared
+  child-items badge lists each card's direct children. Both card sizes anchor ID and a tag-free
+  shared assignee control in their top corners, then align ETA left and child progress right below
+  the title. Compact Done cards keep assignee and ETA read-only until expanded. Cards and direct
+  children render by backlog rank; child popup rows provide editable shared assignee/ETA controls and
+  sibling drag ordering while suspending card drag for the popup lifetime. Lane names are larger and
+  their counts are muted. Tall cards show
+  recognized tags and a clickable immediate-parent type icon/title whose popup lists the
+  type-colored ancestor chain from root to immediate parent with ETA controls. Cards drag across columns and area-path lanes through the
   shared write queue, with diagonal state/area changes sent in one atomic patch. Lane choices include only represented leaf area paths. Project
   choices are limited to planning-parent types above Primary work on ancestor chains of currently
   eligible sprint work, colored by type and searchable by title without dropping matching parents;

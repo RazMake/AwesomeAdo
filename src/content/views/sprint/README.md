@@ -12,7 +12,9 @@ whole session and DOM so no filter, roster, or derived option survives the switc
   members before executing the sprint-adjusted query; renders the sprint, Lane, Project, refresh, write-queue, team,
   marker, and recent-activity controls; and shows the filtered card table.
 - `SprintBoard.ts` -> `renderSprintBoard` - groups cards by exact area-path lane and the first four
-  configured application-state columns (Queue through Done), and persists drag-and-drop moves.
+  configured application-state columns (Queue through Done), keeps their horizontally synchronized
+  titles sticky below the control header, keeps each lane's name and item count visible until the
+  next lane pushes it away, and persists card and direct-child drag-and-drop moves.
 - `SprintHeader.ts` -> `renderSprintHeader` - assembles the sticky, theme-aware control card with
   the query's clickable parent-folder breadcrumb trail at the top.
 
@@ -42,19 +44,33 @@ offsets always rewrite the original body, never a previously rewritten copy. A s
 re-derives Lane and Project choices and resets every filter. Sprint View always filters to the selected sprint: its sprint picker omits the filter
 toggle because an unfiltered mode would contradict the view's purpose.
 
-The card table uses the user's configured labels for Queue, Active, Waiting, and Done, with
-theme-owned neutral, blue, amber, and green column fills. Only types explicitly marked as Primary
-work in the configuration render as cards. Their direct children are summarized by the shared
-completed/total child-items badge; its popup lists only that first child level, regardless of which
-types render as cards. Queue, Active, and Waiting cards use the tall format; Done cards start compact
-and expand on click or keyboard activation. Both formats show the wrapped title, ID, assignee, and
-child badge. Tall cards additionally show the immediate parent and only the three configured marker
-conditions (Blocked, Blocked by another team, and Interrupt). A type-colored edge identifies the
-work-item type.
+The card table uses the user's configured labels for Queue, Active, Waiting, and Done. Theme-owned
+neutral, blue, amber, and green foregrounds make those labels distinct while the matching column
+fills stay quiet. The title row stays lightly tinted in its resting position, then switches to an
+90%-opaque themed backdrop while sticky so cards passing beneath remain subtly visible.
+It remains immediately below the dynamic-height control header; the filter pills scroll beneath it.
+Each lane heading shows the only item total for that lane and
+sticks vertically below the title row until the next lane pushes it away; its area name is emphasized
+while the supporting count stays muted. Only types explicitly
+marked as Primary work in the configuration render as cards. Their direct children are summarized by the shared completed/total child-items
+badge; its popup lists only that first child level, regardless of which types render as cards, ordered
+by backlog rank with the shared editable Assigned To and ETA controls. Queue,
+Active, and Waiting cards use the tall format; Done cards start compact and expand on click or
+keyboard activation. Both formats place the ID in the top-left corner and a tag-free shared Assigned
+To control in the top-right, followed by the wrapped title. The row below places the shared ETA
+control on the left and the child-items badge on the right. Assigned To and ETA remain visually
+unchanged but read-only while a Done card is compact; expanding it restores editing. Tall cards additionally show the
+immediate parent's type icon and title as a clickable, contrast-safe type-colored control. Its popup
+lists ancestors from the root down to that immediate parent, each with its own type color and shared ETA control.
+Tall cards also show only the three configured marker conditions (Blocked, Blocked by another team,
+and Interrupt). A type-colored edge identifies the work-item type.
 
 Every card is draggable. Dropping into another state column writes that type's primary ADO state;
 dropping into another lane writes `System.AreaPath`. A diagonal drop writes both fields in one
-revision-guarded JSON Patch and reflects the move only after Azure DevOps accepts it.
+revision-guarded JSON Patch and reflects the move only after Azure DevOps accepts it. Within each
+lane and state column, cards render in backlog-rank order. Direct children can be dragged by title to
+persist their sibling rank through the same serialized write queue. While the child popup is open,
+the owning card stops being a drag source and resumes only after the popup closes.
 
 Both are registered centrally: the config in `../viewCatalog.ts`, the renderer in
 `../enhancedViewRegistry.ts`.
