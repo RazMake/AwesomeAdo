@@ -10,7 +10,6 @@ const DEFAULT_VIEW_KEY = "settings.defaultView";
 const CURRENT_TEAM_KEY = "settings.currentTeam";
 const FUTURE_SPRINTS_KEY = "settings.futureSprintsCount";
 const PAST_SPRINTS_KEY = "settings.pastSprintsCount";
-const AREA_PATHS_KEY = "settings.areaPaths";
 const BOARD_COLUMNS_KEY = "settings.boardColumns";
 const WORK_ITEM_TYPES_KEY = "settings.workItemTypes";
 const MARKER_TAGS_KEY = "settings.markerTags";
@@ -21,7 +20,6 @@ const SETTING_KEYS = [
   CURRENT_TEAM_KEY,
   FUTURE_SPRINTS_KEY,
   PAST_SPRINTS_KEY,
-  AREA_PATHS_KEY,
   BOARD_COLUMNS_KEY,
   WORK_ITEM_TYPES_KEY,
   MARKER_TAGS_KEY,
@@ -35,7 +33,6 @@ const SETTING_WRITE_MAP: readonly { name: keyof ExtensionSettings; key: string }
   { name: "currentTeam", key: CURRENT_TEAM_KEY },
   { name: "futureSprintsCount", key: FUTURE_SPRINTS_KEY },
   { name: "pastSprintsCount", key: PAST_SPRINTS_KEY },
-  { name: "areaPaths", key: AREA_PATHS_KEY },
   { name: "boardColumns", key: BOARD_COLUMNS_KEY },
   { name: "workItemTypes", key: WORK_ITEM_TYPES_KEY },
   { name: "markerTags", key: MARKER_TAGS_KEY },
@@ -49,7 +46,6 @@ function projectSettings(raw: Record<string, unknown>): ExtensionSettings {
     currentTeam: raw[CURRENT_TEAM_KEY],
     futureSprintsCount: raw[FUTURE_SPRINTS_KEY],
     pastSprintsCount: raw[PAST_SPRINTS_KEY],
-    areaPaths: raw[AREA_PATHS_KEY],
     boardColumns: raw[BOARD_COLUMNS_KEY],
     workItemTypes: raw[WORK_ITEM_TYPES_KEY],
     markerTags: raw[MARKER_TAGS_KEY],
@@ -64,7 +60,7 @@ function projectSettings(raw: Record<string, unknown>): ExtensionSettings {
  * settings introduced by a newer version during a read-modify-write cycle. The optional logger's
  * source names this class so each configuration change is traceable in the Diagnostics log; only the
  * names of the changed settings are recorded, never their values, so the log never leaks the user's
- * ADO organisation, area paths, or team.
+ * ADO organisation or team.
  */
 export class BrowserSyncSettingsStore implements ISettingsStore {
   constructor(
@@ -83,7 +79,7 @@ export class BrowserSyncSettingsStore implements ISettingsStore {
 
   async write(update: Partial<ExtensionSettings>): Promise<void> {
     // Pair each changed setting with its write so the log can name exactly what changed (the signal)
-    // without ever recording the value — values can contain the user's org/team/area-path names.
+    // without ever recording the value — values can contain the user's org/team names.
     const changes: { name: keyof ExtensionSettings; write: Promise<void> }[] = [];
     for (const { name, key } of SETTING_WRITE_MAP) {
       const value = update[name];

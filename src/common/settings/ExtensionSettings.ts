@@ -37,9 +37,6 @@ export interface ExtensionSettings {
    */
   pastSprintsCount: number;
 
-  /** Area paths the user has pinned, each with a short label. Empty until the user adds one. */
-  areaPaths: AreaPath[];
-
   /**
    * The board columns (the team's own "application states") that form the header of the work-item
    * mapping table. The set and order are fixed (`BOARD_COLUMN_COUNT` columns) and shared by every
@@ -73,12 +70,6 @@ export type DefaultView = "original" | "enhanced";
 export interface TeamRef {
   id: string;
   name: string;
-}
-
-/** A pinned area path and the label shown for it (defaults to the path's last segment). */
-export interface AreaPath {
-  path: string;
-  label: string;
 }
 
 /** One board column within a work item type mapping and the ADO states routed onto it. */
@@ -231,7 +222,6 @@ export const DEFAULT_SETTINGS: ExtensionSettings = deepFreeze({
   currentTeam: null,
   futureSprintsCount: DEFAULT_FUTURE_SPRINTS,
   pastSprintsCount: DEFAULT_PAST_SPRINTS,
-  areaPaths: [],
   boardColumns: [...DEFAULT_BOARD_COLUMNS],
   workItemTypes: [],
   markerTags: normalizeMarkerTags(undefined),
@@ -254,16 +244,6 @@ function isTheme(value: unknown): value is Theme {
 
 function isDefaultView(value: unknown): value is DefaultView {
   return typeof value === "string" && (DEFAULT_VIEWS as readonly string[]).includes(value);
-}
-
-/**
- * The label an area path gets when the user has not typed one: its last `\`-separated segment
- * (e.g. `Project\Area\Team` → `Team`). Shared by the normalizer and the options UI so a stored
- * value and a freshly typed one derive the same default.
- */
-export function defaultAreaPathLabel(path: string): string {
-  const segments = path.split("\\").filter((segment) => segment.trim().length > 0);
-  return segments[segments.length - 1]?.trim() ?? "";
 }
 
 function normalizeTeamRef(raw: unknown): TeamRef | null {
@@ -296,38 +276,6 @@ export function normalizeFutureSprintsCount(raw: unknown): number {
 /** Clamp an arbitrary stored value to a whole number of past sprints within the allowed range. */
 export function normalizePastSprintsCount(raw: unknown): number {
   return clampSprintCount(raw, MIN_PAST_SPRINTS, MAX_PAST_SPRINTS, DEFAULT_PAST_SPRINTS);
-}
-
-function normalizeAreaPath(raw: unknown): AreaPath | null {
-  if (typeof raw !== "object" || raw === null) {
-    return null;
-  }
-  const candidate = raw as Partial<Record<keyof AreaPath, unknown>>;
-  const path = typeof candidate.path === "string" ? candidate.path.trim() : "";
-  if (path.length === 0) {
-    return null;
-  }
-  // A stored entry can predate the label field or hold a blank one; fall back to the path's tail so
-  // every persisted area path always has something meaningful to show.
-  const rawLabel = typeof candidate.label === "string" ? candidate.label.trim() : "";
-  return { path, label: rawLabel.length > 0 ? rawLabel : defaultAreaPathLabel(path) };
-}
-
-/** Drop unusable entries so a corrupt array can never surface a pathless or duplicated area path. */
-export function normalizeAreaPaths(raw: unknown): AreaPath[] {
-  if (!Array.isArray(raw)) {
-    return [];
-  }
-  const seen = new Set<string>();
-  const result: AreaPath[] = [];
-  for (const entry of raw) {
-    const areaPath = normalizeAreaPath(entry);
-    if (areaPath !== null && !seen.has(areaPath.path)) {
-      seen.add(areaPath.path);
-      result.push(areaPath);
-    }
-  }
-  return result;
 }
 
 /**
@@ -635,7 +583,6 @@ export function normalizeSettings(raw: unknown): ExtensionSettings {
   if (typeof raw !== "object" || raw === null) {
     return {
       ...DEFAULT_SETTINGS,
-      areaPaths: [],
       boardColumns: [...DEFAULT_BOARD_COLUMNS],
       markerTags: normalizeMarkerTags(undefined),
     };
@@ -649,7 +596,6 @@ export function normalizeSettings(raw: unknown): ExtensionSettings {
     currentTeam: normalizeTeamRef(candidate.currentTeam),
     futureSprintsCount: normalizeFutureSprintsCount(candidate.futureSprintsCount),
     pastSprintsCount: normalizePastSprintsCount(candidate.pastSprintsCount),
-    areaPaths: normalizeAreaPaths(candidate.areaPaths),
     // The board columns are a fixed set, so any stored value (including a never-set key) is coerced
     // back to exactly `BOARD_COLUMN_COUNT` positions, preserving each column's user-edited title.
     boardColumns: normalizeBoardColumns(candidate.boardColumns),
@@ -662,15 +608,14 @@ export function normalizeSettings(raw: unknown): ExtensionSettings {
  * Whether the Azure DevOps settings are complete enough for the extension to enhance a query.
  *
  * The enhanced view depends on a fully mapped board, so every one of these must hold: a current
- * team, at least one pinned area path, and at least one work item type that maps at least one ADO
- * state. (The board columns are a fixed, always-present set, so they need no separate check.) Shared
- * by the content script (which otherwise leaves ADO's own view in place) and the options page (which
- * warns when a binding exists but this returns false).
+ * team and at least one work item type that maps at least one ADO state. (The board columns are a
+ * fixed, always-present set, so they need no separate check.) Shared by the content script (which
+ * otherwise leaves ADO's own view in place) and the options page (which warns when a binding exists
+ * but this returns false).
  */
 export function isAdoConfigured(settings: ExtensionSettings): boolean {
   return (
     settings.currentTeam !== null &&
-    settings.areaPaths.length > 0 &&
     settings.workItemTypes.length > 0 &&
     settings.workItemTypes.every((type) => type.columns.some((column) => column.states.length > 0))
   );

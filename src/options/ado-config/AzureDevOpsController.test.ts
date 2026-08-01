@@ -90,9 +90,6 @@ function makeElements(): AzureDevOpsElements {
   futureSprintsInput.type = "number";
   const pastSprintsInput = document.createElement("input");
   pastSprintsInput.type = "number";
-  const areaPathsList = document.createElement("div");
-  const areaPathsEmpty = document.createElement("p");
-  const areaPathAddButton = document.createElement("button");
   const witTable = document.createElement("table");
   const witHead = document.createElement("thead");
   const witColumnsRow = document.createElement("tr");
@@ -114,9 +111,6 @@ function makeElements(): AzureDevOpsElements {
     teamField,
     futureSprintsInput,
     pastSprintsInput,
-    areaPathsList,
-    areaPathsEmpty,
-    areaPathAddButton,
     witTable,
     workItemTypesEmpty,
     workItemTypeAddButton,
@@ -132,9 +126,6 @@ function makeElements(): AzureDevOpsElements {
     teamInput,
     futureSprintsInput,
     pastSprintsInput,
-    areaPathsList,
-    areaPathsEmpty,
-    areaPathAddButton,
     workItemTypes: {
       columnsRow: witColumnsRow,
       body: witBody,
@@ -157,25 +148,8 @@ const CONTEXT: AdoMetadataContext = {
     { id: "1", name: "Alpha" },
     { id: "2", name: "Beta" },
   ],
-  areaPaths: ["Web", "Web\\Api"],
   workItemTypes: [],
 };
-
-function pathRows(elements: AzureDevOpsElements): HTMLElement[] {
-  return [...elements.areaPathsList.querySelectorAll<HTMLElement>(".area-path-row")];
-}
-
-function rowAt(elements: AzureDevOpsElements, index: number): HTMLElement {
-  const row = pathRows(elements)[index];
-  if (row === undefined) {
-    throw new Error(`no area-path row at index ${index}`);
-  }
-  return row;
-}
-
-function input(row: HTMLElement, role: string): HTMLInputElement {
-  return row.querySelector<HTMLInputElement>(`[data-role="${role}"]`)!;
-}
 
 /** The visible suggestion texts of the combobox wrapping `field`, which must be open. */
 function comboboxOptions(field: HTMLInputElement): string[] {
@@ -235,7 +209,6 @@ describe("AzureDevOpsController — initialization controls & metadata", () => {
     new AzureDevOpsController(store, reader, elements);
     expect(elements.teamInput.disabled).toBe(true);
     expect(elements.futureSprintsInput.disabled).toBe(true);
-    expect(elements.areaPathAddButton.disabled).toBe(true);
   });
 
   it("enables the controls after init resolves", async () => {
@@ -243,7 +216,6 @@ describe("AzureDevOpsController — initialization controls & metadata", () => {
     await controller.init();
     expect(elements.teamInput.disabled).toBe(false);
     expect(elements.futureSprintsInput.disabled).toBe(false);
-    expect(elements.areaPathAddButton.disabled).toBe(false);
     controller.dispose();
   });
 
@@ -272,28 +244,6 @@ describe("AzureDevOpsController — initialization controls & metadata", () => {
     expect(comboboxOptions(elements.teamInput)).toEqual(["Alpha", "Beta"]);
     controller.dispose();
   });
-
-  it("populates a newly added area-path row's dropdown from metadata", async () => {
-    const controller = new AzureDevOpsController(store, reader, elements);
-    await controller.init();
-    elements.areaPathAddButton.click();
-    const path = input(rowAt(elements, 0), "path");
-    path.dispatchEvent(new Event("focus"));
-    expect(comboboxOptions(path)).toEqual(["Web", "Web\\Api"]);
-    controller.dispose();
-  });
-
-  it("pushes metadata suggestions into rows seeded from stored settings", async () => {
-    store = new FakeSettingsStore({ areaPaths: [{ path: "Web\\Api", label: "Api" }] });
-    const controller = new AzureDevOpsController(store, reader, elements);
-    await controller.init();
-    const path = input(rowAt(elements, 0), "path");
-    // Clear the seeded value so focus shows the full suggestion set rather than a filtered subset.
-    path.value = "";
-    path.dispatchEvent(new Event("input", { bubbles: true }));
-    expect(comboboxOptions(path)).toEqual(["Web", "Web\\Api"]);
-    controller.dispose();
-  });
 });
 
 describe("AzureDevOpsController — initialization seeding & errors", () => {
@@ -310,16 +260,12 @@ describe("AzureDevOpsController — initialization seeding & errors", () => {
       currentTeam: { id: "2", name: "Beta" },
       futureSprintsCount: 5,
       pastSprintsCount: 3,
-      areaPaths: [{ path: "Web\\Api", label: "Api" }],
     });
     const controller = new AzureDevOpsController(store, reader, elements);
     await controller.init();
     expect(elements.teamInput.value).toBe("Beta");
     expect(elements.futureSprintsInput.value).toBe("5");
     expect(elements.pastSprintsInput.value).toBe("3");
-    expect(pathRows(elements)).toHaveLength(1);
-    expect(input(rowAt(elements, 0), "path").value).toBe("Web\\Api");
-    expect(input(rowAt(elements, 0), "label").value).toBe("Api");
     controller.dispose();
   });
 
@@ -341,15 +287,6 @@ describe("AzureDevOpsController — initialization seeding & errors", () => {
     expect(errors).toHaveLength(1);
     expect(elements.teamInput.disabled).toBe(false);
     expect(elements.organization.dataset.empty).toBe("true");
-    controller.dispose();
-  });
-
-  it("marks a customized stored label as edited so path edits keep it", async () => {
-    store = new FakeSettingsStore({ areaPaths: [{ path: "Web\\Api", label: "Custom" }] });
-    const controller = new AzureDevOpsController(store, reader, elements);
-    await controller.init();
-    const label = input(rowAt(elements, 0), "label");
-    expect(label.getAttribute("data-edited")).toBe("true");
     controller.dispose();
   });
 });
@@ -480,127 +417,6 @@ describe("AzureDevOpsController — past sprints", () => {
   });
 });
 
-describe("AzureDevOpsController — area paths editing", () => {
-  let elements: AzureDevOpsElements;
-  let controller: AzureDevOpsController;
-
-  beforeEach(async () => {
-    const fixture = makeFixture();
-    ({ elements } = fixture);
-    controller = await bootController(fixture);
-  });
-
-  afterEach(() => controller.dispose());
-
-  it("shows the empty notice until a row exists", () => {
-    expect(elements.areaPathsEmpty.hidden).toBe(false);
-    elements.areaPathAddButton.click();
-    expect(elements.areaPathsEmpty.hidden).toBe(true);
-  });
-
-  it("adds an empty editable row", () => {
-    elements.areaPathAddButton.click();
-    const rows = pathRows(elements);
-    expect(rows).toHaveLength(1);
-    expect(input(rowAt(elements, 0), "path").value).toBe("");
-    expect(input(rowAt(elements, 0), "label").value).toBe("");
-  });
-
-  it("defaults a row's label to the last path segment as the path is typed", () => {
-    elements.areaPathAddButton.click();
-    const path = input(rowAt(elements, 0), "path");
-    path.value = "Web\\Api\\Auth";
-    fire(path, "input");
-    expect(input(rowAt(elements, 0), "label").value).toBe("Auth");
-  });
-
-  it("stops overwriting a label once the user edits it", () => {
-    elements.areaPathAddButton.click();
-    const row = rowAt(elements, 0);
-    const label = input(row, "label");
-    label.value = "Mine";
-    fire(label, "input");
-    const path = input(row, "path");
-    path.value = "Web\\Api";
-    fire(path, "input");
-    expect(label.value).toBe("Mine");
-  });
-});
-
-describe("AzureDevOpsController — area paths persistence", () => {
-  let store: FakeSettingsStore;
-  let elements: AzureDevOpsElements;
-  let controller: AzureDevOpsController;
-
-  beforeEach(async () => {
-    const fixture = makeFixture();
-    ({ store, elements } = fixture);
-    controller = await bootController(fixture);
-  });
-
-  afterEach(() => controller.dispose());
-
-  it("persists committed rows on change, defaulting a blank label", async () => {
-    elements.areaPathAddButton.click();
-    const path = input(rowAt(elements, 0), "path");
-    path.value = "Web\\Api";
-    fire(path, "change");
-    await flush();
-    expect(store.writeCalls).toContainEqual({ areaPaths: [{ path: "Web\\Api", label: "Api" }] });
-  });
-
-  it("skips empty rows and de-duplicates by path when collecting", async () => {
-    elements.areaPathAddButton.click();
-    elements.areaPathAddButton.click();
-    elements.areaPathAddButton.click();
-    input(rowAt(elements, 0), "path").value = "Web\\Api";
-    input(rowAt(elements, 1), "path").value = "Web\\Api";
-    // rowAt(elements, 2) left blank
-    fire(input(rowAt(elements, 0), "path"), "change");
-    await flush();
-    expect(store.writeCalls.at(-1)).toEqual({
-      areaPaths: [{ path: "Web\\Api", label: "Api" }],
-    });
-  });
-
-  it("removes a row and persists on delete", async () => {
-    store = new FakeSettingsStore({
-      areaPaths: [
-        { path: "Web\\Api", label: "Api" },
-        { path: "Web\\Ui", label: "Ui" },
-      ],
-    });
-    controller.dispose();
-    controller = new AzureDevOpsController(store, new FakeMetadataReader(CONTEXT), elements);
-    await controller.init();
-
-    const deleteButton = rowAt(elements, 0).querySelector<HTMLButtonElement>(
-      '[data-role="delete"]',
-    )!;
-    deleteButton.click();
-    await flush();
-    expect(pathRows(elements)).toHaveLength(1);
-    expect(store.writeCalls.at(-1)).toEqual({ areaPaths: [{ path: "Web\\Ui", label: "Ui" }] });
-  });
-
-  it("reports a write failure while persisting area paths", async () => {
-    const errors: unknown[] = [];
-    controller.dispose();
-    store = new FakeSettingsStore();
-    store.setWriteError(new Error("boom"));
-    controller = new AzureDevOpsController(store, new FakeMetadataReader(CONTEXT), elements, (e) =>
-      errors.push(e),
-    );
-    await controller.init();
-    elements.areaPathAddButton.click();
-    const path = input(rowAt(elements, 0), "path");
-    path.value = "Web\\Api";
-    fire(path, "change");
-    await flush();
-    expect(errors).toHaveLength(1);
-  });
-});
-
 describe("AzureDevOpsController — disposal", () => {
   it("ignores events after disposal", async () => {
     const store = new FakeSettingsStore();
@@ -635,14 +451,11 @@ describe("AzureDevOpsController — reload", () => {
     fixture.store.setSettings({
       currentTeam: { id: "9", name: "Imported" },
       futureSprintsCount: 4,
-      areaPaths: [{ path: "Imported\\Area", label: "Imported" }],
     });
     await controller.reload();
 
     expect(fixture.elements.teamInput.value).toBe("Imported");
     expect(fixture.elements.futureSprintsInput.value).toBe("4");
-    expect(pathRows(fixture.elements)).toHaveLength(1);
-    expect(input(rowAt(fixture.elements, 0), "path").value).toBe("Imported\\Area");
   });
 
   it("reports a failed re-read instead of leaving the page silently stale", async () => {

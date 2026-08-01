@@ -715,19 +715,19 @@ settings.defaultView==="enhanced")`; unbound → not enhanced. `content/index.ts
 - jsdom tests don't do layout/cascade, so `.hidden` property tests pass regardless — this bug is
   only visible in a real browser. Verify hide/show behavior in the loaded extension, not just Vitest.
 
-## ADO teams/area-paths came back EMPTY — MV3 content-script CORS (root cause + fix)
+## ADO project metadata came back EMPTY — MV3 content-script CORS (root cause + fix)
 
 - SYMPTOM: options Azure DevOps tab showed org+project (parsed from tab URL, no fetch) but the
-  Current team picker + Area paths autocomplete were always empty. Old design proxied the fetch
-  through the content script (`ADO_METADATA_REQUEST` round-trip).
+  Current team and work-item-type pickers were always empty. Old design proxied the fetch through
+  the content script (`ADO_METADATA_REQUEST` round-trip).
 - ROOT CAUSE (proven via CDP): in MV3 the content-script isolated world's origin is
   `chrome-extension://<id>`, so its cross-origin fetch to ADO is CORS-blocked -> "Failed to fetch"
   (ADO sends no Access-Control-Allow-Origin for the extension). The content script DID reply, but
-  with `{teams:[],areaPaths:[]}`. Extension-PAGE fetch bypasses CORS via host_permissions BUT loses
+  with empty metadata lists. Extension-PAGE fetch bypasses CORS via host_permissions BUT loses
   ADO's SameSite session cookies -> HTTP 500 "looping logins" (redirected:true). Neither works.
 - FIX: fetch in the ADO tab's MAIN (page) world = first-party origin => same-origin AND carries the
   signed-in SameSite session. `ChromeAdoMetadataReader` now calls
-  `chrome.scripting.executeScript({ target:{tabId}, world:"MAIN", func: fetchAdoRawInPage, args:[teamsUrl,areaPathsUrl] })`.
+  `chrome.scripting.executeScript({ target:{tabId}, world:"MAIN", func: fetchAdoRawInPage, args:[teamsUrl,workItemTypesUrl,fieldsUrl] })`.
   Requires "scripting" in manifest permissions (world:"MAIN" is Chrome 95+, min is 106 so fine).
   Verified live: MAIN-world fetch returns 200 + 100 teams; options picker renders all 100.
 - `fetchAdoRawInPage` (`src/common/browser/fetchAdoRawInPage.ts`) is INJECTED via `Function.toString()`,
@@ -736,8 +736,8 @@ settings.defaultView==="enhanced")`; unbound → not enhanced. `content/index.ts
   the body. Build target chrome106 keeps it native, but keep `.then()` to be safe. Confirmed the
   bundled dist function is a standalone `function fetchAdoRawInPage(...)` with an inline `get` arrow.
 - SPLIT to satisfy jscpd + keep the injected fn pure: `fetchAdoMetadata.ts` is now URL-build + parse
-  only (`buildAdoMetadataUrls` -> `{teamsUrl,areaPathsUrl}`|null (null when no project); `parseTeams`;
-  `flattenAreaPaths`; `adoCollectionBaseUrl`). Removed
+  only (`buildAdoMetadataUrls` -> metadata URLs or null when no project; `parseTeams`;
+  `parseWorkItemTypes`; `adoCollectionBaseUrl`). Removed
   AdoFetch/AdoFetchResponse/fetchTeams/fetchAreaPaths/resolveAdoMetadata. `AdoMetadata.ts` lost the
   message contract (ADO_METADATA_REQUEST/AdoMetadataRequest/AdoMetadataResponse/isAdoMetadataRequest);
   kept AdoTeam/AdoMetadata/EMPTY_ADO_METADATA. `content/index.ts` metadata handler removed.

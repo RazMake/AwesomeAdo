@@ -209,7 +209,7 @@ in one place.
 
 ### `IAdoMetadataReader` (interface)
 
-Lets the options page list the detected organization/project along with its teams and area paths,
+Lets the options page list the detected organization/project along with its teams and work-item types,
 without touching `chrome.tabs` directly:
 
 ```typescript
@@ -218,39 +218,39 @@ interface IAdoMetadataReader {
 }
 ```
 
-`read()` resolves with `{ organization, project, teams, areaPaths }` (`AdoMetadataContext`, defined
+`read()` resolves with `{ organization, project, teams, workItemTypes }` (`AdoMetadataContext`, defined
 in `./IAdoMetadataReader`), or `null` when no ADO Query tab is open.
 
 ### `ChromeAdoMetadataReader` (class)
 
 The production implementation. It picks the current ADO Query tab with `pickCurrentAdoQueryTab`,
 parses the organization/project with `parseAdoContext`, then injects `fetchAdoRawInPage` into that
-tab's **page (MAIN) world** via `chrome.scripting.executeScript` to fetch the teams and area tree.
+tab's **page (MAIN) world** via `chrome.scripting.executeScript` to fetch project metadata.
 The options page runs on the `chrome-extension://` origin, whose cross-origin fetch is CORS-blocked
 and whose same-origin fetch loses ADO's SameSite session cookies; the MAIN-world fetch is the only
 context that is both same-origin with the APIs and carries the signed-in session. Metadata is
-best-effort: a non-project tab or any injection failure resolves the team/area lists to empty.
+best-effort: a non-project tab or any injection failure resolves the metadata lists to empty.
 
 ```typescript
 import { ChromeAdoMetadataReader } from "./ChromeAdoMetadataReader";
 
 const reader = new ChromeAdoMetadataReader();
-const metadata = await reader.read(); // { organization, project, teams, areaPaths } | null
+const metadata = await reader.read(); // { organization, project, teams, workItemTypes } | null
 ```
 
 Construct `ChromeAdoMetadataReader` only in the composition root (`src/options/index.ts`). Feature
 code depends on `IAdoMetadataReader`. Injecting into the ADO tab requires the `scripting` permission
 and the `host_permissions` declared in `manifest.json`.
 
-### `fetchAdoRawInPage(teamsUrl, areaPathsUrl, workItemTypesUrl, fieldsUrl)` — `fetchAdoRawInPage.ts`
+### `fetchAdoRawInPage(teamsUrl, workItemTypesUrl, fieldsUrl)` — `fetchAdoRawInPage.ts`
 
 The self-contained function `ChromeAdoMetadataReader` injects into the ADO tab's MAIN world. It runs
 in the page's first-party origin, so its `fetch` is same-origin and sends the user's session cookies.
 It is serialized with `Function.prototype.toString`, so it must reference only its parameters and
 page globals — never an import or module-scoped value. It returns the raw
-`{ teams, areaTree, workItemTypes, fields }` JSON (each `null` on failure) for the reader to parse
-with `parseTeams` / `flattenAreaPaths` / `parseWorkItemTypes` (the `fields` body resolves which of a
-type's fields are date-typed via `parseDateFieldReferenceNames`).
+`{ teams, workItemTypes, fields }` JSON (each `null` on failure) for the reader to parse with
+`parseTeams` / `parseWorkItemTypes` (the `fields` body resolves which of a type's fields are
+date-typed via `parseDateFieldReferenceNames`).
 
 ## Loading a query's work-item tree
 

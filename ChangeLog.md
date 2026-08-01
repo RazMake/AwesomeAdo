@@ -14,12 +14,15 @@ builds use the repository's `Major.Minor.Build` release versioning.
   team-capacity, marker, and recent activity filters; concise tag totals with waiting/accepted
   Interrupt counts; Project choices limited to planning parents of Primary work relevant to the
   visible work, with type colors, responsive long-title handling, and hierarchy-preserving title
-  search; a filtered work-item queue; and refresh that reloads both query items and the selected
-  sprint's team roster.
+  search; clickable query-folder breadcrumbs; a filtered work-item queue; and refresh that reloads
+  both query items and the selected sprint's team roster.
 - Refines enhanced-view filters with compact pills aligned to Project Tracking's user tags and a
   larger gap between full-opacity filter families in Sprint View and Project Tracking.
 - Keeps Primary Work classification intact through team configuration pull and publish, and links a
   successful publish's work item ID directly to the item in Azure DevOps.
+- Removes the unused Area Paths configuration: Sprint View and Project Tracking continue deriving
+  their area filters and edit choices directly from the query's live work items, while export,
+  import, team publish, and team pull no longer carry pinned paths.
 
 ## 0.1
 

@@ -149,6 +149,33 @@ function metric(pill: Element, kind: string): string | null | undefined {
 
 afterEach(() => document.body.replaceChildren());
 
+describe("Sprint View breadcrumbs", () => {
+  it("renders query-folder breadcrumbs at the top of the header", async () => {
+    const root = await render({
+      loadTree: async () => ({
+        isTreeQuery: false,
+        roots: defaultTree(),
+        error: null,
+        folderPath: [
+          { label: "Delivery", path: "Shared Queries/Delivery" },
+          { label: "Sprint Boards", path: "Shared Queries/Delivery/Sprint Boards" },
+        ],
+      }),
+    });
+
+    const header = root.querySelector(".awesomeado-sprint__header")!;
+    const breadcrumbs = header.querySelector(".awesomeado-breadcrumbs")!;
+    const labels = [...breadcrumbs.querySelectorAll(".awesomeado-breadcrumb")].map(
+      (segment) => segment.textContent,
+    );
+
+    expect(header.firstElementChild).toBe(header.querySelector(".awesomeado-sprint__header-top"));
+    expect(breadcrumbs.getAttribute("aria-label")).toBe("Query folder");
+    expect(labels).toEqual(["Delivery", "Sprint Boards"]);
+    expect(breadcrumbs.querySelectorAll(".awesomeado-breadcrumb-sep")).toHaveLength(1);
+  });
+});
+
 describe("Sprint View header", () => {
   it("renders capacity members, Unassigned, and queue/active counts", async () => {
     const root = await render();

@@ -1,14 +1,14 @@
 # src/options/ado-config
 
-The options page's **Azure DevOps** tab: organization/project detection and the team, sprint, area
-path, work-item-type-to-board-state, and marker-tag configuration.
+The options page's **Azure DevOps** tab: organization/project detection and the team, sprint,
+work-item-type-to-board-state, and marker-tag configuration.
 
 ## Purpose
 
 Lets the user configure the Azure DevOps context the enhanced view needs. It detects the active
-org/project, drives a searchable team picker, the future- and past-sprint counts, the pinned
-area-path list, the per-work-item-type board-state mapping table, and the per-condition marker tags,
-persisting everything to the synced settings store.
+org/project, drives a searchable team picker, the future- and past-sprint counts, the
+per-work-item-type board-state mapping table, and the per-condition marker tags, persisting everything
+to the synced settings store.
 
 This component does not log; it surfaces failures through the options page's shared error sink.
 
@@ -17,7 +17,7 @@ This component does not log; it surfaces failures through the options page's sha
 ### `AzureDevOpsController.ts`
 
 - **`AzureDevOpsController`** — controls the Azure DevOps tab end to end, coordinating the team
-  combobox, area paths, sprint count, and the nested work-item-types and marker-tags sub-controllers.
+  combobox, sprint counts, and the nested work-item-types and marker-tags sub-controllers.
   It reads the stored settings once at `init()` and then treats its own controls as the working copy,
   so **`reload()`** re-reads them without re-wiring anything — call it when the stored configuration
   is replaced from outside the tab (a configuration file import), or the tab keeps showing, and on

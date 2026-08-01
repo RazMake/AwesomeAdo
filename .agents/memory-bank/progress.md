@@ -28,9 +28,9 @@ This is a flattened snapshot of what exists now, not a build log.
   Options imports only `content/views/viewCatalog` (scoped §6
   exception, ADR-027, lint-enforced).
 - **Sprint View step 1** (`content/views/sprint`): accepts flat or tree queries; loads the selected
-  sprint's capacity roster; renders an always-active Sprint selector plus Lane, Project, refresh,
-  write-queue, team, marker, and recent-activity controls; and filters a minimal item queue. Project
-  choices are limited to planning-parent types above Primary work on ancestor chains of currently
+  sprint's capacity roster; renders clickable query-folder breadcrumbs plus an always-active Sprint
+  selector, Lane, Project, refresh, write-queue, team, marker, and recent-activity controls; and
+  filters a minimal item queue. Project choices are limited to planning-parent types above Primary work on ancestor chains of currently
   eligible sprint work, colored by type and searchable by title without dropping matching parents;
   long labels use available viewport width before truncating. Team and
   marker pills use compact counters, with one total per marker tag except Interrupt's waiting /
@@ -42,7 +42,8 @@ This is a flattened snapshot of what exists now, not a build log.
   tree hydrates `System.AreaPath`; a compact themed header popup selects full paths using shortest
   unique display suffixes, and the session-scoped selection narrows the board without persisting.
   The item right-click menu reuses the same eligible paths and labels to change `System.AreaPath`,
-  omitting the item's current value and showing complete paths as tooltips.
+  omitting the item's current value and showing complete paths as tooltips. No pinned area-path
+  setting is needed; Sprint View and Project Tracking derive choices from their loaded work items.
 - **Markdown authoring** (`common/view-common/control/TextEditor`): shared bold/italic/link shortcuts
   and keyboard-driven ADO `@`-mention insertion across note/comment and description editors; inline
   notes and New notes activity omit configured marker-comment prefixes while View all stays complete.

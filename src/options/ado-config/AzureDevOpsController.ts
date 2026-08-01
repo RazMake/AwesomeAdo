@@ -5,10 +5,8 @@ import type {
 } from "../../common/browser/IAdoMetadataReader";
 import {
   DEFAULT_SETTINGS,
-  defaultAreaPathLabel,
   normalizeFutureSprintsCount,
   normalizePastSprintsCount,
-  type AreaPath,
   type ExtensionSettings,
   type TeamRef,
 } from "../../common/settings/ExtensionSettings";
@@ -17,7 +15,6 @@ import type { ISettingsStore } from "../../common/settings/ISettingsStore";
 import { AutocompleteInput } from "./AutocompleteInput";
 import { MarkerTagsController, type MarkerTagsElements } from "./MarkerTagsController";
 import { WorkItemTypesController, type WorkItemTypesElements } from "./WorkItemTypesController";
-import { ROLE_ATTRIBUTE, createRoleInput } from "./roleInput";
 
 /** The Azure DevOps tab's elements. Passed in so the controller stays DOM-agnostic and testable. */
 export interface AzureDevOpsElements {
@@ -31,12 +28,6 @@ export interface AzureDevOpsElements {
   futureSprintsInput: HTMLInputElement;
   /** Whole-number input (0..6) for how many past sprints the picker offers. */
   pastSprintsInput: HTMLInputElement;
-  /** Container the controller fills with one editable row per pinned area path. */
-  areaPathsList: HTMLElement;
-  /** Notice shown only while no area-path rows exist. */
-  areaPathsEmpty: HTMLElement;
-  /** Button that appends a new, empty area-path row. */
-  areaPathAddButton: HTMLButtonElement;
   /** The nested work-item-types section, driven by a delegated sub-controller. */
   workItemTypes: WorkItemTypesElements;
   /** The nested marker-tags section, driven by a delegated sub-controller. */
@@ -48,23 +39,17 @@ type ReportError = (error: unknown) => void;
 const defaultReportError: ReportError = (error) =>
   console.error("AwesomeADO could not save Azure DevOps settings", error);
 
-const PATH_ROLE = "path";
-const LABEL_ROLE = "label";
-const DELETE_ROLE = "delete";
-const ROW_SELECTOR = ".area-path-row";
-
 /** The empty metadata used when no ADO tab is open, so `renderMetadata` never optional-chains. */
 const EMPTY_METADATA_CONTEXT: AdoMetadataContext = {
   organization: "",
   project: null,
   teams: [],
-  areaPaths: [],
   workItemTypes: [],
 };
 
 /**
  * Drives the Azure DevOps tab: shows the detected organization/project, and binds the current-team
- * picker, the future-sprints count, and the pinned area-path list to the synced settings store.
+ * picker and the future/past sprint counts to the synced settings store.
  *
  * The store is read once to seed the controls and written on each change (per-key, so unrelated
  * settings are untouched). The detected org/project and the datalist options come from the injected
@@ -77,12 +62,7 @@ export class AzureDevOpsController {
   private confirmedTeam: TeamRef | null = null;
   private confirmedSprints = DEFAULT_SETTINGS.futureSprintsCount;
   private confirmedPastSprints = DEFAULT_SETTINGS.pastSprintsCount;
-  private areaPathSuggestions: readonly string[] = [];
   private readonly teamCombobox: AutocompleteInput;
-  // Each area-path row's path field gets its own suggestion dropdown; keyed by the input so a
-  // removed row's combobox drops out with the input (no manual bookkeeping) and metadata updates
-  // reach every still-present row.
-  private readonly pathComboboxes = new WeakMap<HTMLInputElement, AutocompleteInput>();
   // The work-item-types section is a cohesive sub-feature, so it lives in its own controller that
   // shares this controller's single metadata read and settings load (fed in via render/setAvailableTypes).
   private readonly workItemTypes: WorkItemTypesController;
@@ -99,7 +79,6 @@ export class AzureDevOpsController {
     elements.teamInput.disabled = true;
     elements.futureSprintsInput.disabled = true;
     elements.pastSprintsInput.disabled = true;
-    elements.areaPathAddButton.disabled = true;
     this.teamCombobox = new AutocompleteInput(elements.teamInput);
     this.workItemTypes = new WorkItemTypesController(
       store,
@@ -130,27 +109,17 @@ export class AzureDevOpsController {
   dispose(): void {
     this.disposed = true;
     this.teamCombobox.dispose();
-    this.disposePathComboboxes();
     this.workItemTypes.dispose();
     this.markerTags.dispose();
     this.elements.teamInput.removeEventListener("change", this.handleTeamChange);
     this.elements.futureSprintsInput.removeEventListener("change", this.handleSprintsChange);
     this.elements.pastSprintsInput.removeEventListener("change", this.handlePastSprintsChange);
-    this.elements.areaPathAddButton.removeEventListener("click", this.handleAddAreaPath);
-    this.elements.areaPathsList.removeEventListener("input", this.handleAreaInput);
-    this.elements.areaPathsList.removeEventListener("change", this.handleAreaChange);
-    this.elements.areaPathsList.removeEventListener("click", this.handleAreaClick);
   }
 
   private wireEvents(): void {
     this.elements.teamInput.addEventListener("change", this.handleTeamChange);
     this.elements.futureSprintsInput.addEventListener("change", this.handleSprintsChange);
     this.elements.pastSprintsInput.addEventListener("change", this.handlePastSprintsChange);
-    this.elements.areaPathAddButton.addEventListener("click", this.handleAddAreaPath);
-    // Delegated on the container so dynamically added rows need no per-row listener bookkeeping.
-    this.elements.areaPathsList.addEventListener("input", this.handleAreaInput);
-    this.elements.areaPathsList.addEventListener("change", this.handleAreaChange);
-    this.elements.areaPathsList.addEventListener("click", this.handleAreaClick);
     this.workItemTypes.init();
     this.markerTags.init();
   }
@@ -168,7 +137,6 @@ export class AzureDevOpsController {
     this.renderTeam(settings.currentTeam);
     this.renderFutureSprints(settings.futureSprintsCount);
     this.renderPastSprints(settings.pastSprintsCount);
-    this.renderAreaPaths(settings.areaPaths);
     this.workItemTypes.render(settings.workItemTypes, settings.boardColumns);
     this.markerTags.render(settings.markerTags);
     this.enableControls();
@@ -201,24 +169,13 @@ export class AzureDevOpsController {
     this.setConfigField(this.elements.project, context.project);
     this.teams = context.teams;
     this.teamCombobox.setOptions(this.teams.map((team) => team.name));
-    this.applyAreaPathSuggestions(context.areaPaths);
     this.workItemTypes.setAvailableTypes(context.workItemTypes);
-  }
-
-  private applyAreaPathSuggestions(suggestions: readonly string[]): void {
-    this.areaPathSuggestions = suggestions;
-    // Rows seeded from stored settings may already exist before metadata arrives, so push the
-    // suggestions into every current row's dropdown too.
-    for (const pathInput of this.pathInputs()) {
-      this.pathComboboxes.get(pathInput)?.setOptions(suggestions);
-    }
   }
 
   private enableControls(): void {
     this.elements.teamInput.disabled = false;
     this.elements.futureSprintsInput.disabled = false;
     this.elements.pastSprintsInput.disabled = false;
-    this.elements.areaPathAddButton.disabled = false;
     this.workItemTypes.enable();
   }
 
@@ -300,152 +257,6 @@ export class AzureDevOpsController {
       this.elements.pastSprintsInput.value = String(previous);
       this.reportError(error);
     });
-  }
-
-  // ── Area paths ────────────────────────────────────────────────────────────
-
-  private renderAreaPaths(entries: readonly AreaPath[]): void {
-    this.disposePathComboboxes();
-    this.elements.areaPathsList.replaceChildren();
-    for (const entry of entries) {
-      const row = this.createAreaPathRow(entry);
-      // A stored label that differs from the path's tail was customized by the user; mark it so a
-      // later path edit does not clobber it.
-      if (entry.label !== defaultAreaPathLabel(entry.path)) {
-        row
-          .querySelector<HTMLInputElement>(`[${ROLE_ATTRIBUTE}="${LABEL_ROLE}"]`)
-          ?.setAttribute("data-edited", "true");
-      }
-      this.elements.areaPathsList.append(row);
-    }
-    this.updateAreaPathsEmpty();
-  }
-
-  private createAreaPathRow(entry: AreaPath): HTMLElement {
-    const doc = this.elements.areaPathsList.ownerDocument;
-    const row = doc.createElement("div");
-    row.className = "area-path-row";
-    const pathInput = createRoleInput(doc, PATH_ROLE, "Area path", entry.path);
-    const combobox = new AutocompleteInput(pathInput);
-    combobox.setOptions(this.areaPathSuggestions);
-    this.pathComboboxes.set(pathInput, combobox);
-    row.append(
-      combobox.root,
-      createRoleInput(doc, LABEL_ROLE, "Area path label", entry.label),
-      this.createDeleteButton(doc),
-    );
-    return row;
-  }
-
-  private createDeleteButton(doc: Document): HTMLButtonElement {
-    const button = doc.createElement("button");
-    button.type = "button";
-    button.className = "button button--danger area-path-row__delete";
-    button.setAttribute(ROLE_ATTRIBUTE, DELETE_ROLE);
-    button.setAttribute("aria-label", "Remove area path");
-    button.textContent = "Remove";
-    return button;
-  }
-
-  private readonly handleAddAreaPath = (): void => {
-    const row = this.createAreaPathRow({ path: "", label: "" });
-    this.elements.areaPathsList.append(row);
-    this.updateAreaPathsEmpty();
-    // A brand-new row has no path to store yet; persistence happens once the user commits a path.
-    row.querySelector<HTMLInputElement>(`[${ROLE_ATTRIBUTE}="${PATH_ROLE}"]`)?.focus();
-  };
-
-  private readonly handleAreaInput = (event: Event): void => {
-    const target = event.target as HTMLElement;
-    const role = target.getAttribute(ROLE_ATTRIBUTE);
-    if (role === LABEL_ROLE) {
-      // Any keystroke in the label marks it user-owned so path edits stop overwriting it.
-      target.setAttribute("data-edited", "true");
-    } else if (role === PATH_ROLE) {
-      this.autoFillLabel(target as HTMLInputElement);
-    }
-  };
-
-  private autoFillLabel(pathInput: HTMLInputElement): void {
-    const labelInput = pathInput
-      .closest(ROW_SELECTOR)
-      ?.querySelector<HTMLInputElement>(`[${ROLE_ATTRIBUTE}="${LABEL_ROLE}"]`);
-    if (!labelInput || labelInput.getAttribute("data-edited") === "true") {
-      return;
-    }
-    labelInput.value = defaultAreaPathLabel(pathInput.value.trim());
-  }
-
-  private readonly handleAreaChange = (): void => {
-    this.persistAreaPaths();
-  };
-
-  private readonly handleAreaClick = (event: Event): void => {
-    const target = event.target as HTMLElement;
-    if (target.getAttribute(ROLE_ATTRIBUTE) !== DELETE_ROLE) {
-      return;
-    }
-    const row = target.closest<HTMLElement>(ROW_SELECTOR);
-    if (row !== null) {
-      this.disposeRowCombobox(row);
-      row.remove();
-    }
-    this.updateAreaPathsEmpty();
-    this.persistAreaPaths();
-  };
-
-  private persistAreaPaths(): void {
-    const areaPaths = this.collectAreaPaths();
-    void this.store.write({ areaPaths }).catch((error: unknown) => this.reportError(error));
-  }
-
-  private collectAreaPaths(): AreaPath[] {
-    const rows = this.elements.areaPathsList.querySelectorAll<HTMLElement>(ROW_SELECTOR);
-    const result: AreaPath[] = [];
-    const seen = new Set<string>();
-    for (const row of rows) {
-      const path = this.readRowValue(row, PATH_ROLE);
-      if (path === "" || seen.has(path)) {
-        continue;
-      }
-      seen.add(path);
-      const label = this.readRowValue(row, LABEL_ROLE);
-      result.push({ path, label: label !== "" ? label : defaultAreaPathLabel(path) });
-    }
-    return result;
-  }
-
-  private readRowValue(row: HTMLElement, role: string): string {
-    return row.querySelector<HTMLInputElement>(`[${ROLE_ATTRIBUTE}="${role}"]`)?.value.trim() ?? "";
-  }
-
-  private updateAreaPathsEmpty(): void {
-    this.elements.areaPathsEmpty.hidden =
-      this.elements.areaPathsList.querySelector(ROW_SELECTOR) !== null;
-  }
-
-  // ── Shared helpers ────────────────────────────────────────────────────────
-
-  /** Every current row's path input, so metadata updates and disposal can reach each combobox. */
-  private pathInputs(): HTMLInputElement[] {
-    return [
-      ...this.elements.areaPathsList.querySelectorAll<HTMLInputElement>(
-        `[${ROLE_ATTRIBUTE}="${PATH_ROLE}"]`,
-      ),
-    ];
-  }
-
-  private disposePathComboboxes(): void {
-    for (const pathInput of this.pathInputs()) {
-      this.pathComboboxes.get(pathInput)?.dispose();
-    }
-  }
-
-  private disposeRowCombobox(row: HTMLElement): void {
-    const pathInput = row.querySelector<HTMLInputElement>(`[${ROLE_ATTRIBUTE}="${PATH_ROLE}"]`);
-    if (pathInput !== null) {
-      this.pathComboboxes.get(pathInput)?.dispose();
-    }
   }
 
   private setConfigField(element: HTMLElement, value: string | null): void {

@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
   adoCollectionBaseUrl,
   buildAdoMetadataUrls,
-  flattenAreaPaths,
   parseDateFieldReferenceNames,
   parseTeams,
   parseWorkItemTypes,
@@ -61,11 +60,9 @@ describe("resolveAdoOrganizationBase", () => {
 });
 
 describe("buildAdoMetadataUrls", () => {
-  it("builds the teams and area-tree URLs for a dev.azure.com project", () => {
+  it("builds the metadata URLs for a dev.azure.com project", () => {
     expect(buildAdoMetadataUrls("https://dev.azure.com/contoso/web/_queries/query/abc")).toEqual({
       teamsUrl: "https://dev.azure.com/contoso/_apis/projects/web/teams?$top=1000&api-version=7.1",
-      areaPathsUrl:
-        "https://dev.azure.com/contoso/web/_apis/wit/classificationnodes/areas?$depth=10&api-version=7.1",
       workItemTypesUrl: "https://dev.azure.com/contoso/web/_apis/wit/workitemtypes?api-version=7.1",
       fieldsUrl: "https://dev.azure.com/contoso/web/_apis/wit/fields?api-version=7.1",
     });
@@ -76,8 +73,6 @@ describe("buildAdoMetadataUrls", () => {
       {
         teamsUrl:
           "https://contoso.visualstudio.com/_apis/projects/web/teams?$top=1000&api-version=7.1",
-        areaPathsUrl:
-          "https://contoso.visualstudio.com/web/_apis/wit/classificationnodes/areas?$depth=10&api-version=7.1",
         workItemTypesUrl:
           "https://contoso.visualstudio.com/web/_apis/wit/workitemtypes?api-version=7.1",
         fieldsUrl: "https://contoso.visualstudio.com/web/_apis/wit/fields?api-version=7.1",
@@ -89,9 +84,6 @@ describe("buildAdoMetadataUrls", () => {
     const urls = buildAdoMetadataUrls("https://dev.azure.com/contoso/O365%20Core/_queries");
     expect(urls?.teamsUrl).toBe(
       "https://dev.azure.com/contoso/_apis/projects/O365%20Core/teams?$top=1000&api-version=7.1",
-    );
-    expect(urls?.areaPathsUrl).toBe(
-      "https://dev.azure.com/contoso/O365%20Core/_apis/wit/classificationnodes/areas?$depth=10&api-version=7.1",
     );
     expect(urls?.workItemTypesUrl).toBe(
       "https://dev.azure.com/contoso/O365%20Core/_apis/wit/workitemtypes?api-version=7.1",
@@ -140,26 +132,6 @@ describe("parseTeams", () => {
   it("returns an empty list for a null or non-object body", () => {
     expect(parseTeams(null)).toEqual([]);
     expect(parseTeams("nope")).toEqual([]);
-  });
-});
-
-describe("flattenAreaPaths", () => {
-  it("builds Parent\\Child paths from node names depth-first", () => {
-    const tree = {
-      name: "Web",
-      children: [{ name: "Api", children: [{ name: "Auth" }] }, { name: "Ui" }],
-    };
-    expect(flattenAreaPaths(tree)).toEqual(["Web", "Web\\Api", "Web\\Api\\Auth", "Web\\Ui"]);
-  });
-
-  it("returns an empty list for a non-object or nameless root", () => {
-    expect(flattenAreaPaths(null)).toEqual([]);
-    expect(flattenAreaPaths({ children: [] })).toEqual([]);
-  });
-
-  it("skips a child that is not a named node", () => {
-    const tree = { name: "Web", children: [null, { name: "" }, { name: "Ok" }] };
-    expect(flattenAreaPaths(tree)).toEqual(["Web", "Web\\Ok"]);
   });
 });
 

@@ -20,15 +20,14 @@ interface ExtensionSettings {
   currentTeam: TeamRef | null; // selected ADO team, or null       (default: null)
   futureSprintsCount: number; // sprints offered past the current one, 1..12 (default: 6)
   pastSprintsCount: number; // sprints offered before the current one, 0..6 (default: 0)
-  areaPaths: AreaPath[]; // pinned area paths, each { path, label }  (default: [])
   boardColumns: string[]; // mapping-table columns, fixed set of 5 (default: In Queue/In Progress/Waiting/Done/Removed)
   workItemTypes: WorkItemType[]; // per-type board mapping + hierarchy/classification (default: [])
   markerTags: WorkItemMarkerTags; // per-condition ADO tag + comment token   (default: DEFAULT_MARKER_TAGS)
 }
 ```
 
-`ExtensionSettings.ts` also exports the `Theme` and `DefaultView` unions, the `TeamRef` /
-`AreaPath` shapes, the `WorkItemType` / `WorkItemColumn` shapes, the `BOARD_COLUMN_COUNT` count and
+`ExtensionSettings.ts` also exports the `Theme` and `DefaultView` unions, the `TeamRef`,
+`WorkItemType` / `WorkItemColumn` shapes, the `BOARD_COLUMN_COUNT` count and
 `DEFAULT_BOARD_COLUMNS` fixed list, the `WorkItemMarker` / `MarkerTags` / `WorkItemMarkerTags` shapes,
 the `WORK_ITEM_MARKERS` ordered marker list (key + UI label) and its `DEFAULT_MARKER_TAGS` seed, the
 `THEMES` / `DEFAULT_VIEWS` accepted-value lists, the `MIN_FUTURE_SPRINTS` /
@@ -37,8 +36,7 @@ the `WORK_ITEM_MARKERS` ordered marker list (key + UI label) and its `DEFAULT_MA
 `normalizeSettings(raw)` validates each field independently and falls back to the default when a
 value is missing or unrecognized. The focused helpers `normalizeFutureSprintsCount(raw)` (clamps to
 `1..12`), `normalizePastSprintsCount(raw)` (clamps to `0..6`),
-`normalizeAreaPaths(raw)` (drops pathless/duplicate entries), `defaultAreaPathLabel(path)`
-(the path's last `\`-separated segment), `normalizeBoardColumns(raw)` (coerces to the fixed
+`normalizeBoardColumns(raw)` (coerces to the fixed
 `BOARD_COLUMN_COUNT` positions, keeping each stored title by position and filling blanks/collisions
 from `DEFAULT_BOARD_COLUMNS`), and `normalizeWorkItemTypes(raw)` (drops
 nameless/duplicate types and empty-state/duplicate columns, routes each state to a single column,
@@ -50,8 +48,8 @@ and a freshly typed one derive the same default.
 missing markers from a partial object, and trims both tokens while honoring a deliberately blanked
 entry) is likewise exported for the options UI.
 `isAdoConfigured(settings)` reports whether the Azure DevOps settings are complete enough for the
-extension to enhance a query (a current team, at least one area path, and
-at least one work item type that maps a state); the content script and options page share it.
+extension to enhance a query (a current team and at least one work item type that maps a state); the
+content script and options page share it.
 
 ### `ISettingsStore` (interface) — `ISettingsStore.ts`
 
@@ -107,8 +105,6 @@ unsubscribe();
   `1..12` (default `3`).
 - **`pastSprintsCount`** is how many sprints before the current one the picker offers, clamped to
   `0..6` (default `0`, i.e. only the current and future sprints are shown).
-- **`areaPaths`** is the list of area paths the user pinned, each with a short `label` (defaults to
-  the path's last segment).
 - **`boardColumns`** is the ordered set of columns that form the header of the work-item mapping
   table — the team's own "application states". It is a **fixed set** of `BOARD_COLUMN_COUNT` columns
   shared by every work item type; only each column's _title_ is user-editable (rename — columns
@@ -143,7 +139,7 @@ All values sync across all of the user's devices via `chrome.storage.sync`.
 
 Each setting maps to its own storage key (e.g., `settings.theme`, `settings.defaultView`,
 `settings.currentTeam`, `settings.futureSprintsCount`, `settings.pastSprintsCount`,
-`settings.areaPaths`, `settings.boardColumns`, `settings.workItemTypes`,
-`settings.markerTags`). This means adding a new setting in a future version does not risk a
+`settings.boardColumns`, `settings.workItemTypes`, `settings.markerTags`). This means adding a new
+setting in a future version does not risk a
 read-modify-write race overwriting the new key with `undefined` on older installs still using a
 full-settings-object key.

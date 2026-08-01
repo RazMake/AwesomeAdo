@@ -160,6 +160,24 @@ describe("TeamConfigSynchronizer pull", () => {
   });
 });
 
+describe("TeamConfigSynchronizer legacy pull", () => {
+  it("ignores retired area paths in a remote payload", async () => {
+    const harness = makeHarness();
+    vi.mocked(harness.reader.read).mockResolvedValue({
+      ok: true,
+      text: JSON.stringify({
+        awesomeAdoConfigVersion: 1,
+        settings: { theme: "blue", areaPaths: [{ path: "Web\\Api", label: "Api" }] },
+        enhancedQueries: bindings,
+      }),
+    });
+
+    await harness.synchronizer.pull();
+
+    expect(harness.settingsStore.write).toHaveBeenCalledWith({ theme: "blue" });
+  });
+});
+
 describe("TeamConfigSynchronizer Primary Work pull", () => {
   it("preserves classification from the authoritative description", async () => {
     const harness = makeHarness();
@@ -240,6 +258,7 @@ describe("TeamConfigSynchronizer publish", () => {
       settings: DEFAULT_SETTINGS,
       enhancedQueries: bindings,
     });
+    expect(JSON.parse(published).settings).not.toHaveProperty("areaPaths");
   });
 
   it("reports writer failures without throwing", async () => {

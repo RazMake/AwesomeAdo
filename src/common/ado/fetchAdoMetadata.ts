@@ -4,18 +4,14 @@ import type { AdoTeam, AdoWorkItemField, AdoWorkItemType } from "./AdoMetadata";
 import { ADO_API_VERSION } from "./adoApi";
 
 const API_VERSION = ADO_API_VERSION;
-// Area classification trees are shallow in practice; 10 levels covers every realistic hierarchy
-// while keeping the single request bounded.
-const AREA_TREE_DEPTH = 10;
 // ADO's teams endpoint pages its results; without $top it returns only the first 100 teams, which
 // silently hides most teams in a large org. Request a large page so the in-page reader needs as few
 // round-trips as possible, then let it page $skip to the end (see fetchAdoRawInPage).
 const TEAMS_PAGE_SIZE = 1000;
 
-/** The ADO REST endpoints the options page reads for a project: teams, area tree, types, fields. */
+/** The ADO REST endpoints the options page reads for a project: teams, types, and fields. */
 export interface AdoMetadataUrls {
   teamsUrl: string;
-  areaPathsUrl: string;
   workItemTypesUrl: string;
   /** The project's field list, read only to learn which fields are date-typed (see `fetchAdoRawInPage`). */
   fieldsUrl: string;
@@ -101,7 +97,7 @@ export function buildTeamScopedApiUrl(
 }
 
 /**
- * Build the teams and area-tree REST URLs for the ADO organization/project named by `href`, or null
+ * Build the metadata REST URLs for the ADO organization/project named by `href`, or null
  * when the URL is not a project-scoped ADO location (org-level or folder tabs have nothing to fetch).
  *
  * URL construction is kept here — a pure, chrome-free module — so it can be unit-tested and reused,
@@ -117,7 +113,6 @@ export function buildAdoMetadataUrls(href: string): AdoMetadataUrls | null {
   const { base, project } = resolved;
   return {
     teamsUrl: `${base}/_apis/projects/${project}/teams?$top=${TEAMS_PAGE_SIZE}&api-version=${API_VERSION}`,
-    areaPathsUrl: `${base}/${project}/_apis/wit/classificationnodes/areas?$depth=${AREA_TREE_DEPTH}&api-version=${API_VERSION}`,
     // The work-item-types list endpoint returns each type's states inline, so one request covers both
     // the type list and every type's states.
     workItemTypesUrl: `${base}/${project}/_apis/wit/workitemtypes?api-version=${API_VERSION}`,
@@ -141,35 +136,6 @@ export function parseTeams(body: unknown): AdoTeam[] {
   const teams = value.filter(isTeam).map((team) => ({ id: team.id, name: team.name }));
   teams.sort((left, right) => left.name.localeCompare(right.name));
   return teams;
-}
-
-/**
- * Depth-first flatten of a classification-node tree into `Parent\Child` path strings.
- *
- * The ADO classification tree names its implicit root with the `\Area` classifier, which is not part
- * of how users write an area path, so the flattened paths are rebuilt from node names instead of the
- * raw `path` field.
- */
-export function flattenAreaPaths(root: unknown): string[] {
-  const paths: string[] = [];
-  const walk = (node: unknown, prefix: string): void => {
-    if (typeof node !== "object" || node === null) {
-      return;
-    }
-    const { name, children } = node as { name?: unknown; children?: unknown };
-    if (typeof name !== "string" || name.length === 0) {
-      return;
-    }
-    const path = prefix === "" ? name : `${prefix}\\${name}`;
-    paths.push(path);
-    if (Array.isArray(children)) {
-      for (const child of children) {
-        walk(child, path);
-      }
-    }
-  };
-  walk(root, "");
-  return paths;
 }
 
 function isTeam(value: unknown): value is AdoTeam {

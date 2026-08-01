@@ -137,12 +137,10 @@
         font-size: 13px;
         color: var(--text-muted);
       }
-      /* One shared appearance for every form control so the base look lives in a single place;
-         each control type below only adds what makes it different (e.g. the area-path grid cell). */
+      /* One shared appearance for every form control so the base look lives in a single place. */
       select,
       .field input[type="text"],
       .field input[type="number"],
-      .area-path-row input,
       .marker-tags-row input,
       .wit-table input[type="text"] {
         appearance: none;
@@ -155,7 +153,6 @@
       }
       select:focus-visible,
       .field input:focus-visible,
-      .area-path-row input:focus-visible,
       .marker-tags-row input:focus-visible,
       .wit-table input:focus-visible {
         outline: 2px solid var(--accent);
@@ -168,8 +165,8 @@
       }
 
       /* Custom searchable dropdown (see AutocompleteInput.ts). The list is absolutely positioned so
-         it floats over following content instead of pushing the layout, and the wrapper is the
-         positioning context. `min-width: 0` lets the wrapper shrink inside the area-path grid. */
+        it floats over following content instead of pushing the layout, and the wrapper is the
+        positioning context. */
       .combobox {
         position: relative;
         min-width: 0;
@@ -230,35 +227,6 @@
         color: var(--text-muted);
         font-size: 12px;
         max-width: 520px;
-      }
-
-      .area-paths {
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-      }
-      .area-paths__list {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-      }
-      .area-path-row {
-        display: grid;
-        grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto;
-        gap: 8px;
-        align-items: center;
-      }
-      .area-path-row input {
-        min-width: 0;
-      }
-      .area-path-row__delete {
-        padding: 6px 12px;
-        white-space: nowrap;
-      }
-      .area-paths__empty {
-        margin: 0;
-        color: var(--text-muted);
-        font-size: 13px;
       }
 
       /* Marker tags: a small fixed grid with a label column and two token inputs (ADO tag + comment
@@ -972,8 +940,8 @@
       <div class="banner banner--error" id="config-banner" role="alert" hidden>
         <strong>Enhanced view is paused.</strong> One or more queries are bound, but AwesomeADO's
         Azure DevOps settings are incomplete, so those queries stay on ADO's own view. On the
-        <strong>Azure DevOps</strong> tab, set your current team, add at least one area path, and
-        add at least one work item type with a mapped state.
+        <strong>Azure DevOps</strong> tab, set your current team and add at least one work item type
+        with a mapped state.
       </div>
 
       <nav class="tabs" role="tablist" aria-label="Settings sections">
@@ -1061,10 +1029,10 @@
           <div class="configuration-sharing__section">
             <p class="card__hint">
               Export saves <strong>everything</strong> to an <code>AwesomeADO.config</code> file:
-              your theme, default view, current team name, sprint counts, area paths, board columns,
-              work item types, team configuration work item ID, and every enhanced query (which
-              queries are enhanced and each one's view settings). Import replaces your current
-              configuration with the contents of a file you previously exported.
+              your theme, default view, current team name, sprint counts, board columns, work item
+              types, team configuration work item ID, and every enhanced query (which queries are
+              enhanced and each one's view settings). Import replaces your current configuration
+              with the contents of a file you previously exported.
             </p>
             <div class="log-toolbar">
               <button type="button" class="button button--subtle" id="settings-export">
@@ -1202,23 +1170,6 @@
                 How many past sprints are offered in the sprint picker (in addition to the current
                 sprint). Between 0 and 6; 0 shows only the current and future sprints.
               </p>
-            </div>
-
-            <div class="area-paths">
-              <div class="setting">
-                <span class="field__label">Area paths</span>
-                <p class="field__hint">
-                  Pin the area paths you care about. Each row's label defaults to the path's last
-                  segment; edit it to give the path a friendlier name.
-                </p>
-              </div>
-              <div class="area-paths__list" id="ado-area-paths"></div>
-              <p class="area-paths__empty" id="ado-area-paths-empty" hidden>
-                No area paths added yet.
-              </p>
-              <button type="button" class="button button--subtle" id="ado-area-path-add" disabled>
-                Add area path
-              </button>
             </div>
           </div>
         </div>

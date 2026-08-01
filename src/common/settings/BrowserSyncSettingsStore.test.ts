@@ -70,7 +70,6 @@ const DEFAULT_VIEW_KEY = "settings.defaultView";
 const CURRENT_TEAM_KEY = "settings.currentTeam";
 const FUTURE_SPRINTS_KEY = "settings.futureSprintsCount";
 const PAST_SPRINTS_KEY = "settings.pastSprintsCount";
-const AREA_PATHS_KEY = "settings.areaPaths";
 const BOARD_COLUMNS_KEY = "settings.boardColumns";
 const WORK_ITEM_TYPES_KEY = "settings.workItemTypes";
 const MARKER_TAGS_KEY = "settings.markerTags";
@@ -102,18 +101,16 @@ describe("BrowserSyncSettingsStore - read", () => {
       expect(settings).toEqual({ ...DEFAULT_SETTINGS, theme: "dark", defaultView: "original" });
     });
 
-    it("reads the team, future-sprints, and area-path keys", async () => {
+    it("reads the team and sprint-count keys", async () => {
       const fake = new FakeBrowserSyncStorage();
       await fake.set(CURRENT_TEAM_KEY, { id: "team-1", name: "Platform" });
       await fake.set(FUTURE_SPRINTS_KEY, 5);
       await fake.set(PAST_SPRINTS_KEY, 3);
-      await fake.set(AREA_PATHS_KEY, [{ path: "Web\\Api", label: "Api" }]);
       const store = new BrowserSyncSettingsStore(fake);
       const settings = await store.read();
       expect(settings.currentTeam).toEqual({ id: "team-1", name: "Platform" });
       expect(settings.futureSprintsCount).toBe(5);
       expect(settings.pastSprintsCount).toBe(3);
-      expect(settings.areaPaths).toEqual([{ path: "Web\\Api", label: "Api" }]);
     });
 
     it("does not write any key during a read", async () => {
@@ -221,15 +218,11 @@ describe("BrowserSyncSettingsStore - write (scalars and team)", () => {
 
 describe("BrowserSyncSettingsStore - write (sprints, columns, and types)", () => {
   describe("write", () => {
-    it("persists the future-sprints and area-path keys", async () => {
+    it("persists the future-sprints key", async () => {
       const fake = new FakeBrowserSyncStorage();
       const store = new BrowserSyncSettingsStore(fake);
-      await store.write({
-        futureSprintsCount: 6,
-        areaPaths: [{ path: "Web\\Api", label: "Api" }],
-      });
+      await store.write({ futureSprintsCount: 6 });
       expect(await fake.get(FUTURE_SPRINTS_KEY)).toBe(6);
-      expect(await fake.get(AREA_PATHS_KEY)).toEqual([{ path: "Web\\Api", label: "Api" }]);
     });
 
     it("persists the past-sprints key when supplied", async () => {

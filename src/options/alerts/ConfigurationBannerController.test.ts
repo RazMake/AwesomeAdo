@@ -15,7 +15,6 @@ import { ConfigurationBannerController } from "./ConfigurationBannerController";
 const CONFIGURED: ExtensionSettings = {
   ...DEFAULT_SETTINGS,
   currentTeam: { id: "t1", name: "Platform" },
-  areaPaths: [{ path: "A\\B", label: "B" }],
   boardColumns: ["Active"],
   workItemTypes: [
     { name: "Bug", color: "", icon: "", columns: [{ column: "Active", states: ["New"] }] },

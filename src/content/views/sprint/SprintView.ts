@@ -5,6 +5,7 @@ import type {
   TrackedWorkItem,
   TypeCatalogEntry,
 } from "../../../common/ado/TrackedWorkItem";
+import { buildQueryFolderUrl } from "../../../common/ado/fetchAdoTree";
 import type { SprintWindow, SprintWindowEntry } from "../../../common/ado/sprintWindow";
 import { WORK_ITEM_MARKERS, type WorkItemMarker } from "../../../common/settings/ExtensionSettings";
 import type {
@@ -72,6 +73,13 @@ interface DisplayItem {
 
 interface SprintBoardHandle {
   refresh: RefreshButtonHandle;
+}
+
+function queryBreadcrumbs(result: WorkItemTreeResult, href: string) {
+  return (result.folderPath ?? []).map((folder) => {
+    const url = buildQueryFolderUrl(href, folder.path);
+    return url === null ? { label: folder.label } : { label: folder.label, url };
+  });
 }
 
 function markerPrefixes(context: DataDrivenViewContext): string[] {
@@ -555,6 +563,7 @@ function renderBoard(
     repaint,
   );
   const header = renderSprintHeader(context.doc, {
+    breadcrumbs: queryBreadcrumbs(data.result, context.doc.location?.href ?? ""),
     sprintPicker: sprintPicker.element,
     laneFilter: laneFilter.element,
     projectFilter: projectFilter.element,

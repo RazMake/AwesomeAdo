@@ -57,6 +57,7 @@ describe("exportConfig", () => {
     expect(parsed.awesomeAdoConfigVersion).toBe(CONFIG_FORMAT_VERSION);
     expect(parsed.settings.theme).toBe("dark");
     expect(parsed.settings.currentTeam).toEqual({ id: "team-1", name: "Contoso Team" });
+    expect(parsed.settings).not.toHaveProperty("areaPaths");
     expect(parsed.enhancedQueries).toEqual(sampleBindings);
   });
 
@@ -70,6 +71,7 @@ describe("exportConfig", () => {
     expect(compact).not.toContain("\n");
     expect(compact).toBe(JSON.stringify(JSON.parse(compact)));
     expect(JSON.parse(compact)).not.toHaveProperty("teamConfigWorkItemId");
+    expect(JSON.parse(compact).settings).not.toHaveProperty("areaPaths");
   });
 
   it("includes the trusted team configuration work item in a file export", () => {
@@ -163,6 +165,19 @@ describe("importConfig - salvaging what a file does offer", () => {
 
     expect(imported.settings).toEqual({ theme: "blue" });
     expect(imported.enhancedQueries).toEqual({});
+    expect(imported.problems).toEqual([]);
+  });
+
+  it("ignores the retired areaPaths field from a legacy file", () => {
+    const imported = importConfig(
+      JSON.stringify({
+        awesomeAdoConfigVersion: 1,
+        settings: { theme: "blue", areaPaths: [{ path: "Web\\Api", label: "Api" }] },
+        enhancedQueries: {},
+      }),
+    );
+
+    expect(imported.settings).toEqual({ theme: "blue" });
     expect(imported.problems).toEqual([]);
   });
 

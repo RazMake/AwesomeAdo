@@ -10,7 +10,8 @@ tree queries and keeps its header/filter state for the lifetime of the mounted v
 - `SprintView.ts` -> `sprintView: EnhancedView` - loads the query tree, sprint window, and selected
   iteration's capacity roster; renders the sprint, Lane, Project, refresh, write-queue, team,
   marker, and recent-activity controls; and shows the filtered item queue.
-- `SprintHeader.ts` -> `renderSprintHeader` - assembles the sticky, theme-aware control card.
+- `SprintHeader.ts` -> `renderSprintHeader` - assembles the sticky, theme-aware control card with
+  the query's clickable parent-folder breadcrumb trail at the top.
 
 Team pills come from the selected sprint's capacity roster. An **Unassigned** pill appears when the
 loaded queue contains unassigned work. Team pills report queue and active counts. Marker-tag pills

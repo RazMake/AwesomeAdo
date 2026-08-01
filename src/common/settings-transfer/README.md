@@ -2,7 +2,7 @@
 
 Serializes the user's **entire** configuration to and from a single `AwesomeADO.config` file, so a
 user can back it up or move it between machines. The file carries every extension setting (theme,
-default view, current team, sprint counts, area paths, board columns, work item types) **and** every
+default view, current team, sprint counts, board columns, work item types) **and** every
 enhanced-query binding (which queries are enhanced and each one's per-view property values).
 
 This component is pure data plumbing: no DOM, no `chrome.*`. The options-side controller that wires
@@ -34,6 +34,7 @@ it to buttons and the two stores lives in `src/options/settings-transfer`.
   wrong keeps whatever the user has configured today. Throws `ConfigImportError` only when the file
   yields nothing at all (not JSON, not an object, or missing a whole section), so importing an
   unrelated file cannot wipe settings to defaults.
+  The retired `areaPaths` key in a legacy file or shared payload is ignored without being persisted.
 - `mergeImportedSettings(current, imported)` — apply legacy migrations that need current local
   context, including preserving Primary Work when a version 1 payload predates that field.
 

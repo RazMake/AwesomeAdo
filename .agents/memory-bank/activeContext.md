@@ -58,8 +58,9 @@ The extension is feature-complete for its current scope:
   and a note posted through the comments API all bump `System.Rev` without reporting the new one, so
   the board's cached rev goes stale on its own.
   `sprint` is now a **data-driven queue** for flat or tree queries: its sticky header composes the
-  sprint picker, Lane and Project filters, refresh, write-queue state, capacity-backed team pills,
-  marker filters, and recent-activity filters. The Project filter lists only ancestor chains of work
+  query's clickable parent-folder breadcrumbs, sprint picker, Lane and Project filters, refresh,
+  write-queue state, capacity-backed team pills, marker filters, and recent-activity filters. The
+  Project filter lists only ancestor chains of work
   surviving the sprint and other active filters, without narrowing its own alternatives. Team pills
   show queue + active counters; marker-tag
   pills show one selected-sprint total except Interrupt, which splits not-yet-accepted from
@@ -214,8 +215,9 @@ The extension is feature-complete for its current scope:
   item id syncs separately, unchanged pulls do not rewrite storage, and Disconnect leaves the last
   pulled local snapshot intact.
 - Options page: Appearance (Dark/Light/Blue theme, Follow ADO dark/light resolution, default view +
-  Configuration Sharing), Azure DevOps config (including hierarchy Primary work classification with
-  a context-only root), Query Bindings manager, Diagnostics.
+  Configuration Sharing), Azure DevOps config (team, sprint window, board mappings, marker tags, and
+  hierarchy Primary work classification with a context-only root), Query Bindings manager,
+  Diagnostics. Area paths are not configured: both views derive eligible paths from live query work.
 - SPA-aware navigation via the background service worker.
 - Device-local, source-tagged diagnostics log (`src/common/logging`): every line carries the
   component folder that owns the emitting code (e.g. `content/query-page`, `common/settings`,

@@ -13,7 +13,6 @@ function viewConfigurationSignature(settings: ExtensionSettings): string {
     currentTeam: settings.currentTeam,
     futureSprintsCount: settings.futureSprintsCount,
     pastSprintsCount: settings.pastSprintsCount,
-    areaPaths: settings.areaPaths,
     boardColumns: settings.boardColumns,
     workItemTypes: settings.workItemTypes,
     markerTags: settings.markerTags,

@@ -226,9 +226,6 @@ const adoProject = document.querySelector<HTMLElement>("#ado-project");
 const adoTeamInput = document.querySelector<HTMLInputElement>("#ado-team-input");
 const adoFutureSprints = document.querySelector<HTMLInputElement>("#ado-future-sprints");
 const adoPastSprints = document.querySelector<HTMLInputElement>("#ado-past-sprints");
-const adoAreaPaths = document.querySelector<HTMLElement>("#ado-area-paths");
-const adoAreaPathsEmpty = document.querySelector<HTMLElement>("#ado-area-paths-empty");
-const adoAreaPathAdd = document.querySelector<HTMLButtonElement>("#ado-area-path-add");
 const adoWitColumns = document.querySelector<HTMLElement>("#ado-wit-columns");
 const adoWitRows = document.querySelector<HTMLElement>("#ado-wit-rows");
 const adoWorkItemTypesEmpty = document.querySelector<HTMLElement>("#ado-work-item-types-empty");
@@ -245,9 +242,6 @@ if (
   adoTeamInput &&
   adoFutureSprints &&
   adoPastSprints &&
-  adoAreaPaths &&
-  adoAreaPathsEmpty &&
-  adoAreaPathAdd &&
   adoWitColumns &&
   adoWitRows &&
   adoWorkItemTypesEmpty &&
@@ -264,9 +258,6 @@ if (
     teamInput: adoTeamInput,
     futureSprintsInput: adoFutureSprints,
     pastSprintsInput: adoPastSprints,
-    areaPathsList: adoAreaPaths,
-    areaPathsEmpty: adoAreaPathsEmpty,
-    areaPathAddButton: adoAreaPathAdd,
     workItemTypes: {
       columnsRow: adoWitColumns,
       body: adoWitRows,

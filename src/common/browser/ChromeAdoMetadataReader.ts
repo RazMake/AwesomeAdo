@@ -1,7 +1,6 @@
 import { EMPTY_ADO_METADATA, type AdoMetadata } from "../ado/AdoMetadata";
 import {
   buildAdoMetadataUrls,
-  flattenAreaPaths,
   parseDateFieldReferenceNames,
   parseTeams,
   parseWorkItemTypes,
@@ -14,7 +13,7 @@ import { readCurrentAdoQueryContext } from "./pickAdoQueryTab";
 
 /**
  * IAdoMetadataReader backed by chrome.tabs + chrome.scripting. Identity (org/project) is parsed from
- * the tab URL; the teams and area paths are fetched by injecting a fetch into the ADO tab's MAIN
+ * the tab URL; project metadata is fetched by injecting a fetch into the ADO tab's MAIN
  * (page) world — the only context that is both same-origin with the ADO REST APIs and carries the
  * user's SameSite session cookies (see `fetchAdoRawInPage`). This is the only place allowed to
  * reference chrome.tabs/chrome.scripting, keeping the options controller browser-agnostic.
@@ -38,7 +37,6 @@ export class ChromeAdoMetadataReader implements IAdoMetadataReader {
     const raw = await this.fetchInPage(tabId, urls);
     return {
       teams: parseTeams(raw?.teams),
-      areaPaths: flattenAreaPaths(raw?.areaTree),
       // The type list names each type's fields but not their data type, so the field list resolves
       // which are dates; passing the set attaches each type's ETA-eligible date fields.
       workItemTypes: parseWorkItemTypes(
@@ -57,7 +55,7 @@ export class ChromeAdoMetadataReader implements IAdoMetadataReader {
         target: { tabId },
         world: "MAIN",
         func: fetchAdoRawInPage,
-        args: [urls.teamsUrl, urls.areaPathsUrl, urls.workItemTypesUrl, urls.fieldsUrl],
+        args: [urls.teamsUrl, urls.workItemTypesUrl, urls.fieldsUrl],
       });
       return results[0]?.result as AdoRawMetadata | undefined;
     } catch {

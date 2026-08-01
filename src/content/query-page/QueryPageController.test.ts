@@ -23,7 +23,6 @@ function makeLoggerSpy(): ILogger {
 // configured; individual tests override a single field to exercise the incomplete-config guard.
 const CONFIGURED_ADO: Partial<ExtensionSettings> = {
   currentTeam: { id: "t1", name: "Platform" },
-  areaPaths: [{ path: "A\\B", label: "B" }],
   boardColumns: ["Active"],
   workItemTypes: [
     { name: "Bug", color: "", icon: "", columns: [{ column: "Active", states: ["New"] }] },

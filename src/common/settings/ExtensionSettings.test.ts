@@ -10,9 +10,7 @@ import {
   MIN_FUTURE_SPRINTS,
   MIN_PAST_SPRINTS,
   WORK_ITEM_MARKERS,
-  defaultAreaPathLabel,
   isAdoConfigured,
-  normalizeAreaPaths,
   normalizeBoardColumns,
   normalizeFutureSprintsCount,
   normalizeMarkerTags,
@@ -91,13 +89,6 @@ describe("normalizeSettings - team, sprint, and collection fields", () => {
     expect(normalizeSettings({ pastSprintsCount: "x" }).pastSprintsCount).toBe(
       DEFAULT_SETTINGS.pastSprintsCount,
     );
-  });
-
-  it("normalizes areaPaths through normalizeSettings", () => {
-    expect(normalizeSettings({ areaPaths: [{ path: "A\\B", label: "B" }] }).areaPaths).toEqual([
-      { path: "A\\B", label: "B" },
-    ]);
-    expect(normalizeSettings({ areaPaths: "nope" }).areaPaths).toEqual([]);
   });
 
   it("normalizes workItemTypes through normalizeSettings", () => {
@@ -258,7 +249,6 @@ describe("isAdoConfigured", () => {
   const configured: ExtensionSettings = {
     ...DEFAULT_SETTINGS,
     currentTeam: { id: "t1", name: "Platform" },
-    areaPaths: [{ path: "A\\B", label: "B" }],
     boardColumns: ["Active"],
     workItemTypes: [
       { name: "Bug", color: "", icon: "", columns: [{ column: "Active", states: ["New"] }] },
@@ -271,10 +261,6 @@ describe("isAdoConfigured", () => {
 
   it("is false without a current team", () => {
     expect(isAdoConfigured({ ...configured, currentTeam: null })).toBe(false);
-  });
-
-  it("is false without any area path", () => {
-    expect(isAdoConfigured({ ...configured, areaPaths: [] })).toBe(false);
   });
 
   it("is false without any work item type", () => {
@@ -323,51 +309,6 @@ describe("normalizePastSprintsCount", () => {
     expect(normalizePastSprintsCount(-5)).toBe(MIN_PAST_SPRINTS);
     expect(normalizePastSprintsCount(100)).toBe(MAX_PAST_SPRINTS);
     expect(normalizePastSprintsCount(3.9)).toBe(3);
-  });
-});
-
-describe("defaultAreaPathLabel", () => {
-  it("returns the last non-empty backslash-separated segment", () => {
-    expect(defaultAreaPathLabel("Project\\Area\\Team")).toBe("Team");
-    expect(defaultAreaPathLabel("Solo")).toBe("Solo");
-  });
-
-  it("ignores trailing separators and blank segments", () => {
-    expect(defaultAreaPathLabel("Project\\Area\\")).toBe("Area");
-    expect(defaultAreaPathLabel("A\\ \\C")).toBe("C");
-  });
-
-  it("returns an empty string when there is no usable segment", () => {
-    expect(defaultAreaPathLabel("")).toBe("");
-    expect(defaultAreaPathLabel("\\\\")).toBe("");
-  });
-});
-
-describe("normalizeAreaPaths", () => {
-  it("returns an empty array for non-array input", () => {
-    expect(normalizeAreaPaths(undefined)).toEqual([]);
-    expect(normalizeAreaPaths({ path: "A" })).toEqual([]);
-  });
-
-  it("drops pathless entries and trims the path", () => {
-    expect(normalizeAreaPaths([{ path: "  " }, { label: "x" }, { path: " A\\B " }])).toEqual([
-      { path: "A\\B", label: "B" },
-    ]);
-  });
-
-  it("defaults a blank or missing label to the path's last segment", () => {
-    expect(normalizeAreaPaths([{ path: "A\\B\\C", label: "  " }])).toEqual([
-      { path: "A\\B\\C", label: "C" },
-    ]);
-  });
-
-  it("keeps a supplied label and dedupes by path", () => {
-    expect(
-      normalizeAreaPaths([
-        { path: "A\\B", label: "Custom" },
-        { path: "A\\B", label: "Duplicate" },
-      ]),
-    ).toEqual([{ path: "A\\B", label: "Custom" }]);
   });
 });
 

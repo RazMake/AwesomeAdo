@@ -1,8 +1,8 @@
 # src/common/ado
 
-Azure DevOps project metadata for the options page: the list of **teams**, the project's
-**area paths**, and its **work item types** (each with its states), plus the pure helpers that build
-the REST URLs and parse the responses.
+Azure DevOps project metadata for the options page: the list of **teams** and the project's **work
+item types** (each with its states), plus the pure helpers that build the REST URLs and parse the
+responses.
 
 ## Why this exists
 
@@ -23,10 +23,9 @@ response-parsing logic, kept pure so they are unit-testable without a browser.
 - `AdoWorkItemType` — `{ name, color, icon, states, dateFields }` for one enabled work item type;
   `color` is ADO's hex string (no `#`), `icon` is the type glyph's URL, `states` are the type's state
   names, and `dateFields` are the date-typed fields (`AdoWorkItemField[]`) offered as the type's ETA.
-- `AdoMetadata` — `{ teams: AdoTeam[]; areaPaths: string[]; workItemTypes: AdoWorkItemType[] }`;
-  `areaPaths` are user-facing strings such as `Project\Area\Team`.
-- `EMPTY_ADO_METADATA` — the `{ teams: [], areaPaths: [], workItemTypes: [] }` fallback so callers
-  never see `undefined`.
+- `AdoMetadata` — `{ teams: AdoTeam[]; workItemTypes: AdoWorkItemType[] }`.
+- `EMPTY_ADO_METADATA` — the `{ teams: [], workItemTypes: [] }` fallback so callers never see
+  `undefined`.
 
 ### `TrackedWorkItem.ts`
 
@@ -160,11 +159,10 @@ response-parsing logic, kept pure so they are unit-testable without a browser.
 ### `fetchAdoMetadata.ts`
 
 - `buildAdoMetadataUrls(href)` — parses the org/project from the tab URL and returns the
-  `{ teamsUrl, areaPathsUrl, workItemTypesUrl, fieldsUrl }` to fetch, or `null` for a non-project
+  `{ teamsUrl, workItemTypesUrl, fieldsUrl }` to fetch, or `null` for a non-project
   (org/folder) URL.
 - `parseTeams(body)` — turns the raw teams REST body into a sorted `AdoTeam[]`; **best-effort** (a
   missing/malformed body yields `[]`).
-- `flattenAreaPaths(root)` — flattens the raw classification tree into `Project\Area` strings.
 - `parseWorkItemTypes(body, dateFieldReferenceNames?)` — turns the raw work-item-types REST body into
   a sorted `AdoWorkItemType[]`, dropping disabled types; **best-effort** like `parseTeams`. The list
   endpoint returns each type's states and field list inline, but not the fields' data types, so pass
@@ -190,7 +188,7 @@ response-parsing logic, kept pure so they are unit-testable without a browser.
   project-scoped or `team` is blank. Shared by every team-owned endpoint (a team's iterations, its
   backlog order) so they cannot drift on encoding or on the "no team means no URL" rule.
   `apiVersion` is a parameter because not every team-scoped route has left preview.
-- `AdoMetadataUrls` — the `{ teamsUrl, areaPathsUrl, workItemTypesUrl, fieldsUrl }` shape
+- `AdoMetadataUrls` — the `{ teamsUrl, workItemTypesUrl, fieldsUrl }` shape
   `buildAdoMetadataUrls` returns.
 
 ### `adoAttachment.ts`
@@ -451,6 +449,6 @@ timestamp each.
 
 - The **options-page reader** (`ChromeAdoMetadataReader` in `src/common/browser`) calls
   `buildAdoMetadataUrls`, injects `fetchAdoRawInPage` into the ADO tab to get the raw JSON, then
-  applies `parseTeams` / `flattenAreaPaths` / `parseWorkItemTypes` (passing the date-field reference
-  names from `parseDateFieldReferenceNames`). It is the only place that touches chrome APIs.
+  applies `parseTeams` / `parseWorkItemTypes` (passing the date-field reference names from
+  `parseDateFieldReferenceNames`). It is the only place that touches chrome APIs.
 - Everything here is pure: tests pass URLs/bodies directly and never touch the network.

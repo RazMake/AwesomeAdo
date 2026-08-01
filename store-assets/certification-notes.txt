@@ -6,8 +6,8 @@ Suggested test flow:
 
 1. Sign in to a hosted Azure DevOps organization and open a saved query at a single-query URL.
 2. Confirm the AwesomeADO button appears in the Azure DevOps command bar.
-3. Open AwesomeADO Options and configure the current team, at least one area path, board columns, and
-   a work item type mapping.
+3. Open AwesomeADO Options and configure the current team, board columns, and a work item type
+   mapping.
 4. Bind the saved query to Project Tracking.
 5. Return to the query and confirm the Project Tracking board loads the query tree.
 6. Exercise filters and expand a work item's description or discussion.

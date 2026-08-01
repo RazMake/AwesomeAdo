@@ -22,7 +22,7 @@ export const CONFIG_FORMAT_VERSION = 2;
  * The on-disk shape of an exported `AwesomeADO.config` file.
  *
  * A file export carries the user's ENTIRE configuration: every extension setting (theme, default
- * view, current team, sprint counts, area paths, board columns, work item types, marker tags), every
+ * view, current team, sprint counts, board columns, work item types, marker tags), every
  * enhanced-query binding, and the optional team configuration work item ID. The compact payload
  * published to that work item deliberately omits its own ID.
  */
@@ -304,7 +304,6 @@ const SETTINGS_RULES: readonly {
   { key: "currentTeam", isValid: isTeamRef, expected: "null, or a team with an id and a name" },
   { key: "futureSprintsCount", isValid: isWholeNumber, expected: "a whole number" },
   { key: "pastSprintsCount", isValid: isWholeNumber, expected: "a whole number" },
-  { key: "areaPaths", isValid: isAreaPathList, expected: "a list of area paths, each with a path" },
   { key: "boardColumns", isValid: isStringList, expected: "a list of column titles" },
   {
     key: "workItemTypes",
@@ -338,12 +337,6 @@ function isWholeNumber(value: unknown): boolean {
 function isTeamRef(value: unknown): boolean {
   return (
     value === null || (isRecord(value) && isFilledString(value.id) && isFilledString(value.name))
-  );
-}
-
-function isAreaPathList(value: unknown): boolean {
-  return (
-    Array.isArray(value) && value.every((entry) => isRecord(entry) && isFilledString(entry.path))
   );
 }
 
