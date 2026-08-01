@@ -52,6 +52,20 @@ describe("MessagingWorkItemFieldWriter - success paths", () => {
     expect(message.value).toBe("Active");
   });
 
+  it("forwards additional fields in the same message", async () => {
+    const send = vi.fn<SendUpdateFieldRequest>().mockResolvedValue({ ok: true, rev: 6 });
+    const { writer } = makeWriter(send);
+
+    await writer.writeField({
+      ...makeRequest(),
+      additionalFields: [{ field: "System.AreaPath", value: "Project\\Apps" }],
+    });
+
+    expect(send.mock.calls[0]?.[0].additionalFields).toEqual([
+      { field: "System.AreaPath", value: "Project\\Apps" },
+    ]);
+  });
+
   it("carries a cleared value (null) through the message", async () => {
     const send = vi.fn<SendUpdateFieldRequest>().mockResolvedValue({ ok: true, rev: 6 });
     const { writer } = makeWriter(send);

@@ -16,6 +16,7 @@ export interface LoadQueryTreeMessage {
   type: typeof LOAD_QUERY_TREE_MESSAGE;
   queryId: string;
   fields: string[];
+  wiql?: string;
 }
 
 export interface LoadQueryTreeResponse {
@@ -31,6 +32,7 @@ export function isLoadQueryTreeMessage(value: unknown): value is LoadQueryTreeMe
     candidate.type === LOAD_QUERY_TREE_MESSAGE &&
     typeof candidate.queryId === "string" &&
     Array.isArray(candidate.fields) &&
-    candidate.fields.every((field) => typeof field === "string")
+    candidate.fields.every((field) => typeof field === "string") &&
+    (candidate.wiql === undefined || typeof candidate.wiql === "string")
   );
 }

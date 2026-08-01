@@ -196,8 +196,21 @@ Split into component subfolders (each with its own `README.md`):
   `EnhancedView` renderer). `viewCatalog.ts` owns configs; `enhancedViewRegistry.ts` resolves eager
   and deferred renderers by id. Sprint is eager; Project Tracking is a separately built,
   web-accessible ESM module cached after first use. `shared/` holds per-view building blocks (today
-  `renderViewScaffold`). Sprint is a data-driven queue over flat or tree queries and loads the
-  selected iteration's capacity roster with its tree on every refresh. Its shared sprint picker
+  `renderViewScaffold`). Sprint is a data-driven lane-by-state card table over flat or tree queries and loads the
+  configured team's complete paged roster before executing its tree on every refresh. The original
+  saved WIQL loads independently and is rewritten with the selected sprint's current-iteration
+  offset; results retain team-assigned or unassigned work plus their parent chains. Its first four
+  configured application-state columns use theme-owned neutral/blue/amber/green paint; area paths
+  form rows. Only explicitly configured Primary-work types become cards; each card delegates its
+  direct-child progress and level-one popup to the shared `ChildItemsBadge`. Cards are
+  persist-then-reflect draggable: a cross-column drop writes the destination
+  type mapping's primary ADO state, a cross-lane drop writes `System.AreaPath`, and a diagonal move
+  sends both in one revision-guarded patch. Lane and Project
+  options are derived only from that retained tree. Sprint changes replace the whole DOM and session,
+  resetting all filters and re-deriving Lane/Project options. Its Lane filter offers only
+  represented leaf area paths, excluding any represented ancestor path. Member and Unassigned pill
+  counts include only Primary work and recursively configured child types, and every pill counter
+  exposes its semantic label and value on hover. Its shared sprint picker
   omits the optional filter toggle, keeping the view intrinsically scoped to one sprint; Project
   Tracking retains the toggle for its broader board. **Scoped §6 exception (ADR-027):** options
   may import only `views/viewCatalog` (view config), enforced by an `import-x/no-restricted-paths`

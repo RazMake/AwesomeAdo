@@ -30,7 +30,58 @@ describe("isUpdateWorkItemFieldMessage - type and id", () => {
       }),
     ).toBe(true);
   });
+});
 
+describe("isUpdateWorkItemFieldMessage - additional fields", () => {
+  it("accepts bounded additional field writes for one atomic action", () => {
+    expect(
+      isUpdateWorkItemFieldMessage({
+        type: UPDATE_WORK_ITEM_FIELD_MESSAGE,
+        id: 123,
+        rev: 5,
+        field: "System.State",
+        value: "Active",
+        additionalFields: [{ field: "System.AreaPath", value: "Project\\Apps" }],
+      }),
+    ).toBe(true);
+  });
+
+  it("rejects malformed, duplicate, and unbounded additional field writes", () => {
+    const base = {
+      type: UPDATE_WORK_ITEM_FIELD_MESSAGE,
+      id: 123,
+      rev: 5,
+      field: "System.State",
+      value: "Active",
+    };
+    expect(isUpdateWorkItemFieldMessage({ ...base, additionalFields: "System.AreaPath" })).toBe(
+      false,
+    );
+    expect(
+      isUpdateWorkItemFieldMessage({
+        ...base,
+        additionalFields: [{ field: "System/AreaPath", value: "Project\\Apps" }],
+      }),
+    ).toBe(false);
+    expect(
+      isUpdateWorkItemFieldMessage({
+        ...base,
+        additionalFields: [{ field: "System.State", value: "Done" }],
+      }),
+    ).toBe(false);
+    expect(
+      isUpdateWorkItemFieldMessage({
+        ...base,
+        additionalFields: Array.from({ length: 9 }, (_, index) => ({
+          field: `Custom.Field${index}`,
+          value: String(index),
+        })),
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("isUpdateWorkItemFieldMessage - rejected type and id", () => {
   it("rejects null", () => {
     expect(isUpdateWorkItemFieldMessage(null)).toBe(false);
   });

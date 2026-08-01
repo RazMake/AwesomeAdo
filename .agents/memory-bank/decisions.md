@@ -1083,3 +1083,41 @@ Markdown` in one `/rev`-guarded JSON Patch. The PATCH is not retried; a concurre
   color and raw title into the shared hierarchy control. That control searches titles by
   case-insensitive substring while retaining each match's visible ancestor stack, and expands toward
   the viewport margin before truncating labels with a full-text tooltip.
+
+## ADR-059: Sprint execution is team-roster-gated and sprint switches replace the session
+
+- Decision: Sprint View reads the saved query definition independently from execution. On initial
+  load, manual refresh, and sprint selection it starts that original-WIQL read while resolving the
+  sprint window, pages every member of the configured team, and only then executes a copy whose
+  `@CurrentIteration`/`@CurrentSprint` offset matches the selected sprint. The hydrated tree keeps
+  team-assigned or unassigned work and the parent chains needed to reach it. Team pills are emitted
+  in roster order before Unassigned; Lane and Project choices are derived only after tree pruning.
+  Selecting another sprint destroys the Sprint View session and DOM, resets every filter, and reloads
+  team members, WIQL, work, Lane choices, and Project choices. The roster operation logs request,
+  outcome count, and detailed failures without logging member identity.
+- Rationale: Team membership is the authoritative membership boundary for Sprint View; capacity is
+  optional planning data and must not decide who belongs to the team. Executing work before the roster
+  is known could expose out-of-team items, and deriving filters before pruning could leak their area
+  paths or parents. Keeping
+  the saved WIQL immutable prevents offsets accumulating across repeated sprint changes. Replacing
+  session state avoids stale filters and derived options silently narrowing a different sprint, while
+  manual refresh may still preserve the reader's filters because it does not change sprint context.
+
+## ADR-060: Sprint cards move through an area-by-state table atomically
+
+- Decision: Sprint View renders exact area paths as table lanes and the first four fixed application
+  state ordinals as columns, using the user's configured labels and theme-owned neutral, blue, amber,
+  and green fills. Queue, Active, and Waiting cards are tall; Done cards start compact and expand on
+  click or keyboard activation. Only types explicitly marked `isPrimaryWork` render as cards. Every
+  card shows wrapped title, ID, assignee, a type-colored edge, and the shared completed/total badge;
+  that badge lists only the item's direct children. Tall cards also show the immediate parent and
+  only the three configured marker conditions.
+- Decision: every card is draggable. A destination column resolves through that work-item type's
+  configured ordinal to its primary ADO state; a destination lane supplies the full
+  `System.AreaPath`. Drops are persist-then-reflect through the per-view `WorkItemWriteQueue`. A
+  diagonal drop carries state and area as one bounded `WorkItemFieldWriteRequest` with
+  `additionalFields`, producing one `/rev`-guarded JSON Patch and one resulting revision.
+- Rationale: application state is the configured board ordinal, not raw `System.State`, and area-path
+  lanes must retain full values even when their labels show only the leaf. One patch is required for
+  a diagonal gesture: two writes would make the second race the revision created by the first and
+  could leave half the drag committed.

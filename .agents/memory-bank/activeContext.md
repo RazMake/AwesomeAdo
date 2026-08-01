@@ -57,12 +57,22 @@ The extension is feature-complete for its current scope:
   refused and the field itself is unchanged (ADR-030 amendment) — a drag-reorder, the rank fallback
   and a note posted through the comments API all bump `System.Rev` without reporting the new one, so
   the board's cached rev goes stale on its own.
-  `sprint` is now a **data-driven queue** for flat or tree queries: its sticky header composes the
+  `sprint` is now a **data-driven lane-by-state card table** for flat or tree queries: its sticky header composes the
   query's clickable parent-folder breadcrumbs, sprint picker, Lane and Project filters, refresh,
-  write-queue state, capacity-backed team pills, marker filters, and recent-activity filters. The
+  write-queue state, team-member pills, marker filters, and recent-activity filters. The
+  Lane dropdown derives full paths from loaded work but offers only represented leaves, omitting
+  any path that is an ancestor of another offered path. The
+  rendered table shows only matching exact-path lanes and uses the user's first four application-state
+  labels with theme-owned Queue/Active/Waiting/Done colors. Queue through Waiting use tall cards;
+  Done cards start compact and expand on activation. Only explicitly configured Primary-work types
+  render as cards. Cards expose title, ID, assignee, type color, and a shared completed/total badge
+  whose popup lists their direct children only; tall cards add immediate parent plus recognized marker tags. Dragging across columns
+  changes state, across lanes changes `System.AreaPath`, and diagonally changes both atomically. The
   Project filter lists only ancestor chains of work
   surviving the sprint and other active filters, without narrowing its own alternatives. Team pills
-  show queue + active counters; marker-tag
+  show queue + active counters limited to Primary work and its recursively configured descendants;
+  planning-context ancestors do not contribute to member or Unassigned totals. Every pill counter
+  explains itself on hover. Marker-tag
   pills show one selected-sprint total except Interrupt, which splits not-yet-accepted from
   accepted-in-sprint work and collapses to one total when none are waiting. Unassigned is derived
   from loaded work. All pill families use Project Tracking's compact Feature
@@ -70,8 +80,11 @@ The extension is feature-complete for its current scope:
   at full opacity; non-activity and recent-activity pills use separate wrapping families with a larger
   gap in both views. The
   sprint picker omits its filter toggle because Sprint View is always constrained to the selected
-  iteration. Refresh reloads the query, sprint window, and
-  selected iteration capacity together. Its Project dropdown contains only eligible query ancestors
+  iteration. Initial load and refresh start the original-WIQL read while resolving the sprint,
+  page the configured team's complete roster before executing the offset-adjusted query, and retain
+  only team-assigned or unassigned work plus parent chains. Lane and Project choices are derived only
+  from that retained tree. Sprint changes replace the DOM/session, reset every filter, and reload
+  team members, WIQL, work, Lane choices, and Project choices. Its Project dropdown contains only eligible query ancestors
   whose configured types are strict ancestors of Primary-work types; Primary-work and
   implementation-detail types are not project choices. It colors choices by type, grows to the
   viewport margin before truncating long labels, and searches item titles while retaining matching
@@ -79,7 +92,7 @@ The extension is feature-complete for its current scope:
   view is a folder plus two registrations — see the `add-enhanced-view` skill.
 - Data-driven views depend on an injected `EnhancedViewServices` (optional field on
   `EnhancedViewContext`): `loadTree`, `userDirectory`, `getTypes`, `getBoardColumns`, `markerTags`,
-  `loadSprintWindow`, `loadSprintCapacity`, `noteLoader`,
+  `loadSprintWindow`, `loadTeamMembers`, `loadQueryDefinition`, `noteLoader`,
   `noteWriter`, `now`, `logger`
   (ADR-032). The normalized tree model + loader/directory contracts live in `common/ado`
   (`TrackedWorkItem`, `TrackedUser`, `TypeCatalogEntry`, `TeamIteration`, `IWorkItemTreeLoader`,

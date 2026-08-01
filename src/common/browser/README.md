@@ -261,7 +261,7 @@ MAIN-world fetch and hand back the raw bodies, which the content side then parse
 
 ### `AdoTreeRequest.ts` — the content→background message contract
 
-- `LOAD_QUERY_TREE_MESSAGE` / `LoadQueryTreeMessage` (`{ type, queryId, fields }`) — the request the
+- `LOAD_QUERY_TREE_MESSAGE` / `LoadQueryTreeMessage` (`{ type, queryId, fields, wiql? }`) — the request the
   content side sends to the worker.
 - `LoadQueryTreeResponse` (`{ raw: AdoRawTree | null }`) — the worker's reply; `raw` is `null` when
   the tree could not be loaded.
@@ -294,7 +294,8 @@ returned as an error result — it never throws. Construct it only in the conten
 The self-contained function the **background worker** injects into the ADO tab's MAIN world (via
 `chrome.scripting.executeScript`) to serve a `LoadQueryTreeMessage`. Like `fetchAdoRawInPage`, it is
 serialized with `Function.prototype.toString`, so it references only its parameters and page globals.
-It runs the WIQL query (`_apis/wit/wiql/{id}`), collects the work-item ids from the result, pages the
+It runs the saved WIQL query (`_apis/wit/wiql/{id}`), or POSTs an optional caller-supplied WIQL to
+the project execution endpoint, collects the work-item ids from the result, pages the
 `_apis/wit/workitemsbatch` endpoint (200 ids per page, at most four pages in flight) to hydrate the
 requested `fields`, and returns the raw `{ wiql, items }` (`AdoRawTree`) in id-page order for
 `parseTrackedTree` to normalize. Transport, 408, 429, and 5xx failures retry up to three attempts
@@ -332,17 +333,29 @@ list is small and unpaged) and returns the raw body, or `null` on any non-ok/thr
 is built by `buildAdoIterationsUrl` (in `common/ado/TeamIteration`) from the sender's own trusted tab
 URL, keeping the worker a closed "read this team's iterations" operation.
 
-## Loading a sprint's capacity roster
+## Loading a team's members
 
-Sprint View loads team members from the selected iteration's capacity endpoint through the same
-content -> background -> MAIN-world boundary as iterations.
+Sprint View loads every configured team member through the same content -> background -> MAIN-world
+boundary as iterations.
 
-- `AdoCapacityRequest.ts` defines and guards the closed `{ team, iterationId }` message.
-- `MessagingTeamCapacityLoader` sends the request, parses identities through `parseTeamCapacity`,
-  and logs failures without confusing them with a successful empty roster.
-- `fetchAdoCapacityInPage` performs the credentialed GET with up to three attempts for transient
-  network, 408, 429, and 5xx failures. Its URL is built from the trusted sender tab plus the typed
-  team and iteration identifiers; callers cannot supply an arbitrary URL.
+- `AdoTeamMembersRequest.ts` defines and guards the closed `{ team }` message.
+- `MessagingTeamMembersLoader` logs access, sends the request, parses identities through
+  `parseTeamMembers`, and logs HTTP, transport, stale-worker, pagination, and rejected-request
+  details without recording member names.
+- `executeAdoRequestInPage` pages the credentialed GET by the count actually returned, stops on an
+  empty or short page, and caps reads at 100 pages. Each GET receives up to three attempts for
+  transient network, 408, 429, and 5xx failures. The URL is built from the trusted sender tab plus
+  the typed team identifier; callers cannot supply an arbitrary URL.
+
+## Loading a saved query definition
+
+`AdoQueryDefinitionRequest`, `MessagingQueryDefinitionLoader`, and `executeAdoRequestInPage` read
+`queries/{id}?$expand=wiql` through a dedicated closed operation. Sprint View starts this read while
+resolving the team roster, then supplies an offset-adjusted copy to the tree operation only after
+the roster is ready. The response preserves its failure stage: an unhandled message identifies a
+stale or stopped background worker, while the worker distinguishes malformed requests, unsupported
+tab locations, missing injection results, injection exceptions, exhausted network retries, invalid
+JSON, and HTTP failures. Request arrival and outcome are logged without recording the WIQL body.
 
 ## Searching Azure DevOps for people
 
@@ -504,7 +517,7 @@ message, or the thrown value — so the caller logs the specific reason). Serial
 
 ## Writing a work item field back to ADO
 
-An enhanced view can persist a single work item field change (moving it between board columns via
+An enhanced view can persist an atomic work item field change (moving it between board columns via
 `System.State`, editing a type's ETA date field, etc.) back to Azure DevOps. The write needs the
 credentialed ADO REST API, which the isolated content world cannot reach, so the pattern mirrors the
 tree read and Feature Crew reconcile: the content script messages the background worker, which runs
@@ -512,8 +525,9 @@ the PATCH in the ADO tab's MAIN world.
 
 ### `WorkItemFieldRequest.ts` — the content→background message contract
 
-- `UPDATE_WORK_ITEM_FIELD_MESSAGE` / `UpdateWorkItemFieldMessage` (`{ type, id, rev, field, value }`)
-  — the request the content view sends to update a single work item field. `field` is the ADO field
+- `UPDATE_WORK_ITEM_FIELD_MESSAGE` / `UpdateWorkItemFieldMessage`
+  (`{ type, id, rev, field, value, additionalFields? }`) — the request the content view sends to
+  update one field or a bounded, duplicate-free atomic field set. `field` is the primary ADO field
   reference name and `value` is the new value (or `null` to clear the field). Includes `rev` as an
   optimistic-concurrency guard; the PATCH fails when the item was edited concurrently (its rev
   advanced).
@@ -543,14 +557,14 @@ Constructed only in the composition root (`src/content/index.ts`); feature code 
 ### `updateWorkItemFieldInPage(config)` — `updateWorkItemFieldInPage.ts`
 
 The self-contained function the **background worker** injects into the ADO tab's MAIN world to PATCH
-a single work item field. Takes ONE `UpdateWorkItemFieldConfig`
-(`{ updateUrl, rev, field, value, multilineFormat?, comment?, baseValue? }`) rather than an argument
+a work item's fields. Takes ONE `UpdateWorkItemFieldConfig`
+(`{ updateUrl, rev, field, value, additionalFields?, multilineFormat?, comment?, baseValue? }`) rather than an argument
 each, because `executeScript` requires every entry of `args` to be JSON-serializable and `undefined`
 is not — an omitted optional argument is an unserializable hole in that array and Chrome rejects the
 whole injection before it runs (see the note under **Injecting into the page world** below).
 
 Uses JSON Patch (`application/json-patch+json`) with a test-and-set: the
-rev is tested first (`{ op: "test", path: "/rev", value: rev }`), then the field is written. A `null`
+rev is tested first (`{ op: "test", path: "/rev", value: rev }`), then every requested field is written in that same patch. A `null`
 value clears it (`{ op: "remove", path: "/fields/<field>" }`); any other value sets it, using
 `replace` when `baseValue` names a non-empty current value and `add` otherwise. The op is not
 cosmetic: Azure DevOps treats `add` on `System.Tags` as **append**, so a shortened tag list comes

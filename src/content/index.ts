@@ -8,10 +8,6 @@ import {
 import type { ActiveView } from "../common/bindings/QueryBinding";
 import { createQueryBindingStore } from "../common/bindings/createQueryBindingStore";
 import {
-  type LoadSprintCapacityMessage,
-  type LoadSprintCapacityResponse,
-} from "../common/browser/AdoCapacityRequest";
-import {
   type ResolveAdoIdentityNamesMessage,
   type ResolveAdoIdentityNamesResponse,
 } from "../common/browser/AdoIdentityNamesRequest";
@@ -23,6 +19,14 @@ import {
   type LoadTeamIterationsMessage,
   type LoadTeamIterationsResponse,
 } from "../common/browser/AdoIterationsRequest";
+import {
+  type LoadQueryDefinitionMessage,
+  type LoadQueryDefinitionResponse,
+} from "../common/browser/AdoQueryDefinitionRequest";
+import {
+  type LoadTeamMembersMessage,
+  type LoadTeamMembersResponse,
+} from "../common/browser/AdoTeamMembersRequest";
 import {
   type LoadQueryTreeMessage,
   type LoadQueryTreeResponse,
@@ -44,9 +48,9 @@ import {
   type SendNoteActivityRequest,
 } from "../common/browser/MessagingNoteActivityReader";
 import {
-  MessagingTeamCapacityLoader,
-  type SendCapacityRequest,
-} from "../common/browser/MessagingTeamCapacityLoader";
+  MessagingQueryDefinitionLoader,
+  type SendQueryDefinitionRequest,
+} from "../common/browser/MessagingQueryDefinitionLoader";
 import {
   MessagingTeamConfigReader,
   type SendTeamConfigRequest,
@@ -55,6 +59,10 @@ import {
   MessagingTeamIterationsLoader,
   type SendIterationsRequest,
 } from "../common/browser/MessagingTeamIterationsLoader";
+import {
+  MessagingTeamMembersLoader,
+  type SendTeamMembersRequest,
+} from "../common/browser/MessagingTeamMembersLoader";
 import {
   MessagingUserDirectory,
   type SendIdentitySearchRequest,
@@ -174,6 +182,14 @@ const treeLoader = new MessagingWorkItemTreeLoader(
   etaFieldByType,
   loggers.forSource("content/views"),
 );
+const sendQueryDefinitionRequest: SendQueryDefinitionRequest = (message) =>
+  chrome.runtime.sendMessage<LoadQueryDefinitionMessage, LoadQueryDefinitionResponse | undefined>(
+    message,
+  );
+const queryDefinitionLoader = new MessagingQueryDefinitionLoader(
+  sendQueryDefinitionRequest,
+  loggers.forSource("content/views"),
+);
 
 // The sprint picker's iteration list is fetched the same way the tree is: the isolated content world
 // cannot reach the credentialed ADO REST API, so the loader messages the background worker (which
@@ -187,12 +203,10 @@ const iterationsLoader = new MessagingTeamIterationsLoader(
   loggers.forSource("content/views"),
 );
 
-const sendCapacityRequest: SendCapacityRequest = (message) =>
-  chrome.runtime.sendMessage<LoadSprintCapacityMessage, LoadSprintCapacityResponse | undefined>(
-    message,
-  );
-const capacityLoader = new MessagingTeamCapacityLoader(
-  sendCapacityRequest,
+const sendTeamMembersRequest: SendTeamMembersRequest = (message) =>
+  chrome.runtime.sendMessage<LoadTeamMembersMessage, LoadTeamMembersResponse | undefined>(message);
+const teamMembersLoader = new MessagingTeamMembersLoader(
+  sendTeamMembersRequest,
   loggers.forSource("content/views"),
 );
 
@@ -299,7 +313,8 @@ const openExtensionPage = (message: OpenOptionsMessage | OpenBindingSettingsMess
 };
 
 const trackingServices: EnhancedViewServices = {
-  loadTree: (queryId) => treeLoader.loadTree(queryId),
+  loadTree: (queryId, wiql) => treeLoader.loadTree(queryId, wiql),
+  loadQueryDefinition: (queryId) => queryDefinitionLoader.load(queryId),
   featureCrew: featureCrewWriter,
   noteLoader,
   noteActivity,
@@ -334,12 +349,12 @@ const trackingServices: EnhancedViewServices = {
       futureCount: latestSettings?.futureSprintsCount ?? DEFAULT_SETTINGS.futureSprintsCount,
     });
   },
-  loadSprintCapacity: (iterationId) => {
+  loadTeamMembers: () => {
     const team = latestSettings?.currentTeam ?? null;
-    if (team === null || team.id.trim().length === 0 || iterationId.trim().length === 0) {
+    if (team === null || team.id.trim().length === 0) {
       return Promise.resolve({ members: [], error: null });
     }
-    return capacityLoader.loadCapacity(team.id, iterationId);
+    return teamMembersLoader.loadMembers(team.id);
   },
   now: () => new Date(),
   logger: loggers.forSource("content/views"),

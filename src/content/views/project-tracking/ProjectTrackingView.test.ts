@@ -122,7 +122,7 @@ function createFakeServices(overrides?: Partial<EnhancedViewServices>): Enhanced
       entries: [...FIXTURE_SPRINT_WINDOW.entries],
       currentName: FIXTURE_SPRINT_WINDOW.currentName,
     }),
-    loadSprintCapacity: async () => ({ members: [], error: null }),
+    loadTeamMembers: async () => ({ members: [], error: null }),
     now: () => new Date("2026-07-24T12:00:00Z"),
     // A no-op logger by default: nothing here could read a recorded call, and a recorder no test can
     // reach is dead state. Tests that care about logging override this with their own.

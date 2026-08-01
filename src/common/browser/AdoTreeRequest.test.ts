@@ -11,6 +11,14 @@ describe("isLoadQueryTreeMessage", () => {
         fields: ["System.Id", "System.Title"],
       }),
     ).toBe(true);
+    expect(
+      isLoadQueryTreeMessage({
+        type: LOAD_QUERY_TREE_MESSAGE,
+        queryId: "abc",
+        fields: ["System.Id"],
+        wiql: "SELECT [System.Id] FROM WorkItems",
+      }),
+    ).toBe(true);
   });
 
   it("rejects null", () => {
@@ -51,6 +59,17 @@ describe("isLoadQueryTreeMessage", () => {
         type: LOAD_QUERY_TREE_MESSAGE,
         queryId: "abc",
         fields: ["System.Id", 5],
+      }),
+    ).toBe(false);
+  });
+
+  it("rejects a non-string custom WIQL body", () => {
+    expect(
+      isLoadQueryTreeMessage({
+        type: LOAD_QUERY_TREE_MESSAGE,
+        queryId: "abc",
+        fields: [],
+        wiql: 42,
       }),
     ).toBe(false);
   });

@@ -9,6 +9,22 @@ we hit, why they happened, and the exact fix so nobody re-derives them.
 agent-tool-local memory (it does not clone or transfer between machines/agents). Record new findings
 here so every agent, teammate, and clone sees them.
 
+## Query-definition HTTP 0 can be a stale in-memory MV3 worker
+
+- SYMPTOM: Sprint View stops at `Could not load query definition (HTTP 0)` while the iterations read
+  immediately succeeds. Reloading or rebuilding `dist/` alone does not repair it.
+- VERIFIED LIVE (2026-07-31): the exact query-definition URL returned HTTP 200 with WIQL from the
+  ADO tab's MAIN world, and the service worker's on-disk script contained
+  `awesomeado:load-query-definition`, but sending that message from AwesomeADO's live isolated
+  execution context resolved `undefined`.
+- ROOT CAUSE: `fetch(location.href)` in the worker reads the current script file from disk; it does
+  not prove the already-running worker evaluated that file. The in-memory worker still ran the old
+  bundle, which had the iterations listener but not the newer query-definition listener.
+- FIX / RULE: reload the extension first, then reload the ADO tab so both worker and content script
+  come from the same build. A reply of `undefined` is now logged as an unhandled/stale worker instead
+  of HTTP 0. Query-definition replies also preserve URL-build, injection, network-retry, invalid-JSON,
+  and HTTP failure stages, while background logs record request arrival and outcome.
+
 ## Release validation rejected a correctly immutable tag ruleset
 
 - SYMPTOM: `Verify owner-controlled version tag policy` exited at its final `jq -e` check even though

@@ -9,7 +9,7 @@ export type SprintRelation = "past" | "current" | "future";
 
 /** One decorated sprint option in the picker, structurally usable as a `SprintPicker` option. */
 export interface SprintWindowEntry {
-  /** The iteration GUID used to read this sprint's capacity roster, when ADO supplied it. */
+  /** The iteration GUID supplied by ADO, when available. */
   id?: string;
   /** The iteration path (stable id / option value). */
   path: string;

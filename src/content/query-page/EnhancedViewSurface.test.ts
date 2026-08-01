@@ -305,7 +305,7 @@ describe("EnhancedViewSurface - keep-alive", () => {
       getBoardColumns: () => [],
       markerTags: () => normalizeMarkerTags(undefined),
       loadSprintWindow: () => Promise.resolve({ entries: [], currentName: null }),
-      loadSprintCapacity: () => Promise.resolve({ members: [], error: null }),
+      loadTeamMembers: () => Promise.resolve({ members: [], error: null }),
       now: () => new Date(),
       logger: { info: () => {}, error: () => {} },
       writeField: () => Promise.resolve({ ok: true }),
@@ -319,7 +319,7 @@ describe("EnhancedViewSurface - keep-alive", () => {
     surfaceWithServices.apply(sprint);
     expect(styleEl()).toBeTruthy();
     expect(hostEl()).toBeTruthy();
-    expect(titleText()).toBe("Sprint View");
+    expect(hostEl()?.textContent).toBe("Loading spring data...");
 
     surfaceWithServices.apply(tracking);
     expect(titleText()).toBe("Project Tracking");

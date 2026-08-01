@@ -4,8 +4,9 @@ import {
   FEATURE_CREW_STATE,
   FEATURE_CREW_TITLE,
 } from "../common/ado/FeatureCrew";
-import { buildAdoCapacityUrl } from "../common/ado/TeamCapacity";
+import { buildAdoQueryDefinitionUrl } from "../common/ado/QueryDefinition";
 import { buildAdoIterationsUrl } from "../common/ado/TeamIteration";
+import { buildAdoTeamMembersUrl } from "../common/ado/TeamMembers";
 import { IMPORTANCE_FIELD } from "../common/ado/adoApi";
 import { buildAdoIdentitySearchRequest } from "../common/ado/fetchAdoIdentities";
 import {
@@ -47,11 +48,6 @@ import {
   type RevealOptionsSectionMessage,
 } from "../common/bindings/BindingRequest";
 import {
-  isLoadSprintCapacityMessage,
-  type LoadSprintCapacityMessage,
-  type LoadSprintCapacityResponse,
-} from "../common/browser/AdoCapacityRequest";
-import {
   isResolveAdoIdentityNamesMessage,
   type ResolveAdoIdentityNamesMessage,
   type ResolveAdoIdentityNamesResponse,
@@ -66,6 +62,20 @@ import {
   type LoadTeamIterationsMessage,
   type LoadTeamIterationsResponse,
 } from "../common/browser/AdoIterationsRequest";
+import {
+  isLoadQueryDefinitionMessage,
+  LOAD_QUERY_DEFINITION_MESSAGE,
+  loadQueryDefinitionMessageProblem,
+  type LoadQueryDefinitionMessage,
+  type LoadQueryDefinitionResponse,
+} from "../common/browser/AdoQueryDefinitionRequest";
+import {
+  isLoadTeamMembersMessage,
+  LOAD_TEAM_MEMBERS_MESSAGE,
+  loadTeamMembersMessageProblem,
+  type LoadTeamMembersMessage,
+  type LoadTeamMembersResponse,
+} from "../common/browser/AdoTeamMembersRequest";
 import {
   isLoadQueryTreeMessage,
   type LoadQueryTreeMessage,
@@ -119,9 +129,9 @@ import {
   type FeatureCrewApplyResult,
 } from "../common/browser/applyFeatureCrewInPage";
 import {
-  fetchAdoCapacityInPage,
-  type CapacityFetchOutcome,
-} from "../common/browser/fetchAdoCapacityInPage";
+  executeAdoRequestInPage,
+  type AdoPageRequestOutcome,
+} from "../common/browser/executeAdoRequestInPage";
 import {
   fetchAdoIdentitiesInPage,
   type AdoIdentitySearchOutcome,
@@ -281,11 +291,26 @@ const loadQueryTree = async (
     return { raw: null };
   }
   try {
+    const wiqlInit: RequestInit | null =
+      message.wiql === undefined
+        ? null
+        : {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json", Accept: "application/json" },
+            body: JSON.stringify({ query: message.wiql }),
+          };
     const results = await chrome.scripting.executeScript({
       target: { tabId },
       world: "MAIN",
       func: fetchAdoTreeInPage,
-      args: [urls.wiqlUrl, urls.batchUrl, message.fields, urls.queryUrl],
+      args: [
+        message.wiql === undefined ? urls.wiqlUrl : urls.executeWiqlUrl,
+        urls.batchUrl,
+        message.fields,
+        urls.queryUrl,
+        wiqlInit,
+      ],
     });
     return { raw: (results[0]?.result as AdoRawTree | undefined) ?? null };
   } catch (error) {
@@ -310,6 +335,66 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
   }
   void loadQueryTree(message, tabId, tabUrl).then(sendResponse);
   // Keep the message channel open for the async fetch reply above.
+  return true;
+});
+
+const loadQueryDefinition = async (
+  message: LoadQueryDefinitionMessage,
+  tabId: number,
+  tabUrl: string,
+): Promise<LoadQueryDefinitionResponse> => {
+  const queryUrl = buildAdoQueryDefinitionUrl(tabUrl, message.queryId);
+  if (queryUrl === null) {
+    const error = "sender tab URL is not a supported project-scoped ADO location";
+    logger.error(`Could not build query-definition URL for ${message.queryId}: ${error}.`);
+    return { raw: null, status: 0, error };
+  }
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: "MAIN",
+      func: executeAdoRequestInPage,
+      args: [{ operation: "read", url: queryUrl }],
+    });
+    const outcome = results[0]?.result as LoadQueryDefinitionResponse | undefined;
+    if (outcome === undefined) {
+      const error = "MAIN-world injection returned no result";
+      logger.error(`Query-definition read failed for ${message.queryId}: ${error}.`);
+      return { raw: null, status: 0, error };
+    }
+    if (outcome.raw === null) {
+      logger.error(
+        `Query-definition read failed for ${message.queryId}: ${outcome.error ?? `HTTP ${outcome.status}`}.`,
+      );
+    } else {
+      logger.info(
+        `Query-definition read completed for ${message.queryId} (HTTP ${outcome.status}).`,
+      );
+    }
+    return outcome;
+  } catch (error) {
+    logger.error(`Could not load query definition for ${message.queryId}`, error);
+    const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+    return { raw: null, status: 0, error: `injection failed: ${detail}` };
+  }
+};
+
+chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
+  if (!claimsMessageType(message, LOAD_QUERY_DEFINITION_MESSAGE)) return undefined;
+  const problem = loadQueryDefinitionMessageProblem(message);
+  if (problem !== null || !isLoadQueryDefinitionMessage(message)) {
+    logger.error(`Query-definition request rejected: ${problem ?? "invalid message"}.`);
+    sendResponse({ raw: null, status: 0, error: problem ?? "invalid message" });
+    return undefined;
+  }
+  logger.info(`Query-definition read requested for ${message.queryId}.`);
+  const { id: tabId, url: tabUrl } = sender.tab ?? {};
+  if (tabId === undefined || tabUrl === undefined) {
+    logger.error(`Cannot load query definition for ${message.queryId}: message has no sender tab.`);
+    sendResponse({ raw: null, status: 0 } satisfies LoadQueryDefinitionResponse);
+    return undefined;
+  }
+  void loadQueryDefinition(message, tabId, tabUrl).then(sendResponse);
   return true;
 });
 
@@ -364,43 +449,67 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
   return true;
 });
 
-// Sprint capacity is iteration-specific and team-scoped. As with iteration loading, the content
-// side supplies only identifiers while this worker derives the endpoint from the trusted sender tab.
-const loadSprintCapacity = async (
-  message: LoadSprintCapacityMessage,
+// Team membership is project/team-scoped. The content side supplies only the team identifier while
+// this worker derives the endpoint from the trusted sender tab.
+const loadTeamMembers = async (
+  message: LoadTeamMembersMessage,
   tabId: number,
   tabUrl: string,
-): Promise<LoadSprintCapacityResponse> => {
-  const capacityUrl = buildAdoCapacityUrl(tabUrl, message.team, message.iterationId);
-  if (capacityUrl === null) {
-    logger.info("Sprint capacity load skipped: project, team, or iteration is unavailable.");
-    return { raw: null, status: 0 };
+): Promise<LoadTeamMembersResponse> => {
+  const teamMembersUrl = buildAdoTeamMembersUrl(tabUrl, message.team);
+  if (teamMembersUrl === null) {
+    logger.error(
+      `Team-members read cannot start for team ${message.team}: unsupported sender tab location.`,
+    );
+    return { raw: null, status: 0, error: "unsupported sender tab location" };
   }
   try {
     const results = await chrome.scripting.executeScript({
       target: { tabId },
       world: "MAIN",
-      func: fetchAdoCapacityInPage,
-      args: [capacityUrl],
+      func: executeAdoRequestInPage,
+      args: [{ operation: "readTeamMembers", url: teamMembersUrl }],
     });
-    return (firstScriptResult(results) as CapacityFetchOutcome | null) ?? { raw: null, status: 0 };
-  } catch (error) {
-    logger.error("Could not load sprint capacity", error);
-    return { raw: null, status: 0 };
+    const outcome = firstScriptResult(results) as AdoPageRequestOutcome | undefined;
+    if (outcome === undefined) {
+      const error = "MAIN-world injection returned no result";
+      logger.error(`Team-members read failed for team ${message.team}: ${error}.`);
+      return { raw: null, status: 0, error };
+    }
+    const value = (outcome.raw as { value?: unknown } | null)?.value;
+    if (outcome.raw === null || !Array.isArray(value)) {
+      const error = outcome.error ?? `HTTP ${outcome.status}`;
+      logger.error(`Team-members read failed for team ${message.team}: ${error}.`);
+      return { ...outcome, raw: null, error };
+    }
+    logger.info(
+      `Team-members read completed for team ${message.team}: members=${value.length}, HTTP ${outcome.status}.`,
+    );
+    return outcome;
+  } catch (caught) {
+    const detail = caught instanceof Error ? `${caught.name}: ${caught.message}` : String(caught);
+    logger.error(`Team-members injection failed for team ${message.team}: ${detail}.`, caught);
+    return { raw: null, status: 0, error: `injection failed: ${detail}` };
   }
 };
 
 chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
-  if (!isLoadSprintCapacityMessage(message)) {
+  if (!claimsMessageType(message, LOAD_TEAM_MEMBERS_MESSAGE)) return undefined;
+  if (!isLoadTeamMembersMessage(message)) {
+    const detail = loadTeamMembersMessageProblem(message) ?? "invalid message";
+    logger.error(`Team-members request rejected: ${detail}.`);
+    sendResponse({ raw: null, status: 0, error: detail });
     return undefined;
   }
+  logger.info(`Team-members read requested for team ${message.team}.`);
   const { id: tabId, url: tabUrl } = sender.tab ?? {};
   if (tabId === undefined || tabUrl === undefined) {
-    logger.error("Cannot load sprint capacity: message has no sender tab.");
-    sendResponse({ raw: null, status: 0 } satisfies LoadSprintCapacityResponse);
+    const error = "message has no sender tab";
+    logger.error(`Cannot load team members for team ${message.team}: ${error}.`);
+    sendResponse({ raw: null, status: 0, error } satisfies LoadTeamMembersResponse);
     return undefined;
   }
-  void loadSprintCapacity(message, tabId, tabUrl).then(sendResponse);
+  void loadTeamMembers(message, tabId, tabUrl).then(sendResponse);
   return true;
 });
 
@@ -740,6 +849,7 @@ const updateWorkItemField = async (
           rev: message.rev,
           field: message.field,
           value: message.value,
+          additionalFields: message.additionalFields,
           multilineFormat: message.multilineFormat,
           comment: message.comment,
           baseValue: message.baseValue,

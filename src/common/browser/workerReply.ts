@@ -12,7 +12,7 @@
 /** The explanation a reply with no data and no reason of its own gets. */
 export const UNHANDLED_BY_WORKER =
   "the background worker did not handle the request — it is running older code than this page " +
-  "(reload the ADO tab) or failed to start (check the extension's service worker)";
+  "(reload the extension, then the ADO tab) or failed to start (check the extension's service worker)";
 
 /** The worker's own reason for a data-less reply, or the unhandled-message explanation. */
 export function workerReplyProblem(response: { error?: string } | null | undefined): string {

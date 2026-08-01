@@ -1,4 +1,7 @@
-import type { MultilineFieldFormat } from "../ado/IWorkItemFieldWriter";
+import type {
+  AdditionalWorkItemFieldWrite,
+  MultilineFieldFormat,
+} from "../ado/IWorkItemFieldWriter";
 
 /**
  * The content→background message contract for updating a single work item field.
@@ -20,6 +23,8 @@ export interface UpdateWorkItemFieldMessage {
   field: string;
   /** The value to set; `null` clears the field. */
   value: string | null;
+  /** Other validated fields to include in this action's one atomic JSON Patch. */
+  additionalFields?: AdditionalWorkItemFieldWrite[];
   /**
    * The storage format to put a MULTILINE field into as part of this write; omitted leaves the
    * field's current format alone. Constrained to the two ADO accepts so a caller-supplied string can
@@ -66,6 +71,7 @@ export interface UpdateWorkItemFieldConfig {
   rev: number;
   field: string;
   value: string | null;
+  additionalFields?: AdditionalWorkItemFieldWrite[];
   multilineFormat?: MultilineFieldFormat;
   /** Markdown; the patch stores `System.History` in that format so a mention in it resolves. */
   comment?: string;
@@ -112,6 +118,24 @@ function isFieldValue(value: unknown): value is string | null {
   return typeof value === "string" || value === null;
 }
 
+/** A small, duplicate-free list of extra field writes keeps this credentialed operation bounded. */
+function isAdditionalFields(
+  value: unknown,
+  primaryField: string | undefined,
+): value is AdditionalWorkItemFieldWrite[] | undefined {
+  if (value === undefined) return true;
+  if (!Array.isArray(value) || value.length > 8) return false;
+  const fields = new Set(primaryField === undefined ? [] : [primaryField]);
+  return value.every((entry: unknown) => {
+    if (typeof entry !== "object" || entry === null) return false;
+    const candidate = entry as Partial<AdditionalWorkItemFieldWrite>;
+    if (!isFieldReferenceName(candidate.field) || !isFieldValue(candidate.value)) return false;
+    if (fields.has(candidate.field)) return false;
+    fields.add(candidate.field);
+    return true;
+  });
+}
+
 /** The field's expected current value: like a field value, or simply absent ("never rebase"). */
 function isBaseValue(value: unknown): value is string | null | undefined {
   return value === undefined || isFieldValue(value);
@@ -120,6 +144,22 @@ function isBaseValue(value: unknown): value is string | null | undefined {
 /** An optional plain-text comment to record in the same revision. */
 function isComment(value: unknown): value is string | undefined {
   return value === undefined || typeof value === "string";
+}
+
+function hasValidFieldChanges(candidate: Partial<UpdateWorkItemFieldMessage>): boolean {
+  return (
+    isFieldReferenceName(candidate.field) &&
+    isAdditionalFields(candidate.additionalFields, candidate.field) &&
+    isFieldValue(candidate.value)
+  );
+}
+
+function hasValidWriteMetadata(candidate: Partial<UpdateWorkItemFieldMessage>): boolean {
+  return (
+    isMultilineFormat(candidate.multilineFormat) &&
+    isComment(candidate.comment) &&
+    isBaseValue(candidate.baseValue)
+  );
 }
 
 export function isUpdateWorkItemFieldMessage(value: unknown): value is UpdateWorkItemFieldMessage {
@@ -131,10 +171,7 @@ export function isUpdateWorkItemFieldMessage(value: unknown): value is UpdateWor
     candidate.type === UPDATE_WORK_ITEM_FIELD_MESSAGE &&
     isWorkItemId(candidate.id) &&
     isRevision(candidate.rev) &&
-    isFieldReferenceName(candidate.field) &&
-    isMultilineFormat(candidate.multilineFormat) &&
-    isComment(candidate.comment) &&
-    isBaseValue(candidate.baseValue) &&
-    isFieldValue(candidate.value)
+    hasValidFieldChanges(candidate) &&
+    hasValidWriteMetadata(candidate)
   );
 }

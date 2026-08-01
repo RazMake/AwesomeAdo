@@ -81,15 +81,14 @@ response-parsing logic, kept pure so they are unit-testable without a browser.
 - `ITeamIterationsLoader` — loads a team's iterations in chronological order; the real implementation
   fetches from Azure DevOps, a test fake returns canned data.
 
-### `TeamCapacity.ts`
+### `TeamMembers.ts`
 
-- `SprintCapacityMember` - the normalized identity fields needed by a capacity-backed team pill.
-- `SprintCapacityResult` - a roster plus an explicit error, preserving the difference between an
-  empty sprint and a failed read.
-- `TeamCapacityLoader` - loads one configured team's roster for one iteration.
-- `buildAdoCapacityUrl(href, team, iterationId)` - builds the closed team/iteration-scoped capacity
-  URL.
-- `parseTeamCapacity(body)` - validates and deduplicates ADO capacity identities by id.
+- `TeamMember` - the normalized identity fields needed by a team filter pill.
+- `TeamMembersResult` - a roster plus an explicit error, preserving the difference between an empty
+  team and a failed read.
+- `TeamMembersLoader` - loads every member of one configured team.
+- `buildAdoTeamMembersUrl(href, team)` - builds the paged project/team members URL.
+- `parseTeamMembers(body)` - validates and deduplicates ADO team-member identities by id.
 
 ### `IWorkItemTreeLoader.ts`
 
@@ -235,6 +234,13 @@ response-parsing logic, kept pure so they are unit-testable without a browser.
   `query` is the best-effort query-metadata body (may be absent when that read fails).
 - `AdoTreeUrls` — `{ wiqlUrl, batchUrl, queryUrl }` shape `buildAdoTreeUrls` returns.
 
+### `QueryDefinition.ts` and `sprintQuery.ts`
+
+- `buildAdoQueryDefinitionUrl` / `parseQueryDefinition` read a saved query's original expanded WIQL.
+- `wiqlForSprint` replaces an existing `@CurrentIteration` or `@CurrentSprint` offset from that
+  original body, and `filterTreeForSprintRoster` keeps team members, unassigned work, and only
+  the parent chains needed to reach them.
+
 ### `workItemTags.ts`
 
 Reading and rewriting `System.Tags`, which Azure DevOps stores as ONE semicolon-separated string and
@@ -295,19 +301,20 @@ board's filters and the tagging commands all share one interpretation of the fie
 
 ### `IWorkItemFieldWriter.ts`
 
-- `WorkItemFieldWriteRequest` — `{ id, rev, field, value }`; the request to write a single work item
-  field back to Azure DevOps. `field` is the ADO field reference name (e.g. `System.State` or a
+- `WorkItemFieldWriteRequest` — `{ id, rev, field, value, additionalFields? }`; the request to write
+  one user action back to Azure DevOps. `field` is the primary ADO field reference name (e.g. `System.State` or a
   type's ETA date field) and `value` is the new value, or `null` to clear the field. Includes the
   item's last-known `rev` as an optimistic-concurrency guard so the PATCH fails when the item was
   edited concurrently by someone else (its rev advanced). Optional `baseValue` names the value the
   field held when the change was computed from it; supplying it lets the write be retried once
   against the server's current rev when — and only when — the field itself has not moved, which is
   what keeps an edit alive across the rev bumps nothing reports back (a drag-reorder, the rank
-  fallback, a note posted through the comments API).
+  fallback, a note posted through the comments API). `additionalFields` carries other field/value
+  pairs changed by that same action so all of them land in one guarded JSON Patch and one revision.
 - `WorkItemFieldWriteResult` — `{ ok, rev?, error? }`; the result of writing a work item field;
   `ok` indicates success, `rev` is the item's new System.Rev after a successful write, and `error` is
   a short description when `ok` is false.
-- `IWorkItemFieldWriter` — writes a single work item field back to Azure DevOps. The real
+- `IWorkItemFieldWriter` — writes one atomic work-item field change set back to Azure DevOps. The real
   implementation injects a credentialed PATCH into the ADO tab's MAIN world; a test fake returns
   canned results.
 

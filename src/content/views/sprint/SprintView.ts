@@ -1,11 +1,13 @@
 import type { WorkItemTreeResult } from "../../../common/ado/IWorkItemTreeLoader";
-import type { SprintCapacityMember, SprintCapacityResult } from "../../../common/ado/TeamCapacity";
+import type { TeamMember, TeamMembersResult } from "../../../common/ado/TeamMembers";
 import type {
   TrackedUser,
   TrackedWorkItem,
   TypeCatalogEntry,
 } from "../../../common/ado/TrackedWorkItem";
+import { WorkItemWriteQueue } from "../../../common/ado/WorkItemWriteQueue/WorkItemWriteQueue";
 import { buildQueryFolderUrl } from "../../../common/ado/fetchAdoTree";
+import { filterTreeForSprintRoster, wiqlForSprint } from "../../../common/ado/sprintQuery";
 import type { SprintWindow, SprintWindowEntry } from "../../../common/ado/sprintWindow";
 import { WORK_ITEM_MARKERS, type WorkItemMarker } from "../../../common/settings/ExtensionSettings";
 import type {
@@ -41,7 +43,9 @@ import { itemHasMarker } from "../../../common/view-common/control/MarkerPill/ma
 import { renderSprintPicker } from "../../../common/view-common/control/SprintPicker/SprintPicker";
 import { renderViewScaffold } from "../../../common/view-common/control/ViewScaffold/ViewScaffold";
 import { renderWriteQueueStatus } from "../../../common/view-common/control/WriteQueueStatus/WriteQueueStatus";
+import type { WriteQueueStatusHandle } from "../../../common/view-common/control/WriteQueueStatus/WriteQueueStatus";
 
+import { renderSprintBoard, type SprintBoardItem } from "./SprintBoard";
 import { renderSprintHeader } from "./SprintHeader";
 import { sprintRecentChangesHours, sprintViewType } from "./sprintViewType";
 
@@ -56,16 +60,18 @@ interface SprintSession {
   selectedActivity: Set<RecentActivityKind>;
   recentNotes: RecentNotesIndex;
   repaintQueuedOnNotes: boolean;
+  expandedDoneIds: Set<number>;
 }
 
 interface LoadedSprintData {
   result: WorkItemTreeResult;
   sprintWindow: SprintWindow;
-  capacity: SprintCapacityResult;
+  teamMembers: TeamMembersResult;
 }
 
-interface DisplayItem {
+interface DisplayItem extends SprintBoardItem {
   item: TrackedWorkItem;
+  parent: TrackedWorkItem | null;
   depth: number;
   ancestorIds: number[];
   chain: string[];
@@ -73,6 +79,27 @@ interface DisplayItem {
 
 interface SprintBoardHandle {
   refresh: RefreshButtonHandle;
+  queueStatus: WriteQueueStatusHandle;
+}
+
+interface SprintWriteState {
+  pending: number;
+  failed: number;
+  lastError?: string;
+}
+
+interface SprintHeaderRenderOptions {
+  context: DataDrivenViewContext;
+  data: LoadedSprintData;
+  session: SprintSession;
+  areaPaths: readonly string[];
+  projectOptions: readonly HierarchyFilterOption[];
+  baseItems: readonly DisplayItem[];
+  types: ReadonlyMap<string, TypeCatalogEntry>;
+  repaint: () => void;
+  onRefresh: () => void;
+  onSprintChange: (name: string) => void;
+  writeState: SprintWriteState;
 }
 
 function queryBreadcrumbs(result: WorkItemTreeResult, href: string) {
@@ -103,6 +130,7 @@ function createSession(context: DataDrivenViewContext): SprintSession {
       markerPrefixes(context),
     ),
     repaintQueuedOnNotes: false,
+    expandedDoneIds: new Set<number>(),
   };
 }
 
@@ -113,18 +141,19 @@ function flattenItems(roots: readonly TrackedWorkItem[]): DisplayItem[] {
     depth: number,
     ancestorIds: number[],
     chain: string[],
+    parent: TrackedWorkItem | null,
   ): void => {
     const nextChain = [...chain, item.title];
-    result.push({ item, depth, ancestorIds, chain: nextChain });
+    result.push({ item, parent, depth, ancestorIds, chain: nextChain });
     for (const child of item.children) {
-      visit(child, depth + 1, [...ancestorIds, item.id], nextChain);
+      visit(child, depth + 1, [...ancestorIds, item.id], nextChain, item);
     }
   };
-  for (const root of roots) visit(root, 0, [], []);
+  for (const root of roots) visit(root, 0, [], [], null);
   return result;
 }
 
-function personKey(user: TrackedUser | SprintCapacityMember | null): string {
+function personKey(user: TrackedUser | TeamMember | null): string {
   if (user === null) return UNASSIGNED_KEY;
   return (user.uniqueName ?? user.displayName).trim().toLocaleLowerCase();
 }
@@ -151,6 +180,26 @@ function metricsFor(
   };
 }
 
+function deliveryWorkTypes(types: readonly TypeCatalogEntry[]): ReadonlySet<string> {
+  const workTypes = new Set(
+    types.filter((type) => type.isPrimaryWork === true).map((type) => type.name),
+  );
+  const pending = [...workTypes];
+  while (pending.length > 0) {
+    const name = pending.pop() as string;
+    for (const child of types.find((type) => type.name === name)?.children ?? []) {
+      if (workTypes.has(child)) continue;
+      workTypes.add(child);
+      pending.push(child);
+    }
+  }
+  return workTypes;
+}
+
+function isDeliveryWorkItem(item: TrackedWorkItem, workTypes: ReadonlySet<string>): boolean {
+  return workTypes.has(item.type);
+}
+
 function selectedSprintEntry(
   window: SprintWindow,
   session: SprintSession,
@@ -164,27 +213,50 @@ function normalizeSprintSelection(window: SprintWindow, session: SprintSession):
   }
 }
 
+function selectedSprintOffset(
+  window: SprintWindow,
+  selected: SprintWindowEntry | undefined,
+): number {
+  const selectedIndex = selected === undefined ? -1 : window.entries.indexOf(selected);
+  const currentIndex = window.entries.findIndex((entry) => entry.name === window.currentName);
+  return selectedIndex - (currentIndex === -1 ? selectedIndex : currentIndex);
+}
+
+function loadQueryDefinition(context: DataDrivenViewContext) {
+  return (
+    context.services.loadQueryDefinition?.(context.queryId) ??
+    Promise.resolve({ wiql: null, error: "Query definition loading is unavailable." })
+  );
+}
+
 async function loadSprintData(
   context: DataDrivenViewContext,
   session: SprintSession,
 ): Promise<LoadedSprintData> {
-  const [result, sprintWindow] = await Promise.all([
-    context.services.loadTree(context.queryId),
-    context.services.loadSprintWindow(),
-  ]);
-  if (result.error !== null) throw new Error(result.error);
+  const definitionPromise = loadQueryDefinition(context);
+  const teamMembersPromise = context.services.loadTeamMembers();
+  const sprintWindow = await context.services.loadSprintWindow();
   normalizeSprintSelection(sprintWindow, session);
-  const iterationId = selectedSprintEntry(sprintWindow, session)?.id;
-  const capacity =
-    iterationId === undefined
-      ? { members: [], error: null }
-      : await context.services.loadSprintCapacity(iterationId);
-  if (capacity.error !== null) throw new Error(capacity.error);
+  const selectedSprint = selectedSprintEntry(sprintWindow, session);
+  const [teamMembers, definition] = await Promise.all([teamMembersPromise, definitionPromise]);
+  if (teamMembers.error !== null) throw new Error(teamMembers.error);
+  if (definition.error !== null || definition.wiql === null) {
+    throw new Error(definition.error ?? "The saved query has no WIQL body.");
+  }
+  const loaded = await context.services.loadTree(
+    context.queryId,
+    wiqlForSprint(definition.wiql, selectedSprintOffset(sprintWindow, selectedSprint)),
+  );
+  if (loaded.error !== null) throw new Error(loaded.error);
+  const result: WorkItemTreeResult = {
+    ...loaded,
+    roots: filterTreeForSprintRoster(loaded.roots, teamMembers.members),
+  };
   context.services.logger.info(
     `Sprint View loaded query ${context.queryId}: items=${flattenItems(result.roots).length}, ` +
-      `capacityMembers=${capacity.members.length}.`,
+      `teamMembers=${teamMembers.members.length}.`,
   );
-  return { result, sprintWindow, capacity };
+  return { result, sprintWindow, teamMembers };
 }
 
 function hierarchyOptions(
@@ -238,13 +310,16 @@ function normalizeProjectSelection(
 }
 
 function areaPathsOf(items: readonly DisplayItem[]): string[] {
-  return [
+  const paths = [
     ...new Set(
       items
         .map(({ item }) => item.areaPath)
         .filter((path): path is string => path !== null && path.length > 0),
     ),
-  ].sort((left, right) => left.localeCompare(right));
+  ];
+  return paths
+    .filter((path) => !paths.some((other) => other.startsWith(`${path}\\`)))
+    .sort((left, right) => left.localeCompare(right));
 }
 
 function areaScope(items: readonly DisplayItem[], session: SprintSession): DisplayItem[] {
@@ -329,22 +404,24 @@ function renderPersonPill(
 
 function renderTeamPills(
   doc: Document,
-  members: readonly SprintCapacityMember[],
+  members: readonly TeamMember[],
   items: readonly DisplayItem[],
   types: ReadonlyMap<string, TypeCatalogEntry>,
   session: SprintSession,
   onChange: () => void,
 ): HTMLElement[] {
   const pills: HTMLElement[] = [];
+  const workTypes = deliveryWorkTypes([...types.values()]);
+  const countedItems = items.filter(({ item }) => isDeliveryWorkItem(item, workTypes));
   const validKeys = new Set(members.map(personKey));
-  const unassigned = items.filter(({ item }) => item.assignedTo === null);
+  const unassigned = countedItems.filter(({ item }) => item.assignedTo === null);
   if (unassigned.length > 0) validKeys.add(UNASSIGNED_KEY);
   for (const selected of [...session.selectedPeople]) {
     if (!validKeys.has(selected)) session.selectedPeople.delete(selected);
   }
   for (const member of members) {
     const key = personKey(member);
-    const assigned = items.filter(({ item }) => personKey(item.assignedTo) === key);
+    const assigned = countedItems.filter(({ item }) => personKey(item.assignedTo) === key);
     pills.push(
       renderPersonPill(
         doc,
@@ -451,52 +528,62 @@ function renderFilterPanel(
   return panel;
 }
 
-function renderQueue(context: DataDrivenViewContext, items: readonly DisplayItem[]): HTMLElement {
-  const queue = context.doc.createElement("section");
-  queue.className = "awesomeado-sprint__queue";
-  const heading = context.doc.createElement("div");
-  heading.className = "awesomeado-sprint__queue-heading";
-  heading.textContent = `${items.length} item${items.length === 1 ? "" : "s"}`;
-  heading.style.cssText =
-    "padding:6px 10px;font-size:12px;font-weight:700;color:var(--text-secondary-color)";
-  queue.append(heading);
-  if (items.length === 0) {
-    const empty = context.doc.createElement("p");
-    empty.textContent = "No items match the current filters.";
-    empty.style.cssText = "margin:16px 10px;color:var(--text-secondary-color)";
-    queue.append(empty);
-    return queue;
-  }
-  for (const { item } of items) queue.append(renderQueueRow(context.doc, item));
-  return queue;
-}
-
-function renderQueueRow(doc: Document, item: TrackedWorkItem): HTMLElement {
-  const row = doc.createElement("article");
-  row.className = "awesomeado-sprint__item";
-  row.dataset.itemId = String(item.id);
-  row.style.cssText = [
-    "display:grid",
-    "grid-template-columns:minmax(0,1fr) auto auto",
-    "align-items:center",
-    "gap:16px",
-    "min-height:38px",
-    "padding:4px 10px",
-    "background:var(--item-row-background)",
-    "border-bottom:1px solid var(--control-border)",
-  ].join(";");
-  const title = doc.createElement("span");
-  title.textContent = item.title;
-  title.style.cssText =
-    "min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600";
-  const state = doc.createElement("span");
-  state.textContent = item.state;
-  state.style.cssText = "font-size:11px;color:var(--text-secondary-color)";
-  const assignee = doc.createElement("span");
-  assignee.textContent = item.assignedTo?.displayName ?? "Unassigned";
-  assignee.style.cssText = "font-size:11px;color:var(--text-secondary-color)";
-  row.append(title, state, assignee);
-  return row;
+function renderBoardHeader(options: SprintHeaderRenderOptions): {
+  header: HTMLElement;
+  refresh: RefreshButtonHandle;
+  queueStatus: WriteQueueStatusHandle;
+} {
+  const { context, data, session, repaint } = options;
+  const sprintPicker = renderSprintPicker(context.doc, {
+    sprints: data.sprintWindow.entries,
+    selectedName: session.sprintName,
+    showFilterButton: false,
+    onSprintChange: options.onSprintChange,
+  });
+  const laneFilter = renderAreaPathFilter(context.doc, {
+    label: "Lane",
+    areaPaths: options.areaPaths,
+    selectedAreaPaths: [...session.selectedAreaPaths],
+    onChange: (paths) => {
+      session.selectedAreaPaths = new Set(paths);
+      repaint();
+    },
+  });
+  const projectFilter = renderHierarchyFilter(context.doc, {
+    items: options.projectOptions,
+    selectedId: session.selectedParentId,
+    onChange: (id) => {
+      session.selectedParentId = id;
+      repaint();
+    },
+  });
+  const refresh = renderRefreshButton(context.doc, "awesomeado-sprint__refresh");
+  refresh.element.addEventListener("click", options.onRefresh);
+  const queueStatus = renderWriteQueueStatus(context.doc, {
+    onOpenLog: context.services.openDiagnosticsLog,
+  });
+  queueStatus.setCount(options.writeState.pending);
+  queueStatus.setFailedCount(options.writeState.failed, options.writeState.lastError);
+  return {
+    header: renderSprintHeader(context.doc, {
+      breadcrumbs: queryBreadcrumbs(data.result, context.doc.location?.href ?? ""),
+      sprintPicker: sprintPicker.element,
+      laneFilter: laneFilter.element,
+      projectFilter: projectFilter.element,
+      refresh,
+      queueStatus: queueStatus.element,
+      teamPills: renderTeamPills(
+        context.doc,
+        data.teamMembers.members,
+        options.baseItems,
+        options.types,
+        session,
+        repaint,
+      ),
+    }),
+    refresh,
+    queueStatus,
+  };
 }
 
 function renderBoard(
@@ -505,6 +592,9 @@ function renderBoard(
   session: SprintSession,
   repaint: () => void,
   onRefresh: () => void,
+  onSprintChange: (name: string) => void,
+  writes: WorkItemWriteQueue,
+  writeState: SprintWriteState,
 ): { element: DocumentFragment; handle: SprintBoardHandle } {
   const allItems = flattenItems(data.result.roots);
   const areaPaths = areaPathsOf(allItems);
@@ -522,62 +612,35 @@ function renderBoard(
   normalizeProjectSelection(options, session);
   const base = baseQueue(allItems, session);
   const scoped = boardScope(allItems, session);
-
-  const sprintPicker = renderSprintPicker(context.doc, {
-    sprints: data.sprintWindow.entries,
-    selectedName: session.sprintName,
-    showFilterButton: false,
-    onSprintChange: (name) => {
-      session.sprintName = name;
-      onRefresh();
-    },
-  });
-  const laneFilter = renderAreaPathFilter(context.doc, {
-    label: "Lane",
-    areaPaths,
-    selectedAreaPaths: [...session.selectedAreaPaths],
-    onChange: (paths) => {
-      session.selectedAreaPaths = new Set(paths);
-      repaint();
-    },
-  });
-  const projectFilter = renderHierarchyFilter(context.doc, {
-    items: options,
-    selectedId: session.selectedParentId,
-    onChange: (id) => {
-      session.selectedParentId = id;
-      repaint();
-    },
-  });
-  const refresh = renderRefreshButton(context.doc, "awesomeado-sprint__refresh");
-  refresh.element.addEventListener("click", onRefresh);
-  const queueStatus = renderWriteQueueStatus(context.doc, {
-    onOpenLog: context.services.openDiagnosticsLog,
-  });
-  const teamPills = renderTeamPills(
-    context.doc,
-    data.capacity.members,
-    base,
-    types,
+  const controls = renderBoardHeader({
+    context,
+    data,
     session,
+    areaPaths,
+    projectOptions: options,
+    baseItems: base,
+    types,
     repaint,
-  );
-  const header = renderSprintHeader(context.doc, {
-    breadcrumbs: queryBreadcrumbs(data.result, context.doc.location?.href ?? ""),
-    sprintPicker: sprintPicker.element,
-    laneFilter: laneFilter.element,
-    projectFilter: projectFilter.element,
-    refresh,
-    queueStatus: queueStatus.element,
-    teamPills,
+    onRefresh,
+    onSprintChange,
+    writeState,
   });
   const fragment = context.doc.createDocumentFragment();
   fragment.append(
-    header,
+    controls.header,
     renderFilterPanel(context, scoped, base, session, repaint),
-    renderQueue(context, filteredQueue(base, context, session)),
+    renderSprintBoard(context, filteredQueue(base, context, session), {
+      types,
+      boardColumns: context.services.getBoardColumns(),
+      writes,
+      expandedDoneIds: session.expandedDoneIds,
+      onItemChanged: repaint,
+    }),
   );
-  return { element: fragment, handle: { refresh } };
+  return {
+    element: fragment,
+    handle: { refresh: controls.refresh, queueStatus: controls.queueStatus },
+  };
 }
 
 function renderLoadFailure(context: EnhancedViewContext, root: HTMLElement, error: unknown): void {
@@ -590,55 +653,112 @@ function renderLoadFailure(context: EnhancedViewContext, root: HTMLElement, erro
   );
 }
 
+function observeWriteState(
+  writes: WorkItemWriteQueue,
+  state: SprintWriteState,
+  currentBoard: () => SprintBoardHandle | null,
+): void {
+  writes.onPendingChange((count) => {
+    state.pending = count;
+    currentBoard()?.queueStatus.setCount(count);
+  });
+  writes.onWriteFailed((count, lastError) => {
+    state.failed = count;
+    state.lastError = lastError;
+    currentBoard()?.queueStatus.setFailedCount(count, lastError);
+  });
+}
+
+function createWriteQueue(context: DataDrivenViewContext): WorkItemWriteQueue {
+  return new WorkItemWriteQueue(
+    context.services.writeField,
+    context.services.logger,
+    context.services.reorderItem,
+  );
+}
+
 function startSprintView(context: DataDrivenViewContext, root: HTMLElement): void {
-  const session = createSession(context);
+  let session = createSession(context);
   let data: LoadedSprintData | null = null;
   let board: SprintBoardHandle | null = null;
   let refreshing = false;
+  let loadGeneration = 0;
   let refreshFailed = false;
+  const writes = createWriteQueue(context);
+  const writeState: SprintWriteState = { pending: 0, failed: 0 };
+  observeWriteState(writes, writeState, () => board);
 
   const paint = (): void => {
     if (data === null) return;
-    const rendered = renderBoard(context, data, session, paint, requestRefresh);
+    const rendered = renderBoard(
+      context,
+      data,
+      session,
+      paint,
+      requestRefresh,
+      switchSprint,
+      writes,
+      writeState,
+    );
     board = rendered.handle;
     board.refresh.setFailed(refreshFailed);
     root.replaceChildren(rendered.element);
   };
 
-  const reportRefreshFailure = (error: unknown): void => {
-    context.services.logger.error("Sprint View could not refresh", error);
-    refreshFailed = true;
-    board?.refresh.setFailed(true);
+  const showLoading = (): void => {
+    const loading = context.doc.createElement("div");
+    loading.className = "awesomeado-sprint__loading";
+    loading.textContent = "Loading spring data...";
+    loading.style.cssText = "padding:16px 0;text-align:center;color:var(--text-secondary-color)";
+    root.replaceChildren(loading);
   };
 
-  const requestRefresh = (): void => {
+  const load = (sprintName: string | null, resetSession: boolean): void => {
     if (refreshing) return;
-    if (refreshFailed) {
+    if (!resetSession && refreshFailed) {
       refreshFailed = false;
-      board?.refresh.setFailed(false);
       context.services.openDiagnosticsLog();
       return;
     }
+    if (resetSession) session = createSession(context);
+    session.sprintName = sprintName;
+    const previousData = data;
     refreshing = true;
-    board?.refresh.setBusy(true);
+    data = null;
+    board = null;
+    const generation = ++loadGeneration;
+    showLoading();
     void loadSprintData(context, session)
       .then((loaded) => {
+        if (generation !== loadGeneration) return;
+        refreshFailed = false;
         data = loaded;
         paint();
       })
-      .catch(reportRefreshFailure)
+      .catch((error: unknown) => {
+        if (!resetSession && previousData !== null) {
+          context.services.logger.error("Sprint View could not refresh", error);
+          refreshFailed = true;
+          data = previousData;
+          paint();
+          return;
+        }
+        renderLoadFailure(context, root, error);
+      })
       .finally(() => {
-        refreshing = false;
-        board?.refresh.setBusy(false);
+        if (generation === loadGeneration) refreshing = false;
       });
   };
 
-  loadSprintData(context, session)
-    .then((loaded) => {
-      data = loaded;
-      paint();
-    })
-    .catch((error: unknown) => renderLoadFailure(context, root, error));
+  function requestRefresh(): void {
+    load(session.sprintName, false);
+  }
+
+  function switchSprint(name: string): void {
+    load(name, true);
+  }
+
+  load(null, true);
 }
 
 /**
@@ -672,10 +792,6 @@ export const sprintView: EnhancedView = {
       return root;
     }
     const dataContext: DataDrivenViewContext = { ...context, services: context.services };
-    const loading = context.doc.createElement("div");
-    loading.textContent = "Loading…";
-    loading.style.cssText = "padding:16px 0;text-align:center;color:var(--text-secondary-color)";
-    root.append(loading);
     startSprintView(dataContext, root);
     return root;
   },

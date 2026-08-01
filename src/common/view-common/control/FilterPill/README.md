@@ -5,7 +5,8 @@ enhanced-view filter pills. `appendFilterPillCounts` adds 14px queue-total and a
 used by people filters without making those pills taller than user tags.
 
 `renderFilterPillCount` builds one labelled count circle for controls with different count
-semantics, such as Sprint View's marker-tag totals and Interrupt acceptance split.
+semantics, such as Sprint View's marker-tag totals and Interrupt acceptance split. Every counter
+uses that label and its value for matching accessible text and a native hover tooltip.
 
 `renderFilterPillFamilies` groups full-opacity pills into wrapping semantic families with `6px`
 internal spacing and a larger `16px` gap between families. Selected pills remain distinguished by

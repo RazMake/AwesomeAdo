@@ -80,13 +80,10 @@ export function renderSprintHeader(doc: Document, options: SprintHeaderOptions):
   const team = doc.createElement("div");
   team.className = "awesomeado-sprint__team";
   team.style.cssText = "display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-height:28px";
-  const label = doc.createElement("span");
-  label.textContent = "Team:";
-  label.style.cssText = "font-size:11px;font-weight:600;color:var(--text-secondary-color)";
-  team.append(label, ...options.teamPills);
+  team.append(...options.teamPills);
   if (options.teamPills.length === 0) {
     const empty = doc.createElement("span");
-    empty.textContent = "No capacity members";
+    empty.textContent = "No team members";
     empty.style.cssText = "font-size:12px;color:var(--text-secondary-color)";
     team.append(empty);
   }

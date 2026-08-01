@@ -18,6 +18,7 @@ export function fetchAdoTreeInPage(
   batchUrl: string,
   fields: string[],
   queryUrl: string,
+  wiqlInit: RequestInit | null = null,
 ): Promise<AdoRawTree> {
   // Bound the ids-to-hydrate and batch-page counts so a misbehaving/huge query can never turn this
   // into an unbounded number of page-world fetches.
@@ -75,7 +76,7 @@ export function fetchAdoTreeInPage(
   const queryMeta = readJson(queryUrl, readInit, "wiql").catch(() => null);
 
   // prettier-ignore
-  const tree = readJson(wiqlUrl, readInit, "wiql")
+  const tree = readJson(wiqlUrl, wiqlInit ?? readInit, "wiql")
     .then((wiql) => {
       const idList = collectIds(wiql);
       if (idList.length === 0) return { wiql, items: [] };

@@ -81,6 +81,31 @@ describe("fetchAdoTreeInPage - tree hydration", () => {
   });
 });
 
+describe("fetchAdoTreeInPage - custom WIQL", () => {
+  it("posts a supplied WIQL body instead of executing the saved query by id", async () => {
+    const customWiql =
+      "SELECT [System.Id] FROM WorkItems WHERE [System.IterationPath] = @CurrentIteration + 1";
+    const customInit: RequestInit = {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ query: customWiql }),
+    };
+    const fetchMock = vi.fn((url: string) => {
+      if (url === QUERY_URL) return Promise.resolve(jsonResponse(QUERY_META));
+      if (url === WIQL_URL) {
+        return Promise.resolve(jsonResponse({ queryType: "flat", workItems: [] }));
+      }
+      throw new Error(`unexpected url ${url}`);
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    await fetchAdoTreeInPage(WIQL_URL, BATCH_URL, FIELDS, QUERY_URL, customInit);
+
+    expect(fetchMock).toHaveBeenCalledWith(WIQL_URL, customInit);
+  });
+});
+
 describe("fetchAdoTreeInPage - paging and flat queries", () => {
   it("hydrates ids from workItems when the query is flat (no relations)", async () => {
     const wiqlBody = { queryType: "flat", workItems: [{ id: 5 }, { id: 7 }, { id: 5 }] };

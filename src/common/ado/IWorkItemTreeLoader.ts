@@ -39,5 +39,5 @@ export interface WorkItemTreeResult {
  * placeholder (Phase 1) returns an empty tree + a "coming soon" message.
  */
 export interface IWorkItemTreeLoader {
-  loadTree(queryId: string): Promise<WorkItemTreeResult>;
+  loadTree(queryId: string, wiql?: string): Promise<WorkItemTreeResult>;
 }

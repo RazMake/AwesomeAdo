@@ -27,16 +27,23 @@ This is a flattened snapshot of what exists now, not a build log.
   the bottom of each item, and they are re-striped in visible tree order after outline changes.
   Options imports only `content/views/viewCatalog` (scoped §6
   exception, ADR-027, lint-enforced).
-- **Sprint View step 1** (`content/views/sprint`): accepts flat or tree queries; loads the selected
-  sprint's capacity roster; renders clickable query-folder breadcrumbs plus an always-active Sprint
+- **Sprint View** (`content/views/sprint`): accepts flat or tree queries; loads the selected
+  team's complete paged member roster before executing an offset-adjusted copy of the original WIQL;
+  retains only team members' or unassigned work plus parent chains; and renders clickable query-folder breadcrumbs plus an always-active Sprint
   selector, Lane, Project, refresh, write-queue, team, marker, and recent-activity controls; and
-  filters a minimal item queue. Project choices are limited to planning-parent types above Primary work on ancestor chains of currently
+  filters a lane-by-state card table. It uses configured labels and theme-owned colors for Queue,
+  Active, Waiting, and Done; only Primary-work types render as cards, and the shared child-items
+  badge lists each card's direct children. Tall cards show recognized tags and immediate parent
+  context, while compact Done cards expand on demand. Cards drag across columns and area-path lanes through the
+  shared write queue, with diagonal state/area changes sent in one atomic patch. Lane choices include only represented leaf area paths. Project
+  choices are limited to planning-parent types above Primary work on ancestor chains of currently
   eligible sprint work, colored by type and searchable by title without dropping matching parents;
   long labels use available viewport width before truncating. Team and
-  marker pills use compact counters, with one total per marker tag except Interrupt's waiting /
+  marker pills use compact counters with hover explanations. Member and Unassigned totals count only
+  Primary work and its recursively configured child types. Marker pills show one total except Interrupt's waiting /
   accepted split; every pill matches Project Tracking's Feature Crew tag scale, Unassigned is
-  derived from the loaded work, and refresh replaces both items and
-  capacity members. Both views keep filter pills at full opacity and distinguish non-activity from
+  derived from the loaded work. Sprint changes replace the DOM/session, reset all filters, and
+  reload team members, work, Lane choices, and Project choices. Both views keep filter pills at full opacity and distinguish non-activity from
   recent-activity pills with a larger gap between wrapping families.
 - **Area-path filtering** (`common/view-common/control/AreaPathFilter` + Project Tracking): the live
   tree hydrates `System.AreaPath`; a compact themed header popup selects full paths using shortest

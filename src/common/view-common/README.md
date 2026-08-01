@@ -45,11 +45,11 @@ renderer.
   content surface calls it before replacing or restoring that root.
 - `EnhancedViewContext` — `{ doc, queryId, properties, services? }`, everything a view needs to render,
   injected so a renderer never reaches for a global. `services` is optional: present for data-driven
-  views (carrying the tree loader, user directory, type catalog, sprint window/capacity loaders,
+  views (carrying the tree/query-definition loaders, user directory, type catalog, sprint window/team roster loaders,
   clock, logger), absent for placeholder views.
 - `EnhancedViewServices` — the cross-view data/service singletons injected at the composition root:
-  `loadTree`, `featureCrew`, `writeField`, `reorderItem`, `currentTeam`, `userDirectory`, `mentionDirectory`, `getTypes`,
-  `getBoardColumns`, `markerTags`, `loadSprintWindow`, `loadSprintCapacity`, `now`, `logger`,
+  `loadTree`, `loadQueryDefinition`, `featureCrew`, `writeField`, `reorderItem`, `currentTeam`, `userDirectory`, `mentionDirectory`, `getTypes`,
+  `getBoardColumns`, `markerTags`, `loadSprintWindow`, `loadTeamMembers`, `now`, `logger`,
   `openDiagnosticsLog`. `writeField` persists
   a single work item
   field change (e.g.
@@ -66,8 +66,9 @@ renderer.
   `loadSprintWindow` is the single shared entry point every sprint-filtering view uses to populate its
   sprint picker: it resolves the configured team's iterations around the current one, each labelled by
   its offset, plus the name to select by default.
-  `loadSprintCapacity(iterationId)` reads the configured team's capacity roster for one selected
-  iteration; Sprint View refreshes it together with the query tree.
+  `loadQueryDefinition(queryId)` reads a saved query's original WIQL so Sprint View can derive each
+  selected-sprint execution without accumulating offsets. `loadTeamMembers()` reads the configured
+  team's complete paged roster.
   `getBoardColumns` returns the team's global board columns in order so a status's color can be keyed
   off its board-column position (identical for every work-item type).
   `markerTags` returns the team's own Azure DevOps tag and comment token for each recognized condition

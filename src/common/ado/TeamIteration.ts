@@ -18,7 +18,7 @@ export type SprintTimeFrame = "past" | "current" | "future";
  * `timeFrame` that anchors the "current" sprint.
  */
 export interface TeamIteration {
-  /** The iteration GUID used by team-capacity endpoints. Optional only for defensive/test inputs. */
+  /** The iteration GUID supplied by ADO. Optional only for defensive/test inputs. */
   id?: string;
   /** The iteration path (stable id, e.g. `Project\Sprint 5`). */
   path: string;

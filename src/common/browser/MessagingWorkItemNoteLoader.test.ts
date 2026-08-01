@@ -134,7 +134,7 @@ describe("MessagingWorkItemNoteLoader — failures", () => {
     // The worker answers even a malformed request with a reason, so silence can only mean it is not
     // running this code. Saying so is the difference between a dead end and something to act on.
     expect(result.error).toContain("did not handle the request");
-    expect(result.error).toContain("reload the ADO tab");
+    expect(result.error).toContain("reload the extension, then the ADO tab");
     expect(error).toHaveBeenCalledTimes(1);
     expect(String(error.mock.calls[0]?.[0])).toContain(String(WORK_ITEM_ID));
   });

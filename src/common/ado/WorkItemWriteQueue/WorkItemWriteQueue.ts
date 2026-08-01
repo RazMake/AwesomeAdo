@@ -1,5 +1,6 @@
 import type { ILogger } from "../../logging/ILogger";
 import type {
+  AdditionalWorkItemFieldWrite,
   MultilineFieldFormat,
   WorkItemFieldWriteRequest,
   WorkItemFieldWriteResult,
@@ -38,6 +39,8 @@ export interface QueuedFieldWrite {
   field: string;
   /** The value to set; `null` clears the field. */
   value: string | null;
+  /** Other fields changed by this action and written in the same revision. */
+  additionalFields?: AdditionalWorkItemFieldWrite[];
   /**
    * The storage format to put a MULTILINE field into as part of this write (e.g. `Markdown` for a
    * description); omitted leaves the field's current format alone.
@@ -286,6 +289,7 @@ export class WorkItemWriteQueue {
       rev: queued.currentRev(),
       field: queued.field,
       value: queued.value,
+      additionalFields: queued.additionalFields,
       multilineFormat: queued.multilineFormat,
       comment: queued.comment,
       baseValue: queued.baseValue,

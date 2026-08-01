@@ -54,24 +54,29 @@ import type {
 export function updateWorkItemFieldInPage(
   config: UpdateWorkItemFieldConfig,
 ): Promise<UpdateWorkItemFieldResponse> {
-  const field = config.field;
-  const base = config.baseValue;
   // `add` APPENDS to a multi-value field: Azure DevOps answers a shortened `System.Tags` list with
   // HTTP 200 and keeps every tag, so a removal is silently lost. `replace` sets a field that already
   // holds a value; a field with no value yet has nothing to replace, so it still takes `add`.
-  const setOp = typeof base === "string" && base.length > 0 ? "replace" : "add";
+  const setOp = config.baseValue ? "replace" : "add";
 
   function buildPatch(rev: number): { op: string; path: string; value?: unknown }[] {
     const operations: { op: string; path: string; value?: unknown }[] = [
       { op: "test", path: "/rev", value: rev },
       config.value === null
-        ? { op: "remove", path: "/fields/" + field }
-        : { op: setOp, path: "/fields/" + field, value: config.value },
+        ? { op: "remove", path: "/fields/" + config.field }
+        : { op: setOp, path: "/fields/" + config.field, value: config.value },
     ];
+    operations.push(
+      ...(config.additionalFields ?? []).map((change) =>
+        change.value === null
+          ? { op: "remove", path: "/fields/" + change.field }
+          : { op: "add", path: "/fields/" + change.field, value: change.value },
+      ),
+    );
     if (config.multilineFormat) {
       operations.push({
         op: "add",
-        path: "/multilineFieldsFormat/" + field,
+        path: "/multilineFieldsFormat/" + config.field,
         value: config.multilineFormat,
       });
     }
@@ -105,10 +110,7 @@ export function updateWorkItemFieldInPage(
           return { ok: true, rev: typeof newRev === "number" ? newRev : undefined };
         });
       }
-      const failure: UpdateWorkItemFieldResponse = {
-        ok: false,
-        error: "HTTP " + String(response.status),
-      };
+      const failure = { ok: false, error: "HTTP " + String(response.status) };
       // 412 is the `test /rev` op being refused; 409 is ADO's other shape of the same conflict.
       const staleRev = response.status === 412 || response.status === 409;
       return mayRebase && staleRev ? rebase(failure) : failure;
@@ -123,14 +125,12 @@ export function updateWorkItemFieldInPage(
       .then((response) => (response.ok ? response.json() : null))
       .then((body: { rev?: unknown; fields?: Record<string, unknown> } | null) => {
         const rev = body?.rev;
-        if (typeof rev !== "number") {
-          return failure;
-        }
+        if (typeof rev !== "number") return failure;
         // An unset field is simply ABSENT from `fields`, so absent and empty must read alike or a
         // change that clears a field could never be rebased.
-        const stored = body?.fields?.[field];
+        const stored = body?.fields?.[config.field];
         const current = stored === undefined || stored === null ? "" : String(stored).trim();
-        const expected = base === undefined || base === null ? "" : base.trim();
+        const expected = String(config.baseValue ?? "").trim();
         return current === expected
           ? sendPatch(rev, false)
           : { ok: false, error: failure.error + " — the field changed since it was read" };
@@ -138,7 +138,7 @@ export function updateWorkItemFieldInPage(
       .catch(() => failure);
   }
 
-  return sendPatch(config.rev, base !== undefined).catch((err): UpdateWorkItemFieldResponse => {
-    return { ok: false, error: String(err) };
-  });
+  return sendPatch(config.rev, config.baseValue !== undefined).catch(
+    (err): UpdateWorkItemFieldResponse => ({ ok: false, error: String(err) }),
+  );
 }

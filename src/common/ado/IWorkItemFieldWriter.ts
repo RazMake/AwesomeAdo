@@ -8,6 +8,12 @@
  */
 export type MultilineFieldFormat = "Markdown" | "Html";
 
+/** Another field changed by the same user action and persisted in the same JSON Patch. */
+export interface AdditionalWorkItemFieldWrite {
+  field: string;
+  value: string | null;
+}
+
 /**
  * The request to write a single work item field back to Azure DevOps.
  *
@@ -26,6 +32,8 @@ export interface WorkItemFieldWriteRequest {
   field: string;
   /** The value to set; `null` clears the field (removes its current value). */
   value: string | null;
+  /** Other fields this action changes; all are committed atomically with the primary field. */
+  additionalFields?: AdditionalWorkItemFieldWrite[];
   /**
    * The storage format to put a MULTILINE field into as part of this write. Omitted leaves the
    * field's current format alone, which is what every single-line field wants.

@@ -103,7 +103,9 @@ export function renderFilterPillCount(doc: Document, options: FilterPillCount): 
   count.className = `awesomeado-filter-pill__count awesomeado-filter-pill__count--${options.kind}`;
   count.dataset.count = options.kind;
   count.textContent = String(Math.max(0, Math.floor(options.value)));
-  count.setAttribute("aria-label", `${options.label}: ${count.textContent}`);
+  const description = `${options.label}: ${count.textContent}`;
+  count.setAttribute("aria-label", description);
+  count.title = description;
   count.style.cssText = [
     "box-sizing:border-box",
     "min-width:14px",

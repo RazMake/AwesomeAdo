@@ -94,6 +94,7 @@ export interface AdoRawTree {
 
 export interface AdoTreeUrls {
   wiqlUrl: string;
+  executeWiqlUrl: string;
   batchUrl: string;
   /** The query-metadata endpoint, read for the query's folder `path` (see `parseQueryFolderPath`). */
   queryUrl: string;
@@ -112,6 +113,7 @@ export function buildAdoTreeUrls(href: string, queryId: string): AdoTreeUrls | n
   const encodedQueryId = encodeURIComponent(queryId);
   return {
     wiqlUrl: `${base}/${project}/_apis/wit/wiql/${encodedQueryId}?api-version=${API_VERSION}`,
+    executeWiqlUrl: `${base}/${project}/_apis/wit/wiql?api-version=${API_VERSION}`,
     batchUrl: `${base}/${project}/_apis/wit/workitemsbatch?api-version=${API_VERSION}`,
     queryUrl: `${base}/${project}/_apis/wit/queries/${encodedQueryId}?api-version=${API_VERSION}`,
   };

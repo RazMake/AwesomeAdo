@@ -19,7 +19,8 @@ import type { IWorkItemNoteLoader } from "../ado/IWorkItemNoteLoader";
 import type { IWorkItemNoteWriter } from "../ado/IWorkItemNoteWriter";
 import type { WorkItemReorderRequest, WorkItemReorderResult } from "../ado/IWorkItemReorderWriter";
 import type { WorkItemTreeResult } from "../ado/IWorkItemTreeLoader";
-import type { SprintCapacityResult } from "../ado/TeamCapacity";
+import type { QueryDefinitionResult } from "../ado/QueryDefinition";
+import type { TeamMembersResult } from "../ado/TeamMembers";
 import type { TypeCatalogEntry } from "../ado/TrackedWorkItem";
 import type { SprintWindow } from "../ado/sprintWindow";
 import type { ILogger } from "../logging/ILogger";
@@ -34,7 +35,9 @@ import type { WorkItemMarkerTags } from "../settings/ExtensionSettings";
  */
 export interface EnhancedViewServices {
   /** Load a tree query's work items into the normalized model. */
-  loadTree(queryId: string): Promise<WorkItemTreeResult>;
+  loadTree(queryId: string, wiql?: string): Promise<WorkItemTreeResult>;
+  /** Load a saved query's original WIQL independently from executing it. */
+  loadQueryDefinition?(queryId: string): Promise<QueryDefinitionResult>;
   /** Search and resolve ADO identities (for assignee-pickers and user resolution). */
   userDirectory: IUserDirectory;
   /**
@@ -74,8 +77,8 @@ export interface EnhancedViewServices {
    * configured or the fetch fails.
    */
   loadSprintWindow(): Promise<SprintWindow>;
-  /** Load the configured team's capacity roster for one iteration GUID. */
-  loadSprintCapacity(iterationId: string): Promise<SprintCapacityResult>;
+  /** Load every member of the configured team. */
+  loadTeamMembers(): Promise<TeamMembersResult>;
   /** The reference clock (injected so views can compute "now" deterministically). */
   now(): Date;
   /** The logger for view-level diagnostics. */

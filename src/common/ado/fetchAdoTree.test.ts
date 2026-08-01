@@ -46,6 +46,7 @@ describe("buildAdoTreeUrls", () => {
     );
     expect(urls).toEqual({
       wiqlUrl: "https://dev.azure.com/contoso/web/_apis/wit/wiql/abc-123?api-version=7.1",
+      executeWiqlUrl: "https://dev.azure.com/contoso/web/_apis/wit/wiql?api-version=7.1",
       batchUrl: "https://dev.azure.com/contoso/web/_apis/wit/workitemsbatch?api-version=7.1",
       queryUrl: "https://dev.azure.com/contoso/web/_apis/wit/queries/abc-123?api-version=7.1",
     });
@@ -55,6 +56,7 @@ describe("buildAdoTreeUrls", () => {
     const urls = buildAdoTreeUrls("https://contoso.visualstudio.com/web/_queries/query/xyz", "xyz");
     expect(urls).toEqual({
       wiqlUrl: "https://contoso.visualstudio.com/web/_apis/wit/wiql/xyz?api-version=7.1",
+      executeWiqlUrl: "https://contoso.visualstudio.com/web/_apis/wit/wiql?api-version=7.1",
       batchUrl: "https://contoso.visualstudio.com/web/_apis/wit/workitemsbatch?api-version=7.1",
       queryUrl: "https://contoso.visualstudio.com/web/_apis/wit/queries/xyz?api-version=7.1",
     });

@@ -65,7 +65,32 @@ describe("updateWorkItemFieldInPage", () => {
     ]);
     expect(result).toEqual({ ok: true, rev: 7 });
   });
+});
 
+describe("updateWorkItemFieldInPage - atomic fields", () => {
+  it("PATCHes additional field changes in the same guarded revision", async () => {
+    const fetchMock = vi.fn(() => Promise.resolve(jsonResponse({ rev: 7 })));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    await updateWorkItemFieldInPage({
+      updateUrl: UPDATE_URL,
+      rev: 6,
+      field: "System.State",
+      value: "Active",
+      additionalFields: [{ field: "System.AreaPath", value: "Project\\Apps" }],
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(parsePatchBody(init)).toEqual([
+      { op: "test", path: "/rev", value: 6 },
+      { op: "add", path: "/fields/System.State", value: "Active" },
+      { op: "add", path: "/fields/System.AreaPath", value: "Project\\Apps" },
+    ]);
+  });
+});
+
+describe("updateWorkItemFieldInPage - multiline format", () => {
   it("sets a multiline field's storage format in the SAME patch as its value", async () => {
     const fetchMock = vi.fn(() => Promise.resolve(jsonResponse({ rev: 8 })));
     globalThis.fetch = fetchMock as unknown as typeof fetch;

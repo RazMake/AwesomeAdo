@@ -16,6 +16,15 @@ export type SendTreeRequest = (
 
 const LOAD_FAILURE_ERROR = "Could not load this query from Azure DevOps.";
 
+function treeMessage(queryId: string, fields: string[], wiql?: string): LoadQueryTreeMessage {
+  return {
+    type: LOAD_QUERY_TREE_MESSAGE,
+    queryId,
+    fields,
+    ...(wiql === undefined ? {} : { wiql }),
+  };
+}
+
 /** Log the specific read/parse failure once and tell the caller whether loading must stop. */
 function logTreeFailure(
   logger: ILogger,
@@ -57,12 +66,12 @@ export class MessagingWorkItemTreeLoader implements IWorkItemTreeLoader {
     private readonly logger: ILogger,
   ) {}
 
-  async loadTree(queryId: string): Promise<WorkItemTreeResult> {
+  async loadTree(queryId: string, wiql?: string): Promise<WorkItemTreeResult> {
     const etaFieldByType = this.getEtaFieldByType();
     const fields = Array.from(new Set([...TRACKING_FIELDS, ...etaFieldByType.values()]));
 
     try {
-      const response = await this.send({ type: LOAD_QUERY_TREE_MESSAGE, queryId, fields });
+      const response = await this.send(treeMessage(queryId, fields, wiql));
       if (response === undefined || response === null || response.raw === null) {
         this.logger.error(`Could not load query tree for ${queryId}: no data returned.`);
         return { isTreeQuery: false, roots: [], error: LOAD_FAILURE_ERROR };
