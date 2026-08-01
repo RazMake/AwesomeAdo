@@ -39,13 +39,21 @@ This is a flattened snapshot of what exists now, not a build log.
   render as cards, and the shared
   child-items badge lists each card's direct children. Both card sizes anchor ID and a tag-free
   shared assignee control in their top corners, then align ETA left and child progress right below
-  the title. Compact Done cards keep assignee and ETA read-only until expanded. Cards and direct
-  children render by backlog rank; child popup rows provide editable shared assignee/ETA controls and
-  sibling drag ordering while suspending card drag for the popup lifetime. Lane names are larger and
+  the title. Compact Done cards keep their own assignee and ETA read-only until expanded. A top-right
+  ordering picker defaults cards and direct children to backlog rank and applies title/ETA sorting to
+  both. Child popup rows provide shared assignee/ETA controls and sibling drag ordering under backlog
+  rank while suspending card drag for the popup lifetime; Done parents keep those controls and child
+  ordering read-only after expansion. Lane names are larger and
   their counts are muted. Tall cards show
   recognized tags and a clickable immediate-parent type icon/title whose popup lists the
-  type-colored ancestor chain from root to immediate parent with ETA controls. Cards drag across columns and area-path lanes through the
-  shared write queue, with diagonal state/area changes sent in one atomic patch. Lane choices include only represented leaf area paths. Project
+  type-colored ancestor chain from root to immediate parent with ETA controls, read-only for a Done
+  card. Cards move only between state columns in their current lane using a custom 90%-opaque
+  cursor clone that retains the source card's original resolved background; the source card remains
+  90%-opaque. A border matching the title's semantic color and painted
+  above the sticky backdrop frames the destination title; backlog-rank mode shows an in-place shadow at the
+  resolved slot between visible cards, survives upward reversal through gaps, and appends to an empty
+  destination with title highlight only. One serialized action coordinates state and rank; same-cell
+  moves use an insertion line, while cross-lane drops are rejected. Lane choices include only represented leaf area paths. Project
   choices are limited to planning-parent types above Primary work on ancestor chains of currently
   eligible sprint work, colored by type and searchable by title without dropping matching parents;
   long labels use available viewport width before truncating. Team and

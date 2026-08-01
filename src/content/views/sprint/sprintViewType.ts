@@ -1,8 +1,11 @@
+import { orderingPolicyProperty } from "../../../common/ordering/OrderingProperty";
 import {
   resolveViewTypePropertyValue,
   type ViewType,
   type ViewTypeProperty,
 } from "../../../common/view-common/ViewType";
+
+export { orderingPolicyOf as sprintOrderingPolicy } from "../../../common/ordering/OrderingProperty";
 
 const recentChangesWindowHoursProperty: ViewTypeProperty = {
   key: "hours",
@@ -23,7 +26,7 @@ const recentChangesWindowHoursProperty: ViewTypeProperty = {
 export const sprintViewType: ViewType = {
   id: "sprint",
   label: "Sprint View",
-  properties: [recentChangesWindowHoursProperty],
+  properties: [orderingPolicyProperty, recentChangesWindowHoursProperty],
 };
 
 /** The rolling window used by Sprint View's three recent-activity filters. */

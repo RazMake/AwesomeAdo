@@ -9,6 +9,7 @@ import { WorkItemWriteQueue } from "../../../common/ado/WorkItemWriteQueue/WorkI
 import { buildQueryFolderUrl } from "../../../common/ado/fetchAdoTree";
 import { filterTreeForSprintRoster, wiqlForSprint } from "../../../common/ado/sprintQuery";
 import type { SprintWindow, SprintWindowEntry } from "../../../common/ado/sprintWindow";
+import { MANUAL_ORDERING_POLICY, type OrderingPolicy } from "../../../common/ordering/ItemOrdering";
 import { WORK_ITEM_MARKERS, type WorkItemMarker } from "../../../common/settings/ExtensionSettings";
 import type {
   DataDrivenViewContext,
@@ -40,6 +41,7 @@ import {
 } from "../../../common/view-common/control/HierarchyFilter/HierarchyFilter";
 import { renderMarkerPill } from "../../../common/view-common/control/MarkerPill/MarkerPill";
 import { itemHasMarker } from "../../../common/view-common/control/MarkerPill/markerPresence";
+import { renderOrderingPicker } from "../../../common/view-common/control/OrderingPicker/OrderingPicker";
 import { renderSprintPicker } from "../../../common/view-common/control/SprintPicker/SprintPicker";
 import { renderViewScaffold } from "../../../common/view-common/control/ViewScaffold/ViewScaffold";
 import { renderWriteQueueStatus } from "../../../common/view-common/control/WriteQueueStatus/WriteQueueStatus";
@@ -47,7 +49,7 @@ import type { WriteQueueStatusHandle } from "../../../common/view-common/control
 
 import { renderSprintBoard, type SprintBoardItem } from "./SprintBoard";
 import { renderSprintHeader } from "./SprintHeader";
-import { sprintRecentChangesHours, sprintViewType } from "./sprintViewType";
+import { sprintOrderingPolicy, sprintRecentChangesHours, sprintViewType } from "./sprintViewType";
 
 const UNASSIGNED_KEY = "__unassigned__";
 
@@ -62,6 +64,7 @@ interface SprintSession {
   repaintQueuedOnNotes: boolean;
   expandedDoneIds: Set<number>;
   openChildPopupIds: Set<number>;
+  orderingPolicy: OrderingPolicy | null;
 }
 
 interface LoadedSprintData {
@@ -211,6 +214,7 @@ function createSession(context: DataDrivenViewContext): SprintSession {
     repaintQueuedOnNotes: false,
     expandedDoneIds: new Set<number>(),
     openChildPopupIds: new Set<number>(),
+    orderingPolicy: null,
   };
 }
 
@@ -645,9 +649,30 @@ function renderBoardHeader(options: SprintHeaderRenderOptions): {
   });
   queueStatus.setCount(options.writeState.pending);
   queueStatus.setFailedCount(options.writeState.failed, options.writeState.lastError);
+  const currentOrderingPolicy = session.orderingPolicy ?? sprintOrderingPolicy(context.properties);
+  const orderingPicker = renderOrderingPicker(context.doc, {
+    policy: currentOrderingPolicy,
+    dragReorderUnavailable: (policy) => {
+      if (context.services.currentTeam() === null) {
+        return "drag to reorder needs a team (set one in AwesomeADO options)";
+      }
+      return policy === MANUAL_ORDERING_POLICY
+        ? null
+        : "drag to reorder is only available when ordering by importance";
+    },
+    onChange: (policy) => {
+      context.services.logger.info(
+        `Sprint View ordering changed for this session: from=${currentOrderingPolicy}, ` +
+          `to=${policy}, bindingPolicy=${sprintOrderingPolicy(context.properties)}.`,
+      );
+      session.orderingPolicy = policy;
+      repaint();
+    },
+  });
   return {
     header: renderSprintHeader(context.doc, {
       breadcrumbs: queryBreadcrumbs(data.result, context.doc.location?.href ?? ""),
+      orderingPicker,
       sprintPicker: sprintPicker.element,
       laneFilter: laneFilter.element,
       projectFilter: projectFilter.element,
@@ -723,6 +748,7 @@ function renderBoard(
           uniqueName,
           imageUrl,
         })),
+      orderingPolicy: session.orderingPolicy ?? sprintOrderingPolicy(context.properties),
       onItemChanged: repaint,
     }),
   );

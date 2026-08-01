@@ -128,6 +128,24 @@ describe("isReorderWorkItemMessage - rev and team", () => {
     expect(isReorderWorkItemMessage(message({ typeName: 7 }))).toBe(false);
   });
 
+  it("accepts an optional state and rejects a blank or non-string one", () => {
+    expect(isReorderWorkItemMessage(message({ stateName: undefined }))).toBe(true);
+    expect(isReorderWorkItemMessage(message({ stateName: "Active" }))).toBe(true);
+    expect(isReorderWorkItemMessage(message({ stateName: "" }))).toBe(false);
+    expect(isReorderWorkItemMessage(message({ stateName: "   " }))).toBe(false);
+    expect(isReorderWorkItemMessage(message({ stateName: 7 }))).toBe(false);
+  });
+
+  it("accepts a base state only alongside a destination state", () => {
+    expect(isReorderWorkItemMessage(message({ stateName: "Active", stateBaseName: "New" }))).toBe(
+      true,
+    );
+    expect(isReorderWorkItemMessage(message({ stateBaseName: "New" }))).toBe(false);
+    expect(isReorderWorkItemMessage(message({ stateName: "Active", stateBaseName: "" }))).toBe(
+      false,
+    );
+  });
+
   it("rejects sibling ids that are not all real work item ids", () => {
     // Every entry becomes a URL the worker calls with the user's session, so `0` — fine as a
     // "no parent" sentinel elsewhere — cannot name a sibling to rank.

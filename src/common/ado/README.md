@@ -321,18 +321,20 @@ board's filters and the tagging commands all share one interpretation of the fie
 ### `IWorkItemReorderWriter.ts`
 
 - `WorkItemReorderRequest` —
-  `{ id, rev, parentId, currentParentId, previousId, nextId, siblingIds, type?, team }`; the request to move
+  `{ id, rev, parentId, currentParentId, previousId, nextId, siblingIds, type?, stateName?, stateBaseName?, team }`; the request to move
   an item. Position is named as the two siblings it lands **between** (`0` = start / end / no parent)
   rather than as a rank, because ADO owns the rank arithmetic — and naming neighbours survives a stale
   board, where two independently-computed ranks would collide. `siblingIds` is the destination level
   in its **post-drop** order, which the rank fallback needs when ADO declines to rank the item.
   `type`, when present, is the destination parent's default child type and is applied atomically with
-  the parent link.
-- `WorkItemReorderResult` — `{ ok, order?, rev?, reparented?, ranks?, error? }`; `order` is the rank
+  the parent link. `stateName` and `stateBaseName` coordinate a conflict-safe state patch before rank
+  placement in the same queue action.
+- `WorkItemReorderResult` — `{ ok, order?, rev?, reparented?, stateChanged?, ranks?, error? }`; `order` is the rank
   ADO assigned (so a caller can refresh its model without re-reading the tree), `rev` the item's new
   rev when the re-parent patch ran, `reparented` whether the hierarchy link actually changed (reported
   on failure too, so a caller never keeps showing a parent ADO has already moved the item away from),
-  and `ranks` every rank written directly when ADO refused to order the item.
+  `stateChanged` whether the optional state patch landed before a later rank failure, and `ranks`
+  every rank written directly when ADO refused to order the item.
 - `IWorkItemReorderWriter` — moves a work item within or between parents. Kept separate from
   `IWorkItemFieldWriter` (Interface Segregation): a re-parent changes the item's **links** and its
   rank lives behind a team-scoped backlog endpoint, so neither is a field patch, and a consumer that

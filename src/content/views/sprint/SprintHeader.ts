@@ -6,6 +6,7 @@ import type { RefreshButtonHandle } from "../../../common/view-common/control/He
 
 export interface SprintHeaderOptions {
   breadcrumbs: BreadcrumbSegment[];
+  orderingPicker: HTMLElement;
   sprintPicker: HTMLElement;
   laneFilter: HTMLElement;
   projectFilter: HTMLElement;
@@ -37,13 +38,13 @@ export function renderSprintHeader(doc: Document, options: SprintHeaderOptions):
     segments: options.breadcrumbs,
     ariaLabel: "Query folder",
   });
-  if (breadcrumbs) {
-    const topRow = doc.createElement("div");
-    topRow.className = "awesomeado-sprint__header-top";
-    topRow.style.cssText = "display:flex;align-items:center;min-height:16px";
-    topRow.append(breadcrumbs);
-    header.append(topRow);
-  }
+  const topRow = doc.createElement("div");
+  topRow.className = "awesomeado-sprint__header-top";
+  topRow.style.cssText = "display:flex;align-items:center;min-height:16px";
+  if (breadcrumbs) topRow.append(breadcrumbs);
+  options.orderingPicker.style.marginLeft = "auto";
+  topRow.append(options.orderingPicker);
+  header.append(topRow);
 
   const controls = doc.createElement("div");
   controls.className = "awesomeado-sprint__header-controls";

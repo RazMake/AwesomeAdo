@@ -33,6 +33,10 @@ export interface WorkItemReorderRequest {
   siblingIds: readonly number[];
   /** The destination parent's default child type, applied atomically with a changed parent link. */
   type?: string;
+  /** The destination column's primary ADO state, applied before the item is ranked there. */
+  stateName?: string;
+  /** The state the card showed when the move began, allowing one conflict-safe rev rebase. */
+  stateBaseName?: string;
   /** The team whose backlog order is being changed (ADO ranks per team). */
   team: string;
 }
@@ -54,6 +58,8 @@ export interface WorkItemReorderResult {
    * the old parent and resend a request Azure DevOps has already applied.
    */
   reparented?: boolean;
+  /** Whether the optional state change landed, even when the later rank operation failed. */
+  stateChanged?: boolean;
   /**
    * Every rank written directly, when Azure DevOps refused to rank the item itself. Placing an item
    * can renumber its whole level, so this names each item whose rank changed — not just the moved

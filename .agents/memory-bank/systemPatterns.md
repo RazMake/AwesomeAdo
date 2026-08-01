@@ -214,15 +214,24 @@ Split into component subfolders (each with its own `README.md`):
   direct-child progress and level-one popup to the shared `ChildItemsBadge`; ID and the tag-free
   shared `AssignedTo` control occupy the top corners in both card sizes. ETA and child progress share
   the row below the title, aligned left and right. Assigned To and ETA are read-only while a Done card
-  is compact and become editable when it expands. Cards within each lane/state cell and direct child
-  rows are ordered by the shared manual backlog-rank policy. Child rows use editable shared Assigned
-  To and ETA controls and title-handle sibling reorder; opening their popup suspends the owning card's
-  drag source until every dismissal path closes it. Parent context uses a clickable type icon/title;
+  is compact and become editable when it expands. The shared top-right ordering picker defaults cards
+  and direct child rows to backlog rank and applies title/ETA sorting to both. Child rows use shared
+  Assigned To and ETA controls and title-handle sibling reorder under backlog-rank mode; a Done parent
+  keeps all three read-only after expansion, and opening the popup suspends the owning card's drag
+  source until every dismissal path closes it. Parent context uses a clickable type icon/title;
   its popup lists ancestors from the root down to the immediate parent with type-derived colors and
-  shared ETA controls. Cards are
-  persist-then-reflect draggable: a cross-column drop writes the destination
-  type mapping's primary ADO state, a cross-lane drop writes `System.AreaPath`, and a diagonal move
-  sends both in one revision-guarded patch. Lane and Project
+  shared ETA controls, read-only when the owning card is Done. Cards are persist-then-reflect
+  draggable only within their lane using a custom fixed 90%-opaque cursor clone that retains the
+  source card's resolved background across columns, while the source card remains 90%-opaque.
+  Destination cells own placement math so every pointer position, including
+  inter-card gaps while reversing upward, maps to a stable slot. A dedicated border layer above the
+  backdrop frames the sticky destination title using the title's semantic foreground color;
+  backlog-rank mode draws an in-place shadow
+  for a visible slot, while an empty destination appends last with no false insertion target. A
+  cross-column positioned move prepares `System.State` through the guarded field writer and carries
+  its returned rev into rank placement inside one queue action. Same-cell reorder uses an insertion
+  line. Derived sorts disable reorder but not state changes; card controls
+  cannot initiate a drag. Lane and Project
   options are derived only from that retained tree. Sprint changes replace the whole DOM and session,
   resetting all filters and re-deriving Lane/Project options. Its Lane filter offers only
   represented leaf area paths, excluding any represented ancestor path. Member and Unassigned pill

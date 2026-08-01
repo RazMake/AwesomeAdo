@@ -71,14 +71,25 @@ The extension is feature-complete for its current scope:
   Done cards start compact and expand on activation. Only explicitly configured Primary-work types
   render as cards. Cards expose title, ID, a tag-free shared assignee control, type color, and ETA;
   their row below the title aligns ETA left and the shared completed/total child badge right. Both
-  sizes put ID and assignee in their top corners; compact Done cards keep assignee and ETA read-only
-  until expanded. Cards in each lane/state cell and rows in each direct-child popup are ordered by
-  backlog rank. Child rows expose editable shared Assigned To and ETA controls plus sibling-only
-  title drag ordering; an open popup suspends its owning card's drag source until close. Lane names
+  sizes put ID and assignee in their top corners; compact Done cards keep their own assignee and ETA
+  read-only until expanded. A top-right shared ordering picker defaults cards and direct-child rows
+  to backlog rank and can switch both to title or ETA for the session. Child rows expose shared
+  Assigned To and ETA controls plus sibling-only title drag ordering under backlog-rank mode; all
+  three stay read-only when the parent card is Done. An open popup suspends its owning card's drag
+  source until close. Lane names
   are emphasized while their item counts remain visually secondary. Tall cards add recognized marker tags and a clickable immediate-parent type
   icon/title whose popup lists the type-colored ancestor chain from root to immediate parent with ETA
-  controls. Dragging across columns
-  changes state, across lanes changes `System.AreaPath`, and diagonally changes both atomically. The
+  controls, read-only when the owning card is Done. Card dragging stays within its lane and uses a
+  custom fixed 90%-opaque cursor clone that retains the source card's resolved background across
+  columns; the source card remains 90%-opaque. Every destination frames its sticky
+  column title with that title's semantic color on a border layer painted above the sticky backdrop;
+  under
+  backlog-rank ordering the cell continuously resolves pointer position across cards and gaps, shows
+  an in-place shadow at a visible destination slot, and appends to an empty destination with title
+  highlight only. A cross-column positioned drop coordinates its state patch and rank request in one
+  serialized action, while same-cell reordering shows an insertion line. Title/ETA sorting disables
+  only reorder. Interactive parent
+  controls cannot initiate the card drag. The
   Project filter lists only ancestor chains of work
   surviving the sprint and other active filters, without narrowing its own alternatives. Team pills
   show queue + active counters limited to Primary work and its recursively configured descendants;

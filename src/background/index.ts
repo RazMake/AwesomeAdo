@@ -93,6 +93,7 @@ import {
   type ReadNoteActivityMessage,
   type ReadNoteActivityResponse,
 } from "../common/browser/NoteActivityRequest";
+import { prepareReorderState, withPreparedState } from "../common/browser/ReorderStateChange";
 import {
   isReadTeamConfigMessage,
   isReadTeamConfigResponse,
@@ -919,39 +920,69 @@ const reorderWorkItem = async (
     logger.error(`Work item ${message.id} reorder skipped: ${config} (tab ${tabUrl}).`);
     return { ok: false, error: config };
   }
+  let preparedState: Awaited<ReturnType<typeof prepareReorderState>> | null = null;
   try {
+    const preparation = await prepareReorderState(message, (stateMessage) =>
+      updateWorkItemField(stateMessage, tabId, tabUrl),
+    );
+    if (!preparation.ok) {
+      logger.error(
+        `Work item ${message.id} reorder stopped before ranking: ` +
+          `${preparation.response.error ?? "state update failed"}.`,
+      );
+      return preparation.response;
+    }
+    preparedState = preparation;
+    const preparedMessage = preparation.message;
+    const preparedConfig = { ...config, rev: preparedMessage.rev };
     const results = await chrome.scripting.executeScript({
       target: { tabId },
       world: "MAIN",
       func: reorderWorkItemInPage,
-      args: [config],
+      args: [preparedConfig],
     });
-    const result = (results[0]?.result as ReorderWorkItemResponse | undefined) ?? null;
-    if (result === null) {
-      logger.error(`Work item ${message.id} reorder returned no result.`);
-      return { ok: false, error: "no result" };
-    }
-    if (!result.ok) {
-      // The page world hands back the raw body; naming what ADO actually objected to is what makes
-      // this diagnosable from the log instead of only from a live repro.
-      const reason = describeReorderFailure(result);
-      logger.error(
-        `Work item ${message.id} reorder failed (parent ${message.currentParentId}\u2192${message.parentId}, ` +
-          `between ${message.previousId} and ${message.nextId}, base rev ${message.rev}): ${reason}`,
-      );
-      return rankByHand(message, tabId, tabUrl, result, reason);
-    }
-    logger.info(
-      `Work item ${message.id} reordered under parent ${message.parentId} ` +
-        `(was ${message.currentParentId}), order=${result.order ?? "unchanged"}.`,
-    );
-    return result;
+    const rawResult = (results[0]?.result as ReorderWorkItemResponse | undefined) ?? null;
+    const result = withPreparedState(rawResult ?? { ok: false, error: "no result" }, preparation);
+    return finishReorder(message, preparedMessage, tabId, tabUrl, result);
   } catch (error) {
     // Injection fails on a closed/navigated/restricted tab; report the failure so the view degrades.
     logger.error(`Could not reorder work item ${message.id}`, error);
-    return { ok: false, error: "exception" };
+    const failure: ReorderWorkItemResponse = { ok: false, error: "exception" };
+    return preparedState?.ok === true ? withPreparedState(failure, preparedState) : failure;
   }
 };
+
+async function finishReorder(
+  original: ReorderWorkItemMessage,
+  prepared: ReorderWorkItemMessage,
+  tabId: number,
+  tabUrl: string,
+  result: ReorderWorkItemResponse | null,
+): Promise<ReorderWorkItemResponse> {
+  if (result === null) {
+    logger.error(`Work item ${original.id} reorder returned no result.`);
+    return { ok: false, error: "no result" };
+  }
+  if (!result.ok) {
+    // The page world hands back the raw body; naming what ADO actually objected to is what makes
+    // this diagnosable from the log instead of only from a live repro.
+    const reason = describeReorderFailure(result);
+    logger.error(
+      `Work item ${original.id} reorder failed (parent ${original.currentParentId}\u2192${original.parentId}, ` +
+        `between ${original.previousId} and ${original.nextId}, base rev ${original.rev}): ${reason}`,
+    );
+    return rankByHand(prepared, tabId, tabUrl, result, reason);
+  }
+  logger.info(
+    `Work item ${original.id} reordered under parent ${original.parentId} ` +
+      `(was ${original.currentParentId}), order=${orderDescription(result.order)}.`,
+  );
+  return result;
+}
+
+function orderDescription(order: number | undefined): number | string {
+  return order === undefined ? "unchanged" : order;
+}
 
 // Rank the level by writing the rank field directly, for the moves ADO's backlog-order endpoint
 // refuses outright (see `explainReorderRefusal`). Only a refusal to RANK is worth retrying this way:
@@ -971,6 +1002,7 @@ const rankByHand = async (
     ok: false,
     error: reason,
     reparented: refusal.reparented,
+    ...(refusal.stateChanged === true ? { stateChanged: true } : {}),
     rev: refusal.rev,
   };
   const batchUrl = buildWorkItemsBatchUrl(tabUrl);

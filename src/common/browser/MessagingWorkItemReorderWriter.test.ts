@@ -67,6 +67,15 @@ describe("MessagingWorkItemReorderWriter - success", () => {
     expect(sent[0]?.typeName).toBe("Feature");
   });
 
+  it("forwards a destination state with the positioned move", async () => {
+    const { writer, sent } = makeWriter(() => Promise.resolve({ ok: true }));
+
+    await writer.reorder({ ...REQUEST, stateName: "Active", stateBaseName: "New" });
+
+    expect(sent[0]?.stateName).toBe("Active");
+    expect(sent[0]?.stateBaseName).toBe("New");
+  });
+
   it("sends the whole request as one reorder message", async () => {
     const { writer, sent } = makeWriter(() => Promise.resolve({ ok: true }));
 

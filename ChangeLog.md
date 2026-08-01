@@ -23,15 +23,26 @@ builds use the repository's `Major.Minor.Build` release versioning.
   top-corner ID and tag-free assignee, plus ETA and a right-aligned completed/total badge below the
   title. Assignee and ETA stay read-only while Done cards are compact, then become editable when
   expanded; the assignee picker stays aligned under its right-aligned card control. Cards within a
-  lane and state column, plus each card's direct-child popup, follow backlog-rank order. Child rows
-  use the same editable Assigned To and ETA controls as Project Tracking and can be dragged to persist
-  sibling rank; opening that popup suspends movement of its owning card until the popup closes. Lane
+  lane and state column, plus each card's direct-child popup, default to backlog-rank order. A Project
+  Tracking-style top-right sort indicator switches both surfaces to title or ETA order for the
+  session. Child rows use the same Assigned To and ETA controls as Project Tracking and can be
+  dragged to persist sibling rank while the parent card is active; for Done parents, child ordering,
+  assignment, ETA, and ancestor ETA stay read-only even after expansion. Opening the child popup
+  suspends movement of its owning card until the popup closes. Lane
   names are larger for scanning while their item counts are more muted. Tall cards
   add recognized markers and a clickable immediate-parent title whose
   popup shows the full type-colored ancestor chain from root to immediate parent with ETA controls, while compact Done cards
   expand on demand.
-  Dragging a card changes its application state or area-path lane, with diagonal moves committed as
-  one atomic Azure DevOps revision. Initial load, refresh, and sprint changes now page the configured team's
+  Card dragging stays within its lane and uses a custom 90%-opaque cursor card that retains its
+  original card color while making the light transparency visible. Destination columns keep a visible
+  border matching their sticky title color;
+  backlog-rank mode places a shadow card at the exact slot
+  between visible destination cards, keeps that target when reversing upward through gaps, and
+  appends to an empty destination without drawing a false insertion target. One drop can change state
+  and backlog position together through one serialized action. Same-column reorder uses an insertion
+  line. Title and ETA sorting disable manual reorder without disabling state changes; interactive
+  parent controls cannot start a card drag.
+  Initial load, refresh, and sprint changes now page the configured team's
   complete roster before executing an offset-adjusted copy of the saved WIQL, keep only team-assigned
   or unassigned work plus its parent chains, derive Lane and Project choices from that retained work,
   and fully reset the view and filters when switching sprints. Member and Unassigned counters include

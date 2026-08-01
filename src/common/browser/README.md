@@ -609,16 +609,26 @@ messages the background worker, which runs the calls in the ADO tab's MAIN world
 ### `WorkItemReorderRequest.ts` — the content→background message contract
 
 - `REORDER_WORK_ITEM_MESSAGE` / `ReorderWorkItemMessage`
-  (`{ type, id, rev, parentId, currentParentId, previousId, nextId, siblingIds, typeName?, team }`) — the move. Position is
+  (`{ type, id, rev, parentId, currentParentId, previousId, nextId, siblingIds, typeName?, stateName?, stateBaseName?, team }`) — the move. Position is
   named as the two siblings the item lands **between** (`0` means start of the list / end of the list
   / no parent) rather than as a rank, because ADO owns the rank arithmetic. `team` is required
   because backlog order is per-team in ADO. `typeName`, when present, is written in the same guarded
-  patch as the hierarchy link.
-- `ReorderWorkItemResponse` (`{ ok, order?, rev?, error?, detail? }`) — the worker's reply; `order` is
+  patch as the hierarchy link. `stateName`/`stateBaseName`, when present, ask the worker to use the
+  ordinary conflict-safe `System.State` patch before ranking and carry its returned rev forward.
+- `ReorderWorkItemResponse` (`{ ok, order?, rev?, stateChanged?, error?, detail? }`) — the worker's reply; `order` is
   the rank ADO assigned and `rev` the item's new System.Rev when the re-parent patch ran. `detail`
   carries the raw body ADO returned with a rejected request (truncated), kept separate from `error`
   so the page world can stay minimal — it reports what the server said, and module code turns that
   into a sentence.
+
+### `ReorderStateChange.ts` — state preparation for a positioned column move
+
+- `prepareReorderState(message, writeState)` applies optional `stateName` through the existing
+  `UpdateWorkItemFieldMessage` path, with `stateBaseName` licensing the same one-time safe rebase as
+  every other field edit. A rejected state stops the move before ranking; success removes the state
+  fields from the rank message and replaces its rev with the patch's returned rev.
+- `withPreparedState(response, preparation)` marks `stateChanged: true` and retains that rev even if
+  the later backlog-order request fails, so the board reflects what ADO already accepted.
 - `isReorderWorkItemMessage(value)` / `reorderMessageProblem(value)` — the guard the worker uses, and
   the same check phrased as a **reason**. The worker validates with the latter and replies with the
   offending field rather than ignoring a malformed message: an ignored message reaches the content

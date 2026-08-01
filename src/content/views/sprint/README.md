@@ -7,7 +7,7 @@ whole session and DOM so no filter, roster, or derived option survives the switc
 ## Public API
 
 - `sprintViewType.ts` -> `sprintViewType: ViewType` - id `"sprint"`, label `"Sprint View"`, and the
-  recent-activity window in hours.
+  per-query ordering policy plus recent-activity window in hours.
 - `SprintView.ts` -> `sprintView: EnhancedView` - loads the original WIQL and configured team's
   members before executing the sprint-adjusted query; renders the sprint, Lane, Project, refresh, write-queue, team,
   marker, and recent-activity controls; and shows the filtered card table.
@@ -36,6 +36,9 @@ Only lanes surviving the area-path selection are rendered. The Project filter ke
 planning item and all direct or recursive descendants that belong to the selected sprint.
 The popup colors options by work-item type, expands toward the window margin for long titles, and
 offers title search that keeps a matching item's parent chain visible.
+The header's top-right ordering indicator uses the shared Project Tracking picker. Backlog rank is
+the default; title and ETA choices apply immediately to cards and direct-child popup rows for the
+current session.
 All filter pills stay at full opacity; marker and recent-activity pills occupy separate wrapping
 families with a larger gap between them.
 Initial load, refresh, and sprint changes show `Loading spring data...`. The saved WIQL body loads in
@@ -54,23 +57,36 @@ sticks vertically below the title row until the next lane pushes it away; its ar
 while the supporting count stays muted. Only types explicitly
 marked as Primary work in the configuration render as cards. Their direct children are summarized by the shared completed/total child-items
 badge; its popup lists only that first child level, regardless of which types render as cards, ordered
-by backlog rank with the shared editable Assigned To and ETA controls. Queue,
+by the active policy with the shared Assigned To and ETA controls. Queue,
 Active, and Waiting cards use the tall format; Done cards start compact and expand on click or
 keyboard activation. Both formats place the ID in the top-left corner and a tag-free shared Assigned
 To control in the top-right, followed by the wrapped title. The row below places the shared ETA
 control on the left and the child-items badge on the right. Assigned To and ETA remain visually
-unchanged but read-only while a Done card is compact; expanding it restores editing. Tall cards additionally show the
+unchanged but read-only while a Done card is compact; expanding it restores editing for the card
+itself. A Done card's child Assigned To and ETA controls, child title drag handles, and ancestor ETA
+controls remain read-only in both sizes and use the default cursor. Tall cards additionally show the
 immediate parent's type icon and title as a clickable, contrast-safe type-colored control. Its popup
 lists ancestors from the root down to that immediate parent, each with its own type color and shared ETA control.
 Tall cards also show only the three configured marker conditions (Blocked, Blocked by another team,
 and Interrupt). A type-colored edge identifies the work-item type.
 
-Every card is draggable. Dropping into another state column writes that type's primary ADO state;
-dropping into another lane writes `System.AreaPath`. A diagonal drop writes both fields in one
-revision-guarded JSON Patch and reflects the move only after Azure DevOps accepts it. Within each
-lane and state column, cards render in backlog-rank order. Direct children can be dragged by title to
-persist their sibling rank through the same serialized write queue. While the child popup is open,
-the owning card stops being a drag source and resumes only after the popup closes.
+Every card is draggable from its non-interactive surface. Parent hierarchy controls and other card
+controls never initiate the owning card's drag. The cursor-following card is a custom 90%-opaque
+clone that keeps the source card's original resolved background while moving across columns, making
+the transparency visible without the browser's stronger native fade. The source card also remains at
+90% opacity to mark its origin. A same-lane destination frames its
+always-visible sticky column title with a border that uses the title's semantic color and is painted
+above the sticky backdrop. Under backlog-rank ordering, the destination cell resolves every
+pointer position, including gaps while reversing direction: a visible destination card gets an
+in-place shadow showing the exact insertion slot, while an empty destination means append-last and
+shows only the column highlight. Dropping can change state and backlog position together; the guarded
+state patch runs first and its returned revision feeds the rank request inside one serialized queue
+operation. Cross-lane drops remain rejected. Within the current column, backlog-rank mode previews an
+insertion line and persists the card's manual rank. Title and ETA modes disable card and child
+reordering while continuing to allow same-lane state changes. Direct children in non-Done cards can
+be dragged by title to persist their sibling rank through the same serialized write queue. While a
+child popup is open, the owning card stops being a drag source and resumes only after the popup
+closes.
 
 Both are registered centrally: the config in `../viewCatalog.ts`, the renderer in
 `../enhancedViewRegistry.ts`.

@@ -1,3 +1,4 @@
+import type { WorkItemReorderResult } from "../../../common/ado/IWorkItemReorderWriter";
 import type {
   TrackedUser,
   TrackedWorkItem,
@@ -6,7 +7,11 @@ import type {
 import type { WorkItemWriteQueue } from "../../../common/ado/WorkItemWriteQueue/WorkItemWriteQueue";
 import { ASSIGNED_TO_FIELD, identityFieldValue } from "../../../common/ado/adoApi";
 import { buildWorkItemUrl } from "../../../common/ado/fetchAdoTree";
-import { MANUAL_ORDERING_POLICY, orderItems } from "../../../common/ordering/ItemOrdering";
+import {
+  MANUAL_ORDERING_POLICY,
+  orderItems,
+  type OrderingPolicy,
+} from "../../../common/ordering/ItemOrdering";
 import { WORK_ITEM_MARKERS } from "../../../common/settings/ExtensionSettings";
 import type { DataDrivenViewContext } from "../../../common/view-common/EnhancedView";
 import {
@@ -26,6 +31,8 @@ import { renderItemTypeIcon } from "../../../common/view-common/control/ItemType
 import { renderMarkerPill } from "../../../common/view-common/control/MarkerPill/MarkerPill";
 import { itemHasMarker } from "../../../common/view-common/control/MarkerPill/markerPresence";
 import { createPopupHost } from "../../../common/view-common/control/popupHost/popupHost";
+
+import { SprintCardDragController, type SprintCardMove } from "./SprintCardDragController";
 
 const VISIBLE_COLUMN_COUNT = 4;
 const BOARD_LAYOUT_COLUMNS = "minmax(130px,170px) minmax(0,1fr)";
@@ -72,7 +79,9 @@ interface SprintBoardOptions {
   openChildPopupIds: Set<number>;
   team: string | null;
   assigneeSuggestions: () => TrackedUser[];
+  orderingPolicy: OrderingPolicy;
   onItemChanged: () => void;
+  cardDrag?: SprintCardDragController;
   dragReorder?: DragReorderController;
 }
 
@@ -100,13 +109,23 @@ function lanesOf(items: readonly SprintBoardItem[]): Lane[] {
     }));
 }
 
-function orderByRank<T>(items: readonly T[], itemOf: (entry: T) => TrackedWorkItem): T[] {
+function orderBoardItems<T>(
+  items: readonly T[],
+  itemOf: (entry: T) => TrackedWorkItem,
+  policy: OrderingPolicy,
+): T[] {
   return orderItems(
     items.map((entry) => {
       const item = itemOf(entry);
-      return { entry, importance: item.importance, title: item.title, eta: null };
+      const eta = item.eta === null ? Number.NaN : Date.parse(item.eta);
+      return {
+        entry,
+        importance: item.importance,
+        title: item.title,
+        eta: Number.isNaN(eta) ? null : eta,
+      };
     }),
-    MANUAL_ORDERING_POLICY,
+    policy,
   ).map(({ entry }) => entry);
 }
 
@@ -114,6 +133,7 @@ function renderItemAssignee(
   context: DataDrivenViewContext,
   item: TrackedWorkItem,
   options: SprintBoardOptions,
+  editable = true,
 ): AssignedToHandle {
   const assignee: { handle?: AssignedToHandle } = {};
   assignee.handle = renderAssignedTo(context.doc, {
@@ -121,27 +141,36 @@ function renderItemAssignee(
     userDirectory: context.services.userDirectory,
     suggestions: options.assigneeSuggestions,
     showTag: false,
-    onChange: (picked) => {
-      void options.writes
-        .enqueue({
-          id: item.id,
-          currentRev: () => item.rev,
-          field: ASSIGNED_TO_FIELD,
-          value: identityFieldValue(picked),
-        })
-        .then((result) => {
-          if (!result.ok) return;
-          item.assignedTo = {
-            displayName: picked.displayName,
-            uniqueName: picked.uniqueName,
-            imageUrl: picked.imageUrl,
-          };
-          if (result.rev !== undefined) item.rev = result.rev;
-          assignee.handle?.setUser(item.assignedTo);
-          options.onItemChanged();
-        });
-    },
+    onChange: editable
+      ? (picked) => {
+          void options.writes
+            .enqueue({
+              id: item.id,
+              currentRev: () => item.rev,
+              field: ASSIGNED_TO_FIELD,
+              value: identityFieldValue(picked),
+            })
+            .then((result) => {
+              if (!result.ok) return;
+              item.assignedTo = {
+                displayName: picked.displayName,
+                uniqueName: picked.uniqueName,
+                imageUrl: picked.imageUrl,
+              };
+              if (result.rev !== undefined) item.rev = result.rev;
+              assignee.handle?.setUser(item.assignedTo);
+              options.onItemChanged();
+            });
+        }
+      : undefined,
   });
+  if (!editable) {
+    const name = assignee.handle.querySelector<HTMLButtonElement>(".awesomeado-assigned__name");
+    if (name !== null) {
+      name.disabled = true;
+      name.style.cursor = "default";
+    }
+  }
   return assignee.handle;
 }
 
@@ -157,13 +186,14 @@ function renderChildrenBadge(
   onOpenChange: (open: boolean) => void,
 ): ChildBadgeHandle | null {
   if (item.children.length === 0) return null;
-  const orderedChildren = orderByRank(item.children, (child) => child);
+  const parentDone = stateOrdinal(item, options.types.get(item.type)) === 3;
+  const orderedChildren = orderBoardItems(item.children, (child) => child, options.orderingPolicy);
   const siblingIds = orderedChildren.map((child) => child.id);
   const controls: { assignee: AssignedToHandle; eta: EtaBadgeHandle }[] = [];
   const children = orderedChildren.map((child) => {
     const childType = options.types.get(child.type);
-    const assignee = renderItemAssignee(context, child, options);
-    const eta = renderItemEta(context, child, options);
+    const assignee = renderItemAssignee(context, child, options, !parentDone);
+    const eta = renderItemEta(context, child, options, !parentDone);
     controls.push({ assignee, eta });
     return {
       assignee,
@@ -173,7 +203,7 @@ function renderChildrenBadge(
       eta,
       url: buildWorkItemUrl(context.doc.location?.href ?? "", child.id),
       onRowReady:
-        options.dragReorder === undefined
+        options.dragReorder === undefined || parentDone
           ? undefined
           : (
               row: HTMLElement,
@@ -205,15 +235,19 @@ function renderChildrenBadge(
   return {
     element,
     setEditable: (editable) => {
+      const mayEdit = editable && !parentDone;
       for (const control of controls) {
         const name = control.assignee.querySelector<HTMLButtonElement>(
           ".awesomeado-assigned__name",
         );
-        if (name !== null) name.disabled = !editable;
-        control.eta.setAttribute("aria-disabled", String(!editable));
-        control.eta.style.cursor = editable ? "pointer" : "default";
+        if (name !== null) {
+          name.disabled = !mayEdit;
+          name.style.cursor = mayEdit ? "pointer" : "default";
+        }
+        control.eta.setAttribute("aria-disabled", String(!mayEdit));
+        control.eta.style.cursor = mayEdit ? "pointer" : "default";
         const etaLabel = control.eta.querySelector<HTMLElement>(".awesomeado-eta__label");
-        if (etaLabel !== null) etaLabel.style.pointerEvents = editable ? "" : "none";
+        if (etaLabel !== null) etaLabel.style.pointerEvents = mayEdit ? "" : "none";
       }
     },
   };
@@ -260,21 +294,23 @@ function renderItemEta(
   context: DataDrivenViewContext,
   item: TrackedWorkItem,
   options: SprintBoardOptions,
+  editable = true,
 ): EtaBadgeHandle {
   const etaField = options.types.get(item.type)?.etaField ?? null;
   const badge: { handle?: EtaBadgeHandle } = {};
-  const onChange = etaField
-    ? (eta: string | null): void => {
-        void options.writes
-          .enqueue({ id: item.id, currentRev: () => item.rev, field: etaField, value: eta })
-          .then((result) => {
-            if (!result.ok) return;
-            item.eta = eta;
-            if (result.rev !== undefined) item.rev = result.rev;
-            badge.handle?.setEta(eta);
-          });
-      }
-    : undefined;
+  const onChange =
+    etaField && editable
+      ? (eta: string | null): void => {
+          void options.writes
+            .enqueue({ id: item.id, currentRev: () => item.rev, field: etaField, value: eta })
+            .then((result) => {
+              if (!result.ok) return;
+              item.eta = eta;
+              if (result.rev !== undefined) item.rev = result.rev;
+              badge.handle?.setEta(eta);
+            });
+        }
+      : undefined;
   const completed = stateOrdinal(item, options.types.get(item.type)) === 3;
   badge.handle = renderEtaBadge(context.doc, {
     eta: item.eta,
@@ -289,6 +325,7 @@ function renderParentPopup(
   context: DataDrivenViewContext,
   ancestors: readonly TrackedWorkItem[],
   options: SprintBoardOptions,
+  editable: boolean,
 ): HTMLElement {
   const popup = context.doc.createElement("div");
   popup.className = "awesomeado-sprint-card__parent-popup";
@@ -338,7 +375,7 @@ function renderParentPopup(
     title.title = ancestor.title;
     title.style.cssText = "overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
     identity.append(icon.element, title);
-    row.append(identity, renderItemEta(context, ancestor, options));
+    row.append(identity, renderItemEta(context, ancestor, options, editable));
     popup.append(row);
   }
   return popup;
@@ -348,6 +385,7 @@ function renderParentContext(
   context: DataDrivenViewContext,
   entry: SprintBoardItem,
   options: SprintBoardOptions,
+  editable: boolean,
 ): HTMLElement {
   const parentItem = entry.parent!;
   const parentType = options.types.get(parentItem.type);
@@ -396,7 +434,7 @@ function renderParentContext(
     doc: context.doc,
     trigger,
     mountInto: parent,
-    buildPopup: () => renderParentPopup(context, entry.ancestors, options),
+    buildPopup: () => renderParentPopup(context, entry.ancestors, options, editable),
   });
   return parent;
 }
@@ -426,6 +464,7 @@ function renderCardDetails(
   context: DataDrivenViewContext,
   entry: SprintBoardItem,
   options: SprintBoardOptions,
+  editableParentEta: boolean,
 ): HTMLElement {
   const details = context.doc.createElement("div");
   details.className = "awesomeado-sprint-card__details";
@@ -447,7 +486,7 @@ function renderCardDetails(
     details.append(tags);
   }
   if (entry.parent !== null) {
-    details.append(renderParentContext(context, entry, options));
+    details.append(renderParentContext(context, entry, options, editableParentEta));
   }
   return details;
 }
@@ -466,10 +505,30 @@ function preventCompactFieldEditing(card: HTMLElement): void {
   );
 }
 
+function registerCardDrag(
+  card: HTMLElement,
+  entry: SprintBoardItem,
+  ordinal: number,
+  lane: Lane,
+  siblingIds: readonly number[],
+  controller: SprintCardDragController | undefined,
+): void {
+  controller?.registerCard({
+    id: entry.item.id,
+    lane: lane.areaPath ?? "",
+    ordinal,
+    parentId: entry.parent?.id ?? 0,
+    siblingIds,
+    element: card,
+  });
+}
+
 function renderCard(
   context: DataDrivenViewContext,
   entry: SprintBoardItem,
   ordinal: number,
+  lane: Lane,
+  siblingIds: readonly number[],
   options: SprintBoardOptions,
 ): HTMLElement {
   const { item } = entry;
@@ -503,7 +562,7 @@ function renderCard(
     if (open) options.openChildPopupIds.add(item.id);
     else options.openChildPopupIds.delete(item.id);
   });
-  const details = renderCardDetails(context, entry, options);
+  const details = renderCardDetails(context, entry, options, ordinal !== 3);
   const meta = renderCardMeta(context, item, options);
   const assigneeName = meta.querySelector<HTMLButtonElement>(".awesomeado-assigned__name")!;
   const eta = footer.element.querySelector<HTMLElement>(".awesomeado-sprint-card__eta")!;
@@ -541,11 +600,7 @@ function renderCard(
       toggle();
     });
   }
-  card.addEventListener("dragstart", (event) => {
-    if (event.target !== card || !card.draggable) return;
-    event.dataTransfer?.setData("text/plain", String(item.id));
-    if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
-  });
+  registerCardDrag(card, entry, ordinal, lane, siblingIds, options.cardDrag);
   return card;
 }
 
@@ -642,7 +697,6 @@ function renderCell(
   lane: Lane,
   ordinal: number,
   items: readonly SprintBoardItem[],
-  allItems: readonly SprintBoardItem[],
   options: SprintBoardOptions,
 ): HTMLElement {
   const cell = context.doc.createElement("div");
@@ -659,24 +713,33 @@ function renderCell(
     "border-right:1px solid var(--control-border)",
     "border-bottom:1px solid var(--control-border)",
   ].join(";");
-  for (const entry of items) cell.append(renderCard(context, entry, ordinal, options));
-  cell.addEventListener("dragover", (event) => {
-    event.preventDefault();
-    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
-  });
-  cell.addEventListener("drop", (event) => {
-    event.preventDefault();
-    const id = Number(event.dataTransfer?.getData("text/plain"));
-    const source = allItems.find(({ item }) => item.id === id);
-    if (source !== undefined) applyDrop(context, source, ordinal, lane.areaPath, options);
-  });
+  const siblingIds = items.map(({ item }) => item.id);
+  for (const entry of items) {
+    cell.append(renderCard(context, entry, ordinal, lane, siblingIds, options));
+  }
+  options.cardDrag?.registerCell(cell, lane.areaPath ?? "", ordinal);
   return cell;
+}
+
+function renderColumnHighlight(doc: Document): HTMLElement {
+  const highlight = doc.createElement("span");
+  highlight.className = "awesomeado-sprint__column-title-highlight";
+  highlight.setAttribute("aria-hidden", "true");
+  highlight.style.cssText = [
+    "position:absolute",
+    "inset:0",
+    "z-index:2",
+    "box-sizing:border-box",
+    "border:2px solid transparent",
+    "pointer-events:none",
+  ].join(";");
+  return highlight;
 }
 
 function renderColumnHeader(
   doc: Document,
   boardColumns: readonly string[],
-): { element: HTMLElement; grid: HTMLElement } {
+): { element: HTMLElement; grid: HTMLElement; titles: HTMLElement[] } {
   const header = doc.createElement("div");
   header.className = "awesomeado-sprint__board-header";
   header.style.cssText = [
@@ -702,6 +765,7 @@ function renderColumnHeader(
     `min-width:${CARD_GRID_MIN_WIDTH}`,
     "will-change:transform",
   ].join(";");
+  const titles: HTMLElement[] = [];
   for (let ordinal = 0; ordinal < VISIBLE_COLUMN_COUNT; ordinal += 1) {
     const heading = doc.createElement("div");
     heading.className = "awesomeado-sprint__column-title";
@@ -738,12 +802,13 @@ function renderColumnHeader(
     label.className = "awesomeado-sprint__column-title-label";
     label.textContent = boardColumns[ordinal] ?? "";
     label.style.cssText = "position:relative";
-    heading.append(backdrop, label);
+    heading.append(backdrop, label, renderColumnHighlight(doc));
+    titles.push(heading);
     grid.append(heading);
   }
   viewport.append(grid);
   header.append(laneHeading, viewport);
-  return { element: header, grid };
+  return { element: header, grid, titles };
 }
 
 function findItem(items: readonly TrackedWorkItem[], id: number): TrackedWorkItem | null {
@@ -765,10 +830,23 @@ function applyReportedRanks(
   }
 }
 
-function persistChildMove(
-  move: PlannedMove,
+interface RankMove {
+  id: number;
+  parentId: number;
+  currentParentId: number;
+  previousId: number;
+  nextId: number;
+  siblingIds: readonly number[];
+  stateName?: string;
+  stateBaseName?: string;
+}
+
+function persistRankMove(
+  move: RankMove,
   roots: readonly TrackedWorkItem[],
   options: SprintBoardOptions,
+  afterSuccess?: () => void,
+  onResult?: (result: WorkItemReorderResult) => void,
 ): void {
   if (options.team === null) return;
   const moved = findItem(roots, move.id);
@@ -783,21 +861,81 @@ function persistChildMove(
       nextId: move.nextId,
       siblingIds: move.siblingIds,
       team: options.team,
+      stateName: move.stateName,
+      stateBaseName: move.stateBaseName,
     })
-    .then((result) => {
-      if (result.rev !== undefined) moved.rev = result.rev;
-      if (result.ranks !== undefined) applyReportedRanks(roots, result.ranks);
-      if (result.order !== undefined) moved.importance = result.order;
-      if (!result.ok) return;
-      if (result.ranks === undefined && result.order === undefined) {
-        applyReportedRanks(
-          roots,
-          move.siblingIds.map((id, rank) => ({ id, rank })),
-        );
-      }
-      options.openChildPopupIds.add(move.parentId);
-      options.onItemChanged();
-    });
+    .then((result) =>
+      reconcileRankMove(result, moved, move, roots, options, afterSuccess, onResult),
+    );
+}
+
+function reconcileRankMove(
+  result: WorkItemReorderResult,
+  moved: TrackedWorkItem,
+  move: RankMove,
+  roots: readonly TrackedWorkItem[],
+  options: SprintBoardOptions,
+  afterSuccess?: () => void,
+  onResult?: (result: WorkItemReorderResult) => void,
+): void {
+  if (result.rev !== undefined) moved.rev = result.rev;
+  if (result.ranks !== undefined) applyReportedRanks(roots, result.ranks);
+  if (result.order !== undefined) moved.importance = result.order;
+  onResult?.(result);
+  if (!result.ok) {
+    if (reorderPartlyApplied(result)) options.onItemChanged();
+    return;
+  }
+  if (result.ranks === undefined && result.order === undefined) {
+    applyReportedRanks(
+      roots,
+      move.siblingIds.map((id, rank) => ({ id, rank })),
+    );
+  }
+  afterSuccess?.();
+  options.onItemChanged();
+}
+
+function reorderPartlyApplied(result: WorkItemReorderResult): boolean {
+  return result.reparented === true || result.stateChanged === true;
+}
+
+function persistChildMove(
+  move: PlannedMove,
+  roots: readonly TrackedWorkItem[],
+  options: SprintBoardOptions,
+): void {
+  persistRankMove(move, roots, options, () => options.openChildPopupIds.add(move.parentId));
+}
+
+function persistCardMove(
+  context: DataDrivenViewContext,
+  move: SprintCardMove,
+  cards: readonly SprintBoardItem[],
+  roots: readonly TrackedWorkItem[],
+  options: SprintBoardOptions,
+): void {
+  const source = cards.find(({ item }) => item.id === move.id);
+  if (source === undefined) return;
+  const nextState = primaryState(source.item, move.destinationOrdinal, options);
+  const changesState =
+    nextState !== null &&
+    stateOrdinal(source.item, options.types.get(source.item.type)) !== move.destinationOrdinal;
+  persistRankMove(
+    {
+      ...move,
+      stateName: changesState ? nextState : undefined,
+      stateBaseName: changesState ? source.item.state : undefined,
+    },
+    roots,
+    options,
+    undefined,
+    (result) => {
+      if (!changesState || (!result.ok && result.stateChanged !== true)) return;
+      source.item.state = nextState;
+      source.item.stateChangeDate = context.services.now().toISOString();
+    },
+  );
 }
 
 function renderLane(
@@ -859,13 +997,14 @@ function renderLane(
     "will-change:transform",
   ].join(";");
   for (let ordinal = 0; ordinal < VISIBLE_COLUMN_COUNT; ordinal += 1) {
-    const cellItems = orderByRank(
+    const cellItems = orderBoardItems(
       laneItems.filter(
         (entry) => stateOrdinal(entry.item, options.types.get(entry.item.type)) === ordinal,
       ),
       ({ item }) => item,
+      options.orderingPolicy,
     );
-    grid.append(renderCell(context, lane, ordinal, cellItems, allItems, options));
+    grid.append(renderCell(context, lane, ordinal, cellItems, options));
   }
   viewport.append(grid);
   section.append(rail, laneLabel, viewport);
@@ -892,16 +1031,27 @@ export function renderSprintBoard(
   }
   section.style.cssText = "border:1px solid var(--control-border);border-radius:4px";
   const rootItems = cardItems.map(({ item }) => item);
+  const cardDrag = new SprintCardDragController(
+    context.doc,
+    options.team !== null && options.orderingPolicy === MANUAL_ORDERING_POLICY,
+    (id, ordinal) => {
+      const source = cardItems.find(({ item }) => item.id === id);
+      if (source !== undefined) applyDrop(context, source, ordinal, source.item.areaPath, options);
+    },
+    (move) => persistCardMove(context, move, cardItems, rootItems, options),
+    context.services.logger,
+  );
   const dragReorder =
-    options.team === null
+    options.team === null || options.orderingPolicy !== MANUAL_ORDERING_POLICY
       ? undefined
       : new DragReorderController(
           context.doc,
           (move) => persistChildMove(move, rootItems, options),
           context.services.logger,
         );
-  const renderOptions = { ...options, dragReorder };
+  const renderOptions = { ...options, cardDrag, dragReorder };
   const header = renderColumnHeader(context.doc, options.boardColumns);
+  header.titles.forEach((title, ordinal) => cardDrag.registerColumnTitle(ordinal, title));
   const laneGrids: HTMLElement[] = [];
   const lanes = context.doc.createElement("div");
   lanes.className = "awesomeado-sprint__lanes";

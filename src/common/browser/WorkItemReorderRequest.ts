@@ -34,12 +34,16 @@ export interface ReorderWorkItemMessage {
   siblingIds: number[];
   /** The destination parent's default child type, when the hierarchy move also converts the item. */
   typeName?: string;
+  /** The destination column's primary ADO state, when the move also changes application state. */
+  stateName?: string;
+  /** The state observed before the move, used only to authorize a conflict-safe rev rebase. */
+  stateBaseName?: string;
   /** The team whose backlog order is being changed (ADO ranks per team). */
   team: string;
 }
 
 /** Which call of the move was in flight when it failed; absent on success. */
-export type ReorderStage = "relations" | "reparent" | "order";
+export type ReorderStage = "state" | "relations" | "reparent" | "order";
 
 export interface ReorderWorkItemResponse {
   ok: boolean;
@@ -58,6 +62,8 @@ export interface ReorderWorkItemResponse {
    * a board that keeps showing the old parent would send the same doomed request forever.
    */
   reparented?: boolean;
+  /** Whether the optional state patch landed before a later order failure. */
+  stateChanged?: boolean;
   /**
    * Every rank the worker wrote directly, when Azure DevOps refused to order the item itself.
    * Placing one item can renumber its whole level, so this names each item whose rank changed.
@@ -181,6 +187,10 @@ function detailProblem(candidate: Partial<ReorderWorkItemMessage>): string | nul
   if (typeProblem !== null) {
     return typeProblem;
   }
+  const stateProblem = reorderStateProblem(candidate);
+  if (stateProblem !== null) {
+    return stateProblem;
+  }
   // The sibling order is what the hand-written ranking falls back to, and every entry becomes a URL
   // the worker then calls with the user's session, so it is validated as strictly as the ids above.
   if (!Array.isArray(candidate.siblingIds) || !candidate.siblingIds.every(isWorkItemId)) {
@@ -189,12 +199,36 @@ function detailProblem(candidate: Partial<ReorderWorkItemMessage>): string | nul
   return null;
 }
 
+/** Why the optional state change and its conflict-rebase value cannot travel together. */
+function reorderStateProblem(candidate: Partial<ReorderWorkItemMessage>): string | null {
+  return (
+    stateNameProblem(candidate.stateName) ??
+    stateBaseNameProblem(candidate.stateBaseName, candidate.stateName)
+  );
+}
+
 /** Why an optional destination type cannot name an ADO work-item type. */
 function workItemTypeProblem(value: unknown): string | null {
   if (value === undefined || (typeof value === "string" && value.trim().length > 0)) {
     return null;
   }
   return `typeName ${describeValue(value)} is not a non-blank work item type`;
+}
+
+/** Why an optional application state cannot be sent to `System.State`. */
+function stateNameProblem(value: unknown): string | null {
+  if (value === undefined || (typeof value === "string" && value.trim().length > 0)) {
+    return null;
+  }
+  return `stateName ${describeValue(value)} is not a non-blank ADO state`;
+}
+
+/** Why the optional state-rebase value cannot safely accompany this request. */
+function stateBaseNameProblem(value: unknown, stateName: unknown): string | null {
+  if (value === undefined) return null;
+  if (stateName === undefined) return "stateBaseName cannot be supplied without stateName";
+  if (typeof value === "string" && value.trim().length > 0) return null;
+  return `stateBaseName ${describeValue(value)} is not a non-blank ADO state`;
 }
 
 /**

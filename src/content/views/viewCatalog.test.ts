@@ -50,10 +50,18 @@ describe("VIEW_TYPES", () => {
     expect(byKey.get("hours")).toMatchObject({ kind: "number", defaultValue: "24", min: 1 });
   });
 
-  it("gives Sprint View the shared recent-change window", () => {
-    expect(getViewType("sprint")?.properties).toEqual([
-      expect.objectContaining({ key: "hours", kind: "number", defaultValue: "24", min: 1 }),
-    ]);
+  it("gives Sprint View shared ordering plus its recent-change window", () => {
+    const sprint = getViewType("sprint");
+    const tracking = getViewType("projectTracking");
+    const sprintByKey = new Map(sprint?.properties.map((property) => [property.key, property]));
+    const trackingByKey = new Map(tracking?.properties.map((property) => [property.key, property]));
+    expect(sprint?.properties.map((property) => property.key)).toEqual(["orderingPolicy", "hours"]);
+    expect(sprintByKey.get("orderingPolicy")).toEqual(trackingByKey.get("orderingPolicy"));
+    expect(sprintByKey.get("hours")).toMatchObject({
+      kind: "number",
+      defaultValue: "24",
+      min: 1,
+    });
   });
 });
 

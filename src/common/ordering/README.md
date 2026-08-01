@@ -1,6 +1,6 @@
 # src/common/ordering
 
-Shared item-ordering policies for the Project Tracking view.
+Shared item-ordering policies and binding configuration for enhanced views.
 
 ## Purpose
 
@@ -23,6 +23,12 @@ sort, so "most important first", "a–z", and "by ETA" mean the same thing every
   is more important), `title`, and `eta` (epoch ms or `null`).
 - **`orderItems(items, policy)`** — returns a new, stably-sorted copy of `items` for the policy;
   ties keep their original order, and items without an ETA sort after dated ones under `eta`.
+
+### `OrderingProperty.ts`
+
+- **`orderingPolicyProperty`** — the shared select property views place in their binding config.
+- **`orderingPolicyOf(properties)`** — resolves a stored policy and safely falls back to the default
+  when another build wrote an id this build does not recognize.
 
 ## Usage guidance
 

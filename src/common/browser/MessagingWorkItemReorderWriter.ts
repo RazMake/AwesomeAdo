@@ -33,20 +33,7 @@ export class MessagingWorkItemReorderWriter implements IWorkItemReorderWriter {
   ) {}
 
   async reorder(request: WorkItemReorderRequest): Promise<WorkItemReorderResult> {
-    const message: ReorderWorkItemMessage = {
-      type: REORDER_WORK_ITEM_MESSAGE,
-      id: request.id,
-      rev: request.rev,
-      parentId: request.parentId,
-      currentParentId: request.currentParentId,
-      previousId: request.previousId,
-      nextId: request.nextId,
-      siblingIds: [...request.siblingIds],
-      team: request.team,
-    };
-    if (request.type !== undefined) {
-      message.typeName = request.type;
-    }
+    const message = reorderMessage(request);
 
     try {
       const response = await this.send(message);
@@ -75,7 +62,12 @@ export class MessagingWorkItemReorderWriter implements IWorkItemReorderWriter {
           // is not the actual cause, so a reader given only the raw code chases the wrong theory.
           this.logger.error(`Work item ${request.id} reorder: ${explanation}`);
         }
-        return { ok: false, error: response.error, reparented: response.reparented };
+        return {
+          ok: false,
+          error: response.error,
+          reparented: response.reparented,
+          stateChanged: response.stateChanged,
+        };
       }
 
       // The signals behind the move plus its outcome, so "why did that item end up there?" is
@@ -90,10 +82,29 @@ export class MessagingWorkItemReorderWriter implements IWorkItemReorderWriter {
         rev: response.rev,
         ranks: response.ranks,
         reparented: response.reparented,
+        stateChanged: response.stateChanged,
       };
     } catch (error) {
       this.logger.error(`Could not reorder work item ${request.id}`, error);
       return { ok: false, error: "reorder request threw" };
     }
   }
+}
+
+function reorderMessage(request: WorkItemReorderRequest): ReorderWorkItemMessage {
+  const message: ReorderWorkItemMessage = {
+    type: REORDER_WORK_ITEM_MESSAGE,
+    id: request.id,
+    rev: request.rev,
+    parentId: request.parentId,
+    currentParentId: request.currentParentId,
+    previousId: request.previousId,
+    nextId: request.nextId,
+    siblingIds: [...request.siblingIds],
+    team: request.team,
+  };
+  if (request.type !== undefined) message.typeName = request.type;
+  if (request.stateName !== undefined) message.stateName = request.stateName;
+  if (request.stateBaseName !== undefined) message.stateBaseName = request.stateBaseName;
+  return message;
 }

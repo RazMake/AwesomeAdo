@@ -1125,3 +1125,24 @@ Markdown` in one `/rev`-guarded JSON Patch. The PATCH is not retried; a concurre
   lanes must retain full values even when their labels show only the leaf. One patch is required for
   a diagonal gesture: two writes would make the second race the revision created by the first and
   could leave half the drag committed.
+- Amendment: cards no longer move between area-path lanes. A drag remains inside its source lane.
+  The cursor-following card uses a custom fixed 90%-opaque clone that retains the source card's
+  resolved background across destination columns, suppressing the browser's native drag fade; the
+  source card remains 90%-opaque to mark its origin. Each active destination column frames its sticky
+  title with its own semantic foreground color.
+  Destination cells own slot resolution rather than individual cards, so reversing
+  upward through an inter-card gap still produces a target. The sticky column title always
+  highlights; backlog-rank mode shows an in-place shadow at a visible destination slot, while an
+  empty destination appends last and shows no false reorder target. A cross-column positioned move
+  prepares the destination `System.State` through the existing guarded field writer, carries its
+  returned rev into the rank request, and keeps both under one serialized queue action. A later rank
+  failure reports the already-landed state so the board reflects server truth. Another card in the
+  same cell previews an insertion line and persists backlog rank. The shared top-right ordering picker applies
+  backlog-rank (default), title, or ETA order to cards and direct children; title/ETA modes disable
+  manual card and child reorder but retain cross-column state changes. A Done card keeps child
+  ordering, child Assigned To/ETA, and ancestor ETA read-only even after expansion. Interactive card
+  controls, including the parent hierarchy panel, cannot arm the owning card's drag.
+- Rationale for amendment: lanes are a grouping boundary, not a drag-edit affordance. Rank is the
+  only ordering policy a manual drop can persist without the next render undoing it, while state
+  changes remain meaningful under every display order. Done work and its context remain inspectable
+  without exposing controls that should no longer mutate its plan.

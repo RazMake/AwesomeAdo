@@ -5,6 +5,7 @@ import { normalizeMarkerTags } from "../../../common/settings/ExtensionSettings"
 import type { EnhancedViewServices } from "../../../common/view-common/EnhancedView";
 
 import { sprintView } from "./SprintView";
+import { sprintOrderingPolicy, sprintViewType } from "./sprintViewType";
 
 function user(displayName: string): TrackedUser {
   return {
@@ -156,21 +157,65 @@ function metric(pill: Element, kind: string): string | null | undefined {
 }
 
 function drag(source: HTMLElement, target: HTMLElement): void {
+  const dataTransfer = beginDrag(source);
+  dispatchDrag(target, "dragover", dataTransfer);
+  dispatchDrag(target, "drop", dataTransfer);
+}
+
+function beginDrag(source: HTMLElement): DataTransfer {
   const values = new Map<string, string>();
   const dataTransfer = {
     effectAllowed: "none",
     dropEffect: "none",
     setData: (type: string, value: string) => values.set(type, value),
     getData: (type: string) => values.get(type) ?? "",
+    setDragImage: vi.fn(),
   } as unknown as DataTransfer;
-  for (const type of ["dragstart", "dragover", "drop"]) {
-    const event = new Event(type, { bubbles: true, cancelable: true });
-    Object.defineProperty(event, "dataTransfer", { value: dataTransfer });
-    (type === "dragstart" ? source : target).dispatchEvent(event);
-  }
+  dispatchDrag(source, "dragstart", dataTransfer);
+  return dataTransfer;
+}
+
+function dispatchDrag(
+  target: HTMLElement,
+  type: string,
+  dataTransfer: DataTransfer,
+  clientY = 0,
+): Event {
+  const event = new Event(type, { bubbles: true, cancelable: true });
+  Object.defineProperty(event, "dataTransfer", { value: dataTransfer });
+  Object.defineProperty(event, "clientY", { value: clientY });
+  target.dispatchEvent(event);
+  return event;
+}
+
+async function stickSprintColumnHeader(root: HTMLElement): Promise<HTMLElement> {
+  const boardHeader = root.querySelector<HTMLElement>(".awesomeado-sprint__board-header")!;
+  await vi.waitFor(() =>
+    expect(root.style.getPropertyValue("--awesomeado-sprint-column-header-top")).toBe("12px"),
+  );
+  root.parentElement!.getBoundingClientRect = () => ({ top: 48 }) as DOMRect;
+  boardHeader.getBoundingClientRect = () => ({ top: 60, bottom: 92 }) as unknown as DOMRect;
+  root.parentElement!.dispatchEvent(new Event("scroll"));
+  expect(boardHeader.hasAttribute("data-stuck")).toBe(true);
+  return boardHeader;
+}
+
+function expectOriginalDragBackground(dragImage: HTMLElement, target: HTMLElement): void {
+  expect(dragImage.dataset.columnOrdinal).toBeUndefined();
+  expect(dragImage.style.background).toContain("var(--item-row-background)");
+  expect(dragImage.style.background).not.toContain(target.style.background);
 }
 
 afterEach(() => document.body.replaceChildren());
+
+describe("Sprint View ordering configuration", () => {
+  it("defaults to backlog rank and safely resolves stored policies", () => {
+    expect(sprintOrderingPolicy({})).toBe("importance");
+    expect(sprintOrderingPolicy({ orderingPolicy: "title" })).toBe("title");
+    expect(sprintOrderingPolicy({ orderingPolicy: "retired-policy" })).toBe("importance");
+    expect(sprintViewType.properties[0]?.key).toBe("orderingPolicy");
+  });
+});
 
 describe("Sprint View breadcrumbs", () => {
   it("renders query-folder breadcrumbs at the top of the header", async () => {
@@ -188,6 +233,10 @@ describe("Sprint View breadcrumbs", () => {
 
     const header = root.querySelector(".awesomeado-sprint__header")!;
     const breadcrumbs = header.querySelector(".awesomeado-breadcrumbs")!;
+    const topRow = header.querySelector(".awesomeado-sprint__header-top")!;
+    const ordering = topRow.querySelector<HTMLElement>(".awesomeado-ordering")!;
+    expect(topRow.lastElementChild).toBe(ordering);
+    expect(ordering.style.marginLeft).toBe("auto");
     const labels = [...breadcrumbs.querySelectorAll(".awesomeado-breadcrumb")].map(
       (segment) => segment.textContent,
     );
@@ -407,11 +456,20 @@ function expectWorkCards(root: HTMLElement): void {
   const backdrops = headings.map((heading) =>
     heading.querySelector<HTMLElement>(".awesomeado-sprint__column-title-backdrop")!,
   );
+  const highlights = headings.map((heading) =>
+    heading.querySelector<HTMLElement>(".awesomeado-sprint__column-title-highlight")!,
+  );
   expect(backdrops.map((backdrop) => backdrop.style.background)).toEqual(
     Array.from({ length: 4 }, () => "var(--sprint-column-header-background)"),
   );
   expect(backdrops.map((backdrop) => backdrop.style.opacity)).toEqual(
     Array.from({ length: 4 }, () => "var(--sprint-column-header-opacity)"),
+  );
+  expect(highlights.map((highlight) => highlight.style.zIndex)).toEqual(
+    Array.from({ length: 4 }, () => "2"),
+  );
+  expect(highlights.map((highlight) => highlight.style.borderColor)).toEqual(
+    Array.from({ length: 4 }, () => "transparent"),
   );
   expect(
     headings.map((heading) => heading.style.getPropertyValue("--sprint-column-header-background")),
@@ -489,7 +547,12 @@ function expectCompactDoneCard(root: HTMLElement): void {
   expect(eta.getAttribute("aria-disabled")).toBe("false");
   done.querySelector<HTMLButtonElement>(".awesomeado-sprint-card__parent-trigger")!.click();
   expect(done.dataset.size).toBe("large");
-  expect(done.querySelector(".awesomeado-sprint-card__parent-popup")).not.toBeNull();
+  const parentPopup = done.querySelector<HTMLElement>(".awesomeado-sprint-card__parent-popup")!;
+  expect(parentPopup).not.toBeNull();
+  const parentEta = parentPopup.querySelector<HTMLElement>(".awesomeado-eta")!;
+  expect(parentEta.style.cursor).toBe("default");
+  parentEta.querySelector<HTMLElement>(".awesomeado-eta__label")!.click();
+  expect(parentPopup.querySelector(".awesomeado-eta__popup")).toBeNull();
 }
 
 async function verifyWorkCardRendering(): Promise<void> {
@@ -558,17 +621,31 @@ describe("Sprint View board", () => {
   });
 });
 
-describe("Sprint View rank ordering", () => {
-  it("orders cards and child popup rows by backlog rank", async () => {
+describe("Sprint View ordering", () => {
+  it("defaults to backlog rank and applies a session picker to cards and children", async () => {
     const parent = item(10, "Parent", {
       importance: 1,
       children: [
-        item(12, "Later child", { type: "Task", importance: 20 }),
-        item(11, "Earlier child", { type: "Task", importance: 10 }),
+        item(12, "Alpha child", {
+          type: "Task",
+          importance: 20,
+          eta: "2026-08-10T12:00:00Z",
+        }),
+        item(11, "Zulu child", {
+          type: "Task",
+          importance: 10,
+          eta: "2026-08-20T12:00:00Z",
+        }),
       ],
     });
-    const laterCard = item(2, "Later card", { importance: 20 });
-    const earlierCard = item(1, "Earlier card", { importance: 10 });
+    const laterCard = item(2, "Alpha card", {
+      importance: 20,
+      eta: "2026-08-10T12:00:00Z",
+    });
+    const earlierCard = item(1, "Zulu card", {
+      importance: 10,
+      eta: "2026-08-20T12:00:00Z",
+    });
     const root = await render({
       loadTree: async () => ({
         isTreeQuery: false,
@@ -585,7 +662,28 @@ describe("Sprint View rank ordering", () => {
       [...cards[0]!.querySelectorAll(".awesomeado-child-items__title-text")].map(
         (title) => title.textContent,
       ),
-    ).toEqual(["Earlier child", "Later child"]);
+    ).toEqual(["Zulu child", "Alpha child"]);
+
+    const ordering = root.querySelector<HTMLButtonElement>(".awesomeado-ordering__trigger")!;
+    expect(ordering.title).toContain("By Importance");
+    ordering.click();
+    root.querySelector<HTMLButtonElement>('[data-policy="title"]')!.click();
+    const titleCards = [...root.querySelectorAll<HTMLElement>(".awesomeado-sprint__item")];
+    expect(titleCards.map((card) => card.dataset.itemId)).toEqual(["2", "10", "1"]);
+    titleCards[1]!.querySelector<HTMLButtonElement>(".awesomeado-child-items__badge")!.click();
+    expect(
+      [...titleCards[1]!.querySelectorAll(".awesomeado-child-items__title-text")].map(
+        (title) => title.textContent,
+      ),
+    ).toEqual(["Alpha child", "Zulu child"]);
+
+    root.querySelector<HTMLButtonElement>(".awesomeado-ordering__trigger")!.click();
+    root.querySelector<HTMLButtonElement>('[data-policy="eta"]')!.click();
+    expect(
+      [...root.querySelectorAll<HTMLElement>(".awesomeado-sprint__item")].map(
+        (card) => card.dataset.itemId,
+      ),
+    ).toEqual(["2", "1", "10"]);
   });
 });
 
@@ -707,7 +805,19 @@ async function verifyChildPopupCardDragLifecycle(): Promise<void> {
     card.querySelector<HTMLButtonElement>(
       ".awesomeado-child-items__popup .awesomeado-assigned__name",
     )!.disabled,
-  ).toBe(false);
+  ).toBe(true);
+  expect(
+    card.querySelector<HTMLElement>(".awesomeado-child-items__popup .awesomeado-assigned__name")!
+      .style.cursor,
+  ).toBe("default");
+  expect(
+    card.querySelector<HTMLElement>(".awesomeado-child-items__popup .awesomeado-eta")!.style.cursor,
+  ).toBe("default");
+  expect(
+    [...card.querySelectorAll<HTMLElement>(".awesomeado-child-items__title")].every(
+      (title) => !title.draggable,
+    ),
+  ).toBe(true);
   document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
   expect(card.draggable).toBe(true);
 }
@@ -719,7 +829,7 @@ describe("Sprint View child panel", () => {
 });
 
 describe("Sprint View board drag and drop", () => {
-  it("writes a diagonal state-and-lane drop as one atomic field request", async () => {
+  it("rejects cross-lane drops", async () => {
     const writeField = vi.fn<EnhancedViewServices["writeField"]>().mockResolvedValue({
       ok: true,
       rev: 2,
@@ -735,76 +845,276 @@ describe("Sprint View board drag and drop", () => {
     )!;
 
     drag(source, target);
-    await vi.waitFor(() => expect(writeField).toHaveBeenCalledOnce());
-
-    expect(writeField).toHaveBeenCalledWith({
-      id: 1,
-      rev: 1,
-      field: "System.State",
-      value: "Active",
-      additionalFields: [{ field: "System.AreaPath", value: "Project\\Apps" }],
-      multilineFormat: undefined,
-      comment: undefined,
-      baseValue: undefined,
-    });
-    await vi.waitFor(() => {
-      const moved = root.querySelector<HTMLElement>('[data-item-id="1"]')!;
-      expect(moved.closest<HTMLElement>(".awesomeado-sprint__cell")?.dataset.areaPath).toBe(
-        "Project\\Apps",
-      );
-      expect(moved.closest<HTMLElement>(".awesomeado-sprint__cell")?.dataset.columnOrdinal).toBe(
-        "1",
-      );
-    });
+    expect(writeField).not.toHaveBeenCalled();
+    expect(root.querySelector(".awesomeado-sprint-card__drop-shadow")).toBeNull();
   });
-});
 
-describe("Sprint View one-axis card drops", () => {
-  it.each([
-    {
-      name: "state",
-      areaPath: "Project\\Platform",
-      ordinal: "1",
-      field: "System.State",
-      value: "Active",
-      baseValue: "New",
-    },
-    {
-      name: "area path",
-      areaPath: "Project\\Apps",
-      ordinal: "0",
-      field: "System.AreaPath",
-      value: "Project\\Apps",
-      baseValue: "Project\\Platform",
-    },
-  ])("writes only $name when the other axis is unchanged", async (expected) => {
+  it("highlights an empty destination column and writes its state under a derived sort", async () => {
     const writeField = vi.fn<EnhancedViewServices["writeField"]>().mockResolvedValue({
       ok: true,
       rev: 2,
     });
-    const roots = [item(1, "Move me"), item(2, "Apps", { areaPath: "Project\\Apps" })];
+    const roots = [item(1, "Move me"), item(2, "Stay here")];
     const root = await render({
       loadTree: async () => ({ isTreeQuery: false, roots, error: null }),
       writeField,
     });
+    root.querySelector<HTMLButtonElement>(".awesomeado-ordering__trigger")!.click();
+    root.querySelector<HTMLButtonElement>('[data-policy="title"]')!.click();
     const source = root.querySelector<HTMLElement>('[data-item-id="1"]')!;
     const target = [...root.querySelectorAll<HTMLElement>(".awesomeado-sprint__cell")].find(
-      (cell) =>
-        cell.dataset.areaPath === expected.areaPath &&
-        cell.dataset.columnOrdinal === expected.ordinal,
+      (cell) => cell.dataset.areaPath === "Project\\Platform" && cell.dataset.columnOrdinal === "1",
     )!;
+    await stickSprintColumnHeader(root);
 
-    drag(source, target);
+    const dataTransfer = beginDrag(source);
+    const dragImage = root.ownerDocument.querySelector<HTMLElement>(
+      ".awesomeado-sprint-card__drag-image",
+    )!;
+    expect(source.style.opacity).toBe("0.9");
+    expect(dragImage.style.opacity).toBe("0.9");
+    expect(dragImage.style.position).toBe("fixed");
+    const originalDragBackground = dragImage.style.background;
+    dispatchDrag(target, "dragover", dataTransfer);
+    const columnTitle = root.querySelector<HTMLElement>(
+      ".awesomeado-sprint__column-title:nth-child(2)",
+    )!;
+    expect(columnTitle.style.getPropertyValue("--sprint-column-header-opacity")).toBe("0.9");
+    expect(source.style.opacity).toBe("0.9");
+    expect(dragImage.style.background).toBe(originalDragBackground);
+    expectOriginalDragBackground(dragImage, target);
+    expect(target.querySelector(".awesomeado-sprint-card__drop-shadow")).toBeNull();
+    expect(columnTitle.dataset.dropTarget).toBe("true");
+    const highlight = columnTitle.querySelector<HTMLElement>(
+      ".awesomeado-sprint__column-title-highlight",
+    )!;
+    expect(highlight.style.borderColor).toBe(columnTitle.style.color);
+    expect(highlight.style.borderColor).toBe("var(--status-blue-foreground)");
+    expect(highlight.previousElementSibling).toBe(
+      columnTitle.querySelector(".awesomeado-sprint__column-title-label"),
+    );
+    dispatchDrag(target, "drop", dataTransfer);
     await vi.waitFor(() => expect(writeField).toHaveBeenCalledOnce());
 
     expect(writeField).toHaveBeenCalledWith(
       expect.objectContaining({
-        field: expected.field,
-        value: expected.value,
-        baseValue: expected.baseValue,
+        field: "System.State",
+        value: "Active",
+        baseValue: "New",
         additionalFields: undefined,
       }),
     );
+    expect(source.style.opacity).toBe("");
+    expect(columnTitle.dataset.dropTarget).toBeUndefined();
+    expect(highlight.style.borderColor).toBe("transparent");
+    expect(root.ownerDocument.querySelector(".awesomeado-sprint-card__drag-image")).toBeNull();
+    expect(root.querySelector(".awesomeado-sprint-card__drop-shadow")).toBeNull();
+  });
+});
+
+async function renderCrossColumnPlacement() {
+  const writeField = vi.fn<EnhancedViewServices["writeField"]>().mockResolvedValue({ ok: true });
+  const reorderItem = vi.fn<EnhancedViewServices["reorderItem"]>().mockResolvedValue({
+    ok: true,
+    order: 5,
+    rev: 2,
+    stateChanged: true,
+  });
+  const root = await render({
+    loadTree: async () => ({
+      isTreeQuery: false,
+      roots: [
+        item(1, "Move me", { importance: 30 }),
+        item(2, "First active", { state: "Active", importance: 10 }),
+        item(3, "Second active", { state: "Active", importance: 20 }),
+      ],
+      error: null,
+    }),
+    writeField,
+    reorderItem,
+  });
+  const source = root.querySelector<HTMLElement>('[data-item-id="1"]')!;
+  const first = root.querySelector<HTMLElement>('[data-item-id="2"]')!;
+  const second = root.querySelector<HTMLElement>('[data-item-id="3"]')!;
+  const cell = first.closest<HTMLElement>(".awesomeado-sprint__cell")!;
+  first.getBoundingClientRect = () => ({ top: 100, height: 80 }) as DOMRect;
+  second.getBoundingClientRect = () => ({ top: 188, height: 80 }) as DOMRect;
+  return { root, source, first, second, cell, writeField, reorderItem };
+}
+
+describe("Sprint View cross-column positioned card placement", () => {
+  it("keeps a shadow target visible while dragging upward through card gaps", async () => {
+    const { root, source, second, cell, writeField, reorderItem } =
+      await renderCrossColumnPlacement();
+
+    const dataTransfer = beginDrag(source);
+    dispatchDrag(cell, "dragover", dataTransfer, 250);
+    let shadow = cell.querySelector<HTMLElement>(".awesomeado-sprint-card__drop-shadow")!;
+    expect(shadow.previousElementSibling).toBe(second);
+
+    dispatchDrag(cell, "dragover", dataTransfer, 90);
+    shadow = cell.querySelector<HTMLElement>(".awesomeado-sprint-card__drop-shadow")!;
+    expect(cell.firstElementChild).toBe(shadow);
+    expect(
+      root.querySelector<HTMLElement>(".awesomeado-sprint__column-title:nth-child(2)")!.dataset
+        .dropTarget,
+    ).toBe("true");
+
+    dispatchDrag(cell, "drop", dataTransfer, 90);
+    await vi.waitFor(() => expect(reorderItem).toHaveBeenCalledOnce());
+    expect(writeField).not.toHaveBeenCalled();
+    expect(reorderItem).toHaveBeenCalledWith({
+      id: 1,
+      rev: 1,
+      parentId: 0,
+      currentParentId: 0,
+      previousId: 0,
+      nextId: 2,
+      siblingIds: [1, 2, 3],
+      team: "team-id",
+      stateName: "Active",
+      stateBaseName: "New",
+    });
+    await vi.waitFor(() => {
+      const moved = root.querySelector<HTMLElement>('[data-item-id="1"]')!;
+      expect(moved.closest<HTMLElement>(".awesomeado-sprint__cell")?.dataset.columnOrdinal).toBe(
+        "1",
+      );
+    });
+    expect(root.querySelector(".awesomeado-sprint-card__drop-shadow")).toBeNull();
+  });
+});
+
+describe("Sprint View cross-column empty placement", () => {
+  it("places a drop last when the destination has no visible cards", async () => {
+    const reorderItem = vi
+      .fn<EnhancedViewServices["reorderItem"]>()
+      .mockResolvedValue({ ok: true, stateChanged: true });
+    const root = await render({
+      loadTree: async () => ({
+        isTreeQuery: false,
+        roots: [item(1, "Move me")],
+        error: null,
+      }),
+      reorderItem,
+    });
+    const source = root.querySelector<HTMLElement>('[data-item-id="1"]')!;
+    const cell = [...root.querySelectorAll<HTMLElement>(".awesomeado-sprint__cell")].find(
+      (candidate) => candidate.dataset.columnOrdinal === "1",
+    )!;
+
+    const dataTransfer = beginDrag(source);
+    dispatchDrag(cell, "dragover", dataTransfer, 100);
+    expect(cell.querySelector(".awesomeado-sprint-card__drop-shadow")).toBeNull();
+    expect(
+      root.querySelector<HTMLElement>(".awesomeado-sprint__column-title:nth-child(2)")!.dataset
+        .dropTarget,
+    ).toBe("true");
+    dispatchDrag(cell, "drop", dataTransfer, 100);
+
+    await vi.waitFor(() => expect(reorderItem).toHaveBeenCalledOnce());
+    expect(reorderItem).toHaveBeenCalledWith(
+      expect.objectContaining({
+        previousId: 0,
+        nextId: 0,
+        siblingIds: [1],
+        stateName: "Active",
+      }),
+    );
+  });
+});
+
+describe("Sprint View same-column card reordering", () => {
+  it("shows an insertion line and persists same-cell backlog rank", async () => {
+    const reorderItem = vi.fn<EnhancedViewServices["reorderItem"]>().mockResolvedValue({
+      ok: true,
+      ranks: [
+        { id: 2, rank: 0 },
+        { id: 1, rank: 1 },
+      ],
+    });
+    const root = await render({
+      loadTree: async () => ({
+        isTreeQuery: false,
+        roots: [item(1, "First", { importance: 10 }), item(2, "Second", { importance: 20 })],
+        error: null,
+      }),
+      reorderItem,
+    });
+    const source = root.querySelector<HTMLElement>('[data-item-id="2"]')!;
+    const target = root.querySelector<HTMLElement>('[data-item-id="1"]')!;
+    const dataTransfer = beginDrag(source);
+    dispatchDrag(target, "dragover", dataTransfer);
+    expect(root.querySelector(".awesomeado-tracking__drop-line")).not.toBeNull();
+    dispatchDrag(target, "drop", dataTransfer);
+    await vi.waitFor(() => expect(reorderItem).toHaveBeenCalledOnce());
+    expect(reorderItem).toHaveBeenCalledWith({
+      id: 2,
+      rev: 1,
+      parentId: 0,
+      currentParentId: 0,
+      previousId: 0,
+      nextId: 1,
+      siblingIds: [2, 1],
+      team: "team-id",
+    });
+  });
+
+  it("disables card and child reordering outside backlog-rank mode", async () => {
+    const reorderItem = vi
+      .fn<EnhancedViewServices["reorderItem"]>()
+      .mockResolvedValue({ ok: true });
+    const parent = item(1, "Parent", {
+      children: [item(11, "One", { type: "Task" }), item(12, "Two", { type: "Task" })],
+    });
+    const root = await render({
+      loadTree: async () => ({
+        isTreeQuery: true,
+        roots: [parent, item(2, "Second")],
+        error: null,
+      }),
+      getTypes: workCardTypes,
+      reorderItem,
+    });
+    root.querySelector<HTMLButtonElement>(".awesomeado-ordering__trigger")!.click();
+    root.querySelector<HTMLButtonElement>('[data-policy="title"]')!.click();
+    const cards = [...root.querySelectorAll<HTMLElement>(".awesomeado-sprint__item")];
+    drag(cards[1]!, cards[0]!);
+    expect(reorderItem).not.toHaveBeenCalled();
+    expect(root.querySelector(".awesomeado-tracking__drop-line")).toBeNull();
+    root.querySelector<HTMLButtonElement>(".awesomeado-child-items__badge")!.click();
+    expect(
+      [...root.querySelectorAll<HTMLElement>(".awesomeado-child-items__title")].every(
+        (title) => !title.draggable,
+      ),
+    ).toBe(true);
+  });
+});
+
+describe("Sprint View card drag initiation", () => {
+  it("does not start the owning card drag from its parent hierarchy control", async () => {
+    const writeField = vi.fn<EnhancedViewServices["writeField"]>().mockResolvedValue({ ok: true });
+    const root = await render({
+      loadTree: async () => ({ isTreeQuery: true, roots: workCardTree(), error: null }),
+      getTypes: workCardTypes,
+      writeField,
+    });
+    const card = root.querySelector<HTMLElement>('[data-item-id="2"]')!;
+    const parentTrigger = card.querySelector<HTMLElement>(
+      ".awesomeado-sprint-card__parent-trigger",
+    )!;
+    const target = [...root.querySelectorAll<HTMLElement>(".awesomeado-sprint__cell")].find(
+      (cell) => cell.dataset.areaPath === "Project\\Platform" && cell.dataset.columnOrdinal === "1",
+    )!;
+
+    parentTrigger.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    const dataTransfer = beginDrag(card);
+    dispatchDrag(target, "dragover", dataTransfer);
+    dispatchDrag(target, "drop", dataTransfer);
+
+    expect(writeField).not.toHaveBeenCalled();
+    expect(root.querySelector(".awesomeado-sprint-card__drop-shadow")).toBeNull();
+    expect(card.dataset.dragging).toBeUndefined();
   });
 });
 

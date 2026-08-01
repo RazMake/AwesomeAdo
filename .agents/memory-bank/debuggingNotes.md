@@ -43,6 +43,17 @@ here so every agent, teammate, and clone sees them.
   inspect the full live paint stack: verify every custom property resolves, no ancestor supplies an
   opaque backing, and the actual scroll event activates `data-stuck`.
 
+## A destination outline disappeared under Sprint's sticky title backdrop
+
+- SYMPTOM: drag-target highlighting looked like a border while column titles were at rest, but the
+  border disappeared when the title row became sticky.
+- ROOT CAUSE: the heading's negative-offset outline occupied the same interior pixels as its
+  absolutely positioned backdrop. The 90%-opaque sticky backdrop painted over that interior outline;
+  the quieter resting backdrop only made the layering defect less obvious.
+- FIX / RULE: paint interactive title framing on its own absolute layer after and above the backdrop,
+  with a transparent border at rest. Do not put an inset outline or box shadow on the heading when a
+  positioned child owns its visible surface.
+
 ## Query-definition HTTP 0 can be a stale in-memory MV3 worker
 
 - SYMPTOM: Sprint View stops at `Could not load query definition (HTTP 0)` while the iterations read

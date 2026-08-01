@@ -1,30 +1,11 @@
-import {
-  DEFAULT_ORDERING_POLICY,
-  ORDERING_POLICIES,
-  type OrderingPolicy,
-} from "../../../common/ordering/ItemOrdering";
+import { orderingPolicyProperty } from "../../../common/ordering/OrderingProperty";
 import {
   resolveViewTypePropertyValue,
   type ViewType,
   type ViewTypeProperty,
 } from "../../../common/view-common/ViewType";
 
-/**
- * How items are ordered within each group. Declared as its own constant (rather than inline in the
- * property list) so the reader below resolves the SAME property the binding form wrote — the key,
- * the offered choices and the default can never drift between the two.
- */
-const orderingPolicyProperty: ViewTypeProperty = {
-  key: "orderingPolicy",
-  label: "Items ordering policy",
-  required: false,
-  kind: "select",
-  options: ORDERING_POLICIES.map((policy) => ({ value: policy.value, label: policy.label })),
-  // Encapsulated in src/common/ordering so every renderer sorts items the same way; the raw
-  // sort key (e.g. StackRank vs. the ETA field) is resolved by that component, not stored here.
-  defaultValue: DEFAULT_ORDERING_POLICY,
-  hint: "How items are ordered within each group.",
-};
+export { orderingPolicyOf } from "../../../common/ordering/OrderingProperty";
 
 /** How long a finished item keeps its place on the board; shared with its reader, as above. */
 const hideResolvedAfterDaysProperty: ViewTypeProperty = {
@@ -78,23 +59,6 @@ export const projectTrackingViewType: ViewType = {
     recentChangesWindowHoursProperty,
   ],
 };
-
-/**
- * The ordering policy a binding's stored properties select, defaulted when it stored none.
- *
- * The stored value is matched back against the offered policies rather than cast: a binding written
- * by a build that offered a policy this one no longer has would otherwise hand the renderer a policy
- * id nothing knows how to sort by.
- */
-export function orderingPolicyOf(properties: Record<string, string>): OrderingPolicy {
-  const stored = resolveViewTypePropertyValue(
-    orderingPolicyProperty,
-    properties[orderingPolicyProperty.key],
-  );
-  return (
-    ORDERING_POLICIES.find((policy) => policy.value === stored)?.value ?? DEFAULT_ORDERING_POLICY
-  );
-}
 
 /**
  * How many days a resolved item stays on the board, from the binding's stored properties. Routed
