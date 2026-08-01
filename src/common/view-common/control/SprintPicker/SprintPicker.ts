@@ -15,8 +15,8 @@ export interface SprintOption {
   label?: string;
   /**
    * Optional position relative to the current sprint. Purely cosmetic: past options read orange,
-   * future options read in the theme accent, and the current one is bold, so the list's time
-   * direction is obvious at a glance. Omit it for an unstyled option.
+   * future options read in the theme accent, and the current one is bold in an explicit neutral
+   * color, so the open list's time direction is obvious at a glance. Omit it for an unstyled option.
    */
   relation?: SprintRelation;
 }
@@ -99,8 +99,9 @@ const FUTURE_SPRINT_COLOR = "var(--communication-foreground)";
 
 /**
  * The style declarations that express a sprint's position in time: past = amber, future = theme
- * accent, current = bold in the inherited color (emphasis without competing with the two colored
- * directions). Shared by the dropdown options and the collapsed select so both read identically.
+ * accent, current = bold in an explicit neutral color (emphasis without competing with the two
+ * colored directions). The collapsed select mirrors the selected relation, while current's explicit
+ * color prevents a past/future selection from leaking into that option when the native list opens.
  *
  * Exported because the dropdown is no longer the only place a sprint is offered — the item
  * right-click menu lists the same sprints as menu rows. Re-deriving the palette there would let the
@@ -116,7 +117,10 @@ export function sprintRelationDeclarations(
     return [["color", FUTURE_SPRINT_COLOR]];
   }
   if (relation === "current") {
-    return [["font-weight", "bold"]];
+    return [
+      ["color", "var(--text-primary-color)"],
+      ["font-weight", "bold"],
+    ];
   }
   return [];
 }
@@ -159,11 +163,7 @@ const SELECT_BASE_STYLE = [
   "font-size:inherit",
 ];
 
-/**
- * Restyle the dropdown itself from the selected sprint's relation. Browsers render the collapsed
- * <select> with the select's own color/weight and ignore the selected <option>'s styling, so
- * without this the time-direction cue would vanish the moment the dropdown closes.
- */
+/** Keep the collapsed value consistent with its option without letting that color leak into current. */
 function styleSelectForSelection(select: HTMLSelectElement, sprints: SprintOption[]): void {
   const relation = sprints.find((sprint) => sprint.name === select.value)?.relation;
   if (relation) {

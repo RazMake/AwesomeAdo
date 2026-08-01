@@ -1109,10 +1109,12 @@ Markdown` in one `/rev`-guarded JSON Patch. The PATCH is not retried; a concurre
   state ordinals as columns, using the user's configured labels and theme-owned neutral, blue, amber,
   and green fills. Queue, Active, and Waiting cards are tall; Done cards start compact and expand on
   click or keyboard activation. Only types explicitly marked `isPrimaryWork` render as cards. Every
-  card shows wrapped title, ID, assignee, a type-colored edge, and the shared completed/total badge;
-  that badge lists only the item's direct children. Cards inside one lane/state cell and child rows
-  use the shared manual backlog-rank order. Child rows carry editable shared Assigned To and ETA
-  controls and persist sibling title-drag moves through the board's write queue. Opening a child
+  card shows wrapped title, ID, assignee, a type-colored edge, and, while large, the shared
+  completed/total badge; that badge lists only the item's direct children. Cards inside one lane/state
+  cell and child rows use the shared manual backlog-rank order. Child rows carry an editable
+  completion checkbox plus shared Assigned To and ETA controls, and persist sibling title-drag moves
+  through the board's write queue. The card drag controller ignores their bubbled drag events rather
+  than canceling the native child drag. Opening a child
   popup disables its owning card as a drag source until trigger, Escape, outside-pointer, or action
   dismissal closes it. Tall cards also show the immediate parent and only the three configured marker
   conditions.
@@ -1140,8 +1142,10 @@ Markdown` in one `/rev`-guarded JSON Patch. The PATCH is not retried; a concurre
   same cell previews an insertion line and persists backlog rank. The shared top-right ordering picker applies
   backlog-rank (default), title, or ETA order to cards and direct children; title/ETA modes disable
   manual card and child reorder but retain cross-column state changes. A Done card keeps child
-  ordering, child Assigned To/ETA, and ancestor ETA read-only even after expansion. Interactive card
-  controls, including the parent hierarchy panel, cannot arm the owning card's drag.
+  completion, ordering, child Assigned To/ETA, and ancestor ETA read-only even after expansion. Interactive card
+  controls, including the parent hierarchy panel, cannot arm the owning card's drag. A completion
+  repaint closes the old child popup's document listeners, preserves its open state, and reopens the
+  rebuilt popup in both completion directions.
 - Rationale for amendment: lanes are a grouping boundary, not a drag-edit affordance. Rank is the
   only ordering policy a manual drop can persist without the next render undoing it, while state
   changes remain meaningful under every display order. Done work and its context remain inspectable

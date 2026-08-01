@@ -13,20 +13,21 @@ builds use the repository's `Major.Minor.Build` release versioning.
 - Adds the first Sprint View workflow: an always-active sprint selector, Lane, Project,
   team-member, marker, and recent activity filters; concise tag totals with waiting/accepted
   Interrupt counts; Lane choices limited to leaf area paths; Project choices limited to planning
-  parents of Primary work relevant to the visible work, with type colors, responsive long-title
+  parents of Primary work relevant to the visible work, with type icons and colors, responsive long-title
   handling, and hierarchy-preserving title search; clickable query-folder breadcrumbs; and a
   filtered lane-by-state card table using configured column labels and themed Queue, Active,
   Waiting, and Done colors, with high-contrast column titles that gain a 90%-opaque themed
-  backing only while cards scroll beneath them, over quieter column fills and
+  backing only while cards scroll beneath them, positioned closer to the control header, over quieter column fills and
   per-lane names and item counts that remain visible while scrolling through a lane, then yield to
   the next lane. Only configured Primary-work types render as cards; cards show type color, title,
-  top-corner ID and tag-free assignee, plus ETA and a right-aligned completed/total badge below the
-  title. Assignee and ETA stay read-only while Done cards are compact, then become editable when
+  top-corner ID and tag-free assignee, plus ETA and a right-aligned completed/total badge on large
+  cards. Assignee and ETA stay read-only while Done cards are compact, then become editable when
   expanded; the assignee picker stays aligned under its right-aligned card control. Cards within a
   lane and state column, plus each card's direct-child popup, default to backlog-rank order. A Project
   Tracking-style top-right sort indicator switches both surfaces to title or ETA order for the
-  session. Child rows use the same Assigned To and ETA controls as Project Tracking and can be
-  dragged to persist sibling rank while the parent card is active; for Done parents, child ordering,
+  session. Child rows use the same Assigned To and ETA controls as Project Tracking, can be checked
+  complete or reopened, and can be dragged to persist sibling rank while the parent card is active;
+  for Done parents, child completion, ordering,
   assignment, ETA, and ancestor ETA stay read-only even after expansion. Opening the child popup
   suspends movement of its owning card until the popup closes. Lane
   names are larger for scanning while their item counts are more muted. Tall cards
@@ -41,7 +42,8 @@ builds use the repository's `Major.Minor.Build` release versioning.
   appends to an empty destination without drawing a false insertion target. One drop can change state
   and backlog position together through one serialized action. Same-column reorder uses an insertion
   line. Title and ETA sorting disable manual reorder without disabling state changes; interactive
-  parent controls cannot start a card drag.
+  parent controls cannot start a card drag. The sprint selector preserves the selected past/future
+  color while current remains explicitly neutral in both the closed control and open list.
   Initial load, refresh, and sprint changes now page the configured team's
   complete roster before executing an offset-adjusted copy of the saved WIQL, keep only team-assigned
   or unassigned work plus its parent chains, derive Lane and Project choices from that retained work,

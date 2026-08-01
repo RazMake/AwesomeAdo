@@ -18,7 +18,10 @@ import {
   renderAssignedTo,
   type AssignedToHandle,
 } from "../../../common/view-common/control/AssignedTo/AssignedTo";
-import { renderChildItemsBadge } from "../../../common/view-common/control/ChildItemsBadge/ChildItemsBadge";
+import {
+  renderChildItemsBadge,
+  type ChildItemsBadgeHandle as ChildItemsBadgeControlHandle,
+} from "../../../common/view-common/control/ChildItemsBadge/ChildItemsBadge";
 import {
   DragReorderController,
   type PlannedMove,
@@ -177,6 +180,70 @@ function renderItemAssignee(
 interface ChildBadgeHandle {
   element: HTMLElement;
   setEditable(editable: boolean): void;
+  setVisible(visible: boolean): void;
+}
+
+interface ChildRowControls {
+  assignee: AssignedToHandle;
+  eta: EtaBadgeHandle;
+}
+
+function setChildControlsEditable(controls: readonly ChildRowControls[], editable: boolean): void {
+  for (const control of controls) {
+    const name = control.assignee.querySelector<HTMLButtonElement>(".awesomeado-assigned__name");
+    if (name !== null) {
+      name.disabled = !editable;
+      name.style.cursor = editable ? "pointer" : "default";
+    }
+    control.eta.setAttribute("aria-disabled", String(!editable));
+    control.eta.style.cursor = editable ? "pointer" : "default";
+    const etaLabel = control.eta.querySelector<HTMLElement>(".awesomeado-eta__label");
+    if (etaLabel !== null) etaLabel.style.pointerEvents = editable ? "" : "none";
+  }
+}
+
+function toggleChildDone(
+  context: DataDrivenViewContext,
+  child: TrackedWorkItem,
+  options: SprintBoardOptions,
+  done: boolean,
+  onCommitted: () => void,
+): Promise<boolean> {
+  const targetOrdinal = done ? 3 : 1;
+  const targetState = options.types.get(child.type)?.columns[targetOrdinal]?.states[0];
+  if (targetState === undefined) {
+    context.services.logger.info(
+      `Child ${child.id} (${child.type}) completion unchanged: no state routed to board column ${targetOrdinal}`,
+    );
+    return Promise.resolve(!done);
+  }
+  return options.writes
+    .enqueue({
+      id: child.id,
+      currentRev: () => child.rev,
+      field: "System.State",
+      value: targetState,
+      baseValue: child.state,
+    })
+    .then((result) => {
+      if (!result.ok) return !done;
+      child.state = targetState;
+      child.stateChangeDate = context.services.now().toISOString();
+      if (result.rev !== undefined) child.rev = result.rev;
+      onCommitted();
+      return done;
+    });
+}
+
+function repaintKeepingChildPopupOpen(
+  parentId: number,
+  badge: ChildItemsBadgeControlHandle | undefined,
+  options: SprintBoardOptions,
+): void {
+  const wasOpen = badge?.isPopupOpen() ?? false;
+  badge?.closePopup();
+  if (wasOpen) options.openChildPopupIds.add(parentId);
+  options.onItemChanged();
 }
 
 function renderChildrenBadge(
@@ -189,7 +256,8 @@ function renderChildrenBadge(
   const parentDone = stateOrdinal(item, options.types.get(item.type)) === 3;
   const orderedChildren = orderBoardItems(item.children, (child) => child, options.orderingPolicy);
   const siblingIds = orderedChildren.map((child) => child.id);
-  const controls: { assignee: AssignedToHandle; eta: EtaBadgeHandle }[] = [];
+  const controls: ChildRowControls[] = [];
+  const badge: { handle?: ChildItemsBadgeControlHandle } = {};
   const children = orderedChildren.map((child) => {
     const childType = options.types.get(child.type);
     const assignee = renderItemAssignee(context, child, options, !parentDone);
@@ -198,6 +266,12 @@ function renderChildrenBadge(
     return {
       assignee,
       done: stateOrdinal(child, childType) === 3,
+      onToggleDone: parentDone
+        ? undefined
+        : (done: boolean) =>
+            toggleChildDone(context, child, options, done, () =>
+              repaintKeepingChildPopupOpen(item.id, badge.handle, options),
+            ),
       title: child.title,
       titleColor: typeColor(childType?.color),
       eta,
@@ -232,24 +306,13 @@ function renderChildrenBadge(
     initiallyOpen: options.openChildPopupIds.has(item.id),
     onOpenChange,
   });
+  badge.handle = element;
   return {
     element,
-    setEditable: (editable) => {
-      const mayEdit = editable && !parentDone;
-      for (const control of controls) {
-        const name = control.assignee.querySelector<HTMLButtonElement>(
-          ".awesomeado-assigned__name",
-        );
-        if (name !== null) {
-          name.disabled = !mayEdit;
-          name.style.cursor = mayEdit ? "pointer" : "default";
-        }
-        control.eta.setAttribute("aria-disabled", String(!mayEdit));
-        control.eta.style.cursor = mayEdit ? "pointer" : "default";
-        const etaLabel = control.eta.querySelector<HTMLElement>(".awesomeado-eta__label");
-        if (etaLabel !== null) etaLabel.style.pointerEvents = mayEdit ? "" : "none";
-      }
+    setVisible: (visible) => {
+      element.style.display = visible ? "inline-flex" : "none";
     },
+    setEditable: (editable) => setChildControlsEditable(controls, editable && !parentDone),
   };
 }
 
@@ -577,6 +640,7 @@ function renderCard(
     eta.setAttribute("aria-disabled", String(!large));
     eta.style.cursor = large ? "pointer" : "default";
     footer.children?.setEditable(large);
+    footer.children?.setVisible(large);
     card.tabIndex = ordinal === 3 ? 0 : -1;
     if (ordinal === 3) card.setAttribute("aria-expanded", String(large));
   };

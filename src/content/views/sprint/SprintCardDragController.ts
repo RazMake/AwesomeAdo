@@ -76,7 +76,10 @@ export class SprintCardDragController {
       mayStart = !isInteractiveTarget(event.target);
     });
     card.element.addEventListener("dragstart", (event) => {
-      if (event.target !== card.element || !card.element.draggable || !mayStart) {
+      if (event.target !== card.element) {
+        return;
+      }
+      if (!card.element.draggable || !mayStart) {
         event.preventDefault();
         return;
       }

@@ -1,3 +1,4 @@
+import { renderItemTypeIcon } from "../ItemTypeIcon/ItemTypeIcon";
 import { createPopupHost } from "../popupHost/popupHost";
 
 /** One selectable work item in a loaded parent chain. */
@@ -6,6 +7,10 @@ export interface HierarchyFilterOption {
   label: string;
   /** Raw work-item title used by quick search, without its type prefix. */
   title: string;
+  /** Work-item type name announced by its icon. */
+  typeName: string;
+  /** ADO's work-item type icon URL, or null for the shared colored fallback. */
+  iconUrl: string | null;
   /** Work-item type color. */
   color: string;
   /** Zero-based tree depth; child rows are indented under their parent. */
@@ -113,6 +118,8 @@ function renderPopup(params: {
           params.close();
         },
         item.color,
+        item.typeName,
+        item.iconUrl,
       ),
     );
     list.replaceChildren(clear, ...rows);
@@ -155,6 +162,8 @@ function renderRow(
   checked: boolean,
   onSelect: () => void,
   color?: string,
+  typeName?: string,
+  iconUrl?: string | null,
 ): HTMLElement {
   const label = doc.createElement("label");
   label.className = "awesomeado-hierarchy-filter__option";
@@ -198,7 +207,17 @@ function renderRow(
     "text-overflow:ellipsis",
     "white-space:nowrap",
   ].join(";");
-  label.append(radio, text);
+  label.append(radio);
+  if (typeName !== undefined) {
+    const icon = renderItemTypeIcon(doc, {
+      iconUrl: iconUrl ?? null,
+      color: color ?? null,
+      typeName,
+    });
+    icon.element.style.marginRight = "0";
+    label.append(icon.element);
+  }
+  label.append(text);
   return label;
 }
 

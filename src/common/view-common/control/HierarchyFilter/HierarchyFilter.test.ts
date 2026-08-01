@@ -3,10 +3,42 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderHierarchyFilter } from "./HierarchyFilter";
 
 const ITEMS = [
-  { id: 1, label: "Epic: Portfolio", title: "Portfolio", color: "rgb(1, 2, 3)", depth: 0 },
-  { id: 2, label: "Feature: Search", title: "Search", color: "rgb(4, 5, 6)", depth: 1 },
-  { id: 3, label: "Story: Results", title: "Results", color: "rgb(7, 8, 9)", depth: 2 },
-  { id: 4, label: "Feature: Billing", title: "Billing", color: "rgb(4, 5, 6)", depth: 1 },
+  {
+    id: 1,
+    label: "Portfolio",
+    title: "Portfolio",
+    typeName: "Epic",
+    iconUrl: "https://example.test/epic.svg",
+    color: "rgb(1, 2, 3)",
+    depth: 0,
+  },
+  {
+    id: 2,
+    label: "Search",
+    title: "Search",
+    typeName: "Feature",
+    iconUrl: null,
+    color: "rgb(4, 5, 6)",
+    depth: 1,
+  },
+  {
+    id: 3,
+    label: "Results",
+    title: "Results",
+    typeName: "Story",
+    iconUrl: null,
+    color: "rgb(7, 8, 9)",
+    depth: 2,
+  },
+  {
+    id: 4,
+    label: "Billing",
+    title: "Billing",
+    typeName: "Feature",
+    iconUrl: null,
+    color: "rgb(4, 5, 6)",
+    depth: 1,
+  },
 ] as const;
 
 afterEach(() => document.body.replaceChildren());
@@ -22,14 +54,23 @@ describe("renderHierarchyFilter", () => {
     );
     expect([...rows].map((row) => row.textContent)).toEqual([
       "All projects",
-      "Epic: Portfolio",
-      "Feature: Search",
-      "Story: Results",
-      "Feature: Billing",
+      "Portfolio",
+      "Search",
+      "Results",
+      "Billing",
     ]);
     expect(rows[2]?.style.paddingLeft).toBe("26px");
-    expect(rows[3]?.querySelector<HTMLElement>("span")?.title).toBe("Story: Results");
-    expect(rows[3]?.querySelector<HTMLElement>("span")?.style.textOverflow).toBe("ellipsis");
+    expect(rows[3]?.querySelector<HTMLElement>(".awesomeado-hierarchy-filter__label")?.title).toBe(
+      "Results",
+    );
+    expect(
+      rows[3]?.querySelector<HTMLElement>(".awesomeado-hierarchy-filter__label")?.style
+        .textOverflow,
+    ).toBe("ellipsis");
+    expect(rows[1]?.querySelector<HTMLImageElement>(".awesomeado-type-icon__image")?.src).toBe(
+      "https://example.test/epic.svg",
+    );
+    expect(rows[2]?.querySelector(".awesomeado-type-icon__dot")).not.toBeNull();
     expect(rows[2]?.style.color).toBe("rgb(4, 5, 6)");
     const popup = handle.element.querySelector<HTMLElement>(".awesomeado-hierarchy-filter__popup")!;
     expect(popup.style.width).toBe("max-content");
@@ -63,7 +104,7 @@ describe("renderHierarchyFilter", () => {
     expect(handle.selectedId()).toBe(2);
     expect(onChange).toHaveBeenCalledWith(2);
     expect(trigger.getAttribute("aria-pressed")).toBe("true");
-    expect(trigger.title).toBe("Project filter: Feature: Search");
+    expect(trigger.title).toBe("Project filter: Search");
   });
 
   it("clears invalid replacement selections without firing onChange", () => {

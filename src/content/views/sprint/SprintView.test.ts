@@ -163,6 +163,10 @@ function drag(source: HTMLElement, target: HTMLElement): void {
 }
 
 function beginDrag(source: HTMLElement): DataTransfer {
+  return startDrag(source).dataTransfer;
+}
+
+function startDrag(source: HTMLElement): { dataTransfer: DataTransfer; event: Event } {
   const values = new Map<string, string>();
   const dataTransfer = {
     effectAllowed: "none",
@@ -171,8 +175,8 @@ function beginDrag(source: HTMLElement): DataTransfer {
     getData: (type: string) => values.get(type) ?? "",
     setDragImage: vi.fn(),
   } as unknown as DataTransfer;
-  dispatchDrag(source, "dragstart", dataTransfer);
-  return dataTransfer;
+  const event = dispatchDrag(source, "dragstart", dataTransfer);
+  return { dataTransfer, event };
 }
 
 function dispatchDrag(
@@ -191,10 +195,10 @@ function dispatchDrag(
 async function stickSprintColumnHeader(root: HTMLElement): Promise<HTMLElement> {
   const boardHeader = root.querySelector<HTMLElement>(".awesomeado-sprint__board-header")!;
   await vi.waitFor(() =>
-    expect(root.style.getPropertyValue("--awesomeado-sprint-column-header-top")).toBe("12px"),
+    expect(root.style.getPropertyValue("--awesomeado-sprint-column-header-top")).toBe("6px"),
   );
   root.parentElement!.getBoundingClientRect = () => ({ top: 48 }) as DOMRect;
-  boardHeader.getBoundingClientRect = () => ({ top: 60, bottom: 92 }) as unknown as DOMRect;
+  boardHeader.getBoundingClientRect = () => ({ top: 54, bottom: 86 }) as unknown as DOMRect;
   root.parentElement!.dispatchEvent(new Event("scroll"));
   expect(boardHeader.hasAttribute("data-stuck")).toBe(true);
   return boardHeader;
@@ -361,9 +365,9 @@ function expectStickyColumnHeader(root: HTMLElement, headings: readonly HTMLElem
   expect(laneHeading.style.background).toBe("var(--background-color)");
   expect(laneHeading.style.borderTopLeftRadius).toBe("3px");
   expect(root.querySelector<HTMLElement>(".awesomeado-sprint__filters")!.style.position).toBe("");
-  expect(root.style.getPropertyValue("--awesomeado-sprint-column-header-top")).toBe("12px");
+  expect(root.style.getPropertyValue("--awesomeado-sprint-column-header-top")).toBe("6px");
   root.parentElement!.getBoundingClientRect = () => ({ top: 48 }) as DOMRect;
-  boardHeader.getBoundingClientRect = () => ({ top: 60, bottom: 92 }) as unknown as DOMRect;
+  boardHeader.getBoundingClientRect = () => ({ top: 54, bottom: 86 }) as unknown as DOMRect;
   root.parentElement!.dispatchEvent(new Event("scroll"));
   expect(boardHeader.hasAttribute("data-stuck")).toBe(true);
   expect(
@@ -530,7 +534,9 @@ function expectCompactDoneCard(root: HTMLElement): void {
   expect(meta.querySelector(".awesomeado-sprint-card__id")?.textContent).toBe("#3");
   expect(meta.querySelector(".awesomeado-assigned__name")?.textContent).toBe("Alice");
   expect(done.querySelector(".awesomeado-sprint-card__eta")?.textContent).toBe("ETA 07/30/2026");
-  expect(done.querySelector(".awesomeado-child-items__badge")?.textContent).toBe("1 / 1");
+  const childBadge = done.querySelector<HTMLElement>(".awesomeado-child-items")!;
+  expect(childBadge.textContent).toBe("1 / 1");
+  expect(childBadge.style.display).toBe("none");
   expect(details.style.display).toBe("none");
   const assignee = done.querySelector<HTMLButtonElement>(".awesomeado-assigned__name")!;
   const eta = done.querySelector<HTMLElement>(".awesomeado-sprint-card__eta")!;
@@ -543,6 +549,7 @@ function expectCompactDoneCard(root: HTMLElement): void {
   done.click();
   expect(done.dataset.size).toBe("large");
   expect(details.style.display).toBe("flex");
+  expect(childBadge.style.display).toBe("inline-flex");
   expect(assignee.disabled).toBe(false);
   expect(eta.getAttribute("aria-disabled")).toBe("false");
   done.querySelector<HTMLButtonElement>(".awesomeado-sprint-card__parent-trigger")!.click();
@@ -755,7 +762,10 @@ async function verifyChildDragReorder(): Promise<void> {
   card.querySelector<HTMLButtonElement>(".awesomeado-child-items__badge")!.click();
   const titles = [...card.querySelectorAll<HTMLElement>(".awesomeado-child-items__title")];
   const rows = [...card.querySelectorAll<HTMLElement>(".awesomeado-child-items__row")];
-  drag(titles[1]!, rows[0]!);
+  const { dataTransfer, event } = startDrag(titles[1]!);
+  expect(event.defaultPrevented).toBe(false);
+  dispatchDrag(rows[0]!, "dragover", dataTransfer);
+  dispatchDrag(rows[0]!, "drop", dataTransfer);
   await vi.waitFor(() => expect(reorderItem).toHaveBeenCalledOnce());
   expect(reorderItem).toHaveBeenCalledWith({
     id: 12,
@@ -813,6 +823,9 @@ async function verifyChildPopupCardDragLifecycle(): Promise<void> {
   expect(
     card.querySelector<HTMLElement>(".awesomeado-child-items__popup .awesomeado-eta")!.style.cursor,
   ).toBe("default");
+  expect(card.querySelector<HTMLButtonElement>(".awesomeado-child-items__check")!.disabled).toBe(
+    true,
+  );
   expect(
     [...card.querySelectorAll<HTMLElement>(".awesomeado-child-items__title")].every(
       (title) => !title.draggable,
@@ -824,6 +837,50 @@ async function verifyChildPopupCardDragLifecycle(): Promise<void> {
 
 describe("Sprint View child panel", () => {
   it("edits the child assignee and ETA", verifyChildFieldEditing);
+  it("completes and reopens a child from an active card", async () => {
+    const writeField = vi.fn<EnhancedViewServices["writeField"]>().mockResolvedValue({
+      ok: true,
+      rev: 2,
+    });
+    const parent = item(10, "Parent", {
+      children: [item(11, "Open child", { type: "Task", state: "Active" })],
+    });
+    const root = await render({
+      loadTree: async () => ({ isTreeQuery: true, roots: [parent], error: null }),
+      getTypes: workCardTypes,
+      writeField,
+    });
+    root.querySelector<HTMLButtonElement>(".awesomeado-child-items__badge")!.click();
+    root.querySelector<HTMLButtonElement>(".awesomeado-child-items__check")!.click();
+
+    await vi.waitFor(() => expect(writeField).toHaveBeenCalledOnce());
+    expect(writeField).toHaveBeenCalledWith({
+      id: 11,
+      rev: 1,
+      field: "System.State",
+      value: "Done",
+      baseValue: "Active",
+    });
+    await vi.waitFor(() =>
+      expect(
+        root.querySelector(".awesomeado-child-items__check")?.getAttribute("aria-checked"),
+      ).toBe("true"),
+    );
+    const reopen = root.querySelector<HTMLButtonElement>(".awesomeado-child-items__check")!;
+    reopen.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    reopen.click();
+    await vi.waitFor(() => expect(writeField).toHaveBeenCalledTimes(2));
+    expect(writeField).toHaveBeenNthCalledWith(2, {
+      id: 11,
+      rev: 2,
+      field: "System.State",
+      value: "Active",
+      baseValue: "Done",
+    });
+    await vi.waitFor(() =>
+      expect(root.querySelector(".awesomeado-child-items__popup")).not.toBeNull(),
+    );
+  });
   it("persists child title drag order by rank", verifyChildDragReorder);
   it("suspends card dragging and follows compact editability", verifyChildPopupCardDragLifecycle);
 });
@@ -1666,6 +1723,6 @@ describe("Sprint View sprint switching", () => {
       [...root.querySelectorAll<HTMLElement>(".awesomeado-hierarchy-filter__option")].map(
         (option) => option.textContent,
       ),
-    ).toEqual(["All projects", "Epic: Next epic", "Feature: Next feature"]);
+    ).toEqual(["All projects", "Next epic", "Next feature"]);
   });
 });

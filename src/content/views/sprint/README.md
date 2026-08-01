@@ -34,8 +34,9 @@ The **Lane** filter derives its choices from represented area paths and offers o
 any root path that is an ancestor of another choice.
 Only lanes surviving the area-path selection are rendered. The Project filter keeps the selected
 planning item and all direct or recursive descendants that belong to the selected sprint.
-The popup colors options by work-item type, expands toward the window margin for long titles, and
-offers title search that keeps a matching item's parent chain visible.
+The popup puts each work-item type icon before its title, colors options by type, expands toward the
+window margin for long titles, and offers title search that keeps a matching item's parent chain
+visible.
 The header's top-right ordering indicator uses the shared Project Tracking picker. Backlog rank is
 the default; title and ETA choices apply immediately to cards and direct-child popup rows for the
 current session.
@@ -55,7 +56,7 @@ It remains immediately below the dynamic-height control header; the filter pills
 Each lane heading shows the only item total for that lane and
 sticks vertically below the title row until the next lane pushes it away; its area name is emphasized
 while the supporting count stays muted. Only types explicitly
-marked as Primary work in the configuration render as cards. Their direct children are summarized by the shared completed/total child-items
+marked as Primary work in the configuration render as cards. Their direct children are summarized on large cards by the shared completed/total child-items
 badge; its popup lists only that first child level, regardless of which types render as cards, ordered
 by the active policy with the shared Assigned To and ETA controls. Queue,
 Active, and Waiting cards use the tall format; Done cards start compact and expand on click or
@@ -84,9 +85,10 @@ state patch runs first and its returned revision feeds the rank request inside o
 operation. Cross-lane drops remain rejected. Within the current column, backlog-rank mode previews an
 insertion line and persists the card's manual rank. Title and ETA modes disable card and child
 reordering while continuing to allow same-lane state changes. Direct children in non-Done cards can
-be dragged by title to persist their sibling rank through the same serialized write queue. While a
-child popup is open, the owning card stops being a drag source and resumes only after the popup
-closes.
+be completed or reopened from their checkbox and dragged by title to persist their sibling rank
+through the same serialized write queue. Completion in either direction repaints with the popup still
+open. While a child popup is open, the owning card stops being a drag source and resumes only after
+the popup closes; bubbled title drags never arm or get canceled by the card controller.
 
 Both are registered centrally: the config in `../viewCatalog.ts`, the renderer in
 `../enhancedViewRegistry.ts`.

@@ -69,12 +69,16 @@ const badge = renderChildItemsBadge(document, {
   persistence outside this domain-agnostic control. `dragContext` supplies the popup `surface` and
   its `close()` function for a drag that leaves the popup.
 
-### `renderChildItemsBadge(doc, options): HTMLElement`
+### `renderChildItemsBadge(doc, options): ChildItemsBadgeHandle`
 
 Renders the badge as `completed / total` (e.g. `2 / 3`) in a discrete wash of `color`. Clicking it
 toggles a popup with one row per child:
 
 `{checkbox} {assignee} {title in its type color}{glyph → opens the item in ADO} {ETA}`
+
+The returned element also exposes `closePopup()` and `isPopupOpen()`. A caller replacing the badge
+after a persisted action must close the old popup first so its document-level dismissal listeners do
+not survive on detached DOM; it can preserve the logical open state and reopen the rebuilt badge.
 
 ## Features
 

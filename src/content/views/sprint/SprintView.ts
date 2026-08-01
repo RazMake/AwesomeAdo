@@ -136,7 +136,7 @@ function observeStickyHeader(root: HTMLElement): void {
     const margin = Number.parseFloat(header.style.marginBottom) || 0;
     root.style.setProperty(
       "--awesomeado-sprint-column-header-top",
-      `${header.offsetHeight + margin}px`,
+      `${header.offsetHeight + margin / 2}px`,
     );
     root.style.setProperty(
       "--awesomeado-sprint-board-header-height",
@@ -353,13 +353,18 @@ function hierarchyOptions(
   const projectTypes = primaryWorkParentTypes([...types.values()]);
   return items
     .filter(({ item }) => parentIds.has(item.id) && projectTypes.has(item.type))
-    .map(({ item, depth }) => ({
-      id: item.id,
-      label: `${item.type}: ${item.title}`,
-      title: item.title,
-      color: typeColor(types.get(item.type)?.color),
-      depth,
-    }));
+    .map(({ item, depth }) => {
+      const type = types.get(item.type);
+      return {
+        id: item.id,
+        label: item.title,
+        title: item.title,
+        typeName: item.type,
+        iconUrl: type?.icon ?? null,
+        color: typeColor(type?.color),
+        depth,
+      };
+    });
 }
 
 function typeColor(color: string | undefined): string {

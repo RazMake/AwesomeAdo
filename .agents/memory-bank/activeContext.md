@@ -65,18 +65,19 @@ The extension is feature-complete for its current scope:
   rendered table shows only matching exact-path lanes and uses the user's first four application-state
   labels with high-contrast theme-owned Queue/Active/Waiting/Done title colors over quieter fills;
   their light resting tints become 90%-opaque backdrops only while cards scroll beneath them.
-  its horizontally synchronized column titles stay pinned below the sticky control header while
+  its horizontally synchronized column titles stay pinned at half the header card's resting gap below the sticky control header while
   filter pills scroll beneath them. Each lane's name and per-lane item count stick vertically until
   the next lane pushes them away; there is no table-wide total. Queue through Waiting use tall cards;
   Done cards start compact and expand on activation. Only explicitly configured Primary-work types
   render as cards. Cards expose title, ID, a tag-free shared assignee control, type color, and ETA;
-  their row below the title aligns ETA left and the shared completed/total child badge right. Both
+  their row below the title aligns ETA left and, on large cards only, the shared completed/total child badge right. Both
   sizes put ID and assignee in their top corners; compact Done cards keep their own assignee and ETA
   read-only until expanded. A top-right shared ordering picker defaults cards and direct-child rows
   to backlog rank and can switch both to title or ETA for the session. Child rows expose shared
-  Assigned To and ETA controls plus sibling-only title drag ordering under backlog-rank mode; all
-  three stay read-only when the parent card is Done. An open popup suspends its owning card's drag
-  source until close. Lane names
+  completion toggles, Assigned To and ETA controls, plus sibling-only title drag ordering under
+  backlog-rank mode; all four stay read-only when the parent card is Done. An open popup suspends its owning card's drag
+  source until close, remains open after completing or reactivating a child, and lets child title
+  drags bubble without the card controller canceling them. Lane names
   are emphasized while their item counts remain visually secondary. Tall cards add recognized marker tags and a clickable immediate-parent type
   icon/title whose popup lists the type-colored ancestor chain from root to immediate parent with ETA
   controls, read-only when the owning card is Done. Card dragging stays within its lane and uses a
@@ -108,7 +109,8 @@ The extension is feature-complete for its current scope:
   from that retained tree. Sprint changes replace the DOM/session, reset every filter, and reload
   team members, WIQL, work, Lane choices, and Project choices. Its Project dropdown contains only eligible query ancestors
   whose configured types are strict ancestors of Primary-work types; Primary-work and
-  implementation-detail types are not project choices. It colors choices by type, grows to the
+  implementation-detail types are not project choices. It puts the shared type icon before each
+  title, colors choices by type, grows to the
   viewport margin before truncating long labels, and searches item titles while retaining matching
   ancestor chains. `project-tracking` is a **data-driven tree board**. Adding a
   view is a folder plus two registrations — see the `add-enhanced-view` skill.

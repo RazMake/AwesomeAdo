@@ -207,18 +207,20 @@ Split into component subfolders (each with its own `README.md`):
   offset; results retain team-assigned or unassigned work plus their parent chains. Its first four
   configured application-state columns use quiet theme-owned neutral/blue/amber/green fills with
   high-contrast semantic titles that stay lightly tinted at rest and gain 90%-opaque themed
-  backings only while pinned over scrolling cards below the sticky control header; area paths form
+  backings only while pinned over scrolling cards at half the header card's resting gap below the sticky control header; area paths form
   rows whose names and per-row item counts stick vertically until the next row pushes them away. No
   table-wide total is shown. Only explicitly
   configured Primary-work types become cards; each card delegates its
-  direct-child progress and level-one popup to the shared `ChildItemsBadge`; ID and the tag-free
+  direct-child progress and level-one popup to the shared `ChildItemsBadge` on large cards only; ID and the tag-free
   shared `AssignedTo` control occupy the top corners in both card sizes. ETA and child progress share
   the row below the title, aligned left and right. Assigned To and ETA are read-only while a Done card
   is compact and become editable when it expands. The shared top-right ordering picker defaults cards
   and direct child rows to backlog rank and applies title/ETA sorting to both. Child rows use shared
-  Assigned To and ETA controls and title-handle sibling reorder under backlog-rank mode; a Done parent
-  keeps all three read-only after expansion, and opening the popup suspends the owning card's drag
-  source until every dismissal path closes it. Parent context uses a clickable type icon/title;
+  completion, Assigned To and ETA controls, and title-handle sibling reorder under backlog-rank mode;
+  a Done parent keeps all four read-only after expansion, and opening the popup suspends the owning card's drag
+  source until every dismissal path closes it. Completion repaints explicitly close the old popup's
+  document listeners and reopen the replacement; the card controller ignores bubbled child title
+  drags. Parent context uses a clickable type icon/title;
   its popup lists ancestors from the root down to the immediate parent with type-derived colors and
   shared ETA controls, read-only when the owning card is Done. Cards are persist-then-reflect
   draggable only within their lane using a custom fixed 90%-opaque cursor clone that retains the

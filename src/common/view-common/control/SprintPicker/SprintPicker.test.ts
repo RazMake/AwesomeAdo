@@ -276,7 +276,7 @@ describe("renderSprintPicker - relative-time option styling", () => {
 
     expect(current.dataset.relation).toBe("current");
     expect(current.style.cssText).toContain("bold");
-    expect(current.style.cssText).not.toContain("color");
+    expect(current.style.color).toBe("var(--text-primary-color)");
   });
 
   it("colors future sprints with the theme accent without bolding them", () => {
@@ -311,28 +311,29 @@ describe("renderSprintPicker - collapsed select styling", () => {
     return handle.element.querySelector<HTMLSelectElement>(".awesomeado-sprint-picker__select")!;
   }
 
-  it("mirrors the initially selected sprint's relation onto the select", () => {
+  it("preserves a past sprint's color when it is initially selected", () => {
     const select = renderSelect("Sprint 1");
 
     expect(select.dataset.relation).toBe("past");
-    expect(select.style.cssText).toContain("var(--sprint-past-foreground)");
+    expect(select.style.color).toBe("var(--sprint-past-foreground)");
   });
 
-  it("bolds the select when the current sprint is selected", () => {
+  it("keeps the select neutral when the current sprint is selected", () => {
     const select = renderSelect("Sprint 2");
 
     expect(select.dataset.relation).toBe("current");
-    expect(select.style.cssText).toContain("bold");
+    expect(select.style.color).toBe("var(--text-primary-color)");
+    expect(select.style.fontWeight).toBe("bold");
   });
 
-  it("restyles the select when the selection changes", () => {
+  it("preserves a future sprint's color when selection changes", () => {
     const select = renderSelect("Sprint 1");
 
     select.value = "Sprint 3";
     select.dispatchEvent(new Event("change"));
 
     expect(select.dataset.relation).toBe("future");
-    expect(select.style.cssText).toContain("var(--communication-foreground");
+    expect(select.style.color).toBe("var(--communication-foreground)");
   });
 
   it("keeps the select unstyled when the selected sprint has no relation", () => {

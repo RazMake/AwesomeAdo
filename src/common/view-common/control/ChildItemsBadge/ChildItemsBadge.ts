@@ -78,6 +78,14 @@ export interface ChildItemsBadgeOptions {
   color?: string | null;
 }
 
+/** The rendered badge plus explicit popup lifecycle controls for owners that replace its DOM. */
+export interface ChildItemsBadgeHandle extends HTMLElement {
+  /** Close the popup and release its document-level dismissal listeners. */
+  closePopup(): void;
+  /** Whether this rendered badge currently owns an open popup. */
+  isPopupOpen(): boolean;
+}
+
 /** The alpha the badge fill and border use so any source hue stays discrete on every ADO theme. */
 const TINT_FILL_ALPHA = 0.12;
 const TINT_BORDER_ALPHA = 0.35;
@@ -177,7 +185,10 @@ function tintFromColor(color: string | null | undefined): {
  * Theme-aware via ADO CSS custom properties; renders nothing meaningful when there are no children
  * (the caller decides whether to show it at all).
  */
-export function renderChildItemsBadge(doc: Document, options: ChildItemsBadgeOptions): HTMLElement {
+export function renderChildItemsBadge(
+  doc: Document,
+  options: ChildItemsBadgeOptions,
+): ChildItemsBadgeHandle {
   const { children, completedCount, color, initiallyOpen = false, onOpenChange } = options;
 
   // Root container: position:relative so the popup anchors to it.
@@ -228,7 +239,10 @@ export function renderChildItemsBadge(doc: Document, options: ChildItemsBadgeOpt
     });
   }
 
-  return root;
+  return Object.assign(root, {
+    closePopup: popupHost.close,
+    isPopupOpen: () => popupHost.isOpen,
+  });
 }
 
 /**

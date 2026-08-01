@@ -9,6 +9,20 @@ we hit, why they happened, and the exact fix so nobody re-derives them.
 agent-tool-local memory (it does not clone or transfer between machines/agents). Record new findings
 here so every agent, teammate, and clone sees them.
 
+## Sprint child popup actions had three independent gaps
+
+- SYMPTOMS: completion initially did nothing; title dragging dimmed the row but never started a
+  native drop; and resolving kept the popup open while reactivating closed it.
+- ROOT CAUSES: `ChildItemsBadge` received no `onToggleDone`; the owning card's bubbled `dragstart`
+  handler called `preventDefault()` for every non-card target, canceling the child title's valid drag;
+  and a repaint detached an open popup without releasing its document dismissal listeners, so the
+  old listener handled the next pointerdown and cleared the rebuilt popup's remembered-open state.
+- FIX / RULE: Sprint maps check to Done and uncheck to Active through the shared write queue. Card
+  drag handlers ignore bubbled child drags rather than canceling them. Before a completion repaint,
+  the badge explicitly closes the old popup to release listeners, preserves the logical open ID, and
+  reopens the rebuilt popup. The owning card's Done state gates checkbox, assignee, ETA, and sibling
+  drag together.
+
 ## A clipped popup host became viewport-fixed and misaligned inside a transformed ancestor
 
 - SYMPTOM: Sprint's Assigned To picker opened far above and to the right of its card control.
@@ -865,8 +879,10 @@ settings.defaultView==="enhanced")`; unbound → not enhanced. `content/index.ts
   past/current/future (offset sign) purely so the picker can style the option.
 - `SprintPicker` keeps option.value=name (raw) and callbacks return raw name — only added optional
   `SprintOption.label` for DISPLAY text (and `SprintOption.relation` for option COLOR/WEIGHT: past
-  amber #c26c1d, future `var(--communication-foreground)`, current bold; also mirrored to
-  `data-relation`), so filtering by sprintName still works. Option styles are written via
+  amber #c26c1d, future `var(--communication-foreground)`, current bold and neutral; also mirrored
+  to the option's `data-relation`). The collapsed select mirrors the selected relation; current has
+  an explicit neutral color so a selected past/future color cannot leak into it when the native list
+  opens. Filtering by sprintName remains independent of presentation. Option styles are written via
   `style.cssText` because jsdom's CSSOM drops `var(...)` assigned through typed style properties.
 - `content/index.ts` `loadSprintWindow` reads `latestSettings.currentTeam` (a TeamRef {id,name}, NOT a
   string) → uses `team.id` (GUID-safe) for the URL; blank/no team → {entries:[],currentName:null}.
