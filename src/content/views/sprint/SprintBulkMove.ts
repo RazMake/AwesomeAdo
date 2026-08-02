@@ -47,22 +47,6 @@ export interface SprintBulkMoveOptions {
   limits?: { maxPasses: number; maxItems: number };
 }
 
-export function deliveryWorkTypes(types: readonly TypeCatalogEntry[]): ReadonlySet<string> {
-  const workTypes = new Set(
-    types.filter((type) => type.isPrimaryWork === true).map((type) => type.name),
-  );
-  const pending = [...workTypes];
-  while (pending.length > 0) {
-    const name = pending.pop() as string;
-    for (const child of types.find((type) => type.name === name)?.children ?? []) {
-      if (workTypes.has(child)) continue;
-      workTypes.add(child);
-      pending.push(child);
-    }
-  }
-  return workTypes;
-}
-
 function flattenUnique(roots: readonly TrackedWorkItem[]): TrackedWorkItem[] {
   const found = new Map<number, TrackedWorkItem>();
   const pending = [...roots];

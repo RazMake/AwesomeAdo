@@ -232,9 +232,10 @@ halves of the view — its configuration and its renderer.
     Assigned To pill shows its color.
   - **Filter row**: one wrapping row sits between the header and the tree, introduced by a single
     **`Filters:`** label. Full-opacity pills form two wrapping families: Feature Crew
-    [`tag-filter`](./tag-filter/README.md) and [`marker-filter`](./marker-filter/README.md) pills
-    together, then [`activity-filter`](./activity-filter/README.md) pills after a larger gap. The
-    board re-renders the row whole on any change.
+    [`tag-filter`](./tag-filter/README.md) pills and the shared
+    [`MarkerPill`](../../../common/view-common/control/MarkerPill/README.md) filter pills together,
+    then [`ActivityFilter`](../../../common/view-common/control/ActivityFilter/README.md) pills after
+    a larger gap. The board re-renders the row whole on any change.
     - **Tag pills**: once the Feature Crew roster resolves, one clickable pill per tag worn across
       the tree. Clicking pills narrows to items assigned to people wearing any of the selected tags
       (an **OR** across the selection; empty = show everyone), combined with the sprint filter. The

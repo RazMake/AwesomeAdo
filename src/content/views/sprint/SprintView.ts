@@ -9,6 +9,11 @@ import { WorkItemWriteQueue } from "../../../common/ado/WorkItemWriteQueue/WorkI
 import { buildQueryFolderUrl, buildWorkItemUrl } from "../../../common/ado/fetchAdoTree";
 import { filterTreeForSprintRoster, wiqlForSprint } from "../../../common/ado/sprintQuery";
 import type { SprintWindow, SprintWindowEntry } from "../../../common/ado/sprintWindow";
+import {
+  primaryWorkAncestors,
+  primaryWorkWithDescendants,
+  workItemTypeTextColor,
+} from "../../../common/ado/workItemTypes";
 import { MANUAL_ORDERING_POLICY, type OrderingPolicy } from "../../../common/ordering/ItemOrdering";
 import { WORK_ITEM_MARKERS, type WorkItemMarker } from "../../../common/settings/ExtensionSettings";
 import {
@@ -51,7 +56,7 @@ import {
   type ItemContextMenuCommand,
   type ItemContextMenuTarget,
 } from "../../../common/view-common/control/ItemContextMenu/ItemContextMenu";
-import { renderMarkerPill } from "../../../common/view-common/control/MarkerPill/MarkerPill";
+import { renderMarkerFilterPills } from "../../../common/view-common/control/MarkerPill/MarkerFilterPills";
 import { itemHasMarker } from "../../../common/view-common/control/MarkerPill/markerPresence";
 import { renderOrderingPicker } from "../../../common/view-common/control/OrderingPicker/OrderingPicker";
 import {
@@ -69,7 +74,6 @@ import { buildItemCommands } from "../project-tracking/item-commands/ItemCommand
 import { buildMarkerCommands } from "../project-tracking/item-commands/MarkerCommands";
 
 import { renderSprintBoard, type SprintBoardItem } from "./SprintBoard";
-import { deliveryWorkTypes } from "./SprintBulkMove";
 import { SprintBulkMoveController, type SprintBulkMoveRequest } from "./SprintBulkMoveController";
 import { renderSprintHeader } from "./SprintHeader";
 import {
@@ -400,7 +404,7 @@ function hierarchyOptions(
   types: ReadonlyMap<string, TypeCatalogEntry>,
 ): HierarchyFilterOption[] {
   const parentIds = new Set(shownItems.flatMap(({ ancestorIds }) => ancestorIds));
-  const projectTypes = primaryWorkParentTypes([...types.values()]);
+  const projectTypes = primaryWorkAncestors([...types.values()]);
   return items
     .filter(({ item }) => parentIds.has(item.id) && projectTypes.has(item.type))
     .map(({ item, depth }) => {
@@ -411,33 +415,10 @@ function hierarchyOptions(
         title: item.title,
         typeName: item.type,
         iconUrl: type?.icon ?? null,
-        color: typeColor(type?.color),
+        color: workItemTypeTextColor(type?.color),
         depth,
       };
     });
-}
-
-function typeColor(color: string | undefined): string {
-  if (!color) return "var(--text-primary-color)";
-  return color.startsWith("#") ? color : `#${color}`;
-}
-
-function primaryWorkParentTypes(types: readonly TypeCatalogEntry[]): ReadonlySet<string> {
-  const descendants = new Set(
-    types.filter((type) => type.isPrimaryWork === true).map((type) => type.name),
-  );
-  const parents = new Set<string>();
-  let previousSize = -1;
-  while (previousSize !== descendants.size) {
-    previousSize = descendants.size;
-    for (const type of types) {
-      if (type.children?.some((child) => descendants.has(child))) {
-        parents.add(type.name);
-        descendants.add(type.name);
-      }
-    }
-  }
-  return parents;
 }
 
 function normalizeProjectSelection(
@@ -578,7 +559,7 @@ function renderTeamPills(
   onChange: () => void,
 ): HTMLElement[] {
   const pills: HTMLElement[] = [];
-  const workTypes = deliveryWorkTypes([...types.values()]);
+  const workTypes = primaryWorkWithDescendants([...types.values()]);
   const countedItems = items.filter(({ item }) => isDeliveryWorkItem(item, workTypes));
   const validKeys = new Set(members.map(personKey));
   const unassigned = countedItems.filter(({ item }) => item.assignedTo === null);
@@ -624,28 +605,24 @@ function renderMarkerPills(
   onChange: () => void,
 ): HTMLElement[] {
   const markerTags = context.services.markerTags();
-  return WORK_ITEM_MARKERS.map(({ key }) => {
-    const matching = scopedItems.filter(({ item }) => itemHasMarker(item, key, markerTags));
-    const accepted =
-      key === "interrupt"
-        ? matching.filter(({ item }) => interruptAcceptance.acceptedIds.has(item.id))
-        : acceptedItems.filter(({ item }) => itemHasMarker(item, key, markerTags));
-    return renderMarkerPill(context.doc, {
-      marker: key,
-      accepted: key === "interrupt",
-      title: `Azure DevOps tag "${markerTags[key].tag}"`,
-      interactive: true,
-      selected: session.selectedMarkers.has(key),
-      counts: {
-        total: key === "interrupt" ? matching.length : accepted.length,
-        acceptedInSprint: key === "interrupt" ? accepted.length : undefined,
-      },
-      onToggle: () => {
-        if (session.selectedMarkers.has(key)) session.selectedMarkers.delete(key);
-        else session.selectedMarkers.add(key);
-        onChange();
-      },
-    });
+  return renderMarkerFilterPills(context.doc, {
+    markers: WORK_ITEM_MARKERS.map(({ key }) => key),
+    markerTags,
+    selected: session.selectedMarkers,
+    countsFor: (marker) => {
+      const matching = scopedItems.filter(({ item }) => itemHasMarker(item, marker, markerTags));
+      // An Interrupt is counted against the sprint it was accepted in; every other marker is simply
+      // "carried right now", so its total is the accepted-scope count.
+      const accepted =
+        marker === "interrupt"
+          ? matching.filter(({ item }) => interruptAcceptance.acceptedIds.has(item.id))
+          : acceptedItems.filter(({ item }) => itemHasMarker(item, marker, markerTags));
+      return {
+        total: marker === "interrupt" ? matching.length : accepted.length,
+        acceptedInSprint: marker === "interrupt" ? accepted.length : undefined,
+      };
+    },
+    onChange,
   });
 }
 

@@ -1,6 +1,5 @@
 import type { TrackedWorkItem } from "../../../../common/ado/TrackedWorkItem";
-
-import type { MovePlacement } from "./movePlacement";
+import type { MovePlacement } from "../../../../common/view-common/control/DragReorder/movePlacement";
 
 /**
  * Re-home a moved item inside the board's in-memory tree so the next render shows it where Azure

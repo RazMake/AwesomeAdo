@@ -4,9 +4,9 @@ import type {
   INoteActivityReader,
   NoteActivityRequest,
   NoteActivityResult,
-} from "../../../../common/ado/INoteActivityReader";
-import type { TrackedWorkItem } from "../../../../common/ado/TrackedWorkItem";
-import type { ILogger } from "../../../../common/logging/ILogger";
+} from "../../../ado/INoteActivityReader";
+import type { TrackedWorkItem } from "../../../ado/TrackedWorkItem";
+import type { ILogger } from "../../../logging/ILogger";
 
 import { RecentNotesIndex } from "./RecentNotesIndex";
 

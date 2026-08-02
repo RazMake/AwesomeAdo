@@ -54,6 +54,31 @@ response-parsing logic, kept pure so they are unit-testable without a browser.
   column.
 - `TrackedTypeColumn` — `{ column, states }` for one board column and its routed ADO states.
 
+### `workItemTypes.ts`
+
+The derivations over the configured type catalog that decide **what a view shows and in which
+order**. Every view reads them from here: two copies of "which types are primary work" become two
+boards that disagree about the same query.
+
+- `workItemTypeColor(color)` — the type's hex color with its `#`, or `null` when the type carries
+  none. Settings store the color without the `#`, and an unset color must become an explicit "no
+  color" rather than a bare `#` that silently invalidates the CSS it lands in.
+- `workItemTypeTextColor(color)` — the same color where it paints TEXT, falling back to
+  `var(--text-primary-color)` so an uncolored type stays readable.
+- `primaryWorkTypes(types)` — the types the team marked as independently trackable delivery.
+- `primaryWorkWithDescendants(types)` — primary work plus everything configured beneath it: the work
+  that counts toward a person's load. A story's tasks are the same commitment seen closer up, so
+  counting both would count it twice.
+- `primaryWorkAncestors(types)` — the types that lead down to primary work: the planning context a
+  view groups **by**. A primary type that parents other primary work still counts, since being
+  trackable delivery does not stop it from holding work below it.
+- `primaryWorkWithAncestors(types)` — primary work plus the ancestors needed to reach it: the types a
+  tree renders as rows.
+- `orderTrackedItems(entries, itemOf, policy)` — the one adapter between a tracked item and
+  `common/ordering`. That module stays free of any ADO shape, so this is where an item's ISO ETA
+  becomes the epoch milliseconds the policy compares. `itemOf` lets a caller order its own wrappers
+  (a board entry carrying ancestry, say) without unwrapping them first.
+
 ### `TeamIteration.ts`
 
 - `SprintTimeFrame` — `"past" | "current" | "future"`, ADO's own classification of where an

@@ -20,12 +20,14 @@ import { WorkItemWriteQueue } from "../../../common/ado/WorkItemWriteQueue/WorkI
 import { ASSIGNED_TO_FIELD, identityFieldValue } from "../../../common/ado/adoApi";
 import { buildQueryFolderUrl, buildWorkItemUrl } from "../../../common/ado/fetchAdoTree";
 import type { SprintWindow } from "../../../common/ado/sprintWindow";
-import { resolveMentionsIn } from "../../../common/browser/MessagingMentionDirectory";
 import {
-  MANUAL_ORDERING_POLICY,
-  orderItems,
-  type OrderingPolicy,
-} from "../../../common/ordering/ItemOrdering";
+  orderTrackedItems,
+  primaryWorkWithAncestors,
+  workItemTypeColor,
+} from "../../../common/ado/workItemTypes";
+import { resolveMentionsIn } from "../../../common/browser/MessagingMentionDirectory";
+import { isoEpoch } from "../../../common/datetime/isoEpoch";
+import { MANUAL_ORDERING_POLICY, type OrderingPolicy } from "../../../common/ordering/ItemOrdering";
 import type { WorkItemMarker } from "../../../common/settings/ExtensionSettings";
 import type {
   DataDrivenViewContext,
@@ -33,6 +35,14 @@ import type {
   EnhancedViewContext,
   EnhancedViewServices,
 } from "../../../common/view-common/EnhancedView";
+import { renderActivityFilterPills } from "../../../common/view-common/control/ActivityFilter/ActivityFilterPanel";
+import { RecentNotesIndex } from "../../../common/view-common/control/ActivityFilter/RecentNotesIndex";
+import {
+  activityFilterInForce,
+  matchesRecentActivity,
+  recentWindowStart,
+  type RecentActivityKind,
+} from "../../../common/view-common/control/ActivityFilter/recentActivity";
 import {
   renderAreaPathFilter,
   type AreaPathFilterHandle,
@@ -45,6 +55,10 @@ import {
   renderChildItemsBadge,
   type ChildItemDescriptor,
 } from "../../../common/view-common/control/ChildItemsBadge/ChildItemsBadge";
+import {
+  DragReorderController,
+  type PlannedMove,
+} from "../../../common/view-common/control/DragReorder/DragReorderController";
 import {
   renderEtaBadge,
   type EtaBadgeHandle,
@@ -63,6 +77,12 @@ import {
   renderItemTypeIcon,
   type ItemTypeIconEmphasis,
 } from "../../../common/view-common/control/ItemTypeIcon/ItemTypeIcon";
+import { renderMarkerFilterPills } from "../../../common/view-common/control/MarkerPill/MarkerFilterPills";
+import {
+  collectMarkersInUse,
+  createMarkerFilter,
+  itemHasMarker,
+} from "../../../common/view-common/control/MarkerPill/markerPresence";
 import { renderOrderingPicker } from "../../../common/view-common/control/OrderingPicker/OrderingPicker";
 import {
   renderPriorityBadge,
@@ -82,15 +102,6 @@ import {
 } from "../interrupt-acceptance/interruptAcceptanceState";
 import { writeItemPriority } from "../item-priority/writeItemPriority";
 
-import { renderActivityFilterPills } from "./activity-filter/ActivityFilterPanel";
-import { RecentNotesIndex } from "./activity-filter/RecentNotesIndex";
-import {
-  activityFilterInForce,
-  matchesRecentActivity,
-  recentWindowStart,
-  type RecentActivityKind,
-} from "./activity-filter/recentActivity";
-import { DragReorderController, type PlannedMove } from "./drag-reorder/DragReorderController";
 import { applyMoveToTree, applyRanksToTree } from "./drag-reorder/applyMoveToTree";
 import {
   renderProjectTrackingHeader,
@@ -98,12 +109,6 @@ import {
 } from "./header/ProjectTrackingHeader";
 import { buildItemCommands, buildSprintMoveCommands } from "./item-commands/ItemCommands";
 import { buildMarkerCommands } from "./item-commands/MarkerCommands";
-import { renderMarkerFilterPills } from "./marker-filter/MarkerFilterPanel";
-import {
-  collectMarkersInUse,
-  createMarkerFilter,
-  itemHasMarker,
-} from "./marker-filter/markerPresence";
 import { renderMarkerReasonsPill } from "./marker-reasons/MarkerReasonsPill";
 import { createNotesPanelState, renderNotesPanel, type NotesPanelState } from "./notes/NotesPanel";
 import { markerCommentPrefixes } from "./notes/markerNotes";
@@ -116,42 +121,18 @@ import {
 } from "./projectTrackingViewType";
 import { renderTagFilterPills } from "./tag-filter/TagFilterPanel";
 
-/**
- * Returns the hex color for a given work item type name, or null when not found.
- * The color in TypeCatalogEntry is stored WITHOUT the '#' prefix.
- */
+/** The hex color of a work item type, or null when the type is unknown or carries no color. */
 function typeColorOf(typeName: string, typeMap: Map<string, TypeCatalogEntry>): string | null {
-  const entry = typeMap.get(typeName);
-  return entry ? `#${entry.color}` : null;
+  return workItemTypeColor(typeMap.get(typeName)?.color);
 }
 
 /**
- * The hex color (with `#`) of the LAST configured work item type — the bottom of the hierarchy —
- * or null when no type is configured or that type carries no color. Returned separately from
- * `typeColorOf` because the rollup badge is keyed off the hierarchy's position, not off any
- * particular item's own type.
+ * The hex color of the LAST configured work item type — the bottom of the hierarchy — or null when
+ * no type is configured or that type carries no color. Kept apart from `typeColorOf` because the
+ * rollup badge is keyed off the hierarchy's position, not off any particular item's own type.
  */
 function lastTypeColor(types: TypeCatalogEntry[]): string | null {
-  const color = types[types.length - 1]?.color ?? "";
-  return color.length > 0 ? `#${color}` : null;
-}
-
-/** Types shown as rows: primary delivery plus every configured ancestor needed to reach it. */
-function primaryWorkTreeTypes(types: TypeCatalogEntry[]): ReadonlySet<string> {
-  const rowTypes = new Set(
-    types.filter((type) => type.isPrimaryWork === true).map((type) => type.name),
-  );
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const type of types) {
-      if (!rowTypes.has(type.name) && type.children?.some((child) => rowTypes.has(child))) {
-        rowTypes.add(type.name);
-        changed = true;
-      }
-    }
-  }
-  return rowTypes;
+  return workItemTypeColor(types[types.length - 1]?.color);
 }
 
 /**
@@ -243,32 +224,6 @@ function isVisibleUnderFilter(item: TrackedWorkItem, filter: TreeFilter): boolea
     !filter.isResolvedPastWindow(item);
   if (selfMatches) return true;
   return item.children.some((child) => isVisibleUnderFilter(child, filter));
-}
-
-/**
- * Orders one level of the tree by the binding's policy.
- *
- * `common/ordering` owns what each policy means, so this only adapts a tracked item to what it asks
- * for: an item stores its ETA as an ISO string, but the policy compares epoch milliseconds. The
- * ordered wrappers are unwrapped back to the items, so the caller still renders the real nodes.
- */
-function orderTrackedItems(items: TrackedWorkItem[], policy: OrderingPolicy): TrackedWorkItem[] {
-  const orderable = items.map((item) => ({
-    item,
-    importance: item.importance,
-    title: item.title,
-    eta: epochOf(item.eta),
-  }));
-  return orderItems(orderable, policy).map((entry) => entry.item);
-}
-
-/** An ISO timestamp as epoch milliseconds; null when absent or unparseable. */
-function epochOf(iso: string | null): number | null {
-  if (iso === null) {
-    return null;
-  }
-  const parsed = Date.parse(iso);
-  return Number.isNaN(parsed) ? null : parsed;
 }
 
 /**
@@ -774,7 +729,7 @@ function createResolvedWindowFilter(
     if (!isCompleted(item, typeMap, boardColumns)) {
       return false;
     }
-    const resolvedAt = epochOf(item.stateChangeDate);
+    const resolvedAt = isoEpoch(item.stateChangeDate);
     // An item ADO returned no state-change date for cannot be aged out: keep showing it rather than
     // hiding finished work on a date this build does not actually have.
     return resolvedAt !== null && resolvedAt < cutoff;
@@ -1376,6 +1331,7 @@ function createMinorChildrenBadge(
 ): HTMLElement | null {
   const children = orderTrackedItems(
     item.children.filter((child) => !rendersAsTreeRow(child, options, childDepth)),
+    (child) => child,
     options.orderingPolicy,
   );
   if (children.length === 0) return null;
@@ -1795,7 +1751,7 @@ function renderTree(
   options: TreeRenderOptions,
   depth: number,
 ): HTMLElement[] {
-  const ordered = orderTrackedItems(parent.children, options.orderingPolicy);
+  const ordered = orderTrackedItems(parent.children, (child) => child, options.orderingPolicy);
   const siblingIds = ordered.map((item) => item.id);
   const visible = ordered.filter(
     (item) => rendersAsTreeRow(item, options, depth) && isVisibleUnderFilter(item, options.filter),
@@ -2883,7 +2839,7 @@ function createBoardCore(params: {
       // wears a discrete tint of the LAST configured type's color — it reads as "these are the Tasks"
       // without having to name the type on a badge that only has room for a count.
       minorChildColor: lastTypeColor(services.getTypes()),
-      treeRowTypes: primaryWorkTreeTypes(services.getTypes()),
+      treeRowTypes: primaryWorkWithAncestors(services.getTypes()),
     },
     chipContext: createChipContext(
       doc,

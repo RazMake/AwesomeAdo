@@ -5,6 +5,8 @@
  * and a test fake can mint notes directly.
  */
 
+import { isoEpoch } from "../datetime/isoEpoch";
+
 /** Whoever wrote or is reading a note: enough to show them and to recognize them again. */
 export interface NoteAuthor {
   /** The person's full name, as ADO renders it. */
@@ -118,14 +120,13 @@ export function isOwnNote(note: WorkItemNote, reader: NoteAuthor | null): boolea
 
 /** An ISO timestamp as epoch milliseconds; unparseable input sorts last (oldest). */
 function epochOf(iso: string): number {
-  const parsed = Date.parse(iso);
-  return Number.isNaN(parsed) ? Number.NEGATIVE_INFINITY : parsed;
+  return isoEpoch(iso) ?? Number.NEGATIVE_INFINITY;
 }
 
 /** A `YYYY-M-D` key in the reader's local zone, or null when the timestamp will not parse. */
 function localDayKey(iso: string): string | null {
-  const parsed = Date.parse(iso);
-  if (Number.isNaN(parsed)) {
+  const parsed = isoEpoch(iso);
+  if (parsed === null) {
     return null;
   }
   const date = new Date(parsed);

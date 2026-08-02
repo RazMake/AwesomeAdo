@@ -10,6 +10,7 @@ import {
   type ReconcileFeatureCrewMessage,
   type ReconcileFeatureCrewResponse,
 } from "./FeatureCrewRequest";
+import { workerReplyProblem } from "./workerReply";
 
 /** Sends a reconcile-feature-crew request and resolves the background worker's reply, if any. */
 export type SendReconcileRequest = (
@@ -45,7 +46,7 @@ export class MessagingFeatureCrewWriter implements IFeatureCrewWriter {
 
       if (response === undefined || response === null) {
         this.logger.error(
-          `Feature Crew reconcile for root ${request.rootId}: no response from the background worker.`,
+          `Feature Crew reconcile for root ${request.rootId}: ${workerReplyProblem(response)}.`,
         );
         return { ok: false, changed: false };
       }

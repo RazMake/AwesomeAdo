@@ -9,6 +9,7 @@ import {
 } from "./MessagingWorkItemFieldWriter";
 import { UPDATE_WORK_ITEM_FIELD_MESSAGE } from "./WorkItemFieldRequest";
 import type { UpdateWorkItemFieldMessage } from "./WorkItemFieldRequest";
+import { UNHANDLED_BY_WORKER } from "./workerReply";
 
 function makeLoggerSpy(): ILogger {
   return { info: vi.fn(), error: vi.fn() };
@@ -120,9 +121,7 @@ describe("MessagingWorkItemFieldWriter - failure paths", () => {
 
     expect(result).toEqual({ ok: false });
     expect(logger.error).toHaveBeenCalledTimes(1);
-    expect(logger.error).toHaveBeenCalledWith(
-      "Work item 123 field write: no response from background.",
-    );
+    expect(logger.error).toHaveBeenCalledWith(`Work item 123 field write: ${UNHANDLED_BY_WORKER}.`);
     expect(logger.info).not.toHaveBeenCalled();
   });
 
@@ -134,9 +133,7 @@ describe("MessagingWorkItemFieldWriter - failure paths", () => {
 
     expect(result).toEqual({ ok: false });
     expect(logger.error).toHaveBeenCalledTimes(1);
-    expect(logger.error).toHaveBeenCalledWith(
-      "Work item 123 field write: no response from background.",
-    );
+    expect(logger.error).toHaveBeenCalledWith(`Work item 123 field write: ${UNHANDLED_BY_WORKER}.`);
   });
 
   it("returns failure and logs error when response.ok is false", async () => {

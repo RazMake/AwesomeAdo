@@ -13,6 +13,13 @@ deterministically in any engine.
 
 ## Public API
 
+### `isoEpoch.ts`
+
+- `isoEpoch(iso)` — an ISO 8601 timestamp as epoch milliseconds, or `null` when it is absent or
+  unparseable. The one place that decision is made: written per call site, "no timestamp" drifts
+  between `NaN` (which loses every comparison silently) and `0` (which makes it the oldest thing in
+  the list). Callers that need a different sentinel derive it (`isoEpoch(iso) ?? -Infinity`).
+
 ### `pstDateTime.ts`
 
 - `formatPstDate(iso)` — formats an ISO 8601 timestamp as `MM/DD/YYYY` in America/Los_Angeles; returns

@@ -7,11 +7,8 @@ import type {
 import type { WorkItemWriteQueue } from "../../../common/ado/WorkItemWriteQueue/WorkItemWriteQueue";
 import { ASSIGNED_TO_FIELD, identityFieldValue } from "../../../common/ado/adoApi";
 import { buildWorkItemUrl } from "../../../common/ado/fetchAdoTree";
-import {
-  MANUAL_ORDERING_POLICY,
-  orderItems,
-  type OrderingPolicy,
-} from "../../../common/ordering/ItemOrdering";
+import { orderTrackedItems, workItemTypeTextColor } from "../../../common/ado/workItemTypes";
+import { MANUAL_ORDERING_POLICY, type OrderingPolicy } from "../../../common/ordering/ItemOrdering";
 import { WORK_ITEM_MARKERS } from "../../../common/settings/ExtensionSettings";
 import type { DataDrivenViewContext } from "../../../common/view-common/EnhancedView";
 import {
@@ -128,26 +125,6 @@ function lanesOf(items: readonly SprintBoardItem[]): Lane[] {
       areaPath,
       label: areaPath?.split("\\").at(-1) ?? "No area path",
     }));
-}
-
-function orderBoardItems<T>(
-  items: readonly T[],
-  itemOf: (entry: T) => TrackedWorkItem,
-  policy: OrderingPolicy,
-): T[] {
-  return orderItems(
-    items.map((entry) => {
-      const item = itemOf(entry);
-      const eta = item.eta === null ? Number.NaN : Date.parse(item.eta);
-      return {
-        entry,
-        importance: item.importance,
-        title: item.title,
-        eta: Number.isNaN(eta) ? null : eta,
-      };
-    }),
-    policy,
-  ).map(({ entry }) => entry);
 }
 
 function renderItemAssignee(
@@ -272,7 +249,11 @@ function renderChildrenBadge(
 ): ChildBadgeHandle | null {
   if (item.children.length === 0) return null;
   const parentDone = stateOrdinal(item, options.types.get(item.type)) === 3;
-  const orderedChildren = orderBoardItems(item.children, (child) => child, options.orderingPolicy);
+  const orderedChildren = orderTrackedItems(
+    item.children,
+    (child) => child,
+    options.orderingPolicy,
+  );
   const siblingIds = orderedChildren.map((child) => child.id);
   const controls: ChildRowControls[] = [];
   const badge: { handle?: ChildItemsBadgeControlHandle } = {};
@@ -291,7 +272,7 @@ function renderChildrenBadge(
               repaintKeepingChildPopupOpen(item.id, badge.handle, options),
             ),
       title: child.title,
-      titleColor: typeColor(childType?.color),
+      titleColor: workItemTypeTextColor(childType?.color),
       eta,
       url: buildWorkItemUrl(context.doc.location?.href ?? "", child.id),
       onContextMenu: (event: MouseEvent) =>
@@ -379,7 +360,7 @@ function renderCardMeta(
   id.textContent = `#${item.id}`;
   const details = renderItemDetailsButton(context.doc, {
     hasDescription: item.description.trim().length > 0,
-    typeColor: typeColor(options.types.get(item.type)?.color),
+    typeColor: workItemTypeTextColor(options.types.get(item.type)?.color),
     className: "awesomeado-sprint-card__describe",
   });
   createPopupHost({
@@ -457,7 +438,7 @@ function renderCardDetailsPopup(
 
 function parentForeground(color: string | undefined): string {
   if (!color) return "var(--text-primary-color)";
-  return `color-mix(in srgb, ${typeColor(color)} 62%, var(--text-primary-color))`;
+  return `color-mix(in srgb, ${workItemTypeTextColor(color)} 62%, var(--text-primary-color))`;
 }
 
 function renderItemEta(
@@ -537,7 +518,7 @@ function renderParentPopup(
     ].join(";");
     const icon = renderItemTypeIcon(context.doc, {
       iconUrl: type?.icon ?? null,
-      color: typeColor(type?.color),
+      color: workItemTypeTextColor(type?.color),
       typeName: ancestor.type,
     });
     const title = context.doc.createElement("span");
@@ -588,7 +569,7 @@ function renderParentContext(
   ].join(";");
   const icon = renderItemTypeIcon(context.doc, {
     iconUrl: parentType?.icon ?? null,
-    color: typeColor(parentType?.color),
+    color: workItemTypeTextColor(parentType?.color),
     typeName: parentItem.type,
   });
   icon.element.style.background = OPAQUE_BOARD_BACKGROUND;
@@ -738,7 +719,7 @@ function renderCard(
   card.className = "awesomeado-sprint__item awesomeado-sprint-card";
   card.dataset.itemId = String(item.id);
   card.draggable = true;
-  card.style.setProperty("--sprint-item-type-color", typeColor(type?.color));
+  card.style.setProperty("--sprint-item-type-color", workItemTypeTextColor(type?.color));
   card.style.cssText += [
     "display:flex",
     "flex-direction:column",
@@ -800,11 +781,6 @@ function renderCard(
   }
   registerCardDrag(card, entry, ordinal, lane, siblingIds, options.cardDrag);
   return card;
-}
-
-function typeColor(color: string | undefined): string {
-  if (!color) return "var(--text-primary-color)";
-  return color.startsWith("#") ? color : `#${color}`;
 }
 
 function primaryState(
@@ -1195,7 +1171,7 @@ function renderLane(
     "will-change:transform",
   ].join(";");
   for (let ordinal = 0; ordinal < VISIBLE_COLUMN_COUNT; ordinal += 1) {
-    const cellItems = orderBoardItems(
+    const cellItems = orderTrackedItems(
       laneItems.filter(
         (entry) => stateOrdinal(entry.item, options.types.get(entry.item.type)) === ordinal,
       ),

@@ -12,6 +12,7 @@ import {
   MessagingFeatureCrewWriter,
   type SendReconcileRequest,
 } from "./MessagingFeatureCrewWriter";
+import { UNHANDLED_BY_WORKER } from "./workerReply";
 
 function makeLoggerSpy(): ILogger {
   return { info: vi.fn(), error: vi.fn() };
@@ -114,7 +115,7 @@ describe("MessagingFeatureCrewWriter - failure responses", () => {
     expect(result).toEqual({ ok: false, changed: false });
     expect(logger.error).toHaveBeenCalledTimes(1);
     expect(logger.error).toHaveBeenCalledWith(
-      "Feature Crew reconcile for root 123: no response from the background worker.",
+      `Feature Crew reconcile for root 123: ${UNHANDLED_BY_WORKER}.`,
     );
   });
 
@@ -129,7 +130,7 @@ describe("MessagingFeatureCrewWriter - failure responses", () => {
     expect(result).toEqual({ ok: false, changed: false });
     expect(logger.error).toHaveBeenCalledTimes(1);
     expect(logger.error).toHaveBeenCalledWith(
-      "Feature Crew reconcile for root 123: no response from the background worker.",
+      `Feature Crew reconcile for root 123: ${UNHANDLED_BY_WORKER}.`,
     );
   });
 

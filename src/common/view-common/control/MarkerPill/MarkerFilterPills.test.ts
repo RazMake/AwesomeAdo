@@ -1,11 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
-import {
-  DEFAULT_MARKER_TAGS,
-  type WorkItemMarker,
-} from "../../../../common/settings/ExtensionSettings";
+import { DEFAULT_MARKER_TAGS, type WorkItemMarker } from "../../../settings/ExtensionSettings";
 
-import { renderMarkerFilterPills } from "./MarkerFilterPanel";
+import { renderMarkerFilterPills } from "./MarkerFilterPills";
 
 /** Renders the pills over a caller-owned selection, and reports both back. */
 function renderPills(markers: WorkItemMarker[], selected: WorkItemMarker[] = []) {

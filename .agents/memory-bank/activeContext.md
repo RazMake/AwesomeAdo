@@ -169,7 +169,7 @@ The extension is feature-complete for its current scope:
   tree (and the rollup popup) through `common/ordering`, `days` drops an item once its Status has
   sat in the resolved column (the one before Removed) longer than that window, aged from
   `stateChangeDate`, and `weeks` now bounds how far back each item's **notes** are fetched. `hours`
-  is honored by the **recent-activity pills** (`content/views/project-tracking/activity-filter`,
+  is honored by the **recent-activity pills** (`common/view-common/control/ActivityFilter`,
   ADR-048): _Newly created_ / _Newly updated_ / _New notes_ sit in the board's wrapping `Filters:`
   row as a separate family after the tag/marker family, OR together, and combine with the sprint and
   tag filters. The first two
@@ -178,7 +178,7 @@ The extension is feature-complete for its current scope:
   the pill is lit, only where `noteCount > 0`, ≤6 in flight, once per board), pages to the newest note
   not beginning with a configured marker `commentTag`, and leaves the board unnarrowed — pill showing
   `New notes…` — until the reads settle (ADR-051).
-  The **marker pills** (`content/views/project-tracking/marker-filter`) form a third AND-ed group:
+  The **marker pills** (`common/view-common/control/MarkerPill`) form a third AND-ed group:
   one pill per configured `markerTags` condition that something in the tree actually carries
   (`TrackedWorkItem.tags` ← `System.Tags`, split by `common/ado/workItemTags`), appearing and
   disappearing with the flags themselves. Because a menu command can change which pills EXIST, the

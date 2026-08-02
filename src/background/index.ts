@@ -112,7 +112,9 @@ import {
   isWriteTeamConfigResponse,
   READ_TEAM_CONFIG_MESSAGE,
   WRITE_TEAM_CONFIG_MESSAGE,
+  type ReadTeamConfigMessage,
   type ReadTeamConfigResponse,
+  type WriteTeamConfigMessage,
   type WriteTeamConfigResponse,
 } from "../common/browser/TeamConfigRequest";
 import {
@@ -168,6 +170,7 @@ import {
   reorderWorkItemInPage,
   type ReorderWorkItemConfig,
 } from "../common/browser/reorderWorkItemInPage";
+import { tabRequestListener } from "../common/browser/tabRequestListener";
 import { updateWorkItemFieldInPage } from "../common/browser/updateWorkItemFieldInPage";
 import { writeTeamConfigInPage } from "../common/browser/writeTeamConfigInPage";
 import { writeWorkItemNoteInPage } from "../common/browser/writeWorkItemNoteInPage";
@@ -338,77 +341,72 @@ const loadQueryTree = async (
   }
 };
 
-chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
-  if (!isLoadQueryTreeMessage(message)) {
-    // Not ours — leave it for the other listener above to handle.
-    return undefined;
-  }
-  const tabId = sender.tab?.id;
-  const tabUrl = sender.tab?.url;
-  if (tabId === undefined || tabUrl === undefined) {
-    // Only a real ADO tab can be scripted; a message with no sender tab cannot be served.
-    logger.error(`Cannot load query tree for ${message.queryId}: message has no sender tab.`);
-    sendResponse({ raw: null } satisfies LoadQueryTreeResponse);
-    return undefined;
-  }
-  void loadQueryTree(message, tabId, tabUrl).then(sendResponse);
-  // Keep the message channel open for the async fetch reply above.
-  return true;
-});
+chrome.runtime.onMessage.addListener(
+  tabRequestListener<LoadQueryTreeMessage, LoadQueryTreeResponse>(logger, {
+    claims: isLoadQueryTreeMessage,
+    unscriptable: (message) => ({
+      log: `Cannot load query tree for ${message.queryId}: message has no sender tab.`,
+      response: { raw: null },
+    }),
+    serve: loadQueryTree,
+  }),
+);
 
-chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
-  if (!claimsMessageType(message, WRITE_TEAM_CONFIG_MESSAGE)) return undefined;
-  if (!isWriteTeamConfigMessage(message)) {
-    logger.error("Rejected malformed team configuration write request.");
-    sendResponse({
-      ok: false,
-      error: "invalid team configuration write",
-    } satisfies WriteTeamConfigResponse);
-    return undefined;
-  }
-  const tabId = sender.tab?.id;
-  const url =
-    sender.tab?.url === undefined
-      ? null
-      : buildWorkItemUpdateUrl(sender.tab.url, message.workItemId);
-  if (tabId === undefined || url === null) {
+const writeTeamConfig = async (
+  message: WriteTeamConfigMessage,
+  tabId: number,
+  tabUrl: string,
+): Promise<WriteTeamConfigResponse> => {
+  const url = buildWorkItemUpdateUrl(tabUrl, message.workItemId);
+  if (url === null) {
     logger.error(
-      `Cannot write team configuration work item ${message.workItemId}: no supported sender tab.`,
+      `Cannot write team configuration work item ${message.workItemId}: unsupported sender tab location.`,
     );
-    sendResponse({ ok: false, error: "no supported sender tab" } satisfies WriteTeamConfigResponse);
-    return undefined;
+    return { ok: false, error: "no supported sender tab" };
   }
-  void chrome.scripting
-    .executeScript({
+  try {
+    const results = await chrome.scripting.executeScript({
       target: { tabId },
       world: "MAIN",
       func: writeTeamConfigInPage,
       args: [{ url, text: message.text }],
-    })
-    .then((results) => {
-      const response = firstScriptResult(results);
-      if (!isWriteTeamConfigResponse(response)) {
-        logger.error(
-          `Team configuration work item ${message.workItemId} returned no valid write response.`,
-        );
-        sendResponse({ ok: false, error: "no valid response" } satisfies WriteTeamConfigResponse);
-        return;
-      }
-      if (!response.ok)
-        logger.error(
-          `Could not write team configuration work item ${message.workItemId}: ${response.error}`,
-        );
-      sendResponse(response);
-    })
-    .catch((error: unknown) => {
-      logger.error(`Could not write team configuration work item ${message.workItemId}`, error);
-      sendResponse({
-        ok: false,
-        error: `injection failed: ${String(error)}`,
-      } satisfies WriteTeamConfigResponse);
     });
-  return true;
-});
+    const response = firstScriptResult(results);
+    if (!isWriteTeamConfigResponse(response)) {
+      logger.error(
+        `Team configuration work item ${message.workItemId} returned no valid write response.`,
+      );
+      return { ok: false, error: "no valid response" };
+    }
+    if (!response.ok) {
+      logger.error(
+        `Could not write team configuration work item ${message.workItemId}: ${response.error}`,
+      );
+    }
+    return response;
+  } catch (error: unknown) {
+    logger.error(`Could not write team configuration work item ${message.workItemId}`, error);
+    return { ok: false, error: `injection failed: ${String(error)}` };
+  }
+};
+
+chrome.runtime.onMessage.addListener(
+  tabRequestListener<WriteTeamConfigMessage, WriteTeamConfigResponse>(logger, {
+    claims: (message) => claimsMessageType(message, WRITE_TEAM_CONFIG_MESSAGE),
+    malformed: (message) =>
+      isWriteTeamConfigMessage(message)
+        ? null
+        : {
+            log: "Rejected malformed team configuration write request.",
+            response: { ok: false, error: "invalid team configuration write" },
+          },
+    unscriptable: (message) => ({
+      log: `Cannot write team configuration work item ${message.workItemId}: no supported sender tab.`,
+      response: { ok: false, error: "no supported sender tab" },
+    }),
+    serve: writeTeamConfig,
+  }),
+);
 
 const loadQueryDefinition = async (
   message: LoadQueryDefinitionMessage,
@@ -451,24 +449,26 @@ const loadQueryDefinition = async (
   }
 };
 
-chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
-  if (!claimsMessageType(message, LOAD_QUERY_DEFINITION_MESSAGE)) return undefined;
-  const problem = loadQueryDefinitionMessageProblem(message);
-  if (problem !== null || !isLoadQueryDefinitionMessage(message)) {
-    logger.error(`Query-definition request rejected: ${problem ?? "invalid message"}.`);
-    sendResponse({ raw: null, status: 0, error: problem ?? "invalid message" });
-    return undefined;
-  }
-  logger.info(`Query-definition read requested for ${message.queryId}.`);
-  const { id: tabId, url: tabUrl } = sender.tab ?? {};
-  if (tabId === undefined || tabUrl === undefined) {
-    logger.error(`Cannot load query definition for ${message.queryId}: message has no sender tab.`);
-    sendResponse({ raw: null, status: 0 } satisfies LoadQueryDefinitionResponse);
-    return undefined;
-  }
-  void loadQueryDefinition(message, tabId, tabUrl).then(sendResponse);
-  return true;
-});
+chrome.runtime.onMessage.addListener(
+  tabRequestListener<LoadQueryDefinitionMessage, LoadQueryDefinitionResponse>(logger, {
+    claims: (message) => claimsMessageType(message, LOAD_QUERY_DEFINITION_MESSAGE),
+    malformed: (message) => {
+      const problem = loadQueryDefinitionMessageProblem(message);
+      if (problem === null && isLoadQueryDefinitionMessage(message)) return null;
+      const detail = problem ?? "invalid message";
+      return {
+        log: `Query-definition request rejected: ${detail}.`,
+        response: { raw: null, status: 0, error: detail },
+      };
+    },
+    announce: (message) => `Query-definition read requested for ${message.queryId}.`,
+    unscriptable: (message) => ({
+      log: `Cannot load query definition for ${message.queryId}: message has no sender tab.`,
+      response: { raw: null, status: 0 },
+    }),
+    serve: loadQueryDefinition,
+  }),
+);
 
 // A sprint-filtering view (e.g. Project Tracking) needs the team's iterations to build its picker,
 // but the credentialed team-iterations fetch can only run in the ADO tab's MAIN world (same reason
@@ -503,23 +503,16 @@ const loadTeamIterations = async (
   }
 };
 
-chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
-  if (!isLoadTeamIterationsMessage(message)) {
-    // Not ours — leave it for the other listeners to handle.
-    return undefined;
-  }
-  const tabId = sender.tab?.id;
-  const tabUrl = sender.tab?.url;
-  if (tabId === undefined || tabUrl === undefined) {
-    // Only a real ADO tab can be scripted; a message with no sender tab cannot be served.
-    logger.error(`Cannot load iterations for team "${message.team}": message has no sender tab.`);
-    sendResponse({ raw: null } satisfies LoadTeamIterationsResponse);
-    return undefined;
-  }
-  void loadTeamIterations(message, tabId, tabUrl).then(sendResponse);
-  // Keep the message channel open for the async fetch reply above.
-  return true;
-});
+chrome.runtime.onMessage.addListener(
+  tabRequestListener<LoadTeamIterationsMessage, LoadTeamIterationsResponse>(logger, {
+    claims: isLoadTeamIterationsMessage,
+    unscriptable: (message) => ({
+      log: `Cannot load iterations for team "${message.team}": message has no sender tab.`,
+      response: { raw: null },
+    }),
+    serve: loadTeamIterations,
+  }),
+);
 
 // Team membership is project/team-scoped. The content side supplies only the team identifier while
 // this worker derives the endpoint from the trusted sender tab.
@@ -565,25 +558,25 @@ const loadTeamMembers = async (
   }
 };
 
-chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
-  if (!claimsMessageType(message, LOAD_TEAM_MEMBERS_MESSAGE)) return undefined;
-  if (!isLoadTeamMembersMessage(message)) {
-    const detail = loadTeamMembersMessageProblem(message) ?? "invalid message";
-    logger.error(`Team-members request rejected: ${detail}.`);
-    sendResponse({ raw: null, status: 0, error: detail });
-    return undefined;
-  }
-  logger.info(`Team-members read requested for team ${message.team}.`);
-  const { id: tabId, url: tabUrl } = sender.tab ?? {};
-  if (tabId === undefined || tabUrl === undefined) {
-    const error = "message has no sender tab";
-    logger.error(`Cannot load team members for team ${message.team}: ${error}.`);
-    sendResponse({ raw: null, status: 0, error } satisfies LoadTeamMembersResponse);
-    return undefined;
-  }
-  void loadTeamMembers(message, tabId, tabUrl).then(sendResponse);
-  return true;
-});
+chrome.runtime.onMessage.addListener(
+  tabRequestListener<LoadTeamMembersMessage, LoadTeamMembersResponse>(logger, {
+    claims: (message) => claimsMessageType(message, LOAD_TEAM_MEMBERS_MESSAGE),
+    malformed: (message) => {
+      if (isLoadTeamMembersMessage(message)) return null;
+      const detail = loadTeamMembersMessageProblem(message) ?? "invalid message";
+      return {
+        log: `Team-members request rejected: ${detail}.`,
+        response: { raw: null, status: 0, error: detail },
+      };
+    },
+    announce: (message) => `Team-members read requested for team ${message.team}.`,
+    unscriptable: (message) => ({
+      log: `Cannot load team members for team ${message.team}: message has no sender tab.`,
+      response: { raw: null, status: 0, error: "message has no sender tab" },
+    }),
+    serve: loadTeamMembers,
+  }),
+);
 
 // An assignee picker resolves people against Azure DevOps' own identity directory, which — like
 // every other ADO read here — is only reachable from a credentialed MAIN-world fetch. The content
@@ -630,21 +623,16 @@ const searchAdoIdentities = async (
   }
 };
 
-chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
-  if (!isSearchAdoIdentitiesMessage(message)) {
-    // Not ours — leave it for the other listeners to handle.
-    return undefined;
-  }
-  const { id: tabId, url: tabUrl } = sender.tab ?? {};
-  if (tabId === undefined || tabUrl === undefined) {
-    logger.error("Cannot search identities: message has no sender tab.");
-    sendResponse({ raw: null } satisfies SearchAdoIdentitiesResponse);
-    return undefined;
-  }
-  void searchAdoIdentities(message, tabId, tabUrl).then(sendResponse);
-  // Keep the message channel open for the async fetch reply above.
-  return true;
-});
+chrome.runtime.onMessage.addListener(
+  tabRequestListener<SearchAdoIdentitiesMessage, SearchAdoIdentitiesResponse>(logger, {
+    claims: isSearchAdoIdentitiesMessage,
+    unscriptable: () => ({
+      log: "Cannot search identities: message has no sender tab.",
+      response: { raw: null },
+    }),
+    serve: searchAdoIdentities,
+  }),
+);
 
 // A work item's description and its discussion store an `@`-mention as a bare identity GUID, so a
 // view that renders them has to ask who those people are. The whole board's mentions are collected
@@ -708,21 +696,16 @@ const resolveAdoIdentityNames = async (
   }
 };
 
-chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
-  if (!isResolveAdoIdentityNamesMessage(message)) {
-    // Not ours — leave it for the other listeners to handle.
-    return undefined;
-  }
-  const { id: tabId, url: tabUrl } = sender.tab ?? {};
-  if (tabId === undefined || tabUrl === undefined) {
-    logger.error("Cannot resolve mention identities: message has no sender tab.");
-    sendResponse({ raw: null, complete: false } satisfies ResolveAdoIdentityNamesResponse);
-    return undefined;
-  }
-  void resolveAdoIdentityNames(message, tabId, tabUrl).then(sendResponse);
-  // Keep the message channel open for the async fetch reply above.
-  return true;
-});
+chrome.runtime.onMessage.addListener(
+  tabRequestListener<ResolveAdoIdentityNamesMessage, ResolveAdoIdentityNamesResponse>(logger, {
+    claims: isResolveAdoIdentityNamesMessage,
+    unscriptable: () => ({
+      log: "Cannot resolve mention identities: message has no sender tab.",
+      response: { raw: null, complete: false },
+    }),
+    serve: resolveAdoIdentityNames,
+  }),
+);
 
 // The Project Tracking view keeps a per-project "Feature Crew" roster in a dedicated, permanently
 // Removed work item (see common/ado/FeatureCrew). Like the tree load, the credentialed create/update
@@ -842,49 +825,34 @@ const readTeamConfig = async (
   }
 };
 
-chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
-  if (!claimsMessageType(message, READ_TEAM_CONFIG_MESSAGE)) {
-    return undefined;
-  }
-  if (!isReadTeamConfigMessage(message)) {
-    logger.error("Rejected malformed team configuration read request.");
-    sendResponse({ ok: false, error: "invalid work item id" } satisfies ReadTeamConfigResponse);
-    return undefined;
-  }
-  const tabId = sender.tab?.id;
-  const tabUrl = sender.tab?.url;
-  if (tabId === undefined || tabUrl === undefined) {
-    logger.error(`Cannot read team configuration work item ${message.workItemId}: no sender tab.`);
-    sendResponse({ ok: false, error: "no sender tab" } satisfies ReadTeamConfigResponse);
-    return undefined;
-  }
-  void readTeamConfig(message.workItemId, tabId, tabUrl).then(sendResponse);
-  return true;
-});
+chrome.runtime.onMessage.addListener(
+  tabRequestListener<ReadTeamConfigMessage, ReadTeamConfigResponse>(logger, {
+    claims: (message) => claimsMessageType(message, READ_TEAM_CONFIG_MESSAGE),
+    malformed: (message) =>
+      isReadTeamConfigMessage(message)
+        ? null
+        : {
+            log: "Rejected malformed team configuration read request.",
+            response: { ok: false, error: "invalid work item id" },
+          },
+    unscriptable: (message) => ({
+      log: `Cannot read team configuration work item ${message.workItemId}: no sender tab.`,
+      response: { ok: false, error: "no sender tab" },
+    }),
+    serve: (message, tabId, tabUrl) => readTeamConfig(message.workItemId, tabId, tabUrl),
+  }),
+);
 
-chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
-  if (!isReconcileFeatureCrewMessage(message)) {
-    // Not ours — leave it for the other listeners above to handle.
-    return undefined;
-  }
-  const tabId = sender.tab?.id;
-  const tabUrl = sender.tab?.url;
-  if (tabId === undefined || tabUrl === undefined) {
-    // Only a real ADO tab can be scripted; a message with no sender tab cannot be served.
-    logger.error(
-      `Cannot reconcile Feature Crew for root ${message.rootId}: message has no sender tab.`,
-    );
-    sendResponse({
-      ok: false,
-      changed: false,
-      error: "no sender tab",
-    } satisfies ReconcileFeatureCrewResponse);
-    return undefined;
-  }
-  void reconcileFeatureCrew(message, tabId, tabUrl).then(sendResponse);
-  // Keep the message channel open for the async fetch reply above.
-  return true;
-});
+chrome.runtime.onMessage.addListener(
+  tabRequestListener<ReconcileFeatureCrewMessage, ReconcileFeatureCrewResponse>(logger, {
+    claims: isReconcileFeatureCrewMessage,
+    unscriptable: (message) => ({
+      log: `Cannot reconcile Feature Crew for root ${message.rootId}: message has no sender tab.`,
+      response: { ok: false, changed: false, error: "no sender tab" },
+    }),
+    serve: reconcileFeatureCrew,
+  }),
+);
 
 // An enhanced view can persist a work item field change back to Azure DevOps (e.g. its status or
 // its ETA date). Like the tree load and Feature Crew reconcile, the credentialed PATCH can only run
@@ -952,23 +920,16 @@ const updateWorkItemField = async (
   }
 };
 
-chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
-  if (!isUpdateWorkItemFieldMessage(message)) {
-    // Not ours — leave it for the other listeners above to handle.
-    return undefined;
-  }
-  const tabId = sender.tab?.id;
-  const tabUrl = sender.tab?.url;
-  if (tabId === undefined || tabUrl === undefined) {
-    // Only a real ADO tab can be scripted; a message with no sender tab cannot be served.
-    logger.error(`Cannot update work item ${message.id} field: message has no sender tab.`);
-    sendResponse({ ok: false, error: "no sender tab" } satisfies UpdateWorkItemFieldResponse);
-    return undefined;
-  }
-  void updateWorkItemField(message, tabId, tabUrl).then(sendResponse);
-  // Keep the message channel open for the async PATCH reply above.
-  return true;
-});
+chrome.runtime.onMessage.addListener(
+  tabRequestListener<UpdateWorkItemFieldMessage, UpdateWorkItemFieldResponse>(logger, {
+    claims: isUpdateWorkItemFieldMessage,
+    unscriptable: (message) => ({
+      log: `Cannot update work item ${message.id} field: message has no sender tab.`,
+      response: { ok: false, error: "no sender tab" },
+    }),
+    serve: updateWorkItemField,
+  }),
+);
 
 // An enhanced view can also MOVE an item: drag-reordering the tree changes the item's backlog rank
 // and, when it lands under a different parent, its hierarchy link. Both are credentialed calls that
@@ -1222,33 +1183,25 @@ function buildReorderConfig(
   };
 }
 
-chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
-  if (!claimsMessageType(message, REORDER_WORK_ITEM_MESSAGE)) {
-    // Not ours — leave it for the other listeners above to handle.
-    return undefined;
-  }
-  const problem = reorderMessageProblem(message);
-  if (problem !== null) {
-    // Answered rather than ignored on purpose: an ignored message reaches the content side as the
-    // uninformative "no response from background", which looks identical to a worker that has no
-    // handler at all. Replying with the offending field turns a dead end into a diagnosis.
-    logger.error(`Rejected a malformed reorder request: ${problem}.`);
-    sendResponse({ ok: false, error: `malformed request: ${problem}` });
-    return undefined;
-  }
-  const reorder = message as ReorderWorkItemMessage;
-  const tabId = sender.tab?.id;
-  const tabUrl = sender.tab?.url;
-  if (tabId === undefined || tabUrl === undefined) {
-    // Only a real ADO tab can be scripted; a message with no sender tab cannot be served.
-    logger.error(`Cannot reorder work item ${reorder.id}: message has no sender tab.`);
-    sendResponse({ ok: false, error: "no sender tab" } satisfies ReorderWorkItemResponse);
-    return undefined;
-  }
-  void reorderWorkItem(reorder, tabId, tabUrl).then(sendResponse);
-  // Keep the message channel open for the async PATCH reply above.
-  return true;
-});
+chrome.runtime.onMessage.addListener(
+  tabRequestListener<ReorderWorkItemMessage, ReorderWorkItemResponse>(logger, {
+    claims: (message) => claimsMessageType(message, REORDER_WORK_ITEM_MESSAGE),
+    malformed: (message) => {
+      const problem = reorderMessageProblem(message);
+      return problem === null
+        ? null
+        : {
+            log: `Rejected a malformed reorder request: ${problem}.`,
+            response: { ok: false, error: `malformed request: ${problem}` },
+          };
+    },
+    unscriptable: (message) => ({
+      log: `Cannot reorder work item ${message.id}: message has no sender tab.`,
+      response: { ok: false, error: "no sender tab" },
+    }),
+    serve: reorderWorkItem,
+  }),
+);
 
 // The Project Tracking board shows each item's Discussion as its "notes". Like every other ADO read
 // here, the comments collection is only reachable from a credentialed MAIN-world fetch, so the
@@ -1372,29 +1325,25 @@ const readInterruptAcceptance = async (
   }
 };
 
-chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
-  if (!claimsMessageType(message, READ_INTERRUPT_ACCEPTANCE_MESSAGE)) return undefined;
-  const problem = readInterruptAcceptanceMessageProblem(message);
-  if (problem !== null) {
-    logger.error(`Rejected a malformed interrupt acceptance request: ${problem}.`);
-    sendResponse({
-      raw: null,
-      error: `malformed request: ${problem}`,
-    } satisfies ReadInterruptAcceptanceResponse);
-    return undefined;
-  }
-  const tabId = sender.tab?.id;
-  const tabUrl = sender.tab?.url;
-  if (tabId === undefined || tabUrl === undefined) {
-    logger.error("Cannot read interrupt acceptance: message has no sender tab.");
-    sendResponse({ raw: null, error: "no sender tab" } satisfies ReadInterruptAcceptanceResponse);
-    return undefined;
-  }
-  void readInterruptAcceptance(message as ReadInterruptAcceptanceMessage, tabId, tabUrl).then(
-    sendResponse,
-  );
-  return true;
-});
+chrome.runtime.onMessage.addListener(
+  tabRequestListener<ReadInterruptAcceptanceMessage, ReadInterruptAcceptanceResponse>(logger, {
+    claims: (message) => claimsMessageType(message, READ_INTERRUPT_ACCEPTANCE_MESSAGE),
+    malformed: (message) => {
+      const problem = readInterruptAcceptanceMessageProblem(message);
+      return problem === null
+        ? null
+        : {
+            log: `Rejected a malformed interrupt acceptance request: ${problem}.`,
+            response: { raw: null, error: `malformed request: ${problem}` },
+          };
+    },
+    unscriptable: () => ({
+      log: "Cannot read interrupt acceptance: message has no sender tab.",
+      response: { raw: null, error: "no sender tab" },
+    }),
+    serve: readInterruptAcceptance,
+  }),
+);
 
 /**
  * Answers "when was each of these items last commented on?" for the board's **New notes** filter.
@@ -1451,62 +1400,45 @@ const readNoteActivity = async (
   }
 };
 
-chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
-  if (!claimsMessageType(message, READ_NOTE_ACTIVITY_MESSAGE)) {
-    // Not ours — leave it for the other listeners to handle.
-    return undefined;
-  }
-  const problem = readNoteActivityMessageProblem(message);
-  if (problem !== null) {
-    // Answered rather than ignored: an ignored message reaches the content side as "no response
-    // from background", which looks identical to a worker that has no handler at all.
-    logger.error(`Rejected a malformed note-activity request: ${problem}.`);
-    sendResponse({
-      raw: null,
-      error: `malformed request: ${problem}`,
-    } satisfies ReadNoteActivityResponse);
-    return undefined;
-  }
-  const tabId = sender.tab?.id;
-  const tabUrl = sender.tab?.url;
-  if (tabId === undefined || tabUrl === undefined) {
-    // Only a real ADO tab can be scripted; a message with no sender tab cannot be served.
-    logger.error("Cannot read note activity: message has no sender tab.");
-    sendResponse({ raw: null, error: "no sender tab" } satisfies ReadNoteActivityResponse);
-    return undefined;
-  }
-  void readNoteActivity(message as ReadNoteActivityMessage, tabId, tabUrl).then(sendResponse);
-  // Keep the message channel open for the async fetch reply above.
-  return true;
-});
+chrome.runtime.onMessage.addListener(
+  tabRequestListener<ReadNoteActivityMessage, ReadNoteActivityResponse>(logger, {
+    claims: (message) => claimsMessageType(message, READ_NOTE_ACTIVITY_MESSAGE),
+    malformed: (message) => {
+      const problem = readNoteActivityMessageProblem(message);
+      return problem === null
+        ? null
+        : {
+            log: `Rejected a malformed note-activity request: ${problem}.`,
+            response: { raw: null, error: `malformed request: ${problem}` },
+          };
+    },
+    unscriptable: () => ({
+      log: "Cannot read note activity: message has no sender tab.",
+      response: { raw: null, error: "no sender tab" },
+    }),
+    serve: readNoteActivity,
+  }),
+);
 
-chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
-  if (!claimsMessageType(message, LOAD_WORK_ITEM_NOTES_MESSAGE)) {
-    // Not ours — leave it for the other listeners above to handle.
-    return undefined;
-  }
-  const problem = loadNotesMessageProblem(message);
-  if (problem !== null) {
-    // Answered rather than ignored, exactly as a malformed reorder is: an ignored message reaches
-    // the content side as "no response from background", which looks identical to a worker that has
-    // no handler at all. Replying with the offending field turns a dead end into a diagnosis.
-    logger.error(`Rejected a malformed notes read request: ${problem}.`);
-    sendResponse({ raw: null, error: `malformed request: ${problem}` });
-    return undefined;
-  }
-  const notes = message as LoadWorkItemNotesMessage;
-  const tabId = sender.tab?.id;
-  const tabUrl = sender.tab?.url;
-  if (tabId === undefined || tabUrl === undefined) {
-    // Only a real ADO tab can be scripted; a message with no sender tab cannot be served.
-    logger.error(`Cannot load notes for work item ${notes.workItemId}: message has no sender tab.`);
-    sendResponse({ raw: null, error: "no sender tab" } satisfies LoadWorkItemNotesResponse);
-    return undefined;
-  }
-  void loadWorkItemNotes(notes, tabId, tabUrl).then(sendResponse);
-  // Keep the message channel open for the async fetch reply above.
-  return true;
-});
+chrome.runtime.onMessage.addListener(
+  tabRequestListener<LoadWorkItemNotesMessage, LoadWorkItemNotesResponse>(logger, {
+    claims: (message) => claimsMessageType(message, LOAD_WORK_ITEM_NOTES_MESSAGE),
+    malformed: (message) => {
+      const problem = loadNotesMessageProblem(message);
+      return problem === null
+        ? null
+        : {
+            log: `Rejected a malformed notes read request: ${problem}.`,
+            response: { raw: null, error: `malformed request: ${problem}` },
+          };
+    },
+    unscriptable: (message) => ({
+      log: `Cannot load notes for work item ${message.workItemId}: message has no sender tab.`,
+      response: { raw: null, error: "no sender tab" },
+    }),
+    serve: loadWorkItemNotes,
+  }),
+);
 
 // Adding or correcting a note is the write half of the same conversation, and is closed the same
 // way: the collection comes from the SENDER's own tab, the shape is validated before anything is
@@ -1561,30 +1493,22 @@ const writeWorkItemNote = async (
   }
 };
 
-chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
-  if (!claimsMessageType(message, WRITE_WORK_ITEM_NOTE_MESSAGE)) {
-    // Not ours — leave it for the other listeners above to handle.
-    return undefined;
-  }
-  const problem = writeNoteMessageProblem(message);
-  if (problem !== null) {
-    // Answered, not ignored — see the read listener above for why silence is the worst reply here.
-    logger.error(`Rejected a malformed note write request: ${problem}.`);
-    sendResponse({ ok: false, error: `malformed request: ${problem}` });
-    return undefined;
-  }
-  const write = message as WriteWorkItemNoteMessage;
-  const tabId = sender.tab?.id;
-  const tabUrl = sender.tab?.url;
-  if (tabId === undefined || tabUrl === undefined) {
-    // Only a real ADO tab can be scripted; a message with no sender tab cannot be served.
-    logger.error(
-      `Cannot write a note on work item ${write.workItemId}: message has no sender tab.`,
-    );
-    sendResponse({ ok: false, error: "no sender tab" } satisfies WriteWorkItemNoteResponse);
-    return undefined;
-  }
-  void writeWorkItemNote(write, tabId, tabUrl).then(sendResponse);
-  // Keep the message channel open for the async write reply above.
-  return true;
-});
+chrome.runtime.onMessage.addListener(
+  tabRequestListener<WriteWorkItemNoteMessage, WriteWorkItemNoteResponse>(logger, {
+    claims: (message) => claimsMessageType(message, WRITE_WORK_ITEM_NOTE_MESSAGE),
+    malformed: (message) => {
+      const problem = writeNoteMessageProblem(message);
+      return problem === null
+        ? null
+        : {
+            log: `Rejected a malformed note write request: ${problem}.`,
+            response: { ok: false, error: `malformed request: ${problem}` },
+          };
+    },
+    unscriptable: (message) => ({
+      log: `Cannot write a note on work item ${message.workItemId}: message has no sender tab.`,
+      response: { ok: false, error: "no sender tab" },
+    }),
+    serve: writeWorkItemNote,
+  }),
+);

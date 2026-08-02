@@ -818,8 +818,9 @@
 
 ## ADR-048: The "New notes" pill reads discussions on demand, and narrows only once it can
 
-- Decision: The Project Tracking board offers three recent-activity pills (`content/views/
-project-tracking/activity-filter`) that narrow the tree to items created, changed, or commented on
+- Decision: The Project Tracking board offers three recent-activity pills
+  (`common/view-common/control/ActivityFilter`) that narrow the tree to items created, changed, or
+  commented on
   inside the binding's `hours` window. Created/updated are answered from `System.CreatedDate` /
   `System.ChangedDate`, already in the tree. "New notes" is answered by `RecentNotesIndex`, which
   reads each item's ADO Discussion through the existing `IWorkItemNoteLoader` — but **only when the

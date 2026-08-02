@@ -54,6 +54,9 @@ builds use the repository's `Major.Minor.Build` release versioning.
   logged with transport detail for diagnostics. Query-definition failures now
   distinguish a stale background worker, malformed request, unsupported tab location, injection
   failure, network exhaustion, invalid JSON, and HTTP errors instead of collapsing them to HTTP 0.
+  Work item field writes, Feature Crew reconciles, and drag-reorder moves now report a silent
+  background worker with the same actionable explanation the other operations already gave, instead
+  of a bare "no response from background".
 - Refines enhanced-view filters with compact pills aligned to Project Tracking's user tags and a
   larger gap between full-opacity filter families in Sprint View and Project Tracking.
 - Makes Sprint View's active Project button clear the selected project on the first click and reopen

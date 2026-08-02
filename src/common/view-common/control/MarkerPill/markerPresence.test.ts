@@ -1,10 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import type { TrackedWorkItem } from "../../../../common/ado/TrackedWorkItem";
-import {
-  DEFAULT_MARKER_TAGS,
-  type WorkItemMarkerTags,
-} from "../../../../common/settings/ExtensionSettings";
+import type { TrackedWorkItem } from "../../../ado/TrackedWorkItem";
+import { DEFAULT_MARKER_TAGS, type WorkItemMarkerTags } from "../../../settings/ExtensionSettings";
 
 import { collectMarkersInUse, createMarkerFilter, itemHasMarker } from "./markerPresence";
 

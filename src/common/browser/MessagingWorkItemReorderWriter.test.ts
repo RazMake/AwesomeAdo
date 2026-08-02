@@ -12,6 +12,7 @@ import {
   type ReorderWorkItemMessage,
   type ReorderWorkItemResponse,
 } from "./WorkItemReorderRequest";
+import { UNHANDLED_BY_WORKER } from "./workerReply";
 
 /** A logger that records what it was told, so tests can assert on the diagnostics trail. */
 function createRecordingLogger(): {
@@ -219,10 +220,10 @@ describe("MessagingWorkItemReorderWriter - failure", () => {
 
     const result = await writer.reorder(REQUEST);
 
-    expect(result).toEqual({ ok: false, error: "no response from the background worker" });
+    expect(result).toEqual({ ok: false, error: UNHANDLED_BY_WORKER });
     // Silence is the hardest failure to act on, so the line has to carry what was sent and the most
     // likely cause — a worker that predates the feature — or there is nothing to go on but a repro.
-    expect(errors[0]?.message).toContain("no response from the background worker");
+    expect(errors[0]?.message).toContain(UNHANDLED_BY_WORKER);
     expect(errors[0]?.message).toContain("rev 5");
     expect(errors[0]?.message).toContain("team set");
     expect(errors[0]?.message).toContain("reload the extension");
@@ -241,7 +242,7 @@ describe("MessagingWorkItemReorderWriter - failure", () => {
 
     const result = await writer.reorder(REQUEST);
 
-    expect(result).toEqual({ ok: false, error: "no response from the background worker" });
+    expect(result).toEqual({ ok: false, error: UNHANDLED_BY_WORKER });
     expect(errors).toHaveLength(1);
   });
 

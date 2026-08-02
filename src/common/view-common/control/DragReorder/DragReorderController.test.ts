@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import type { ILogger } from "../../../../common/logging/ILogger";
+import type { ILogger } from "../../../logging/ILogger";
 
 import {
   DragReorderController,

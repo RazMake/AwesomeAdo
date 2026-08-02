@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { TrackedWorkItem } from "../../../../common/ado/TrackedWorkItem";
+import type { TrackedWorkItem } from "../../../ado/TrackedWorkItem";
 
 import {
   RECENT_ACTIVITY_FILTERS,

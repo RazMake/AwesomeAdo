@@ -1,3 +1,5 @@
+import { isoEpoch } from "../datetime/isoEpoch";
+
 export interface InterruptAcceptanceNote {
   text: string;
   createdDate: string;
@@ -20,18 +22,12 @@ export function isInterruptAccepted(
   evidence: InterruptAcceptanceEvidence | undefined,
   acceptanceTag: string,
 ): boolean {
-  const taggedAt = parseTimestamp(evidence?.taggedAt ?? null);
+  const taggedAt = isoEpoch(evidence?.taggedAt);
   const token = acceptanceTag.trim();
   if (evidence === undefined || taggedAt === null || token.length === 0) return false;
 
   return evidence.notes.some((note) => {
-    const notedAt = parseTimestamp(note.createdDate);
+    const notedAt = isoEpoch(note.createdDate);
     return notedAt !== null && notedAt >= taggedAt && note.text.includes(token);
   });
-}
-
-function parseTimestamp(value: string | null): number | null {
-  if (value === null) return null;
-  const parsed = Date.parse(value);
-  return Number.isNaN(parsed) ? null : parsed;
 }

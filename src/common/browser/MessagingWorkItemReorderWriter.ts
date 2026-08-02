@@ -11,6 +11,7 @@ import {
   type ReorderWorkItemMessage,
   type ReorderWorkItemResponse,
 } from "./WorkItemReorderRequest";
+import { workerReplyProblem } from "./workerReply";
 
 /** Sends a reorder-work-item request and resolves the background worker's reply, if any. */
 export type SendReorderRequest = (
@@ -40,17 +41,16 @@ export class MessagingWorkItemReorderWriter implements IWorkItemReorderWriter {
 
       if (response === undefined || response === null) {
         // "No response" is the hardest failure to act on, because it is silence rather than an
-        // error: the worker either has no handler for this message (an extension updated but not
-        // reloaded, so the running worker predates the feature) or dropped it before replying.
-        // Recording exactly what was sent lets the next reader tell those apart without a repro.
+        // error. The shared diagnosis names the causes; what only this writer knows is exactly what
+        // was sent, which lets the next reader tell those apart without a repro.
+        const problem = workerReplyProblem(response);
         this.logger.error(
-          `Work item ${request.id} reorder: no response from the background worker. ` +
+          `Work item ${request.id} reorder: ${problem}. ` +
             `Sent parent ${request.currentParentId}\u2192${request.parentId}, between ` +
             `${request.previousId} and ${request.nextId}, rev ${request.rev}, ` +
-            `team ${request.team.length > 0 ? "set" : "MISSING"}. ` +
-            `The worker may predate this feature \u2014 reload the extension and retry.`,
+            `team ${request.team.length > 0 ? "set" : "MISSING"}.`,
         );
-        return { ok: false, error: "no response from the background worker" };
+        return { ok: false, error: problem };
       }
 
       if (!response.ok) {

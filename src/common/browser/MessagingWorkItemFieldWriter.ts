@@ -10,6 +10,7 @@ import {
   type UpdateWorkItemFieldMessage,
   type UpdateWorkItemFieldResponse,
 } from "./WorkItemFieldRequest";
+import { workerReplyProblem } from "./workerReply";
 
 /** Sends an update-work-item-field request and resolves the background worker's reply, if any. */
 export type SendUpdateFieldRequest = (
@@ -49,7 +50,7 @@ export class MessagingWorkItemFieldWriter implements IWorkItemFieldWriter {
       const response = await this.send(message);
 
       if (response === undefined || response === null) {
-        this.logger.error(`Work item ${request.id} field write: no response from background.`);
+        this.logger.error(`Work item ${request.id} field write: ${workerReplyProblem(response)}.`);
         return { ok: false };
       }
 

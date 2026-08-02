@@ -158,6 +158,50 @@ const theme = await requestFromTab<AdoThemeResponse, AdoTheme | null>(
 );
 ```
 
+## Serving a content-side request from the sender's own tab
+
+### `tabRequestListener(logger, handler)` — `tabRequestListener.ts`
+
+Builds the `chrome.runtime.onMessage` listener the service worker registers for one credentialed ADO
+operation. Every such operation follows the same three rules, and all three are easy to get subtly
+wrong once per message type — so they are written here once:
+
+1. **The sender's tab is the trust boundary.** A request URL is derived from the tab the message
+   arrived from, never from a URL the content side supplied. That is what keeps each operation a
+   closed "do this one thing here" rather than a fetch-anywhere proxy carrying the user's session, so
+   a message with no scriptable sender tab cannot be served at all.
+2. **A claimed message is always answered.** Ignoring a malformed request reaches the caller as the
+   uninformative "no response from background", indistinguishable from a worker with no handler.
+3. **The message channel is held open** (`return true`) for the async reply, and only then.
+
+A handler supplies only what is specific to it:
+
+| Member         | Meaning                                                                                 |
+| -------------- | --------------------------------------------------------------------------------------- |
+| `claims`       | Whether the message is this handler's; anything else is left for the next listener.     |
+| `malformed`    | Optional. The refusal for a claimed message that cannot be served as sent, or `null`.   |
+| `unscriptable` | The refusal for a message that did not arrive from a scriptable ADO tab.                |
+| `serve`        | Serves the request as `(message, tabId, tabUrl)`, against the sender's own trusted tab. |
+| `announce`     | Optional. A line recorded when the request is accepted, before it is served.            |
+
+A refusal is `{ log, response }`: what the diagnostics log records, and what the caller is told.
+
+```typescript
+chrome.runtime.onMessage.addListener(
+  tabRequestListener<LoadQueryTreeMessage, LoadQueryTreeResponse>(logger, {
+    claims: isLoadQueryTreeMessage,
+    unscriptable: (message) => ({
+      log: `Cannot load query tree for ${message.queryId}: message has no sender tab.`,
+      response: { raw: null },
+    }),
+    serve: loadQueryTree,
+  }),
+);
+```
+
+It returns the listener rather than registering it, so the rules are testable without a `chrome`
+runtime and the composition root keeps one `addListener` call per operation.
+
 ## Reading the active ADO tab
 
 ### `IAdoTabReader` (interface)

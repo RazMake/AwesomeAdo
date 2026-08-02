@@ -34,6 +34,13 @@ source AND ADO's own rendering) plus the pure windowing rules — `noteWindowSta
 `fetchWorkItemNotes` and the `IWorkItemNoteLoader` / `IWorkItemNoteWriter` contracts split apart
 (Interface Segregation: showing notes and authoring them are different capabilities). See ADR-043.
 
+`workItemTypes.ts` owns every derivation over the configured **type catalog** — the answers that
+decide what a view shows and in which order, so no view can hold its own copy: `workItemTypeColor` /
+`workItemTypeTextColor` (the `#`-prefixed hex, with an unset color reported as `null` rather than a
+bare `#`), the primary-work closures (`primaryWorkTypes`, `primaryWorkWithDescendants`,
+`primaryWorkAncestors`, `primaryWorkWithAncestors`), and `orderTrackedItems` — the ONE adapter
+between a tracked item and `common/ordering`, which stays free of any ADO shape.
+
 ### `src/common/browser`
 
 The **only** place allowed to touch `chrome.*`, plus the browser-adjacent plumbing that pairs with
@@ -61,6 +68,11 @@ Key members:
   `StorageObservation`.
 - `requestFromTab` — the shared best-effort tab round-trip (missing receiver → a fallback value)
   both tab readers use.
+- `tabRequestListener` — the ONE place the service worker's request-serving rules live: the sender's
+  tab is the trust boundary (a URL is derived from it, never supplied by the content side), a
+  claimed message is always answered rather than met with silence, and the message channel is held
+  open only for a request actually being served. Every credentialed operation registers through it,
+  so a new one cannot forget any of the three.
 
 Known cohesion debt: groups 2 and 3 contain no `chrome.*` calls at all — they are message shapes and
 ADO REST bodies. Moving them to `common/messaging` and `common/ado/in-page` is tracked as follow-up
@@ -139,15 +151,17 @@ outside pointer, or Escape. The Sprint title menu can replace the selected sprin
 binding defaults, disabled when none exist. See ADR-063.
 
 `control/ActivityFilter` owns the shared recent-activity pill definitions, OR predicate, and
-session-scoped newest-discussion-date index. `control/MarkerPill/markerPresence` owns configured-tag
-matching. Shared filter pills and Project Tracking's row sprint pills use the compact Feature Crew
+session-scoped newest-discussion-date index. `control/MarkerPill` owns configured-tag matching
+(`markerPresence`), the pill itself, and `MarkerFilterPills` — the ONE marker filter row both views
+render, differing only in which markers they offer and whether they can count them. Shared filter
+pills and Project Tracking's row sprint pills use the compact Feature Crew
 tag geometry; count bubbles fit inside that scale. Sprint marker tags show one total except
 Interrupt, which distinguishes unaccepted work from work accepted during its current tagged
 lifetime and collapses to one total when none are waiting. Every filter pill stays at full opacity, and
 `renderFilterPillFamilies` separates non-activity from recent-activity pills with `6px` inside each
-wrapping family and `16px` between families. Selected pills use their themed border. Sprint imports
-these shared modules directly; Project Tracking's legacy local paths are thin compatibility exports,
-preserving the eager Sprint / deferred Project Tracking bundle split.
+wrapping family and `16px` between families. Selected pills use their themed border. Both views
+import these shared modules directly, preserving the eager Sprint / deferred Project Tracking bundle
+split.
 
 Item-level marker pills in both views use `marker-reasons` to pre-check Discussion notes beginning
 with that marker's configured comment token. A matching result becomes a tooltip-free opener; no
@@ -158,7 +172,7 @@ item type hue while blending toward the active theme's primary foreground for re
 `control/DragReorder` owns the DOM controller, themed insertion indicator, and pure neighbour-based
 placement math shared by Project Tracking rows and Sprint direct-child popups. Views register only
 the rows they permit to move and retain ownership of persistence and model mutation. Project
-Tracking's legacy drag-reorder paths are compatibility exports; its tree mutation remains local.
+Tracking's tree mutation (`drag-reorder/applyMoveToTree`) remains local, because only a tree has one.
 
 ### `src/common/ordering`
 
@@ -322,6 +336,19 @@ extension in a real browser.
 - **Synced-storage observation** lives once in `observeStorageKeys`. The settings store, the bindings
   store and the diagnostics log store all delegate to it, so the subtle race logic cannot drift
   between them (ADR-036).
+- **Serving a content-side request in the worker** lives once in `tabRequestListener`: the sender's
+  tab as the trust boundary, always answering a claimed message, and holding the channel open. Every
+  credentialed operation in `background/index.ts` registers through it.
+- **ISO timestamp → epoch milliseconds** lives once in `common/datetime/isoEpoch`, so "no timestamp"
+  cannot mean `NaN` in one comparator and `0` in the next.
+- **Type-catalog derivations** (a type's color, which types are primary work / its ancestors / its
+  descendants, and how an item is adapted to an ordering policy) live once in
+  `common/ado/workItemTypes`, shared by both views.
+- **Filter pills a view shares** are one control each, configured per view rather than re-rendered:
+  `MarkerPill/MarkerFilterPills` (Sprint supplies counts, Project Tracking does not),
+  `ActivityFilter/ActivityFilterPanel`, `AreaPathFilter`, `SprintPicker`, `OrderingPicker`,
+  `WriteQueueStatus`, `DragReorder`. Views own their own selection state; the controls stay
+  stateless about it.
 - **The ADO REST API version** lives once in `common/ado/adoApi.ts` (`ADO_API_VERSION`); every URL
   builder derives from it, so a read and the write beside it cannot target different API versions.
 - **"Which URLs are ADO"** lives once in `AdoHost` (predicate + match patterns). The route parser,
