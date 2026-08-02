@@ -123,6 +123,15 @@ describe("createItemContextMenu opening", () => {
 });
 
 describe("createItemContextMenu commands", () => {
+  it("can show only the standard commands selected by the caller", () => {
+    menu.openAt(rightClick(), {
+      id: 0,
+      url: "https://dev.azure.com/example/project/_queries/query/id",
+      standardCommands: ["copy-url"],
+    });
+
+    expect(commands().map((entry) => entry.textContent)).toEqual(["Copy ADO Url"]);
+  });
   const url = "https://dev.azure.com/o/p/_workitems/edit/42";
 
   it("copies the item id and closes", () => {
@@ -258,7 +267,82 @@ describe("createItemContextMenu with the caller's own commands", () => {
     expect(run).toHaveBeenCalledTimes(1);
     expect(mount.querySelector(".awesomeado-item-menu")).toBeNull();
   });
+});
 
+describe("createItemContextMenu checkbox commands", () => {
+  it("keeps an inline checkbox open until the sibling command button runs", () => {
+    const onChange = vi.fn();
+    const run = vi.fn();
+    openWithCommands([
+      {
+        label: "Tag with Interrupt",
+        checkbox: { label: "Accepted", onChange },
+        run,
+      },
+    ]);
+
+    const checkbox = mount.querySelector<HTMLInputElement>(".awesomeado-item-menu__checkbox")!;
+    const box = mount.querySelector<HTMLElement>(".awesomeado-item-menu__checkbox-box")!;
+    const tick = mount.querySelector<HTMLElement>(".awesomeado-item-menu__checkbox-tick")!;
+    const control = mount.querySelector<HTMLElement>(".awesomeado-item-menu__checkbox-control")!;
+    const background = box.style.background;
+    expect(checkbox.closest("button")).toBeNull();
+    expect(control.style.width).toBe("14px");
+    expect(control.style.height).toBe("14px");
+    expect(box.style.border).toBe("1px solid var(--control-border-strong)");
+    checkbox.focus();
+    expect(checkbox.style.outline).toBe("none");
+    expect(box.style.outline).toBe("");
+    expect(tick.style.visibility).toBe("hidden");
+    expect(tick.style.color).toBe("var(--completion-foreground)");
+    expect(tick.style.fontSize).toBe("14px");
+    checkbox.click();
+
+    expect(onChange).toHaveBeenCalledWith(true);
+    expect(box.style.background).toBe(background);
+    expect(tick.style.visibility).toBe("visible");
+    expect(run).not.toHaveBeenCalled();
+    expect(mount.querySelector(".awesomeado-item-menu")).not.toBeNull();
+
+    command(3).click();
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(mount.querySelector(".awesomeado-item-menu")).toBeNull();
+  });
+
+  it("highlights the complete checkbox row while keeping the checkbox action separate", () => {
+    const run = vi.fn();
+    openWithCommands([
+      { label: "Tag with Interrupt", checkbox: { label: "Accepted", onChange: vi.fn() }, run },
+    ]);
+    const wrapper = mount.querySelector<HTMLElement>(".awesomeado-item-menu__checkbox-command")!;
+    const checkbox = wrapper.querySelector<HTMLInputElement>("input")!;
+
+    wrapper.dispatchEvent(new MouseEvent("mouseenter"));
+    expect(wrapper.style.background).toBe("var(--control-background-hover)");
+    checkbox.click();
+    expect(run).not.toHaveBeenCalled();
+    wrapper.dispatchEvent(new MouseEvent("mouseleave"));
+    expect(wrapper.style.background).toBe("transparent");
+  });
+
+  it("closes on Escape while the Accepted checkbox has focus", () => {
+    openWithCommands([
+      {
+        label: "Tag with Interrupt",
+        checkbox: { label: "Accepted", onChange: vi.fn() },
+        run: vi.fn(),
+      },
+    ]);
+    const checkbox = mount.querySelector<HTMLInputElement>(".awesomeado-item-menu__checkbox")!;
+    checkbox.focus();
+
+    checkbox.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+
+    expect(mount.querySelector(".awesomeado-item-menu")).toBeNull();
+  });
+});
+
+describe("createItemContextMenu command presentation", () => {
   it("paints a command with the declarations it was given", () => {
     openWithCommands([{ label: "Next sprint", declarations: [["color", "rgb(1, 2, 3)"]] }]);
 

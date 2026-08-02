@@ -88,13 +88,18 @@ export function renderTextEditor(doc: Document, options: TextEditorOptions): HTM
   root.append(fieldShell, buttons);
 
   let saving = false;
+  const refreshSubmit = (): void => {
+    const hasRequiredText = options.allowEmpty === true || input.value.trim().length > 0;
+    submit.disabled = saving || !hasRequiredText;
+  };
+  refreshSubmit();
   const save = (): void => {
     const typed = input.value.trim();
     if (saving || (typed.length === 0 && options.allowEmpty !== true)) {
       return;
     }
     saving = true;
-    submit.disabled = true;
+    refreshSubmit();
     cancel.disabled = true;
     failure.style.display = "none";
     // The box shows each mention as the person's NAME; what ADO stores has to be the identity
@@ -107,52 +112,65 @@ export function renderTextEditor(doc: Document, options: TextEditorOptions): HTM
       }
       // The caller keeps the editor mounted on failure, so re-enable it rather than leaving the
       // author looking at their own unsaved words behind dead buttons.
-      submit.disabled = false;
+      refreshSubmit();
       cancel.disabled = false;
       failure.textContent = "Not saved — see the diagnostics log.";
       failure.style.display = "inline";
     });
   };
 
-  submit.addEventListener("click", save);
-  cancel.addEventListener("click", () => options.onCancel());
-  // Typed through `HTMLElement` because a `<input> | <textarea>` union collapses `addEventListener`
-  // onto its bare-`Event` overload, which knows nothing about keys.
+  wireEditorEvents({
+    input,
+    submit,
+    cancel,
+    singleLine,
+    mentionSuggestions,
+    mentionHighlight,
+    save,
+    refreshSubmit,
+    onCancel: options.onCancel,
+  });
+
+  return root;
+}
+
+function wireEditorEvents(options: {
+  input: HTMLInputElement | HTMLTextAreaElement;
+  submit: HTMLButtonElement;
+  cancel: HTMLButtonElement;
+  singleLine: boolean;
+  mentionSuggestions: MentionSuggestions | null;
+  mentionHighlight: MentionHighlight | null;
+  save(): void;
+  refreshSubmit(): void;
+  onCancel(): void;
+}): void {
+  const { input } = options;
+  options.submit.addEventListener("click", options.save);
+  options.cancel.addEventListener("click", options.onCancel);
   (input as HTMLElement).addEventListener("keydown", (event) => {
-    if (mentionSuggestions?.handleKeydown(event) === true) {
-      event.stopPropagation();
-      return;
-    }
-    if (!singleLine && applyMarkdownShortcut(event, input)) {
-      event.stopPropagation();
-      return;
-    }
-    // A bare Enter commits a one-line field (there is no newline to insert) but must not commit a
-    // Markdown box, where it is how paragraphs are written.
-    if (event.key === "Enter" && (singleLine || event.ctrlKey || event.metaKey)) {
+    if (options.mentionSuggestions?.handleKeydown(event) === true) return event.stopPropagation();
+    if (!options.singleLine && applyMarkdownShortcut(event, input)) return event.stopPropagation();
+    if (event.key === "Enter" && (options.singleLine || event.ctrlKey || event.metaKey)) {
       event.preventDefault();
-      save();
+      options.save();
     } else if (event.key === "Escape") {
       event.preventDefault();
       options.onCancel();
     }
-    // Typing inside an enhanced view must never reach ADO's page shortcuts underneath it.
     event.stopPropagation();
   });
-  if (!singleLine) {
+  if (!options.singleLine) {
     (input as HTMLTextAreaElement).addEventListener("paste", (event) =>
       pasteMarkdownLink(event, input),
     );
-    input.addEventListener("input", () => {
-      mentionSuggestions?.refresh();
-      mentionHighlight?.refresh();
-    });
   }
-
-  // Deferred so the element is in the document before it is asked to take focus.
+  input.addEventListener("input", () => {
+    options.mentionSuggestions?.refresh();
+    options.mentionHighlight?.refresh();
+    options.refreshSubmit();
+  });
   setTimeout(() => input.focus(), 0);
-
-  return root;
 }
 
 /**

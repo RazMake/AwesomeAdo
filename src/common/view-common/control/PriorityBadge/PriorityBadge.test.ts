@@ -79,4 +79,23 @@ describe("renderPriorityBadge", () => {
     expect(chipOf(badge).style.background).toBe("var(--priority-background)");
     expect(chipOf(badge).style.color).toBe("var(--priority-high-foreground)");
   });
+
+  it("can become read-only and editable again without changing its value", () => {
+    const badge = renderPriorityBadge(document, { priority: 2 });
+    document.body.append(badge);
+    const chip = chipOf(badge);
+
+    badge.setEditable(false);
+    expect(chip.disabled).toBe(true);
+    expect(chip.getAttribute("aria-disabled")).toBe("true");
+    expect(chip.style.cursor).toBe("default");
+    chip.click();
+    expect(badge.querySelector(".awesomeado-priority__popup")).toBeNull();
+
+    badge.setEditable(true);
+    expect(chip.disabled).toBe(false);
+    chip.click();
+    expect(badge.querySelector(".awesomeado-priority__popup")).not.toBeNull();
+    expect(chip.textContent).toContain("P2");
+  });
 });

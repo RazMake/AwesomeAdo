@@ -35,6 +35,7 @@ row.append(
 | `title`       | Tooltip — normally the Azure DevOps tag the team configured for this marker.           |
 | `interactive` | Renders a `<button>` toggle instead of a static `<span>` label (default `false`).      |
 | `selected`    | When interactive, whether the pill is part of the active filter (themed ring).         |
+| `accepted`    | Interrupt only: solid accepted paint; false uses the muted raised paint.               |
 | `counts`      | Optional tag total and Interrupt accepted-in-sprint count, using shared pill geometry. |
 | `onToggle`    | When interactive, called on click; the caller flips its own selection and re-renders.  |
 
@@ -53,5 +54,10 @@ callers that need the text alone (a tooltip, a log line).
   under a readable contrast ratio, so that pill carries near-black instead.
 - **The pill never reads settings.** It is told which marker to paint; the caller supplies the
   configured Azure DevOps tag as the tooltip.
+- **Accepted and raised Interrupts are intentionally distinct.** Accepted uses the solid bright
+  Interrupt purple. Raised uses a 24% purple fill with a 1px bright-purple edge. Item and menu pills
+  use their real state; Interrupt filter pills always use the accepted solid paint because they
+  represent the condition as a whole rather than one item's acceptance state.
 - **Count presentation follows marker semantics.** Normal markers show one tag total. Interrupt
-  shows not-yet-accepted and accepted-in-sprint counts when both groups exist, otherwise one total.
+  shows not-yet-accepted and current-lifetime accepted counts when both groups exist, otherwise one
+  total.

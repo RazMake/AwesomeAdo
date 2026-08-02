@@ -22,6 +22,7 @@ const sharedBindings: QueryBindings = {
 function makeElements(): TeamConfigElements {
   return {
     workItemId: document.createElement("input"),
+    workItemLink: document.createElement("a"),
     connectButton: document.createElement("button"),
     pullButton: document.createElement("button"),
     publishButton: document.createElement("button"),
@@ -66,6 +67,10 @@ function makeHarness(initialSource: number | null = null) {
   const elements = makeElements();
   const errors: unknown[] = [];
   const onPulled = vi.fn();
+  const resolveWorkItemUrl = vi.fn(
+    async (workItemId: number) =>
+      `https://dev.azure.com/Contoso/Project/_workitems/edit/${workItemId}`,
+  );
   const synchronizer = new TeamConfigSynchronizer(
     sourceStore,
     reader,
@@ -80,6 +85,7 @@ function makeHarness(initialSource: number | null = null) {
     elements,
     (error) => errors.push(error),
     onPulled,
+    resolveWorkItemUrl,
   );
   return {
     controller,
@@ -91,18 +97,27 @@ function makeHarness(initialSource: number | null = null) {
     elements,
     errors,
     onPulled,
+    resolveWorkItemUrl,
   };
 }
 
 const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
-describe("TeamConfigController connection", () => {
+describe("TeamConfigController connection rendering", () => {
   it("loads a saved source and enables team actions", async () => {
     const harness = makeHarness(42);
 
     await harness.controller.init();
 
     expect(harness.elements.workItemId.value).toBe("42");
+    expect(harness.elements.workItemId.hidden).toBe(true);
+    expect(harness.elements.workItemLink.hidden).toBe(false);
+    expect(harness.elements.workItemLink.textContent).toBe("42");
+    expect(harness.elements.workItemLink.href).toBe(
+      "https://dev.azure.com/Contoso/Project/_workitems/edit/42",
+    );
+    expect(harness.elements.workItemLink.target).toBe("_blank");
+    expect(harness.elements.workItemLink.rel).toBe("noopener noreferrer");
     expect(harness.elements.connectButton.textContent).toBe("Connected");
     expect(harness.elements.connectButton.disabled).toBe(true);
     expect(harness.elements.pullButton.disabled).toBe(false);
@@ -116,10 +131,14 @@ describe("TeamConfigController connection", () => {
     await harness.controller.init();
 
     expect(harness.elements.connectButton.textContent).toBe("Connect");
+    expect(harness.elements.workItemId.hidden).toBe(false);
+    expect(harness.elements.workItemLink.hidden).toBe(true);
     expect(harness.elements.connectButton.disabled).toBe(false);
     expect(harness.elements.disconnectButton.disabled).toBe(true);
   });
+});
 
+describe("TeamConfigController connection actions", () => {
   it("connects and applies the authoritative configuration", async () => {
     const harness = makeHarness();
     await harness.controller.init();
@@ -130,6 +149,10 @@ describe("TeamConfigController connection", () => {
 
     expect(harness.sourceStore.write).toHaveBeenCalledWith(42);
     expect(harness.reader.read).toHaveBeenCalledWith(42);
+    expect(harness.elements.workItemId.hidden).toBe(true);
+    expect(harness.elements.workItemLink.href).toBe(
+      "https://dev.azure.com/Contoso/Project/_workitems/edit/42",
+    );
     expect(harness.bindingStore.replaceAll).toHaveBeenCalledWith(sharedBindings);
     expect(harness.onPulled).toHaveBeenCalledOnce();
     expect(harness.elements.status.textContent).toContain("Pulled 1 enhanced query");

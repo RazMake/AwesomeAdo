@@ -40,8 +40,8 @@ const host = createPopupHost({
   Set `false` for a popup that can hold an editor: there, Escape is how the author abandons what they
   are typing, and dismissing the whole surface on the same keystroke takes the editor away with
   everything around it. The second Escape, with nothing left editing, still closes the popup.
-  Recognized by tag name (`INPUT`, `TEXTAREA`, `contenteditable`), and only for a field **inside** the
-  popup.
+  Recognized as a text input, `TEXTAREA`, or `contenteditable`, and only for a field **inside** the
+  popup. Checkboxes are not editors, so Escape closes their popup immediately.
 
 ### `PopupHost`
 

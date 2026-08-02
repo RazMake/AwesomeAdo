@@ -36,9 +36,17 @@ import {
   type ReconcileFeatureCrewResponse,
 } from "../common/browser/FeatureCrewRequest";
 import {
+  type ReadInterruptAcceptanceMessage,
+  type ReadInterruptAcceptanceResponse,
+} from "../common/browser/InterruptAcceptanceRequest";
+import {
   MessagingFeatureCrewWriter,
   type SendReconcileRequest,
 } from "../common/browser/MessagingFeatureCrewWriter";
+import {
+  MessagingInterruptAcceptanceReader,
+  type SendInterruptAcceptanceRequest,
+} from "../common/browser/MessagingInterruptAcceptanceReader";
 import {
   MessagingMentionDirectory,
   type SendIdentityNamesRequest,
@@ -55,6 +63,10 @@ import {
   MessagingTeamConfigReader,
   type SendTeamConfigRequest,
 } from "../common/browser/MessagingTeamConfigReader";
+import {
+  MessagingTeamConfigWriter,
+  type SendTeamConfigWriteRequest,
+} from "../common/browser/MessagingTeamConfigWriter";
 import {
   MessagingTeamIterationsLoader,
   type SendIterationsRequest,
@@ -94,6 +106,8 @@ import {
 import {
   type ReadTeamConfigMessage,
   type ReadTeamConfigResponse,
+  type WriteTeamConfigMessage,
+  type WriteTeamConfigResponse,
 } from "../common/browser/TeamConfigRequest";
 import {
   type UpdateWorkItemFieldMessage,
@@ -120,6 +134,7 @@ import {
 } from "../common/settings/ExtensionSettings";
 import { createSettingsStore } from "../common/settings/createSettingsStore";
 import { TeamConfigSynchronizer } from "../common/settings-transfer/TeamConfigSynchronizer";
+import { TeamSprintAreaPathStore } from "../common/settings-transfer/TeamSprintAreaPathStore";
 import { createTeamConfigSourceStore } from "../common/settings-transfer/createTeamConfigSourceStore";
 import type { EnhancedViewServices } from "../common/view-common/EnhancedView";
 
@@ -293,6 +308,16 @@ const noteActivity = new MessagingNoteActivityReader(
   loggers.forSource("content/views"),
 );
 
+const sendInterruptAcceptanceRequest: SendInterruptAcceptanceRequest = (message) =>
+  chrome.runtime.sendMessage<
+    ReadInterruptAcceptanceMessage,
+    ReadInterruptAcceptanceResponse | undefined
+  >(message);
+const interruptAcceptance = new MessagingInterruptAcceptanceReader(
+  sendInterruptAcceptanceRequest,
+  loggers.forSource("content/views"),
+);
+
 const sendNoteWriteRequest: SendNoteWriteRequest = (message) =>
   chrome.runtime.sendMessage<WriteWorkItemNoteMessage, WriteWorkItemNoteResponse | undefined>(
     message,
@@ -312,12 +337,15 @@ const openExtensionPage = (message: OpenOptionsMessage | OpenBindingSettingsMess
   });
 };
 
+let sprintAreaPathStore: TeamSprintAreaPathStore | null = null;
+
 const trackingServices: EnhancedViewServices = {
   loadTree: (queryId, wiql) => treeLoader.loadTree(queryId, wiql),
   loadQueryDefinition: (queryId) => queryDefinitionLoader.load(queryId),
   featureCrew: featureCrewWriter,
   noteLoader,
   noteActivity,
+  interruptAcceptance,
   noteWriter,
   userDirectory,
   mentionDirectory,
@@ -348,6 +376,11 @@ const trackingServices: EnhancedViewServices = {
       pastCount: latestSettings?.pastSprintsCount ?? DEFAULT_SETTINGS.pastSprintsCount,
       futureCount: latestSettings?.futureSprintsCount ?? DEFAULT_SETTINGS.futureSprintsCount,
     });
+  },
+  sprintAreaPaths: {
+    read: () =>
+      sprintAreaPathStore?.read() ?? Promise.resolve({ defaultAreaPaths: [], sprintAreaPaths: {} }),
+    save: (sprintAreaPaths) => sprintAreaPathStore?.save(sprintAreaPaths) ?? Promise.resolve(false),
   },
   loadTeamMembers: () => {
     const team = latestSettings?.currentTeam ?? null;
@@ -394,11 +427,19 @@ const teamConfigSourceStore = createTeamConfigSourceStore(
 );
 const sendTeamConfigRequest: SendTeamConfigRequest = (message) =>
   chrome.runtime.sendMessage<ReadTeamConfigMessage, ReadTeamConfigResponse | undefined>(message);
+const sendTeamConfigWriteRequest: SendTeamConfigWriteRequest = (message) =>
+  chrome.runtime.sendMessage<WriteTeamConfigMessage, WriteTeamConfigResponse | undefined>(message);
 const teamConfig = new TeamConfigSynchronizer(
   teamConfigSourceStore,
   new MessagingTeamConfigReader(sendTeamConfigRequest),
   store,
   bindingStore,
+  loggers.forSource("common/settings-transfer"),
+);
+sprintAreaPathStore = new TeamSprintAreaPathStore(
+  store,
+  teamConfig,
+  new MessagingTeamConfigWriter(sendTeamConfigWriteRequest),
   loggers.forSource("common/settings-transfer"),
 );
 const pullTeamConfigForQuery = (url: string): void => {

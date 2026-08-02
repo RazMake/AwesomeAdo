@@ -30,6 +30,7 @@ const REQUIRED_ELEMENT_IDS: readonly string[] = [
   "settings-transfer-status",
   // Team configuration
   "team-config-work-item-id",
+  "team-config-work-item-link",
   "team-config-connect",
   "team-config-pull",
   "team-config-publish",

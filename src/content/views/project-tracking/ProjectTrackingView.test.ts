@@ -99,6 +99,13 @@ function createFakeServices(overrides?: Partial<EnhancedViewServices>): Enhanced
     noteActivity: {
       readNoteActivity: async () => ({ activity: [], error: null }),
     },
+    interruptAcceptance: {
+      readInterruptAcceptance: async () => ({
+        acceptedWorkItemIds: [],
+        failedWorkItemIds: [],
+        error: null,
+      }),
+    },
     noteWriter: {
       addNote: async () => ({ ok: true }),
       editNote: async () => ({ ok: true }),
@@ -1811,7 +1818,13 @@ describe("ProjectTrackingView — blocked marker pills", () => {
         return element.querySelector(".awesomeado-marker-pill")?.getAttribute("data-marker");
       });
 
-    expect(inlineOrder).toEqual(["assigned", "blocked", "blockedByOtherTeam", "sprint"]);
+    expect(inlineOrder).toEqual([
+      "assigned",
+      "blocked",
+      "blockedByOtherTeam",
+      "interrupt",
+      "sprint",
+    ]);
   });
 });
 
@@ -5057,6 +5070,13 @@ function markerCommand(root: HTMLElement, verb: string): HTMLButtonElement {
   return commandNamed(root, verb);
 }
 
+function submitMarkerReason(root: HTMLElement, text: string): void {
+  const { input, save } = editorIn(root);
+  input.value = text;
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  save.click();
+}
+
 /** The marker pills on the board's filter row (never the one drawn inside a menu command). */
 const filterMarkerPills = (root: HTMLElement): HTMLButtonElement[] => [
   ...root.querySelectorAll<HTMLButtonElement>(
@@ -5095,9 +5115,7 @@ describe("ProjectTrackingView - flagging an item from its menu", () => {
     const { root, writes, notes } = await renderFlaggedBoard([]);
 
     markerCommand(root, "Tag with Blocked (internal)").click();
-    const { input, save } = editorIn(root);
-    input.value = "Waiting on the API.";
-    save.click();
+    submitMarkerReason(root, "Waiting on the API.");
     await settleWrites();
 
     expect(writes).toEqual([
@@ -5117,9 +5135,7 @@ describe("ProjectTrackingView - flagging an item from its menu", () => {
     const { root, writes } = await renderFlaggedBoard(["Blocked"]);
 
     markerCommand(root, "Tag with Blocked by another team").click();
-    const { input, save } = editorIn(root);
-    input.value = "Handed to Platform.";
-    save.click();
+    submitMarkerReason(root, "Handed to Platform.");
     await settleWrites();
 
     expect(writes[0]).toMatchObject({
@@ -5132,9 +5148,7 @@ describe("ProjectTrackingView - flagging an item from its menu", () => {
     const { root, writes } = await renderFlaggedBoard(["Blocked"]);
 
     markerCommand(root, "Tag with Blocked by another team").click();
-    const { input, save } = editorIn(root);
-    input.value = "Handed to Platform.";
-    save.click();
+    submitMarkerReason(root, "Handed to Platform.");
     await settleWrites();
 
     // A drag-reorder or a note advances System.Rev without reporting it, so without the base value
@@ -5151,9 +5165,7 @@ describe("ProjectTrackingView - flagging an item from its menu", () => {
     });
 
     markerCommand(root, "Tag with Blocked (internal)").click();
-    const { input, save } = editorIn(root);
-    input.value = "Waiting on the API.";
-    save.click();
+    submitMarkerReason(root, "Waiting on the API.");
     await settleWrites();
 
     // One patch means one outcome: the reason and the tag were refused together, so there is nothing
@@ -5221,9 +5233,7 @@ describe("ProjectTrackingView - clearing a flag and unconfigured markers", () =>
     });
 
     markerCommand(root, "Tag with Blocked (internal)").click();
-    const { input, save } = editorIn(root);
-    input.value = "Waiting on the API.";
-    save.click();
+    submitMarkerReason(root, "Waiting on the API.");
     await settleWrites();
 
     expect(writes[0]?.comment).toBe("Waiting on the API.");

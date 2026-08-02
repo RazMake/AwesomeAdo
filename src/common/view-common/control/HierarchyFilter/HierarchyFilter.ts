@@ -153,6 +153,11 @@ function matchingItems(
   return items.filter((item) => visibleIds.has(item.id));
 }
 
+/** Retain the work-item type hue while pulling its text toward each theme's readable foreground. */
+function readableTypeColor(color: string): string {
+  return `color-mix(in srgb, ${color} 60%, var(--text-primary-color))`;
+}
+
 /** Build one indented radio row. */
 function renderRow(
   doc: Document,
@@ -177,10 +182,11 @@ function renderRow(
     "min-width:0",
     "padding:6px 8px",
     "border-radius:4px",
+    "font-weight:600",
     "cursor:pointer",
   ].join(";");
   label.style.paddingLeft = `${8 + depth * 18}px`;
-  if (color !== undefined) label.style.color = color;
+  if (color !== undefined) label.style.color = readableTypeColor(color);
   const radio = doc.createElement("input");
   radio.type = "radio";
   radio.name = "awesomeado-project-filter";
@@ -268,11 +274,20 @@ export function renderHierarchyFilter(
     doc,
     trigger,
     mountInto: root,
-    interactive: options.items.length > 0,
+    interactive: false,
     buildPopup: (close) =>
       renderPopup({ doc, items: options.items, selectedId, select: changed, close }),
     onOpened: (popup) => popup.querySelector<HTMLInputElement>("input[type=search]")?.focus(),
   });
+  if (options.items.length > 0) {
+    trigger.addEventListener("click", () => {
+      if (selectedId !== null) {
+        changed(null);
+        return;
+      }
+      popupHost.toggle();
+    });
+  }
 
   return {
     element: root,

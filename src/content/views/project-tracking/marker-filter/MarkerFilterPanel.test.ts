@@ -51,6 +51,13 @@ describe("renderMarkerFilterPills", () => {
     expect(pills[1]?.style.opacity).toBe("1");
   });
 
+  it("always uses the accepted paint for an Interrupt filter", () => {
+    const interrupt = renderPills(["interrupt"]).pills[0]!;
+
+    expect(interrupt.dataset.accepted).toBe("true");
+    expect(interrupt.style.background).toBe("var(--marker-interrupt-background)");
+  });
+
   it("adds a marker to the selection on click and reports the change", () => {
     const { pills, selection, onChange } = renderPills(["blocked"]);
 

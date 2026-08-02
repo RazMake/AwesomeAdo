@@ -47,7 +47,7 @@ This is a flattened snapshot of what exists now, not a build log.
   those controls and child ordering read-only after expansion. Completion repaints preserve the open
   popup, and the card controller does not cancel bubbled child title drags. Lane names are larger and
   their counts are muted. Tall cards show
-  recognized tags and a clickable immediate-parent type icon/title whose popup lists the
+  clickable recognized tags that open their configured-token Discussion notes and a clickable immediate-parent type icon/title whose popup lists the
   type-colored ancestor chain from root to immediate parent with ETA controls, read-only for a Done
   card. Cards move only between state columns in their current lane using a custom 90%-opaque
   cursor clone that retains the source card's original resolved background; the source card remains
@@ -57,20 +57,31 @@ This is a flattened snapshot of what exists now, not a build log.
   destination with title highlight only. One serialized action coordinates state and rank; same-cell
   moves use an insertion line, while cross-lane drops are rejected. Lane choices include only represented leaf area paths. Project
   choices are limited to planning-parent types above Primary work on ancestor chains of currently
-  eligible sprint work, prefixed by type icons, colored by type, and searchable by title without dropping matching parents;
+  eligible sprint work, prefixed by type icons, colored by type with stronger themed contrast, and searchable by title without dropping matching parents;
   long labels use available viewport width before truncating. Team and
   marker pills use compact counters with hover explanations. Member and Unassigned totals count only
   Primary work and its recursively configured child types. Marker pills show one total except Interrupt's waiting /
-  accepted split; every pill matches Project Tracking's Feature Crew tag scale, Unassigned is
+  accepted-current-lifetime split; every pill matches Project Tracking's Feature Crew tag scale, Unassigned is
   derived from the loaded work. Sprint changes replace the DOM/session, reset all filters, and
   reload team members, work, Lane choices, and Project choices. Both views keep filter pills at full opacity and distinguish non-activity from
-  recent-activity pills with a larger gap between wrapping families.
-- **Area-path filtering** (`common/view-common/control/AreaPathFilter` + Project Tracking): the live
+  recent-activity pills with a larger gap between wrapping families. The title context menu copies
+  the query URL; only past sprints can bulk-move a confirmed snapshot of visible, assigned,
+  non-Done Primary-work cards to a current/future sprint, with Lane/assignee summaries, atomic
+  State/Lane/assignee guards, retries, cancellation, leave protection, and bounded passes. Cards and direct
+  children share Project Tracking item commands plus Sprint-only Interrupt Tag/Accept/Clear actions;
+  the inline checkbox previews acceptance, while accepting opens the shared titled Markdown/mention
+  editor and requires a non-empty reason. The token, reason, and tag share one patch. Accepted and
+  raised item pills use muted purple with a 1px bright edge while accepted pills use solid purple.
+  Both card sizes expose Priority (compact Done read-only)
+  and the shared `?` popup, which wraps long content and scrolls vertically only. Project Tracking uses the same
+  latest-tag-lifetime acceptance state without exposing Interrupt mutation commands.
+- **Area-path filtering** (`common/view-common/control/AreaPathFilter` + both views): the live
   tree hydrates `System.AreaPath`; a compact themed header popup selects full paths using shortest
-  unique display suffixes, and the session-scoped selection narrows the board without persisting.
+  unique display suffixes. Project Tracking keeps session state. Sprint loads configured defaults
+  plus its dated team-shared per-sprint selection on load/refresh/sprint change and auto-publishes
+  changes; the newest ten past sprint records are retained.
   The item right-click menu reuses the same eligible paths and labels to change `System.AreaPath`,
-  omitting the item's current value and showing complete paths as tooltips. No pinned area-path
-  setting is needed; Sprint View and Project Tracking derive choices from their loaded work items.
+  omitting the item's current value and showing complete paths as tooltips.
 - **Markdown authoring** (`common/view-common/control/TextEditor`): shared bold/italic/link shortcuts
   and keyboard-driven ADO `@`-mention insertion across note/comment and description editors; inline
   notes and New notes activity omit configured marker-comment prefixes while View all stays complete.
@@ -80,7 +91,7 @@ This is a flattened snapshot of what exists now, not a build log.
 - **Team configuration sharing** (`common/settings-transfer`, `common/browser`, and Options): one
   same-organization ADO work item Description is the permissioned full-config source; clients
   automatically pull it on saved-query entry and editors explicitly publish with revision conflict
-  protection.
+  protection. The connected read-only work item ID links directly to that item in ADO.
 - **Navigation** (`src/common/navigation`): `AdoHost` single-source host matching, query-route and
   identity parsing, navigation + theme + query-name message contracts, `NavigationNotifier`.
 - **Browser isolation** (`src/common/browser`): `ChromeSyncStorage`, the two ADO tab readers, and

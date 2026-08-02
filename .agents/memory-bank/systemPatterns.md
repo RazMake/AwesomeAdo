@@ -105,6 +105,12 @@ identity reference rather than display text. Project Tracking's inline note glan
 activity index omit source text beginning with configured marker `commentTag` prefixes; View all
 notes remains complete. See ADR-051.
 
+`control/ItemDetails` owns the shared `?` button paint plus Created / Last Modified / sanitized
+description content. Project Tracking places that content inline; Sprint cards place it in a popup,
+including compact Done cards. Sprint constrains that popup to a useful 280–380px width, wraps rich
+content (including code and tables), suppresses horizontal scrolling, and caps height with vertical
+scrolling.
+
 `control/AreaPathFilter` is the shared compact full-path multi-select. Callers exchange complete ADO
 area paths with it; the control alone derives shortest unique suffix labels by growing an ambiguous
 leaf one parent at a time. Project Tracking offers only paths represented by descendants that survive
@@ -114,16 +120,30 @@ filter group without turning a transient reading position into synced configurat
 item's current path, exposes each full path as a tooltip, and persists `System.AreaPath` through the
 board's shared write queue. See ADR-053.
 
+Sprint uses the same control over represented leaf paths, but its selection is team configuration,
+not reading position. `settings/SprintAreaPaths` normalizes defaults and dated per-iteration records,
+materializes defaults so later removal never deselects an existing sprint, and keeps the newest ten
+completed records. `TeamSprintAreaPathStore` pulls before each Sprint load/refresh/switch and
+serializes save-plus-publish through the connected configuration work item. Checkbox changes remain
+open for multi-selection; Sprint persists each change and repaints once the popup closes by trigger,
+outside pointer, or Escape. See ADR-063.
+
 `control/ActivityFilter` owns the shared recent-activity pill definitions, OR predicate, and
 session-scoped newest-discussion-date index. `control/MarkerPill/markerPresence` owns configured-tag
 matching. Shared filter pills and Project Tracking's row sprint pills use the compact Feature Crew
 tag geometry; count bubbles fit inside that scale. Sprint marker tags show one total except
-Interrupt, which distinguishes query work waiting outside the selected sprint from work accepted
-into it and collapses to one total when none are waiting. Every filter pill stays at full opacity, and
+Interrupt, which distinguishes unaccepted work from work accepted during its current tagged
+lifetime and collapses to one total when none are waiting. Every filter pill stays at full opacity, and
 `renderFilterPillFamilies` separates non-activity from recent-activity pills with `6px` inside each
 wrapping family and `16px` between families. Selected pills use their themed border. Sprint imports
 these shared modules directly; Project Tracking's legacy local paths are thin compatibility exports,
 preserving the eager Sprint / deferred Project Tracking bundle split.
+
+Item-level marker pills in both views use `marker-reasons` to pre-check Discussion notes beginning
+with that marker's configured comment token. A matching result becomes a tooltip-free opener; no
+match remains inert with `No notes`. Every focused row hides its configured marker token from
+display while retaining the complete source. Sprint's Project hierarchy labels keep each work
+item type hue while blending toward the active theme's primary foreground for readable contrast.
 
 `control/DragReorder` owns the DOM controller, themed insertion indicator, and pure neighbour-based
 placement math shared by Project Tracking rows and Sprint direct-child popups. Views register only
@@ -212,7 +232,17 @@ Split into component subfolders (each with its own `README.md`):
   table-wide total is shown. Only explicitly
   configured Primary-work types become cards; each card delegates its
   direct-child progress and level-one popup to the shared `ChildItemsBadge` on large cards only; ID and the tag-free
-  shared `AssignedTo` control occupy the top corners in both card sizes. ETA and child progress share
+  shared `AssignedTo` control occupy the top corners in both card sizes, while the shared `?` details
+  control and Priority chip remain available in either size. Priority is read-only while Done is
+  compact and editable after expansion. The title right-click menu copies the query URL and, only for
+  a past sprint, moves a confirmed snapshot of visible, assigned, non-Done Primary-work cards to a
+  current/future iteration. The dialog summarizes by Lane and assignee; Lane display reuses
+  `shortestUniqueAreaPathLabels` so leaves expand through parents only when they collide. The operation never widens
+  beyond those IDs and atomically guards State, Area Path, and Assigned To before each iteration write.
+  Card and child menus reuse Project
+  Tracking commands and add Sprint-only Interrupt Tag/Accept/Clear actions; a themed inline checkbox
+  previews proposed versus accepted, and acceptance opens the shared titled Markdown/mention editor.
+  The Accept action stays disabled until a reason exists. ETA and child progress share
   the row below the title, aligned left and right. Assigned To and ETA are read-only while a Done card
   is compact and become editable when it expands. The shared top-right ordering picker defaults cards
   and direct child rows to backlog rank and applies title/ETA sorting to both. Child rows use shared

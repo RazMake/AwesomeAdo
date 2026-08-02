@@ -9,6 +9,50 @@ we hit, why they happened, and the exact fix so nobody re-derives them.
 agent-tool-local memory (it does not clone or transfer between machines/agents). Record new findings
 here so every agent, teammate, and clone sees them.
 
+## A bulk move must not rediscover work after confirmation
+
+- RISK: re-running the source WIQL and reapplying whatever filters happen to be current can add work
+  the confirmation never counted, including another team's cards, or make a filter change halfway
+  through alter the operation's meaning.
+- RULE: snapshot only rendered, assigned, non-Done Primary-work card IDs when the dialog opens. Fresh
+  reads may validate those IDs but never add IDs. Atomically test State, Area Path, and Assigned To
+  with the iteration write; a 409/412 gets a full fresh pass, never the primary-field-only rebase.
+- Unassigned, missing, Done, reassigned, or re-laned cards are skipped and reported. The dialog's
+  Lane/assignee counts remain the operation contract from confirmation through completion.
+
+## An old acceptance note must not survive an Interrupt re-tag
+
+- SYMPTOM: an item tagged Interrupt, accepted, untagged, and later tagged again still painted as
+  accepted because the reader looked for any `[ACCEPTED]` note in its history.
+- FIX / RULE: acceptance is scoped to the latest tag-add revision. Page the work-item updates stream
+  by the count actually returned; find the latest `System.Tags` transition from absent to present;
+  then accept only a configured `System.History` token at or after that update's
+  `System.ChangedDate`. Do not use the item's current `ChangedDate`, which moves for unrelated edits.
+- Transport reuses `executeAdoRequestInPage`, so each idempotent page GET gets three bounded retries.
+  Keep failed item IDs separate from unaccepted IDs; inability to read evidence is not evidence of
+  rejection.
+
+## Sprint Lane selections are shared records, not session filters
+
+- `defaultAreaPaths` and dated `sprintAreaPaths` are normal settings, so both file transfer and the
+  compact team work-item payload include them through the existing full-config serializer.
+- A refresh or sprint change must pull before reading. A Lane change must update the selected sprint
+  record and publish through `TeamSprintAreaPathStore`; keeping only `SprintSession.selectedAreaPaths`
+  silently loses the team decision.
+- Materialize defaults into each sprint record. Removing a default then leaves existing sprint
+  selections intact. Prune only records with a known finish date, keeping the newest ten completed
+  sprints plus current/future/undated records.
+
+## Sprint must paint before Interrupt acceptance settles
+
+- LIVE SYMPTOM: tree and roster reads completed, Diagnostics logged `Sprint View loaded`, but the
+  surface stayed on `Loading spring data...` while the current-lifetime acceptance read remained
+  pending.
+- FIX / RULE: acceptance is post-paint enrichment in both views. Sprint starts with empty acceptance
+  state, then generation-guards the asynchronous result and repaints only the still-current sprint.
+  Team-config materialization is likewise fire-and-forget; a shared publish must never hold the board
+  blank.
+
 ## Sprint child popup actions had three independent gaps
 
 - SYMPTOMS: completion initially did nothing; title dragging dimmed the row but never started a

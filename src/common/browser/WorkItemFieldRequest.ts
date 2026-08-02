@@ -1,6 +1,9 @@
 import type {
   AdditionalWorkItemFieldWrite,
   MultilineFieldFormat,
+  WorkItemFieldWriteRequest,
+  WorkItemFieldWriteResult,
+  WorkItemFieldPrecondition,
 } from "../ado/IWorkItemFieldWriter";
 
 /**
@@ -15,44 +18,11 @@ import type {
  */
 export const UPDATE_WORK_ITEM_FIELD_MESSAGE = "awesomeado:update-work-item-field";
 
-export interface UpdateWorkItemFieldMessage {
+export interface UpdateWorkItemFieldMessage extends WorkItemFieldWriteRequest {
   type: typeof UPDATE_WORK_ITEM_FIELD_MESSAGE;
-  id: number;
-  rev: number;
-  /** The ADO field reference name to write (e.g. `System.State` or a type's ETA date field). */
-  field: string;
-  /** The value to set; `null` clears the field. */
-  value: string | null;
-  /** Other validated fields to include in this action's one atomic JSON Patch. */
-  additionalFields?: AdditionalWorkItemFieldWrite[];
-  /**
-   * The storage format to put a MULTILINE field into as part of this write; omitted leaves the
-   * field's current format alone. Constrained to the two ADO accepts so a caller-supplied string can
-   * never reach the patch body — the same closed-operation reasoning as `isFieldReferenceName`.
-   */
-  multilineFormat?: MultilineFieldFormat;
-  /**
-   * A discussion comment recorded as part of the same revision (`System.History`). Markdown — the
-   * patch stores that field as Markdown, so an `@<guid>` mention in it resolves to the person
-   * instead of being HTML-encoded into visible markup.
-   */
-  comment?: string;
-  /**
-   * The value the sender believes `field` currently holds, which authorizes ONE rebase-and-retry
-   * after a stale-rev refusal (see `updateWorkItemFieldInPage`). Omitted means "never rebase".
-   *
-   * Safe to accept from the content side: it can only ever make the patch run against a rev the
-   * SERVER just reported, never widen what the patch does — the field, the value and the pointer are
-   * all still the ones already validated above.
-   */
-  baseValue?: string | null;
 }
 
-export interface UpdateWorkItemFieldResponse {
-  ok: boolean;
-  rev?: number;
-  error?: string;
-}
+export type UpdateWorkItemFieldResponse = WorkItemFieldWriteResult;
 
 /**
  * What the background worker hands the MAIN-world patch: the message's own values plus the update
@@ -64,19 +34,9 @@ export interface UpdateWorkItemFieldResponse {
  * Optional *properties* just disappear when the object is serialized, so this shape stays safe as it
  * grows.
  */
-export interface UpdateWorkItemFieldConfig {
+export interface UpdateWorkItemFieldConfig extends Omit<WorkItemFieldWriteRequest, "id"> {
   /** The item's `_apis/wit/workitems/{id}` endpoint, already resolved from the sender's tab. */
   updateUrl: string;
-  /** The item's last-known rev, asserted by the patch's `test` op. */
-  rev: number;
-  field: string;
-  value: string | null;
-  additionalFields?: AdditionalWorkItemFieldWrite[];
-  multilineFormat?: MultilineFieldFormat;
-  /** Markdown; the patch stores `System.History` in that format so a mention in it resolves. */
-  comment?: string;
-  /** The field's expected current value; supplying it authorizes one rebase after a stale rev. */
-  baseValue?: string | null;
 }
 
 /**
@@ -118,22 +78,32 @@ function isFieldValue(value: unknown): value is string | null {
   return typeof value === "string" || value === null;
 }
 
-/** A small, duplicate-free list of extra field writes keeps this credentialed operation bounded. */
-function isAdditionalFields(
-  value: unknown,
-  primaryField: string | undefined,
-): value is AdditionalWorkItemFieldWrite[] | undefined {
+type FieldEntry = AdditionalWorkItemFieldWrite | WorkItemFieldPrecondition;
+
+function isBoundedFieldList(value: unknown, fields: Set<string>): boolean {
   if (value === undefined) return true;
   if (!Array.isArray(value) || value.length > 8) return false;
-  const fields = new Set(primaryField === undefined ? [] : [primaryField]);
   return value.every((entry: unknown) => {
     if (typeof entry !== "object" || entry === null) return false;
-    const candidate = entry as Partial<AdditionalWorkItemFieldWrite>;
+    const candidate = entry as Partial<FieldEntry>;
     if (!isFieldReferenceName(candidate.field) || !isFieldValue(candidate.value)) return false;
     if (fields.has(candidate.field)) return false;
     fields.add(candidate.field);
     return true;
   });
+}
+
+/** A small, duplicate-free list of extra field writes keeps this credentialed operation bounded. */
+function isAdditionalFields(
+  value: unknown,
+  primaryField: string | undefined,
+): value is AdditionalWorkItemFieldWrite[] | undefined {
+  return isBoundedFieldList(value, new Set(primaryField === undefined ? [] : [primaryField]));
+}
+
+/** A small, duplicate-free list keeps the extra server-side tests bounded. */
+function isPreconditions(value: unknown): value is WorkItemFieldPrecondition[] | undefined {
+  return isBoundedFieldList(value, new Set<string>());
 }
 
 /** The field's expected current value: like a field value, or simply absent ("never rebase"). */
@@ -156,6 +126,7 @@ function hasValidFieldChanges(candidate: Partial<UpdateWorkItemFieldMessage>): b
 
 function hasValidWriteMetadata(candidate: Partial<UpdateWorkItemFieldMessage>): boolean {
   return (
+    isPreconditions(candidate.preconditions) &&
     isMultilineFormat(candidate.multilineFormat) &&
     isComment(candidate.comment) &&
     isBaseValue(candidate.baseValue)

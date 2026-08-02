@@ -301,7 +301,7 @@ board's filters and the tagging commands all share one interpretation of the fie
 
 ### `IWorkItemFieldWriter.ts`
 
-- `WorkItemFieldWriteRequest` — `{ id, rev, field, value, additionalFields? }`; the request to write
+- `WorkItemFieldWriteRequest` — `{ id, rev, field, value, additionalFields?, preconditions? }`; the request to write
   one user action back to Azure DevOps. `field` is the primary ADO field reference name (e.g. `System.State` or a
   type's ETA date field) and `value` is the new value, or `null` to clear the field. Includes the
   item's last-known `rev` as an optimistic-concurrency guard so the PATCH fails when the item was
@@ -311,6 +311,8 @@ board's filters and the tagging commands all share one interpretation of the fie
   what keeps an edit alive across the rev bumps nothing reports back (a drag-reorder, the rank
   fallback, a note posted through the comments API). `additionalFields` carries other field/value
   pairs changed by that same action so all of them land in one guarded JSON Patch and one revision.
+  `preconditions` carries a bounded set of other field/value pairs that must still match; each is a
+  JSON Patch `test` before any write, for actions whose safety depends on more than the primary field.
 - `WorkItemFieldWriteResult` — `{ ok, rev?, error? }`; the result of writing a work item field;
   `ok` indicates success, `rev` is the item's new System.Rev after a successful write, and `error` is
   a short description when `ok` is false.
@@ -453,6 +455,15 @@ timestamp each.
   one odd response must not lose the rest of the board.
 - `MAX_NOTE_ACTIVITY_ITEMS`, `MAX_NOTE_ACTIVITY_PAGES`, and the prefix bounds are runaway guards on
   one bulk ask, not expected user limits.
+
+### `IInterruptAcceptanceReader.ts` + `interruptAcceptance.ts`
+
+Resolves whether each currently Interrupt-tagged item was accepted during its **current** tagged
+lifetime. `isInterruptAccepted` requires a configured acceptance token in `System.History` at or
+after the latest update that added the configured Interrupt tag; equality is valid because tagging
+as accepted writes both in one revision. Failed items are returned separately and never treated as
+unaccepted. `fetchInterruptAcceptance.ts` builds the sender-project-scoped, `$skip`-paged work-item
+updates URL and owns request/page/marker length guards.
 
 ## Usage guidance
 

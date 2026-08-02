@@ -11,6 +11,34 @@ describe("markerLabel", () => {
 });
 
 describe("renderMarkerPill", () => {
+  it("distinguishes raised and accepted Interrupts without changing pill geometry", () => {
+    const raised = renderMarkerPill(document, { marker: "interrupt" });
+    const accepted = renderMarkerPill(document, { marker: "interrupt", accepted: true });
+
+    expect(raised.dataset.accepted).toBe("false");
+    expect(raised.style.background).toBe(
+      "color-mix(in srgb, var(--marker-interrupt-background) 24%, transparent)",
+    );
+    expect(raised.style.color).toBe("var(--marker-interrupt-foreground)");
+    expect(raised.style.border).toBe("1px solid var(--marker-interrupt-background)");
+    expect(accepted.dataset.accepted).toBe("true");
+    expect(accepted.style.background).toBe("var(--marker-interrupt-background)");
+    expect(accepted.style.border).toBe("1px solid transparent");
+    expect(raised.style.padding).toBe(accepted.style.padding);
+  });
+
+  it("keeps the raised edge inside an interactive filter's selection ring", () => {
+    const raised = renderMarkerPill(document, { marker: "interrupt", interactive: true });
+    const accepted = renderMarkerPill(document, {
+      marker: "interrupt",
+      interactive: true,
+      accepted: true,
+    });
+
+    expect(raised.style.boxShadow).toBe("inset 0 0 0 1px var(--marker-interrupt-background)");
+    expect(raised.style.border).toContain("transparent");
+    expect(accepted.style.boxShadow).toBe("");
+  });
   it("renders a static label with the marker's own wording and color", () => {
     const pill = renderMarkerPill(document, { marker: "blocked" });
 

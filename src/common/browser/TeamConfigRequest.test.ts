@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   isReadTeamConfigMessage,
   isReadTeamConfigResponse,
+  isWriteTeamConfigMessage,
   READ_TEAM_CONFIG_MESSAGE,
+  WRITE_TEAM_CONFIG_MESSAGE,
 } from "./TeamConfigRequest";
 
 describe("team configuration message guards", () => {
@@ -13,6 +15,23 @@ describe("team configuration message guards", () => {
     expect(isReadTeamConfigMessage({ type: READ_TEAM_CONFIG_MESSAGE, workItemId: "42" })).toBe(
       false,
     );
+  });
+
+  it("accepts only bounded team configuration writes", () => {
+    expect(
+      isWriteTeamConfigMessage({
+        type: WRITE_TEAM_CONFIG_MESSAGE,
+        workItemId: 42,
+        text: "{}",
+      }),
+    ).toBe(true);
+    expect(
+      isWriteTeamConfigMessage({
+        type: WRITE_TEAM_CONFIG_MESSAGE,
+        workItemId: 42,
+        text: "x".repeat(1_000_001),
+      }),
+    ).toBe(false);
   });
 
   it("accepts both typed response outcomes", () => {

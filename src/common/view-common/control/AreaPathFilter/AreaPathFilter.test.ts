@@ -138,6 +138,41 @@ describe("renderAreaPathFilter - selection", () => {
     expect(
       handle.element.querySelector<HTMLButtonElement>(".awesomeado-area-filter__clear")?.disabled,
     ).toBe(false);
+    expect(handle.element.querySelector(".awesomeado-area-filter__popup")).not.toBeNull();
+  });
+
+  it("allows multiple checkbox selections before the popup closes", () => {
+    const { handle, onChange } = openFilter();
+    const checkboxes = handle.element.querySelectorAll<HTMLInputElement>("input[type=checkbox]");
+
+    checkboxes[0]!.click();
+    checkboxes[1]!.click();
+
+    expect(onChange).toHaveBeenLastCalledWith(["Project\\Platform\\API", "Project\\Commerce\\API"]);
+    expect(handle.element.querySelector(".awesomeado-area-filter__popup")).not.toBeNull();
+  });
+});
+
+describe("renderAreaPathFilter - dismissal", () => {
+  it.each([
+    [
+      "outside pointer",
+      () => document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })),
+    ],
+    ["Escape", () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }))],
+  ])("closes on %s", (_label, dismiss) => {
+    const onPopupClosed = vi.fn();
+    const handle = renderAreaPathFilter(document, {
+      areaPaths: ["Project\\Platform"],
+      onPopupClosed,
+    });
+    document.body.append(handle.element);
+    handle.element.querySelector<HTMLButtonElement>(".awesomeado-area-filter__trigger")!.click();
+
+    dismiss();
+
+    expect(handle.element.querySelector(".awesomeado-area-filter__popup")).toBeNull();
+    expect(onPopupClosed).toHaveBeenCalledOnce();
   });
 
   it("Clear reports an empty selection and closes the popup", () => {
@@ -157,7 +192,9 @@ describe("renderAreaPathFilter - selection", () => {
     expect(handle.selectedAreaPaths()).toEqual([]);
     expect(handle.element.querySelector(".awesomeado-area-filter__popup")).toBeNull();
   });
+});
 
+describe("renderAreaPathFilter - replacement", () => {
   it("accepts a replacement selection without firing onChange", () => {
     const { handle, onChange } = openFilter();
 

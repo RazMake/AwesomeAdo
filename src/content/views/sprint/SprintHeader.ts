@@ -12,7 +12,9 @@ export interface SprintHeaderOptions {
   projectFilter: HTMLElement;
   refresh: RefreshButtonHandle;
   queueStatus: HTMLElement;
+  bulkMoveStatus: HTMLElement;
   teamPills: readonly HTMLElement[];
+  onTitleContextMenu: (event: MouseEvent) => void;
 }
 
 /** Render Sprint View's fixed-title, two-band themed header card. */
@@ -59,7 +61,8 @@ export function renderSprintHeader(doc: Document, options: SprintHeaderOptions):
   const title = doc.createElement("h1");
   title.className = "awesomeado-view__title awesomeado-sprint__title";
   title.textContent = "Sprint View";
-  title.style.cssText = "margin:0 8px 0 0;font-size:17px;font-weight:700";
+  title.style.cssText = "margin:0 8px 0 0;font-size:17px;font-weight:700;cursor:context-menu";
+  title.addEventListener("contextmenu", options.onTitleContextMenu);
   controls.append(
     title,
     options.sprintPicker,
@@ -72,7 +75,7 @@ export function renderSprintHeader(doc: Document, options: SprintHeaderOptions):
   statusSlot.className = "awesomeado-sprint__queue-status";
   statusSlot.style.cssText =
     "display:inline-flex;align-items:center;margin-left:auto;min-height:24px";
-  statusSlot.append(options.queueStatus);
+  statusSlot.append(options.bulkMoveStatus, options.queueStatus);
   controls.append(statusSlot);
 
   const divider = doc.createElement("hr");

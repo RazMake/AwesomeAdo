@@ -1,7 +1,7 @@
 # marker-reasons
 
-The **Blocked** / **Blocked by another team** pill an item wears on the Project Tracking board, and
-the notes that say why it wears it.
+The **Blocked** / **Blocked by another team** / **Interrupt** pill an item wears in Project Tracking
+or Sprint View, and the notes that say why it wears it.
 
 A pill states a condition but never its reason. Reading one used to mean opening the item's whole
 discussion and picking the marker notes out of it by eye, so the board's own claim was the one thing
@@ -36,15 +36,17 @@ row.append(
 
 ## Behaviour
 
-- Clicking the pill opens the item's notes **filtered to that marker's comment token** — the
+- A marker with a positive discussion count reads its filtered notes before deciding whether it is
+  interactive. Clicking a ready pill opens the item's notes **filtered to that marker's comment token** — the
   `[BLOCKED]` notes under a Blocked pill, and nothing else.
-- The discussion is read on the **first open**, never with the board: a board shows dozens of rows,
-  and reading every marker's reasons up front would be dozens of credentialed requests for popups
-  nobody opened.
+- A marker with no matching notes stays a plain pill with the tooltip **No notes**. A clickable pill
+  carries no tooltip.
+- Every focused marker note omits its configured token (`[BLOCKED]`, `[ACCEPTED]`, and so on) and
+  shows only the reader-authored explanation; the stored/editable source remains complete.
 - The popup carries **no composer**. A note typed there would not begin with the token, so it would
   vanish from the very list it was written in — which reads as a lost note.
-- A marker whose team configured **no comment token** stays a plain label: nothing identifies which
-  notes explain it, and an empty popup would claim nobody said why.
+- A marker whose team configured **no comment token** stays a plain `No notes` label because no note
+  can be identified as belonging to that marker.
 - The click is kept off the row underneath, which opens the item's own notes panel.
 
 ## Files

@@ -14,6 +14,12 @@ export interface AdditionalWorkItemFieldWrite {
   value: string | null;
 }
 
+/** A field value that must still match for this action's atomic patch to proceed. */
+export interface WorkItemFieldPrecondition {
+  field: string;
+  value: string | null;
+}
+
 /**
  * The request to write a single work item field back to Azure DevOps.
  *
@@ -34,6 +40,8 @@ export interface WorkItemFieldWriteRequest {
   value: string | null;
   /** Other fields this action changes; all are committed atomically with the primary field. */
   additionalFields?: AdditionalWorkItemFieldWrite[];
+  /** Other field values this action was based on; each becomes a JSON Patch `test` operation. */
+  preconditions?: WorkItemFieldPrecondition[];
   /**
    * The storage format to put a MULTILINE field into as part of this write. Omitted leaves the
    * field's current format alone, which is what every single-line field wants.

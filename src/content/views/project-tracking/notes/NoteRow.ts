@@ -10,6 +10,8 @@ import { withMarkerCommentAsCode } from "./markerNotes";
 /** What one note row shows, and what it may do about it. */
 export interface NoteRowOptions {
   note: WorkItemNote;
+  /** Alternate display source; editing still opens the complete stored note. */
+  displayText?: string;
   /** Marker comment prefixes to show as inline code when this note opens with one. */
   codePrefixes?: readonly string[];
   /** Identity search used when this note opens for editing. */
@@ -99,7 +101,10 @@ export function renderNoteRow(doc: Document, options: NoteRowOptions): HTMLEleme
   // read as a continuation of the name they sit under. The first line is pushed past the floated
   // header instead, which is what puts the note on the author's own line.
   body.style.paddingLeft = `${NOTE_WRAP_INDENT_PX}px`;
-  const source = withMarkerCommentAsCode(note.text, options.codePrefixes ?? []);
+  const source = withMarkerCommentAsCode(
+    options.displayText ?? note.text,
+    options.codePrefixes ?? [],
+  );
   body.append(
     renderMarkdownText(doc, {
       text: source,

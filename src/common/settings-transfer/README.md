@@ -2,7 +2,8 @@
 
 Serializes the user's **entire** configuration to and from a single `AwesomeADO.config` file, so a
 user can back it up or move it between machines. The file carries every extension setting (theme,
-default view, current team, sprint counts, board columns, work item types) **and** every
+default view, current team, sprint counts, default area paths, dated per-sprint area selections,
+board columns, work item types) **and** every
 enhanced-query binding (which queries are enhanced and each one's per-view property values).
 
 This component is pure data plumbing: no DOM, no `chrome.*`. The options-side controller that wires
@@ -63,7 +64,10 @@ and `TeamConfigSynchronizer` never applies a source ID found in a remote payload
   replaces settings and bindings only when the normalized snapshot changed, and publishes the current
   full `exportCompactConfig` snapshot. Work-item type settings include their Primary Work
   classification in both directions. Concurrent pulls share one in-flight operation.
+- `TeamSprintAreaPathStore` — pulls before Sprint reads, serializes per-sprint setting writes, and
+  publishes the resulting full normalized configuration through the connected work item.
 
-Connected content scripts pull when a saved query opens. Publishing is always an explicit options
-action: local edits never become team edits automatically. The source work item and shared queries
+Connected content scripts pull when a saved query opens. Ordinary settings publish through the
+explicit Options action; Sprint Lane selections are the exception and auto-publish after each
+change because the work-item payload is their team-shared source of truth. The source work item and shared queries
 must be in the same Azure DevOps organization, and every viewer needs read access to that item.

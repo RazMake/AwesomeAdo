@@ -19,8 +19,10 @@ change-event filter both storage adapters reuse; and `requestFromTab`, the best-
 
 Team configuration uses the same isolation boundary. `ChromeTeamConfigClient` injects
 `fetchTeamConfigInPage` / `writeTeamConfigInPage` into the current ADO query tab for options-page
-Pull and Publish. A content script uses `MessagingTeamConfigReader`; the background worker derives
-the work item REST URL from that sender tab and injects the same read function. Description GETs
+Pull and Publish, and resolves the connected item's human-facing ADO URL for the options-page link.
+A content script uses `MessagingTeamConfigReader` and
+`MessagingTeamConfigWriter`; the background worker derives the work item REST URL from that sender
+tab and injects the same read/write functions. Both messages are bounded closed operations. Description GETs
 retry transient failures up to three attempts. A successful GET with no Description returns a
 successful empty read; non-empty text is decoded for the settings-transfer parser. Publishing sends
 one `/rev`-guarded JSON Patch that sets both `System.Description` and its Markdown format, and never
@@ -526,7 +528,7 @@ the PATCH in the ADO tab's MAIN world.
 ### `WorkItemFieldRequest.ts` — the content→background message contract
 
 - `UPDATE_WORK_ITEM_FIELD_MESSAGE` / `UpdateWorkItemFieldMessage`
-  (`{ type, id, rev, field, value, additionalFields? }`) — the request the content view sends to
+  (`{ type, id, rev, field, value, additionalFields?, preconditions? }`) — the request the content view sends to
   update one field or a bounded, duplicate-free atomic field set. `field` is the primary ADO field
   reference name and `value` is the new value (or `null` to clear the field). Includes `rev` as an
   optimistic-concurrency guard; the PATCH fails when the item was edited concurrently (its rev
@@ -558,13 +560,14 @@ Constructed only in the composition root (`src/content/index.ts`); feature code 
 
 The self-contained function the **background worker** injects into the ADO tab's MAIN world to PATCH
 a work item's fields. Takes ONE `UpdateWorkItemFieldConfig`
-(`{ updateUrl, rev, field, value, additionalFields?, multilineFormat?, comment?, baseValue? }`) rather than an argument
+(`{ updateUrl, rev, field, value, additionalFields?, preconditions?, multilineFormat?, comment?, baseValue? }`) rather than an argument
 each, because `executeScript` requires every entry of `args` to be JSON-serializable and `undefined`
 is not — an omitted optional argument is an unserializable hole in that array and Chrome rejects the
 whole injection before it runs (see the note under **Injecting into the page world** below).
 
 Uses JSON Patch (`application/json-patch+json`) with a test-and-set: the
-rev is tested first (`{ op: "test", path: "/rev", value: rev }`), then every requested field is written in that same patch. A `null`
+rev is tested first (`{ op: "test", path: "/rev", value: rev }`), followed by each bounded field
+`precondition`; then every requested field is written in that same patch. A `null`
 value clears it (`{ op: "remove", path: "/fields/<field>" }`); any other value sets it, using
 `replace` when `baseValue` names a non-empty current value and `add` otherwise. The op is not
 cosmetic: Azure DevOps treats `add` on `System.Tags` as **append**, so a shortened tag list comes
@@ -597,7 +600,9 @@ whenever the new value is derived from the old one (adding a tag to the tags alr
 a drag-reorder, the rank fallback, a note posted through the comments API and any edit made in ADO's
 own tab all advance `System.Rev` **without reporting the new one** — so a cached rev goes stale by
 itself and every later write is refused until the board is reloaded. Omit it to keep the strict
-"one attempt, no rebase" behaviour.
+"one attempt, no rebase" behaviour. A request carrying `preconditions` also stays strict: the
+field-only rebase cannot prove those other guards still match, so a conflict returns to the owning
+operation for a fresh complete validation instead.
 
 ## Moving a work item (drag-to-reorder)
 
@@ -800,3 +805,13 @@ than parsed as "no comments", skips comments beginning with any configured marke
 follows continuation pages until it finds the newest remaining comment. A page-limit cutoff is
 reported in `failedIds` rather than as a null date. Only the FIRST failure is kept, so one lost
 session is not reported once per item.
+
+### Interrupt acceptance transport
+
+`InterruptAcceptanceRequest` is the bounded content-to-background contract carrying item IDs plus
+the configured Interrupt and acceptance tokens; the worker still builds every URL from the sender
+tab. `readInterruptAcceptance` pages each work-item updates stream by the count actually returned,
+uses a bounded worker pool, and derives tag additions plus `System.History` notes from one revision
+timeline. Each page runs through the existing retrying `executeAdoRequestInPage` MAIN-world read.
+`MessagingInterruptAcceptanceReader` applies the shared timestamp predicate, preserves partial
+results, and logs counts only.

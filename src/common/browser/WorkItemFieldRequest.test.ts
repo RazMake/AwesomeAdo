@@ -81,6 +81,56 @@ describe("isUpdateWorkItemFieldMessage - additional fields", () => {
   });
 });
 
+describe("isUpdateWorkItemFieldMessage - preconditions", () => {
+  it("accepts bounded field preconditions for one atomic action", () => {
+    expect(
+      isUpdateWorkItemFieldMessage({
+        type: UPDATE_WORK_ITEM_FIELD_MESSAGE,
+        id: 123,
+        rev: 5,
+        field: "System.IterationPath",
+        value: "Project\\Sprint 2",
+        preconditions: [{ field: "System.State", value: "Active" }],
+      }),
+    ).toBe(true);
+  });
+
+  it("rejects malformed, duplicate, and unbounded preconditions", () => {
+    const base = {
+      type: UPDATE_WORK_ITEM_FIELD_MESSAGE,
+      id: 123,
+      rev: 5,
+      field: "System.IterationPath",
+      value: "Project\\Sprint 2",
+    };
+    expect(isUpdateWorkItemFieldMessage({ ...base, preconditions: "System.State" })).toBe(false);
+    expect(
+      isUpdateWorkItemFieldMessage({
+        ...base,
+        preconditions: [{ field: "System/State", value: "Active" }],
+      }),
+    ).toBe(false);
+    expect(
+      isUpdateWorkItemFieldMessage({
+        ...base,
+        preconditions: [
+          { field: "System.State", value: "Active" },
+          { field: "System.State", value: "Waiting" },
+        ],
+      }),
+    ).toBe(false);
+    expect(
+      isUpdateWorkItemFieldMessage({
+        ...base,
+        preconditions: Array.from({ length: 9 }, (_, index) => ({
+          field: `Custom.Guard${index}`,
+          value: String(index),
+        })),
+      }),
+    ).toBe(false);
+  });
+});
+
 describe("isUpdateWorkItemFieldMessage - rejected type and id", () => {
   it("rejects null", () => {
     expect(isUpdateWorkItemFieldMessage(null)).toBe(false);

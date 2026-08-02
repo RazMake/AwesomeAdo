@@ -144,6 +144,22 @@ describe("WorkItemWriteQueue - write behavior", () => {
     expect(await second).toEqual({ ok: true, rev: 3 });
     expect(writeField.mock.calls.map(([request]) => request.rev)).toEqual([1, 2]);
   });
+
+  it("forwards atomic field preconditions after binding the current rev", async () => {
+    const { logger } = createRecordingLogger();
+    const writeField = vi.fn(async (): Promise<WorkItemFieldWriteResult> => ({ ok: true, rev: 6 }));
+    const queue = new WorkItemWriteQueue(writeField, logger);
+
+    await queue.enqueue({
+      ...req(1, 5, "Project\\Sprint 2", "System.IterationPath"),
+      preconditions: [{ field: "System.State", value: "Active" }],
+    });
+
+    expect(writeField).toHaveBeenCalledWith({
+      ...sent(1, 5, "Project\\Sprint 2", "System.IterationPath"),
+      preconditions: [{ field: "System.State", value: "Active" }],
+    });
+  });
 });
 
 describe("WorkItemWriteQueue - ordering", () => {

@@ -110,6 +110,28 @@ describe("normalizeSettings - team, sprint, and collection fields", () => {
     ).toEqual({ tag: "Impediment", commentTag: "[X]" });
   });
 
+  it("normalizes default and per-sprint full area paths", () => {
+    const settings = normalizeSettings({
+      defaultAreaPaths: [" Project\\API ", "project\\api", "", 7],
+      sprintAreaPaths: {
+        "Project\\Sprint 1": {
+          areaPaths: ["Project\\API", "Project\\Web", "Project\\API"],
+          startDate: "2026-07-01T00:00:00Z",
+          finishDate: "invalid",
+        },
+      },
+    });
+
+    expect(settings.defaultAreaPaths).toEqual(["Project\\API"]);
+    expect(settings.sprintAreaPaths).toEqual({
+      "Project\\Sprint 1": {
+        areaPaths: ["Project\\API", "Project\\Web"],
+        startDate: "2026-07-01T00:00:00Z",
+        finishDate: null,
+      },
+    });
+  });
+
   it("coerces the board columns to the fixed set, preserving stored titles by position", () => {
     // A never-set key means a fresh install, so the default titles appear...
     expect(normalizeSettings({}).boardColumns).toEqual([...DEFAULT_BOARD_COLUMNS]);

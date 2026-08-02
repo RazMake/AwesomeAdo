@@ -58,6 +58,8 @@ row.addEventListener("contextmenu", (event) => {
   beneath the three above. Supplied by the caller rather than built here so the menu stays a **menu**:
   what it means to rename a work item, where its description is persisted and which sprints it may
   move to are facts about the owning view's data.
+- **`standardCommands?`** — Optional ordered subset of `copy-id`, `copy-url`, and `open`; omitted
+  keeps all three. Sprint's title uses only `copy-url` before its view-level bulk command.
 
 ### `ItemContextMenuCommand`
 
@@ -68,6 +70,7 @@ Exactly one of `run`, `panel` and `submenu` gives a command its behaviour.
 | `label`            | The row's text — and, when `renderLabel` is given, the name the row is announced by.                                                                             |
 | `title`            | Optional tooltip for a compact label whose complete value still needs to be available.                                                                           |
 | `renderLabel`      | `(doc) => Node[]` — builds the row's visible content instead of plain text, for a command that has to **show** the thing it acts on (a colored condition pill).  |
+| `checkbox`         | Themed checkbox beside the command button. Changing it leaves the menu open; the command runs separately with caller-retained state.                             |
 | `separatorBefore`  | Draws a rule above the row, splitting the caller's own list into groups that answer different questions.                                                         |
 | `run`              | `() => void` — runs the command and closes the menu.                                                                                                             |
 | `panel`            | `(close) => HTMLElement` — **replaces** the menu's commands with this element (an editor, a list). `close` dismisses the whole menu.                             |
@@ -105,6 +108,14 @@ Exactly one of `run`, `panel` and `submenu` gives a command its behaviour.
 - **A command can still be announced when its label is a rendered thing.** `renderLabel` replaces the
   row's text with nodes (a [`MarkerPill`](../MarkerPill/README.md), say), and `label` is then applied
   as the row's `aria-label` so it is never nameless to a screen reader.
+- **Inline checkboxes are siblings of their command buttons**, never nested inside them. This keeps
+  the HTML valid, gives each control unambiguous keyboard behavior, and lets a binary choice update
+  a preview without committing or dismissing the menu. Their shared wrapper owns the hover wash, so
+  the highlight covers the command and checkbox as one complete menu item even though their click
+  actions remain separate. The 14px box uses the same muted border as the menu separators and keeps
+  the same themed background in both states; only its theme-owned green checkmark appears when
+  selected. It suppresses the browser's blue focus outline; Escape while it has focus closes the
+  menu.
 - **A caller can group its own commands** with `separatorBefore`. The rule reads exactly like the one
   under the three built-in commands, so the menu has one visual language for "these answer a
   different question" — which is what keeps a mis-click from crossing between "edit this item" and

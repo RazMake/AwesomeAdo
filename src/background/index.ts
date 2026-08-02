@@ -14,6 +14,11 @@ import {
   buildWorkItemUpdateUrl,
   type AdoRawTree,
 } from "../common/ado/fetchAdoTree";
+import {
+  buildInterruptAcceptanceUrls,
+  INTERRUPT_UPDATES_PAGE_SIZE,
+  MAX_INTERRUPT_UPDATE_PAGES,
+} from "../common/ado/fetchInterruptAcceptance";
 import { buildNewestNoteUrl, MAX_NOTE_ACTIVITY_PAGES } from "../common/ado/fetchNoteActivity";
 import {
   buildAddNoteUrl,
@@ -87,6 +92,12 @@ import {
   type ReconcileFeatureCrewResponse,
 } from "../common/browser/FeatureCrewRequest";
 import {
+  READ_INTERRUPT_ACCEPTANCE_MESSAGE,
+  readInterruptAcceptanceMessageProblem,
+  type ReadInterruptAcceptanceMessage,
+  type ReadInterruptAcceptanceResponse,
+} from "../common/browser/InterruptAcceptanceRequest";
+import {
   READ_NOTE_ACTIVITY_MESSAGE,
   readNoteActivityMessageProblem,
   type RawNoteActivity,
@@ -97,8 +108,12 @@ import { prepareReorderState, withPreparedState } from "../common/browser/Reorde
 import {
   isReadTeamConfigMessage,
   isReadTeamConfigResponse,
+  isWriteTeamConfigMessage,
+  isWriteTeamConfigResponse,
   READ_TEAM_CONFIG_MESSAGE,
+  WRITE_TEAM_CONFIG_MESSAGE,
   type ReadTeamConfigResponse,
+  type WriteTeamConfigResponse,
 } from "../common/browser/TeamConfigRequest";
 import {
   isUpdateWorkItemFieldMessage,
@@ -147,12 +162,14 @@ import { fetchNoteActivityInPage } from "../common/browser/fetchNoteActivityInPa
 import { fetchTeamConfigInPage } from "../common/browser/fetchTeamConfigInPage";
 import { fetchWorkItemNotesInPage } from "../common/browser/fetchWorkItemNotesInPage";
 import { findFeatureCrewInPage } from "../common/browser/findFeatureCrewInPage";
+import { readInterruptAcceptance as readInterruptAcceptancePages } from "../common/browser/readInterruptAcceptance";
 import { readWorkItemRanksInPage } from "../common/browser/readWorkItemRanksInPage";
 import {
   reorderWorkItemInPage,
   type ReorderWorkItemConfig,
 } from "../common/browser/reorderWorkItemInPage";
 import { updateWorkItemFieldInPage } from "../common/browser/updateWorkItemFieldInPage";
+import { writeTeamConfigInPage } from "../common/browser/writeTeamConfigInPage";
 import { writeWorkItemNoteInPage } from "../common/browser/writeWorkItemNoteInPage";
 import { writeWorkItemRanksInPage } from "../common/browser/writeWorkItemRanksInPage";
 import { createLoggerFactory } from "../common/logging/createLogger";
@@ -336,6 +353,60 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
   }
   void loadQueryTree(message, tabId, tabUrl).then(sendResponse);
   // Keep the message channel open for the async fetch reply above.
+  return true;
+});
+
+chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
+  if (!claimsMessageType(message, WRITE_TEAM_CONFIG_MESSAGE)) return undefined;
+  if (!isWriteTeamConfigMessage(message)) {
+    logger.error("Rejected malformed team configuration write request.");
+    sendResponse({
+      ok: false,
+      error: "invalid team configuration write",
+    } satisfies WriteTeamConfigResponse);
+    return undefined;
+  }
+  const tabId = sender.tab?.id;
+  const url =
+    sender.tab?.url === undefined
+      ? null
+      : buildWorkItemUpdateUrl(sender.tab.url, message.workItemId);
+  if (tabId === undefined || url === null) {
+    logger.error(
+      `Cannot write team configuration work item ${message.workItemId}: no supported sender tab.`,
+    );
+    sendResponse({ ok: false, error: "no supported sender tab" } satisfies WriteTeamConfigResponse);
+    return undefined;
+  }
+  void chrome.scripting
+    .executeScript({
+      target: { tabId },
+      world: "MAIN",
+      func: writeTeamConfigInPage,
+      args: [{ url, text: message.text }],
+    })
+    .then((results) => {
+      const response = firstScriptResult(results);
+      if (!isWriteTeamConfigResponse(response)) {
+        logger.error(
+          `Team configuration work item ${message.workItemId} returned no valid write response.`,
+        );
+        sendResponse({ ok: false, error: "no valid response" } satisfies WriteTeamConfigResponse);
+        return;
+      }
+      if (!response.ok)
+        logger.error(
+          `Could not write team configuration work item ${message.workItemId}: ${response.error}`,
+        );
+      sendResponse(response);
+    })
+    .catch((error: unknown) => {
+      logger.error(`Could not write team configuration work item ${message.workItemId}`, error);
+      sendResponse({
+        ok: false,
+        error: `injection failed: ${String(error)}`,
+      } satisfies WriteTeamConfigResponse);
+    });
   return true;
 });
 
@@ -851,6 +922,7 @@ const updateWorkItemField = async (
           field: message.field,
           value: message.value,
           additionalFields: message.additionalFields,
+          preconditions: message.preconditions,
           multilineFormat: message.multilineFormat,
           comment: message.comment,
           baseValue: message.baseValue,
@@ -1245,6 +1317,84 @@ const MAX_NOTE_PAGES = 10;
  * this read.
  */
 const NOTE_ACTIVITY_CONCURRENCY = 6;
+const INTERRUPT_ACCEPTANCE_CONCURRENCY = 6;
+
+const readInterruptAcceptance = async (
+  message: ReadInterruptAcceptanceMessage,
+  tabId: number,
+  tabUrl: string,
+): Promise<ReadInterruptAcceptanceResponse> => {
+  logger.info(
+    `Interrupt acceptance read requested for ${message.workItemIds.length} work item(s).`,
+  );
+  const requests = message.workItemIds.flatMap((workItemId) => {
+    const urls = buildInterruptAcceptanceUrls(tabUrl, workItemId);
+    return urls === null ? [] : [{ workItemId, ...urls }];
+  });
+  if (requests.length === 0) {
+    logger.info("Interrupt acceptance read skipped: tab is not a project-scoped ADO URL.");
+    return { raw: null, error: "not a project-scoped ADO URL" };
+  }
+  try {
+    const raw = await readInterruptAcceptancePages(
+      {
+        requests,
+        interruptTag: message.interruptTag,
+        acceptanceTag: message.acceptanceTag,
+        concurrency: INTERRUPT_ACCEPTANCE_CONCURRENCY,
+        updatePageSize: INTERRUPT_UPDATES_PAGE_SIZE,
+        maxUpdatePages: MAX_INTERRUPT_UPDATE_PAGES,
+      },
+      async (url) => {
+        const results = await chrome.scripting.executeScript({
+          target: { tabId },
+          world: "MAIN",
+          func: executeAdoRequestInPage,
+          args: [{ operation: "read", url }],
+        });
+        return (
+          (firstScriptResult(results) as AdoPageRequestOutcome | null) ?? {
+            raw: null,
+            status: 0,
+            error: "no result",
+          }
+        );
+      },
+    );
+    logger.info(
+      `Interrupt acceptance read finished: evidence=${raw.evidence.length}, ` +
+        `failed=${raw.failedIds.length}, failure=${raw.failure}, status=${raw.status}.`,
+    );
+    return { raw };
+  } catch (error) {
+    logger.error("Could not read interrupt acceptance", error);
+    return { raw: null, error: "exception" };
+  }
+};
+
+chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
+  if (!claimsMessageType(message, READ_INTERRUPT_ACCEPTANCE_MESSAGE)) return undefined;
+  const problem = readInterruptAcceptanceMessageProblem(message);
+  if (problem !== null) {
+    logger.error(`Rejected a malformed interrupt acceptance request: ${problem}.`);
+    sendResponse({
+      raw: null,
+      error: `malformed request: ${problem}`,
+    } satisfies ReadInterruptAcceptanceResponse);
+    return undefined;
+  }
+  const tabId = sender.tab?.id;
+  const tabUrl = sender.tab?.url;
+  if (tabId === undefined || tabUrl === undefined) {
+    logger.error("Cannot read interrupt acceptance: message has no sender tab.");
+    sendResponse({ raw: null, error: "no sender tab" } satisfies ReadInterruptAcceptanceResponse);
+    return undefined;
+  }
+  void readInterruptAcceptance(message as ReadInterruptAcceptanceMessage, tabId, tabUrl).then(
+    sendResponse,
+  );
+  return true;
+});
 
 /**
  * Answers "when was each of these items last commented on?" for the board's **New notes** filter.

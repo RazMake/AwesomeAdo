@@ -41,6 +41,8 @@ export interface QueuedFieldWrite {
   value: string | null;
   /** Other fields changed by this action and written in the same revision. */
   additionalFields?: AdditionalWorkItemFieldWrite[];
+  /** Other field values that must still match when this action reaches Azure DevOps. */
+  preconditions?: WorkItemFieldWriteRequest["preconditions"];
   /**
    * The storage format to put a MULTILINE field into as part of this write (e.g. `Markdown` for a
    * description); omitted leaves the field's current format alone.
@@ -290,6 +292,7 @@ export class WorkItemWriteQueue {
       field: queued.field,
       value: queued.value,
       additionalFields: queued.additionalFields,
+      preconditions: queued.preconditions,
       multilineFormat: queued.multilineFormat,
       comment: queued.comment,
       baseValue: queued.baseValue,

@@ -78,7 +78,7 @@ The extension is feature-complete for its current scope:
   backlog-rank mode; all four stay read-only when the parent card is Done. An open popup suspends its owning card's drag
   source until close, remains open after completing or reactivating a child, and lets child title
   drags bubble without the card controller canceling them. Lane names
-  are emphasized while their item counts remain visually secondary. Tall cards add recognized marker tags and a clickable immediate-parent type
+  are emphasized while their item counts remain visually secondary. Tall cards add clickable recognized marker tags that open only their configured-token Discussion notes, plus a clickable immediate-parent type
   icon/title whose popup lists the type-colored ancestor chain from root to immediate parent with ETA
   controls, read-only when the owning card is Done. Card dragging stays within its lane and uses a
   custom fixed 90%-opaque cursor clone that retains the source card's resolved background across
@@ -110,14 +110,27 @@ The extension is feature-complete for its current scope:
   team members, WIQL, work, Lane choices, and Project choices. Its Project dropdown contains only eligible query ancestors
   whose configured types are strict ancestors of Primary-work types; Primary-work and
   implementation-detail types are not project choices. It puts the shared type icon before each
-  title, colors choices by type, grows to the
+  title, strengthens each type color toward the theme foreground for contrast, grows to the
   viewport margin before truncating long labels, and searches item titles while retaining matching
-  ancestor chains. `project-tracking` is a **data-driven tree board**. Adding a
+  ancestor chains. The title's right-click menu always copies the query URL; on a past sprint it can
+  bulk-move a confirmed snapshot of visible, assigned, non-Done Primary-work cards to a current/future
+  sprint, summarized by Lane and assignee. Filtered-out, unassigned, descendant-only, and newly arrived
+  items never enter the snapshot; fresh State/Lane/assignee guards skip changed cards. Cards and direct children reuse Project Tracking item
+  commands, then add Sprint-only Interrupt Tag/Accept/Clear commands. New Interrupts retain the inline
+  Accepted checkbox preview, but choosing acceptance opens the shared titled Markdown/mention editor;
+  Accept stays disabled until a reason exists, and the configured token plus reason rides with the
+  tag in one patch. Existing Interrupts use the same dialog. Accepted and unaccepted item pills use
+  distinct shared paint: raised is muted purple with a 1px bright edge, while accepted is solid
+  purple. Both card sizes expose Priority on the
+  top row (compact Done is read-only) and the shared `?` lifecycle/description popup, whose long
+  content wraps with vertical-only scrolling. Sprint and Project Tracking derive accepted Interrupt
+  state only from a configured acceptance note at or after the latest tag-add revision (ADR-061), so
+  an untag/re-tag cycle cannot reuse old acceptance. `project-tracking` is a **data-driven tree board**. Adding a
   view is a folder plus two registrations — see the `add-enhanced-view` skill.
 - Data-driven views depend on an injected `EnhancedViewServices` (optional field on
   `EnhancedViewContext`): `loadTree`, `userDirectory`, `getTypes`, `getBoardColumns`, `markerTags`,
   `loadSprintWindow`, `loadTeamMembers`, `loadQueryDefinition`, `noteLoader`,
-  `noteWriter`, `now`, `logger`
+  `noteActivity`, `interruptAcceptance`, `sprintAreaPaths`, `noteWriter`, `now`, `logger`
   (ADR-032). The normalized tree model + loader/directory contracts live in `common/ado`
   (`TrackedWorkItem`, `TrackedUser`, `TypeCatalogEntry`, `TeamIteration`, `IWorkItemTreeLoader`,
   `ITeamIterationsLoader`, `IUserDirectory`); PST date/ETA math lives in `common/datetime`. `EnhancedViewSurface` takes the
@@ -249,12 +262,13 @@ The extension is feature-complete for its current scope:
 - Team configuration sharing: Options connects to a same-organization Azure DevOps work item whose
   Description is the authoritative full configuration. Saved-query navigation automatically pulls
   it; Pull Now and explicit conflict-aware Publish controls are available in Appearance. The trusted
-  item id syncs separately, unchanged pulls do not rewrite storage, and Disconnect leaves the last
-  pulled local snapshot intact.
+  item id syncs separately and becomes a direct ADO link while connected; unchanged pulls do not
+  rewrite storage, and Disconnect leaves the last pulled local snapshot intact.
 - Options page: Appearance (Dark/Light/Blue theme, Follow ADO dark/light resolution, default view +
   Configuration Sharing), Azure DevOps config (team, sprint window, board mappings, marker tags, and
-  hierarchy Primary work classification with a context-only root), Query Bindings manager,
-  Diagnostics. Area paths are not configured: both views derive eligible paths from live query work.
+  hierarchy Primary work classification with a context-only root, plus default Sprint area paths),
+  Query Bindings manager, Diagnostics. Sprint defaults and dated per-sprint selections round-trip in
+  file and team configuration; Project Tracking continues deriving its eligible paths from live work.
 - SPA-aware navigation via the background service worker.
 - Device-local, source-tagged diagnostics log (`src/common/logging`): every line carries the
   component folder that owns the emitting code (e.g. `content/query-page`, `common/settings`,

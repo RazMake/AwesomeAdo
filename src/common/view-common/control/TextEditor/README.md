@@ -73,5 +73,7 @@ const describe = renderTextEditor(document, {
   text metrics (`FIELD_TEXT_STYLE`) with the field, so it cannot drift.
 - **While saving** both buttons are disabled. A write that resolves `false` re-enables them and shows
   _"Not saved — see the diagnostics log."_, leaving the author's words untouched.
+- **Mandatory values advertise their state.** Unless `allowEmpty` is true, the confirm button stays
+  disabled while the field contains only whitespace and enables as soon as text is entered.
 - **Focus** is taken on the next tick, after the element is in the document.
 - The caller owns the editor's lifetime: `onSubmit` resolving `true` is the signal to unmount it.

@@ -19,28 +19,32 @@ function createNote(id: number, text: string): WorkItemNote {
 }
 
 /** A pill over a discussion holding one note per marker plus an ordinary one. */
-function mountPill(overrides: { commentTag?: string } = {}) {
+function mountPill(
+  overrides: { commentTag?: string; marker?: "blocked" | "interrupt"; notes?: WorkItemNote[] } = {},
+) {
+  const notes = overrides.notes ?? [
+    createNote(1, "[BLOCKED] Waiting on the API team."),
+    createNote(2, "[ACCEPTED] Platform owns this now."),
+    createNote(3, "An ordinary project note."),
+  ];
   const loadNotes = vi.fn(() =>
     Promise.resolve({
-      notes: [
-        createNote(1, "[BLOCKED] Waiting on the API team."),
-        createNote(2, "[ACCEPTED] Platform owns this now."),
-        createNote(3, "An ordinary project note."),
-      ],
+      notes,
       currentUser: null,
       error: null,
     }),
   );
   const markerTags = normalizeMarkerTags(undefined);
+  const marker = overrides.marker ?? "blocked";
   const tags =
     overrides.commentTag === undefined
-      ? markerTags.blocked
-      : { ...markerTags.blocked, commentTag: overrides.commentTag };
+      ? markerTags[marker]
+      : { ...markerTags[marker], commentTag: overrides.commentTag };
 
   const element = renderMarkerReasonsPill({
     doc: document,
-    item: { id: 7, tags: [tags.tag] } as never,
-    marker: "blocked",
+    item: { id: 7, tags: [tags.tag], noteCount: notes.length } as never,
+    marker,
     tags,
     notesSinceIso: SINCE,
     services: {
@@ -64,6 +68,9 @@ function mountPill(overrides: { commentTag?: string } = {}) {
 
 /** Open the pill's popup and let the note read settle. */
 async function openPopup(element: HTMLElement): Promise<void> {
+  for (let tick = 0; tick < 6; tick += 1) {
+    await Promise.resolve();
+  }
   element.querySelector<HTMLButtonElement>(".awesomeado-marker-pill")!.click();
   for (let tick = 0; tick < 4; tick += 1) {
     await Promise.resolve();
@@ -81,6 +88,11 @@ describe("renderMarkerReasonsPill", () => {
     );
     expect(notes).toHaveLength(1);
     expect(notes[0]).toContain("Waiting on the API team.");
+    expect(notes[0]).not.toContain("[BLOCKED]");
+    expect(element.querySelector(".awesomeado-marker-pill")?.getAttribute("title")).toBeNull();
+    expect(
+      element.querySelector<HTMLElement>(".awesomeado-marker-reasons__popup")?.style.borderRadius,
+    ).toBe("8px");
     element.remove();
   });
 
@@ -94,21 +106,40 @@ describe("renderMarkerReasonsPill", () => {
     element.remove();
   });
 
-  it("reads the discussion only when the pill is actually clicked", () => {
+  it("reads marker notes before deciding whether the pill can be clicked", async () => {
     const { element, loadNotes } = mountPill();
 
-    // A board shows dozens of rows; reading every marker's reasons up front would be dozens of
-    // credentialed requests for popups nobody opened.
-    expect(loadNotes).not.toHaveBeenCalled();
+    expect(element.querySelector(".awesomeado-marker-pill")?.getAttribute("title")).toBe(
+      "Loading notes",
+    );
+    await Promise.resolve();
+    expect(loadNotes).toHaveBeenCalledTimes(1);
     element.remove();
   });
 
-  it("stays a plain label when the team configured no comment token for the marker", () => {
-    const { element } = mountPill({ commentTag: "" });
+  it("stays a tooltip-only label when no matching notes exist", async () => {
+    const { element } = mountPill({ notes: [createNote(3, "An ordinary project note.")] });
+    for (let tick = 0; tick < 6; tick += 1) await Promise.resolve();
 
-    // Nothing identifies which notes explain it, so an empty popup would claim nobody said why.
     expect(element.querySelector("button")).toBeNull();
     expect(element.querySelector(".awesomeado-marker-pill")?.tagName).toBe("SPAN");
+    expect(element.querySelector(".awesomeado-marker-pill")?.getAttribute("title")).toBe(
+      "No notes",
+    );
+    element.remove();
+  });
+
+  it("hides the configured acceptance token and shows only the reasoning", async () => {
+    const { element } = mountPill({
+      marker: "interrupt",
+      notes: [createNote(2, "[ACCEPTED] Platform owns this now.")],
+    });
+
+    await openPopup(element);
+
+    const text = element.querySelector(".awesomeado-note__text")?.textContent ?? "";
+    expect(text).toContain("Platform owns this now.");
+    expect(text).not.toContain("[ACCEPTED]");
     element.remove();
   });
 });

@@ -50,6 +50,8 @@ export interface NotesPanelOptions {
    * something to read. Never called on a FAILED load: an unknown count must not be reported as none.
    */
   onNoteCountKnown?: (count: number) => void;
+  /** Called when the discussion could not be read, so a trigger need not stay in a loading state. */
+  onNoteLoadFailed?: () => void;
   /**
    * Show EVERY note inside the Updates window instead of only the two most recent days with notes.
    *
@@ -67,6 +69,8 @@ export interface NotesPanelOptions {
    * would not begin with the prefix, and would therefore vanish from the very list it was written in.
    */
   onlyCommentPrefix?: string;
+  /** Hide `onlyCommentPrefix` from each displayed note while retaining it in stored/editable text. */
+  hideOnlyCommentPrefix?: boolean;
 }
 
 /** A mounted notes panel and the one thing the row that owns it changes about it. */
@@ -136,6 +140,7 @@ export function renderNotesPanel(options: NotesPanelOptions): NotesPanelHandle {
 
   const render = (): void => {
     list.replaceChildren(...renderRows(options, state, render));
+    if (state.error !== undefined) options.onNoteLoadFailed?.();
     // Only ever reported from a SUCCESSFUL read: after a failure the count is unknown, and calling
     // this with 0 would grey out an item whose discussion nobody managed to read.
     if (state.error === undefined && state.loaded) {
@@ -197,6 +202,7 @@ function renderRows(
   return visible.map((note) =>
     renderNoteRow(doc, {
       note,
+      displayText: displayNoteText(options, note),
       codePrefixes: markerCommentPrefixes(options.services.markerTags()),
       currentUser: state.currentUser,
       mentionNames: options.services.mentionDirectory.knownNames(),
@@ -208,6 +214,13 @@ function renderRows(
         submitNote(options, state, note.id, text).then((ok) => finish(ok, rerender)),
     }),
   );
+}
+
+function displayNoteText(options: NotesPanelOptions, note: WorkItemNote): string {
+  const prefix = options.onlyCommentPrefix;
+  return options.hideOnlyCommentPrefix === true && prefix !== undefined
+    ? note.text.slice(prefix.length).trimStart()
+    : note.text;
 }
 
 /** The notes this surface is allowed to show; the deliberately-full popup bypasses marker filtering. */

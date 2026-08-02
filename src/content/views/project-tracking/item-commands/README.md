@@ -22,6 +22,10 @@ Under a **second** rule, the marker flags (`buildMarkerCommands`):
 The marker's name is drawn as the very [`MarkerPill`](../../../../common/view-common/control/MarkerPill/README.md)
 the item will wear, so the command previews its own result.
 
+Sprint View passes an `InterruptCommandState` as the optional second argument. That opt-in adds
+Tag/Accept/Clear Interrupt commands and updates the supplied accepted-ID set after a committed
+write. Project Tracking omits the argument, so Interrupt mutation remains unavailable there.
+
 ## Usage
 
 ```ts

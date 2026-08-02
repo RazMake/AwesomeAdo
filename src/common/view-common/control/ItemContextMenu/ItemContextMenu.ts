@@ -20,6 +20,19 @@ export interface ItemContextMenuCommand {
    */
   renderLabel?: (doc: Document) => Node[];
   /**
+   * A checkbox rendered beside the command button in the same visual row.
+   *
+   * Kept as a sibling rather than nested inside the button: nested interactive controls are invalid
+   * HTML and make keyboard activation ambiguous. Changing it leaves the menu open; clicking the
+   * command button still runs the command with whatever state the caller retained.
+   */
+  checkbox?: {
+    label: string;
+    checked?: boolean;
+    disabledReason?: string | null;
+    onChange(checked: boolean): void;
+  };
+  /**
    * Draws a rule above this command, splitting the caller's list into groups. Use it where the
    * commands beneath answer a different question from the ones above ("edit this item" vs. "flag
    * this item"), so a mis-click cannot cross between them.
@@ -61,6 +74,8 @@ export interface ItemContextMenuTarget {
    * stay in the same place and say why they cannot run.
    */
   url: string | null;
+  /** Which standard rows appear; omitted keeps Copy ID, Copy URL, and Open in ADO. */
+  standardCommands?: readonly ("copy-id" | "copy-url" | "open")[];
   /**
    * Commands specific to this item, shown under a separator beneath the three every menu carries.
    *
@@ -302,17 +317,22 @@ function buildMenu(
 
   const commands = doc.createElement("div");
   commands.className = "awesomeado-item-menu__commands";
-  commands.append(
-    renderCopyCommand(doc, COPY_ID_LABEL, String(target.id), close, logger),
-    renderCopyCommand(doc, COPY_URL_LABEL, target.url, close, logger),
-    renderOpenCommand(doc, target.url, close),
-  );
+  const standard = target.standardCommands ?? ["copy-id", "copy-url", "open"];
+  for (const command of standard) {
+    if (command === "copy-id") {
+      commands.append(renderCopyCommand(doc, COPY_ID_LABEL, String(target.id), close, logger));
+    } else if (command === "copy-url") {
+      commands.append(renderCopyCommand(doc, COPY_URL_LABEL, target.url, close, logger));
+    } else {
+      commands.append(renderOpenCommand(doc, target.url, close));
+    }
+  }
 
   // The caller's commands act ON the item; the three above only describe it. The rule separates two
   // groups that answer different questions, so a mis-click cannot cross between "tell me about this"
   // and "change this".
   if (target.commands?.length) {
-    commands.append(renderSeparator(doc));
+    if (standard.length > 0) commands.append(renderSeparator(doc));
     for (const command of target.commands) {
       // A caller can split its own list further; the rule reads the same as the one above so the
       // menu has one visual language for "these answer a different question".
@@ -366,33 +386,16 @@ function renderCustomCommand(
     return makeInert(row, command.disabledReason);
   }
 
+  if (command.checkbox) {
+    return renderCheckboxCommand(doc, row, command, menu, close, panelBounds);
+  }
+
   if (command.submenu) {
     return renderSubmenu(doc, row, command.submenu, menu, close, panelBounds);
   }
 
   if (command.panel) {
-    const panel = command.panel;
-    row.addEventListener("click", () => {
-      // Padded here rather than by each panel, and only by what the menu's own inset does not already
-      // give it, so an editor sits the same distance from the edge as a command row's text does.
-      const surface = doc.createElement("div");
-      surface.className = "awesomeado-item-menu__panel";
-      surface.style.cssText = [
-        "position:relative",
-        `padding:${MENU_PADDING_PX}px ${MENU_PADDING_PX + 2}px`,
-      ].join(";");
-      const panelElement = panel(close);
-      surface.append(panelElement);
-      if (command.maximizablePanel) {
-        surface.append(renderPanelMaximizeButton(doc, menu, surface, panelElement, panelBounds));
-      }
-      menu.replaceChildren(surface);
-      if (command.centerPanel) {
-        centerInWindow(menu);
-      } else {
-        keepPanelInView(menu, doc);
-      }
-    });
+    row.addEventListener("click", () => openCommandPanel(doc, command, menu, close, panelBounds));
     return row;
   }
 
@@ -402,6 +405,150 @@ function renderCustomCommand(
     close();
   });
   return row;
+}
+
+/** A command button and themed checkbox presented as one menu row without nesting controls. */
+function renderCheckboxCommand(
+  doc: Document,
+  row: HTMLButtonElement,
+  command: ItemContextMenuCommand,
+  menu: HTMLElement,
+  close: () => void,
+  panelBounds?: () => Element | null,
+): HTMLElement {
+  const checkbox = command.checkbox!;
+  const wrapper = doc.createElement("div");
+  wrapper.className = "awesomeado-item-menu__checkbox-command";
+  wrapper.style.cssText = [
+    "display:flex",
+    "align-items:center",
+    "width:100%",
+    "box-sizing:border-box",
+    "border-radius:6px",
+    "background:transparent",
+  ].join(";");
+  wrapper.addEventListener("mouseenter", () => {
+    wrapper.style.background = ROW_HOVER_BACKGROUND;
+  });
+  wrapper.addEventListener("mouseleave", () => {
+    wrapper.style.background = "transparent";
+  });
+  row.style.flex = "1 1 auto";
+  row.style.width = "auto";
+
+  const label = doc.createElement("label");
+  label.style.cssText = [
+    "display:inline-flex",
+    "align-items:center",
+    "gap:5px",
+    "padding:6px 10px 6px 4px",
+    "font-size:12px",
+    "white-space:nowrap",
+    "cursor:pointer",
+  ].join(";");
+  const input = doc.createElement("input");
+  input.type = "checkbox";
+  input.className = "awesomeado-item-menu__checkbox";
+  input.checked = checkbox.checked ?? false;
+  input.disabled = checkbox.disabledReason !== null && checkbox.disabledReason !== undefined;
+  if (checkbox.disabledReason) label.title = checkbox.disabledReason;
+  input.addEventListener("change", () => checkbox.onChange(input.checked));
+  label.append(renderCheckboxControl(doc, input), doc.createTextNode(checkbox.label));
+
+  row.addEventListener("click", () => {
+    if (input.checked && command.panel !== undefined) {
+      openCommandPanel(doc, command, menu, close, panelBounds);
+    } else {
+      command.run?.();
+      close();
+    }
+  });
+  wrapper.append(row, label);
+  return wrapper;
+}
+
+function openCommandPanel(
+  doc: Document,
+  command: ItemContextMenuCommand,
+  menu: HTMLElement,
+  close: () => void,
+  panelBounds?: () => Element | null,
+): void {
+  const panel = command.panel;
+  if (panel === undefined) return;
+  // The menu owns the inset so every editor aligns with the command rows it replaces.
+  const surface = doc.createElement("div");
+  surface.className = "awesomeado-item-menu__panel";
+  surface.style.cssText = [
+    "position:relative",
+    `padding:${MENU_PADDING_PX}px ${MENU_PADDING_PX + 2}px`,
+  ].join(";");
+  const panelElement = panel(close);
+  surface.append(panelElement);
+  if (command.maximizablePanel) {
+    surface.append(renderPanelMaximizeButton(doc, menu, surface, panelElement, panelBounds));
+  }
+  menu.replaceChildren(surface);
+  if (command.centerPanel) centerInWindow(menu);
+  else keepPanelInView(menu, doc);
+}
+
+/** Keep the box visually stable while the theme-owned green tick alone reports completion. */
+function renderCheckboxControl(doc: Document, input: HTMLInputElement): HTMLElement {
+  const control = doc.createElement("span");
+  control.className = "awesomeado-item-menu__checkbox-control";
+  control.style.cssText = [
+    "position:relative",
+    "display:inline-flex",
+    "flex:0 0 14px",
+    "width:14px",
+    "height:14px",
+  ].join(";");
+
+  const box = doc.createElement("span");
+  box.className = "awesomeado-item-menu__checkbox-box";
+  box.style.cssText = [
+    "position:absolute",
+    "inset:0",
+    "box-sizing:border-box",
+    `border:${MENU_BORDER}`,
+    "border-radius:3px",
+    "background:var(--control-background-muted)",
+    "pointer-events:none",
+  ].join(";");
+  const tick = doc.createElement("span");
+  tick.className = "awesomeado-item-menu__checkbox-tick";
+  tick.textContent = "\u2713";
+  tick.style.cssText = [
+    "position:absolute",
+    "left:50%",
+    "top:50%",
+    "color:var(--completion-foreground)",
+    "font-size:14px",
+    "font-weight:800",
+    "line-height:1",
+    "transform:translate(-50%,-52%)",
+    "pointer-events:none",
+  ].join(";");
+  const paint = (): void => {
+    tick.style.visibility = input.checked ? "visible" : "hidden";
+  };
+
+  input.style.cssText = [
+    "position:absolute",
+    "inset:0",
+    "width:100%",
+    "height:100%",
+    "margin:0",
+    "opacity:0",
+    "outline:none",
+    `cursor:${input.disabled ? "default" : "pointer"}`,
+  ].join(";");
+  input.addEventListener("change", paint);
+  if (input.disabled) control.style.opacity = "0.55";
+  paint();
+  control.append(box, tick, input);
+  return control;
 }
 
 interface PanelStyleSnapshot {

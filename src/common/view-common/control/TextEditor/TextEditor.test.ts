@@ -42,6 +42,11 @@ function openEditor(
   return { root, onSubmit, onCancel, ...partsOf(root) };
 }
 
+function typeText(input: HTMLInputElement | HTMLTextAreaElement, text: string): void {
+  input.value = text;
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
 describe("renderTextEditor — opening", () => {
   it("opens on the text it was handed, so a correction starts from what was written", () => {
     const { input } = openEditor("The original text.");
@@ -80,7 +85,7 @@ describe("renderTextEditor — opening", () => {
 describe("renderTextEditor — submitting", () => {
   it("saves the trimmed text, so stray whitespace never becomes part of the value", () => {
     const { input, submit, onSubmit } = openEditor();
-    input.value = "  Some text.  \n";
+    typeText(input, "  Some text.  \n");
 
     submit.click();
 
@@ -89,8 +94,9 @@ describe("renderTextEditor — submitting", () => {
 
   it("refuses to save nothing when the value must exist", () => {
     const { input, submit, onSubmit } = openEditor();
-    input.value = "   \n\t ";
+    typeText(input, "   \n\t ");
 
+    expect(submit.disabled).toBe(true);
     submit.click();
 
     expect(onSubmit).not.toHaveBeenCalled();
@@ -98,7 +104,7 @@ describe("renderTextEditor — submitting", () => {
 
   it("saves nothing when the value may be cleared", () => {
     const { input, submit, onSubmit } = openEditor("Old text.", undefined, { allowEmpty: true });
-    input.value = "  ";
+    typeText(input, "  ");
 
     submit.click();
 
@@ -329,7 +335,7 @@ describe("renderTextEditor — inserting a mention", () => {
 
   it("leaves a name nobody picked from the list alone", async () => {
     const { root, input, submit, onSubmit } = mentionEditor();
-    input.value = "Ask @Grace Hopper and @Someone Else";
+    typeText(input, "Ask @Grace Hopper and @Someone Else");
     submit.click();
     await Promise.resolve();
 
@@ -430,7 +436,7 @@ describe("renderTextEditor — while a save is in flight", () => {
       "",
       vi.fn(() => pending.promise),
     );
-    input.value = "Some text.";
+    typeText(input, "Some text.");
 
     submit.click();
 
@@ -442,7 +448,7 @@ describe("renderTextEditor — while a save is in flight", () => {
     const pending = deferred();
     const onSubmit = vi.fn(() => pending.promise);
     const { input, submit } = openEditor("", onSubmit);
-    input.value = "Some text.";
+    typeText(input, "Some text.");
 
     submit.click();
     submit.dispatchEvent(new MouseEvent("click"));
@@ -455,7 +461,7 @@ describe("renderTextEditor — while a save is in flight", () => {
       "",
       vi.fn(() => Promise.resolve(false)),
     );
-    input.value = "Some text.";
+    typeText(input, "Some text.");
 
     submit.click();
     await Promise.resolve();
@@ -474,7 +480,7 @@ describe("renderTextEditor — while a save is in flight", () => {
       "",
       vi.fn(() => Promise.resolve(true)),
     );
-    input.value = "Some text.";
+    typeText(input, "Some text.");
 
     submit.click();
     await Promise.resolve();

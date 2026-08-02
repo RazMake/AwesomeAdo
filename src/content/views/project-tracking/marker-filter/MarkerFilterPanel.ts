@@ -35,6 +35,7 @@ export function renderMarkerFilterPills(
   return markers.map((marker) =>
     renderMarkerPill(doc, {
       marker,
+      accepted: marker === "interrupt",
       title: `Azure DevOps tag "${markerTags[marker].tag}"`,
       interactive: true,
       selected: selected.has(marker),

@@ -4,6 +4,8 @@ import type {
 } from "../settings-transfer/TeamConfigSynchronizer";
 
 export const READ_TEAM_CONFIG_MESSAGE = "awesomeado:read-team-config";
+export const WRITE_TEAM_CONFIG_MESSAGE = "awesomeado:write-team-config";
+const MAX_TEAM_CONFIG_TEXT_LENGTH = 1_000_000;
 
 export interface ReadTeamConfigMessage {
   type: typeof READ_TEAM_CONFIG_MESSAGE;
@@ -12,13 +14,32 @@ export interface ReadTeamConfigMessage {
 
 export type ReadTeamConfigResponse = TeamConfigReadResult;
 
+export interface WriteTeamConfigMessage {
+  type: typeof WRITE_TEAM_CONFIG_MESSAGE;
+  workItemId: number;
+  text: string;
+}
+
+export type WriteTeamConfigResponse = TeamConfigWriteResult;
+
 export function isReadTeamConfigMessage(value: unknown): value is ReadTeamConfigMessage {
-  if (typeof value !== "object" || value === null) {
-    return false;
-  }
-  const candidate = value as Partial<ReadTeamConfigMessage>;
+  return isPositiveWorkItemMessage(value, READ_TEAM_CONFIG_MESSAGE);
+}
+
+export function isWriteTeamConfigMessage(value: unknown): value is WriteTeamConfigMessage {
+  if (!isPositiveWorkItemMessage(value, WRITE_TEAM_CONFIG_MESSAGE)) return false;
+  const candidate = value as Partial<WriteTeamConfigMessage>;
+  return typeof candidate.text === "string" && candidate.text.length <= MAX_TEAM_CONFIG_TEXT_LENGTH;
+}
+
+function isPositiveWorkItemMessage(
+  value: unknown,
+  type: string,
+): value is { type: string; workItemId: number } {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as { type?: unknown; workItemId?: unknown };
   return (
-    candidate.type === READ_TEAM_CONFIG_MESSAGE &&
+    candidate.type === type &&
     typeof candidate.workItemId === "number" &&
     Number.isSafeInteger(candidate.workItemId) &&
     candidate.workItemId > 0

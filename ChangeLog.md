@@ -34,6 +34,8 @@ builds use the repository's `Major.Minor.Build` release versioning.
   add recognized markers and a clickable immediate-parent title whose
   popup shows the full type-colored ancestor chain from root to immediate parent with ETA controls, while compact Done cards
   expand on demand.
+  Card marker pills open only the Discussion notes carrying their configured marker token. Project
+  and milestone labels in the Project dropdown retain their type colors with stronger themed contrast.
   Card dragging stays within its lane and uses a custom 90%-opaque cursor card that retains its
   original card color while making the light transparency visible. Destination columns keep a visible
   border matching their sticky title color;
@@ -54,11 +56,36 @@ builds use the repository's `Major.Minor.Build` release versioning.
   failure, network exhaustion, invalid JSON, and HTTP errors instead of collapsing them to HTTP 0.
 - Refines enhanced-view filters with compact pills aligned to Project Tracking's user tags and a
   larger gap between full-opacity filter families in Sprint View and Project Tracking.
-- Keeps Primary Work classification intact through team configuration pull and publish, and links a
-  successful publish's work item ID directly to the item in Azure DevOps.
-- Removes the unused Area Paths configuration: Sprint View and Project Tracking continue deriving
-  their area filters and edit choices directly from the query's live work items, while export,
-  import, team publish, and team pull no longer carry pinned paths.
+- Makes Sprint View's active Project button clear the selected project on the first click and reopen
+  the project choices on the next click.
+- Adds Sprint View right-click actions: the title copies the query URL, and a past sprint can move a
+  confirmed snapshot of its visible, assigned, non-Done Primary-work cards to the current or a
+  future iteration. The confirmation summarizes the move by Lane and assignee, excludes unassigned
+  and filtered-out cards, and protects long operations with fresh State/Lane/assignee guards,
+  transient retries, cancellation, leave warnings, bounded passes, and a header result summary.
+  Cards and direct children share Project
+  Tracking's copy/open, title, description, sprint, area, notes, and blocker commands. Sprint also
+  adds Interrupt tag/accept/clear actions. Choosing acceptance opens a titled Markdown reason dialog
+  with `@` mentions and keeps Accept disabled until an explanation is entered; the configured token,
+  explanation, and tag commit in one revision. Accepted Interrupt pills use solid purple; raised
+  Interrupts use a muted fill with a 1px bright-purple edge on state-bearing item/menu pills, while
+  Interrupt filters always use solid accepted paint. Marker pills become clickable only when matching notes exist, carry no
+  tooltip when clickable, otherwise show `No notes`, and hide configured marker tokens from displayed
+  reasons. Also adds a Project Tracking-style `?` details popup on compact and expanded cards whose long
+  content wraps with vertical-only scrolling. Both card sizes show Priority on their top row, read-only while Done is
+  compact. Marker-note and description popups use the selected theme with rounded corners, and the
+  Sprint title no longer carries a tooltip. Interrupt acceptance now requires the configured acceptance note at or after
+  the most recent Interrupt tag addition, so untagging and re-tagging cannot reuse stale acceptance;
+  both Sprint View and Project Tracking use that same accepted/unaccepted pill state.
+- Keeps Primary Work classification intact through team configuration pull and publish, and replaces
+  the connected read-only configuration work item ID with a link that opens the item in Azure DevOps.
+- Adds default Sprint area paths to Azure DevOps settings with an Add field, editable rows, and a
+  remove button per path. Defaults are initially selected across sprints; additions flow into saved
+  sprint filters while removals leave those filters unchanged. Each sprint's selected full paths are
+  pulled on load, refresh, and sprint change and auto-published through the team configuration work
+  item. The Lane dropdown stays open for multiple checkbox selections and closes on outside click or
+  Escape. File export/import and compact team payloads include both defaults and per-sprint selections;
+  dated history retains the newest ten past sprints and prunes older records when possible.
 
 ## 0.1
 

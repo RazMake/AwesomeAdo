@@ -1,5 +1,10 @@
 import { THEME_PREFERENCES, type ThemePreference } from "../view-common/themes/themes";
 
+import {
+  normalizeAreaPaths,
+  normalizeSprintAreaPaths,
+  type SprintAreaPaths,
+} from "./SprintAreaPaths";
 import { reachesWorkItemType } from "./workItemHierarchy";
 
 /**
@@ -36,6 +41,12 @@ export interface ExtensionSettings {
    * only the current and future sprints are shown.
    */
   pastSprintsCount: number;
+
+  /** Full area paths initially selected whenever a Sprint View opens a sprint. */
+  defaultAreaPaths: string[];
+
+  /** Team-shared Lane-filter selections keyed by full iteration path. */
+  sprintAreaPaths: SprintAreaPaths;
 
   /**
    * The board columns (the team's own "application states") that form the header of the work-item
@@ -152,13 +163,13 @@ export const WORK_ITEM_MARKERS: readonly {
 
 /**
  * The tag/comment tokens a fresh install starts from — the vocabulary most teams already use — so
- * the options page opens with sensible values instead of empty boxes. Interrupt has no conventional
- * comment token, so it seeds blank.
+ * the options page opens with sensible values instead of empty boxes. Interrupt acceptance uses an
+ * explicit note token so a later untag/re-tag cycle can be distinguished from an old acceptance.
  */
 export const DEFAULT_MARKER_TAGS: WorkItemMarkerTags = {
   blocked: { tag: "Blocked", commentTag: "[BLOCKED]" },
   blockedByOtherTeam: { tag: "Blocked by another team", commentTag: "[ACCEPTED]" },
-  interrupt: { tag: "Interrupt", commentTag: "" },
+  interrupt: { tag: "Interrupt", commentTag: "[ACCEPTED]" },
 };
 
 /** Allowed theme values, in the order they are offered to the user. */
@@ -222,6 +233,8 @@ export const DEFAULT_SETTINGS: ExtensionSettings = deepFreeze({
   currentTeam: null,
   futureSprintsCount: DEFAULT_FUTURE_SPRINTS,
   pastSprintsCount: DEFAULT_PAST_SPRINTS,
+  defaultAreaPaths: [],
+  sprintAreaPaths: {},
   boardColumns: [...DEFAULT_BOARD_COLUMNS],
   workItemTypes: [],
   markerTags: normalizeMarkerTags(undefined),
@@ -596,6 +609,8 @@ export function normalizeSettings(raw: unknown): ExtensionSettings {
     currentTeam: normalizeTeamRef(candidate.currentTeam),
     futureSprintsCount: normalizeFutureSprintsCount(candidate.futureSprintsCount),
     pastSprintsCount: normalizePastSprintsCount(candidate.pastSprintsCount),
+    defaultAreaPaths: normalizeAreaPaths(candidate.defaultAreaPaths),
+    sprintAreaPaths: normalizeSprintAreaPaths(candidate.sprintAreaPaths),
     // The board columns are a fixed set, so any stored value (including a never-set key) is coerced
     // back to exactly `BOARD_COLUMN_COUNT` positions, preserving each column's user-edited title.
     boardColumns: normalizeBoardColumns(candidate.boardColumns),

@@ -108,6 +108,10 @@
       .team-config-actions {
         margin-top: 12px;
       }
+      .team-config-work-item-link {
+        width: fit-content;
+        color: var(--accent);
+      }
       /* A failed (or only partly applied) import differs from a clean one by wording alone, on a
          line the reader has already learned to skim as "done" — so the colour is what makes it
          land. Same red as the page-level .status and .banner--error. */
@@ -142,6 +146,7 @@
       .field input[type="text"],
       .field input[type="number"],
       .marker-tags-row input,
+      .default-area-paths input,
       .wit-table input[type="text"] {
         appearance: none;
         font: inherit;
@@ -154,6 +159,7 @@
       select:focus-visible,
       .field input:focus-visible,
       .marker-tags-row input:focus-visible,
+      .default-area-paths input:focus-visible,
       .wit-table input:focus-visible {
         outline: 2px solid var(--accent);
         outline-offset: 1px;
@@ -268,6 +274,34 @@
         background: transparent;
         color: var(--accent);
         border: 1px solid var(--border);
+      }
+      .default-area-paths {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        max-width: 620px;
+      }
+      .default-area-paths__add,
+      .default-area-paths__row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 8px;
+        align-items: center;
+      }
+      .default-area-paths__remove {
+        width: 30px;
+        height: 30px;
+        padding: 0;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: transparent;
+        color: var(--text-muted);
+        font: inherit;
+        font-size: 18px;
+        cursor: pointer;
+      }
+      .default-area-paths__remove:hover {
+        color: var(--error);
       }
 
       /* Work item types: a mapping table whose header cells are the team's board columns and whose
@@ -1076,6 +1110,7 @@
                 inputmode="numeric"
                 placeholder="123456"
               />
+              <a id="team-config-work-item-link" class="team-config-work-item-link" hidden></a>
             </div>
             <div class="log-toolbar team-config-actions">
               <button type="button" class="button button--connect" id="team-config-connect">
@@ -1171,6 +1206,28 @@
                 sprint). Between 0 and 6; 0 shows only the current and future sprints.
               </p>
             </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2 class="card__title">Default Sprint area paths</h2>
+          <p class="card__hint">
+            Full area paths initially selected in every sprint. Adding a path also selects it in
+            existing saved sprint filters; removing a default does not change those sprint filters.
+          </p>
+          <div class="default-area-paths">
+            <div class="default-area-paths__add">
+              <input
+                id="ado-default-area-path-input"
+                type="text"
+                aria-label="New default area path"
+                placeholder="Project\Area"
+              />
+              <button type="button" class="button button--subtle" id="ado-default-area-path-add">
+                Add
+              </button>
+            </div>
+            <div id="ado-default-area-paths"></div>
           </div>
         </div>
 

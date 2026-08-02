@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { TrackedUser, TrackedWorkItem } from "../../../common/ado/TrackedWorkItem";
+import type { SprintWindow } from "../../../common/ado/sprintWindow";
 import { normalizeMarkerTags } from "../../../common/settings/ExtensionSettings";
 import type { EnhancedViewServices } from "../../../common/view-common/EnhancedView";
 
@@ -57,6 +58,16 @@ function defaultTree(): TrackedWorkItem[] {
       sprintName: "Sprint 2",
     }),
   ];
+}
+
+function noInterruptAcceptance(): EnhancedViewServices["interruptAcceptance"] {
+  return {
+    readInterruptAcceptance: async () => ({
+      acceptedWorkItemIds: [],
+      failedWorkItemIds: [],
+      error: null,
+    }),
+  };
 }
 
 function services(overrides: Partial<EnhancedViewServices> = {}): EnhancedViewServices {
@@ -118,6 +129,7 @@ function services(overrides: Partial<EnhancedViewServices> = {}): EnhancedViewSe
     now: () => new Date("2026-07-31T12:00:00Z"),
     logger: { info: vi.fn(), error: vi.fn() },
     noteActivity: { readNoteActivity: async () => ({ activity: [], error: null }) },
+    interruptAcceptance: noInterruptAcceptance(),
     noteLoader: { loadNotes: async () => ({ notes: [], currentUser: null, error: null }) },
     noteWriter: {
       addNote: async () => ({ ok: true }),
@@ -295,12 +307,14 @@ function workCardTree(): TrackedWorkItem[] {
           sprintName: "Backlog",
           children: [
             item(2, "A long queued title that wraps onto another line", {
+              priority: 1,
               eta: "2026-08-10T12:00:00Z",
               tags: ["Blocked", "Unrecognized"],
               children: [queuedChild],
             }),
             item(3, "Completed story", {
               state: "Done",
+              priority: 2,
               eta: "2026-07-30T12:00:00Z",
               children: [doneChild],
             }),
@@ -498,6 +512,7 @@ function expectWorkCards(root: HTMLElement): void {
   const meta = queued.querySelector<HTMLElement>(".awesomeado-sprint-card__meta")!;
   expect(queued.firstElementChild).toBe(meta);
   expect(meta.querySelector(".awesomeado-sprint-card__id")?.textContent).toBe("#2");
+  expect(meta.querySelector(".awesomeado-priority__badge")?.textContent).toContain("P1");
   expect(meta.querySelector(".awesomeado-assigned__name")?.textContent).toBe("Alice");
   expect(meta.querySelector(".awesomeado-tag-pill")).toBeNull();
   expect(queued.textContent).toContain("Blocked");
@@ -532,6 +547,11 @@ function expectCompactDoneCard(root: HTMLElement): void {
   expect(done.dataset.size).toBe("compact");
   expect(done.firstElementChild).toBe(meta);
   expect(meta.querySelector(".awesomeado-sprint-card__id")?.textContent).toBe("#3");
+  const priority = meta.querySelector<HTMLButtonElement>(".awesomeado-priority__badge")!;
+  expect(priority.textContent).toContain("P2");
+  expect(priority.disabled).toBe(true);
+  priority.click();
+  expect(done.querySelector(".awesomeado-priority__popup")).toBeNull();
   expect(meta.querySelector(".awesomeado-assigned__name")?.textContent).toBe("Alice");
   expect(done.querySelector(".awesomeado-sprint-card__eta")?.textContent).toBe("ETA 07/30/2026");
   const childBadge = done.querySelector<HTMLElement>(".awesomeado-child-items")!;
@@ -552,6 +572,10 @@ function expectCompactDoneCard(root: HTMLElement): void {
   expect(childBadge.style.display).toBe("inline-flex");
   expect(assignee.disabled).toBe(false);
   expect(eta.getAttribute("aria-disabled")).toBe("false");
+  expect(priority.disabled).toBe(false);
+  priority.click();
+  expect(done.querySelector(".awesomeado-priority__popup")).not.toBeNull();
+  document.body.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
   done.querySelector<HTMLButtonElement>(".awesomeado-sprint-card__parent-trigger")!.click();
   expect(done.dataset.size).toBe("large");
   const parentPopup = done.querySelector<HTMLElement>(".awesomeado-sprint-card__parent-popup")!;
@@ -624,6 +648,431 @@ describe("Sprint View board", () => {
       rev: 2,
       field: "Custom.StoryETA",
       value: "2026-08-14T12:00:00Z",
+    });
+  });
+});
+
+describe("Sprint View card priority and details", () => {
+  it("persists priority changes through the shared card control", async () => {
+    const writeField = vi
+      .fn<EnhancedViewServices["writeField"]>()
+      .mockResolvedValue({ ok: true, rev: 2 });
+    const root = await render({
+      loadTree: async () => ({
+        isTreeQuery: false,
+        roots: [item(1, "Prioritized", { priority: 2 })],
+        error: null,
+      }),
+      writeField,
+    });
+
+    root.querySelector<HTMLButtonElement>(".awesomeado-priority__badge")!.click();
+    const p1 = [...root.querySelectorAll<HTMLButtonElement>(".awesomeado-priority__option")].find(
+      (option) => option.textContent === "P1",
+    )!;
+    p1.click();
+
+    await vi.waitFor(() => expect(writeField).toHaveBeenCalledTimes(1));
+    expect(writeField).toHaveBeenCalledWith({
+      id: 1,
+      rev: 1,
+      field: "Microsoft.VSTS.Common.Priority",
+      value: "1",
+      baseValue: "2",
+    });
+    expect(root.querySelector(".awesomeado-priority__badge")?.textContent).toContain("P1");
+  });
+
+  it("shows lifecycle and description details from both large and compact cards", async () => {
+    const roots = [
+      item(1, "Active details", { description: "Active card description" }),
+      item(2, "Done details", { state: "Done", description: "Done card description" }),
+    ];
+    const root = await render({
+      loadTree: async () => ({ isTreeQuery: false, roots, error: null }),
+    });
+
+    const active = root.querySelector<HTMLElement>('[data-item-id="1"]')!;
+    active.querySelector<HTMLButtonElement>(".awesomeado-sprint-card__describe")!.click();
+    const activePopup = active.querySelector<HTMLElement>(
+      ".awesomeado-sprint-card__description-popup",
+    )!;
+    expect(activePopup.textContent).toContain("Created on:");
+    expect(activePopup.textContent).toContain("Last Modified on:");
+    expect(activePopup.textContent).toContain("Active card description");
+    expect(activePopup.style.width).toBe("380px");
+    expect(activePopup.style.minWidth).toBe("280px");
+    expect(activePopup.style.overflowX).toBe("hidden");
+    expect(activePopup.style.overflowY).toBe("auto");
+    expect(activePopup.style.overflowWrap).toBe("anywhere");
+
+    const done = root.querySelector<HTMLElement>('[data-item-id="2"]')!;
+    expect(done.dataset.size).toBe("compact");
+    done.querySelector<HTMLButtonElement>(".awesomeado-sprint-card__describe")!.click();
+    expect(done.dataset.size).toBe("compact");
+    expect(done.querySelector(".awesomeado-sprint-card__description-popup")?.textContent).toContain(
+      "Done card description",
+    );
+  });
+});
+
+function openContextMenu(target: Element): HTMLButtonElement[] {
+  target.dispatchEvent(
+    new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 20, clientY: 30 }),
+  );
+  return [...document.querySelectorAll<HTMLButtonElement>(".awesomeado-item-menu__command")];
+}
+
+function menuCommand(label: string): HTMLButtonElement {
+  const command = [
+    ...document.querySelectorAll<HTMLButtonElement>(".awesomeado-item-menu__command"),
+  ].find((row) => row.getAttribute("aria-label") === label || row.textContent?.trim() === label);
+  if (command === undefined) throw new Error(`Missing menu command "${label}".`);
+  return command;
+}
+
+function bulkMoveSprintWindow(): SprintWindow {
+  return {
+    entries: [
+      {
+        id: "sprint-0",
+        path: "Project\\Sprint 0",
+        name: "Sprint 0",
+        label: "Previous - Sprint 0",
+        relation: "past",
+      },
+      {
+        id: "sprint-1",
+        path: "Project\\Sprint 1",
+        name: "Sprint 1",
+        label: "Current - Sprint 1",
+        relation: "current",
+      },
+      {
+        id: "sprint-2",
+        path: "Project\\Sprint 2",
+        name: "Sprint 2",
+        label: "Next - Sprint 2",
+        relation: "future",
+      },
+    ],
+    currentName: "Sprint 1",
+  };
+}
+
+async function selectSprint(root: HTMLElement, name: string): Promise<void> {
+  const select = root.querySelector<HTMLSelectElement>(".awesomeado-sprint-picker__select")!;
+  select.value = name;
+  select.dispatchEvent(new Event("change"));
+  await vi.waitFor(() => expect(root.textContent).not.toBe("Loading spring data..."));
+}
+
+function expectCopyOnlyTitleMenu(root: HTMLElement): void {
+  expect(
+    openContextMenu(root.querySelector(".awesomeado-sprint__title")!).map((row) => row.textContent),
+  ).toEqual(["Copy ADO Url"]);
+}
+
+function openBulkConfirmation(root: HTMLElement): HTMLElement {
+  const titleRows = openContextMenu(root.querySelector(".awesomeado-sprint__title")!);
+  expect(titleRows.map((row) => row.getAttribute("aria-label") ?? row.textContent)).toEqual([
+    "Copy ADO Url",
+    "Move all non-DONE items to",
+  ]);
+  const done = titleRows[1]!.querySelector("span") as HTMLElement;
+  expect(done.textContent).toBe("DONE");
+  expect(done.style.background).toBe("var(--status-green-background)");
+  expect(done.style.color).toBe("var(--completion-foreground)");
+  titleRows[1]!.click();
+  const next = [
+    ...document.querySelectorAll<HTMLButtonElement>(".awesomeado-item-menu__submenu button"),
+  ].find((row) => row.textContent === "Next - Sprint 2")!;
+  next.click();
+  return root.querySelector<HTMLElement>(".awesomeado-sprint__bulk-dialog")!;
+}
+
+function confirmBulkDialog(dialog: HTMLElement): void {
+  expect(dialog.textContent).toContain("Move 1 visible item(s)?");
+  expect(dialog.textContent).toContain("Platform1");
+  expect(dialog.textContent).toContain("Alice1");
+  expect(dialog.textContent).toContain("1 visible unassigned item(s) excluded.");
+  dialog.querySelector<HTMLButtonElement>(".awesomeado-sprint__bulk-dialog-confirm")!.click();
+}
+
+async function verifyPastSprintBulkMove(): Promise<void> {
+  const writeField = vi
+    .fn<EnhancedViewServices["writeField"]>()
+    .mockResolvedValue({ ok: true, rev: 2 });
+  const roots = [
+    item(1, "Move me", { iterationPath: "Project\\Sprint 0", sprintName: "Sprint 0" }),
+    item(2, "Leave done", {
+      state: "Done",
+      iterationPath: "Project\\Sprint 0",
+      sprintName: "Sprint 0",
+    }),
+    item(3, "Leave unassigned", {
+      assignedTo: null,
+      iterationPath: "Project\\Sprint 0",
+      sprintName: "Sprint 0",
+    }),
+  ];
+  const root = await render({
+    loadTree: async () => ({ isTreeQuery: false, roots, error: null }),
+    loadSprintWindow: async () => bulkMoveSprintWindow(),
+    writeField,
+  });
+  const title = root.querySelector<HTMLElement>(".awesomeado-sprint__title")!;
+  expect(title.style.cursor).toBe("context-menu");
+  expect(title.title).toBe("");
+  expectCopyOnlyTitleMenu(root);
+  await selectSprint(root, "Sprint 2");
+  expectCopyOnlyTitleMenu(root);
+  await selectSprint(root, "Sprint 0");
+  confirmBulkDialog(openBulkConfirmation(root));
+  await vi.waitFor(() => expect(writeField).toHaveBeenCalledTimes(1));
+  expect(writeField).toHaveBeenCalledWith(
+    expect.objectContaining({
+      id: 1,
+      rev: 1,
+      field: "System.IterationPath",
+      value: "Project\\Sprint 2",
+      baseValue: "Project\\Sprint 0",
+      preconditions: [
+        { field: "System.State", value: "New" },
+        { field: "System.AreaPath", value: "Project\\Platform" },
+        { field: "System.AssignedTo", value: "alice@example.com" },
+      ],
+    }),
+  );
+}
+
+describe("Sprint View title context menu", () => {
+  it(
+    "offers bulk move only for a past sprint and guards every non-Done item",
+    verifyPastSprintBulkMove,
+  );
+});
+
+describe("Sprint View item context menus", () => {
+  it("offers the same item commands on cards and direct child rows", async () => {
+    const parent = item(1, "Parent", { children: [item(2, "Child")] });
+    const root = await render({
+      loadTree: async () => ({ isTreeQuery: true, roots: [parent], error: null }),
+    });
+    const expected = [
+      "Copy Item ID",
+      "Copy ADO Url",
+      "Open in ADO",
+      "Update title",
+      "Update description",
+      "Move to another sprint",
+      "Change area path",
+      "View all notes",
+      "Tag with Blocked (internal)",
+      "Tag with Blocked by another team",
+      "Tag with Interrupt",
+    ];
+
+    const cardRows = openContextMenu(root.querySelector('[data-item-id="1"]')!);
+    expect(
+      cardRows.map(
+        (row) => row.getAttribute("aria-label") ?? row.textContent?.replace("›", "").trim(),
+      ),
+    ).toEqual(expected);
+    root.querySelector<HTMLButtonElement>(".awesomeado-child-items__badge")!.click();
+    const childRows = openContextMenu(root.querySelector(".awesomeado-child-items__row")!);
+    expect(
+      childRows.map(
+        (row) => row.getAttribute("aria-label") ?? row.textContent?.replace("›", "").trim(),
+      ),
+    ).toEqual(expected);
+  });
+});
+
+describe("Sprint View item marker notes", () => {
+  it("opens a card marker pill on only the notes carrying that marker token", async () => {
+    const loadNotes = vi.fn(() =>
+      Promise.resolve({
+        notes: [
+          {
+            id: 1,
+            workItemId: 1,
+            text: "[BLOCKED] Waiting on the API team.",
+            renderedHtml: null,
+            createdDate: "2026-07-31T10:00:00Z",
+            author: { id: "author", displayName: "Ada", uniqueName: "ada@example.com" },
+          },
+          {
+            id: 2,
+            workItemId: 1,
+            text: "An unrelated note.",
+            renderedHtml: null,
+            createdDate: "2026-07-31T11:00:00Z",
+            author: { id: "author", displayName: "Ada", uniqueName: "ada@example.com" },
+          },
+        ],
+        currentUser: null,
+        error: null,
+      }),
+    );
+    const root = await render({
+      loadTree: async () => ({
+        isTreeQuery: false,
+        roots: [item(1, "Queued", { tags: ["Blocked"], noteCount: 2 })],
+        error: null,
+      }),
+      noteLoader: { loadNotes },
+    });
+    const selector =
+      '[data-item-id="1"] .awesomeado-sprint-card__markers button[data-marker="blocked"]';
+    await vi.waitFor(() => expect(root.querySelector(selector)).not.toBeNull());
+    const pill = root.querySelector<HTMLButtonElement>(selector)!;
+
+    expect(pill.title).toBe("");
+    pill.click();
+    await vi.waitFor(() =>
+      expect(root.querySelector(".awesomeado-marker-reasons__popup")?.textContent).toContain(
+        "Waiting on the API team.",
+      ),
+    );
+
+    expect(loadNotes).toHaveBeenCalledTimes(1);
+    expect(root.querySelector(".awesomeado-marker-reasons__popup")?.textContent).not.toContain(
+      "An unrelated note.",
+    );
+  });
+});
+
+describe("Sprint View new Interrupt command", () => {
+  it("tags a new Interrupt as accepted in one patch when its checkbox is selected", async () => {
+    const writeField = vi
+      .fn<EnhancedViewServices["writeField"]>()
+      .mockResolvedValue({ ok: true, rev: 2 });
+    const root = await render({ writeField });
+    openContextMenu(root.querySelector('[data-item-id="2"]')!);
+    const command = menuCommand("Tag with Interrupt");
+    const accepted = document.querySelector<HTMLInputElement>(
+      '.awesomeado-item-menu__checkbox-command input[type="checkbox"]',
+    )!;
+    expect(accepted.checked).toBe(false);
+    expect(command.querySelector('[data-marker="interrupt"]')?.getAttribute("data-accepted")).toBe(
+      "false",
+    );
+    expect(document.querySelector(".awesomeado-item-command__panel")).toBeNull();
+
+    accepted.click();
+    expect(accepted.checked).toBe(true);
+    expect(command.querySelector('[data-marker="interrupt"]')?.getAttribute("data-accepted")).toBe(
+      "true",
+    );
+    expect(document.querySelector(".awesomeado-item-menu")).not.toBeNull();
+    command.click();
+
+    const editor = document.querySelector<HTMLElement>(".awesomeado-text-editor")!;
+    const input = editor.querySelector<HTMLTextAreaElement>("textarea")!;
+    const acceptButton = [...editor.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent === "Accept",
+    )!;
+    expect(document.querySelector(".awesomeado-item-command__title")?.textContent).toBe("Queued");
+    expect(input.placeholder).toBe("Why is the interrupt accepted in the sprint?");
+    expect(acceptButton.disabled).toBe(true);
+    input.value = "Needed to meet the sprint goal.";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(acceptButton.disabled).toBe(false);
+    acceptButton.click();
+
+    await vi.waitFor(() => expect(writeField).toHaveBeenCalledTimes(1));
+    expect(writeField).toHaveBeenCalledWith({
+      id: 2,
+      rev: 1,
+      field: "System.Tags",
+      value: "Interrupt",
+      baseValue: "",
+      comment: "[ACCEPTED] Needed to meet the sprint goal.",
+    });
+    expect(
+      root
+        .querySelector('[data-item-id="2"] [data-marker="interrupt"]')
+        ?.getAttribute("data-accepted"),
+    ).toBe("true");
+  });
+});
+
+describe("Sprint View existing Interrupt commands", () => {
+  it("offers Clear and Accept for an unaccepted Interrupt", async () => {
+    const writeField = vi
+      .fn<EnhancedViewServices["writeField"]>()
+      .mockResolvedValue({ ok: true, rev: 2 });
+    const root = await render({
+      loadTree: async () => ({
+        isTreeQuery: false,
+        roots: [item(1, "Interrupt", { tags: ["Interrupt"] })],
+        error: null,
+      }),
+      writeField,
+    });
+    openContextMenu(root.querySelector('[data-item-id="1"]')!);
+    expect(menuCommand("Clear Interrupt")).not.toBeNull();
+    menuCommand("Accept interrupt").click();
+
+    const editor = document.querySelector<HTMLElement>(".awesomeado-text-editor")!;
+    const input = editor.querySelector<HTMLTextAreaElement>("textarea")!;
+    const acceptButton = [...editor.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent === "Accept",
+    )!;
+    input.value = "The team committed to delivering it.";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    acceptButton.click();
+
+    await vi.waitFor(() => expect(writeField).toHaveBeenCalledTimes(1));
+    expect(writeField).toHaveBeenCalledWith({
+      id: 1,
+      rev: 1,
+      field: "System.Tags",
+      value: "Interrupt",
+      baseValue: "Interrupt",
+      comment: "[ACCEPTED] The team committed to delivering it.",
+    });
+  });
+
+  it("offers only an accepted Clear command for an accepted Interrupt", async () => {
+    const writeField = vi
+      .fn<EnhancedViewServices["writeField"]>()
+      .mockResolvedValue({ ok: true, rev: 2 });
+    const root = await render({
+      loadTree: async () => ({
+        isTreeQuery: false,
+        roots: [item(1, "Accepted", { tags: ["Interrupt"] })],
+        error: null,
+      }),
+      interruptAcceptance: {
+        readInterruptAcceptance: async () => ({
+          acceptedWorkItemIds: [1],
+          failedWorkItemIds: [],
+          error: null,
+        }),
+      },
+      writeField,
+    });
+    openContextMenu(root.querySelector('[data-item-id="1"]')!);
+    const clear = menuCommand("Clear Interrupt");
+    expect(clear.querySelector('[data-marker="interrupt"]')?.getAttribute("data-accepted")).toBe(
+      "true",
+    );
+    expect(
+      [...document.querySelectorAll(".awesomeado-item-menu__command")].some(
+        (row) => row.getAttribute("aria-label") === "Accept interrupt",
+      ),
+    ).toBe(false);
+    clear.click();
+
+    await vi.waitFor(() => expect(writeField).toHaveBeenCalledTimes(1));
+    expect(writeField).toHaveBeenCalledWith({
+      id: 1,
+      rev: 1,
+      field: "System.Tags",
+      value: "",
+      baseValue: "Interrupt",
     });
   });
 });
@@ -1254,6 +1703,13 @@ describe("Sprint View header", () => {
     ];
     const root = await render({
       loadTree: async () => ({ isTreeQuery: false, roots, error: null }),
+      interruptAcceptance: {
+        readInterruptAcceptance: async () => ({
+          acceptedWorkItemIds: [1],
+          failedWorkItemIds: [],
+          error: null,
+        }),
+      },
     });
     const interrupt = root.querySelector('[data-marker="interrupt"]')!;
 
@@ -1263,6 +1719,13 @@ describe("Sprint View header", () => {
 
     const acceptedOnly = await render({
       loadTree: async () => ({ isTreeQuery: false, roots: [roots[0]!], error: null }),
+      interruptAcceptance: {
+        readInterruptAcceptance: async () => ({
+          acceptedWorkItemIds: [1],
+          failedWorkItemIds: [],
+          error: null,
+        }),
+      },
     });
     const collapsed = acceptedOnly.querySelector('[data-marker="interrupt"]')!;
     expect(metric(collapsed, "total")).toBe("1");
@@ -1311,11 +1774,162 @@ describe("Sprint View filters", () => {
     checkbox.checked = true;
     checkbox.dispatchEvent(new Event("change"));
 
+    expect(root.querySelector(".awesomeado-area-filter__popup")).not.toBeNull();
+    expect(root.querySelectorAll(".awesomeado-sprint__item")).toHaveLength(2);
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+
     expect(root.querySelectorAll(".awesomeado-sprint__item")).toHaveLength(1);
     expect(root.querySelector(".awesomeado-sprint__item")?.textContent).toContain("Apps item");
     expect(
       [...root.querySelectorAll(".awesomeado-sprint__lane-name")].map((lane) => lane.textContent),
     ).toEqual(["Apps"]);
+  });
+});
+
+describe("Sprint View shared Lane defaults and publishing", () => {
+  it("initially selects the union of defaults and this sprint's shared paths", async () => {
+    const save = vi.fn(async () => true);
+    const roots = [item(1, "Platform item"), item(2, "Apps item", { areaPath: "Project\\Apps" })];
+    const root = await render({
+      loadTree: async () => ({ isTreeQuery: false, roots, error: null }),
+      sprintAreaPaths: {
+        read: async () => ({
+          defaultAreaPaths: ["Project\\Apps"],
+          sprintAreaPaths: {
+            "Project\\Sprint 1": {
+              areaPaths: ["Project\\Platform"],
+              startDate: null,
+              finishDate: null,
+            },
+          },
+        }),
+        save,
+      },
+    });
+
+    root.querySelector<HTMLButtonElement>(".awesomeado-area-filter__trigger")!.click();
+    const selected = [...root.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')]
+      .filter((input) => input.checked)
+      .map((input) => input.value)
+      .sort();
+    expect(selected).toEqual(["Project\\Apps", "Project\\Platform"]);
+    expect(save).toHaveBeenCalledWith({
+      "Project\\Sprint 1": {
+        areaPaths: ["Project\\Platform", "Project\\Apps"],
+        startDate: null,
+        finishDate: null,
+      },
+    });
+  });
+
+  it("publishes each Lane-filter change under the selected sprint path", async () => {
+    const save = vi.fn(async () => true);
+    const roots = [item(1, "Platform item"), item(2, "Apps item", { areaPath: "Project\\Apps" })];
+    const root = await render({
+      loadTree: async () => ({ isTreeQuery: false, roots, error: null }),
+      sprintAreaPaths: {
+        read: async () => ({
+          defaultAreaPaths: [],
+          sprintAreaPaths: {
+            "Project\\Sprint 1": { areaPaths: [], startDate: null, finishDate: null },
+          },
+        }),
+        save,
+      },
+    });
+    save.mockClear();
+
+    root.querySelector<HTMLButtonElement>(".awesomeado-area-filter__trigger")!.click();
+    const apps = [...root.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')].find(
+      (input) => input.value === "Project\\Apps",
+    )!;
+    apps.checked = true;
+    apps.dispatchEvent(new Event("change"));
+
+    expect(save).toHaveBeenCalledWith({
+      "Project\\Sprint 1": {
+        areaPaths: ["Project\\Apps"],
+        startDate: null,
+        finishDate: null,
+      },
+    });
+  });
+});
+
+describe("Sprint View shared Lane reloads", () => {
+  it("reloads the selected paths from shared configuration on refresh", async () => {
+    const read = vi
+      .fn()
+      .mockResolvedValueOnce({
+        defaultAreaPaths: [],
+        sprintAreaPaths: {
+          "Project\\Sprint 1": {
+            areaPaths: ["Project\\Platform"],
+            startDate: null,
+            finishDate: null,
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        defaultAreaPaths: [],
+        sprintAreaPaths: {
+          "Project\\Sprint 1": {
+            areaPaths: ["Project\\Apps"],
+            startDate: null,
+            finishDate: null,
+          },
+        },
+      });
+    const roots = [item(1, "Platform item"), item(2, "Apps item", { areaPath: "Project\\Apps" })];
+    const root = await render({
+      loadTree: async () => ({ isTreeQuery: false, roots, error: null }),
+      sprintAreaPaths: { read, save: async () => true },
+    });
+    expect(root.querySelector(".awesomeado-sprint__item")?.textContent).toContain("Platform item");
+
+    root.querySelector<HTMLButtonElement>(".awesomeado-sprint__refresh")!.click();
+    await vi.waitFor(() =>
+      expect(root.querySelector(".awesomeado-sprint__item")?.textContent).toContain("Apps item"),
+    );
+    expect(read).toHaveBeenCalledTimes(2);
+  });
+
+  it("loads the selection stored for each sprint when the sprint changes", async () => {
+    const read = vi.fn(async () => ({
+      defaultAreaPaths: [],
+      sprintAreaPaths: {
+        "Project\\Sprint 1": {
+          areaPaths: ["Project\\Platform"],
+          startDate: null,
+          finishDate: null,
+        },
+        "Project\\Sprint 2": {
+          areaPaths: ["Project\\Apps"],
+          startDate: null,
+          finishDate: null,
+        },
+      },
+    }));
+    const roots = [
+      item(1, "Current platform"),
+      item(2, "Future apps", {
+        areaPath: "Project\\Apps",
+        iterationPath: "Project\\Sprint 2",
+        sprintName: "Sprint 2",
+      }),
+    ];
+    const root = await render({
+      loadTree: async () => ({ isTreeQuery: false, roots, error: null }),
+      sprintAreaPaths: { read, save: async () => true },
+    });
+    expect(root.querySelector(".awesomeado-sprint__item")?.textContent).toContain(
+      "Current platform",
+    );
+
+    await selectSprint(root, "Sprint 2");
+
+    expect(root.querySelector(".awesomeado-sprint__item")?.textContent).toContain("Future apps");
+    expect(read).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -1367,8 +1981,12 @@ describe("Sprint View Project filter", () => {
     root.querySelector<HTMLButtonElement>(".awesomeado-hierarchy-filter__trigger")!.click();
     const options = root.querySelectorAll<HTMLElement>(".awesomeado-hierarchy-filter__option");
     expect([...options].map((option) => option.dataset.itemId)).toEqual(["", "1", "2"]);
-    expect(options[1]?.style.color).toBe("rgb(17, 34, 51)");
-    expect(options[2]?.style.color).toBe("rgb(68, 85, 102)");
+    expect(options[1]?.style.color).toBe(
+      "color-mix(in srgb, #112233 60%, var(--text-primary-color))",
+    );
+    expect(options[2]?.style.color).toBe(
+      "color-mix(in srgb, #445566 60%, var(--text-primary-color))",
+    );
 
     const parentRadio = root.querySelector<HTMLInputElement>(
       '.awesomeado-hierarchy-filter__option[data-item-id="2"] input',
@@ -1385,6 +2003,19 @@ describe("Sprint View Project filter", () => {
     expect(root.querySelector(".awesomeado-child-items__popup")?.textContent).toContain(
       "Shown child",
     );
+
+    root.querySelector<HTMLButtonElement>(".awesomeado-hierarchy-filter__trigger")!.click();
+
+    expect(
+      root
+        .querySelector<HTMLButtonElement>(".awesomeado-hierarchy-filter__trigger")
+        ?.getAttribute("aria-pressed"),
+    ).toBe("false");
+    expect(root.querySelector(".awesomeado-hierarchy-filter__popup")).toBeNull();
+
+    root.querySelector<HTMLButtonElement>(".awesomeado-hierarchy-filter__trigger")!.click();
+
+    expect(root.querySelector(".awesomeado-hierarchy-filter__popup")).not.toBeNull();
   });
 });
 

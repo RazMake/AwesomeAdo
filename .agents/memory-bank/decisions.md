@@ -1150,3 +1150,70 @@ Markdown` in one `/rev`-guarded JSON Patch. The PATCH is not retried; a concurre
   only ordering policy a manual drop can persist without the next render undoing it, while state
   changes remain meaningful under every display order. Done work and its context remain inspectable
   without exposing controls that should no longer mutate its plan.
+
+## ADR-061: Interrupt acceptance belongs to the current tagged lifetime
+
+- Decision: an Interrupt is accepted only when a Discussion revision containing the configured
+  Interrupt comment token occurs at or after the most recent revision that added the configured
+  Interrupt tag. The reader pages the work-item updates stream by actual returned count and derives
+  `System.Tags`, `System.History`, and `System.ChangedDate` from that one revision timeline. Failed
+  items remain unknown rather than being guessed unaccepted.
+- Rationale: checking for any historic acceptance note lets an old note survive tag removal and a
+  later re-tag. The updates stream orders both facts without guessing from the item's broad current
+  `ChangedDate`; equality supports the single-patch “tag as accepted” action.
+- Consequence: Sprint View alone exposes Tag/Accept/Clear Interrupt commands. Tagging as accepted
+  writes `System.Tags` and the configured acceptance note in one JSON Patch. A themed checkbox in
+  the menu row selects proposed versus accepted and updates the preview; selecting acceptance opens
+  the shared titled Markdown/mention editor. Accept stays disabled until a non-empty reason exists,
+  and the configured token prefixes that reason in `System.History`. Existing Interrupts use the
+  same dialog. Accepted pills use solid Interrupt purple; raised pills use a 24% fill with a 1px
+  bright-purple edge. Interrupt filter pills always use accepted paint, since they represent the
+  condition rather than one item's acceptance state. Project Tracking does not expose mutation
+  commands, but both views use the same accepted/unaccepted state and shared paint.
+- Consequence: the typed reader pages through the existing retrying MAIN-world request, with URLs
+  built only from the sender tab. Both views paint immediately and resolve acceptance afterward;
+  Sprint generation-guards the repaint so a slow read cannot hold the board blank or repaint a
+  different sprint.
+
+## ADR-062: Sprint bulk movement owns a confirmed visible-card snapshot
+
+- Decision: the Sprint title offers bulk movement only while a past sprint is selected. Choosing a
+  current/future destination opens a confirmation that groups the exact currently visible eligible
+  cards by Lane and assignee. Lane display uses the same shortest-unique-suffix labels as the Lane
+  dropdown, while candidates and guards retain full Area Paths. Eligibility is assigned, non-Done Primary work; unassigned visible
+  cards are reported as excluded. The operation snapshots those IDs at confirmation and never adds
+  filtered-out cards, implementation-detail descendants, new query arrivals, or cards revealed by a
+  later filter change.
+- Decision: each snapshot ID is freshly read before writing and its `System.IterationPath` patch
+  atomically tests `System.State`, `System.AreaPath`, and `System.AssignedTo`. Changed, missing, Done,
+  or unassigned cards are skipped. A preconditioned write never uses the primary-field-only rebase;
+  409/412 returns to a fresh complete pass. Transient failures receive three retries with backoff;
+  execution is bounded to 100 passes and 10,000 confirmed IDs.
+- Decision: while active, view interactions are blocked and unload receives the browser warning.
+  Cancel or Escape finishes the current write and abandons the remainder. Header progress reports
+  moved/failed/skipped counts and links failures to Diagnostics; completion refreshes the sprint.
+- Rationale: the visible filtered table is the user's team/scope boundary. Re-evaluating filters or
+  discovering source-sprint work after confirmation would make the dialog's counts false and could
+  move another team's work. Exact snapshot membership plus fresh server guards preserves both the
+  user's confirmed scope and protection against cards becoming Done or changing ownership mid-run.
+
+## ADR-063: Sprint area-path selections are dated team configuration
+
+- Decision: `defaultAreaPaths` and `sprintAreaPaths` are normalized `ExtensionSettings`, so file
+  export/import and the compact work-item payload carry both automatically. Defaults are full paths.
+  A per-sprint record is keyed by full iteration path and stores selected full paths plus ADO's sprint
+  start/finish dates.
+- Decision: opening, refreshing, or switching a sprint pulls the connected team configuration and
+  loads that sprint's selection. Defaults are unioned into the record and materialized there; adding
+  a default also adds it to existing records, while removing a default never removes it from a
+  sprint. Every Sprint Lane change updates immediately and serially publishes the resulting full
+  configuration through a bounded content-to-background write and the existing revision-guarded
+  Description patch.
+- Decision: pruning retains all current, future, and undated records plus the ten most recently
+  finished sprints. Older completed records are deleted whenever a sprint record is materialized or
+  changed, keeping the shared Description bounded without guessing about records whose dates are
+  unavailable.
+- Rationale: defaults are an initial list, not a permanent policy, while the sprint selection is a
+  team decision that must survive refreshes and be identical for every viewer. Storing date bounds
+  with each record makes the ten-sprint retention rule deterministic even after a sprint falls
+  outside the configured picker window.

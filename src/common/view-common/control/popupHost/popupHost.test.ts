@@ -229,6 +229,17 @@ describe("createPopupHost - Escape inside a text field", () => {
 
     expect(host.isOpen).toBe(false);
   });
+
+  it("closes when Escape comes from a checkbox, which is not a text editor", () => {
+    const { host, field } = setupWithField(false);
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    field.replaceWith(checkbox);
+
+    escapeFrom(checkbox);
+
+    expect(host.isOpen).toBe(false);
+  });
 });
 
 describe("createPopupHost - keeping the popup on screen", () => {

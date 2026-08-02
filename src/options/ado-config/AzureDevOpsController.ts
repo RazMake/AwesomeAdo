@@ -13,6 +13,10 @@ import {
 import type { ISettingsStore } from "../../common/settings/ISettingsStore";
 
 import { AutocompleteInput } from "./AutocompleteInput";
+import {
+  DefaultAreaPathsController,
+  type DefaultAreaPathsElements,
+} from "./DefaultAreaPathsController";
 import { MarkerTagsController, type MarkerTagsElements } from "./MarkerTagsController";
 import { WorkItemTypesController, type WorkItemTypesElements } from "./WorkItemTypesController";
 
@@ -28,6 +32,8 @@ export interface AzureDevOpsElements {
   futureSprintsInput: HTMLInputElement;
   /** Whole-number input (0..6) for how many past sprints the picker offers. */
   pastSprintsInput: HTMLInputElement;
+  /** The nested default Sprint area-path editor. */
+  defaultAreaPaths: DefaultAreaPathsElements;
   /** The nested work-item-types section, driven by a delegated sub-controller. */
   workItemTypes: WorkItemTypesElements;
   /** The nested marker-tags section, driven by a delegated sub-controller. */
@@ -69,6 +75,7 @@ export class AzureDevOpsController {
   // The marker-tags section is likewise its own writer of one settings slice, so it lives in its own
   // controller fed by this controller's single settings load (via render).
   private readonly markerTags: MarkerTagsController;
+  private readonly defaultAreaPaths: DefaultAreaPathsController;
 
   constructor(
     private readonly store: ISettingsStore,
@@ -86,6 +93,11 @@ export class AzureDevOpsController {
       this.reportError,
     );
     this.markerTags = new MarkerTagsController(store, elements.markerTags, this.reportError);
+    this.defaultAreaPaths = new DefaultAreaPathsController(
+      store,
+      elements.defaultAreaPaths,
+      this.reportError,
+    );
   }
 
   async init(): Promise<void> {
@@ -111,6 +123,7 @@ export class AzureDevOpsController {
     this.teamCombobox.dispose();
     this.workItemTypes.dispose();
     this.markerTags.dispose();
+    this.defaultAreaPaths.dispose();
     this.elements.teamInput.removeEventListener("change", this.handleTeamChange);
     this.elements.futureSprintsInput.removeEventListener("change", this.handleSprintsChange);
     this.elements.pastSprintsInput.removeEventListener("change", this.handlePastSprintsChange);
@@ -122,6 +135,7 @@ export class AzureDevOpsController {
     this.elements.pastSprintsInput.addEventListener("change", this.handlePastSprintsChange);
     this.workItemTypes.init();
     this.markerTags.init();
+    this.defaultAreaPaths.init();
   }
 
   private async loadSettings(): Promise<void> {
@@ -139,6 +153,7 @@ export class AzureDevOpsController {
     this.renderPastSprints(settings.pastSprintsCount);
     this.workItemTypes.render(settings.workItemTypes, settings.boardColumns);
     this.markerTags.render(settings.markerTags);
+    this.defaultAreaPaths.render(settings);
     this.enableControls();
   }
 

@@ -6,11 +6,17 @@ import type {
   TypeCatalogEntry,
 } from "../../../common/ado/TrackedWorkItem";
 import { WorkItemWriteQueue } from "../../../common/ado/WorkItemWriteQueue/WorkItemWriteQueue";
-import { buildQueryFolderUrl } from "../../../common/ado/fetchAdoTree";
+import { buildQueryFolderUrl, buildWorkItemUrl } from "../../../common/ado/fetchAdoTree";
 import { filterTreeForSprintRoster, wiqlForSprint } from "../../../common/ado/sprintQuery";
 import type { SprintWindow, SprintWindowEntry } from "../../../common/ado/sprintWindow";
 import { MANUAL_ORDERING_POLICY, type OrderingPolicy } from "../../../common/ordering/ItemOrdering";
 import { WORK_ITEM_MARKERS, type WorkItemMarker } from "../../../common/settings/ExtensionSettings";
+import {
+  selectedAreaPathsForSprint,
+  withSprintAreaPathSelection,
+  type SprintAreaPathConfiguration,
+  type SprintAreaPaths,
+} from "../../../common/settings/SprintAreaPaths";
 import type {
   DataDrivenViewContext,
   EnhancedView,
@@ -39,15 +45,32 @@ import {
   renderHierarchyFilter,
   type HierarchyFilterOption,
 } from "../../../common/view-common/control/HierarchyFilter/HierarchyFilter";
+import {
+  createItemContextMenu,
+  type ItemContextMenu,
+  type ItemContextMenuCommand,
+  type ItemContextMenuTarget,
+} from "../../../common/view-common/control/ItemContextMenu/ItemContextMenu";
 import { renderMarkerPill } from "../../../common/view-common/control/MarkerPill/MarkerPill";
 import { itemHasMarker } from "../../../common/view-common/control/MarkerPill/markerPresence";
 import { renderOrderingPicker } from "../../../common/view-common/control/OrderingPicker/OrderingPicker";
-import { renderSprintPicker } from "../../../common/view-common/control/SprintPicker/SprintPicker";
+import {
+  renderSprintPicker,
+  sprintRelationDeclarations,
+} from "../../../common/view-common/control/SprintPicker/SprintPicker";
 import { renderViewScaffold } from "../../../common/view-common/control/ViewScaffold/ViewScaffold";
 import { renderWriteQueueStatus } from "../../../common/view-common/control/WriteQueueStatus/WriteQueueStatus";
 import type { WriteQueueStatusHandle } from "../../../common/view-common/control/WriteQueueStatus/WriteQueueStatus";
+import {
+  loadInterruptAcceptanceState,
+  type InterruptAcceptanceState,
+} from "../interrupt-acceptance/interruptAcceptanceState";
+import { buildItemCommands } from "../project-tracking/item-commands/ItemCommands";
+import { buildMarkerCommands } from "../project-tracking/item-commands/MarkerCommands";
 
 import { renderSprintBoard, type SprintBoardItem } from "./SprintBoard";
+import { deliveryWorkTypes } from "./SprintBulkMove";
+import { SprintBulkMoveController, type SprintBulkMoveRequest } from "./SprintBulkMoveController";
 import { renderSprintHeader } from "./SprintHeader";
 import { sprintOrderingPolicy, sprintRecentChangesHours, sprintViewType } from "./sprintViewType";
 
@@ -71,6 +94,11 @@ interface LoadedSprintData {
   result: WorkItemTreeResult;
   sprintWindow: SprintWindow;
   teamMembers: TeamMembersResult;
+  interruptAcceptance: InterruptAcceptanceState;
+  queryWiql: string;
+  selectedOffset: number;
+  selectedSprint: SprintWindowEntry | null;
+  sprintAreaPaths: SprintAreaPaths;
 }
 
 interface DisplayItem extends SprintBoardItem {
@@ -85,6 +113,7 @@ interface DisplayItem extends SprintBoardItem {
 interface SprintBoardHandle {
   refresh: RefreshButtonHandle;
   queueStatus: WriteQueueStatusHandle;
+  bulkMoveStatus: HTMLElement;
 }
 
 interface StickyHeaderObservation {
@@ -181,6 +210,9 @@ interface SprintHeaderRenderOptions {
   repaint: () => void;
   onRefresh: () => void;
   onSprintChange: (name: string) => void;
+  onAreaPathsChange: (paths: string[]) => void;
+  onAreaPathsDismiss: () => void;
+  onTitleContextMenu: (event: MouseEvent) => void;
   writeState: SprintWriteState;
 }
 
@@ -265,22 +297,6 @@ function metricsFor(
   };
 }
 
-function deliveryWorkTypes(types: readonly TypeCatalogEntry[]): ReadonlySet<string> {
-  const workTypes = new Set(
-    types.filter((type) => type.isPrimaryWork === true).map((type) => type.name),
-  );
-  const pending = [...workTypes];
-  while (pending.length > 0) {
-    const name = pending.pop() as string;
-    for (const child of types.find((type) => type.name === name)?.children ?? []) {
-      if (workTypes.has(child)) continue;
-      workTypes.add(child);
-      pending.push(child);
-    }
-  }
-  return workTypes;
-}
-
 function isDeliveryWorkItem(item: TrackedWorkItem, workTypes: ReadonlySet<string>): boolean {
   return workTypes.has(item.type);
 }
@@ -320,9 +336,25 @@ async function loadSprintData(
 ): Promise<LoadedSprintData> {
   const definitionPromise = loadQueryDefinition(context);
   const teamMembersPromise = context.services.loadTeamMembers();
-  const sprintWindow = await context.services.loadSprintWindow();
+  const [sprintWindow, areaConfiguration] = await Promise.all([
+    context.services.loadSprintWindow(),
+    loadSprintAreaPathConfiguration(context),
+  ]);
   normalizeSprintSelection(sprintWindow, session);
-  const selectedSprint = selectedSprintEntry(sprintWindow, session);
+  const selectedSprint = selectedSprintEntry(sprintWindow, session) ?? null;
+  session.selectedAreaPaths = new Set(
+    selectedAreaPathsForSprint(
+      areaConfiguration.defaultAreaPaths,
+      selectedSprint === null ? undefined : areaConfiguration.sprintAreaPaths[selectedSprint.path],
+    ),
+  );
+  const sprintAreaPaths = materializeSprintAreaPaths(
+    context,
+    areaConfiguration,
+    selectedSprint,
+    session.selectedAreaPaths,
+  );
+  const offset = selectedSprintOffset(sprintWindow, selectedSprint ?? undefined);
   const [teamMembers, definition] = await Promise.all([teamMembersPromise, definitionPromise]);
   if (teamMembers.error !== null) throw new Error(teamMembers.error);
   if (definition.error !== null || definition.wiql === null) {
@@ -330,7 +362,7 @@ async function loadSprintData(
   }
   const loaded = await context.services.loadTree(
     context.queryId,
-    wiqlForSprint(definition.wiql, selectedSprintOffset(sprintWindow, selectedSprint)),
+    wiqlForSprint(definition.wiql, offset),
   );
   if (loaded.error !== null) throw new Error(loaded.error);
   const result: WorkItemTreeResult = {
@@ -341,7 +373,46 @@ async function loadSprintData(
     `Sprint View loaded query ${context.queryId}: items=${flattenItems(result.roots).length}, ` +
       `teamMembers=${teamMembers.members.length}.`,
   );
-  return { result, sprintWindow, teamMembers };
+  return {
+    result,
+    sprintWindow,
+    teamMembers,
+    interruptAcceptance: { acceptedIds: new Set<number>(), failedIds: new Set<number>() },
+    queryWiql: definition.wiql,
+    selectedOffset: offset,
+    selectedSprint,
+    sprintAreaPaths,
+  };
+}
+
+async function loadSprintAreaPathConfiguration(
+  context: DataDrivenViewContext,
+): Promise<SprintAreaPathConfiguration> {
+  return (
+    (await context.services.sprintAreaPaths?.read()) ?? {
+      defaultAreaPaths: [],
+      sprintAreaPaths: {},
+    }
+  );
+}
+
+function materializeSprintAreaPaths(
+  context: DataDrivenViewContext,
+  configuration: SprintAreaPathConfiguration,
+  sprint: SprintWindowEntry | null,
+  selected: ReadonlySet<string>,
+): SprintAreaPaths {
+  if (sprint === null) return configuration.sprintAreaPaths;
+  const next = withSprintAreaPathSelection(
+    configuration.sprintAreaPaths,
+    sprint,
+    [...selected],
+    context.services.now(),
+  );
+  if (JSON.stringify(next) !== JSON.stringify(configuration.sprintAreaPaths)) {
+    void context.services.sprintAreaPaths?.save(next);
+  }
+  return next;
 }
 
 function hierarchyOptions(
@@ -410,6 +481,12 @@ function areaPathsOf(items: readonly DisplayItem[]): string[] {
   return paths
     .filter((path) => !paths.some((other) => other.startsWith(`${path}\\`)))
     .sort((left, right) => left.localeCompare(right));
+}
+
+function pruneSelectedAreaPaths(areaPaths: readonly string[], session: SprintSession): void {
+  for (const path of [...session.selectedAreaPaths]) {
+    if (!areaPaths.includes(path)) session.selectedAreaPaths.delete(path);
+  }
 }
 
 function areaScope(items: readonly DisplayItem[], session: SprintSession): DisplayItem[] {
@@ -542,15 +619,20 @@ function renderMarkerPills(
   context: DataDrivenViewContext,
   scopedItems: readonly DisplayItem[],
   acceptedItems: readonly DisplayItem[],
+  interruptAcceptance: InterruptAcceptanceState,
   session: SprintSession,
   onChange: () => void,
 ): HTMLElement[] {
   const markerTags = context.services.markerTags();
   return WORK_ITEM_MARKERS.map(({ key }) => {
     const matching = scopedItems.filter(({ item }) => itemHasMarker(item, key, markerTags));
-    const accepted = acceptedItems.filter(({ item }) => itemHasMarker(item, key, markerTags));
+    const accepted =
+      key === "interrupt"
+        ? matching.filter(({ item }) => interruptAcceptance.acceptedIds.has(item.id))
+        : acceptedItems.filter(({ item }) => itemHasMarker(item, key, markerTags));
     return renderMarkerPill(context.doc, {
       marker: key,
+      accepted: key === "interrupt",
       title: `Azure DevOps tag "${markerTags[key].tag}"`,
       interactive: true,
       selected: session.selectedMarkers.has(key),
@@ -586,6 +668,7 @@ function renderFilterPanel(
   context: DataDrivenViewContext,
   scopedItems: readonly DisplayItem[],
   acceptedItems: readonly DisplayItem[],
+  interruptAcceptance: InterruptAcceptanceState,
   session: SprintSession,
   onChange: () => void,
 ): HTMLElement {
@@ -601,7 +684,14 @@ function renderFilterPanel(
   const label = context.doc.createElement("span");
   label.textContent = "Filters:";
   label.style.cssText = "font-size:11px;font-weight:600;color:var(--text-secondary-color)";
-  const markerPills = renderMarkerPills(context, scopedItems, acceptedItems, session, onChange);
+  const markerPills = renderMarkerPills(
+    context,
+    scopedItems,
+    acceptedItems,
+    interruptAcceptance,
+    session,
+    onChange,
+  );
   const activityPills = renderActivityFilterPills(context.doc, {
     selected: session.selectedActivity,
     windowHours: sprintRecentChangesHours(context.properties),
@@ -618,10 +708,30 @@ function renderFilterPanel(
   return panel;
 }
 
+function renderHeaderStatuses(options: SprintHeaderRenderOptions): {
+  refresh: RefreshButtonHandle;
+  queueStatus: WriteQueueStatusHandle;
+  bulkMoveStatus: HTMLElement;
+} {
+  const { context } = options;
+  const refresh = renderRefreshButton(context.doc, "awesomeado-sprint__refresh");
+  refresh.element.addEventListener("click", options.onRefresh);
+  const queueStatus = renderWriteQueueStatus(context.doc, {
+    onOpenLog: context.services.openDiagnosticsLog,
+  });
+  queueStatus.setCount(options.writeState.pending);
+  queueStatus.setFailedCount(options.writeState.failed, options.writeState.lastError);
+  const bulkMoveStatus = context.doc.createElement("span");
+  bulkMoveStatus.className = "awesomeado-sprint__bulk-move-status";
+  bulkMoveStatus.style.cssText = "display:inline-flex;align-items:center;margin-right:8px";
+  return { refresh, queueStatus, bulkMoveStatus };
+}
+
 function renderBoardHeader(options: SprintHeaderRenderOptions): {
   header: HTMLElement;
   refresh: RefreshButtonHandle;
   queueStatus: WriteQueueStatusHandle;
+  bulkMoveStatus: HTMLElement;
 } {
   const { context, data, session, repaint } = options;
   const sprintPicker = renderSprintPicker(context.doc, {
@@ -630,13 +740,17 @@ function renderBoardHeader(options: SprintHeaderRenderOptions): {
     showFilterButton: false,
     onSprintChange: options.onSprintChange,
   });
+  let laneSelectionChanged = false;
   const laneFilter = renderAreaPathFilter(context.doc, {
     label: "Lane",
     areaPaths: options.areaPaths,
     selectedAreaPaths: [...session.selectedAreaPaths],
     onChange: (paths) => {
-      session.selectedAreaPaths = new Set(paths);
-      repaint();
+      laneSelectionChanged = true;
+      options.onAreaPathsChange(paths);
+    },
+    onPopupClosed: () => {
+      if (laneSelectionChanged) options.onAreaPathsDismiss();
     },
   });
   const projectFilter = renderHierarchyFilter(context.doc, {
@@ -647,13 +761,7 @@ function renderBoardHeader(options: SprintHeaderRenderOptions): {
       repaint();
     },
   });
-  const refresh = renderRefreshButton(context.doc, "awesomeado-sprint__refresh");
-  refresh.element.addEventListener("click", options.onRefresh);
-  const queueStatus = renderWriteQueueStatus(context.doc, {
-    onOpenLog: context.services.openDiagnosticsLog,
-  });
-  queueStatus.setCount(options.writeState.pending);
-  queueStatus.setFailedCount(options.writeState.failed, options.writeState.lastError);
+  const { refresh, queueStatus, bulkMoveStatus } = renderHeaderStatuses(options);
   const currentOrderingPolicy = session.orderingPolicy ?? sprintOrderingPolicy(context.properties);
   const orderingPicker = renderOrderingPicker(context.doc, {
     policy: currentOrderingPolicy,
@@ -683,6 +791,7 @@ function renderBoardHeader(options: SprintHeaderRenderOptions): {
       projectFilter: projectFilter.element,
       refresh,
       queueStatus: queueStatus.element,
+      bulkMoveStatus,
       teamPills: renderTeamPills(
         context.doc,
         data.teamMembers.members,
@@ -691,9 +800,202 @@ function renderBoardHeader(options: SprintHeaderRenderOptions): {
         session,
         repaint,
       ),
+      onTitleContextMenu: options.onTitleContextMenu,
     }),
     refresh,
     queueStatus,
+    bulkMoveStatus,
+  };
+}
+
+const ALL_NOTES_SINCE = new Date(0).toISOString();
+
+function sprintItemMenuTarget(params: {
+  context: DataDrivenViewContext;
+  item: TrackedWorkItem;
+  writes: WorkItemWriteQueue;
+  data: LoadedSprintData;
+  areaPaths: readonly string[];
+  repaint: () => void;
+}): ItemContextMenuTarget {
+  const target = {
+    doc: params.context.doc,
+    item: params.item,
+    services: params.context.services,
+    queue: params.writes,
+    onChanged: params.repaint,
+  };
+  return {
+    id: params.item.id,
+    url: buildWorkItemUrl(params.context.doc.location?.href ?? "", params.item.id),
+    commands: [
+      ...buildItemCommands({
+        ...target,
+        sprintWindow: params.data.sprintWindow,
+        areaPaths: params.areaPaths,
+        notesSinceIso: ALL_NOTES_SINCE,
+      }),
+      ...buildMarkerCommands(target, params.data.interruptAcceptance),
+    ],
+  };
+}
+
+function bulkMoveLabel(doc: Document): Node[] {
+  const done = doc.createElement("span");
+  done.textContent = "DONE";
+  done.style.cssText = [
+    "display:inline-flex",
+    "align-items:center",
+    "margin:0 3px",
+    "padding:0 5px",
+    "border:1px solid var(--status-green-border)",
+    "border-radius:8px",
+    "background:var(--status-green-background)",
+    "color:var(--completion-foreground)",
+    "font-size:9px",
+    "font-weight:700",
+    "line-height:1.5",
+  ].join(";");
+  return [doc.createTextNode("Move all (non "), done, doc.createTextNode(") items to")];
+}
+
+function moveAllCommands(params: {
+  data: LoadedSprintData;
+  onBulkMove: (destination: SprintWindowEntry) => void;
+}): ItemContextMenuCommand[] {
+  return params.data.sprintWindow.entries
+    .filter((entry) => entry.relation !== "past")
+    .map((entry) => ({
+      label: entry.label,
+      declarations: sprintRelationDeclarations(entry.relation),
+      run: () => params.onBulkMove(entry),
+    }));
+}
+
+function sprintTitleMenuTarget(params: {
+  context: DataDrivenViewContext;
+  data: LoadedSprintData;
+  session: SprintSession;
+  onBulkMove: (destination: SprintWindowEntry) => void;
+}): ItemContextMenuTarget {
+  const destinations = (): ItemContextMenuCommand[] => moveAllCommands(params);
+  const source = selectedSprintEntry(params.data.sprintWindow, params.session);
+  return {
+    id: 0,
+    url: params.context.doc.location?.href ?? null,
+    standardCommands: ["copy-url"],
+    commands:
+      source?.relation === "past"
+        ? [
+            {
+              label: "Move all non-DONE items to",
+              renderLabel: bulkMoveLabel,
+              disabledReason:
+                destinations().length === 0 ? "No current or future sprint is configured." : null,
+              submenu: destinations,
+            },
+          ]
+        : undefined,
+  };
+}
+
+function createSprintContextMenu(params: {
+  context: DataDrivenViewContext;
+  header: HTMLElement;
+  data: LoadedSprintData;
+  allItems: readonly DisplayItem[];
+  types: ReadonlyMap<string, TypeCatalogEntry>;
+  writes: WorkItemWriteQueue;
+  areaPaths: readonly string[];
+  repaint: () => void;
+  session: SprintSession;
+  visibleItems: readonly DisplayItem[];
+  onBulkMove: (destination: SprintWindowEntry, items: readonly TrackedWorkItem[]) => void;
+}): {
+  menu: ItemContextMenu;
+  target: (item: TrackedWorkItem) => ItemContextMenuTarget;
+  openTitle: (event: MouseEvent) => void;
+} {
+  const menu = createItemContextMenu({
+    doc: params.context.doc,
+    mountInto: params.header,
+    logger: params.context.services.logger,
+  });
+  return {
+    menu,
+    target: (item) => sprintItemMenuTarget({ ...params, item }),
+    openTitle: (event) =>
+      menu.openAt(
+        event,
+        sprintTitleMenuTarget({
+          ...params,
+          onBulkMove: (destination) =>
+            params.onBulkMove(
+              destination,
+              params.visibleItems.map(({ item }) => item),
+            ),
+        }),
+      ),
+  };
+}
+
+function renderSprintQueue(params: {
+  context: DataDrivenViewContext;
+  data: LoadedSprintData;
+  session: SprintSession;
+  visibleItems: readonly DisplayItem[];
+  types: ReadonlyMap<string, TypeCatalogEntry>;
+  writes: WorkItemWriteQueue;
+  menus: ReturnType<typeof createSprintContextMenu>;
+  repaint: () => void;
+}): HTMLElement {
+  const { context, data, session } = params;
+  return renderSprintBoard(context, params.visibleItems, {
+    types: params.types,
+    boardColumns: context.services.getBoardColumns(),
+    writes: params.writes,
+    expandedDoneIds: session.expandedDoneIds,
+    openChildPopupIds: session.openChildPopupIds,
+    team: context.services.currentTeam(),
+    assigneeSuggestions: () =>
+      data.teamMembers.members.map(({ displayName, uniqueName, imageUrl }) => ({
+        displayName,
+        uniqueName,
+        imageUrl,
+      })),
+    orderingPolicy: session.orderingPolicy ?? sprintOrderingPolicy(context.properties),
+    interruptAcceptance: data.interruptAcceptance,
+    notesSinceIso: ALL_NOTES_SINCE,
+    contextMenu: params.menus.menu,
+    menuTarget: params.menus.target,
+    onItemChanged: params.repaint,
+  });
+}
+
+function persistSprintAreaPaths(
+  context: DataDrivenViewContext,
+  data: LoadedSprintData,
+  session: SprintSession,
+  paths: string[],
+): void {
+  session.selectedAreaPaths = new Set(paths);
+  if (data.selectedSprint !== null) {
+    data.sprintAreaPaths = withSprintAreaPathSelection(
+      data.sprintAreaPaths,
+      data.selectedSprint,
+      paths,
+      context.services.now(),
+    );
+    void context.services.sprintAreaPaths?.save(data.sprintAreaPaths);
+  }
+}
+
+function sprintBoardCollections(context: DataDrivenViewContext, data: LoadedSprintData) {
+  const allItems = flattenItems(data.result.roots);
+  return {
+    allItems,
+    areaPaths: areaPathsOf(allItems),
+    types: new Map(context.services.getTypes().map((type) => [type.name, type])),
   };
 }
 
@@ -706,13 +1008,10 @@ function renderBoard(
   onSprintChange: (name: string) => void,
   writes: WorkItemWriteQueue,
   writeState: SprintWriteState,
+  bulkMove: SprintBulkMoveController,
 ): { element: DocumentFragment; handle: SprintBoardHandle } {
-  const allItems = flattenItems(data.result.roots);
-  const areaPaths = areaPathsOf(allItems);
-  for (const path of [...session.selectedAreaPaths]) {
-    if (!areaPaths.includes(path)) session.selectedAreaPaths.delete(path);
-  }
-  const types = new Map(context.services.getTypes().map((type) => [type.name, type]));
+  const { allItems, areaPaths, types } = sprintBoardCollections(context, data);
+  pruneSelectedAreaPaths(areaPaths, session);
   scheduleNotesRepaint(data, session, repaint);
   const shownWithoutProject = filteredQueue(
     selectedSprintItems(areaScope(allItems, session), session),
@@ -722,7 +1021,8 @@ function renderBoard(
   const options = hierarchyOptions(allItems, shownWithoutProject, types);
   normalizeProjectSelection(options, session);
   const base = baseQueue(allItems, session);
-  const scoped = boardScope(allItems, session);
+  const visibleItems = filteredQueue(base, context, session);
+  let openTitleMenu: (event: MouseEvent) => void = () => {};
   const controls = renderBoardHeader({
     context,
     data,
@@ -734,32 +1034,80 @@ function renderBoard(
     repaint,
     onRefresh,
     onSprintChange,
+    onAreaPathsChange: (paths) => persistSprintAreaPaths(context, data, session, paths),
+    onAreaPathsDismiss: repaint,
+    onTitleContextMenu: (event) => openTitleMenu(event),
     writeState,
   });
+  const menus = createSprintContextMenu({
+    context,
+    header: controls.header,
+    data,
+    allItems,
+    types,
+    writes,
+    areaPaths,
+    repaint,
+    session,
+    visibleItems,
+    onBulkMove: (destination, items) => {
+      const request = createBulkMoveRequest(context, data, session, destination, items, onRefresh);
+      if (request !== null) bulkMove.open(request);
+    },
+  });
+  openTitleMenu = menus.openTitle;
+  bulkMove.attachStatus(controls.bulkMoveStatus);
   const fragment = context.doc.createDocumentFragment();
   fragment.append(
     controls.header,
-    renderFilterPanel(context, scoped, base, session, repaint),
-    renderSprintBoard(context, filteredQueue(base, context, session), {
-      types,
-      boardColumns: context.services.getBoardColumns(),
-      writes,
-      expandedDoneIds: session.expandedDoneIds,
-      openChildPopupIds: session.openChildPopupIds,
-      team: context.services.currentTeam(),
-      assigneeSuggestions: () =>
-        data.teamMembers.members.map(({ displayName, uniqueName, imageUrl }) => ({
-          displayName,
-          uniqueName,
-          imageUrl,
-        })),
-      orderingPolicy: session.orderingPolicy ?? sprintOrderingPolicy(context.properties),
-      onItemChanged: repaint,
-    }),
+    renderFilterPanel(
+      context,
+      boardScope(allItems, session),
+      base,
+      data.interruptAcceptance,
+      session,
+      repaint,
+    ),
+    renderSprintQueue({ context, data, session, visibleItems, types, writes, menus, repaint }),
   );
   return {
     element: fragment,
-    handle: { refresh: controls.refresh, queueStatus: controls.queueStatus },
+    handle: {
+      refresh: controls.refresh,
+      queueStatus: controls.queueStatus,
+      bulkMoveStatus: controls.bulkMoveStatus,
+    },
+  };
+}
+
+function createBulkMoveRequest(
+  context: DataDrivenViewContext,
+  data: LoadedSprintData,
+  session: SprintSession,
+  destination: SprintWindowEntry,
+  visibleItems: readonly TrackedWorkItem[],
+  onSettled: () => void,
+): SprintBulkMoveRequest | null {
+  const source = selectedSprintEntry(data.sprintWindow, session);
+  if (source?.relation !== "past") return null;
+  const operationHref = context.doc.location?.href ?? "";
+  return {
+    source,
+    destination,
+    visibleItems,
+    types: context.services.getTypes(),
+    loadRoots: async () => {
+      if ((context.doc.location?.href ?? "") !== operationHref) {
+        throw new Error("The Azure DevOps page changed during the bulk move.");
+      }
+      const loaded = await context.services.loadTree(
+        context.queryId,
+        wiqlForSprint(data.queryWiql, data.selectedOffset),
+      );
+      if (loaded.error !== null) throw new Error(loaded.error);
+      return filterTreeForSprintRoster(loaded.roots, data.teamMembers.members);
+    },
+    onSettled,
   };
 }
 
@@ -797,6 +1145,58 @@ function createWriteQueue(context: DataDrivenViewContext): WorkItemWriteQueue {
   );
 }
 
+function createBulkMoveController(
+  context: DataDrivenViewContext,
+  root: HTMLElement,
+  writes: WorkItemWriteQueue,
+): SprintBulkMoveController {
+  return new SprintBulkMoveController({
+    doc: context.doc,
+    mountInto: root,
+    writes,
+    logger: context.services.logger,
+    openDiagnosticsLog: context.services.openDiagnosticsLog,
+  });
+}
+
+function showSprintLoading(context: DataDrivenViewContext, root: HTMLElement): void {
+  stopObservingStickyHeader(root);
+  const loading = context.doc.createElement("div");
+  loading.className = "awesomeado-sprint__loading";
+  loading.textContent = "Loading spring data...";
+  loading.style.cssText = "padding:16px 0;text-align:center;color:var(--text-secondary-color)";
+  root.replaceChildren(loading);
+}
+
+function resolveSprintAcceptance(
+  context: DataDrivenViewContext,
+  loaded: LoadedSprintData,
+  isCurrent: () => boolean,
+  repaint: () => void,
+): void {
+  void loadInterruptAcceptanceState(loaded.result.roots, context.services)
+    .then((acceptance) => {
+      if (!isCurrent()) return;
+      loaded.interruptAcceptance = acceptance;
+      repaint();
+    })
+    .catch((error: unknown) => {
+      context.services.logger.error("Sprint View could not resolve interrupt acceptance", error);
+    });
+}
+
+function createSprintRuntime(
+  context: DataDrivenViewContext,
+  root: HTMLElement,
+  writes: WorkItemWriteQueue,
+  writeState: SprintWriteState,
+  currentBoard: () => SprintBoardHandle | null,
+): SprintBulkMoveController {
+  const bulkMove = createBulkMoveController(context, root, writes);
+  observeWriteState(writes, writeState, currentBoard);
+  return bulkMove;
+}
+
 function startSprintView(context: DataDrivenViewContext, root: HTMLElement): void {
   let session = createSession(context);
   let data: LoadedSprintData | null = null;
@@ -806,7 +1206,7 @@ function startSprintView(context: DataDrivenViewContext, root: HTMLElement): voi
   let refreshFailed = false;
   const writes = createWriteQueue(context);
   const writeState: SprintWriteState = { pending: 0, failed: 0 };
-  observeWriteState(writes, writeState, () => board);
+  const bulkMove = createSprintRuntime(context, root, writes, writeState, () => board);
 
   const paint = (): void => {
     if (data === null) return;
@@ -819,20 +1219,12 @@ function startSprintView(context: DataDrivenViewContext, root: HTMLElement): voi
       switchSprint,
       writes,
       writeState,
+      bulkMove,
     );
     board = rendered.handle;
     board.refresh.setFailed(refreshFailed);
     root.replaceChildren(rendered.element);
     queueMicrotask(() => observeStickyHeader(root));
-  };
-
-  const showLoading = (): void => {
-    stopObservingStickyHeader(root);
-    const loading = context.doc.createElement("div");
-    loading.className = "awesomeado-sprint__loading";
-    loading.textContent = "Loading spring data...";
-    loading.style.cssText = "padding:16px 0;text-align:center;color:var(--text-secondary-color)";
-    root.replaceChildren(loading);
   };
 
   const load = (sprintName: string | null, resetSession: boolean): void => {
@@ -849,13 +1241,19 @@ function startSprintView(context: DataDrivenViewContext, root: HTMLElement): voi
     data = null;
     board = null;
     const generation = ++loadGeneration;
-    showLoading();
+    showSprintLoading(context, root);
     void loadSprintData(context, session)
       .then((loaded) => {
         if (generation !== loadGeneration) return;
         refreshFailed = false;
         data = loaded;
         paint();
+        resolveSprintAcceptance(
+          context,
+          loaded,
+          () => generation === loadGeneration && data === loaded,
+          paint,
+        );
       })
       .catch((error: unknown) => {
         if (!resetSession && previousData !== null) {
@@ -873,10 +1271,12 @@ function startSprintView(context: DataDrivenViewContext, root: HTMLElement): voi
   };
 
   function requestRefresh(): void {
+    if (bulkMove.isActive) return;
     load(session.sprintName, false);
   }
 
   function switchSprint(name: string): void {
+    if (bulkMove.isActive) return;
     load(name, true);
   }
 

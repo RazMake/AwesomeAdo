@@ -10,6 +10,7 @@ import { renderLinkedTransferStatus, renderTransferStatus } from "./transferStat
 
 export interface TeamConfigElements {
   workItemId: HTMLInputElement;
+  workItemLink: HTMLAnchorElement;
   connectButton: HTMLButtonElement;
   pullButton: HTMLButtonElement;
   publishButton: HTMLButtonElement;
@@ -18,6 +19,7 @@ export interface TeamConfigElements {
 }
 
 type ReportError = (error: unknown) => void;
+type ResolveWorkItemUrl = (workItemId: number) => Promise<string | null>;
 
 /** Drives the explicit team configuration connection and publish workflow on the options page. */
 export class TeamConfigController {
@@ -32,6 +34,7 @@ export class TeamConfigController {
     private readonly elements: TeamConfigElements,
     private readonly reportError: ReportError,
     private readonly onPulled: () => void,
+    private readonly resolveWorkItemUrl: ResolveWorkItemUrl,
   ) {}
 
   async init(): Promise<void> {
@@ -48,7 +51,7 @@ export class TeamConfigController {
       return;
     }
     this.connected = workItemId !== null;
-    this.elements.workItemId.value = workItemId?.toString() ?? "";
+    await this.renderWorkItem(workItemId);
     this.updateButtons();
   }
 
@@ -85,6 +88,7 @@ export class TeamConfigController {
     await this.run(async () => {
       await this.sourceStore.write(workItemId);
       this.connected = true;
+      await this.renderWorkItem(workItemId);
       return this.synchronizer.pull();
     });
   }
@@ -101,9 +105,30 @@ export class TeamConfigController {
     await this.run(async () => {
       await this.sourceStore.write(null);
       this.connected = false;
-      this.elements.workItemId.value = "";
+      await this.renderWorkItem(null);
       return { status: "disconnected" };
     });
+  }
+
+  private async renderWorkItem(workItemId: number | null): Promise<void> {
+    this.elements.workItemId.value = workItemId?.toString() ?? "";
+    this.elements.workItemId.hidden = workItemId !== null;
+    this.elements.workItemLink.hidden = workItemId === null;
+    this.elements.workItemLink.textContent = workItemId?.toString() ?? "";
+    this.elements.workItemLink.removeAttribute("href");
+    if (workItemId === null) {
+      return;
+    }
+    try {
+      const url = await this.resolveWorkItemUrl(workItemId);
+      if (url !== null && !this.disposed) {
+        this.elements.workItemLink.href = url;
+        this.elements.workItemLink.target = "_blank";
+        this.elements.workItemLink.rel = "noopener noreferrer";
+      }
+    } catch (error) {
+      this.reportError(error);
+    }
   }
 
   private async run(action: () => Promise<TeamConfigSyncResult>): Promise<void> {

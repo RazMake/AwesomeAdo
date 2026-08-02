@@ -57,20 +57,24 @@ export function updateWorkItemFieldInPage(
   // `add` APPENDS to a multi-value field: Azure DevOps answers a shortened `System.Tags` list with
   // HTTP 200 and keeps every tag, so a removal is silently lost. `replace` sets a field that already
   // holds a value; a field with no value yet has nothing to replace, so it still takes `add`.
-  const setOp = config.baseValue ? "replace" : "add";
+  function fieldOperation(field: string, value: string | null, setOp: string) {
+    const path = "/fields/" + field;
+    return value === null ? { op: "remove", path } : { op: setOp, path, value };
+  }
 
   function buildPatch(rev: number): { op: string; path: string; value?: unknown }[] {
     const operations: { op: string; path: string; value?: unknown }[] = [
       { op: "test", path: "/rev", value: rev },
-      config.value === null
-        ? { op: "remove", path: "/fields/" + config.field }
-        : { op: setOp, path: "/fields/" + config.field, value: config.value },
+      ...(config.preconditions ?? []).map((condition) => ({
+        op: "test",
+        path: "/fields/" + condition.field,
+        value: condition.value,
+      })),
+      fieldOperation(config.field, config.value, config.baseValue ? "replace" : "add"),
     ];
     operations.push(
       ...(config.additionalFields ?? []).map((change) =>
-        change.value === null
-          ? { op: "remove", path: "/fields/" + change.field }
-          : { op: "add", path: "/fields/" + change.field, value: change.value },
+        fieldOperation(change.field, change.value, "add"),
       ),
     );
     if (config.multilineFormat) {
@@ -81,16 +85,10 @@ export function updateWorkItemFieldInPage(
       });
     }
     if (config.comment) {
-      operations.push({
-        op: "add",
-        path: "/fields/System.History",
-        value: config.comment,
-      });
-      operations.push({
-        op: "add",
-        path: "/multilineFieldsFormat/System.History",
-        value: "Markdown",
-      });
+      operations.push(
+        { op: "add", path: "/fields/System.History", value: config.comment },
+        { op: "add", path: "/multilineFieldsFormat/System.History", value: "Markdown" },
+      );
     }
     return operations;
   }
@@ -112,8 +110,9 @@ export function updateWorkItemFieldInPage(
       }
       const failure = { ok: false, error: "HTTP " + String(response.status) };
       // 412 is the `test /rev` op being refused; 409 is ADO's other shape of the same conflict.
-      const staleRev = response.status === 412 || response.status === 409;
-      return mayRebase && staleRev ? rebase(failure) : failure;
+      return mayRebase && (response.status === 412 || response.status === 409)
+        ? rebase(failure)
+        : failure;
     });
   }
 
@@ -138,7 +137,9 @@ export function updateWorkItemFieldInPage(
       .catch(() => failure);
   }
 
-  return sendPatch(config.rev, config.baseValue !== undefined).catch(
-    (err): UpdateWorkItemFieldResponse => ({ ok: false, error: String(err) }),
-  );
+  const mayRebase = config.baseValue !== undefined && (config.preconditions?.length ?? 0) === 0;
+  return sendPatch(config.rev, mayRebase).catch((err): UpdateWorkItemFieldResponse => ({
+    ok: false,
+    error: String(err),
+  }));
 }

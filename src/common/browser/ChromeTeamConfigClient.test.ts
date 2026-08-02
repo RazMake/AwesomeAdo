@@ -58,6 +58,13 @@ describe("ChromeTeamConfigClient", () => {
     });
   });
 
+  it("resolves the human-facing work item URL from the current query tab", async () => {
+    chromeMock.query.mockResolvedValue([ADO_TAB]);
+
+    await expect(client.resolveWorkItemUrl(42)).resolves.toBe(ITEM_WEB_URL);
+    expect(chromeMock.executeScript).not.toHaveBeenCalled();
+  });
+
   it("publishes with one serializable config argument", async () => {
     chromeMock.query.mockResolvedValue([ADO_TAB]);
     chromeMock.executeScript.mockResolvedValue([{ result: { ok: true } }]);

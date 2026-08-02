@@ -1,8 +1,9 @@
 # `content/views/sprint`
 
 The **Sprint View** presents a bound query's work as a sprint-filtered lane table. It accepts flat and
-tree queries. Manual refresh keeps its filter state, while selecting another sprint destroys the
-whole session and DOM so no filter, roster, or derived option survives the switch.
+tree queries. Manual refresh reloads the selected sprint's shared Lane filter while retaining the
+other filters; selecting another sprint destroys the whole session and loads that sprint's shared
+Lane selection.
 
 ## Public API
 
@@ -17,6 +18,40 @@ whole session and DOM so no filter, roster, or derived option survives the switc
   next lane pushes it away, and persists card and direct-child drag-and-drop moves.
 - `SprintHeader.ts` -> `renderSprintHeader` - assembles the sticky, theme-aware control card with
   the query's clickable parent-folder breadcrumb trail at the top.
+- `SprintBulkMoveDialog.ts` -> `buildSprintBulkMovePlan` / `renderSprintBulkMoveDialog` - snapshots
+  eligible visible cards and confirms their Lane/assignee summary before any write begins.
+- `SprintBulkMoveController.ts` -> `SprintBulkMoveController` - owns confirmation, progress,
+  cancellation, interaction/unload guards, and the final refresh.
+- `SprintBulkMove.ts` -> `runSprintBulkMove` - revalidates only confirmed IDs and executes their
+  bounded, retrying, atomically guarded iteration writes.
+
+Right-clicking the **Sprint View** title always offers **Copy ADO Url**. Only a selected **past**
+sprint also offers **Move all (non DONE) items to**, with the current and future iterations as
+destinations. The title uses a context-menu cursor without a tooltip, and DONE is rendered as a
+theme-aware green chip in the command label.
+
+Choosing a destination opens a confirmation dialog for the exact card set visible under the current
+Lane, Project, person, marker, and activity filters. It summarizes eligible cards by Lane and by
+assignee. Lane names use the filter dropdown's shortest unique suffixes: normally the leaf alone,
+expanding through parents only until colliding leaves differ. Only assigned, non-Done Primary-work cards enter the immutable operation snapshot;
+unassigned visible cards are counted as excluded, filtered-out cards and implementation-detail
+children never enter it, and later query arrivals are never added. During execution each snapshot ID
+is freshly read and guarded atomically by its State, Area Path, and Assigned To values before its
+`System.IterationPath` changes. A card that became Done, unassigned, reassigned, or moved Lane is
+skipped. Transient failures retry three times with backoff; conflicts return to a fresh validation
+pass, bounded to 100 passes and 10,000 confirmed items. Refresh, sprint/filter actions, and other
+page interactions are blocked while the operation runs; leaving the page warns, Escape or **Cancel**
+finishes the current write and skips the remainder, and the header reports moved/failed/skipped
+counts with failures linked to Diagnostics.
+
+Right-clicking a card or direct-child row opens Project Tracking's item commands: copy/open, title,
+description, sprint, area, notes, and both blocker markers. Sprint alone opts into Interrupt
+Tag/Accept/Clear commands. **Tag with Interrupt** carries an inline **Accepted** checkbox: toggling it
+updates the pill preview and leaves the menu open. A proposed Interrupt writes directly. An accepted
+Interrupt opens a titled Markdown editor with `@` mentions and requires a non-empty explanation;
+the Accept button stays disabled until text exists. The configured acceptance token and explanation
+then ride with the tag in one atomic patch. Accepting an existing Interrupt uses the same dialog.
+Project Tracking deliberately does not expose those Interrupt mutation commands.
 
 Team pills come from the configured team's complete paged roster, in server order, followed by
 **Unassigned** when the loaded queue contains unassigned work. Query results retain only items
@@ -26,14 +61,24 @@ options. Team pill queue and active counts include only configured Primary work 
 recursively configured child types; planning-context ancestors do not inflate either member or
 Unassigned totals. Counter tooltips explain each displayed metric. Marker-tag pills
 report one selected-sprint total, except **Interrupt**: it reports not-yet-accepted work followed by
-accepted-in-sprint work, and collapses to one total when no interrupts are waiting for acceptance.
+accepted work in the current tagged lifetime, and collapses to one total when no interrupts are
+waiting for acceptance.
+Acceptance requires the configured acceptance token in a Discussion revision at or after the most
+recent revision that added the Interrupt tag. Both views share this rule, so an old note cannot
+survive an untag/re-tag cycle.
 The **Project** filter offers only items whose configured types are parents of Primary-work types,
 recursively through their planning ancestors, and whose branches contain work surviving the
 selected sprint and other active filters. Primary-work and implementation-detail items are omitted.
 The **Lane** filter derives its choices from represented area paths and offers only leaves, omitting
 any root path that is an ancestor of another choice.
-Only lanes surviving the area-path selection are rendered. The Project filter keeps the selected
-planning item and all direct or recursive descendants that belong to the selected sprint.
+Options can define full area paths initially selected in every sprint. Defaults are materialized
+into each sprint's own team-shared selection, so removing a default later does not deselect it from
+an existing sprint. Sprint selections are pulled on load, refresh, and sprint change; every Lane
+change publishes the full shared configuration. Dated records retain the newest ten past sprints and
+prune older completed records when possible. Only lanes surviving the area-path selection are rendered. The Project filter keeps the selected
+planning item and all direct or recursive descendants that belong to the selected sprint. Clicking
+the active Project button clears that selection without opening the popup; clicking it again opens
+the project choices.
 The popup puts each work-item type icon before its title, colors options by type, expands toward the
 window margin for long titles, and offers title search that keeps a matching item's parent chain
 visible.
@@ -61,7 +106,11 @@ badge; its popup lists only that first child level, regardless of which types re
 by the active policy with the shared Assigned To and ETA controls. Queue,
 Active, and Waiting cards use the tall format; Done cards start compact and expand on click or
 keyboard activation. Both formats place the ID in the top-left corner and a tag-free shared Assigned
-To control in the top-right, followed by the wrapped title. The row below places the shared ETA
+To control in the top-right, followed by the wrapped title. The shared `?` button beside the ID opens
+Created, Last Modified, and the sanitized description in either size. The popup stays at least
+280px wide, wraps long prose/code/table content without a horizontal scrollbar, and scrolls
+vertically when its height exceeds 320px. A shared Priority chip sits on the same top row in both
+sizes; it is read-only while a Done card is compact and editable after expansion. The row below places the shared ETA
 control on the left and the child-items badge on the right. Assigned To and ETA remain visually
 unchanged but read-only while a Done card is compact; expanding it restores editing for the card
 itself. A Done card's child Assigned To and ETA controls, child title drag handles, and ancestor ETA
@@ -69,7 +118,11 @@ controls remain read-only in both sizes and use the default cursor. Tall cards a
 immediate parent's type icon and title as a clickable, contrast-safe type-colored control. Its popup
 lists ancestors from the root down to that immediate parent, each with its own type color and shared ETA control.
 Tall cards also show only the three configured marker conditions (Blocked, Blocked by another team,
-and Interrupt). A type-colored edge identifies the work-item type.
+and Interrupt). Clicking a ready marker opens only the Discussion notes beginning with that marker's
+configured comment token. Marker-specific notes are checked before the pill becomes interactive: an
+empty result stays a plain pill with a `No notes` tooltip, while a clickable pill has no tooltip.
+Reason rows hide the configured marker token and show only the explanation. A
+type-colored edge identifies the work-item type.
 
 Every card is draggable from its non-interactive surface. Parent hierarchy controls and other card
 controls never initiate the owning card's drag. The cursor-following card is a custom 90%-opaque

@@ -110,6 +110,11 @@ function buttonLabelled(root: HTMLElement, label: string): HTMLButtonElement {
   return [...root.querySelectorAll("button")].find((button) => button.textContent === label)!;
 }
 
+function typeInto(input: HTMLTextAreaElement, text: string): void {
+  input.value = text;
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
 /** Open the panel and let its first fetch settle. */
 async function expand(handle: NotesPanelHandle): Promise<void> {
   handle.setExpanded(true);
@@ -344,8 +349,10 @@ describe("renderNotesPanel — @-mentions", () => {
     await expand(handle);
 
     buttonLabelled(handle.element, "+\u00A0Add note").click();
-    handle.element.querySelector<HTMLTextAreaElement>(".awesomeado-text-editor__input")!.value =
-      "Over to someone";
+    typeInto(
+      handle.element.querySelector<HTMLTextAreaElement>(".awesomeado-text-editor__input")!,
+      "Over to someone",
+    );
     buttonLabelled(handle.element, "Add").click();
     await flush();
 
@@ -359,8 +366,10 @@ describe("renderNotesPanel — adding a note", () => {
   /** Open the composer, type `text` and confirm it. */
   async function addThroughComposer(handle: NotesPanelHandle, text: string): Promise<void> {
     buttonLabelled(handle.element, "+\u00A0Add note").click();
-    handle.element.querySelector<HTMLTextAreaElement>(".awesomeado-text-editor__input")!.value =
-      text;
+    typeInto(
+      handle.element.querySelector<HTMLTextAreaElement>(".awesomeado-text-editor__input")!,
+      text,
+    );
     buttonLabelled(handle.element, "Add").click();
     await flush();
   }
@@ -385,7 +394,10 @@ describe("renderNotesPanel — adding a note", () => {
     await addThroughComposer(handle, "Never stored.");
 
     expect(rowsOf(handle)).toHaveLength(1);
-    expect(handle.element.textContent).not.toContain("Never stored.");
+    expect(rowsOf(handle)[0]?.textContent).not.toContain("Never stored.");
+    expect(handle.element.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe(
+      "Never stored.",
+    );
   });
 });
 

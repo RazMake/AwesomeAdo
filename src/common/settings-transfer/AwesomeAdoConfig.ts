@@ -304,6 +304,12 @@ const SETTINGS_RULES: readonly {
   { key: "currentTeam", isValid: isTeamRef, expected: "null, or a team with an id and a name" },
   { key: "futureSprintsCount", isValid: isWholeNumber, expected: "a whole number" },
   { key: "pastSprintsCount", isValid: isWholeNumber, expected: "a whole number" },
+  { key: "defaultAreaPaths", isValid: isStringList, expected: "a list of full area paths" },
+  {
+    key: "sprintAreaPaths",
+    isValid: isSprintAreaPathMap,
+    expected: "a map of sprint paths to selected full area paths",
+  },
   { key: "boardColumns", isValid: isStringList, expected: "a list of column titles" },
   {
     key: "workItemTypes",
@@ -324,6 +330,15 @@ function isFilledString(value: unknown): boolean {
 
 function isStringList(value: unknown): boolean {
   return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+}
+
+function isSprintAreaPathMap(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    Object.values(value).every(
+      (selection) => isRecord(selection) && isStringList(selection.areaPaths),
+    )
+  );
 }
 
 function isOneOf(allowed: readonly string[]): (value: unknown) => boolean {

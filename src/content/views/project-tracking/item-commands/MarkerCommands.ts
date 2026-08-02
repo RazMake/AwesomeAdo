@@ -33,6 +33,10 @@ const TAGS_FIELD = "System.Tags";
  */
 const TAGGABLE_MARKERS: readonly WorkItemMarker[] = ["blocked", "blockedByOtherTeam"];
 
+export interface InterruptCommandState {
+  acceptedIds: Set<number>;
+}
+
 /** What an unconfigured marker's command says instead of running. */
 function unconfiguredReason(marker: WorkItemMarker): string {
   return (
@@ -50,12 +54,158 @@ function unconfiguredReason(marker: WorkItemMarker): string {
  * the board says ABOUT it. A view that does not want them simply does not ask for them — which is
  * what keeps "flag this item" out of a menu on a surface where flagging means nothing.
  */
-export function buildMarkerCommands(target: ItemCommandTarget): ItemContextMenuCommand[] {
+export function buildMarkerCommands(
+  target: ItemCommandTarget,
+  interrupt?: InterruptCommandState,
+): ItemContextMenuCommand[] {
   const configured = target.services.markerTags();
-  return TAGGABLE_MARKERS.map((marker, index) => ({
+  const commands: ItemContextMenuCommand[] = TAGGABLE_MARKERS.map((marker, index) => ({
     ...markerCommand(target, marker, configured[marker]),
     separatorBefore: index === 0,
   }));
+  if (interrupt !== undefined) {
+    commands.push(...interruptCommands(target, configured.interrupt, interrupt));
+  }
+  return commands;
+}
+
+function interruptCommands(
+  target: ItemCommandTarget,
+  tags: MarkerTags,
+  state: InterruptCommandState,
+): ItemContextMenuCommand[] {
+  const applied = hasWorkItemTag(target.item.tags, tags.tag);
+  const accepted = state.acceptedIds.has(target.item.id);
+  if (tags.tag.length === 0) {
+    return [newInterruptCommand(target, tags, state, unconfiguredReason("interrupt"))];
+  }
+  if (!applied) {
+    return [newInterruptCommand(target, tags, state)];
+  }
+  const commands: ItemContextMenuCommand[] = [
+    {
+      label: "Clear Interrupt",
+      renderLabel: (doc) => [doc.createTextNode("Clear "), interruptPill(doc, tags, accepted)],
+      run: () => void clearInterrupt(target, tags, state),
+    },
+  ];
+  if (!accepted) {
+    commands.push({
+      label: "Accept interrupt",
+      renderLabel: (doc) => [doc.createTextNode("Accept "), interruptPill(doc, tags, true)],
+      disabledReason:
+        tags.commentTag.length === 0
+          ? "No acceptance comment tag is configured for Interrupt."
+          : null,
+      panel: (close) => acceptancePanel(target, tags, state, false, close),
+    });
+  }
+  return commands;
+}
+
+function newInterruptCommand(
+  target: ItemCommandTarget,
+  tags: MarkerTags,
+  state: InterruptCommandState,
+  disabledReason?: string,
+): ItemContextMenuCommand {
+  let accepted = false;
+  let preview: HTMLElement | null = null;
+  return {
+    label: "Tag with Interrupt",
+    disabledReason,
+    renderLabel: (doc) => {
+      preview = interruptPill(doc, tags, accepted);
+      return [doc.createTextNode("Tag with "), preview];
+    },
+    checkbox: {
+      label: "Accepted",
+      disabledReason:
+        tags.commentTag.length === 0
+          ? "No acceptance comment tag is configured for Interrupt."
+          : null,
+      onChange: (checked) => {
+        accepted = checked;
+        if (preview === null) return;
+        const replacement = interruptPill(preview.ownerDocument, tags, accepted);
+        preview.replaceWith(replacement);
+        preview = replacement;
+      },
+    },
+    run: () => void applyInterrupt(target, tags, state),
+    panel: (close) => acceptancePanel(target, tags, state, true, close),
+  };
+}
+
+function interruptPill(doc: Document, tags: MarkerTags, accepted: boolean): HTMLElement {
+  return renderMarkerPill(doc, {
+    marker: "interrupt",
+    accepted,
+    title: accepted ? `Accepted by note "${tags.commentTag}"` : `Azure DevOps tag "${tags.tag}"`,
+  });
+}
+
+async function applyInterrupt(
+  target: ItemCommandTarget,
+  tags: MarkerTags,
+  state: InterruptCommandState,
+): Promise<void> {
+  if (!(await setTags(target, withWorkItemTag(target.item.tags, tags.tag)))) return;
+  state.acceptedIds.delete(target.item.id);
+  logMarkerChange(target, "interrupt", tags.tag, true);
+  target.onChanged();
+}
+
+function acceptancePanel(
+  target: ItemCommandTarget,
+  tags: MarkerTags,
+  state: InterruptCommandState,
+  applyTag: boolean,
+  close: () => void,
+): HTMLElement {
+  return panelFor(target.doc, target.item, { withTitle: true, widthPx: EDITOR_WIDTH_PX }, [
+    renderTextEditor(target.doc, {
+      initialText: "",
+      submitLabel: "Accept",
+      placeholder: "Why is the interrupt accepted in the sprint?",
+      mentions: {
+        userDirectory: target.services.userDirectory,
+        logger: target.services.logger,
+        mentionNames: target.services.mentionDirectory.knownNames(),
+      },
+      onSubmit: (text) => acceptInterrupt(target, tags, state, applyTag, text, close),
+      onCancel: close,
+    }),
+  ]);
+}
+
+async function acceptInterrupt(
+  target: ItemCommandTarget,
+  tags: MarkerTags,
+  state: InterruptCommandState,
+  applyTag: boolean,
+  reason: string,
+  close: () => void,
+): Promise<boolean> {
+  if (tags.commentTag.length === 0) return false;
+  const nextTags = applyTag ? withWorkItemTag(target.item.tags, tags.tag) : target.item.tags;
+  const comment = `${tags.commentTag} ${reason}`;
+  if (!(await setTags(target, nextTags, comment))) return false;
+  state.acceptedIds.add(target.item.id);
+  if (applyTag) logMarkerChange(target, "interrupt", tags.tag, true);
+  finish(target, close);
+  return true;
+}
+
+async function clearInterrupt(
+  target: ItemCommandTarget,
+  tags: MarkerTags,
+  state: InterruptCommandState,
+): Promise<void> {
+  if (!(await setTags(target, withoutWorkItemTag(target.item.tags, tags.tag)))) return;
+  state.acceptedIds.delete(target.item.id);
+  logMarkerChange(target, "interrupt", tags.tag, false);
+  target.onChanged();
 }
 
 /** The one command for a marker: apply it with a comment, or clear it when the item already wears it. */

@@ -17,7 +17,7 @@ import type {
 } from "../../../common/ado/TrackedWorkItem";
 import { noteWindowStart } from "../../../common/ado/WorkItemNote";
 import { WorkItemWriteQueue } from "../../../common/ado/WorkItemWriteQueue/WorkItemWriteQueue";
-import { ASSIGNED_TO_FIELD, PRIORITY_FIELD, identityFieldValue } from "../../../common/ado/adoApi";
+import { ASSIGNED_TO_FIELD, identityFieldValue } from "../../../common/ado/adoApi";
 import { buildQueryFolderUrl, buildWorkItemUrl } from "../../../common/ado/fetchAdoTree";
 import type { SprintWindow } from "../../../common/ado/sprintWindow";
 import { resolveMentionsIn } from "../../../common/browser/MessagingMentionDirectory";
@@ -55,12 +55,14 @@ import {
   type ItemContextMenu,
   type ItemContextMenuTarget,
 } from "../../../common/view-common/control/ItemContextMenu/ItemContextMenu";
-import { renderItemLifecycleInfo } from "../../../common/view-common/control/ItemLifecycleInfo/ItemLifecycleInfo";
+import {
+  renderItemDetailsButton,
+  renderItemDetailsContent,
+} from "../../../common/view-common/control/ItemDetails/ItemDetails";
 import {
   renderItemTypeIcon,
   type ItemTypeIconEmphasis,
 } from "../../../common/view-common/control/ItemTypeIcon/ItemTypeIcon";
-import { renderMarkdownText } from "../../../common/view-common/control/MarkdownText/MarkdownText";
 import { renderOrderingPicker } from "../../../common/view-common/control/OrderingPicker/OrderingPicker";
 import {
   renderPriorityBadge,
@@ -74,6 +76,11 @@ import { renderStatusBadge } from "../../../common/view-common/control/StatusBad
 import { renderViewScaffold } from "../../../common/view-common/control/ViewScaffold/ViewScaffold";
 import { renderWriteQueueStatus } from "../../../common/view-common/control/WriteQueueStatus/WriteQueueStatus";
 import { createPopupHost } from "../../../common/view-common/control/popupHost/popupHost";
+import {
+  loadInterruptAcceptanceState,
+  type InterruptAcceptanceState,
+} from "../interrupt-acceptance/interruptAcceptanceState";
+import { writeItemPriority } from "../item-priority/writeItemPriority";
 
 import { renderActivityFilterPills } from "./activity-filter/ActivityFilterPanel";
 import { RecentNotesIndex } from "./activity-filter/RecentNotesIndex";
@@ -265,72 +272,6 @@ function epochOf(iso: string | null): number | null {
 }
 
 /**
- * Builds the meta line for the description panel: "Created on: <date>, Last Modified on: <date>".
- * The actor's name lives in each label's "By <name>" tooltip (via ItemLifecycleInfo) to keep the
- * line compact; DateLabel elements are appended, never innerHTML.
- */
-function buildMetaLine(
-  doc: Document,
-  item: TrackedWorkItem,
-): { container: HTMLElement; dateElements: number } {
-  const meta = doc.createElement("div");
-  meta.className = "awesomeado-tracking__meta";
-  // Muted text color from ADO theme so the meta line reads on both light and dark themes.
-  meta.style.cssText = [
-    "font-size:11px",
-    "color:var(--text-secondary-color)",
-    "margin-bottom:8px",
-  ].join(";");
-
-  meta.append(
-    renderItemLifecycleInfo(doc, {
-      event: "created",
-      timestamp: item.createdDate,
-      user: item.createdBy,
-    }),
-  );
-  meta.append(doc.createTextNode(", "));
-  meta.append(
-    renderItemLifecycleInfo(doc, {
-      event: "last-modified",
-      timestamp: item.changedDate,
-      user: item.changedBy,
-    }),
-  );
-
-  return { container: meta, dateElements: 2 };
-}
-
-const DESCRIBE_DISC_NEUTRAL = "var(--description-neutral-background)";
-const DESCRIBE_DISC_NEUTRAL_ACTIVE = "var(--description-neutral-active-background)";
-
-/**
- * The disc's fill: the item's own type color, but only once there is a description to promise.
- *
- * A row with no description stays grey even while its panel is open — the type color is the board's
- * "there is something written here" signal, and lending it to an empty panel would spend it on
- * nothing. Opening such a row only brightens the same grey.
- */
-function describeDiscColor(emphasis: ItemTypeIconEmphasis, typeColor: string | null): string {
-  if (!emphasis.colored || typeColor === null) {
-    return emphasis.loud ? DESCRIBE_DISC_NEUTRAL_ACTIVE : DESCRIBE_DISC_NEUTRAL;
-  }
-  const lightStrength = emphasis.loud ? 24 : 14;
-  const darkStrength = emphasis.loud ? 80 : 50;
-  return `light-dark(color-mix(in srgb, ${typeColor} ${lightStrength}%, var(--type-tint-background)), color-mix(in srgb, ${typeColor} ${darkStrength}%, var(--type-tint-background)))`;
-}
-
-/**
- * The disc's tooltip: what pressing it does, nothing more. It deliberately does NOT report whether
- * there is a description — the panel still carries the created/modified line either way, so the disc
- * is worth pressing on every row and a "nothing here" label would talk the reader out of it. The
- * disc's shade is what answers that question.
- */
-function describeToggleTitle(expanded: boolean): string {
-  return expanded ? "Hide description" : "Show description";
-}
-
-/**
  * Renders the description panel (initially hidden) for a work item row.
  * Returns the panel element plus the toggle button that controls its visibility.
  */
@@ -341,49 +282,26 @@ function renderDescription(
   mentionNames: ReadonlyMap<string, string>,
 ): { panel: HTMLElement; toggleButton: HTMLButtonElement; expansion: ExpansionControl } {
   const hasDescription = item.description.trim().length > 0;
-  const toggleButton = doc.createElement("button");
-  toggleButton.className = "awesomeado-tracking__describe";
-  toggleButton.type = "button";
-  toggleButton.textContent = "?";
-  // Everything except the fill is fixed, so the fill is the one thing a reader has to compare down
-  // the column.
-  toggleButton.style.cssText = [
-    "cursor:pointer",
-    "border:1px solid var(--palette-neutral-20)",
-    "border-radius:50%",
-    "width:16px",
-    "height:16px",
-    "font-size:10px",
-    "font-weight:bold",
-    "line-height:1",
-    "color:light-dark(var(--text-secondary-color), var(--text-on-communication-background))",
-    "padding:0",
-    "margin:1px",
-    "display:inline-flex",
-    "align-items:center",
-    "justify-content:center",
-    "transition:background 120ms ease",
-  ].join(";");
+  const toggleButton = renderItemDetailsButton(doc, {
+    hasDescription,
+    typeColor,
+    className: "awesomeado-tracking__describe",
+  });
 
   const panel = doc.createElement("div");
   panel.className = "awesomeado-tracking__description";
   panel.style.cssText = "display:none;margin-top:8px;padding-left:39px";
-
-  const { container: meta } = buildMetaLine(doc, item);
-  panel.append(meta);
-
-  const descText = renderMarkdownText(doc, { text: item.description, mentionNames });
-  descText.classList.add("awesomeado-tracking__desc-text");
-  // Themed primary text color for description text; the control itself owns the rest of the look.
-  descText.style.fontSize = "11px";
-  descText.style.color = "var(--text-primary-color)";
-  panel.append(descText);
+  const content = renderItemDetailsContent(doc, item, mentionNames);
+  content
+    .querySelector(".awesomeado-item-details__meta")
+    ?.classList.add("awesomeado-tracking__meta");
+  content
+    .querySelector(".awesomeado-item-details__description")
+    ?.classList.add("awesomeado-tracking__desc-text");
+  panel.append(content);
 
   const setExpanded = (expanded: boolean): void => {
-    const emphasis = contentEmphasis(expanded, hasDescription);
-    toggleButton.setAttribute("aria-expanded", expanded ? "true" : "false");
-    toggleButton.title = describeToggleTitle(expanded);
-    toggleButton.style.background = describeDiscColor(emphasis, typeColor);
+    toggleButton.setExpanded(expanded);
     panel.style.display = expanded ? "block" : "none";
   };
   setExpanded(false);
@@ -568,6 +486,8 @@ interface TreeRenderOptions {
   sprintWindow: SprintWindow;
   /** The same full paths offered by the header's area-path filter. */
   areaPaths: readonly string[];
+  /** Interrupt ids accepted during their current tagged lifetime. */
+  interruptAcceptedIds: ReadonlySet<number>;
   /**
    * Repaints the board after a menu command changed what a row shows — the FILTER ROW as well as the
    * tree, because a command can change which pills exist at all (flagging an item is what makes its
@@ -904,21 +824,7 @@ function createPriorityBadge(
   const badge = renderPriorityBadge(options.doc, {
     priority: item.priority,
     onChange: (priority) => {
-      options.queue
-        .enqueue({
-          id: item.id,
-          currentRev: () => item.rev,
-          field: PRIORITY_FIELD,
-          value: String(priority),
-          baseValue: item.priority === null ? null : String(item.priority),
-        })
-        .then((result) => {
-          if (result.ok && result.rev !== undefined) {
-            item.priority = priority;
-            item.rev = result.rev;
-            badge.setPriority(priority);
-          }
-        });
+      writeItemPriority(item, priority, options.queue, (committed) => badge.setPriority(committed));
     },
   });
   badge.style.verticalAlign = "middle";
@@ -1518,6 +1424,7 @@ function createRowAssignee(item: TrackedWorkItem, options: TreeRenderOptions): H
 const ROW_BLOCKED_MARKERS = [
   "blocked",
   "blockedByOtherTeam",
+  "interrupt",
 ] as const satisfies readonly WorkItemMarker[];
 
 /** Creates the blocked-condition pills carried directly by one work-item row. */
@@ -1534,6 +1441,7 @@ function createRowBlockedMarkerPills(
         item,
         marker,
         tags: markerTags[marker],
+        accepted: marker === "interrupt" && options.interruptAcceptedIds.has(item.id),
         notesSinceIso: options.notesSinceIso,
         services,
       }),
@@ -1951,6 +1859,8 @@ interface BoardSession {
   orderingPolicy: OrderingPolicy | null;
   /** One-shot parent id whose rolled-up child popup reopens after a successful reorder repaint. */
   reopenMinorChildPopupId: number | null;
+  /** Acceptance evidence is reloaded with the tree and updated by Sprint-only commands elsewhere. */
+  interruptAcceptance: InterruptAcceptanceState;
 }
 
 /** A fresh session: nothing collapsed, nothing filtered, no pick that overrides the binding. */
@@ -1971,6 +1881,7 @@ function createBoardSession(services: EnhancedViewServices): BoardSession {
     sprint: null,
     orderingPolicy: null,
     reopenMinorChildPopupId: null,
+    interruptAcceptance: { acceptedIds: new Set<number>(), failedIds: new Set<number>() },
   };
 }
 
@@ -2478,6 +2389,7 @@ function createBoardTreeRenderer(params: BoardTreeRendererParams): () => void {
       contextMenu: params.contextMenu,
       sprintWindow: params.sprintWindow,
       areaPaths: params.areaPaths,
+      interruptAcceptedIds: params.session.interruptAcceptance.acceptedIds,
       // Self-referencing so a menu command repaints through the very renderer it was built inside;
       // the reference resolves at call time, long after this assignment completes. It goes through
       // the whole-board repaint rather than this pass alone, because a command can also change which
@@ -3654,6 +3566,19 @@ function startProjectTrackingBoard(context: DataDrivenViewContext, root: HTMLEle
     });
     if (board !== null) {
       resolveBoardMentions(services, result.roots, board.repaint);
+      void loadInterruptAcceptanceState(result.roots, services)
+        .then((acceptance) => {
+          const changed =
+            acceptance.acceptedIds.size !== session.interruptAcceptance.acceptedIds.size ||
+            [...acceptance.acceptedIds].some(
+              (workItemId) => !session.interruptAcceptance.acceptedIds.has(workItemId),
+            );
+          session.interruptAcceptance = acceptance;
+          if (changed) board?.repaint();
+        })
+        .catch((error: unknown) => {
+          services.logger.error("Project Tracking could not resolve interrupt acceptance", error);
+        });
     }
   };
 

@@ -15,6 +15,11 @@ const NO_QUERY_ERROR = "Open an Azure DevOps query in this organization first.";
 
 /** Pulls and publishes through the current ADO query tab's signed-in MAIN world. */
 export class ChromeTeamConfigClient implements TeamConfigReader, TeamConfigWriter {
+  async resolveWorkItemUrl(workItemId: number): Promise<string | null> {
+    const target = await this.target(workItemId);
+    return typeof target === "string" ? null : target.workItemUrl;
+  }
+
   async read(workItemId: number): Promise<TeamConfigReadResult> {
     return this.execute(
       workItemId,

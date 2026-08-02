@@ -55,7 +55,7 @@ function isFieldInside(popup: HTMLElement | null, target: EventTarget | null): b
   }
   const element = target as Partial<HTMLElement> & { tagName?: string };
   return (
-    element.tagName === "INPUT" ||
+    (element.tagName === "INPUT" && (element as HTMLInputElement).type === "text") ||
     element.tagName === "TEXTAREA" ||
     element.isContentEditable === true
   );

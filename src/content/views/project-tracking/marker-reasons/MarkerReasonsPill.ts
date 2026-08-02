@@ -2,7 +2,12 @@ import type { TrackedWorkItem } from "../../../../common/ado/TrackedWorkItem";
 import type { MarkerTags, WorkItemMarker } from "../../../../common/settings/ExtensionSettings";
 import { renderMarkerPill } from "../../../../common/view-common/control/MarkerPill/MarkerPill";
 import { createPopupHost } from "../../../../common/view-common/control/popupHost/popupHost";
-import { renderNotesPanel, type NotesPanelServices } from "../notes/NotesPanel";
+import {
+  createNotesPanelState,
+  renderNotesPanel,
+  type NotesPanelServices,
+  type NotesPanelState,
+} from "../notes/NotesPanel";
 
 /** What a row's marker pill needs to show the notes that explain it. */
 export interface MarkerReasonsPillOptions {
@@ -14,10 +19,13 @@ export interface MarkerReasonsPillOptions {
   /** ISO 8601 start of the binding's Updates window; nothing older is fetched or shown. */
   notesSinceIso: string;
   services: NotesPanelServices;
+  /** Current-lifetime acceptance, used only by the Interrupt pill paint. */
+  accepted?: boolean;
 }
 
 /** Wide enough for a sentence of prose without the popup taking over the row it belongs to. */
 const POPUP_WIDTH_PX = 380;
+const noteStateByItem = new WeakMap<TrackedWorkItem, NotesPanelState>();
 
 /**
  * The pill an item wears for a marker, opening the notes that say WHY it wears it.
@@ -31,36 +39,60 @@ export function renderMarkerReasonsPill(options: MarkerReasonsPillOptions): HTML
   const shell = doc.createElement("span");
   shell.className = "awesomeado-marker-reasons";
   shell.style.cssText = ["position:relative", "display:inline-flex", "margin-left:6px"].join(";");
-  const tagTitle = `Azure DevOps tag "${tags.tag}"`;
 
-  if (tags.commentTag.length === 0) {
-    // With no comment token configured, nothing identifies which notes explain this marker: the pill
-    // would open an empty list and read as "nobody said why", which is a different claim.
-    shell.append(renderMarkerPill(doc, { marker, title: tagTitle }));
+  const renderStatic = (title: string): void => {
+    shell.replaceChildren(renderMarkerPill(doc, { marker, accepted: options.accepted, title }));
+  };
+  if (tags.commentTag.length === 0 || options.item.noteCount === 0) {
+    renderStatic("No notes");
     return shell;
   }
 
-  const pill = renderMarkerPill(doc, {
-    marker,
-    title: `${tagTitle} — click to read why`,
-    onActivate: () => host.toggle(),
-  });
-  const host = createPopupHost({
+  const notes = renderNotesPanel({
     doc,
-    trigger: pill,
-    mountInto: shell,
-    buildPopup: () => buildReasonsPopup(options),
-    // The pill wires its own click (it has to stop the row underneath from opening its notes too);
-    // letting the host wire a second one would toggle twice and the popup would never appear.
-    interactive: false,
+    workItemId: options.item.id,
+    sinceIso: options.notesSinceIso,
+    services: options.services,
+    state: notesState(options.item),
+    onlyCommentPrefix: tags.commentTag,
+    hideOnlyCommentPrefix: true,
+    onNoteCountKnown: (count) => {
+      if (count === 0) {
+        renderStatic("No notes");
+        return;
+      }
+      const pill = renderMarkerPill(doc, {
+        marker,
+        accepted: options.accepted,
+        onActivate: () => host.toggle(),
+      });
+      const host = createPopupHost({
+        doc,
+        trigger: pill,
+        mountInto: shell,
+        buildPopup: () => buildReasonsPopup(doc, notes.element),
+        // The pill stops the row beneath from opening its complete discussion.
+        interactive: false,
+      });
+      shell.replaceChildren(pill);
+    },
+    onNoteLoadFailed: () => renderStatic("Could not load notes"),
   });
-  shell.append(pill);
+  renderStatic("Loading notes");
+  notes.setExpanded(true);
   return shell;
 }
 
+function notesState(item: TrackedWorkItem): NotesPanelState {
+  const existing = noteStateByItem.get(item);
+  if (existing !== undefined) return existing;
+  const created = createNotesPanelState();
+  noteStateByItem.set(item, created);
+  return created;
+}
+
 /** The floating list of this marker's notes, newest first. */
-function buildReasonsPopup(options: MarkerReasonsPillOptions): HTMLElement {
-  const { doc } = options;
+function buildReasonsPopup(doc: Document, notes: HTMLElement): HTMLElement {
   const popup = doc.createElement("div");
   popup.className = "awesomeado-marker-reasons__popup";
   popup.style.cssText = [
@@ -80,21 +112,13 @@ function buildReasonsPopup(options: MarkerReasonsPillOptions): HTMLElement {
     "font-size:11px",
     "background:var(--callout-background-color)",
     "border:1px solid var(--control-border-emphasis)",
-    "border-radius:3px",
+    "border-radius:8px",
     "box-shadow:0 4px 12px var(--popup-shadow-strong)",
     "color:var(--text-primary-color)",
   ].join(";");
 
-  const notes = renderNotesPanel({
-    doc,
-    workItemId: options.item.id,
-    sinceIso: options.notesSinceIso,
-    services: options.services,
-    onlyCommentPrefix: options.tags.commentTag,
-  });
   // Built for life under a row: hidden until expanded, and indented to clear the tree's gutter.
-  notes.element.style.paddingLeft = "0";
-  notes.setExpanded(true);
-  popup.append(notes.element);
+  notes.style.paddingLeft = "0";
+  popup.append(notes);
   return popup;
 }

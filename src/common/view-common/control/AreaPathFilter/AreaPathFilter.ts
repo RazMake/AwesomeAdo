@@ -11,6 +11,8 @@ export interface AreaPathFilterOptions {
   selectedAreaPaths?: readonly string[];
   /** Called after a checkbox or Clear changes the selected full paths. */
   onChange?(selectedAreaPaths: string[]): void;
+  /** Called after an open popup closes by trigger, outside pointer, Escape, or Clear. */
+  onPopupClosed?(): void;
 }
 
 /** The mounted control plus its full-path selection API. */
@@ -321,6 +323,7 @@ export function renderAreaPathFilter(
     trigger,
     mountInto: root,
     interactive: paths.length > 0,
+    onClosed: options.onPopupClosed,
     buildPopup: () =>
       renderPopup({
         doc,

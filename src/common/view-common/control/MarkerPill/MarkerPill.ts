@@ -5,6 +5,7 @@ import { filterPillStyle, renderFilterPillCount } from "../FilterPill/FilterPill
 interface MarkerPillPaint {
   background: string;
   color: string;
+  edge?: string;
 }
 
 /** Counts attached to an interactive marker filter. */
@@ -68,6 +69,8 @@ export interface MarkerPillOptions {
    * selection, whereas this one states a condition the item genuinely carries and opens its reasons.
    */
   onActivate?: () => void;
+  /** Whether an Interrupt belongs to its current accepted tagged lifetime. Ignored by other markers. */
+  accepted?: boolean;
   /** Tag total, plus the accepted-in-sprint split used only by Interrupt. */
   counts?: MarkerPillCounts;
 }
@@ -82,50 +85,75 @@ export interface MarkerPillOptions {
  */
 export function renderMarkerPill(doc: Document, options: MarkerPillOptions): HTMLElement {
   const { marker, interactive = false, selected = false } = options;
-  const paint = MARKER_PILL_PAINT[marker];
+  const accepted = marker === "interrupt" && options.accepted === true;
+  const paint = markerPillPaint(marker, accepted);
   const activates = options.onActivate !== undefined;
 
   const pill = doc.createElement(interactive || activates ? "button" : "span");
   pill.className = "awesomeado-marker-pill";
   pill.dataset.marker = marker;
+  if (marker === "interrupt") pill.dataset.accepted = String(accepted);
   pill.textContent = markerLabel(marker);
   if (options.title !== undefined) {
     pill.title = options.title;
   }
 
-  const styles = interactive
-    ? [
-        filterPillStyle({
-          background: paint.background,
-          color: paint.color,
-          selected,
-        }),
-      ]
-    : [
-        "display:inline-flex",
-        "align-items:center",
-        "vertical-align:middle",
-        "border-radius:9px",
-        "padding:1px 8px",
-        "font-size:9px",
-        "font-weight:600",
-        "line-height:1.6",
-        "white-space:nowrap",
-        `color:${paint.color}`,
-        `background:${paint.background}`,
-      ];
-
-  if (interactive) {
-    asFilterToggle(pill, selected, options.onToggle);
-  } else if (activates) {
-    styles.push(...asOpener(pill, options.onActivate));
-  }
-
-  pill.style.cssText = styles.join(";");
+  pill.style.cssText = markerPillStyles(paint, interactive, selected).join(";");
+  wireMarkerPill(pill, options, interactive, activates, selected);
   if (options.counts !== undefined) {
     appendMarkerCounts(doc, pill, marker, options.counts);
   }
   return pill;
+}
+
+function markerPillPaint(marker: WorkItemMarker, accepted: boolean): MarkerPillPaint {
+  if (marker !== "interrupt" || accepted) return MARKER_PILL_PAINT[marker];
+  return {
+    background: "color-mix(in srgb, var(--marker-interrupt-background) 24%, transparent)",
+    color: "var(--marker-interrupt-foreground)",
+    edge: "var(--marker-interrupt-background)",
+  };
+}
+
+function markerPillStyles(
+  paint: MarkerPillPaint,
+  interactive: boolean,
+  selected: boolean,
+): string[] {
+  if (interactive) {
+    const styles = [
+      filterPillStyle({ background: paint.background, color: paint.color, selected }),
+    ];
+    if (paint.edge !== undefined) styles.push(`box-shadow:inset 0 0 0 1px ${paint.edge}`);
+    return styles;
+  }
+  const styles = [
+    "display:inline-flex",
+    "align-items:center",
+    "vertical-align:middle",
+    "border-radius:9px",
+    "padding:1px 8px",
+    "font-size:9px",
+    "font-weight:600",
+    "line-height:1.6",
+    "white-space:nowrap",
+    `color:${paint.color}`,
+    `background:${paint.background}`,
+  ];
+  if (paint.edge !== undefined) styles.push(`border:1px solid ${paint.edge}`);
+  else if (paint === MARKER_PILL_PAINT.interrupt) styles.push("border:1px solid transparent");
+  return styles;
+}
+
+function wireMarkerPill(
+  pill: HTMLElement,
+  options: MarkerPillOptions,
+  interactive: boolean,
+  activates: boolean,
+  selected: boolean,
+): void {
+  if (interactive) asFilterToggle(pill, selected, options.onToggle);
+  else if (activates) pill.style.cssText += `;${asOpener(pill, options.onActivate).join(";")}`;
 }
 
 function appendMarkerCounts(

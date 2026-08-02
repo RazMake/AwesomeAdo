@@ -19,6 +19,8 @@ export interface SprintWindowEntry {
   label: string;
   /** Where this sprint sits relative to the current one, so the picker can style it. */
   relation: SprintRelation;
+  startDate?: string;
+  finishDate?: string;
 }
 
 /** The sprint picker's data: the decorated window plus the name to select by default. */
@@ -76,6 +78,8 @@ export function buildSprintWindow(
       name: iteration.name,
       label: labelFor(iteration.name, index - anchor),
       relation: relationFor(index - anchor),
+      ...(iteration.startDate === undefined ? {} : { startDate: iteration.startDate }),
+      ...(iteration.finishDate === undefined ? {} : { finishDate: iteration.finishDate }),
     });
   }
 

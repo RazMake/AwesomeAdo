@@ -10,12 +10,16 @@ export interface PriorityBadgeOptions {
   priorities?: readonly number[];
   /** Called immediately when the user chooses another priority. */
   onChange?: (priority: number) => void;
+  /** Whether the popup can open. Defaults to true and may be changed through the returned handle. */
+  editable?: boolean;
 }
 
 /** The rendered chip plus the handle used to reflect a committed priority change. */
 export interface PriorityBadgeHandle extends HTMLElement {
   /** Update the displayed priority and its color. */
   setPriority(priority: number): void;
+  /** Enable or disable priority selection without changing the displayed value. */
+  setEditable(editable: boolean): void;
 }
 
 /** The host declares color-scheme, so dark chips can be deeper without changing the light paint. */
@@ -121,6 +125,7 @@ export function renderPriorityBadge(
 ): PriorityBadgeHandle {
   const priorities = options.priorities ?? DEFAULT_PRIORITIES;
   let currentPriority = options.priority;
+  let editable = options.editable ?? true;
 
   const root = doc.createElement("span");
   root.className = "awesomeado-priority";
@@ -147,10 +152,22 @@ export function renderPriorityBadge(
   });
 
   const handle = root as PriorityBadgeHandle;
+  const applyEditability = (): void => {
+    chip.disabled = !editable;
+    chip.setAttribute("aria-disabled", String(!editable));
+    chip.style.cursor = editable ? "pointer" : "default";
+    caret.style.display = editable ? "inline" : "none";
+  };
   handle.setPriority = (priority) => {
     currentPriority = priority;
     label.textContent = priorityLabel(priority);
     stylePriorityChip(chip, priority);
+    applyEditability();
   };
+  handle.setEditable = (next) => {
+    editable = next;
+    applyEditability();
+  };
+  applyEditability();
   return handle;
 }

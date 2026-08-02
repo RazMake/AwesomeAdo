@@ -64,6 +64,7 @@ describe("renderNoteComposer", () => {
     triggerOf(root)?.click();
     const input = inputOf(root)!;
     input.value = "  A note.  ";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
 
     const add = [...root.querySelectorAll("button")].find((button) => button.textContent === "Add");
     add?.click();

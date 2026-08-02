@@ -180,6 +180,9 @@ if (settingsExportButton && settingsImportButton && settingsImportFile && settin
 }
 
 const teamConfigWorkItemId = document.querySelector<HTMLInputElement>("#team-config-work-item-id");
+const teamConfigWorkItemLink = document.querySelector<HTMLAnchorElement>(
+  "#team-config-work-item-link",
+);
 const teamConfigConnect = document.querySelector<HTMLButtonElement>("#team-config-connect");
 const teamConfigPull = document.querySelector<HTMLButtonElement>("#team-config-pull");
 const teamConfigPublish = document.querySelector<HTMLButtonElement>("#team-config-publish");
@@ -188,6 +191,7 @@ const teamConfigStatus = document.querySelector<HTMLElement>("#team-config-statu
 
 if (
   teamConfigWorkItemId &&
+  teamConfigWorkItemLink &&
   teamConfigConnect &&
   teamConfigPull &&
   teamConfigPublish &&
@@ -196,6 +200,7 @@ if (
 ) {
   const teamConfigElements: TeamConfigElements = {
     workItemId: teamConfigWorkItemId,
+    workItemLink: teamConfigWorkItemLink,
     connectButton: teamConfigConnect,
     pullButton: teamConfigPull,
     publishButton: teamConfigPublish,
@@ -209,6 +214,7 @@ if (
     teamConfigElements,
     report,
     reloadImportedConfiguration,
+    (workItemId) => teamConfigClient.resolveWorkItemUrl(workItemId),
   );
   reloadAfterImport.push(() => {
     void teamConfigController.reload().catch(report);
@@ -235,6 +241,13 @@ const adoWitEtaEmpty = document.querySelector<HTMLElement>("#ado-wit-eta-empty")
 const adoWitHierarchy = document.querySelector<HTMLElement>("#ado-wit-hierarchy");
 const adoWitHierarchyEmpty = document.querySelector<HTMLElement>("#ado-wit-hierarchy-empty");
 const adoMarkerTags = document.querySelector<HTMLElement>("#ado-marker-tags");
+const adoDefaultAreaPathInput = document.querySelector<HTMLInputElement>(
+  "#ado-default-area-path-input",
+);
+const adoDefaultAreaPathAdd = document.querySelector<HTMLButtonElement>(
+  "#ado-default-area-path-add",
+);
+const adoDefaultAreaPaths = document.querySelector<HTMLElement>("#ado-default-area-paths");
 
 if (
   adoOrganization &&
@@ -250,7 +263,10 @@ if (
   adoWitEtaEmpty &&
   adoWitHierarchy &&
   adoWitHierarchyEmpty &&
-  adoMarkerTags
+  adoMarkerTags &&
+  adoDefaultAreaPathInput &&
+  adoDefaultAreaPathAdd &&
+  adoDefaultAreaPaths
 ) {
   const adoElements: AzureDevOpsElements = {
     organization: adoOrganization,
@@ -258,6 +274,11 @@ if (
     teamInput: adoTeamInput,
     futureSprintsInput: adoFutureSprints,
     pastSprintsInput: adoPastSprints,
+    defaultAreaPaths: {
+      input: adoDefaultAreaPathInput,
+      addButton: adoDefaultAreaPathAdd,
+      list: adoDefaultAreaPaths,
+    },
     workItemTypes: {
       columnsRow: adoWitColumns,
       body: adoWitRows,

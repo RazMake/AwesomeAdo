@@ -103,7 +103,7 @@ describe("MarkerTagsController rendering", () => {
     expect(inputFor(elements, "blocked", "tag").value).toBe("Blocked");
     expect(inputFor(elements, "blocked", "comment").value).toBe("[BLOCKED]");
     expect(inputFor(elements, "blockedByOtherTeam", "comment").value).toBe("[ACCEPTED]");
-    expect(inputFor(elements, "interrupt", "comment").value).toBe("");
+    expect(inputFor(elements, "interrupt", "comment").value).toBe("[ACCEPTED]");
   });
 });
 
@@ -122,14 +122,14 @@ describe("MarkerTagsController persistence", () => {
     expect(errors).toHaveLength(0);
   });
 
-  it("keeps a deliberately blanked marker blank in the persisted value", async () => {
+  it("keeps a deliberately blanked tag blank without clearing its comment token", async () => {
     controller.render(DEFAULT_MARKER_TAGS);
 
     setValue(inputFor(elements, "interrupt", "tag"), "");
     await flush();
 
     const written = store.writeCalls.at(-1)?.markerTags as WorkItemMarkerTags;
-    expect(written.interrupt).toEqual({ tag: "", commentTag: "" });
+    expect(written.interrupt).toEqual({ tag: "", commentTag: "[ACCEPTED]" });
   });
 });
 

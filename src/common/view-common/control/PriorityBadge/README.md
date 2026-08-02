@@ -19,4 +19,5 @@ const badge = renderPriorityBadge(document, {
 
 Clicking the chip opens P0 through P4 as chips with the same background, edge, and text-color rules
 used in the view. The current value is omitted. Call `setPriority(priority)` after the write commits
-to update the visible value and text color.
+to update the visible value and text color. Call `setEditable(false)` to keep the same chip visible
+but suppress its caret and popup, then `setEditable(true)` to restore editing.

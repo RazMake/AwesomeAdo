@@ -44,7 +44,8 @@ injected store abstractions.
 Drives the Team configuration subsection of Configuration Sharing on Appearance:
 
 - **Connect** validates and saves the trusted work item id, then applies its full Description. Once
-  connected, that button reads **Connected** and stays disabled until Disconnect is used.
+  connected, the editable ID is replaced by a link to that work item in ADO; the button reads
+  **Connected** and stays disabled until Disconnect is used.
 - **Pull Now** refreshes settings and bindings immediately.
 - **Publish Config** explicitly replaces Description with the current full snapshot, then links the
   published work item ID to its Azure DevOps page.

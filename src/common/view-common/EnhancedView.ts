@@ -8,6 +8,7 @@
  */
 
 import type { IFeatureCrewWriter } from "../ado/IFeatureCrewWriter";
+import type { IInterruptAcceptanceReader } from "../ado/IInterruptAcceptanceReader";
 import type { IMentionDirectory } from "../ado/IMentionDirectory";
 import type { INoteActivityReader } from "../ado/INoteActivityReader";
 import type { IUserDirectory } from "../ado/IUserDirectory";
@@ -25,6 +26,7 @@ import type { TypeCatalogEntry } from "../ado/TrackedWorkItem";
 import type { SprintWindow } from "../ado/sprintWindow";
 import type { ILogger } from "../logging/ILogger";
 import type { WorkItemMarkerTags } from "../settings/ExtensionSettings";
+import type { SprintAreaPathConfigurationService } from "../settings/SprintAreaPaths";
 
 /**
  * Data-loading and cross-view services injected into data-driven views.
@@ -77,6 +79,8 @@ export interface EnhancedViewServices {
    * configured or the fetch fails.
    */
   loadSprintWindow(): Promise<SprintWindow>;
+  /** Team-shared default and per-sprint Lane-filter configuration. */
+  sprintAreaPaths?: SprintAreaPathConfigurationService;
   /** Load every member of the configured team. */
   loadTeamMembers(): Promise<TeamMembersResult>;
   /** The reference clock (injected so views can compute "now" deterministically). */
@@ -103,6 +107,8 @@ export interface EnhancedViewServices {
    * rendered comments per item, one round-trip at a time.
    */
   noteActivity: INoteActivityReader;
+  /** Resolves whether an interrupt was accepted after its current tag was applied. */
+  interruptAcceptance: IInterruptAcceptanceReader;
   /**
    * Posts new discussion notes and rewrites existing ones. Separate from `noteLoader` (Interface
    * Segregation): showing notes and authoring them are different capabilities, and only some views

@@ -30,10 +30,24 @@ import {
   renderEtaBadge,
   type EtaBadgeHandle,
 } from "../../../common/view-common/control/EtaBadge/EtaBadge";
+import type {
+  ItemContextMenu,
+  ItemContextMenuTarget,
+} from "../../../common/view-common/control/ItemContextMenu/ItemContextMenu";
+import {
+  renderItemDetailsButton,
+  renderItemDetailsContent,
+} from "../../../common/view-common/control/ItemDetails/ItemDetails";
 import { renderItemTypeIcon } from "../../../common/view-common/control/ItemTypeIcon/ItemTypeIcon";
-import { renderMarkerPill } from "../../../common/view-common/control/MarkerPill/MarkerPill";
 import { itemHasMarker } from "../../../common/view-common/control/MarkerPill/markerPresence";
+import {
+  renderPriorityBadge,
+  type PriorityBadgeHandle,
+} from "../../../common/view-common/control/PriorityBadge/PriorityBadge";
 import { createPopupHost } from "../../../common/view-common/control/popupHost/popupHost";
+import type { InterruptAcceptanceState } from "../interrupt-acceptance/interruptAcceptanceState";
+import { writeItemPriority } from "../item-priority/writeItemPriority";
+import { renderMarkerReasonsPill } from "../project-tracking/marker-reasons/MarkerReasonsPill";
 
 import { SprintCardDragController, type SprintCardMove } from "./SprintCardDragController";
 
@@ -83,6 +97,10 @@ interface SprintBoardOptions {
   team: string | null;
   assigneeSuggestions: () => TrackedUser[];
   orderingPolicy: OrderingPolicy;
+  interruptAcceptance: InterruptAcceptanceState;
+  notesSinceIso: string;
+  contextMenu: ItemContextMenu;
+  menuTarget: (item: TrackedWorkItem) => ItemContextMenuTarget;
   onItemChanged: () => void;
   cardDrag?: SprintCardDragController;
   dragReorder?: DragReorderController;
@@ -276,6 +294,8 @@ function renderChildrenBadge(
       titleColor: typeColor(childType?.color),
       eta,
       url: buildWorkItemUrl(context.doc.location?.href ?? "", child.id),
+      onContextMenu: (event: MouseEvent) =>
+        options.contextMenu.openAt(event, options.menuTarget(child)),
       onRowReady:
         options.dragReorder === undefined || parentDone
           ? undefined
@@ -316,16 +336,34 @@ function renderChildrenBadge(
   };
 }
 
+function renderCardPriority(
+  context: DataDrivenViewContext,
+  item: TrackedWorkItem,
+  options: SprintBoardOptions,
+): PriorityBadgeHandle {
+  const badge = renderPriorityBadge(context.doc, {
+    priority: item.priority,
+    onChange: (priority) => {
+      writeItemPriority(item, priority, options.writes, (committed) =>
+        badge.setPriority(committed),
+      );
+    },
+  });
+  badge.classList.add("awesomeado-sprint-card__priority");
+  badge.style.justifySelf = "start";
+  return badge;
+}
+
 function renderCardMeta(
   context: DataDrivenViewContext,
   item: TrackedWorkItem,
   options: SprintBoardOptions,
-): HTMLElement {
+): { element: HTMLElement; priority: PriorityBadgeHandle } {
   const meta = context.doc.createElement("div");
   meta.className = "awesomeado-sprint-card__meta";
   meta.style.cssText = [
     "display:grid",
-    "grid-template-columns:minmax(0,1fr) minmax(0,1fr)",
+    "grid-template-columns:auto auto minmax(0,1fr)",
     "align-items:center",
     "gap:7px",
     "width:100%",
@@ -333,9 +371,27 @@ function renderCardMeta(
     "font-size:10px",
     "color:var(--text-secondary-color)",
   ].join(";");
+  const idGroup = context.doc.createElement("span");
+  idGroup.className = "awesomeado-sprint-card__identity";
+  idGroup.style.cssText = "position:relative;display:inline-flex;align-items:center;gap:4px";
   const id = context.doc.createElement("span");
   id.className = "awesomeado-sprint-card__id";
   id.textContent = `#${item.id}`;
+  const details = renderItemDetailsButton(context.doc, {
+    hasDescription: item.description.trim().length > 0,
+    typeColor: typeColor(options.types.get(item.type)?.color),
+    className: "awesomeado-sprint-card__describe",
+  });
+  createPopupHost({
+    doc: context.doc,
+    trigger: details,
+    mountInto: idGroup,
+    onOpened: () => details.setExpanded(true),
+    onClosed: () => details.setExpanded(false),
+    buildPopup: () => renderCardDetailsPopup(context, item),
+  });
+  idGroup.append(id, details);
+  const priority = renderCardPriority(context, item, options);
   const assignee = renderItemAssignee(context, item, options);
   assignee.classList.add("awesomeado-sprint-card__assignee");
   assignee.style.cssText += ";justify-self:end;min-width:0;max-width:100%;overflow:visible";
@@ -344,8 +400,59 @@ function renderCardMeta(
     assigneeName.style.cssText +=
       ";min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
   }
-  meta.append(id, assignee);
-  return meta;
+  meta.append(idGroup, priority, assignee);
+  return { element: meta, priority };
+}
+
+function renderCardDetailsPopup(
+  context: DataDrivenViewContext,
+  item: TrackedWorkItem,
+): HTMLElement {
+  const popup = renderItemDetailsContent(
+    context.doc,
+    item,
+    context.services.mentionDirectory.knownNames(),
+  );
+  popup.classList.add("awesomeado-sprint-card__description-popup");
+  popup.setAttribute("role", "dialog");
+  popup.setAttribute("aria-label", `Details for item ${item.id}`);
+  popup.style.cssText = [
+    "position:absolute",
+    "top:100%",
+    "left:0",
+    "margin-top:4px",
+    "width:380px",
+    "min-width:280px",
+    "max-width:calc(100vw - 24px)",
+    "max-height:320px",
+    "overflow-y:auto",
+    "overflow-x:hidden",
+    "overflow-wrap:anywhere",
+    "word-break:break-word",
+    "padding:10px",
+    "box-sizing:border-box",
+    "z-index:1000",
+    "white-space:normal",
+    "text-align:left",
+    "background:var(--callout-background-color)",
+    "border:1px solid var(--control-border-emphasis)",
+    "border-radius:8px",
+    "box-shadow:0 4px 12px var(--popup-shadow-strong)",
+    "color:var(--text-primary-color)",
+  ].join(";");
+  for (const element of popup.querySelectorAll<HTMLElement>("*")) {
+    element.style.maxWidth = "100%";
+    element.style.overflowWrap = "anywhere";
+  }
+  for (const preformatted of popup.querySelectorAll<HTMLElement>("pre,code")) {
+    preformatted.style.whiteSpace = "pre-wrap";
+    preformatted.style.wordBreak = "break-word";
+  }
+  for (const table of popup.querySelectorAll<HTMLElement>("table")) {
+    table.style.width = "100%";
+    table.style.tableLayout = "fixed";
+  }
+  return popup;
 }
 
 function parentForeground(color: string | undefined): string {
@@ -539,12 +646,17 @@ function renderCardDetails(
     tags.className = "awesomeado-sprint-card__markers";
     tags.style.cssText = "display:flex;gap:4px;flex-wrap:wrap";
     for (const { key } of markers) {
-      tags.append(
-        renderMarkerPill(context.doc, {
-          marker: key,
-          title: `Azure DevOps tag "${markerTags[key].tag}"`,
-        }),
-      );
+      const pill = renderMarkerReasonsPill({
+        doc: context.doc,
+        item: entry.item,
+        marker: key,
+        tags: markerTags[key],
+        accepted: key === "interrupt" && options.interruptAcceptance.acceptedIds.has(entry.item.id),
+        notesSinceIso: options.notesSinceIso,
+        services: context.services,
+      });
+      pill.style.marginLeft = "0";
+      tags.append(pill);
     }
     details.append(tags);
   }
@@ -586,6 +698,32 @@ function registerCardDrag(
   });
 }
 
+function wireCardContextMenu(
+  card: HTMLElement,
+  item: TrackedWorkItem,
+  options: SprintBoardOptions,
+): void {
+  card.addEventListener("contextmenu", (event) =>
+    options.contextMenu.openAt(event, options.menuTarget(item)),
+  );
+}
+
+function setCardControlsEditable(
+  large: boolean,
+  priority: PriorityBadgeHandle,
+  assigneeName: HTMLButtonElement,
+  eta: HTMLElement,
+  children: ChildBadgeHandle | null,
+): void {
+  assigneeName.disabled = !large;
+  assigneeName.style.cursor = large ? "pointer" : "default";
+  priority.setEditable(large);
+  eta.setAttribute("aria-disabled", String(!large));
+  eta.style.cursor = large ? "pointer" : "default";
+  children?.setEditable(large);
+  children?.setVisible(large);
+}
+
 function renderCard(
   context: DataDrivenViewContext,
   entry: SprintBoardItem,
@@ -614,6 +752,7 @@ function renderCard(
     "cursor:grab",
     "box-shadow:0 1px 2px var(--write-status-shadow)",
   ].join(";");
+  wireCardContextMenu(card, item, options);
 
   const title = context.doc.createElement("div");
   title.className = "awesomeado-sprint-card__title";
@@ -627,20 +766,15 @@ function renderCard(
   });
   const details = renderCardDetails(context, entry, options, ordinal !== 3);
   const meta = renderCardMeta(context, item, options);
-  const assigneeName = meta.querySelector<HTMLButtonElement>(".awesomeado-assigned__name")!;
+  const assigneeName = meta.element.querySelector<HTMLButtonElement>(".awesomeado-assigned__name")!;
   const eta = footer.element.querySelector<HTMLElement>(".awesomeado-sprint-card__eta")!;
-  card.append(meta, title, footer.element, details);
+  card.append(meta.element, title, footer.element, details);
 
   const setSize = (large: boolean): void => {
     card.dataset.size = large ? "large" : "compact";
     card.style.minHeight = large ? "112px" : "68px";
     details.style.display = large ? "flex" : "none";
-    assigneeName.disabled = !large;
-    assigneeName.style.cursor = large ? "pointer" : "default";
-    eta.setAttribute("aria-disabled", String(!large));
-    eta.style.cursor = large ? "pointer" : "default";
-    footer.children?.setEditable(large);
-    footer.children?.setVisible(large);
+    setCardControlsEditable(large, meta.priority, assigneeName, eta, footer.children);
     card.tabIndex = ordinal === 3 ? 0 : -1;
     if (ordinal === 3) card.setAttribute("aria-expanded", String(large));
   };

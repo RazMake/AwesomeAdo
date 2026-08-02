@@ -88,6 +88,26 @@ describe("updateWorkItemFieldInPage - atomic fields", () => {
       { op: "add", path: "/fields/System.AreaPath", value: "Project\\Apps" },
     ]);
   });
+
+  it("tests field preconditions in the same patch before changing the target field", async () => {
+    const fetchMock = vi.fn(() => Promise.resolve(jsonResponse({ rev: 7 })));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    await updateWorkItemFieldInPage({
+      updateUrl: UPDATE_URL,
+      rev: 6,
+      field: "System.IterationPath",
+      value: "Project\\Sprint 2",
+      preconditions: [{ field: "System.State", value: "Active" }],
+    });
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(parsePatchBody(init)).toEqual([
+      { op: "test", path: "/rev", value: 6 },
+      { op: "test", path: "/fields/System.State", value: "Active" },
+      { op: "add", path: "/fields/System.IterationPath", value: "Project\\Sprint 2" },
+    ]);
+  });
 });
 
 describe("updateWorkItemFieldInPage - multiline format", () => {
@@ -361,6 +381,34 @@ describe("updateWorkItemFieldInPage - rebasing a write whose rev went stale", ()
     });
 
     expect(result).toEqual({ ok: true, rev: 21 });
+  });
+});
+
+describe("updateWorkItemFieldInPage - guarded writes", () => {
+  it("refuses when an atomic precondition changed even if the target field did not", async () => {
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) => {
+      if (init?.method === "PATCH") return Promise.resolve(jsonResponse({}, false, 412));
+      return Promise.resolve(
+        jsonResponse({
+          rev: 20,
+          fields: { "System.IterationPath": "Project\\Sprint 1", "System.State": "Done" },
+        }),
+      );
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const result = await updateWorkItemFieldInPage({
+      updateUrl: UPDATE_URL,
+      rev: 15,
+      field: "System.IterationPath",
+      value: "Project\\Sprint 2",
+      baseValue: "Project\\Sprint 1",
+      preconditions: [{ field: "System.State", value: "Active" }],
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("412");
   });
 });
 

@@ -25,6 +25,9 @@ export interface TeamIteration {
   /** The iteration's display name (the leaf of its path, e.g. `Sprint 5`). */
   name: string;
   timeFrame: SprintTimeFrame;
+  /** ISO date bounds supplied by ADO, retained so old sprint configuration can be pruned safely. */
+  startDate?: string;
+  finishDate?: string;
 }
 
 /**
@@ -72,7 +75,22 @@ function parseTeamIteration(entry: unknown): TeamIteration | null {
     path: typeof path === "string" && path.length > 0 ? path : name,
     name,
     timeFrame: readTimeFrame(attributes),
+    ...readDates(attributes),
   };
+}
+
+function readDates(attributes: unknown): Pick<TeamIteration, "startDate" | "finishDate"> {
+  const candidate = attributes as { startDate?: unknown; finishDate?: unknown } | null;
+  const startDate = normalizeIterationDate(candidate?.startDate);
+  const finishDate = normalizeIterationDate(candidate?.finishDate);
+  return {
+    ...(startDate === null ? {} : { startDate }),
+    ...(finishDate === null ? {} : { finishDate }),
+  };
+}
+
+function normalizeIterationDate(value: unknown): string | null {
+  return typeof value === "string" && Number.isFinite(Date.parse(value)) ? value : null;
 }
 
 /**

@@ -292,6 +292,10 @@ describe("EnhancedViewSurface - keep-alive", () => {
       noteActivity: {
         readNoteActivity: () => Promise.resolve({ activity: [], error: null }),
       },
+      interruptAcceptance: {
+        readInterruptAcceptance: () =>
+          Promise.resolve({ acceptedWorkItemIds: [], failedWorkItemIds: [], error: null }),
+      },
       noteWriter: {
         addNote: () => Promise.resolve({ ok: true }),
         editNote: () => Promise.resolve({ ok: true }),
