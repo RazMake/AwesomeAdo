@@ -272,4 +272,40 @@ describe("TeamConfigSynchronizer publish", () => {
     expect(result).toEqual({ status: "failed", workItemId: 42, error: "HTTP 412" });
     expect(harness.logger.error).toHaveBeenCalledOnce();
   });
+
+  it("logs and reports a binding-store read failure", async () => {
+    const harness = makeHarness();
+    vi.mocked(harness.bindingStore.read).mockRejectedValue(new Error("storage offline"));
+    const writer: TeamConfigWriter = { write: vi.fn() };
+
+    await expect(harness.synchronizer.publish(writer)).resolves.toEqual({
+      status: "failed",
+      workItemId: 42,
+      error: "storage offline",
+    });
+    expect(writer.write).not.toHaveBeenCalled();
+    expect(harness.logger.error).toHaveBeenCalledOnce();
+  });
+
+  it("publishes proposed binding properties without rereading stale local bindings", async () => {
+    const harness = makeHarness(42, bindings);
+    const proposed: QueryBindings = {
+      ...bindings,
+      query: {
+        view: "sprint",
+        properties: { defaultAreaPaths: "Project\\API\nProject\\Web" },
+      },
+    };
+    const writer: TeamConfigWriter = { write: vi.fn(async () => ({ ok: true as const })) };
+
+    await expect(harness.synchronizer.publishBindings(writer, proposed)).resolves.toMatchObject({
+      status: "published",
+    });
+
+    const published = vi.mocked(writer.write).mock.calls[0]?.[1] ?? "";
+    expect(JSON.parse(published).enhancedQueries.query.properties.defaultAreaPaths).toBe(
+      "Project\\API\nProject\\Web",
+    );
+    expect(harness.bindingStore.read).not.toHaveBeenCalled();
+  });
 });

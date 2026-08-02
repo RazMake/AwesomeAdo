@@ -1,10 +1,6 @@
 import { THEME_PREFERENCES, type ThemePreference } from "../view-common/themes/themes";
 
-import {
-  normalizeAreaPaths,
-  normalizeSprintAreaPaths,
-  type SprintAreaPaths,
-} from "./SprintAreaPaths";
+import { normalizeSprintAreaPaths, type SprintAreaPaths } from "./SprintAreaPaths";
 import { reachesWorkItemType } from "./workItemHierarchy";
 
 /**
@@ -41,9 +37,6 @@ export interface ExtensionSettings {
    * only the current and future sprints are shown.
    */
   pastSprintsCount: number;
-
-  /** Full area paths initially selected whenever a Sprint View opens a sprint. */
-  defaultAreaPaths: string[];
 
   /** Team-shared Lane-filter selections keyed by full iteration path. */
   sprintAreaPaths: SprintAreaPaths;
@@ -233,7 +226,6 @@ export const DEFAULT_SETTINGS: ExtensionSettings = deepFreeze({
   currentTeam: null,
   futureSprintsCount: DEFAULT_FUTURE_SPRINTS,
   pastSprintsCount: DEFAULT_PAST_SPRINTS,
-  defaultAreaPaths: [],
   sprintAreaPaths: {},
   boardColumns: [...DEFAULT_BOARD_COLUMNS],
   workItemTypes: [],
@@ -609,7 +601,6 @@ export function normalizeSettings(raw: unknown): ExtensionSettings {
     currentTeam: normalizeTeamRef(candidate.currentTeam),
     futureSprintsCount: normalizeFutureSprintsCount(candidate.futureSprintsCount),
     pastSprintsCount: normalizePastSprintsCount(candidate.pastSprintsCount),
-    defaultAreaPaths: normalizeAreaPaths(candidate.defaultAreaPaths),
     sprintAreaPaths: normalizeSprintAreaPaths(candidate.sprintAreaPaths),
     // The board columns are a fixed set, so any stored value (including a never-set key) is coerced
     // back to exactly `BOARD_COLUMN_COUNT` positions, preserving each column's user-edited title.

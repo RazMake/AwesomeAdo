@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   adoCollectionBaseUrl,
   buildAdoMetadataUrls,
+  parseAreaPaths,
   parseDateFieldReferenceNames,
   parseTeams,
   parseWorkItemTypes,
@@ -65,6 +66,8 @@ describe("buildAdoMetadataUrls", () => {
       teamsUrl: "https://dev.azure.com/contoso/_apis/projects/web/teams?$top=1000&api-version=7.1",
       workItemTypesUrl: "https://dev.azure.com/contoso/web/_apis/wit/workitemtypes?api-version=7.1",
       fieldsUrl: "https://dev.azure.com/contoso/web/_apis/wit/fields?api-version=7.1",
+      areaPathsUrl:
+        "https://dev.azure.com/contoso/web/_apis/wit/classificationnodes/areas?$depth=100&api-version=7.1",
     });
   });
 
@@ -76,6 +79,8 @@ describe("buildAdoMetadataUrls", () => {
         workItemTypesUrl:
           "https://contoso.visualstudio.com/web/_apis/wit/workitemtypes?api-version=7.1",
         fieldsUrl: "https://contoso.visualstudio.com/web/_apis/wit/fields?api-version=7.1",
+        areaPathsUrl:
+          "https://contoso.visualstudio.com/web/_apis/wit/classificationnodes/areas?$depth=100&api-version=7.1",
       },
     );
   });
@@ -91,6 +96,9 @@ describe("buildAdoMetadataUrls", () => {
     expect(urls?.fieldsUrl).toBe(
       "https://dev.azure.com/contoso/O365%20Core/_apis/wit/fields?api-version=7.1",
     );
+    expect(urls?.areaPathsUrl).toBe(
+      "https://dev.azure.com/contoso/O365%20Core/_apis/wit/classificationnodes/areas?$depth=100&api-version=7.1",
+    );
   });
 
   it("returns null for a non-ADO URL", () => {
@@ -99,6 +107,45 @@ describe("buildAdoMetadataUrls", () => {
 
   it("returns null for an org-level URL with no project", () => {
     expect(buildAdoMetadataUrls("https://dev.azure.com/contoso/_queries")).toBeNull();
+  });
+});
+
+describe("parseAreaPaths", () => {
+  it("returns every full area path from a nested classification tree", () => {
+    expect(
+      parseAreaPaths({
+        name: "Project",
+        path: "\\Project\\Area",
+        children: [
+          { name: "Platform", path: "\\Project\\Area\\Platform" },
+          {
+            name: "Apps",
+            children: [{ name: "Web" }, { name: "Mobile", path: "\\Project\\Area\\Apps\\Mobile" }],
+          },
+        ],
+      }),
+    ).toEqual([
+      "Project",
+      "Project\\Apps",
+      "Project\\Apps\\Mobile",
+      "Project\\Apps\\Web",
+      "Project\\Platform",
+    ]);
+  });
+
+  it("drops malformed and duplicate paths", () => {
+    expect(
+      parseAreaPaths({
+        name: "Project",
+        children: [
+          { name: "API", path: "\\Project\\API" },
+          { name: "api", path: "\\project\\api" },
+          null,
+          { children: [{ name: "Services" }] },
+        ],
+      }),
+    ).toEqual(["Project", "Project\\API", "Project\\Services"]);
+    expect(parseAreaPaths(null)).toEqual([]);
   });
 });
 

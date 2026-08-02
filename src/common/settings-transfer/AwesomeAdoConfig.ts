@@ -304,7 +304,6 @@ const SETTINGS_RULES: readonly {
   { key: "currentTeam", isValid: isTeamRef, expected: "null, or a team with an id and a name" },
   { key: "futureSprintsCount", isValid: isWholeNumber, expected: "a whole number" },
   { key: "pastSprintsCount", isValid: isWholeNumber, expected: "a whole number" },
-  { key: "defaultAreaPaths", isValid: isStringList, expected: "a list of full area paths" },
   {
     key: "sprintAreaPaths",
     isValid: isSprintAreaPathMap,

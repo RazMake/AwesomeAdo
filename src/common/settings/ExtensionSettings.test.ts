@@ -110,9 +110,8 @@ describe("normalizeSettings - team, sprint, and collection fields", () => {
     ).toEqual({ tag: "Impediment", commentTag: "[X]" });
   });
 
-  it("normalizes default and per-sprint full area paths", () => {
+  it("normalizes per-sprint full area paths", () => {
     const settings = normalizeSettings({
-      defaultAreaPaths: [" Project\\API ", "project\\api", "", 7],
       sprintAreaPaths: {
         "Project\\Sprint 1": {
           areaPaths: ["Project\\API", "Project\\Web", "Project\\API"],
@@ -122,7 +121,6 @@ describe("normalizeSettings - team, sprint, and collection fields", () => {
       },
     });
 
-    expect(settings.defaultAreaPaths).toEqual(["Project\\API"]);
     expect(settings.sprintAreaPaths).toEqual({
       "Project\\Sprint 1": {
         areaPaths: ["Project\\API", "Project\\Web"],

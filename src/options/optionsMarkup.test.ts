@@ -110,6 +110,14 @@ describe("options.html element contract", () => {
     expect(duplicated).toEqual([]);
   });
 
+  it("keeps query-binding status inside its configuration card", () => {
+    const doc = loadOptionsDocument();
+    const card = requiredElement(doc, "binding-view-config-card");
+    const status = requiredElement(doc, "binding-status");
+
+    expect(status.closest("#binding-view-config-card")).toBe(card);
+  });
+
   it("groups configuration sharing controls and preserves their distinct guidance", () => {
     const doc = loadOptionsDocument();
     const card = requiredElement(doc, "configuration-sharing");

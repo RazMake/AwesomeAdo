@@ -1,4 +1,5 @@
 import type { IQueryBindingStore } from "../bindings/IQueryBindingStore";
+import type { QueryBindings } from "../bindings/QueryBinding";
 import type { ILogger } from "../logging/ILogger";
 import type { ISettingsStore } from "../settings/ISettingsStore";
 
@@ -54,21 +55,36 @@ export class TeamConfigSynchronizer {
   }
 
   async publish(writer: TeamConfigWriter): Promise<TeamConfigSyncResult> {
+    return this.publishSnapshot(writer, this.bindingStore.read());
+  }
+
+  /** Publish proposed bindings before a caller exposes them locally to pull-triggered observers. */
+  async publishBindings(
+    writer: TeamConfigWriter,
+    bindings: QueryBindings,
+  ): Promise<TeamConfigSyncResult> {
+    return this.publishSnapshot(writer, bindings);
+  }
+
+  private async publishSnapshot(
+    writer: TeamConfigWriter,
+    bindings: QueryBindings | Promise<QueryBindings>,
+  ): Promise<TeamConfigSyncResult> {
     let workItemId: number | null = null;
     try {
       workItemId = await this.sourceStore.read();
       if (workItemId === null) {
         return { status: "disconnected" };
       }
-      const [settings, bindings] = await Promise.all([
-        this.settingsStore.read(),
-        this.bindingStore.read(),
-      ]);
-      const result = await writer.write(workItemId, exportCompactConfig(settings, bindings));
+      const [settings, resolvedBindings] = await Promise.all([this.settingsStore.read(), bindings]);
+      const result = await writer.write(
+        workItemId,
+        exportCompactConfig(settings, resolvedBindings),
+      );
       if (!result.ok) {
         throw new Error(result.error);
       }
-      const bindingCount = Object.keys(bindings).length;
+      const bindingCount = Object.keys(resolvedBindings).length;
       this.logger.info(
         `Published team configuration from work item ${workItemId}: ${bindingCount} binding(s).`,
       );

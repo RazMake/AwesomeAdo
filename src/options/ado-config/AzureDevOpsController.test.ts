@@ -105,9 +105,6 @@ function makeElements(): AzureDevOpsElements {
   witHierarchyTable.append(witHierarchyBody);
   const witHierarchyEmpty = document.createElement("p");
   const markerTagsList = document.createElement("div");
-  const defaultAreaPathInput = document.createElement("input");
-  const defaultAreaPathAdd = document.createElement("button");
-  const defaultAreaPaths = document.createElement("div");
   document.body.append(
     organization,
     project,
@@ -122,9 +119,6 @@ function makeElements(): AzureDevOpsElements {
     witHierarchyTable,
     witHierarchyEmpty,
     markerTagsList,
-    defaultAreaPathInput,
-    defaultAreaPathAdd,
-    defaultAreaPaths,
   );
   return {
     organization,
@@ -132,11 +126,6 @@ function makeElements(): AzureDevOpsElements {
     teamInput,
     futureSprintsInput,
     pastSprintsInput,
-    defaultAreaPaths: {
-      input: defaultAreaPathInput,
-      addButton: defaultAreaPathAdd,
-      list: defaultAreaPaths,
-    },
     workItemTypes: {
       columnsRow: witColumnsRow,
       body: witBody,
@@ -155,6 +144,7 @@ function makeElements(): AzureDevOpsElements {
 const CONTEXT: AdoMetadataContext = {
   organization: "contoso",
   project: "web",
+  areaPaths: ["web", "web\\Platform"],
   teams: [
     { id: "1", name: "Alpha" },
     { id: "2", name: "Beta" },

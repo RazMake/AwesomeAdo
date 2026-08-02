@@ -2,9 +2,9 @@
 
 Serializes the user's **entire** configuration to and from a single `AwesomeADO.config` file, so a
 user can back it up or move it between machines. The file carries every extension setting (theme,
-default view, current team, sprint counts, default area paths, dated per-sprint area selections,
-board columns, work item types) **and** every
-enhanced-query binding (which queries are enhanced and each one's per-view property values).
+default view, current team, sprint counts, dated per-sprint area selections, board columns, work item
+types) **and** every enhanced-query binding (which queries are enhanced and each one's per-view
+property values, including Sprint View's default Lane area paths).
 
 This component is pure data plumbing: no DOM, no `chrome.*`. The options-side controller that wires
 it to buttons and the two stores lives in `src/options/settings-transfer`.
@@ -62,8 +62,10 @@ and `TeamConfigSynchronizer` never applies a source ID found in a remote payload
 - `TeamConfigSynchronizer` — pulls through `importConfig`, refuses partial/invalid remote files,
   reports an empty Description as connected but not yet published without changing local settings,
   replaces settings and bindings only when the normalized snapshot changed, and publishes the current
-  full `exportCompactConfig` snapshot. Work-item type settings include their Primary Work
-  classification in both directions. Concurrent pulls share one in-flight operation.
+  full `exportCompactConfig` snapshot. `publishBindings(writer, proposed)` publishes a caller's
+  proposed binding map without rereading stale local bindings, so options can publish before making
+  a mutation observable to pull-triggered content views. Work-item type settings include their
+  Primary Work classification in both directions. Concurrent pulls share one in-flight operation.
 - `TeamSprintAreaPathStore` — pulls before Sprint reads, serializes per-sprint setting writes, and
   publishes the resulting full normalized configuration through the connected work item.
 

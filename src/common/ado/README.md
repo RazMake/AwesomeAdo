@@ -158,10 +158,12 @@ response-parsing logic, kept pure so they are unit-testable without a browser.
 ### `fetchAdoMetadata.ts`
 
 - `buildAdoMetadataUrls(href)` — parses the org/project from the tab URL and returns the
-  `{ teamsUrl, workItemTypesUrl, fieldsUrl }` to fetch, or `null` for a non-project
+  `{ teamsUrl, workItemTypesUrl, fieldsUrl, areaPathsUrl }` to fetch, or `null` for a non-project
   (org/folder) URL.
 - `parseTeams(body)` — turns the raw teams REST body into a sorted `AdoTeam[]`; **best-effort** (a
   missing/malformed body yields `[]`).
+- `parseAreaPaths(body)` — flattens the project classification tree into deduplicated, sorted full
+  `System.AreaPath` values for options-page autocomplete; **best-effort** like `parseTeams`.
 - `parseWorkItemTypes(body, dateFieldReferenceNames?)` — turns the raw work-item-types REST body into
   a sorted `AdoWorkItemType[]`, dropping disabled types; **best-effort** like `parseTeams`. The list
   endpoint returns each type's states and field list inline, but not the fields' data types, so pass

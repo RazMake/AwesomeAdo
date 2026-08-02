@@ -378,8 +378,7 @@ const trackingServices: EnhancedViewServices = {
     });
   },
   sprintAreaPaths: {
-    read: () =>
-      sprintAreaPathStore?.read() ?? Promise.resolve({ defaultAreaPaths: [], sprintAreaPaths: {} }),
+    read: () => sprintAreaPathStore?.read() ?? Promise.resolve({ sprintAreaPaths: {} }),
     save: (sprintAreaPaths) => sprintAreaPathStore?.save(sprintAreaPaths) ?? Promise.resolve(false),
   },
   loadTeamMembers: () => {

@@ -7,8 +7,8 @@ work-item-type-to-board-state, and marker-tag configuration.
 
 Lets the user configure the Azure DevOps context the enhanced view needs. It detects the active
 org/project, drives a searchable team picker, the future- and past-sprint counts, the
-default Sprint area paths, per-work-item-type board-state mapping table, and the per-condition marker tags, persisting everything
-to the synced settings store.
+per-work-item-type board-state mapping table, and the per-condition marker tags, persisting
+everything to the synced settings store.
 
 This component does not log; it surfaces failures through the options page's shared error sink.
 
@@ -36,13 +36,6 @@ This component does not log; it surfaces failures through the options page's sha
   so a value can never be stored under a neighbouring marker. A failed write restores the last
   accepted values so the fields never show a value the store rejected.
 - **`MarkerTagsElements`** — the container element it fills with the marker rows.
-
-### `DefaultAreaPathsController.ts`
-
-- **`DefaultAreaPathsController`** — nested controller for full area paths initially selected in
-  every Sprint View. It offers an Add input at the top and editable rows with remove buttons.
-  Adding or renaming a default also adds the new value to existing per-sprint selections; removing
-  a default writes only `defaultAreaPaths`, deliberately leaving sprint selections unchanged.
 
 ### `WorkItemTypesController.ts`
 

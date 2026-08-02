@@ -26,6 +26,7 @@ Checkbox changes keep the popup open so several paths can be selected in one vis
 pressing Escape, or toggling the trigger closes it; `onPopupClosed` lets a caller defer expensive
 repainting until that dismissal while `onChange` still reports each selection immediately.
 
-The trigger count and active treatment use the selected AwesomeADO theme's communication roles;
-the popup, border, checkbox accent, and hover state use shared control roles, so Dark, Light, Blue,
-and Follow Azure DevOps remain consistent.
+An active selection uses the same filled communication background and contrasting foreground as the
+Project filter, plus a visible count badge. The trigger is disabled only when the caller offers no
+area paths. The popup, checkbox accent, and hover state use shared control roles, so Dark, Light,
+Blue, and Follow Azure DevOps remain consistent.

@@ -9,7 +9,6 @@ export interface SprintAreaPathSelection {
 export type SprintAreaPaths = Record<string, SprintAreaPathSelection>;
 
 export interface SprintAreaPathConfiguration {
-  defaultAreaPaths: string[];
   sprintAreaPaths: SprintAreaPaths;
 }
 
@@ -53,12 +52,12 @@ export function normalizeSprintAreaPaths(raw: unknown): SprintAreaPaths {
   return result;
 }
 
-/** Materialize defaults into a sprint so removing a default later never deselects that sprint. */
+/** Use a team's saved sprint choice when present; otherwise seed the filter from binding defaults. */
 export function selectedAreaPathsForSprint(
   defaults: readonly string[],
   selection: SprintAreaPathSelection | undefined,
 ): string[] {
-  return normalizeAreaPaths([...(selection?.areaPaths ?? []), ...defaults]);
+  return normalizeAreaPaths(selection?.areaPaths ?? defaults);
 }
 
 /** Replace one sprint selection and prune completed history against the injected clock. */

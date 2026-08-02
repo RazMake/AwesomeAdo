@@ -79,13 +79,20 @@ builds use the repository's `Major.Minor.Build` release versioning.
   both Sprint View and Project Tracking use that same accepted/unaccepted pill state.
 - Keeps Primary Work classification intact through team configuration pull and publish, and replaces
   the connected read-only configuration work item ID with a link that opens the item in Azure DevOps.
-- Adds default Sprint area paths to Azure DevOps settings with an Add field, editable rows, and a
-  remove button per path. Defaults are initially selected across sprints; additions flow into saved
-  sprint filters while removals leave those filters unchanged. Each sprint's selected full paths are
-  pulled on load, refresh, and sprint change and auto-published through the team configuration work
-  item. The Lane dropdown stays open for multiple checkbox selections and closes on outside click or
-  Escape. File export/import and compact team payloads include both defaults and per-sprint selections;
-  dated history retains the newest ten past sprints and prunes older records when possible.
+- Adds default Sprint Lane area paths to each query's Sprint View configuration. They initialize a
+  sprint only until the team saves a Lane choice; a saved choice, including no filter, takes priority
+  and is shared through team configuration. Defaults are added one at a time, with live project-area
+  autocomplete matching any part of the path on every edit row and an individual remove button.
+  The Sprint title menu can reset the current sprint's saved Lanes to those configured defaults.
+  The active Lane trigger uses the same filled filter-on style as Project while retaining its count
+  badge.
+  Each sprint's selected full paths are pulled on load, refresh, and sprint change and published only
+  after a Lane change or reset. The Lane dropdown stays open for multiple checkbox selections and
+  closes on outside click or Escape. File export/import and compact team payloads include both binding
+  defaults and dated per-sprint selections, retaining the newest ten past sprint records and pruning
+  older ones when possible. Saving query configuration now publishes its proposed binding snapshot
+  before updating local synced storage, preventing an automatic team pull from immediately erasing
+  the new default paths and ensuring subsequent file exports include them.
 
 ## 0.1
 

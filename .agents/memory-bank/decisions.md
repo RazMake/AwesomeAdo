@@ -1199,21 +1199,29 @@ Markdown` in one `/rev`-guarded JSON Patch. The PATCH is not retried; a concurre
 
 ## ADR-063: Sprint area-path selections are dated team configuration
 
-- Decision: `defaultAreaPaths` and `sprintAreaPaths` are normalized `ExtensionSettings`, so file
-  export/import and the compact work-item payload carry both automatically. Defaults are full paths.
-  A per-sprint record is keyed by full iteration path and stores selected full paths plus ADO's sprint
-  start/finish dates.
+- Decision: default full paths are a per-query Sprint View binding property. `sprintAreaPaths` is a
+  normalized `ExtensionSettings` field whose per-sprint records are keyed by full iteration path and
+  store selected full paths plus ADO's sprint start/finish dates. Full configuration transfer carries
+  both the binding property and the records automatically. Options presents the property as one
+  autocomplete row per path with individual add/remove actions; suggestions come from the project's
+  complete area classification tree, while the persisted value remains newline-delimited for
+  compatibility. Add is disabled while blank, row actions remain adjacent to their textboxes, and
+  save/error feedback stays inside the binding configuration card. A connected binding mutation
+  publishes the complete proposed binding map before writing local synced storage; disconnected
+  mutations skip that remote step. This ordering prevents the local observer's Sprint redraw and
+  mandatory pull from restoring the previous team payload over the new binding.
 - Decision: opening, refreshing, or switching a sprint pulls the connected team configuration and
-  loads that sprint's selection. Defaults are unioned into the record and materialized there; adding
-  a default also adds it to existing records, while removing a default never removes it from a
-  sprint. Every Sprint Lane change updates immediately and serially publishes the resulting full
-  configuration through a bounded content-to-background write and the existing revision-guarded
-  Description patch.
+  loads that sprint's saved selection when one exists; the saved record takes priority even when it
+  is empty. Binding defaults apply only when no record exists and are never auto-materialized. Every
+  Sprint Lane change updates immediately and serially publishes the resulting full configuration
+  through a bounded content-to-background write and the existing revision-guarded Description patch.
+  The title-menu Reset command runs that same write with the binding defaults and is disabled when
+  the default list is empty.
 - Decision: pruning retains all current, future, and undated records plus the ten most recently
-  finished sprints. Older completed records are deleted whenever a sprint record is materialized or
-  changed, keeping the shared Description bounded without guessing about records whose dates are
-  unavailable.
-- Rationale: defaults are an initial list, not a permanent policy, while the sprint selection is a
-  team decision that must survive refreshes and be identical for every viewer. Storing date bounds
-  with each record makes the ten-sprint retention rule deterministic even after a sprint falls
-  outside the configured picker window.
+  finished sprints. Older completed records are deleted whenever a sprint record changes, keeping the
+  shared Description bounded without guessing about records whose dates are unavailable.
+- Rationale: each saved query can represent a different Lane scope, so its initial list belongs to
+  the binding. Once anyone changes Lane, that sprint selection is a team decision that must survive
+  refreshes and be identical for every viewer. Storing date bounds with each record makes the
+  ten-sprint retention rule deterministic even after a sprint falls outside the configured picker
+  window.

@@ -70,7 +70,6 @@ const DEFAULT_VIEW_KEY = "settings.defaultView";
 const CURRENT_TEAM_KEY = "settings.currentTeam";
 const FUTURE_SPRINTS_KEY = "settings.futureSprintsCount";
 const PAST_SPRINTS_KEY = "settings.pastSprintsCount";
-const DEFAULT_AREA_PATHS_KEY = "settings.defaultAreaPaths";
 const SPRINT_AREA_PATHS_KEY = "settings.sprintAreaPaths";
 const BOARD_COLUMNS_KEY = "settings.boardColumns";
 const WORK_ITEM_TYPES_KEY = "settings.workItemTypes";
@@ -235,15 +234,14 @@ describe("BrowserSyncSettingsStore - write (sprints, columns, and types)", () =>
       expect(await fake.get(PAST_SPRINTS_KEY)).toBe(3);
     });
 
-    it("persists both default and per-sprint area-path settings", async () => {
+    it("persists per-sprint area-path settings", async () => {
       const fake = new FakeBrowserSyncStorage();
       const store = new BrowserSyncSettingsStore(fake);
       const sprintAreaPaths = {
         "Project\\Sprint 1": { areaPaths: ["Project\\API"], startDate: null, finishDate: null },
       };
-      await store.write({ defaultAreaPaths: ["Project\\API"], sprintAreaPaths });
+      await store.write({ sprintAreaPaths });
 
-      expect(await fake.get(DEFAULT_AREA_PATHS_KEY)).toEqual(["Project\\API"]);
       expect(await fake.get(SPRINT_AREA_PATHS_KEY)).toEqual(sprintAreaPaths);
     });
 

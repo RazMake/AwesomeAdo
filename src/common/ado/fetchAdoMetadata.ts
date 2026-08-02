@@ -15,6 +15,8 @@ export interface AdoMetadataUrls {
   workItemTypesUrl: string;
   /** The project's field list, read only to learn which fields are date-typed (see `fetchAdoRawInPage`). */
   fieldsUrl: string;
+  /** The project's complete area hierarchy, used to suggest valid full area paths. */
+  areaPathsUrl: string;
 }
 
 /**
@@ -119,7 +121,61 @@ export function buildAdoMetadataUrls(href: string): AdoMetadataUrls | null {
     // The type-list body names each type's fields but never their data type, so the project field
     // list is read alongside it purely to learn which of those fields are date-typed.
     fieldsUrl: `${base}/${project}/_apis/wit/fields?api-version=${API_VERSION}`,
+    areaPathsUrl: `${base}/${project}/_apis/wit/classificationnodes/areas?$depth=100&api-version=${API_VERSION}`,
   };
+}
+
+/** Parse the project area hierarchy into full `System.AreaPath` values for autocomplete. */
+export function parseAreaPaths(body: unknown): string[] {
+  const paths: string[] = [];
+  const seen = new Set<string>();
+  collectAreaPaths(body, "", paths, seen);
+  return paths.sort((left, right) => left.localeCompare(right));
+}
+
+interface AreaNode {
+  path: string;
+  children: readonly unknown[];
+}
+
+function parseAreaNode(value: unknown, parentPath: string): AreaNode | null {
+  if (typeof value !== "object" || value === null) return null;
+  const raw = value as { name?: unknown; path?: unknown; children?: unknown };
+  const name = typeof raw.name === "string" ? raw.name.trim() : "";
+  const supplied =
+    typeof raw.path === "string" ? systemAreaPathFromClassificationPath(raw.path) : "";
+  const path = supplied || (parentPath === "" ? name : `${parentPath}\\${name}`);
+  return { path: name === "" && supplied === "" ? "" : path, children: toChildren(raw.children) };
+}
+
+function systemAreaPathFromClassificationPath(path: string): string {
+  const parts = path
+    .split("\\")
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+  if (parts[1]?.toLocaleLowerCase() === "area") parts.splice(1, 1);
+  return parts.join("\\");
+}
+
+function toChildren(value: unknown): readonly unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function collectAreaPaths(
+  value: unknown,
+  parentPath: string,
+  paths: string[],
+  seen: Set<string>,
+): void {
+  const node = parseAreaNode(value, parentPath);
+  if (node === null) return;
+  const key = node.path.toLocaleLowerCase();
+  if (node.path !== "" && !seen.has(key)) {
+    seen.add(key);
+    paths.push(node.path);
+  }
+  const childParent = node.path || parentPath;
+  for (const child of node.children) collectAreaPaths(child, childParent, paths, seen);
 }
 
 /**

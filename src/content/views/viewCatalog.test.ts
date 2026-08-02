@@ -50,17 +50,26 @@ describe("VIEW_TYPES", () => {
     expect(byKey.get("hours")).toMatchObject({ kind: "number", defaultValue: "24", min: 1 });
   });
 
-  it("gives Sprint View shared ordering plus its recent-change window", () => {
+  it("gives Sprint View ordering, recent-change, and default Lane settings", () => {
     const sprint = getViewType("sprint");
     const tracking = getViewType("projectTracking");
     const sprintByKey = new Map(sprint?.properties.map((property) => [property.key, property]));
     const trackingByKey = new Map(tracking?.properties.map((property) => [property.key, property]));
-    expect(sprint?.properties.map((property) => property.key)).toEqual(["orderingPolicy", "hours"]);
+    expect(sprint?.properties.map((property) => property.key)).toEqual([
+      "orderingPolicy",
+      "hours",
+      "defaultAreaPaths",
+    ]);
     expect(sprintByKey.get("orderingPolicy")).toEqual(trackingByKey.get("orderingPolicy"));
     expect(sprintByKey.get("hours")).toMatchObject({
       kind: "number",
       defaultValue: "24",
       min: 1,
+    });
+    expect(sprintByKey.get("defaultAreaPaths")).toMatchObject({
+      kind: "area-path-list",
+      label: "Default Area Paths for the team",
+      hint: "Add the default area paths for the team one at a time. Each area path edit box offers autocomplete suggestions that match any part of the path. These defaults are used only when a sprint has no saved Lane selection.",
     });
   });
 });

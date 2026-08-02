@@ -241,13 +241,12 @@ const adoWitEtaEmpty = document.querySelector<HTMLElement>("#ado-wit-eta-empty")
 const adoWitHierarchy = document.querySelector<HTMLElement>("#ado-wit-hierarchy");
 const adoWitHierarchyEmpty = document.querySelector<HTMLElement>("#ado-wit-hierarchy-empty");
 const adoMarkerTags = document.querySelector<HTMLElement>("#ado-marker-tags");
-const adoDefaultAreaPathInput = document.querySelector<HTMLInputElement>(
-  "#ado-default-area-path-input",
-);
-const adoDefaultAreaPathAdd = document.querySelector<HTMLButtonElement>(
-  "#ado-default-area-path-add",
-);
-const adoDefaultAreaPaths = document.querySelector<HTMLElement>("#ado-default-area-paths");
+const adoMetadataReader = new ChromeAdoMetadataReader();
+let adoMetadataRead: ReturnType<ChromeAdoMetadataReader["read"]> | null = null;
+const readAdoMetadata = (): ReturnType<ChromeAdoMetadataReader["read"]> => {
+  adoMetadataRead ??= adoMetadataReader.read();
+  return adoMetadataRead;
+};
 
 if (
   adoOrganization &&
@@ -263,10 +262,7 @@ if (
   adoWitEtaEmpty &&
   adoWitHierarchy &&
   adoWitHierarchyEmpty &&
-  adoMarkerTags &&
-  adoDefaultAreaPathInput &&
-  adoDefaultAreaPathAdd &&
-  adoDefaultAreaPaths
+  adoMarkerTags
 ) {
   const adoElements: AzureDevOpsElements = {
     organization: adoOrganization,
@@ -274,11 +270,6 @@ if (
     teamInput: adoTeamInput,
     futureSprintsInput: adoFutureSprints,
     pastSprintsInput: adoPastSprints,
-    defaultAreaPaths: {
-      input: adoDefaultAreaPathInput,
-      addButton: adoDefaultAreaPathAdd,
-      list: adoDefaultAreaPaths,
-    },
     workItemTypes: {
       columnsRow: adoWitColumns,
       body: adoWitRows,
@@ -297,7 +288,7 @@ if (
   };
   const adoController = new AzureDevOpsController(
     settingsStore,
-    new ChromeAdoMetadataReader(),
+    { read: readAdoMetadata },
     adoElements,
     report,
   );
@@ -360,9 +351,22 @@ if (
   if (queryId !== null) {
     tabs.activate("tab-bindings");
   }
-  const bindings = new QueryBindingsController(bindingStore, bindingElements, report, {
-    resolveCurrentQueryId: () => adoTabReader.readCurrentQueryId(),
-  });
+  const bindingLogger = loggers.forSource("options/query-bindings");
+  const bindings = new QueryBindingsController(
+    bindingStore,
+    bindingElements,
+    (error) => bindingLogger.error("Query binding operation failed", error),
+    {
+      resolveCurrentQueryId: () => adoTabReader.readCurrentQueryId(),
+      resolveAreaPaths: async () => (await readAdoMetadata())?.areaPaths ?? [],
+      publishBindings: async (proposed) => {
+        const result = await teamConfigSynchronizer.publishBindings(teamConfigClient, proposed);
+        if (result.status === "failed") {
+          throw new Error(`Could not publish team configuration: ${result.error}`);
+        }
+      },
+    },
+  );
   void bindings.init(queryId, queryName).catch((error: unknown) => {
     bindings.dispose();
     report(error);

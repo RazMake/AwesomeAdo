@@ -114,19 +114,29 @@ scrolling.
 `control/AreaPathFilter` is the shared compact full-path multi-select. Callers exchange complete ADO
 area paths with it; the control alone derives shortest unique suffix labels by growing an ambiguous
 leaf one parent at a time. Project Tracking offers only paths represented by descendants that survive
-the resolved-age rule, then keeps its selection in `BoardSession`, where it composes as an AND-ed
+the resolved-age rule. Active selections use the same filled communication background and
+contrasting foreground as the Project filter, plus a count badge; only an empty offered-path list
+disables the trigger. Project Tracking keeps its selection in `BoardSession`, where it composes as an AND-ed
 filter group without turning a transient reading position into synced configuration. Its item menu's
 **Change area path** command receives that same eligible list, computes labels before omitting the
 item's current path, exposes each full path as a tooltip, and persists `System.AreaPath` through the
 board's shared write queue. See ADR-053.
 
 Sprint uses the same control over represented leaf paths, but its selection is team configuration,
-not reading position. `settings/SprintAreaPaths` normalizes defaults and dated per-iteration records,
-materializes defaults so later removal never deselects an existing sprint, and keeps the newest ten
-completed records. `TeamSprintAreaPathStore` pulls before each Sprint load/refresh/switch and
+not reading position. Its query binding supplies default full paths only when the sprint has no saved
+record; an existing record, including an empty selection, takes priority. `settings/SprintAreaPaths`
+normalizes dated per-iteration records and keeps the newest ten completed records.
+Options edits binding defaults through one autocomplete row per path, sourcing suggestions from the
+project's complete area classification tree in `AdoMetadata`. The Add control is disabled while
+blank, descriptions sit directly below it, and row actions remain adjacent to their textboxes.
+When team sharing is connected, query-binding mutations publish their proposed full map before the
+local store write; otherwise the local observer redraws Sprint, its mandatory pull sees the older
+team payload, and `replaceAll` erases the mutation before export can read it.
+`TeamSprintAreaPathStore` pulls before each Sprint load/refresh/switch and
 serializes save-plus-publish through the connected configuration work item. Checkbox changes remain
 open for multi-selection; Sprint persists each change and repaints once the popup closes by trigger,
-outside pointer, or Escape. See ADR-063.
+outside pointer, or Escape. The Sprint title menu can replace the selected sprint record with the
+binding defaults, disabled when none exist. See ADR-063.
 
 `control/ActivityFilter` owns the shared recent-activity pill definitions, OR predicate, and
 session-scoped newest-discussion-date index. `control/MarkerPill/markerPresence` owns configured-tag

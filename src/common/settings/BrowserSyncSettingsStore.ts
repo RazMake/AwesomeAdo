@@ -10,7 +10,6 @@ const DEFAULT_VIEW_KEY = "settings.defaultView";
 const CURRENT_TEAM_KEY = "settings.currentTeam";
 const FUTURE_SPRINTS_KEY = "settings.futureSprintsCount";
 const PAST_SPRINTS_KEY = "settings.pastSprintsCount";
-const DEFAULT_AREA_PATHS_KEY = "settings.defaultAreaPaths";
 const SPRINT_AREA_PATHS_KEY = "settings.sprintAreaPaths";
 const BOARD_COLUMNS_KEY = "settings.boardColumns";
 const WORK_ITEM_TYPES_KEY = "settings.workItemTypes";
@@ -22,7 +21,6 @@ const SETTING_KEYS = [
   CURRENT_TEAM_KEY,
   FUTURE_SPRINTS_KEY,
   PAST_SPRINTS_KEY,
-  DEFAULT_AREA_PATHS_KEY,
   SPRINT_AREA_PATHS_KEY,
   BOARD_COLUMNS_KEY,
   WORK_ITEM_TYPES_KEY,
@@ -37,7 +35,6 @@ const SETTING_WRITE_MAP: readonly { name: keyof ExtensionSettings; key: string }
   { name: "currentTeam", key: CURRENT_TEAM_KEY },
   { name: "futureSprintsCount", key: FUTURE_SPRINTS_KEY },
   { name: "pastSprintsCount", key: PAST_SPRINTS_KEY },
-  { name: "defaultAreaPaths", key: DEFAULT_AREA_PATHS_KEY },
   { name: "sprintAreaPaths", key: SPRINT_AREA_PATHS_KEY },
   { name: "boardColumns", key: BOARD_COLUMNS_KEY },
   { name: "workItemTypes", key: WORK_ITEM_TYPES_KEY },
@@ -52,7 +49,6 @@ function projectSettings(raw: Record<string, unknown>): ExtensionSettings {
     currentTeam: raw[CURRENT_TEAM_KEY],
     futureSprintsCount: raw[FUTURE_SPRINTS_KEY],
     pastSprintsCount: raw[PAST_SPRINTS_KEY],
-    defaultAreaPaths: raw[DEFAULT_AREA_PATHS_KEY],
     sprintAreaPaths: raw[SPRINT_AREA_PATHS_KEY],
     boardColumns: raw[BOARD_COLUMNS_KEY],
     workItemTypes: raw[WORK_ITEM_TYPES_KEY],

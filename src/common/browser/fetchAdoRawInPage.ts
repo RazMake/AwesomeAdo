@@ -4,6 +4,7 @@ export interface AdoRawMetadata {
   workItemTypes: unknown;
   /** The project field list, read only to learn which of a type's fields are date-typed. */
   fields: unknown;
+  areaPaths: unknown;
 }
 
 /**
@@ -23,11 +24,30 @@ export function fetchAdoRawInPage(
   teamsUrl: string,
   workItemTypesUrl: string,
   fieldsUrl: string,
+  areaPathsUrl: string,
 ): Promise<AdoRawMetadata> {
   const get = (url: string): Promise<unknown> =>
     fetch(url, { credentials: "include", headers: { Accept: "application/json" } })
       .then((response) => (response.ok ? response.json() : null))
       .catch(() => null);
+
+  const getAreaPaths = (attempt = 1): Promise<unknown> =>
+    fetch(areaPathsUrl, { credentials: "include", headers: { Accept: "application/json" } })
+      .then((response) => {
+        if (response.ok) return response.json();
+        const transient =
+          response.status === 408 || response.status === 429 || response.status >= 500;
+        if (!transient || attempt >= 3) return null;
+        return new Promise<void>((resolve) => setTimeout(resolve, 100 * 2 ** (attempt - 1))).then(
+          () => getAreaPaths(attempt + 1),
+        );
+      })
+      .catch(() => {
+        if (attempt >= 3) return null;
+        return new Promise<void>((resolve) => setTimeout(resolve, 100 * 2 ** (attempt - 1))).then(
+          () => getAreaPaths(attempt + 1),
+        );
+      });
 
   // The teams endpoint pages its results, so walk $skip until a page comes back empty; reading only
   // the first page hides most teams in a large org (thousands are common). Advance $skip by the count
@@ -54,11 +74,15 @@ export function fetchAdoRawInPage(
     return readPage(0, MAX_TEAM_PAGES);
   };
 
-  return Promise.all([getAllTeams(teamsUrl), get(workItemTypesUrl), get(fieldsUrl)]).then(
-    (bodies) => ({
-      teams: bodies[0],
-      workItemTypes: bodies[1],
-      fields: bodies[2],
-    }),
-  );
+  return Promise.all([
+    getAllTeams(teamsUrl),
+    get(workItemTypesUrl),
+    get(fieldsUrl),
+    getAreaPaths(),
+  ]).then((bodies) => ({
+    teams: bodies[0],
+    workItemTypes: bodies[1],
+    fields: bodies[2],
+    areaPaths: bodies[3],
+  }));
 }

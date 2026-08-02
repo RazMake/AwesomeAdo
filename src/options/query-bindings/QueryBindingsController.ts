@@ -8,6 +8,8 @@ import {
 } from "../../common/view-common/ViewType";
 import { VIEW_TYPES } from "../../content/views/viewCatalog";
 
+import { AreaPathListEditor } from "./AreaPathListEditor";
+
 /** The Query Bindings tab's elements. Passed in so the controller stays DOM-agnostic and testable. */
 export interface QueryBindingsElements {
   /** Shown when there is nothing to add (no query in context) and nothing bound to edit. */
@@ -39,7 +41,7 @@ export interface QueryBindingsElements {
   status: HTMLElement;
 }
 
-type ReportError = (error: unknown) => void;
+type RecordError = (error: unknown) => void;
 
 /** The optional collaborators, grouped so no caller ever passes a positional `undefined`. */
 export interface QueryBindingsOptions {
@@ -47,6 +49,16 @@ export interface QueryBindingsOptions {
   viewTypes?: readonly ViewType[];
   /** Resolves the query id of the ADO tab the user is on. Defaults to "none". */
   resolveCurrentQueryId?: CurrentQueryIdResolver;
+  /** Loads full project area paths for the Sprint binding's autocomplete editors. */
+  resolveAreaPaths?: () => Promise<readonly string[]>;
+  /** Publishes the proposed full binding map before local observers can trigger a stale pull. */
+  publishBindings?: (bindings: QueryBindings) => Promise<void>;
+}
+
+interface PropertyControl {
+  element: HTMLElement;
+  read(): string;
+  dispose(): void;
 }
 
 /**
@@ -72,7 +84,7 @@ export type CurrentQueryIdResolver = () => Promise<string | null>;
  * exercise the flow with fakes and without a browser.
  */
 export class QueryBindingsController {
-  private readonly propertyInputs = new Map<string, HTMLInputElement | HTMLSelectElement>();
+  private readonly propertyInputs = new Map<string, PropertyControl>();
   private readonly queryNames = new Map<string, string | null>();
   private bindings: QueryBindings = {};
   private selectedQueryId: string | null = null;
@@ -80,19 +92,23 @@ export class QueryBindingsController {
 
   private readonly viewTypes: readonly ViewType[];
   private readonly resolveCurrentQueryId: CurrentQueryIdResolver;
+  private readonly resolveAreaPaths: () => Promise<readonly string[]>;
+  private readonly publishBindings: (bindings: QueryBindings) => Promise<void>;
+  private areaPaths: readonly string[] = [];
 
-  // `reportError` is REQUIRED, not defaulted: it is the only route a failure here has to the user
-  // and to the device-local diagnostics log, so a default would silently opt a caller out of the
-  // observability the rest of the extension guarantees. The remaining collaborators are grouped in
-  // an options object so nobody has to pass a positional `undefined` to skip one.
+  // `recordError` is REQUIRED, not defaulted: local status gives the user the failure while this
+  // callback preserves its detail in diagnostics. The remaining collaborators are grouped in an
+  // options object so nobody has to pass a positional `undefined` to skip one.
   constructor(
     private readonly store: IQueryBindingStore,
     private readonly elements: QueryBindingsElements,
-    private readonly reportError: ReportError,
+    private readonly recordError: RecordError,
     options: QueryBindingsOptions = {},
   ) {
     this.viewTypes = options.viewTypes ?? VIEW_TYPES;
     this.resolveCurrentQueryId = options.resolveCurrentQueryId ?? (async () => null);
+    this.resolveAreaPaths = options.resolveAreaPaths ?? (async () => []);
+    this.publishBindings = options.publishBindings ?? (async () => {});
   }
 
   /**
@@ -108,7 +124,10 @@ export class QueryBindingsController {
     this.elements.saveButton.addEventListener("click", this.handleSave);
     this.elements.deleteButton.addEventListener("click", this.handleDelete);
 
-    this.bindings = await this.readBindings();
+    [this.bindings, this.areaPaths] = await Promise.all([
+      this.readBindings(),
+      this.readAreaPaths(),
+    ]);
     this.syncQueryNames();
     await this.show(queryId, queryName);
   }
@@ -149,8 +168,17 @@ export class QueryBindingsController {
     try {
       return await this.store.read();
     } catch (error: unknown) {
-      this.reportError(error);
+      this.recordError(error);
       return {};
+    }
+  }
+
+  private async readAreaPaths(): Promise<readonly string[]> {
+    try {
+      return await this.resolveAreaPaths();
+    } catch (error: unknown) {
+      this.recordError(error);
+      return [];
     }
   }
 
@@ -197,7 +225,7 @@ export class QueryBindingsController {
       return current !== null && this.bindings[current] !== undefined ? current : null;
     } catch (error: unknown) {
       // Preselection is a convenience; a tab-read failure must not block editing existing bindings.
-      this.reportError(error);
+      this.recordError(error);
       return null;
     }
   }
@@ -224,7 +252,7 @@ export class QueryBindingsController {
     this.elements.addViewSelect.value = this.viewTypes[0]?.id ?? "";
     // With no view to bind there is nothing to save; otherwise the picker always has a default.
     this.elements.addSaveButton.disabled = this.viewTypes.length === 0;
-    this.elements.status.textContent = "";
+    this.setStatus("");
   }
 
   /** Render the single read-only "ADO Query to enhance" line, with the id italicised after the name. */
@@ -274,7 +302,7 @@ export class QueryBindingsController {
     }
     this.renderProperties();
     this.elements.deleteButton.disabled = this.editing === undefined;
-    this.elements.status.textContent = "";
+    this.setStatus("");
   }
 
   private populateViews(select: HTMLSelectElement): void {
@@ -315,16 +343,17 @@ export class QueryBindingsController {
   ): HTMLElement {
     const setting = doc.createElement("div");
     setting.className = "setting";
-    const field = doc.createElement("label");
-    field.className = "field";
+    const isAreaPathList = viewTypePropertyKind(property) === "area-path-list";
+    const field = doc.createElement(isAreaPathList ? "div" : "label");
+    field.className = isAreaPathList ? "field field--full" : "field";
     const label = doc.createElement("span");
     label.className = "field__label";
     label.textContent = property.required ? `${property.label} (required)` : property.label;
     const control = this.createPropertyControl(doc, property, stored);
-    field.append(label, control);
+    field.append(label, control.element);
     setting.append(field);
     this.propertyInputs.set(property.key, control);
-    if (property.hint !== undefined) {
+    if (!isAreaPathList && property.hint !== undefined) {
       const hint = doc.createElement("p");
       hint.className = "field__hint";
       hint.textContent = property.hint;
@@ -338,8 +367,9 @@ export class QueryBindingsController {
     doc: Document,
     property: ViewTypeProperty,
     stored: string | undefined,
-  ): HTMLInputElement | HTMLSelectElement {
-    if (viewTypePropertyKind(property) === "select") {
+  ): PropertyControl {
+    const kind = viewTypePropertyKind(property);
+    if (kind === "select") {
       const select = doc.createElement("select");
       select.dataset.propertyKey = property.key;
       for (const option of property.options ?? []) {
@@ -351,11 +381,19 @@ export class QueryBindingsController {
       // Seed the stored value, or the property's default when the binding has none or stored an
       // option this build no longer offers.
       select.value = resolveViewTypePropertyValue(property, stored);
-      select.addEventListener("change", this.handleInput);
-      return select;
+      return this.domControl(select, "change", this.handleInput);
+    }
+    if (kind === "area-path-list") {
+      const editor = new AreaPathListEditor(
+        doc,
+        resolveViewTypePropertyValue(property, stored),
+        this.areaPaths,
+        propertyDescription(property),
+        () => this.updateSaveEnabled(),
+      );
+      return { element: editor.root, read: () => editor.value, dispose: () => editor.dispose() };
     }
     const input = doc.createElement("input");
-    const kind = viewTypePropertyKind(property);
     input.type = kind === "number" ? "number" : "text";
     input.dataset.propertyKey = property.key;
     if (kind === "number") {
@@ -371,13 +409,34 @@ export class QueryBindingsController {
     // Seed the stored value, or the property's default when the binding has none, so an unconfigured
     // field opens with the behavior the view expects.
     input.value = resolveViewTypePropertyValue(property, stored);
-    input.addEventListener("input", this.handleInput);
     if (kind === "number") {
       // A number is forced into range only once the user leaves the field, so deleting digits mid-edit
       // is not fought.
+      input.addEventListener("input", this.handleInput);
       input.addEventListener("change", this.handleNumberChange);
+      return {
+        element: input,
+        read: () => input.value,
+        dispose: () => {
+          input.removeEventListener("input", this.handleInput);
+          input.removeEventListener("change", this.handleNumberChange);
+        },
+      };
     }
-    return input;
+    return this.domControl(input, "input", this.handleInput);
+  }
+
+  private domControl(
+    element: HTMLInputElement | HTMLSelectElement,
+    event: "input" | "change",
+    listener: EventListener,
+  ): PropertyControl {
+    element.addEventListener(event, listener);
+    return {
+      element,
+      read: () => element.value,
+      dispose: () => element.removeEventListener(event, listener),
+    };
   }
 
   private selectedView(): ViewType | undefined {
@@ -395,7 +454,7 @@ export class QueryBindingsController {
       // the form shows.
       properties[property.key] = resolveViewTypePropertyValue(
         property,
-        this.propertyInputs.get(property.key)?.value,
+        this.propertyInputs.get(property.key)?.read(),
       );
     }
     return properties;
@@ -417,7 +476,7 @@ export class QueryBindingsController {
     }
     return view.properties.every(
       (property) =>
-        !property.required || (this.propertyInputs.get(property.key)?.value.trim() ?? "") !== "",
+        !property.required || (this.propertyInputs.get(property.key)?.read().trim() ?? "") !== "",
     );
   }
 
@@ -426,14 +485,18 @@ export class QueryBindingsController {
       this.selectedQueryId === null || !this.hasAllRequiredProperties();
   }
 
+  private setStatus(message: string, failed = false): void {
+    this.elements.status.textContent = message;
+    this.elements.status.classList.toggle("binding__status--error", failed);
+  }
+
+  private reportFailure(message: string, error: unknown): void {
+    this.setStatus(message, true);
+    this.recordError(error);
+  }
+
   private removePropertyInputs(): void {
-    for (const input of this.propertyInputs.values()) {
-      input.removeEventListener("input", this.handleInput);
-      // Covers both a number input's clamp-on-change and a select's change; removing a listener that
-      // was never added is a no-op, so detaching both from every control is safe.
-      input.removeEventListener("change", this.handleNumberChange);
-      input.removeEventListener("change", this.handleInput);
-    }
+    for (const input of this.propertyInputs.values()) input.dispose();
     this.propertyInputs.clear();
     this.elements.properties.replaceChildren();
   }
@@ -478,16 +541,14 @@ export class QueryBindingsController {
       binding.name = name;
     }
     this.elements.addSaveButton.disabled = true;
-    void this.store
-      .bind(queryId, binding)
+    void this.persistBinding(queryId, binding)
       .then(() => {
-        this.bindings[queryId] = binding;
         // The query is now bound, so hand off to edit mode where it can be reconfigured or removed.
         this.enterEdit(queryId);
-        this.elements.status.textContent = "Saved.";
+        this.setStatus("Saved.");
       })
       .catch((error: unknown) => {
-        this.reportError(error);
+        this.reportFailure("Could not save the query enhancement.", error);
         this.elements.addSaveButton.disabled = false;
       });
   };
@@ -504,20 +565,24 @@ export class QueryBindingsController {
       binding.name = name;
     }
     this.elements.saveButton.disabled = true;
-    void this.store
-      .bind(queryId, binding)
+    void this.persistBinding(queryId, binding)
       .then(() => {
-        this.bindings[queryId] = binding;
         this.editing = binding;
         this.elements.deleteButton.disabled = false;
         // The picker label is just name and id, so a view/property change leaves it correct as-is.
-        this.elements.status.textContent = "Saved.";
+        this.setStatus("Saved.");
       })
       .catch((error: unknown) => {
-        this.reportError(error);
+        this.reportFailure("Could not save the query enhancement.", error);
         this.updateSaveEnabled();
       });
   };
+
+  private async persistBinding(queryId: string, binding: QueryBinding): Promise<void> {
+    await this.publishBindings({ ...this.bindings, [queryId]: binding });
+    await this.store.bind(queryId, binding);
+    this.bindings[queryId] = binding;
+  }
 
   private readonly handleDelete = (): void => {
     const queryId = this.selectedQueryId;
@@ -525,9 +590,11 @@ export class QueryBindingsController {
       return;
     }
     const nextQueryId = this.queryIdAfter(queryId);
+    const nextBindings = { ...this.bindings };
+    delete nextBindings[queryId];
     this.elements.deleteButton.disabled = true;
-    void this.store
-      .unbind(queryId)
+    void this.publishBindings(nextBindings)
+      .then(() => this.store.unbind(queryId))
       .then(() => {
         delete this.bindings[queryId];
         this.queryNames.delete(queryId);
@@ -540,10 +607,10 @@ export class QueryBindingsController {
           // Nothing bound is left, and a new binding must start from a query's page, so show guidance.
           this.enterEmpty();
         }
-        this.elements.status.textContent = "Deleted.";
+        this.setStatus("Deleted.");
       })
       .catch((error: unknown) => {
-        this.reportError(error);
+        this.reportFailure("Could not delete the query enhancement.", error);
         this.elements.deleteButton.disabled = false;
       });
   };
@@ -558,4 +625,8 @@ export class QueryBindingsController {
     }
     return remaining[Math.min(index, remaining.length - 1)] ?? null;
   }
+}
+
+function propertyDescription(property: ViewTypeProperty): string {
+  return property.hint ?? "";
 }

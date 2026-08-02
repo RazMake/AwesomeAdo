@@ -1,11 +1,11 @@
 import type { AdoMetadata } from "../ado/AdoMetadata";
 import type { AdoContext } from "../navigation/AdoContext";
 
-/** The detected ADO organization/project together with its team and work-item-type metadata. */
+/** The detected ADO organization/project together with its team, area-path, and type metadata. */
 export interface AdoMetadataContext extends AdoContext, AdoMetadata {}
 
 /**
- * Reads the ADO project metadata the options page's Azure DevOps tab needs.
+ * Reads the ADO project metadata the options page's configuration controls need.
  *
  * Segregated from IAdoTabReader (Interface Segregation): identity/theme and project metadata are
  * fetched differently — metadata needs a credentialed REST call run in the ADO tab's page world —

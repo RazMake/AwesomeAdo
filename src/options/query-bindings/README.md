@@ -28,11 +28,16 @@ This component does not log; it surfaces failures through the options page's sha
 
 - **`QueryBindingsController`** — drives both layouts against the synced query-binding store: in add
   mode it saves a new binding from the view picker; in edit mode it switches the selected query and
-  view, renders one input per property of the selected view — text or a range-bounded whole-number
-  field, seeded from the binding or the property's default with numbers forced back into range as you
-  leave the field — and saves or deletes the binding. Its in-memory binding map is the form's working
-  copy and is what a save writes back, so **`reload()`** re-reads the store and re-populates the form;
-  call it when the bindings are replaced from outside the tab (a configuration file import).
+  view, renders one control per property of the selected view — text, a select, a range-bounded
+  whole-number field, or the area-path list editor — seeded from the binding or the property's
+  default with numbers forced back into range as you leave the field, and saves or deletes the binding. Its in-memory
+  binding map is the form's working copy and is what a save writes back, so **`reload()`** re-reads
+  the store and re-populates the form; call it when the bindings are replaced from outside the tab
+  (a configuration file import). Save/delete outcomes and caught errors render inside the Query
+  Enhancement Configuration card; the injected error callback records detail without creating a
+  second page-level message. When team sharing is connected, the controller's `publishBindings`
+  collaborator publishes the proposed full map before `bind`/`unbind` exposes it locally. This keeps
+  Sprint's automatic pull from replacing a just-saved binding with the older team snapshot.
 - **`QueryBindingsElements`** — the tab's elements the controller drives (the empty state, the add
   card's read-only query line, view picker and Save; the edit card's query picker and Delete; the view
   config card's view picker, property container and Save; and the shared status line), passed in so it
@@ -40,8 +45,17 @@ This component does not log; it surfaces failures through the options page's sha
 - **`CurrentQueryIdResolver`** — an injected `() => Promise<string | null>` the controller uses to
   preselect the query the active ADO tab is on.
 
+### `AreaPathListEditor.ts`
+
+- **`AreaPathListEditor`** — presents the newline-backed binding value as an Add autocomplete and one
+  editable autocomplete row per full area path. Each row has its own remove button. Suggestions are
+  the live project classification paths supplied by the options composition root; typed custom paths
+  remain valid, and duplicates are ignored case-insensitively. Add is disabled while its textbox is
+  blank, action buttons sit immediately after their textboxes, and the property description sits
+  between the Add row and the editable rows.
+
 ## Usage guidance
 
 Construct `QueryBindingsController` at the options composition root with the shared binding store, the
-elements, the page's `report` error sink, and a resolver backed by the ADO tab reader
-(see `src/options/index.ts`).
+elements, a binding-scoped diagnostics callback, a query-id resolver backed by the ADO tab reader,
+and an area-path resolver backed by the shared ADO metadata read (see `src/options/index.ts`).

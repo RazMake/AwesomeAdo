@@ -8,7 +8,7 @@ Lane selection.
 ## Public API
 
 - `sprintViewType.ts` -> `sprintViewType: ViewType` - id `"sprint"`, label `"Sprint View"`, and the
-  per-query ordering policy plus recent-activity window in hours.
+  per-query ordering policy, recent-activity window in hours, and default Lane area paths.
 - `SprintView.ts` -> `sprintView: EnhancedView` - loads the original WIQL and configured team's
   members before executing the sprint-adjusted query; renders the sprint, Lane, Project, refresh, write-queue, team,
   marker, and recent-activity controls; and shows the filtered card table.
@@ -25,10 +25,12 @@ Lane selection.
 - `SprintBulkMove.ts` -> `runSprintBulkMove` - revalidates only confirmed IDs and executes their
   bounded, retrying, atomically guarded iteration writes.
 
-Right-clicking the **Sprint View** title always offers **Copy ADO Url**. Only a selected **past**
-sprint also offers **Move all (non DONE) items to**, with the current and future iterations as
-destinations. The title uses a context-menu cursor without a tooltip, and DONE is rendered as a
-theme-aware green chip in the command label.
+Right-clicking the **Sprint View** title always offers **Copy ADO Url** and **Reset lanes to
+default**. Reset replaces the selected sprint's saved team-shared Lane paths with the query binding's
+defaults and repaints; it is disabled when no defaults are configured. Only a selected **past** sprint
+also offers **Move all (non DONE) items to**, with the current and future iterations as destinations.
+The title uses a context-menu cursor without a tooltip, and DONE is rendered as a theme-aware green
+chip in the command label.
 
 Choosing a destination opens a confirmation dialog for the exact card set visible under the current
 Lane, Project, person, marker, and activity filters. It summarizes eligible cards by Lane and by
@@ -71,11 +73,12 @@ recursively through their planning ancestors, and whose branches contain work su
 selected sprint and other active filters. Primary-work and implementation-detail items are omitted.
 The **Lane** filter derives its choices from represented area paths and offers only leaves, omitting
 any root path that is an ancestor of another choice.
-Options can define full area paths initially selected in every sprint. Defaults are materialized
-into each sprint's own team-shared selection, so removing a default later does not deselect it from
-an existing sprint. Sprint selections are pulled on load, refresh, and sprint change; every Lane
-change publishes the full shared configuration. Dated records retain the newest ten past sprints and
-prune older completed records when possible. Only lanes surviving the area-path selection are rendered. The Project filter keeps the selected
+Each Sprint View query binding can define full area paths initially selected when a sprint has no
+team-shared Lane choice. Options edits them one at a time with autocomplete from the live project
+area hierarchy and a remove button per path. A saved sprint selection, including an explicitly empty
+one, takes priority over those binding defaults. Sprint selections are pulled on load, refresh, and sprint change; only
+an actual Lane change publishes the full shared configuration. Dated records retain the newest ten
+past sprints and prune older completed records when possible. Only lanes surviving the area-path selection are rendered. The Project filter keeps the selected
 planning item and all direct or recursive descendants that belong to the selected sprint. Clicking
 the active Project button clears that selection without opening the popup; clicking it again opens
 the project choices.

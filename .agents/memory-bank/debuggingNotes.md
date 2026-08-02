@@ -34,14 +34,39 @@ here so every agent, teammate, and clone sees them.
 
 ## Sprint Lane selections are shared records, not session filters
 
-- `defaultAreaPaths` and dated `sprintAreaPaths` are normal settings, so both file transfer and the
-  compact team work-item payload include them through the existing full-config serializer.
+- Default Lane paths belong to the Sprint View query binding. Dated `sprintAreaPaths` remain normal
+  settings, so file transfer and the compact team work-item payload include both through the existing
+  full-config serializer.
 - A refresh or sprint change must pull before reading. A Lane change must update the selected sprint
   record and publish through `TeamSprintAreaPathStore`; keeping only `SprintSession.selectedAreaPaths`
   silently loses the team decision.
-- Materialize defaults into each sprint record. Removing a default then leaves existing sprint
-  selections intact. Prune only records with a known finish date, keeping the newest ten completed
-  sprints plus current/future/undated records.
+- A saved sprint record wins over the binding defaults, even when its path list is empty. Defaults
+  apply only when no record exists and must not be auto-materialized or published. Prune only records
+  with a known finish date, keeping the newest ten completed sprints plus current/future/undated records.
+
+## ADO classification paths contain an `Area` segment that work-item paths omit
+
+- SYMPTOM: **Reset lanes to default** persisted the configured list but the Lane filter showed zero
+  selections. Live defaults were `Project\\Area\\Team`, while represented `System.AreaPath` values
+  were `Project\\Team`.
+- ROOT CAUSE: the classification-nodes API returns paths shaped as `\\Project\\Area\\...`; `Area` is
+  the classification structure segment, not part of `System.AreaPath`. The options metadata parser
+  stripped only the leading slash and therefore stored values no work item could match.
+- FIX / RULE: `parseAreaPaths` removes the structural second segment. Sprint still exact-matches a
+  configured path first, then treats a nonmatching `Project\\Area\\...` value as legacy metadata and
+  reconciles it to a represented `Project\\...` lane. Reset persists the reconciled paths so existing
+  bindings repair themselves without misreading a real, exact lane named `Area`.
+
+## A binding Save was immediately undone by Sprint's team pull
+
+- SYMPTOM: Options reported `Saved.`, but default area paths vanished on reload and were absent from
+  file export. Diagnostics showed `Rebound query ...`, then about 200 ms later `Replaced all query
+bindings ...` / `Pulled team configuration ...`.
+- ROOT CAUSE: the local `bind` notified the open Sprint view, its settings-backed redraw performed the
+  mandatory team pull, and the older work-item payload replaced the just-saved local map.
+- FIX / RULE: while connected, publish the complete proposed binding map first, then perform the
+  local `bind`/`unbind`. Never expose a team-shared binding mutation locally before its authoritative
+  work-item snapshot has accepted it. A publication failure leaves local state unchanged.
 
 ## Sprint must paint before Interrupt acceptance settles
 
@@ -50,8 +75,8 @@ here so every agent, teammate, and clone sees them.
   pending.
 - FIX / RULE: acceptance is post-paint enrichment in both views. Sprint starts with empty acceptance
   state, then generation-guards the asynchronous result and repaints only the still-current sprint.
-  Team-config materialization is likewise fire-and-forget; a shared publish must never hold the board
-  blank.
+  Team-config publication after a Lane change is likewise fire-and-forget; a shared publish must
+  never hold the board blank.
 
 ## Sprint child popup actions had three independent gaps
 

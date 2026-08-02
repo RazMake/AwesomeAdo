@@ -6,7 +6,7 @@ import { normalizeMarkerTags } from "../../../common/settings/ExtensionSettings"
 import type { EnhancedViewServices } from "../../../common/view-common/EnhancedView";
 
 import { sprintView } from "./SprintView";
-import { sprintOrderingPolicy, sprintViewType } from "./sprintViewType";
+import { sprintDefaultAreaPaths, sprintOrderingPolicy, sprintViewType } from "./sprintViewType";
 
 function user(displayName: string): TrackedUser {
   return {
@@ -149,11 +149,14 @@ function services(overrides: Partial<EnhancedViewServices> = {}): EnhancedViewSe
   };
 }
 
-async function render(overrides: Partial<EnhancedViewServices> = {}): Promise<HTMLElement> {
+async function render(
+  overrides: Partial<EnhancedViewServices> = {},
+  properties: Record<string, string> = {},
+): Promise<HTMLElement> {
   const root = sprintView.render({
     doc: document,
     queryId: "query-id",
-    properties: {},
+    properties,
     services: services(overrides),
   });
   const host = document.createElement("div");
@@ -230,6 +233,15 @@ describe("Sprint View ordering configuration", () => {
     expect(sprintOrderingPolicy({ orderingPolicy: "title" })).toBe("title");
     expect(sprintOrderingPolicy({ orderingPolicy: "retired-policy" })).toBe("importance");
     expect(sprintViewType.properties[0]?.key).toBe("orderingPolicy");
+  });
+
+  it("normalizes one default Lane path per binding-property line", () => {
+    expect(
+      sprintDefaultAreaPaths({
+        defaultAreaPaths: " Project\\Apps\nProject\\Platform\nproject\\apps\n",
+      }),
+    ).toEqual(["Project\\Apps", "Project\\Platform"]);
+    expect(sprintViewType.properties[2]?.key).toBe("defaultAreaPaths");
   });
 });
 
@@ -768,22 +780,24 @@ async function selectSprint(root: HTMLElement, name: string): Promise<void> {
 }
 
 function expectCopyOnlyTitleMenu(root: HTMLElement): void {
-  expect(
-    openContextMenu(root.querySelector(".awesomeado-sprint__title")!).map((row) => row.textContent),
-  ).toEqual(["Copy ADO Url"]);
+  const rows = openContextMenu(root.querySelector(".awesomeado-sprint__title")!);
+  expect(rows.map((row) => row.textContent)).toEqual(["Copy ADO Url", "Reset lanes to default"]);
+  expect(rows[1]?.disabled).toBe(true);
+  expect(rows[1]?.title).toBe("No default area paths are configured.");
 }
 
 function openBulkConfirmation(root: HTMLElement): HTMLElement {
   const titleRows = openContextMenu(root.querySelector(".awesomeado-sprint__title")!);
   expect(titleRows.map((row) => row.getAttribute("aria-label") ?? row.textContent)).toEqual([
     "Copy ADO Url",
+    "Reset lanes to default",
     "Move all non-DONE items to",
   ]);
-  const done = titleRows[1]!.querySelector("span") as HTMLElement;
+  const done = titleRows[2]!.querySelector("span") as HTMLElement;
   expect(done.textContent).toBe("DONE");
   expect(done.style.background).toBe("var(--status-green-background)");
   expect(done.style.color).toBe("var(--completion-foreground)");
-  titleRows[1]!.click();
+  titleRows[2]!.click();
   const next = [
     ...document.querySelectorAll<HTMLButtonElement>(".awesomeado-item-menu__submenu button"),
   ].find((row) => row.textContent === "Next - Sprint 2")!;
@@ -851,6 +865,50 @@ describe("Sprint View title context menu", () => {
     "offers bulk move only for a past sprint and guards every non-Done item",
     verifyPastSprintBulkMove,
   );
+
+  it("replaces the selected sprint's saved lanes with configured defaults", async () => {
+    const save = vi.fn(async () => true);
+    const roots = [item(1, "Platform item"), item(2, "Apps item", { areaPath: "Project\\Apps" })];
+    const root = await render(
+      {
+        loadTree: async () => ({ isTreeQuery: false, roots, error: null }),
+        sprintAreaPaths: {
+          read: async () => ({
+            sprintAreaPaths: {
+              "Project\\Sprint 1": {
+                areaPaths: ["Project\\Platform"],
+                startDate: null,
+                finishDate: null,
+              },
+            },
+          }),
+          save,
+        },
+      },
+      { defaultAreaPaths: "Project\\Area\\Apps" },
+    );
+
+    const rows = openContextMenu(root.querySelector(".awesomeado-sprint__title")!);
+    const reset = rows.find((row) => row.textContent === "Reset lanes to default")!;
+    expect(reset.disabled).toBe(false);
+    reset.click();
+
+    expect(save).toHaveBeenCalledWith({
+      "Project\\Sprint 1": {
+        areaPaths: ["Project\\Apps"],
+        startDate: null,
+        finishDate: null,
+      },
+    });
+    expect(root.querySelector(".awesomeado-sprint__item")?.textContent).toContain("Apps item");
+    const lane = root.querySelector<HTMLButtonElement>(".awesomeado-area-filter__trigger")!;
+    expect(lane.disabled).toBe(false);
+    expect(lane.style.opacity).toBe("");
+    expect(lane.textContent).toBe("Lanes1");
+    expect(lane.getAttribute("aria-pressed")).toBe("true");
+    expect(lane.style.background).toBe("var(--communication-background)");
+    expect(lane.style.color).toBe("var(--text-on-communication-background)");
+  });
 });
 
 describe("Sprint View item context menus", () => {
@@ -1787,39 +1845,53 @@ describe("Sprint View filters", () => {
 });
 
 describe("Sprint View shared Lane defaults and publishing", () => {
-  it("initially selects the union of defaults and this sprint's shared paths", async () => {
+  it("uses this sprint's shared paths instead of the binding defaults", async () => {
     const save = vi.fn(async () => true);
     const roots = [item(1, "Platform item"), item(2, "Apps item", { areaPath: "Project\\Apps" })];
-    const root = await render({
-      loadTree: async () => ({ isTreeQuery: false, roots, error: null }),
-      sprintAreaPaths: {
-        read: async () => ({
-          defaultAreaPaths: ["Project\\Apps"],
-          sprintAreaPaths: {
-            "Project\\Sprint 1": {
-              areaPaths: ["Project\\Platform"],
-              startDate: null,
-              finishDate: null,
+    const root = await render(
+      {
+        loadTree: async () => ({ isTreeQuery: false, roots, error: null }),
+        sprintAreaPaths: {
+          read: async () => ({
+            sprintAreaPaths: {
+              "Project\\Sprint 1": {
+                areaPaths: ["Project\\Platform"],
+                startDate: null,
+                finishDate: null,
+              },
             },
-          },
-        }),
-        save,
+          }),
+          save,
+        },
       },
-    });
+      { defaultAreaPaths: "Project\\Apps" },
+    );
 
     root.querySelector<HTMLButtonElement>(".awesomeado-area-filter__trigger")!.click();
     const selected = [...root.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')]
       .filter((input) => input.checked)
       .map((input) => input.value)
       .sort();
-    expect(selected).toEqual(["Project\\Apps", "Project\\Platform"]);
-    expect(save).toHaveBeenCalledWith({
-      "Project\\Sprint 1": {
-        areaPaths: ["Project\\Platform", "Project\\Apps"],
-        startDate: null,
-        finishDate: null,
+    expect(selected).toEqual(["Project\\Platform"]);
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it("uses binding defaults without publishing when the sprint has no shared selection", async () => {
+    const save = vi.fn(async () => true);
+    const roots = [item(1, "Platform item"), item(2, "Apps item", { areaPath: "Project\\Apps" })];
+    const root = await render(
+      {
+        loadTree: async () => ({ isTreeQuery: false, roots, error: null }),
+        sprintAreaPaths: {
+          read: async () => ({ sprintAreaPaths: {} }),
+          save,
+        },
       },
-    });
+      { defaultAreaPaths: "Project\\Apps" },
+    );
+
+    expect(root.querySelector(".awesomeado-sprint__item")?.textContent).toContain("Apps item");
+    expect(save).not.toHaveBeenCalled();
   });
 
   it("publishes each Lane-filter change under the selected sprint path", async () => {
@@ -1829,7 +1901,6 @@ describe("Sprint View shared Lane defaults and publishing", () => {
       loadTree: async () => ({ isTreeQuery: false, roots, error: null }),
       sprintAreaPaths: {
         read: async () => ({
-          defaultAreaPaths: [],
           sprintAreaPaths: {
             "Project\\Sprint 1": { areaPaths: [], startDate: null, finishDate: null },
           },
@@ -1861,7 +1932,6 @@ describe("Sprint View shared Lane reloads", () => {
     const read = vi
       .fn()
       .mockResolvedValueOnce({
-        defaultAreaPaths: [],
         sprintAreaPaths: {
           "Project\\Sprint 1": {
             areaPaths: ["Project\\Platform"],
@@ -1871,7 +1941,6 @@ describe("Sprint View shared Lane reloads", () => {
         },
       })
       .mockResolvedValueOnce({
-        defaultAreaPaths: [],
         sprintAreaPaths: {
           "Project\\Sprint 1": {
             areaPaths: ["Project\\Apps"],
@@ -1896,7 +1965,6 @@ describe("Sprint View shared Lane reloads", () => {
 
   it("loads the selection stored for each sprint when the sprint changes", async () => {
     const read = vi.fn(async () => ({
-      defaultAreaPaths: [],
       sprintAreaPaths: {
         "Project\\Sprint 1": {
           areaPaths: ["Project\\Platform"],

@@ -7,14 +7,31 @@ import {
 } from "./SprintAreaPaths";
 
 describe("selectedAreaPathsForSprint", () => {
-  it("materializes new defaults without removing a sprint's existing selections", () => {
+  it("uses an existing sprint selection instead of binding defaults", () => {
     expect(
       selectedAreaPathsForSprint(["Project\\API", "Project\\Web"], {
         areaPaths: ["Project\\API", "Project\\Legacy"],
         startDate: null,
         finishDate: null,
       }),
-    ).toEqual(["Project\\API", "Project\\Legacy", "Project\\Web"]);
+    ).toEqual(["Project\\API", "Project\\Legacy"]);
+  });
+
+  it("uses binding defaults only when the sprint has no saved selection", () => {
+    expect(selectedAreaPathsForSprint(["Project\\API", "Project\\Web"], undefined)).toEqual([
+      "Project\\API",
+      "Project\\Web",
+    ]);
+  });
+
+  it("keeps an explicitly empty sprint selection instead of restoring defaults", () => {
+    expect(
+      selectedAreaPathsForSprint(["Project\\API"], {
+        areaPaths: [],
+        startDate: null,
+        finishDate: null,
+      }),
+    ).toEqual([]);
   });
 });
 

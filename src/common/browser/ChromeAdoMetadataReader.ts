@@ -1,6 +1,7 @@
 import { EMPTY_ADO_METADATA, type AdoMetadata } from "../ado/AdoMetadata";
 import {
   buildAdoMetadataUrls,
+  parseAreaPaths,
   parseDateFieldReferenceNames,
   parseTeams,
   parseWorkItemTypes,
@@ -37,6 +38,7 @@ export class ChromeAdoMetadataReader implements IAdoMetadataReader {
     const raw = await this.fetchInPage(tabId, urls);
     return {
       teams: parseTeams(raw?.teams),
+      areaPaths: parseAreaPaths(raw?.areaPaths),
       // The type list names each type's fields but not their data type, so the field list resolves
       // which are dates; passing the set attaches each type's ETA-eligible date fields.
       workItemTypes: parseWorkItemTypes(
@@ -55,7 +57,7 @@ export class ChromeAdoMetadataReader implements IAdoMetadataReader {
         target: { tabId },
         world: "MAIN",
         func: fetchAdoRawInPage,
-        args: [urls.teamsUrl, urls.workItemTypesUrl, urls.fieldsUrl],
+        args: [urls.teamsUrl, urls.workItemTypesUrl, urls.fieldsUrl, urls.areaPathsUrl],
       });
       return results[0]?.result as AdoRawMetadata | undefined;
     } catch {

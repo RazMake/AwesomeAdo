@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { IQueryBindingStore } from "../../common/bindings/IQueryBindingStore";
 import type { QueryBinding, QueryBindings } from "../../common/bindings/QueryBinding";
+import { DEFAULT_SETTINGS } from "../../common/settings/ExtensionSettings";
+import { exportConfig } from "../../common/settings-transfer/AwesomeAdoConfig";
 import type { ViewType } from "../../common/view-common/ViewType";
 
 import { QueryBindingsController, type QueryBindingsElements } from "./QueryBindingsController";
@@ -64,6 +66,21 @@ const CONFIG_VIEWS: readonly ViewType[] = [
   },
 ];
 
+const AREA_PATH_VIEWS: readonly ViewType[] = [
+  {
+    id: "sprint",
+    label: "Sprint View",
+    properties: [
+      {
+        key: "defaultAreaPaths",
+        label: "Default Lane area paths",
+        required: false,
+        kind: "area-path-list",
+      },
+    ],
+  },
+];
+
 interface FakeStore {
   read: ReturnType<typeof vi.fn>;
   bind: ReturnType<typeof vi.fn>;
@@ -108,11 +125,11 @@ function makeElements(): QueryBindingsElements {
   const viewSelect = create<HTMLSelectElement>("select");
   const properties = create<HTMLElement>("div");
   const saveButton = create<HTMLButtonElement>("button");
-  viewConfigCard.append(viewSelect, properties, saveButton);
-
   const status = create<HTMLElement>("span");
+  viewConfigCard.append(viewSelect, properties, saveButton, status);
+
   const root = create<HTMLElement>("div");
-  root.append(emptyState, addCard, editCard, viewConfigCard, status);
+  root.append(emptyState, addCard, editCard, viewConfigCard);
   document.body.append(root);
   return {
     emptyState,
@@ -153,12 +170,14 @@ const controllerFor = (
   store: FakeStore,
   views: readonly ViewType[] = VIEWS,
   resolveCurrentQueryId?: () => Promise<string | null>,
+  resolveAreaPaths?: () => Promise<readonly string[]>,
+  publishBindings?: (bindings: QueryBindings) => Promise<void>,
 ) =>
   new QueryBindingsController(
     store as unknown as IQueryBindingStore,
     elements,
     reportError as unknown as (error: unknown) => void,
-    { viewTypes: views, resolveCurrentQueryId },
+    { viewTypes: views, resolveCurrentQueryId, resolveAreaPaths, publishBindings },
   );
 
 const propInput = (key: string): HTMLInputElement | null =>
@@ -348,6 +367,9 @@ describe("edit mode (opened from an already-bound query's button)", () => {
     await settle();
 
     expect(reportError).toHaveBeenCalled();
+    expect(elements.status.textContent).toBe("Could not save the query enhancement.");
+    expect(elements.status.classList.contains("binding__status--error")).toBe(true);
+    expect(elements.status.closest("div")).toBe(elements.viewConfigCard);
     expect(elements.saveButton.disabled).toBe(false);
   });
 
@@ -669,6 +691,105 @@ describe("edge cases (empty catalog, dispose)", () => {
     setView("tracking");
     // The change listener is gone, so no property inputs are rendered for the view.
     expect(elements.properties.children.length).toBe(0);
+  });
+});
+
+describe("view property kinds — area-path lists", () => {
+  it("renders and saves the area-path list property", async () => {
+    const store = makeStore({
+      [GUID_A]: {
+        view: "sprint",
+        properties: { defaultAreaPaths: "Project\\Apps\nProject\\Platform" },
+        name: "Alpha",
+      },
+    });
+    const publishBindings = vi.fn(async () => {});
+    await controllerFor(
+      store,
+      AREA_PATH_VIEWS,
+      undefined,
+      async () => ["Project\\API", "Project\\Apps", "Project\\Platform", "Project\\Web"],
+      publishBindings,
+    ).init(GUID_A, "Alpha");
+
+    const rows = elements.properties.querySelectorAll<HTMLInputElement>(
+      ".area-path-list-editor__row input",
+    );
+    expect([...rows].map((input) => input.value)).toEqual(["Project\\Apps", "Project\\Platform"]);
+    expect(
+      elements.properties
+        .querySelector(".area-path-list-editor")
+        ?.parentElement?.classList.contains("field--full"),
+    ).toBe(true);
+    rows[0]!.value = "Project\\API";
+    rows[0]!.dispatchEvent(new Event("change"));
+    elements.properties
+      .querySelectorAll<HTMLButtonElement>(".area-path-list-editor__remove")[1]!
+      .click();
+    const add = elements.properties.querySelector<HTMLInputElement>(
+      '[aria-label="New default Lane area path"]',
+    )!;
+    add.value = "Project\\Web";
+    add.dispatchEvent(new Event("input"));
+    elements.properties
+      .querySelector<HTMLButtonElement>(".area-path-list-editor__add button")!
+      .click();
+    elements.saveButton.click();
+    await settle();
+
+    expect(store.bind).toHaveBeenCalledWith(GUID_A, {
+      view: "sprint",
+      properties: { defaultAreaPaths: "Project\\API\nProject\\Web" },
+      name: "Alpha",
+    });
+    expect(publishBindings).toHaveBeenCalledWith({
+      [GUID_A]: {
+        view: "sprint",
+        properties: { defaultAreaPaths: "Project\\API\nProject\\Web" },
+        name: "Alpha",
+      },
+    });
+    expect(publishBindings.mock.invocationCallOrder[0]).toBeLessThan(
+      store.bind.mock.invocationCallOrder[0]!,
+    );
+    const persisted = await (store as unknown as IQueryBindingStore).read();
+    expect(persisted[GUID_A]?.properties.defaultAreaPaths).toBe("Project\\API\nProject\\Web");
+    expect(
+      JSON.parse(exportConfig(DEFAULT_SETTINGS, persisted)).enhancedQueries[GUID_A],
+    ).toHaveProperty("properties.defaultAreaPaths", "Project\\API\nProject\\Web");
+  });
+});
+
+describe("view property kinds — area-path publication failure", () => {
+  it("does not expose a binding locally when team publication fails", async () => {
+    const store = makeStore({
+      [GUID_A]: { view: "sprint", properties: {}, name: "Alpha" },
+    });
+    const publishBindings = vi.fn(async () => {
+      throw new Error("HTTP 412");
+    });
+    await controllerFor(
+      store,
+      AREA_PATH_VIEWS,
+      undefined,
+      async () => ["Project\\API"],
+      publishBindings,
+    ).init(GUID_A, "Alpha");
+    const add = elements.properties.querySelector<HTMLInputElement>(
+      '[aria-label="New default Lane area path"]',
+    )!;
+    add.value = "Project\\API";
+    add.dispatchEvent(new Event("input"));
+    elements.properties
+      .querySelector<HTMLButtonElement>(".area-path-list-editor__add button")!
+      .click();
+
+    elements.saveButton.click();
+    await settle();
+
+    expect(store.bind).not.toHaveBeenCalled();
+    expect((await (store as unknown as IQueryBindingStore).read())[GUID_A]?.properties).toEqual({});
+    expect(elements.status.textContent).toBe("Could not save the query enhancement.");
   });
 });
 

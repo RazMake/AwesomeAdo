@@ -24,7 +24,6 @@ export class TeamSprintAreaPathStore {
     try {
       const settings = await this.settings.read();
       return {
-        defaultAreaPaths: [...settings.defaultAreaPaths],
         sprintAreaPaths: normalizeSprintAreaPaths(settings.sprintAreaPaths),
       };
     } catch (error) {

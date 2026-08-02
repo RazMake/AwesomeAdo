@@ -72,7 +72,12 @@ import { renderSprintBoard, type SprintBoardItem } from "./SprintBoard";
 import { deliveryWorkTypes } from "./SprintBulkMove";
 import { SprintBulkMoveController, type SprintBulkMoveRequest } from "./SprintBulkMoveController";
 import { renderSprintHeader } from "./SprintHeader";
-import { sprintOrderingPolicy, sprintRecentChangesHours, sprintViewType } from "./sprintViewType";
+import {
+  sprintDefaultAreaPaths,
+  sprintOrderingPolicy,
+  sprintRecentChangesHours,
+  sprintViewType,
+} from "./sprintViewType";
 
 const UNASSIGNED_KEY = "__unassigned__";
 
@@ -344,15 +349,9 @@ async function loadSprintData(
   const selectedSprint = selectedSprintEntry(sprintWindow, session) ?? null;
   session.selectedAreaPaths = new Set(
     selectedAreaPathsForSprint(
-      areaConfiguration.defaultAreaPaths,
+      sprintDefaultAreaPaths(context.properties),
       selectedSprint === null ? undefined : areaConfiguration.sprintAreaPaths[selectedSprint.path],
     ),
-  );
-  const sprintAreaPaths = materializeSprintAreaPaths(
-    context,
-    areaConfiguration,
-    selectedSprint,
-    session.selectedAreaPaths,
   );
   const offset = selectedSprintOffset(sprintWindow, selectedSprint ?? undefined);
   const [teamMembers, definition] = await Promise.all([teamMembersPromise, definitionPromise]);
@@ -381,7 +380,7 @@ async function loadSprintData(
     queryWiql: definition.wiql,
     selectedOffset: offset,
     selectedSprint,
-    sprintAreaPaths,
+    sprintAreaPaths: areaConfiguration.sprintAreaPaths,
   };
 }
 
@@ -390,29 +389,9 @@ async function loadSprintAreaPathConfiguration(
 ): Promise<SprintAreaPathConfiguration> {
   return (
     (await context.services.sprintAreaPaths?.read()) ?? {
-      defaultAreaPaths: [],
       sprintAreaPaths: {},
     }
   );
-}
-
-function materializeSprintAreaPaths(
-  context: DataDrivenViewContext,
-  configuration: SprintAreaPathConfiguration,
-  sprint: SprintWindowEntry | null,
-  selected: ReadonlySet<string>,
-): SprintAreaPaths {
-  if (sprint === null) return configuration.sprintAreaPaths;
-  const next = withSprintAreaPathSelection(
-    configuration.sprintAreaPaths,
-    sprint,
-    [...selected],
-    context.services.now(),
-  );
-  if (JSON.stringify(next) !== JSON.stringify(configuration.sprintAreaPaths)) {
-    void context.services.sprintAreaPaths?.save(next);
-  }
-  return next;
 }
 
 function hierarchyOptions(
@@ -483,10 +462,31 @@ function areaPathsOf(items: readonly DisplayItem[]): string[] {
     .sort((left, right) => left.localeCompare(right));
 }
 
+function availableAreaPaths(
+  areaPaths: readonly string[],
+  selectedAreaPaths: readonly string[],
+): string[] {
+  const availableByKey = new Map(
+    areaPaths.map((path) => [path.toLocaleLowerCase(), path] as const),
+  );
+  return selectedAreaPaths.map((path) => {
+    const exact = availableByKey.get(path.toLocaleLowerCase());
+    if (exact !== undefined) return exact;
+    const parts = path.split("\\");
+    if (parts.length > 2 && parts[1]?.toLocaleLowerCase() === "area") {
+      const workItemPath = [parts[0], ...parts.slice(2)].join("\\");
+      return availableByKey.get(workItemPath.toLocaleLowerCase()) ?? path;
+    }
+    return path;
+  });
+}
+
 function pruneSelectedAreaPaths(areaPaths: readonly string[], session: SprintSession): void {
-  for (const path of [...session.selectedAreaPaths]) {
-    if (!areaPaths.includes(path)) session.selectedAreaPaths.delete(path);
-  }
+  session.selectedAreaPaths = new Set(
+    availableAreaPaths(areaPaths, [...session.selectedAreaPaths]).filter((path) =>
+      areaPaths.includes(path),
+    ),
+  );
 }
 
 function areaScope(items: readonly DisplayItem[], session: SprintSession): DisplayItem[] {
@@ -742,7 +742,7 @@ function renderBoardHeader(options: SprintHeaderRenderOptions): {
   });
   let laneSelectionChanged = false;
   const laneFilter = renderAreaPathFilter(context.doc, {
-    label: "Lane",
+    label: "Lanes",
     areaPaths: options.areaPaths,
     selectedAreaPaths: [...session.selectedAreaPaths],
     onChange: (paths) => {
@@ -876,26 +876,34 @@ function sprintTitleMenuTarget(params: {
   context: DataDrivenViewContext;
   data: LoadedSprintData;
   session: SprintSession;
+  onResetLanes: (paths: string[]) => void;
   onBulkMove: (destination: SprintWindowEntry) => void;
 }): ItemContextMenuTarget {
   const destinations = (): ItemContextMenuCommand[] => moveAllCommands(params);
   const source = selectedSprintEntry(params.data.sprintWindow, params.session);
+  const defaults = sprintDefaultAreaPaths(params.context.properties);
+  const commands: ItemContextMenuCommand[] = [
+    {
+      label: "Reset lanes to default",
+      disabledReason: defaults.length === 0 ? "No default area paths are configured." : null,
+      run: () => params.onResetLanes(defaults),
+    },
+  ];
+  if (source?.relation === "past") {
+    commands.push({
+      label: "Move all non-DONE items to",
+      renderLabel: bulkMoveLabel,
+      separatorBefore: true,
+      disabledReason:
+        destinations().length === 0 ? "No current or future sprint is configured." : null,
+      submenu: destinations,
+    });
+  }
   return {
     id: 0,
     url: params.context.doc.location?.href ?? null,
     standardCommands: ["copy-url"],
-    commands:
-      source?.relation === "past"
-        ? [
-            {
-              label: "Move all non-DONE items to",
-              renderLabel: bulkMoveLabel,
-              disabledReason:
-                destinations().length === 0 ? "No current or future sprint is configured." : null,
-              submenu: destinations,
-            },
-          ]
-        : undefined,
+    commands,
   };
 }
 
@@ -929,6 +937,15 @@ function createSprintContextMenu(params: {
         event,
         sprintTitleMenuTarget({
           ...params,
+          onResetLanes: (paths) => {
+            persistSprintAreaPaths(
+              params.context,
+              params.data,
+              params.session,
+              availableAreaPaths(params.areaPaths, paths),
+            );
+            params.repaint();
+          },
           onBulkMove: (destination) =>
             params.onBulkMove(
               destination,

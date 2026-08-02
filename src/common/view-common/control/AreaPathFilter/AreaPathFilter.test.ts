@@ -135,6 +135,10 @@ describe("renderAreaPathFilter - selection", () => {
     expect(trigger.getAttribute("aria-pressed")).toBe("true");
     expect(handle.element.querySelector(".awesomeado-area-filter__count")?.textContent).toBe("1");
     expect(trigger.style.background).toBe("var(--communication-background)");
+    expect(trigger.style.color).toBe("var(--text-on-communication-background)");
+    expect(trigger.style.borderColor).toBe("var(--communication-background)");
+    expect(trigger.disabled).toBe(false);
+    expect(trigger.style.opacity).toBe("");
     expect(
       handle.element.querySelector<HTMLButtonElement>(".awesomeado-area-filter__clear")?.disabled,
     ).toBe(false);

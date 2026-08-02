@@ -9,7 +9,7 @@
  */
 
 /** How a view property is entered on the binding form and validated before it is stored. */
-export type ViewTypePropertyKind = "text" | "number" | "select";
+export type ViewTypePropertyKind = "text" | "area-path-list" | "number" | "select";
 
 /** One choice offered by a `select` property: the stored `value` and the label shown for it. */
 export interface ViewTypeOption {

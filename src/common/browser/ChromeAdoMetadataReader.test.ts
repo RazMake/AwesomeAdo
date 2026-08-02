@@ -24,6 +24,8 @@ const WORK_ITEM_TYPES_URL =
   "https://dev.azure.com/O365Exchange/O365%20Core/_apis/wit/workitemtypes?api-version=7.1";
 const FIELDS_URL =
   "https://dev.azure.com/O365Exchange/O365%20Core/_apis/wit/fields?api-version=7.1";
+const AREA_PATHS_URL =
+  "https://dev.azure.com/O365Exchange/O365%20Core/_apis/wit/classificationnodes/areas?$depth=100&api-version=7.1";
 
 interface MetadataContext {
   chromeMock: MockChrome;
@@ -62,6 +64,7 @@ describe("ChromeAdoMetadataReader - guards", () => {
       organization: "O365Exchange",
       project: "O365 Core",
       teams: [],
+      areaPaths: [],
       workItemTypes: [],
     });
   });
@@ -74,6 +77,7 @@ describe("ChromeAdoMetadataReader - guards", () => {
       organization: "O365Exchange",
       project: "O365 Core",
       teams: [],
+      areaPaths: [],
       workItemTypes: [],
     });
   });
@@ -87,6 +91,7 @@ describe("ChromeAdoMetadataReader - guards", () => {
       organization: "o365exchange",
       project: null,
       teams: [],
+      areaPaths: [],
       workItemTypes: [],
     });
     expect(chromeMock.executeScript).not.toHaveBeenCalled();
@@ -134,6 +139,11 @@ describe("ChromeAdoMetadataReader - injection parsing", () => {
               { referenceName: "Microsoft.VSTS.Common.ResolvedDate", type: "dateTime" },
             ],
           },
+          areaPaths: {
+            name: "O365 Core",
+            path: "\\O365 Core",
+            children: [{ name: "Platform", path: "\\O365 Core\\Platform" }],
+          },
         },
       },
     ]);
@@ -145,6 +155,7 @@ describe("ChromeAdoMetadataReader - injection parsing", () => {
         { id: "1", name: "Alpha" },
         { id: "2", name: "Beta" },
       ],
+      areaPaths: ["O365 Core", "O365 Core\\Platform"],
       workItemTypes: [
         {
           name: "Bug",
@@ -161,7 +172,7 @@ describe("ChromeAdoMetadataReader - injection parsing", () => {
       target: { tabId: ADO_TAB.id },
       world: "MAIN",
       func: expect.any(Function),
-      args: [TEAMS_URL, WORK_ITEM_TYPES_URL, FIELDS_URL],
+      args: [TEAMS_URL, WORK_ITEM_TYPES_URL, FIELDS_URL, AREA_PATHS_URL],
     });
   });
 });

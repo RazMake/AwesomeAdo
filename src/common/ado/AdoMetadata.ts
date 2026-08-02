@@ -1,6 +1,6 @@
 /**
- * The Azure DevOps project metadata the options page needs to fill its team and work-item-type
- * pickers.
+ * The Azure DevOps project metadata the options page needs to fill its team, area-path, and
+ * work-item-type pickers.
  *
  * The credentialed REST fetch that populates these is injected into the ADO tab's page world (see
  * `src/common/browser/fetchAdoRawInPage.ts`); this file only defines the shared data shapes.
@@ -43,9 +43,11 @@ export interface AdoWorkItemType {
 /** Everything the Azure DevOps options tab lists for the detected organization/project. */
 export interface AdoMetadata {
   teams: AdoTeam[];
+  /** Every full area path configured for the project, offered by binding editors. */
+  areaPaths: string[];
   /** The project's work item types with their states, for the work-item-types picker. */
   workItemTypes: AdoWorkItemType[];
 }
 
 /** The empty result used whenever metadata cannot be determined, so callers never see `undefined`. */
-export const EMPTY_ADO_METADATA: AdoMetadata = { teams: [], workItemTypes: [] };
+export const EMPTY_ADO_METADATA: AdoMetadata = { teams: [], areaPaths: [], workItemTypes: [] };

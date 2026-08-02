@@ -77,9 +77,14 @@ This is a flattened snapshot of what exists now, not a build log.
   latest-tag-lifetime acceptance state without exposing Interrupt mutation commands.
 - **Area-path filtering** (`common/view-common/control/AreaPathFilter` + both views): the live
   tree hydrates `System.AreaPath`; a compact themed header popup selects full paths using shortest
-  unique display suffixes. Project Tracking keeps session state. Sprint loads configured defaults
-  plus its dated team-shared per-sprint selection on load/refresh/sprint change and auto-publishes
-  changes; the newest ten past sprint records are retained.
+  unique display suffixes. Active selections match the Project filter's filled communication style
+  and retain their count badge; only a filter with no offered paths is disabled. Project Tracking keeps session state. Sprint uses per-query binding
+  defaults only when no dated team-shared selection exists for that sprint; saved selections take
+  priority on load/refresh/sprint change, and Lane changes auto-publish. Options adds defaults one at
+  a time with live project-area autocomplete and per-row removal. The Sprint title menu resets the
+  current saved selection to those defaults when at least one exists. The newest ten past sprint
+  records are retained. Connected binding edits publish their proposed map before local persistence,
+  so team pull, reload, and file export retain the default paths.
   The item right-click menu reuses the same eligible paths and labels to change `System.AreaPath`,
   omitting the item's current value and showing complete paths as tooltips.
 - **Markdown authoring** (`common/view-common/control/TextEditor`): shared bold/italic/link shortcuts

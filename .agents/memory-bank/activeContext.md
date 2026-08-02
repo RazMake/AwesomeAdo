@@ -266,9 +266,12 @@ The extension is feature-complete for its current scope:
   rewrite storage, and Disconnect leaves the last pulled local snapshot intact.
 - Options page: Appearance (Dark/Light/Blue theme, Follow ADO dark/light resolution, default view +
   Configuration Sharing), Azure DevOps config (team, sprint window, board mappings, marker tags, and
-  hierarchy Primary work classification with a context-only root, plus default Sprint area paths),
-  Query Bindings manager, Diagnostics. Sprint defaults and dated per-sprint selections round-trip in
-  file and team configuration; Project Tracking continues deriving its eligible paths from live work.
+  hierarchy Primary work classification with a context-only root), Query Bindings manager (including
+  per-query Sprint default Lane paths edited as individually removable, live-project-autocomplete
+  rows with adjacent actions and in-card status/error feedback), Diagnostics. Sprint binding defaults and dated per-sprint
+  selections round-trip in file and team configuration; connected binding saves publish the proposed
+  map before local mutation so an automatic pull cannot erase them. Project Tracking continues deriving its
+  eligible paths from live work.
 - SPA-aware navigation via the background service worker.
 - Device-local, source-tagged diagnostics log (`src/common/logging`): every line carries the
   component folder that owns the emitting code (e.g. `content/query-page`, `common/settings`,

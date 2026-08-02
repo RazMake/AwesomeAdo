@@ -20,7 +20,6 @@ interface ExtensionSettings {
   currentTeam: TeamRef | null; // selected ADO team, or null       (default: null)
   futureSprintsCount: number; // sprints offered past the current one, 1..12 (default: 6)
   pastSprintsCount: number; // sprints offered before the current one, 0..6 (default: 0)
-  defaultAreaPaths: string[]; // full paths initially selected in every sprint
   sprintAreaPaths: SprintAreaPaths; // team-shared selection per iteration path
   boardColumns: string[]; // mapping-table columns, fixed set of 5 (default: In Queue/In Progress/Waiting/Done/Removed)
   workItemTypes: WorkItemType[]; // per-type board mapping + hierarchy/classification (default: [])
@@ -49,9 +48,9 @@ and a freshly typed one derive the same default.
 `normalizeMarkerTags(raw)` (seeds the full `DEFAULT_MARKER_TAGS` for a never-set value, seeds only the
 missing markers from a partial object, and trims both tokens while honoring a deliberately blanked
 entry) is likewise exported for the options UI.
-`SprintAreaPaths.ts` owns full-path normalization, default materialization, the dated per-sprint
-record shape, and pruning that retains the newest ten completed sprints plus current, future, and
-undated records.
+`SprintAreaPaths.ts` owns full-path normalization, saved-selection-over-binding-default precedence,
+the dated per-sprint record shape, and pruning that retains the newest ten completed sprints plus
+current, future, and undated records.
 `isAdoConfigured(settings)` reports whether the Azure DevOps settings are complete enough for the
 extension to enhance a query (a current team and at least one work item type that maps a state); the
 content script and options page share it.
@@ -110,8 +109,6 @@ unsubscribe();
   `1..12` (default `3`).
 - **`pastSprintsCount`** is how many sprints before the current one the picker offers, clamped to
   `0..6` (default `0`, i.e. only the current and future sprints are shown).
-- **`defaultAreaPaths`** are full area paths initially selected whenever Sprint View opens a sprint.
-  Adding one is materialized into existing sprint records; removing one does not alter them.
 - **`sprintAreaPaths`** stores each sprint's selected full paths under its iteration path, with date
   bounds used to retain the newest ten past sprints. Sprint View publishes these records through the
   connected team configuration work item.
@@ -149,7 +146,7 @@ All values sync across all of the user's devices via `chrome.storage.sync`.
 
 Each setting maps to its own storage key (e.g., `settings.theme`, `settings.defaultView`,
 `settings.currentTeam`, `settings.futureSprintsCount`, `settings.pastSprintsCount`,
-`settings.defaultAreaPaths`, `settings.sprintAreaPaths`, `settings.boardColumns`,
+`settings.sprintAreaPaths`, `settings.boardColumns`,
 `settings.workItemTypes`, `settings.markerTags`). This means adding a new
 setting in a future version does not risk a
 read-modify-write race overwriting the new key with `undefined` on older installs still using a

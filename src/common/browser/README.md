@@ -211,8 +211,8 @@ in one place.
 
 ### `IAdoMetadataReader` (interface)
 
-Lets the options page list the detected organization/project along with its teams and work-item types,
-without touching `chrome.tabs` directly:
+Lets the options page list the detected organization/project along with its teams, area paths, and
+work-item types, without touching `chrome.tabs` directly:
 
 ```typescript
 interface IAdoMetadataReader {
@@ -220,8 +220,8 @@ interface IAdoMetadataReader {
 }
 ```
 
-`read()` resolves with `{ organization, project, teams, workItemTypes }` (`AdoMetadataContext`, defined
-in `./IAdoMetadataReader`), or `null` when no ADO Query tab is open.
+`read()` resolves with `{ organization, project, teams, areaPaths, workItemTypes }`
+(`AdoMetadataContext`, defined in `./IAdoMetadataReader`), or `null` when no ADO Query tab is open.
 
 ### `ChromeAdoMetadataReader` (class)
 
@@ -230,8 +230,10 @@ parses the organization/project with `parseAdoContext`, then injects `fetchAdoRa
 tab's **page (MAIN) world** via `chrome.scripting.executeScript` to fetch project metadata.
 The options page runs on the `chrome-extension://` origin, whose cross-origin fetch is CORS-blocked
 and whose same-origin fetch loses ADO's SameSite session cookies; the MAIN-world fetch is the only
-context that is both same-origin with the APIs and carries the signed-in session. Metadata is
-best-effort: a non-project tab or any injection failure resolves the metadata lists to empty.
+context that is both same-origin with the APIs and carries the signed-in session. Area paths come
+from the complete project classification tree; that idempotent GET receives three bounded transient
+attempts. Metadata is best-effort: a non-project tab or any injection failure resolves the metadata
+lists to empty.
 
 ```typescript
 import { ChromeAdoMetadataReader } from "./ChromeAdoMetadataReader";
