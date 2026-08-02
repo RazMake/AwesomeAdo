@@ -7,6 +7,8 @@ import type { ISettingsStore } from "./ISettingsStore";
 
 const THEME_KEY = "settings.theme";
 const DEFAULT_VIEW_KEY = "settings.defaultView";
+const ORGANIZATION_KEY = "settings.organization";
+const PROJECT_KEY = "settings.project";
 const CURRENT_TEAM_KEY = "settings.currentTeam";
 const FUTURE_SPRINTS_KEY = "settings.futureSprintsCount";
 const PAST_SPRINTS_KEY = "settings.pastSprintsCount";
@@ -18,6 +20,8 @@ const MARKER_TAGS_KEY = "settings.markerTags";
 const SETTING_KEYS = [
   THEME_KEY,
   DEFAULT_VIEW_KEY,
+  ORGANIZATION_KEY,
+  PROJECT_KEY,
   CURRENT_TEAM_KEY,
   FUTURE_SPRINTS_KEY,
   PAST_SPRINTS_KEY,
@@ -32,6 +36,8 @@ const SETTING_KEYS = [
 const SETTING_WRITE_MAP: readonly { name: keyof ExtensionSettings; key: string }[] = [
   { name: "theme", key: THEME_KEY },
   { name: "defaultView", key: DEFAULT_VIEW_KEY },
+  { name: "organization", key: ORGANIZATION_KEY },
+  { name: "project", key: PROJECT_KEY },
   { name: "currentTeam", key: CURRENT_TEAM_KEY },
   { name: "futureSprintsCount", key: FUTURE_SPRINTS_KEY },
   { name: "pastSprintsCount", key: PAST_SPRINTS_KEY },
@@ -46,6 +52,8 @@ function projectSettings(raw: Record<string, unknown>): ExtensionSettings {
   return normalizeSettings({
     theme: raw[THEME_KEY],
     defaultView: raw[DEFAULT_VIEW_KEY],
+    organization: raw[ORGANIZATION_KEY],
+    project: raw[PROJECT_KEY],
     currentTeam: raw[CURRENT_TEAM_KEY],
     futureSprintsCount: raw[FUTURE_SPRINTS_KEY],
     pastSprintsCount: raw[PAST_SPRINTS_KEY],

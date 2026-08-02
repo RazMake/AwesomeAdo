@@ -2,7 +2,8 @@
 
 Serializes the user's **entire** configuration to and from a single `AwesomeADO.config` file, so a
 user can back it up or move it between machines. The file carries every extension setting (theme,
-default view, current team, sprint counts, dated per-sprint area selections, board columns, work item
+default view, organization, project, current team, sprint counts, dated per-sprint area selections,
+board columns, work item
 types) **and** every enhanced-query binding (which queries are enhanced and each one's per-view
 property values, including Sprint View's default Lane area paths).
 

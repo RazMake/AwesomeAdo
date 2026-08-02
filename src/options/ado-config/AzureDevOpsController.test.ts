@@ -80,8 +80,10 @@ class FakeMetadataReader implements IAdoMetadataReader {
 }
 
 function makeElements(): AzureDevOpsElements {
-  const organization = document.createElement("dd");
-  const project = document.createElement("dd");
+  const organization = document.createElement("input");
+  const organizationDetected = document.createElement("p");
+  const project = document.createElement("input");
+  const projectDetected = document.createElement("p");
   const teamField = document.createElement("div");
   const teamInput = document.createElement("input");
   teamInput.id = "ado-team-input";
@@ -107,7 +109,9 @@ function makeElements(): AzureDevOpsElements {
   const markerTagsList = document.createElement("div");
   document.body.append(
     organization,
+    organizationDetected,
     project,
+    projectDetected,
     teamField,
     futureSprintsInput,
     pastSprintsInput,
@@ -121,8 +125,8 @@ function makeElements(): AzureDevOpsElements {
     markerTagsList,
   );
   return {
-    organization,
-    project,
+    organization: { input: organization, proposal: organizationDetected },
+    project: { input: project, proposal: projectDetected },
     teamInput,
     futureSprintsInput,
     pastSprintsInput,
@@ -220,21 +224,44 @@ describe("AzureDevOpsController — initialization controls & metadata", () => {
     controller.dispose();
   });
 
-  it("fills the detected organization and project", async () => {
+  it("seeds and stores the organization and project from the open query tab", async () => {
     const controller = new AzureDevOpsController(store, reader, elements);
     await controller.init();
-    expect(elements.organization.textContent).toBe("contoso");
-    expect(elements.organization.dataset.empty).toBe("false");
-    expect(elements.project.textContent).toBe("web");
-    expect(elements.project.dataset.empty).toBe("false");
+    await flush();
+    expect(elements.organization.input.value).toBe("contoso");
+    expect(elements.project.input.value).toBe("web");
+    expect(store.writeCalls).toEqual([{ organization: "contoso" }, { project: "web" }]);
     controller.dispose();
   });
 
-  it("marks the config fields empty when there is no active ADO tab", async () => {
+  it("leaves the scope fields empty when there is no active ADO tab", async () => {
     const controller = new AzureDevOpsController(store, new FakeMetadataReader(null), elements);
     await controller.init();
-    expect(elements.organization.dataset.empty).toBe("true");
-    expect(elements.project.dataset.empty).toBe("true");
+    expect(elements.organization.input.value).toBe("");
+    expect(elements.organization.proposal.hidden).toBe(true);
+    expect(elements.project.proposal.hidden).toBe(true);
+    expect(store.writeCalls).toEqual([]);
+    controller.dispose();
+  });
+
+  it("keeps the ADO-backed controls off when ADO is unreachable, but not the rest", async () => {
+    const controller = new AzureDevOpsController(store, new FakeMetadataReader(null), elements);
+    await controller.init();
+    // Nothing can name a team or a work item type without ADO, so those two stay off; the settings
+    // that only edit stored values must stay usable.
+    expect(elements.teamInput.disabled).toBe(true);
+    expect(elements.workItemTypes.addTypeButton.disabled).toBe(true);
+    expect(elements.organization.input.disabled).toBe(false);
+    expect(elements.futureSprintsInput.disabled).toBe(false);
+    expect(elements.pastSprintsInput.disabled).toBe(false);
+    controller.dispose();
+  });
+
+  it("enables the ADO-backed controls once metadata arrives", async () => {
+    const controller = new AzureDevOpsController(store, reader, elements);
+    await controller.init();
+    expect(elements.teamInput.disabled).toBe(false);
+    expect(elements.workItemTypes.addTypeButton.disabled).toBe(false);
     controller.dispose();
   });
 
@@ -286,8 +313,82 @@ describe("AzureDevOpsController — initialization seeding & errors", () => {
     const controller = new AzureDevOpsController(store, reader, elements, (e) => errors.push(e));
     await controller.init();
     expect(errors).toHaveLength(1);
-    expect(elements.teamInput.disabled).toBe(false);
-    expect(elements.organization.dataset.empty).toBe("true");
+    // The stored settings still load, so everything they alone drive stays editable; only the two
+    // controls that need ADO to answer are held back.
+    expect(elements.futureSprintsInput.disabled).toBe(false);
+    expect(elements.teamInput.disabled).toBe(true);
+    expect(elements.organization.proposal.hidden).toBe(true);
+    controller.dispose();
+  });
+});
+
+describe("AzureDevOpsController — organization & project", () => {
+  let store: FakeSettingsStore;
+  let reader: FakeMetadataReader;
+  let elements: AzureDevOpsElements;
+
+  beforeEach(() => {
+    ({ store, reader, elements } = makeFixture());
+  });
+
+  /** The saved-value fixture every proposal test starts from: a scope the open tab disagrees with. */
+  async function bootWithSavedScope(): Promise<AzureDevOpsController> {
+    store = new FakeSettingsStore({ organization: "fabrikam", project: "apps" });
+    return bootController({ store, reader, elements });
+  }
+
+  it("keeps a saved scope and offers the tab's values as proposals instead", async () => {
+    const controller = await bootWithSavedScope();
+    expect(elements.organization.input.value).toBe("fabrikam");
+    expect(elements.organization.proposal.hidden).toBe(false);
+    expect(elements.organization.proposal.textContent).toContain("contoso");
+    expect(elements.project.proposal.textContent).toContain("web");
+    expect(store.writeCalls).toEqual([]);
+    controller.dispose();
+  });
+
+  it("adopts a proposal on one click and then stops offering it", async () => {
+    const controller = await bootWithSavedScope();
+    elements.organization.proposal.querySelector("button")?.click();
+    await flush();
+    expect(elements.organization.input.value).toBe("contoso");
+    expect(elements.organization.proposal.hidden).toBe(true);
+    expect(store.writeCalls).toEqual([{ organization: "contoso" }]);
+    controller.dispose();
+  });
+
+  it("persists a hand-typed scope, trimmed, and keeps proposing the tab's own", async () => {
+    const controller = await bootWithSavedScope();
+    elements.project.input.value = "  billing  ";
+    fire(elements.project.input, "change");
+    await flush();
+    expect(elements.project.input.value).toBe("billing");
+    expect(store.writeCalls).toEqual([{ project: "billing" }]);
+    expect(elements.project.proposal.hidden).toBe(false);
+    controller.dispose();
+  });
+
+  it("restores the last saved scope when the write fails", async () => {
+    const errors: unknown[] = [];
+    store = new FakeSettingsStore({ organization: "fabrikam", project: "apps" });
+    store.setWriteError(new Error("quota exceeded"));
+    const controller = new AzureDevOpsController(store, reader, elements, (e) => errors.push(e));
+    await controller.init();
+    elements.organization.input.value = "typo";
+    fire(elements.organization.input, "change");
+    await flush();
+    expect(elements.organization.input.value).toBe("fabrikam");
+    expect(elements.organization.proposal.hidden).toBe(false);
+    expect(errors).toHaveLength(1);
+    controller.dispose();
+  });
+
+  it("re-compares the scope against the open tab after a configuration import", async () => {
+    const controller = await bootWithSavedScope();
+    store.setSettings({ organization: "contoso" });
+    await controller.reload();
+    expect(elements.organization.input.value).toBe("contoso");
+    expect(elements.organization.proposal.hidden).toBe(true);
     controller.dispose();
   });
 });
@@ -420,7 +521,9 @@ describe("AzureDevOpsController — past sprints", () => {
 
 describe("AzureDevOpsController — disposal", () => {
   it("ignores events after disposal", async () => {
-    const store = new FakeSettingsStore();
+    // Seeded to match the tab so the scope fields have nothing to adopt, leaving `writeCalls` as a
+    // clean record of what the disposed controls did (or, as asserted, did not) persist.
+    const store = new FakeSettingsStore({ organization: "contoso", project: "web" });
     const elements = makeElements();
     const controller = new AzureDevOpsController(store, new FakeMetadataReader(CONTEXT), elements);
     await controller.init();

@@ -33,15 +33,33 @@ export interface AdoQueryTabContext {
  * one place to keep the readers free of duplicated guard logic.
  */
 export async function readCurrentAdoQueryContext(): Promise<AdoQueryTabContext | null> {
-  const queryTab = await pickCurrentAdoQueryTab();
-  if (!queryTab?.url || queryTab.id === undefined) {
+  return toTabContext(await pickCurrentAdoQueryTab());
+}
+
+/**
+ * The same lookup, but satisfied by ANY open ADO tab when no Query tab is open.
+ *
+ * Reading org/project and fetching project metadata need only a first-party ADO page — the query
+ * grid plays no part in either — so insisting on a Query tab left the options page unable to name
+ * the organization, or to list teams and work item types, for a user who had ADO open on a board, a
+ * work item, or the org home. A Query tab is still preferred, since it is the page the extension
+ * actually enhances and therefore the best guess at where the user is working.
+ */
+export async function readCurrentAdoTabContext(): Promise<AdoQueryTabContext | null> {
+  const tabs = await chrome.tabs.query({ url: [...ADO_HOST_MATCH_PATTERNS] });
+  return toTabContext(pickQueryTab(tabs) ?? pickPreferredTab(tabs));
+}
+
+/** Pair a tab's id and URL with its parsed ADO identity, or null when either is unusable. */
+function toTabContext(tab: chrome.tabs.Tab | undefined): AdoQueryTabContext | null {
+  if (!tab?.url || tab.id === undefined) {
     return null;
   }
-  const context = parseAdoContext(queryTab.url);
+  const context = parseAdoContext(tab.url);
   if (context === null) {
     return null;
   }
-  return { tabId: queryTab.id, url: queryTab.url, context };
+  return { tabId: tab.id, url: tab.url, context };
 }
 
 /**
@@ -50,12 +68,18 @@ export async function readCurrentAdoQueryContext(): Promise<AdoQueryTabContext |
  * the tab the user most likely came from when several ADO tabs are open.
  */
 function pickQueryTab(tabs: chrome.tabs.Tab[]): chrome.tabs.Tab | undefined {
-  const queryTabs = tabs.filter((tab) => typeof tab.url === "string" && isAdoQueryUrl(tab.url));
-  const activeQueryTab = queryTabs.find((tab) => tab.active);
-  if (activeQueryTab) {
-    return activeQueryTab;
+  return pickPreferredTab(
+    tabs.filter((tab) => typeof tab.url === "string" && isAdoQueryUrl(tab.url)),
+  );
+}
+
+/** Prefer a tab still active in its window, else the most recently accessed one. */
+function pickPreferredTab(tabs: chrome.tabs.Tab[]): chrome.tabs.Tab | undefined {
+  const activeTab = tabs.find((tab) => tab.active);
+  if (activeTab) {
+    return activeTab;
   }
-  return queryTabs.reduce<chrome.tabs.Tab | undefined>((mostRecent, tab) => {
+  return tabs.reduce<chrome.tabs.Tab | undefined>((mostRecent, tab) => {
     if (mostRecent === undefined) {
       return tab;
     }

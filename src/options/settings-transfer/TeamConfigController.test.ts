@@ -87,6 +87,9 @@ function makeHarness(initialSource: number | null = null) {
     onPulled,
     resolveWorkItemUrl,
   );
+  // Every group below exercises the connection state machine, which only comes into play once ADO is
+  // reachable at all; the unreachable case has its own group.
+  controller.setAdoReachable(true);
   return {
     controller,
     sourceStore,
@@ -135,6 +138,32 @@ describe("TeamConfigController connection rendering", () => {
     expect(harness.elements.workItemLink.hidden).toBe(true);
     expect(harness.elements.connectButton.disabled).toBe(false);
     expect(harness.elements.disconnectButton.disabled).toBe(true);
+  });
+});
+
+describe("TeamConfigController without a reachable Azure DevOps", () => {
+  it("turns off every action that has to reach ADO, but not Disconnect", async () => {
+    const harness = makeHarness(42);
+    await harness.controller.init();
+
+    harness.controller.setAdoReachable(false);
+
+    expect(harness.elements.connectButton.disabled).toBe(true);
+    expect(harness.elements.pullButton.disabled).toBe(true);
+    expect(harness.elements.publishButton.disabled).toBe(true);
+    // Disconnecting only clears the locally stored source, so it stays available.
+    expect(harness.elements.disconnectButton.disabled).toBe(false);
+  });
+
+  it("re-enables them once ADO becomes reachable again", async () => {
+    const harness = makeHarness(42);
+    await harness.controller.init();
+
+    harness.controller.setAdoReachable(false);
+    harness.controller.setAdoReachable(true);
+
+    expect(harness.elements.pullButton.disabled).toBe(false);
+    expect(harness.elements.publishButton.disabled).toBe(false);
   });
 });
 

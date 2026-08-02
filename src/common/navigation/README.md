@@ -69,6 +69,10 @@ theme.
   `https://dev.azure.com/{org}/{project}/...` or `https://{org}.visualstudio.com/{project}/...`,
   or `null` when the URL is not a recognized hosted ADO location (host discrimination is delegated
   to `AdoHost.isSupportedAdoHost`).
+- **`buildAdoContextUrl(hostHref, context)`** — the inverse: rebuilds a project URL for `context` on
+  the ADO host that serves `hostHref`, or `null` when that host is not ADO or the context names no
+  project. It takes a host rather than assuming one because only a URL on the same origin as an
+  already-open tab can be fetched with the user's session.
 - **`ADO_THEME_REQUEST`**, **`AdoThemeRequest`**, **`AdoThemeResponse`**,
   **`isAdoThemeRequest(value)`** — the request/response message the options page sends to an ADO
   content script (via `chrome.tabs.sendMessage`) to read the rendered theme. The content script

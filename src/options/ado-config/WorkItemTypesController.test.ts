@@ -273,7 +273,7 @@ function setup(options?: {
   controller.init();
   controller.setAvailableTypes(TYPES);
   controller.render(options?.entries ?? [], options?.boardColumns ?? []);
-  controller.enable();
+  controller.setEnabled(true);
   return { store, elements, controller };
 }
 
@@ -322,9 +322,17 @@ describe("WorkItemTypesController — enablement", () => {
     expect(elements.addTypeButton.disabled).toBe(true);
 
     controller.render([], ["Active"]);
-    controller.enable();
+    controller.setEnabled(true);
 
     expect(elements.addTypeButton.disabled).toBe(false);
+  });
+
+  it("disables the add-type button again when the type catalog becomes unavailable", () => {
+    const { elements, controller } = setup();
+
+    controller.setEnabled(false);
+
+    expect(elements.addTypeButton.disabled).toBe(true);
   });
 });
 
@@ -926,7 +934,7 @@ describe("WorkItemTypesController — removal and persistence", () => {
     controller.init();
     controller.setAvailableTypes(TYPES);
     controller.render([], ["Active"]);
-    controller.enable();
+    controller.setEnabled(true);
 
     addTypeRow(elements, "Bug");
     await flush();

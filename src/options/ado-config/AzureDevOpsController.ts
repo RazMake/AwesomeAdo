@@ -13,15 +13,16 @@ import {
 import type { ISettingsStore } from "../../common/settings/ISettingsStore";
 
 import { AutocompleteInput } from "./AutocompleteInput";
+import { DetectedValueField, type DetectedValueElements } from "./DetectedValueField";
 import { MarkerTagsController, type MarkerTagsElements } from "./MarkerTagsController";
 import { WorkItemTypesController, type WorkItemTypesElements } from "./WorkItemTypesController";
 
 /** The Azure DevOps tab's elements. Passed in so the controller stays DOM-agnostic and testable. */
 export interface AzureDevOpsElements {
-  /** Read-only detected organization. */
-  organization: HTMLElement;
-  /** Read-only detected project. */
-  project: HTMLElement;
+  /** Editable organization, reconciled against the open query tab. */
+  organization: DetectedValueElements;
+  /** Editable project, reconciled against the open query tab. */
+  project: DetectedValueElements;
   /** Searchable input for the current team; the controller wraps it in a suggestion dropdown. */
   teamInput: HTMLInputElement;
   /** Whole-number input (1..12) for how many future sprints the picker offers. */
@@ -49,11 +50,11 @@ const EMPTY_METADATA_CONTEXT: AdoMetadataContext = {
 };
 
 /**
- * Drives the Azure DevOps tab: shows the detected organization/project, and binds the current-team
- * picker and the future/past sprint counts to the synced settings store.
+ * Drives the Azure DevOps tab: binds the organization/project scope, the current-team picker and the
+ * future/past sprint counts to the synced settings store.
  *
  * The store is read once to seed the controls and written on each change (per-key, so unrelated
- * settings are untouched). The detected org/project and the datalist options come from the injected
+ * settings are untouched). The org/project proposals and the datalist options come from the injected
  * metadata reader, which fetches them through the open ADO tab's content script; both the store and
  * the reader are injected (Dependency Inversion) so the flow is fully testable without a browser.
  */
@@ -63,7 +64,16 @@ export class AzureDevOpsController {
   private confirmedTeam: TeamRef | null = null;
   private confirmedSprints = DEFAULT_SETTINGS.futureSprintsCount;
   private confirmedPastSprints = DEFAULT_SETTINGS.pastSprintsCount;
+  // Two independent gates gone through by the ADO-backed pickers: the stored values must have
+  // loaded, AND an ADO tab must be reachable to name a team or list the org's work item types.
+  // Settings and metadata are read concurrently, so each records its own gate and re-applies both.
+  private settingsLoaded = false;
+  private adoReachable = false;
   private readonly teamCombobox: AutocompleteInput;
+  // The scope boxes are the one pair of settings an open ADO tab can also answer for, so they share
+  // one field that owns the stored-value-versus-detected-value reconciliation.
+  private readonly organization: DetectedValueField;
+  private readonly project: DetectedValueField;
   // The work-item-types section is a cohesive sub-feature, so it lives in its own controller that
   // shares this controller's single metadata read and settings load (fed in via render/setAvailableTypes).
   private readonly workItemTypes: WorkItemTypesController;
@@ -81,6 +91,18 @@ export class AzureDevOpsController {
     elements.futureSprintsInput.disabled = true;
     elements.pastSprintsInput.disabled = true;
     this.teamCombobox = new AutocompleteInput(elements.teamInput);
+    this.organization = new DetectedValueField(
+      elements.organization,
+      "organization",
+      (value) => store.write({ organization: value }),
+      this.reportError,
+    );
+    this.project = new DetectedValueField(
+      elements.project,
+      "project",
+      (value) => store.write({ project: value }),
+      this.reportError,
+    );
     this.workItemTypes = new WorkItemTypesController(
       store,
       elements.workItemTypes,
@@ -100,8 +122,8 @@ export class AzureDevOpsController {
    * This tab loads its values once and then treats its own DOM as the working copy, so an outside
    * replacement of the stored configuration (a configuration file import) would otherwise leave it
    * showing — and, on the next edit, re-saving — the configuration the file just replaced. The ADO
-   * metadata is deliberately not re-read: it describes the organization, which an import cannot
-   * change.
+   * metadata is deliberately not re-read: it describes the tab the user has open, which an import
+   * cannot change; the scope fields re-compare the imported values against it on their own.
    */
   async reload(): Promise<void> {
     await this.loadSettings();
@@ -110,6 +132,8 @@ export class AzureDevOpsController {
   dispose(): void {
     this.disposed = true;
     this.teamCombobox.dispose();
+    this.organization.dispose();
+    this.project.dispose();
     this.workItemTypes.dispose();
     this.markerTags.dispose();
     this.elements.teamInput.removeEventListener("change", this.handleTeamChange);
@@ -121,6 +145,8 @@ export class AzureDevOpsController {
     this.elements.teamInput.addEventListener("change", this.handleTeamChange);
     this.elements.futureSprintsInput.addEventListener("change", this.handleSprintsChange);
     this.elements.pastSprintsInput.addEventListener("change", this.handlePastSprintsChange);
+    this.organization.init();
+    this.project.init();
     this.workItemTypes.init();
     this.markerTags.init();
   }
@@ -135,6 +161,8 @@ export class AzureDevOpsController {
     if (this.disposed) {
       return;
     }
+    this.organization.render(settings.organization);
+    this.project.render(settings.project);
     this.renderTeam(settings.currentTeam);
     this.renderFutureSprints(settings.futureSprintsCount);
     this.renderPastSprints(settings.pastSprintsCount);
@@ -163,21 +191,37 @@ export class AzureDevOpsController {
 
   private renderMetadata(metadata: AdoMetadataContext | null): void {
     // Normalize once so each field read below is a plain property access, not another optional-chain
-    // + fallback. An absent tab yields empty strings/lists, which `setConfigField` renders identically
-    // to `null` (its "No active query tab" placeholder), so behavior is unchanged.
+    // + fallback. An absent tab yields empty strings/lists, which the scope fields read as "nothing
+    // detected" — so they simply offer no proposal — leaving the stored values in place.
     const context = metadata ?? EMPTY_METADATA_CONTEXT;
-    this.setConfigField(this.elements.organization, context.organization);
-    this.setConfigField(this.elements.project, context.project);
+    this.adoReachable = metadata !== null;
+    this.organization.setDetected(context.organization);
+    this.project.setDetected(context.project ?? "");
     this.teams = context.teams;
     this.teamCombobox.setOptions(this.teams.map((team) => team.name));
     this.workItemTypes.setAvailableTypes(context.workItemTypes);
+    this.applyEnabledState();
   }
 
   private enableControls(): void {
-    this.elements.teamInput.disabled = false;
+    this.settingsLoaded = true;
+    this.organization.enable();
+    this.project.enable();
     this.elements.futureSprintsInput.disabled = false;
     this.elements.pastSprintsInput.disabled = false;
-    this.workItemTypes.enable();
+    this.applyEnabledState();
+  }
+
+  /**
+   * Leave the two ADO-backed controls off until ADO can actually answer them: without a reachable
+   * tab the team picker offers no teams and a new row could name no type, so an enabled control
+   * would read as a broken one rather than an unavailable one. Everything else on this tab edits
+   * stored values and stays usable.
+   */
+  private applyEnabledState(): void {
+    const usable = this.settingsLoaded && this.adoReachable;
+    this.elements.teamInput.disabled = !usable;
+    this.workItemTypes.setEnabled(usable);
   }
 
   // ── Current team ──────────────────────────────────────────────────────────
@@ -258,11 +302,5 @@ export class AzureDevOpsController {
       this.elements.pastSprintsInput.value = String(previous);
       this.reportError(error);
     });
-  }
-
-  private setConfigField(element: HTMLElement, value: string | null): void {
-    const hasValue = value !== null && value.length > 0;
-    element.textContent = hasValue ? value : "No active query tab";
-    element.dataset.empty = String(!hasValue);
   }
 }

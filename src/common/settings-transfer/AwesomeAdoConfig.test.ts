@@ -223,6 +223,21 @@ describe("importConfig - salvaging what a file does offer", () => {
     expect(imported.problems).toEqual([]);
   });
 
+  it("carries the Azure DevOps organization and project, and reports a non-text one", () => {
+    const imported = importConfig(
+      JSON.stringify({
+        awesomeAdoConfigVersion: 2,
+        settings: { organization: " contoso ", project: 7 },
+        enhancedQueries: {},
+      }),
+    );
+
+    expect(imported.settings).toEqual({ organization: "contoso" });
+    expect(imported.problems).toEqual([expect.stringContaining('"project" was skipped')]);
+  });
+});
+
+describe("importConfig - judging the format stamp", () => {
   it("reports a file that is not stamped by AwesomeADO but still imports what it holds", () => {
     const imported = importConfig(
       JSON.stringify({ settings: { theme: "blue" }, enhancedQueries: {} }),

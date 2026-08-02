@@ -98,6 +98,76 @@ describe("ChromeAdoMetadataReader - guards", () => {
   });
 });
 
+describe("ChromeAdoMetadataReader - reading away from a query page", () => {
+  let chromeMock: MockChrome;
+
+  beforeEach(() => {
+    chromeMock = installMockChrome();
+    chromeMock.executeScript.mockResolvedValue([{ result: { teams: { value: [] } } }]);
+  });
+
+  /** A reader whose stored scope is the O365Exchange project the query-page fixtures use. */
+  function readerWithConfiguredScope(): ChromeAdoMetadataReader {
+    return new ChromeAdoMetadataReader(() =>
+      Promise.resolve({ organization: "O365Exchange", project: "O365 Core" }),
+    );
+  }
+
+  it("reads through any ADO tab when no query page is open", async () => {
+    chromeMock.query.mockResolvedValue([
+      { id: 4, url: "https://dev.azure.com/O365Exchange/O365%20Core/_boards/board/t/Alpha" },
+    ]);
+
+    expect(await new ChromeAdoMetadataReader().read()).toMatchObject({
+      organization: "O365Exchange",
+      project: "O365 Core",
+    });
+    expect(chromeMock.executeScript).toHaveBeenCalledWith(
+      expect.objectContaining({ target: { tabId: 4 }, args: expect.arrayContaining([TEAMS_URL]) }),
+    );
+  });
+
+  it("queries the configured project through a tab that names none", async () => {
+    chromeMock.query.mockResolvedValue([{ id: 6, url: "https://dev.azure.com/O365Exchange" }]);
+
+    // The reported project stays null because the TAB named none; only the REST calls are redirected
+    // onto the saved project, so the options page can still tell detected from saved.
+    expect(await readerWithConfiguredScope().read()).toMatchObject({
+      organization: "O365Exchange",
+      project: null,
+    });
+    expect(chromeMock.executeScript).toHaveBeenCalledWith(
+      expect.objectContaining({ args: expect.arrayContaining([TEAMS_URL]) }),
+    );
+  });
+
+  it("ignores a configured project that belongs to another organization", async () => {
+    chromeMock.query.mockResolvedValue([{ id: 8, url: "https://dev.azure.com/Fabrikam" }]);
+
+    expect(await readerWithConfiguredScope().read()).toEqual({
+      organization: "Fabrikam",
+      project: null,
+      teams: [],
+      areaPaths: [],
+      workItemTypes: [],
+    });
+    expect(chromeMock.executeScript).not.toHaveBeenCalled();
+  });
+
+  it("still prefers a query tab when one is open alongside other ADO tabs", async () => {
+    chromeMock.query.mockResolvedValue([
+      { id: 4, url: "https://dev.azure.com/O365Exchange/O365%20Core/_boards" },
+      ADO_TAB,
+    ]);
+
+    await readerWithConfiguredScope().read();
+
+    expect(chromeMock.executeScript).toHaveBeenCalledWith(
+      expect.objectContaining({ target: { tabId: ADO_TAB.id } }),
+    );
+  });
+});
+
 describe("ChromeAdoMetadataReader - injection parsing", () => {
   let chromeMock: MockChrome;
   let reader: ChromeAdoMetadataReader;

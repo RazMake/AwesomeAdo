@@ -196,9 +196,9 @@ export class WorkItemTypesController {
     this.renderDerivedSections();
   }
 
-  enable(): void {
-    this.enabled = true;
-    this.elements.addTypeButton.disabled = false;
+  setEnabled(enabled: boolean): void {
+    this.enabled = enabled;
+    this.elements.addTypeButton.disabled = !enabled;
   }
 
   // ── Column-level events ─────────────────────────────────────────────────────

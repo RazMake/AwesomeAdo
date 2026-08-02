@@ -22,9 +22,9 @@ export const CONFIG_FORMAT_VERSION = 2;
  * The on-disk shape of an exported `AwesomeADO.config` file.
  *
  * A file export carries the user's ENTIRE configuration: every extension setting (theme, default
- * view, current team, sprint counts, board columns, work item types, marker tags), every
- * enhanced-query binding, and the optional team configuration work item ID. The compact payload
- * published to that work item deliberately omits its own ID.
+ * view, organization, project, current team, sprint counts, board columns, work item types, marker
+ * tags), every enhanced-query binding, and the optional team configuration work item ID. The compact
+ * payload published to that work item deliberately omits its own ID.
  */
 export interface AwesomeAdoConfig {
   awesomeAdoConfigVersion: number;
@@ -301,6 +301,8 @@ const SETTINGS_RULES: readonly {
     isValid: isOneOf(DEFAULT_VIEWS),
     expected: `one of ${DEFAULT_VIEWS.join(", ")}`,
   },
+  { key: "organization", isValid: isText, expected: "the organization name as text" },
+  { key: "project", isValid: isText, expected: "the project name as text" },
   { key: "currentTeam", isValid: isTeamRef, expected: "null, or a team with an id and a name" },
   { key: "futureSprintsCount", isValid: isWholeNumber, expected: "a whole number" },
   { key: "pastSprintsCount", isValid: isWholeNumber, expected: "a whole number" },
@@ -325,6 +327,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isFilledString(value: unknown): boolean {
   return typeof value === "string" && value.trim().length > 0;
+}
+
+function isText(value: unknown): boolean {
+  return typeof value === "string";
 }
 
 function isStringList(value: unknown): boolean {

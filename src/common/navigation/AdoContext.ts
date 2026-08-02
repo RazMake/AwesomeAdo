@@ -65,6 +65,25 @@ function firstNamedSegment(segments: string[], index: number): string | null {
   return decodeURIComponent(segment);
 }
 
+/**
+ * Rebuild a project URL for `context` on the ADO host that serves `hostHref`, or null when that host
+ * is not ADO or the context names no project.
+ *
+ * The inverse of {@link parseAdoContext}, and the reason it takes a host rather than assuming one:
+ * an org reachable at `dev.azure.com` may equally be reachable at `{org}.visualstudio.com`, and only
+ * a URL on the SAME origin as an already-open tab can be fetched with the user's session. So the
+ * caller supplies a real open ADO URL and this substitutes the project it actually wants to address.
+ */
+export function buildAdoContextUrl(hostHref: string, context: AdoContext): string | null {
+  const url = parseSupportedAdoUrl(hostHref);
+  if (url === null || context.project === null) {
+    return null;
+  }
+  const segments =
+    url.hostname === "dev.azure.com" ? [context.organization, context.project] : [context.project];
+  return `${url.origin}/${segments.map((segment) => encodeURIComponent(segment)).join("/")}`;
+}
+
 /** Message an extension page sends to an ADO tab's content script to learn its rendered theme. */
 export const ADO_THEME_REQUEST = "awesomeado:theme-request";
 

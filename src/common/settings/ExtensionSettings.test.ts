@@ -11,6 +11,7 @@ import {
   MIN_PAST_SPRINTS,
   WORK_ITEM_MARKERS,
   isAdoConfigured,
+  normalizeAdoName,
   normalizeBoardColumns,
   normalizeFutureSprintsCount,
   normalizeMarkerTags,
@@ -148,6 +149,22 @@ describe("normalizeSettings - team, sprint, and collection fields", () => {
       "Done",
       "Removed",
     ]);
+  });
+});
+
+describe("normalizeAdoName", () => {
+  it.each([undefined, null, 7, {}, []])("treats a non-string %# as not set", (raw) => {
+    expect(normalizeAdoName(raw)).toBe("");
+  });
+
+  it("trims the stored name", () => {
+    expect(normalizeAdoName("  contoso ")).toBe("contoso");
+  });
+
+  it("normalizes the organization and project through normalizeSettings", () => {
+    const settings = normalizeSettings({ organization: " contoso ", project: 42 });
+    expect(settings.organization).toBe("contoso");
+    expect(settings.project).toBe("");
   });
 });
 

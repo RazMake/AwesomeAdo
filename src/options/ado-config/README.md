@@ -1,13 +1,13 @@
 # src/options/ado-config
 
-The options page's **Azure DevOps** tab: organization/project detection and the team, sprint,
+The options page's **Azure DevOps** tab: the organization/project scope and the team, sprint,
 work-item-type-to-board-state, and marker-tag configuration.
 
 ## Purpose
 
-Lets the user configure the Azure DevOps context the enhanced view needs. It detects the active
-org/project, drives a searchable team picker, the future- and past-sprint counts, the
-per-work-item-type board-state mapping table, and the per-condition marker tags, persisting
+Lets the user configure the Azure DevOps context the enhanced view needs. It owns the editable
+organization and project boxes, drives a searchable team picker, the future- and past-sprint counts,
+the per-work-item-type board-state mapping table, and the per-condition marker tags, persisting
 everything to the synced settings store.
 
 This component does not log; it surfaces failures through the options page's shared error sink.
@@ -16,14 +16,28 @@ This component does not log; it surfaces failures through the options page's sha
 
 ### `AzureDevOpsController.ts`
 
-- **`AzureDevOpsController`** — controls the Azure DevOps tab end to end, coordinating the team
-  combobox, sprint counts, and the nested work-item-types and marker-tags sub-controllers.
+- **`AzureDevOpsController`** — controls the Azure DevOps tab end to end, coordinating the
+  organization/project fields, the team combobox, sprint counts, and the nested work-item-types and
+  marker-tags sub-controllers.
   It reads the stored settings once at `init()` and then treats its own controls as the working copy,
   so **`reload()`** re-reads them without re-wiring anything — call it when the stored configuration
   is replaced from outside the tab (a configuration file import), or the tab keeps showing, and on
   the next edit re-saves, the configuration that was replaced. It deliberately does not re-read the
-  ADO metadata, which describes the organization and no import can change.
+  ADO metadata, which describes the tab the user has open and no import can change.
+  The **current-team picker and the type table stay disabled while ADO is unreachable** (the metadata
+  read answered `null`), since neither can offer a real value then; every other control on the tab
+  edits stored values and stays usable.
 - **`AzureDevOpsElements`** — the DOM elements the controller drives, passed in so it stays testable.
+
+### `DetectedValueField.ts`
+
+- **`DetectedValueField`** — one editable text setting the open ADO query tab can also answer for,
+  used here for both the organization and the project. Call `render(value)` with the stored value and
+  `setDetected(value)` with what the tab reports, in either order: while nothing is stored the tab's
+  value is adopted and saved, and after that a differing tab value is only **offered** as a one-click
+  "Use this" proposal below the box. The proposal disappears once the two agree or once there is no
+  tab to read. A rejected write restores the last saved value.
+- **`DetectedValueElements`** — the box and the container the proposal row is drawn into.
 
 ### `MarkerTagsController.ts`
 

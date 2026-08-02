@@ -5,6 +5,18 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ## Next Version
 
+- Makes the Azure DevOps organization and project editable settings instead of read-only detections.
+  They are filled in from the open query tab the first time, then saved — so the options page keeps
+  working with no ADO tab open — and travel with exported and team-shared configuration. When the
+  open tab is on a different organization or project, the tab's value is offered under the box as a
+  one-click update instead of replacing what was saved. The options page no longer needs a _query_
+  tab to configure Azure DevOps: it reads the organization, project, teams, area paths, and work item
+  types through any open ADO tab, and falls back to the saved project when that tab names none (an
+  org home page or a folder route). With no ADO tab open at all the options page now says so in a
+  banner and turns off the settings that can only be answered by Azure DevOps — the current team, the
+  work item type list, and Connect / Pull / Publish — instead of showing them empty; everything
+  already saved stays visible and editable, and a re-check picks the page back up once an ADO tab is
+  open.
 - Adds a Primary work classification to the work-item hierarchy, distinguishing independently
   trackable delivery from planning context and implementation details while keeping the root as
   context. Project Tracking shows Primary work and its planning ancestors as tree rows, while

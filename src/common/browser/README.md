@@ -251,6 +251,11 @@ accessed one (opening the options page makes options the active tab, so the ADO 
 active). Both `ChromeAdoTabReader` and `ChromeAdoMetadataReader` reuse it so the selection rule lives
 in one place.
 
+`readCurrentAdoQueryContext()` pairs that tab's id and URL with its parsed `AdoContext`, or `null`.
+`readCurrentAdoTabContext()` does the same but is satisfied by **any** open ADO tab when no Query tab
+is open: reading org/project and fetching project metadata need only a first-party ADO page, so the
+options page still works for a user sitting on a board, a work item, or the org home.
+
 ## Reading ADO project metadata
 
 ### `IAdoMetadataReader` (interface)
@@ -265,12 +270,13 @@ interface IAdoMetadataReader {
 ```
 
 `read()` resolves with `{ organization, project, teams, areaPaths, workItemTypes }`
-(`AdoMetadataContext`, defined in `./IAdoMetadataReader`), or `null` when no ADO Query tab is open.
+(`AdoMetadataContext`, defined in `./IAdoMetadataReader`), or `null` when no ADO tab is open.
 
 ### `ChromeAdoMetadataReader` (class)
 
-The production implementation. It picks the current ADO Query tab with `pickCurrentAdoQueryTab`,
-parses the organization/project with `parseAdoContext`, then injects `fetchAdoRawInPage` into that
+The production implementation. It picks the current ADO tab with `readCurrentAdoTabContext`
+(preferring a Query tab), parses the organization/project with `parseAdoContext`, then injects
+`fetchAdoRawInPage` into that
 tab's **page (MAIN) world** via `chrome.scripting.executeScript` to fetch project metadata.
 The options page runs on the `chrome-extension://` origin, whose cross-origin fetch is CORS-blocked
 and whose same-origin fetch loses ADO's SameSite session cookies; the MAIN-world fetch is the only
@@ -279,10 +285,19 @@ from the complete project classification tree; that idempotent GET receives thre
 attempts. Metadata is best-effort: a non-project tab or any injection failure resolves the metadata
 lists to empty.
 
+The optional constructor argument is a `ConfiguredAdoScopeReader` — the org/project the user has
+saved. When the open tab names no project (an org home page, a folder route) but the saved scope
+names one in the **same organization**, the REST calls are addressed at the saved project instead, so
+the pickers still fill away from a project page. The org/project the reader _reports_ are always the
+tab's own, so a detected value stays distinguishable from a saved one.
+
 ```typescript
 import { ChromeAdoMetadataReader } from "./ChromeAdoMetadataReader";
 
-const reader = new ChromeAdoMetadataReader();
+const reader = new ChromeAdoMetadataReader(async () => {
+  const { organization, project } = await settingsStore.read();
+  return organization === "" || project === "" ? null : { organization, project };
+});
 const metadata = await reader.read(); // { organization, project, teams, workItemTypes } | null
 ```
 

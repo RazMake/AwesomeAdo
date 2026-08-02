@@ -52,6 +52,10 @@ Drives the Team configuration subsection of Configuration Sharing on Appearance:
 - **Disconnect** stops future automatic pulls without deleting the last configuration already
   applied locally.
 
+`setAdoReachable(reachable)` turns Connect, Pull Now, and Publish Config off while Azure DevOps
+cannot be reached — all three run through an ADO tab's page world, so with none open they could only
+fail. Disconnect only clears the locally stored source, so it stays available.
+
 Successful pulls notify the same options-page reload callback as file import, so read-once sections
 cannot display or later re-save stale values. Publish conflicts and malformed remote configuration
 remain connected but surface as failures in both the card and Diagnostics.

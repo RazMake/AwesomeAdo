@@ -9,6 +9,33 @@ we hit, why they happened, and the exact fix so nobody re-derives them.
 agent-tool-local memory (it does not clone or transfer between machines/agents). Record new findings
 here so every agent, teammate, and clone sees them.
 
+## The options page must not require an ADO _Query_ tab
+
+- SYMPTOM: with no query tab open, the Azure DevOps options tab behaved as if it knew nothing about
+  the org/project — empty team, area-path, and work-item-type pickers — even for a user sitting on
+  an ADO board, work item, or org home page.
+- ROOT CAUSE: `ChromeAdoMetadataReader` resolved its tab through `readCurrentAdoQueryContext()`,
+  which filters on `isAdoQueryUrl`. But the query grid plays NO part in either job: org/project is
+  parsed from the URL, and the credentialed fetch only needs a first-party ADO page (any of them).
+- FIX / RULE: read through `readCurrentAdoTabContext()` — prefer a Query tab, else any open ADO tab.
+  When that tab names no project (org home, folder route), address the REST calls at the SAVED
+  project via `buildAdoContextUrl(tabHref, configuredScope)`, but only when the saved organization
+  matches the tab's; another org's project cannot be read through this org's session.
+- The org/project the reader REPORTS stay the tab's own even when the saved project supplied the
+  URLs. The options page compares reported-vs-saved to decide whether to offer a proposal
+  (`DetectedValueField`), so reporting a saved value back as "detected" would make it offer stale
+  updates after the next edit.
+- STILL TRUE: with **no** ADO tab open at all there is no credentialed path to ADO (see the MV3 CORS
+  note below), so the pickers stay empty by construction. That is why the org/project (and team, and
+  types) are stored settings — the page must remain readable and editable from storage alone.
+- RULE for that state: SAY SO and TURN THE DEAD CONTROLS OFF. `AdoAccessBannerController`
+  (`options/alerts`) resolves `readAdoMetadata() !== null` once, shows the `ado-access-banner`, and
+  returns the answer; the composition root gates the only ADO-answerable controls on it — the
+  current-team picker and the add-work-item-type button (`AzureDevOpsController.applyEnabledState`)
+  and Connect/Pull/Publish (`TeamConfigController.setAdoReachable`; Disconnect is local, so it stays
+  on). An empty-but-enabled picker reads as a broken extension, not an unavailable one. Re-checking
+  reloads the page: every ADO-backed control is initialized from that same single read.
+
 ## A bulk move must not rediscover work after confirmation
 
 - RISK: re-running the source WIQL and reapplying whatever filters happen to be current can add work

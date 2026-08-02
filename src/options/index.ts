@@ -21,6 +21,7 @@ import {
   AzureDevOpsController,
   type AzureDevOpsElements,
 } from "./ado-config/AzureDevOpsController";
+import { AdoAccessBannerController } from "./alerts/AdoAccessBannerController";
 import { ConfigurationBannerController } from "./alerts/ConfigurationBannerController";
 import { StatusReporter } from "./alerts/StatusReporter";
 import { OptionsController, type OptionsElements } from "./appearance/OptionsController";
@@ -125,6 +126,24 @@ const teamConfigSynchronizer = new TeamConfigSynchronizer(
 // resolves "auto" from its theme, and the Query Bindings picker asks it which query that tab is on.
 const adoTabReader = new ChromeAdoTabReader();
 
+// The saved scope lets the metadata read address the configured project even from an ADO tab that
+// names none (an org home page or a folder route), so the pickers still fill away from a query.
+const adoMetadataReader = new ChromeAdoMetadataReader(async () => {
+  const settings = await settingsStore.read();
+  return settings.organization === "" || settings.project === ""
+    ? null
+    : { organization: settings.organization, project: settings.project };
+});
+let adoMetadataRead: ReturnType<ChromeAdoMetadataReader["read"]> | null = null;
+const readAdoMetadata = (): ReturnType<ChromeAdoMetadataReader["read"]> => {
+  adoMetadataRead ??= adoMetadataReader.read();
+  return adoMetadataRead;
+};
+
+// The reader answers null for exactly one reason: no ADO tab is open, which in MV3 means there is no
+// credentialed path to ADO at all. Every ADO-backed control on the page is gated on this one answer.
+const isAdoReachable = async (): Promise<boolean> => (await readAdoMetadata()) !== null;
+
 // An import replaces the stored configuration wholesale. The Appearance panel and the configuration
 // banner subscribe to their stores and follow it on their own, but the Azure DevOps tab and the
 // query-binding form each read once at load and then treat their own state as the working copy — so
@@ -223,12 +242,19 @@ if (
     teamConfigController.dispose();
     report(error);
   });
+  void isAdoReachable()
+    .then((reachable) => {
+      teamConfigController.setAdoReachable(reachable);
+    })
+    .catch(report);
 } else {
   report(new Error("The options page is missing the team configuration controls."));
 }
 
-const adoOrganization = document.querySelector<HTMLElement>("#ado-organization");
-const adoProject = document.querySelector<HTMLElement>("#ado-project");
+const adoOrganization = document.querySelector<HTMLInputElement>("#ado-organization");
+const adoOrganizationDetected = document.querySelector<HTMLElement>("#ado-organization-detected");
+const adoProject = document.querySelector<HTMLInputElement>("#ado-project");
+const adoProjectDetected = document.querySelector<HTMLElement>("#ado-project-detected");
 const adoTeamInput = document.querySelector<HTMLInputElement>("#ado-team-input");
 const adoFutureSprints = document.querySelector<HTMLInputElement>("#ado-future-sprints");
 const adoPastSprints = document.querySelector<HTMLInputElement>("#ado-past-sprints");
@@ -241,16 +267,12 @@ const adoWitEtaEmpty = document.querySelector<HTMLElement>("#ado-wit-eta-empty")
 const adoWitHierarchy = document.querySelector<HTMLElement>("#ado-wit-hierarchy");
 const adoWitHierarchyEmpty = document.querySelector<HTMLElement>("#ado-wit-hierarchy-empty");
 const adoMarkerTags = document.querySelector<HTMLElement>("#ado-marker-tags");
-const adoMetadataReader = new ChromeAdoMetadataReader();
-let adoMetadataRead: ReturnType<ChromeAdoMetadataReader["read"]> | null = null;
-const readAdoMetadata = (): ReturnType<ChromeAdoMetadataReader["read"]> => {
-  adoMetadataRead ??= adoMetadataReader.read();
-  return adoMetadataRead;
-};
 
 if (
   adoOrganization &&
+  adoOrganizationDetected &&
   adoProject &&
+  adoProjectDetected &&
   adoTeamInput &&
   adoFutureSprints &&
   adoPastSprints &&
@@ -265,8 +287,8 @@ if (
   adoMarkerTags
 ) {
   const adoElements: AzureDevOpsElements = {
-    organization: adoOrganization,
-    project: adoProject,
+    organization: { input: adoOrganization, proposal: adoOrganizationDetected },
+    project: { input: adoProject, proposal: adoProjectDetected },
     teamInput: adoTeamInput,
     futureSprintsInput: adoFutureSprints,
     pastSprintsInput: adoPastSprints,
@@ -384,6 +406,27 @@ if (
   });
 } else {
   report(new Error("The options page is missing the query-binding form and cannot bind queries."));
+}
+
+const adoAccessBanner = document.querySelector<HTMLElement>("#ado-access-banner");
+const adoAccessRecheck = document.querySelector<HTMLButtonElement>("#ado-access-recheck");
+if (adoAccessBanner && adoAccessRecheck) {
+  const accessBanner = new AdoAccessBannerController(
+    { banner: adoAccessBanner, recheckButton: adoAccessRecheck },
+    isAdoReachable,
+    // Reachability is resolved once and every ADO-backed control is initialized from that same read,
+    // so a fresh load is the honest way to re-evaluate it rather than half-refreshing the page.
+    () => {
+      location.reload();
+    },
+    report,
+  );
+  void accessBanner.init().catch((error: unknown) => {
+    accessBanner.dispose();
+    report(error);
+  });
+} else {
+  report(new Error("The options page is missing the Azure DevOps availability banner."));
 }
 
 const configBanner = document.querySelector<HTMLElement>("#config-banner");

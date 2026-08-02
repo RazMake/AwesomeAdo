@@ -652,22 +652,27 @@
         text-overflow: ellipsis;
       }
 
-      .config {
-        display: grid;
-        grid-template-columns: minmax(0, max-content) 1fr;
-        gap: 10px 20px;
+      /* A value the open ADO tab reports that differs from the saved one, offered rather than
+         applied (see DetectedValueField.ts). It sits between the box and its hint, so it must read
+         as a suggestion — accented, one line, never as loud as an error. */
+      .detected {
+        display: flex;
+        align-items: center;
+        gap: 10px;
         margin: 0;
-      }
-      .config dt {
+        font-size: 12px;
         color: var(--text-muted);
       }
-      .config dd {
-        margin: 0;
+      .detected[hidden] {
+        display: none;
+      }
+      .detected__value {
+        color: var(--accent);
+      }
+      .detected__apply {
+        font-size: 12px;
         font-weight: 600;
-      }
-      .config dd[data-empty="true"] {
-        font-weight: 400;
-        color: var(--text-muted);
+        padding: 4px 10px;
       }
       .empty {
         color: var(--warning);
@@ -692,6 +697,18 @@
         border: 1px solid var(--error);
         background: var(--error-background);
         color: var(--text);
+      }
+      /* The ADO-unreachable notice reports an environment limit the user can lift, not a fault, so
+         it is edged in the warning colour rather than wearing the error banner's red fill. */
+      .banner--warning {
+        border: 1px solid var(--warning);
+        background: var(--surface);
+        color: var(--text);
+      }
+      .banner__action {
+        margin-left: 4px;
+        padding: 3px 10px;
+        font-size: 12px;
       }
 
       .binding {
@@ -977,6 +994,17 @@
         <h1 class="app__title">AwesomeADO</h1>
       </header>
 
+      <div class="banner banner--warning" id="ado-access-banner" role="status" hidden>
+        <strong>Azure DevOps is not reachable.</strong> AwesomeADO can only read Azure DevOps
+        through a signed-in ADO tab, so with none open the settings that have to ask ADO — the
+        current team, the work item type list, and Connect / Pull / Publish — are turned off.
+        Everything already saved is still shown and still editable. Open Azure DevOps in another
+        tab, then
+        <button type="button" class="button button--subtle banner__action" id="ado-access-recheck">
+          check again
+        </button>
+      </div>
+
       <div class="banner banner--error" id="config-banner" role="alert" hidden>
         <strong>Enhanced view is paused.</strong> One or more queries are bound, but AwesomeADO's
         Azure DevOps settings are incomplete, so those queries stay on ADO's own view. On the
@@ -1146,16 +1174,46 @@
         <div class="card">
           <h2 class="card__title">ADO Configuration</h2>
           <p class="card__hint">
-            Detected from the Azure DevOps query tab you currently have open.
+            Seeded from the Azure DevOps query tab you have open, then yours to change.
           </p>
 
           <div class="stack">
-            <dl class="config">
-              <dt>Organization</dt>
-              <dd id="ado-organization" data-empty="true">No active query tab</dd>
-              <dt>Project</dt>
-              <dd id="ado-project" data-empty="true">No active query tab</dd>
-            </dl>
+            <div class="setting">
+              <div class="field">
+                <label for="ado-organization">Organization</label>
+                <input
+                  id="ado-organization"
+                  type="text"
+                  autocomplete="off"
+                  placeholder="Organization name"
+                  disabled
+                />
+              </div>
+              <p class="detected" id="ado-organization-detected" hidden></p>
+              <p class="field__hint">
+                The Azure DevOps organization AwesomeADO works against. It is filled in from the
+                query tab you have open the first time, and saved so this page keeps working with no
+                ADO tab open.
+              </p>
+            </div>
+
+            <div class="setting">
+              <div class="field">
+                <label for="ado-project">Project</label>
+                <input
+                  id="ado-project"
+                  type="text"
+                  autocomplete="off"
+                  placeholder="Project name"
+                  disabled
+                />
+              </div>
+              <p class="detected" id="ado-project-detected" hidden></p>
+              <p class="field__hint">
+                The project inside that organization. Like the organization, it is seeded from the
+                open query tab and then only ever <i>offered</i> as an update you can accept.
+              </p>
+            </div>
 
             <div class="setting">
               <div class="field">

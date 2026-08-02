@@ -265,10 +265,19 @@ The extension is feature-complete for its current scope:
   item id syncs separately and becomes a direct ADO link while connected; unchanged pulls do not
   rewrite storage, and Disconnect leaves the last pulled local snapshot intact.
 - Options page: Appearance (Dark/Light/Blue theme, Follow ADO dark/light resolution, default view +
-  Configuration Sharing), Azure DevOps config (team, sprint window, board mappings, marker tags, and
+  Configuration Sharing), Azure DevOps config (editable organization/project, team, sprint window,
+  board mappings, marker tags, and
   hierarchy Primary work classification with a context-only root), Query Bindings manager (including
   per-query Sprint default Lane paths edited as individually removable, live-project-autocomplete
-  rows with adjacent actions and in-card status/error feedback), Diagnostics. Sprint binding defaults and dated per-sprint
+  rows with adjacent actions and in-card status/error feedback), Diagnostics. The organization and
+  project are stored settings (`DetectedValueField`, `src/options/ado-config`): seeded once from the
+  open ADO query tab, thereafter only _offered_ as a one-click proposal when the tab disagrees, so
+  the tab works with no ADO tab open and the scope travels with file and team configuration.
+  ADO metadata is read through ANY open ADO tab (preferring a Query tab), falling back to the saved
+  project when that tab names none; with no ADO tab at all there is no credentialed path, so the
+  `ado-access-banner` says so and the only ADO-answerable controls — current team, add work item
+  type, Connect/Pull/Publish — are disabled while everything stored stays editable.
+  Sprint binding defaults and dated per-sprint
   selections round-trip in file and team configuration; connected binding saves publish the proposed
   map before local mutation so an automatic pull cannot erase them. Project Tracking continues deriving its
   eligible paths from live work.

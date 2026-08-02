@@ -23,6 +23,16 @@ export interface ExtensionSettings {
   defaultView: DefaultView;
 
   /**
+   * The Azure DevOps organization the team works in; empty until it is set. Stored rather than only
+   * read off an open ADO tab so the options page still knows the team's scope with no query tab
+   * open, and so it travels with an exported or team-shared configuration.
+   */
+  organization: string;
+
+  /** The Azure DevOps project inside {@link ExtensionSettings.organization}; empty until it is set. */
+  project: string;
+
+  /**
    * The ADO team whose sprints (iterations) drive the sprint picker and the "current sprint"
    * default, or null when the user has not chosen one. Stored with both id and display name so the
    * options page can label the saved team even when no ADO tab is open to re-list the org's teams.
@@ -223,6 +233,8 @@ const DEFAULT_PAST_SPRINTS = 0;
 export const DEFAULT_SETTINGS: ExtensionSettings = deepFreeze({
   theme: "auto",
   defaultView: "enhanced",
+  organization: "",
+  project: "",
   currentTeam: null,
   futureSprintsCount: DEFAULT_FUTURE_SPRINTS,
   pastSprintsCount: DEFAULT_PAST_SPRINTS,
@@ -249,6 +261,15 @@ function isTheme(value: unknown): value is Theme {
 
 function isDefaultView(value: unknown): value is DefaultView {
   return typeof value === "string" && (DEFAULT_VIEWS as readonly string[]).includes(value);
+}
+
+/**
+ * Reduce a stored Azure DevOps organization or project name to a trimmed string, with the empty
+ * string standing for "not set" — the same value a first run starts from — so no consumer has to
+ * distinguish an absent key from a blank one.
+ */
+export function normalizeAdoName(raw: unknown): string {
+  return typeof raw === "string" ? raw.trim() : "";
 }
 
 function normalizeTeamRef(raw: unknown): TeamRef | null {
@@ -598,6 +619,8 @@ export function normalizeSettings(raw: unknown): ExtensionSettings {
     defaultView: isDefaultView(candidate.defaultView)
       ? candidate.defaultView
       : DEFAULT_SETTINGS.defaultView,
+    organization: normalizeAdoName(candidate.organization),
+    project: normalizeAdoName(candidate.project),
     currentTeam: normalizeTeamRef(candidate.currentTeam),
     futureSprintsCount: normalizeFutureSprintsCount(candidate.futureSprintsCount),
     pastSprintsCount: normalizePastSprintsCount(candidate.pastSprintsCount),

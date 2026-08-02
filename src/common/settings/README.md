@@ -17,6 +17,8 @@ The shape of user settings:
 interface ExtensionSettings {
   theme: Theme; // "auto" | "light" | "dark" | "blue"  (default: "auto")
   defaultView: DefaultView; // "original" | "enhanced"        (default: "enhanced")
+  organization: string; // ADO organization, "" when not set  (default: "")
+  project: string; // ADO project, "" when not set       (default: "")
   currentTeam: TeamRef | null; // selected ADO team, or null       (default: null)
   futureSprintsCount: number; // sprints offered past the current one, 1..12 (default: 6)
   pastSprintsCount: number; // sprints offered before the current one, 0..6 (default: 0)
@@ -37,6 +39,7 @@ the `WORK_ITEM_MARKERS` ordered marker list (key + UI label) and its `DEFAULT_MA
 `normalizeSettings(raw)` validates each field independently and falls back to the default when a
 value is missing or unrecognized. The focused helpers `normalizeFutureSprintsCount(raw)` (clamps to
 `1..12`), `normalizePastSprintsCount(raw)` (clamps to `0..6`),
+`normalizeAdoName(raw)` (trims an organization/project name, yielding `""` for anything unusable),
 `normalizeBoardColumns(raw)` (coerces to the fixed
 `BOARD_COLUMN_COUNT` positions, keeping each stored title by position and filling blanks/collisions
 from `DEFAULT_BOARD_COLUMNS`), and `normalizeWorkItemTypes(raw)` (drops
@@ -102,6 +105,11 @@ unsubscribe();
 - **`defaultView`** decides what the content script shows on an ADO Query page. `enhanced`
   (default) lets the extension take over the page below the breadcrumb bar; `original` leaves ADO
   untouched.
+- **`organization`** and **`project`** name the Azure DevOps scope AwesomeADO works against, `""`
+  until set. The options page seeds them from the open ADO query tab the first time and then only
+  ever _offers_ the tab's values as a one-click update, so a saved scope is never silently replaced.
+  Storing them is what lets the options page describe the team's scope with no ADO tab open, and
+  they travel with an exported or team-shared configuration.
 - **`currentTeam`** is the ADO team (`{ id, name }`) whose sprints drive the sprint picker and the
   "current sprint" default, or `null` when the user has not chosen one. The name is stored alongside
   the id so the options page can label the saved team even when no ADO tab is open.
@@ -146,6 +154,7 @@ All values sync across all of the user's devices via `chrome.storage.sync`.
 
 Each setting maps to its own storage key (e.g., `settings.theme`, `settings.defaultView`,
 `settings.currentTeam`, `settings.futureSprintsCount`, `settings.pastSprintsCount`,
+`settings.organization`, `settings.project`,
 `settings.sprintAreaPaths`, `settings.boardColumns`,
 `settings.workItemTypes`, `settings.markerTags`). This means adding a new
 setting in a future version does not risk a

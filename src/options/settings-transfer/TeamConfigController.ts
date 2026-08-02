@@ -26,6 +26,9 @@ export class TeamConfigController {
   private disposed = false;
   private busy = false;
   private connected = false;
+  // Connect, Pull and Publish all run through an ADO tab's page world; with none open they can only
+  // fail, so they stay off until the page reports ADO is reachable. Disconnect is purely local.
+  private adoReachable = false;
 
   constructor(
     private readonly sourceStore: TeamConfigSourceStore,
@@ -52,6 +55,12 @@ export class TeamConfigController {
     }
     this.connected = workItemId !== null;
     await this.renderWorkItem(workItemId);
+    this.updateButtons();
+  }
+
+  /** Report whether an ADO tab is open, which is the only path Connect/Pull/Publish can take. */
+  setAdoReachable(reachable: boolean): void {
+    this.adoReachable = reachable;
     this.updateButtons();
   }
 
@@ -187,10 +196,10 @@ export class TeamConfigController {
 
   private updateButtons(): void {
     this.elements.connectButton.textContent = this.connected ? "Connected" : "Connect";
-    this.elements.connectButton.disabled = this.busy || this.connected;
+    this.elements.connectButton.disabled = this.busy || this.connected || !this.adoReachable;
     this.elements.workItemId.disabled = this.busy || this.connected;
-    this.elements.pullButton.disabled = this.busy || !this.connected;
-    this.elements.publishButton.disabled = this.busy || !this.connected;
+    this.elements.pullButton.disabled = this.busy || !this.connected || !this.adoReachable;
+    this.elements.publishButton.disabled = this.busy || !this.connected || !this.adoReachable;
     this.elements.disconnectButton.disabled = this.busy || !this.connected;
   }
 

@@ -20,6 +20,8 @@ const REQUIRED_ELEMENT_IDS: readonly string[] = [
   // Shell + alerts
   "status",
   "config-banner",
+  "ado-access-banner",
+  "ado-access-recheck",
   // Appearance
   "theme-select",
   "default-view-select",
@@ -38,7 +40,9 @@ const REQUIRED_ELEMENT_IDS: readonly string[] = [
   "team-config-status",
   // Azure DevOps configuration
   "ado-organization",
+  "ado-organization-detected",
   "ado-project",
+  "ado-project-detected",
   "ado-team-input",
   "ado-future-sprints",
   "ado-past-sprints",

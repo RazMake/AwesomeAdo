@@ -67,6 +67,8 @@ class FakeBrowserSyncStorage implements IBrowserSyncStorage {
 
 const THEME_KEY = "settings.theme";
 const DEFAULT_VIEW_KEY = "settings.defaultView";
+const ORGANIZATION_KEY = "settings.organization";
+const PROJECT_KEY = "settings.project";
 const CURRENT_TEAM_KEY = "settings.currentTeam";
 const FUTURE_SPRINTS_KEY = "settings.futureSprintsCount";
 const PAST_SPRINTS_KEY = "settings.pastSprintsCount";
@@ -112,6 +114,16 @@ describe("BrowserSyncSettingsStore - read", () => {
       expect(settings.currentTeam).toEqual({ id: "team-1", name: "Platform" });
       expect(settings.futureSprintsCount).toBe(5);
       expect(settings.pastSprintsCount).toBe(3);
+    });
+
+    it("reads and trims the organization and project keys", async () => {
+      const fake = new FakeBrowserSyncStorage();
+      await fake.set(ORGANIZATION_KEY, " contoso ");
+      await fake.set(PROJECT_KEY, "web");
+      const store = new BrowserSyncSettingsStore(fake);
+      const settings = await store.read();
+      expect(settings.organization).toBe("contoso");
+      expect(settings.project).toBe("web");
     });
 
     it("does not write any key during a read", async () => {
@@ -213,6 +225,14 @@ describe("BrowserSyncSettingsStore - write (scalars and team)", () => {
       await store.write({ currentTeam: null });
       expect(fake.getStoredKeys()).toEqual([CURRENT_TEAM_KEY]);
       expect(await fake.get(CURRENT_TEAM_KEY)).toBeNull();
+    });
+
+    it("persists a blank organization so a cleared scope is stored, not skipped", async () => {
+      const fake = new FakeBrowserSyncStorage();
+      const store = new BrowserSyncSettingsStore(fake);
+      await store.write({ organization: "", project: "web" });
+      expect(await fake.get(ORGANIZATION_KEY)).toBe("");
+      expect(await fake.get(PROJECT_KEY)).toBe("web");
     });
   });
 });
