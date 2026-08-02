@@ -798,10 +798,16 @@ describe("renderAssignedTo tag editor - opening and selection", () => {
       showTag: true,
       assignableTags: ["Core", "Platform"],
     });
+    // Read-only is only meaningful about a pill that is actually there showing the assignee's tag;
+    // a control that rendered none would otherwise pass every assertion below vacuously.
     const pill = control.querySelector<HTMLElement>(".awesomeado-tag-pill");
-    pill?.click();
+    expect(pill).not.toBeNull();
+    expect(pill!.textContent).toBe("Core");
 
-    expect(pill?.style.cursor).not.toBe("pointer");
+    pill!.click();
+
+    // The static pill declares no cursor at all; only the editable one sets `pointer`.
+    expect(pill!.style.cursor).toBe("");
     expect(control.querySelector(".awesomeado-assigned__tag-popup")).toBeNull();
   });
 
@@ -873,11 +879,33 @@ describe("renderAssignedTo tag editor - add field", () => {
   });
 
   it("caps the add field length at 15 characters", () => {
-    const control = renderEditable([], () => {});
+    let picked: string | null = null;
+    const control = renderEditable([], (tag) => {
+      picked = tag;
+    });
     control.querySelector<HTMLElement>(".awesomeado-tag-pill")?.click();
 
     const input = control.querySelector<HTMLInputElement>(".awesomeado-assigned__tag-input")!;
+    const addButton = control.querySelector<HTMLButtonElement>(
+      ".awesomeado-assigned__tag-add-button",
+    )!;
     expect(input.maxLength).toBe(15);
+
+    // maxLength only stops the cap being TYPED past; a paste lands in the field regardless, so the
+    // validator has to refuse it too — neither Add nor Enter may commit an over-long tag.
+    input.value = "SixteenCharsXXXX";
+    input.dispatchEvent(new Event("input"));
+    expect(addButton.disabled).toBe(true);
+    addButton.click();
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+    expect(picked).toBeNull();
+
+    // Exactly at the cap is still a legal tag, so the boundary is inclusive.
+    input.value = "FifteenChars123";
+    input.dispatchEvent(new Event("input"));
+    expect(addButton.disabled).toBe(false);
+    addButton.click();
+    expect(picked).toBe("FifteenChars123");
   });
 
   it("disables Add for a duplicate of an existing tag (case-insensitive)", () => {

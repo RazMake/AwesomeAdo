@@ -1414,3 +1414,32 @@ bindings)`→indented JSON {awesomeAdoConfigVersion,settings,enhancedQueries}; `
   `await Promise.resolve()`. The regression test drives a DEFERRED fake reconcile (pending[] of
   settle() closures that apply the request like the real background) and asserts the setTag reconcile
   does NOT fire until the seed is settled.
+
+## Test-assertion traps found in a repo-wide test scrub (2026-08)
+
+Recurring shapes that let a BROKEN implementation ship green. Check for these when writing or
+reviewing any test here.
+
+- REJECTED-WRITE TESTS MUST ASSERT THE ATTEMPT. On the persist-then-reflect boards the state after a
+  refused write is by construction identical to the state before the click, so "unchanged" is equally
+  true of code that never enqueued anything. Always assert the exact attempted patch first, THEN that
+  nothing moved.
+- `vi.waitFor(() => expect(spy).toHaveBeenCalledTimes(1))` CANNOT prove "one patch". It resolves on the
+  first matching tick and never looks again, so a second write fired a microtask later is invisible.
+  Follow it with a microtask drain and assert the whole `spy.mock.calls` array.
+- `expect.any(Function)` on a `currentRev` resolver asserts nothing: the rev guard IS that closure.
+  Invoke it, then mutate the live item and invoke it again to prove it reads live state.
+- `writes[0]` + `toMatchObject` hides extra writes AND missing `rev`/`baseValue`. Prefer
+  `expect(writes).toEqual([...])` — exact array, exact payload (see AGENTS.md §12 batch-write rule).
+- Assertions inside `if (el)` or inside `nodeList.forEach(...)` run ZERO times on an empty render, so
+  the test gets weaker the more broken the code is. Assert the expected count/identity BEFORE looping.
+- Count-without-identity (`rows.length === 3`, `badges.length > 0`) passes on wrong items, duplicates
+  and reversed order. Assert the ordered array of titles/ids instead.
+- Controls that always render an element (`renderEtaBadge` emits "No ETA", `renderChildren` emits an
+  empty container) make `toBeTruthy()`/`not.toBeNull()` unfalsifiable as a FINAL assertion.
+- `restoreMocks` does NOT undo `Object.defineProperty(window.navigator, ...)` or a board left in
+  `document.body`; both leak to every later test in the file. Clean them in `afterEach`.
+- Comparing two values both produced by the code under test (`slot.style.minHeight` vs
+  `title.style.lineHeight`) degrades to `expect("").toBe("")` when both regress. Pin the literal.
+- A settle gate must observe the NEW state (picker value / new item ids), not merely "not the loading
+  text" — any error banner or the previous render satisfies the negative form.

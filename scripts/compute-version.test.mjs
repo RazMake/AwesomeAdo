@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { writeFileSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 
-import { computeVersion } from "./compute-version.mjs";
+import { computeVersion, emitResult } from "./compute-version.mjs";
 
 // These cases exercise pure version/changelog logic, not the CI-only guard that requires
 // RELEASE_SHA. CI — and `test:scripts` locally — sets GITHUB_ACTIONS=true, so without this
@@ -223,39 +223,77 @@ describe("computeVersion — Git failure", () => {
   });
 });
 
-describe("computeVersion — output file writing", () => {
-  it("appends key=value lines to GITHUB_OUTPUT when set", () => {
-    const tmpDir = tmpdir();
-    const outputFile = join(tmpDir, `github_output_${Date.now()}.txt`);
-    writeFileSync(outputFile, "");
-    const originalOutputFile = process.env.GITHUB_OUTPUT;
-    const originalBuildNumber = process.env.BUILD_NUMBER;
+describe("emitResult — output file writing", () => {
+  const RESULT = {
+    base: "0.1",
+    build: "5",
+    full: "0.1.5",
+    is_new_official: true,
+    should_release_official: true,
+  };
+  const EXPECTED_LINES = [
+    "base=0.1",
+    "build=5",
+    "full=0.1.5",
+    "is_new_official=true",
+    "should_release_official=true",
+  ];
+
+  /**
+   * Run `body` with GITHUB_OUTPUT set as given, restoring whatever the environment had.
+   * @param {string | undefined} value
+   * @param {() => void} body
+   */
+  function withGithubOutput(value, body) {
+    const original = process.env.GITHUB_OUTPUT;
     try {
-      process.env.GITHUB_OUTPUT = outputFile;
-      process.env.BUILD_NUMBER = "5";
-      const result = computeVersion({
-        packageMetadata: basePkg,
-        changelogText: validChangelog,
-        tagExists: () => ({ exists: false }),
-        isGithubActions: false,
-      });
-      // emitResult is not exported; test through direct invocation by checking stdout
-      // For output-file test, we call a minimal wrapper that uses the real emitResult path
-      // Actually let's just verify computeVersion returns correct values and trust the emit path
-      assert.equal(result.base, "0.1");
-      assert.equal(result.build, "5");
-      assert.equal(result.full, "0.1.5");
+      if (value === undefined) delete process.env.GITHUB_OUTPUT;
+      else process.env.GITHUB_OUTPUT = value;
+      body();
     } finally {
-      if (originalOutputFile !== undefined) {
-        process.env.GITHUB_OUTPUT = originalOutputFile;
-      } else {
-        delete process.env.GITHUB_OUTPUT;
-      }
-      if (originalBuildNumber !== undefined) {
-        process.env.BUILD_NUMBER = originalBuildNumber;
-      } else {
-        delete process.env.BUILD_NUMBER;
-      }
+      if (original !== undefined) process.env.GITHUB_OUTPUT = original;
+      else delete process.env.GITHUB_OUTPUT;
     }
+  }
+
+  it("appends every key=value line to GITHUB_OUTPUT when set", () => {
+    const outputFile = join(tmpdir(), `github_output_${Date.now()}.txt`);
+    writeFileSync(outputFile, "");
+
+    withGithubOutput(outputFile, () => emitResult(RESULT));
+
+    assert.equal(readFileSync(outputFile, "utf8"), EXPECTED_LINES.join("\n") + "\n");
+    rmSync(outputFile, { force: true });
+  });
+
+  it("appends rather than truncates, so an earlier step's outputs survive", () => {
+    const outputFile = join(tmpdir(), `github_output_append_${Date.now()}.txt`);
+    writeFileSync(outputFile, "earlier=kept\n");
+
+    withGithubOutput(outputFile, () => emitResult(RESULT));
+
+    const written = readFileSync(outputFile, "utf8");
+    assert.equal(written, "earlier=kept\n" + EXPECTED_LINES.join("\n") + "\n");
+    rmSync(outputFile, { force: true });
+  });
+
+  it("falls back to stdout when GITHUB_OUTPUT is not set, so a local run still reports", () => {
+    /** @type {string[]} */
+    const written = [];
+    const originalWrite = process.stdout.write;
+    process.stdout.write = (chunk) => {
+      written.push(String(chunk));
+      return true;
+    };
+    try {
+      withGithubOutput(undefined, () => emitResult(RESULT));
+    } finally {
+      process.stdout.write = originalWrite;
+    }
+
+    assert.deepEqual(
+      written,
+      EXPECTED_LINES.map((line) => line + "\n"),
+    );
   });
 });

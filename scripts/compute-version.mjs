@@ -181,9 +181,12 @@ export function computeVersion(options = {}) {
 
 /**
  * Emit the computed version as key=value lines.
+ *
+ * Exported so the release pipeline's only side-effecting step is reachable from a test; the
+ * script entry point below is the sole production caller.
  * @param {{ base: string, build: string, full: string, is_new_official: boolean, should_release_official: boolean }} result
  */
-function emitResult(result) {
+export function emitResult(result) {
   const lines = [
     `base=${result.base}`,
     `build=${result.build}`,

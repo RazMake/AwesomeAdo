@@ -207,6 +207,24 @@ function dispatchDrag(
   return event;
 }
 
+/** The board cell that currently holds a card, so a test can name WHERE an item ended up. */
+function cellOf(root: HTMLElement, itemId: number): HTMLElement | null {
+  return (
+    root
+      .querySelector<HTMLElement>(`.awesomeado-sprint__item[data-item-id="${itemId}"]`)
+      ?.closest<HTMLElement>(".awesomeado-sprint__cell") ?? null
+  );
+}
+
+/**
+ * Drain the microtask chain a queued write travels through. `vi.waitFor` resolves on the FIRST
+ * tick a call count matches and never re-checks, so a stray SECOND write to the same item lands
+ * unseen; settling here is what lets a whole-call-log assertion catch it.
+ */
+async function settleQueuedWrites(): Promise<void> {
+  for (let tick = 0; tick < 10; tick += 1) await Promise.resolve();
+}
+
 async function stickSprintColumnHeader(root: HTMLElement): Promise<HTMLElement> {
   const boardHeader = root.querySelector<HTMLElement>(".awesomeado-sprint__board-header")!;
   await vi.waitFor(() =>
@@ -685,13 +703,18 @@ describe("Sprint View card priority and details", () => {
     p1.click();
 
     await vi.waitFor(() => expect(writeField).toHaveBeenCalledTimes(1));
-    expect(writeField).toHaveBeenCalledWith({
-      id: 1,
-      rev: 1,
-      field: "Microsoft.VSTS.Common.Priority",
-      value: "1",
-      baseValue: "2",
-    });
+    await settleQueuedWrites();
+    expect(writeField.mock.calls).toEqual([
+      [
+        {
+          id: 1,
+          rev: 1,
+          field: "Microsoft.VSTS.Common.Priority",
+          value: "1",
+          baseValue: "2",
+        },
+      ],
+    ]);
     expect(root.querySelector(".awesomeado-priority__badge")?.textContent).toContain("P1");
   });
 
@@ -772,11 +795,31 @@ function bulkMoveSprintWindow(): SprintWindow {
   };
 }
 
-async function selectSprint(root: HTMLElement, name: string): Promise<void> {
+function boardItemIds(root: HTMLElement): number[] {
+  return [...root.querySelectorAll<HTMLElement>(".awesomeado-sprint__item")]
+    .map((card) => Number(card.dataset.itemId))
+    .sort((left, right) => left - right);
+}
+
+/**
+ * Switch sprints and wait for the board that switch produced. Waiting for "anything but the
+ * loading text" would also accept an error banner, a half-painted board, or the PREVIOUS sprint
+ * still on screen because the picker ignored the change — so the wait names the sprint's items.
+ */
+async function selectSprint(
+  root: HTMLElement,
+  name: string,
+  expectedItemIds: readonly number[],
+): Promise<void> {
   const select = root.querySelector<HTMLSelectElement>(".awesomeado-sprint-picker__select")!;
   select.value = name;
   select.dispatchEvent(new Event("change"));
-  await vi.waitFor(() => expect(root.textContent).not.toBe("Loading spring data..."));
+  await vi.waitFor(() => {
+    expect(root.querySelector<HTMLSelectElement>(".awesomeado-sprint-picker__select")?.value).toBe(
+      name,
+    );
+    expect(boardItemIds(root)).toEqual([...expectedItemIds]);
+  });
 }
 
 function expectCopyOnlyTitleMenu(root: HTMLElement): void {
@@ -806,28 +849,41 @@ function openBulkConfirmation(root: HTMLElement): HTMLElement {
 }
 
 function confirmBulkDialog(dialog: HTMLElement): void {
-  expect(dialog.textContent).toContain("Move 1 visible item(s)?");
-  expect(dialog.textContent).toContain("Platform1");
-  expect(dialog.textContent).toContain("Alice1");
+  expect(dialog.textContent).toContain("Move 2 visible item(s)?");
+  expect(dialog.querySelector("section")?.textContent).toBe("By laneApps1Platform1");
+  expect(dialog.querySelectorAll("section")[1]?.textContent).toBe("By assigneeAlice1Bob1");
   expect(dialog.textContent).toContain("1 visible unassigned item(s) excluded.");
   dialog.querySelector<HTMLButtonElement>(".awesomeado-sprint__bulk-dialog-confirm")!.click();
+}
+
+function pastSprintMove(id: number, areaPath: string, assignee: string) {
+  return {
+    id,
+    rev: 1,
+    field: "System.IterationPath",
+    value: "Project\\Sprint 2",
+    baseValue: "Project\\Sprint 0",
+    preconditions: [
+      { field: "System.State", value: "New" },
+      { field: "System.AreaPath", value: areaPath },
+      { field: "System.AssignedTo", value: assignee },
+    ],
+  };
 }
 
 async function verifyPastSprintBulkMove(): Promise<void> {
   const writeField = vi
     .fn<EnhancedViewServices["writeField"]>()
     .mockResolvedValue({ ok: true, rev: 2 });
+  const past = { iterationPath: "Project\\Sprint 0", sprintName: "Sprint 0" };
   const roots = [
-    item(1, "Move me", { iterationPath: "Project\\Sprint 0", sprintName: "Sprint 0" }),
-    item(2, "Leave done", {
-      state: "Done",
-      iterationPath: "Project\\Sprint 0",
-      sprintName: "Sprint 0",
-    }),
-    item(3, "Leave unassigned", {
-      assignedTo: null,
-      iterationPath: "Project\\Sprint 0",
-      sprintName: "Sprint 0",
+    item(1, "Move me", past),
+    item(2, "Leave done", { state: "Done", ...past }),
+    item(3, "Leave unassigned", { assignedTo: null, ...past }),
+    item(4, "Move me too", { assignedTo: user("Bob"), areaPath: "Project\\Apps", ...past }),
+    item(5, "Next sprint work", {
+      iterationPath: "Project\\Sprint 2",
+      sprintName: "Sprint 2",
     }),
   ];
   const root = await render({
@@ -839,30 +895,26 @@ async function verifyPastSprintBulkMove(): Promise<void> {
   expect(title.style.cursor).toBe("context-menu");
   expect(title.title).toBe("");
   expectCopyOnlyTitleMenu(root);
-  await selectSprint(root, "Sprint 2");
+  await selectSprint(root, "Sprint 2", [5]);
+  expect(root.querySelector('[data-item-id="5"]')?.textContent).toContain("Next sprint work");
   expectCopyOnlyTitleMenu(root);
-  await selectSprint(root, "Sprint 0");
+  await selectSprint(root, "Sprint 0", [1, 2, 3, 4]);
   confirmBulkDialog(openBulkConfirmation(root));
-  await vi.waitFor(() => expect(writeField).toHaveBeenCalledTimes(1));
-  expect(writeField).toHaveBeenCalledWith(
-    expect.objectContaining({
-      id: 1,
-      rev: 1,
-      field: "System.IterationPath",
-      value: "Project\\Sprint 2",
-      baseValue: "Project\\Sprint 0",
-      preconditions: [
-        { field: "System.State", value: "New" },
-        { field: "System.AreaPath", value: "Project\\Platform" },
-        { field: "System.AssignedTo", value: "alice@example.com" },
-      ],
-    }),
-  );
+  await vi.waitFor(() => expect(writeField).toHaveBeenCalledTimes(2));
+  await settleQueuedWrites();
+
+  // Every non-Done ASSIGNED card is guarded on its OWN lane and assignee; the Done card, the
+  // unassigned one, and the card that already sits in the destination are never written at all.
+  expect(writeField.mock.calls.map(([request]) => request)).toEqual([
+    pastSprintMove(4, "Project\\Apps", "bob@example.com"),
+    pastSprintMove(1, "Project\\Platform", "alice@example.com"),
+  ]);
+  expect(writeField).not.toHaveBeenCalledWith(expect.objectContaining({ id: 3 }));
 }
 
 describe("Sprint View title context menu", () => {
   it(
-    "offers bulk move only for a past sprint and guards every non-Done item",
+    "offers bulk move only for a past sprint, guarding each non-Done assigned item and excluding unassigned work",
     verifyPastSprintBulkMove,
   );
 
@@ -1040,14 +1092,21 @@ describe("Sprint View new Interrupt command", () => {
     acceptButton.click();
 
     await vi.waitFor(() => expect(writeField).toHaveBeenCalledTimes(1));
-    expect(writeField).toHaveBeenCalledWith({
-      id: 2,
-      rev: 1,
-      field: "System.Tags",
-      value: "Interrupt",
-      baseValue: "",
-      comment: "[ACCEPTED] Needed to meet the sprint goal.",
-    });
+    await settleQueuedWrites();
+    // The tag and the reason must be ONE patch: a trailing second write would be a stale-rev bug,
+    // and only the whole call log can say that the second write is absent.
+    expect(writeField.mock.calls).toEqual([
+      [
+        {
+          id: 2,
+          rev: 1,
+          field: "System.Tags",
+          value: "Interrupt",
+          baseValue: "",
+          comment: "[ACCEPTED] Needed to meet the sprint goal.",
+        },
+      ],
+    ]);
     expect(
       root
         .querySelector('[data-item-id="2"] [data-marker="interrupt"]')
@@ -1083,14 +1142,19 @@ describe("Sprint View existing Interrupt commands", () => {
     acceptButton.click();
 
     await vi.waitFor(() => expect(writeField).toHaveBeenCalledTimes(1));
-    expect(writeField).toHaveBeenCalledWith({
-      id: 1,
-      rev: 1,
-      field: "System.Tags",
-      value: "Interrupt",
-      baseValue: "Interrupt",
-      comment: "[ACCEPTED] The team committed to delivering it.",
-    });
+    await settleQueuedWrites();
+    expect(writeField.mock.calls).toEqual([
+      [
+        {
+          id: 1,
+          rev: 1,
+          field: "System.Tags",
+          value: "Interrupt",
+          baseValue: "Interrupt",
+          comment: "[ACCEPTED] The team committed to delivering it.",
+        },
+      ],
+    ]);
   });
 
   it("offers only an accepted Clear command for an accepted Interrupt", async () => {
@@ -1125,13 +1189,10 @@ describe("Sprint View existing Interrupt commands", () => {
     clear.click();
 
     await vi.waitFor(() => expect(writeField).toHaveBeenCalledTimes(1));
-    expect(writeField).toHaveBeenCalledWith({
-      id: 1,
-      rev: 1,
-      field: "System.Tags",
-      value: "",
-      baseValue: "Interrupt",
-    });
+    await settleQueuedWrites();
+    expect(writeField.mock.calls).toEqual([
+      [{ id: 1, rev: 1, field: "System.Tags", value: "", baseValue: "Interrupt" }],
+    ]);
   });
 });
 
@@ -1412,7 +1473,9 @@ describe("Sprint View board drag and drop", () => {
     expect(writeField).not.toHaveBeenCalled();
     expect(root.querySelector(".awesomeado-sprint-card__drop-shadow")).toBeNull();
   });
+});
 
+describe("Sprint View column drag and drop", () => {
   it("highlights an empty destination column and writes its state under a derived sort", async () => {
     const writeField = vi.fn<EnhancedViewServices["writeField"]>().mockResolvedValue({
       ok: true,
@@ -1459,15 +1522,32 @@ describe("Sprint View board drag and drop", () => {
     );
     dispatchDrag(target, "drop", dataTransfer);
     await vi.waitFor(() => expect(writeField).toHaveBeenCalledOnce());
-
-    expect(writeField).toHaveBeenCalledWith(
-      expect.objectContaining({
-        field: "System.State",
-        value: "Active",
-        baseValue: "New",
-        additionalFields: undefined,
+    await vi.waitFor(() =>
+      expect(cellOf(root, 1)?.dataset).toMatchObject({
+        areaPath: "Project\\Platform",
+        columnOrdinal: "1",
       }),
     );
+    await settleQueuedWrites();
+
+    // Both fixture cards are "New", so a handler that wrote the WRONG card would produce a
+    // byte-identical body without the id/rev — the one drag failure a reader can never see.
+    expect(writeField.mock.calls).toEqual([
+      [
+        {
+          id: 1,
+          rev: 1,
+          field: "System.State",
+          value: "Active",
+          baseValue: "New",
+          additionalFields: undefined,
+        },
+      ],
+    ]);
+    expect(cellOf(root, 2)?.dataset).toMatchObject({
+      areaPath: "Project\\Platform",
+      columnOrdinal: "0",
+    });
     expect(source.style.opacity).toBe("");
     expect(columnTitle.dataset.dropTarget).toBeUndefined();
     expect(highlight.style.borderColor).toBe("transparent");
@@ -1577,14 +1657,19 @@ describe("Sprint View cross-column empty placement", () => {
     dispatchDrag(cell, "drop", dataTransfer, 100);
 
     await vi.waitFor(() => expect(reorderItem).toHaveBeenCalledOnce());
-    expect(reorderItem).toHaveBeenCalledWith(
-      expect.objectContaining({
-        previousId: 0,
-        nextId: 0,
-        siblingIds: [1],
-        stateName: "Active",
-      }),
-    );
+    // The id/rev name WHICH card the board moved; without them a move of another card reads the same.
+    expect(reorderItem).toHaveBeenCalledWith({
+      id: 1,
+      rev: 1,
+      parentId: 0,
+      currentParentId: 0,
+      previousId: 0,
+      nextId: 0,
+      siblingIds: [1],
+      team: "team-id",
+      stateName: "Active",
+      stateBaseName: "New",
+    });
   });
 });
 
@@ -1609,7 +1694,13 @@ describe("Sprint View same-column card reordering", () => {
     const target = root.querySelector<HTMLElement>('[data-item-id="1"]')!;
     const dataTransfer = beginDrag(source);
     dispatchDrag(target, "dragover", dataTransfer);
-    expect(root.querySelector(".awesomeado-tracking__drop-line")).not.toBeNull();
+    // The line's only job is to say WHERE the card lands, so it has to sit exactly where the
+    // asserted previousId/nextId puts it: nothing before it, the target row right after it.
+    const line = root.querySelector<HTMLElement>(".awesomeado-tracking__drop-line")!;
+    expect(line.parentElement).toBe(target.parentElement);
+    expect(line.previousElementSibling).toBeNull();
+    expect(line.nextElementSibling).toBe(target);
+    expect(line.dataset.dropKind).toBe("reorder");
     dispatchDrag(target, "drop", dataTransfer);
     await vi.waitFor(() => expect(reorderItem).toHaveBeenCalledOnce());
     expect(reorderItem).toHaveBeenCalledWith({
@@ -1622,6 +1713,7 @@ describe("Sprint View same-column card reordering", () => {
       siblingIds: [2, 1],
       team: "team-id",
     });
+    expect(root.querySelector(".awesomeado-tracking__drop-line")).toBeNull();
   });
 
   it("disables card and child reordering outside backlog-rank mode", async () => {
@@ -1994,7 +2086,7 @@ describe("Sprint View shared Lane reloads", () => {
       "Current platform",
     );
 
-    await selectSprint(root, "Sprint 2");
+    await selectSprint(root, "Sprint 2", [2]);
 
     expect(root.querySelector(".awesomeado-sprint__item")?.textContent).toContain("Future apps");
     expect(read).toHaveBeenCalledTimes(2);

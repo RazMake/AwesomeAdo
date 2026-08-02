@@ -221,9 +221,17 @@ describe("SettingsTransferController import", () => {
     chooseFile(h.elements.fileInput, exportConfig(DEFAULT_SETTINGS, {}));
     await flush();
 
+    // The rest of the file still has to land, or "preserved" would just mean "nothing happened".
+    expect(h.settingsStore.write).toHaveBeenCalledTimes(1);
+    expect(h.bindingStore.replaceAll).toHaveBeenCalledTimes(1);
+    expect(h.elements.status.textContent).toContain("Imported");
+    // An absent ID means "this file predates the connection", never "disconnect me".
     expect(h.teamConfigSourceStore.write).not.toHaveBeenCalled();
+    expect(await h.teamConfigSourceStore.read()).toBe(42);
   });
+});
 
+describe("SettingsTransferController import — partial and invalid files", () => {
   it("imports what it can and reports in red what the file got wrong", async () => {
     const h = setup();
 

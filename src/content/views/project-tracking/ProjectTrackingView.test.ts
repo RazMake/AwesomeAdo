@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { FeatureCrewAssignee } from "../../../common/ado/FeatureCrew";
 import type { FeatureCrewReconcileRequest } from "../../../common/ado/IFeatureCrewWriter";
@@ -277,6 +277,18 @@ function marginRightOf(element: Element | null | undefined): string {
   return element instanceof HTMLElement ? element.style.marginRight : "";
 }
 
+// Three things in this file outlive the test that created them, and none of them is a mock, so
+// Vitest's `restoreMocks`/`clearMocks` cannot undo any of them: a board mounted into the shared
+// jsdom body, the fake clipboard defined onto the shared `navigator`, and the document-level
+// Ctrl+Shift highlight tracker, which latches its state and re-applies it to every board registered
+// afterwards. Left behind, each one silently changes the starting conditions of every later test.
+afterEach(() => {
+  document.body.replaceChildren();
+  Reflect.deleteProperty(window.navigator, "clipboard");
+  // No modifiers held: the tracker keys off the event's ctrl/shift flags, so this releases the latch.
+  document.dispatchEvent(new KeyboardEvent("keyup", { key: "Shift" }));
+});
+
 describe("ProjectTrackingView — services & load errors", () => {
   it("should show unavailable message when services are undefined", async () => {
     const doc = document;
@@ -512,12 +524,14 @@ describe("ProjectTrackingView — header & tech lead", () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    // The root ETA badge should be present in the header.
-    const etaBadges = root.querySelectorAll(".awesomeado-eta");
-    expect(etaBadges.length).toBeGreaterThan(0);
-    // The first ETA badge in the header is the root's.
-    const headerEta = root.querySelector(".awesomeado-tracking__header .awesomeado-eta");
-    expect(headerEta).toBeTruthy();
+    // `renderEtaBadge` ALWAYS returns an element (it renders "No ETA" when there is none), so only
+    // the rendered date proves the root's own eta was read — and it belongs on the tech-lead line.
+    const headerEta = root.querySelector<HTMLElement>(
+      ".awesomeado-tracking__header .awesomeado-tracking__techlead-row .awesomeado-eta",
+    );
+    // The epic's eta is 2026-12-31T00:00Z, which is 12/30 in the Pacific zone the badge formats in.
+    expect(headerEta?.textContent).toBe("ETA 12/30/2026");
+    expect(headerEta?.textContent).not.toBe("No ETA");
   });
 });
 
@@ -556,6 +570,9 @@ describe("ProjectTrackingView — tree rows", () => {
 
     const allRows = root.querySelectorAll(".awesomeado-tracking__row");
     // 2 Features + 1 Story = 3 rows (the epic is summarized in the header, not listed as a row).
+    // Named and ordered rather than counted: a board that rendered the epic and dropped the Story
+    // would still count 3.
+    expect(renderedRowTitles(root)).toEqual(["User Authentication", "Login UI", "Data Migration"]);
     expect(allRows.length).toBe(3);
   });
 
@@ -581,11 +598,29 @@ describe("ProjectTrackingView — tree rows", () => {
     const root = projectTrackingView.render(context);
     await Promise.resolve();
     await Promise.resolve();
+    await turnSprintFilterOff(root);
 
-    const childrenContainers = root.querySelectorAll(".awesomeado-tracking__children");
-    expect(childrenContainers.length).toBeGreaterThan(0);
+    // Every row emits a children container before anything is put in it, so its mere presence is
+    // equally true of a flattened tree: the child has to be found inside its OWN parent's container.
+    const parent = itemWrapperTitled(root, "User Authentication");
+    const children = parent.querySelector<HTMLElement>(":scope > .awesomeado-tracking__children")!;
+    expect(
+      [...children.querySelectorAll(".awesomeado-tracking__item-title")].map(
+        (title) => title.textContent,
+      ),
+    ).toEqual(["Login UI"]);
   });
 });
+
+/** The row wrapper whose OWN row (not a descendant's) carries `title`. */
+function itemWrapperTitled(root: HTMLElement, title: string): HTMLElement {
+  return [...root.querySelectorAll<HTMLElement>(".awesomeado-tracking__item")].find(
+    (item) =>
+      item.querySelector(
+        ":scope > .awesomeado-tracking__item-surface .awesomeado-tracking__item-title",
+      )?.textContent === title,
+  )!;
+}
 
 /** Renders a board over `tree` and waits for its two settle ticks. Shared by the outline tests. */
 async function renderOutlineBoard(tree: TrackedWorkItem): Promise<HTMLElement> {
@@ -727,13 +762,13 @@ describe("ProjectTrackingView — expand & collapse", () => {
     await Promise.resolve();
 
     // First collapse a node manually.
-    const twisties = root.querySelectorAll(
-      ".awesomeado-tracking__twisty",
-    ) as NodeListOf<HTMLButtonElement>;
-    if (twisties.length > 0 && twisties[0]) {
-      twisties[0].click();
-      expect(twisties[0].getAttribute("aria-expanded")).toBe("false");
-    }
+    const twisties = [...root.querySelectorAll<HTMLButtonElement>(".awesomeado-tracking__twisty")];
+    // Counted BEFORE the loop below: a board that rendered no twisty would otherwise run through
+    // every assertion in it without executing one. Under the default Sprint 1 filter the Feature is
+    // the board's only expandable row.
+    expect(twisties).toHaveLength(1);
+    twisties[0]!.click();
+    expect(twisties[0]!.getAttribute("aria-expanded")).toBe("false");
 
     const expandAll = root.querySelector(".awesomeado-tracking__expand-all") as HTMLButtonElement;
     expandAll.click();
@@ -750,6 +785,7 @@ describe("ProjectTrackingView — expand & collapse", () => {
     });
 
     const notes = root.querySelectorAll<HTMLButtonElement>(".awesomeado-tracking__notes-toggle");
+    expect(notes).toHaveLength(1);
     notes.forEach((toggle) => expect(toggle.getAttribute("aria-expanded")).toBe("false"));
   });
 
@@ -888,6 +924,8 @@ describe("ProjectTrackingView — collapse all & description", () => {
     const twisties = root.querySelectorAll(
       ".awesomeado-tracking__twisty",
     ) as NodeListOf<HTMLButtonElement>;
+    // Counted BEFORE the loop: an empty list would otherwise satisfy every assertion inside it.
+    expect(twisties).toHaveLength(1);
     twisties.forEach((tw) => {
       expect(tw.getAttribute("aria-expanded")).toBe("false");
       expect(tw.textContent).toBe("▶\uFE0E");
@@ -1155,18 +1193,21 @@ describe("ProjectTrackingView — item title & ETA", () => {
     await new Promise((resolve) => setTimeout(resolve, 10));
     await Promise.resolve();
 
-    const titles = root.querySelectorAll(".awesomeado-tracking__item-title");
-    // Browser normalizes hex colors to rgb(), so check for either format.
-    // The tree starts at the epic's children: first row is a Feature.
-    if (titles[0]) {
-      const style0 = titles[0].getAttribute("style") ?? "";
-      expect(style0.includes("#6bcf7f") || style0.includes("rgb(107, 207, 127)")).toBe(true);
-    }
-    // Its nested child is a Story.
-    if (titles[1]) {
-      const style1 = titles[1].getAttribute("style") ?? "";
-      expect(style1.includes("#4fc3f7") || style1.includes("rgb(79, 195, 247)")).toBe(true);
-    }
+    const titles = [...root.querySelectorAll(".awesomeado-tracking__item-title")];
+    // Asserted as a whole FIRST: guarding each color check behind `if (titles[n])` let an empty
+    // board run zero assertions and still report green.
+    expect(titles.map((title) => title.textContent)).toEqual([
+      "User Authentication",
+      "Login UI",
+      "Data Migration",
+    ]);
+
+    // Browser normalizes hex colors to rgb(), so accept either format.
+    const styleOf = (index: number): string => titles[index]!.getAttribute("style") ?? "";
+    // The tree starts at the epic's children: the two Features are green, the nested Story is blue.
+    expect(styleOf(0)).toMatch(/#6bcf7f|rgb\(107, 207, 127\)/);
+    expect(styleOf(1)).toMatch(/#4fc3f7|rgb\(79, 195, 247\)/);
+    expect(styleOf(2)).toMatch(/#6bcf7f|rgb\(107, 207, 127\)/);
   });
 
   it("should render ETA badge for items with eta", async () => {
@@ -1192,9 +1233,11 @@ describe("ProjectTrackingView — item title & ETA", () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    const etaBadges = root.querySelectorAll(".awesomeado-eta");
-    // Epic and one Feature have eta set
-    expect(etaBadges.length).toBeGreaterThan(0);
+    // A badge is rendered for EVERY item ("No ETA" when there is none), so only the rendered date
+    // proves the row's own eta was read. Under the default Sprint 1 filter the Feature "User
+    // Authentication" is the only row; its eta is 2026-08-15T00:00Z — 08/14 in the Pacific zone.
+    const rowEta = root.querySelector<HTMLElement>(".awesomeado-tracking__row .awesomeado-eta");
+    expect(rowEta?.textContent).toBe("ETA 08/14/2026");
   });
 });
 
@@ -1253,20 +1296,19 @@ describe("ProjectTrackingView — sprint filter", () => {
     await Promise.resolve();
 
     const select = root.querySelector(".awesomeado-sprint-picker__select") as HTMLSelectElement;
-    select.value = "Sprint 1";
-    select.dispatchEvent(new Event("change"));
+    // Sprint 1 is ALREADY the default selection, so re-selecting it makes the change handler a no-op
+    // and proves only that the default render works. Picking the OTHER sprint forces it to run.
+    expect(renderedRowTitles(root)).toEqual(["User Authentication"]);
 
+    select.value = "Sprint 2";
+    select.dispatchEvent(new Event("change"));
+    await new Promise((resolve) => setTimeout(resolve, 10));
     await Promise.resolve();
 
-    // Feature "User Authentication" is Sprint 1; the Story and Feature "Data Migration" are Sprint 2.
-    // The epic is summarized in the header, not listed as a tree row. With Sprint 1 selected the
-    // tree shows User Authentication (matches) and hides the Sprint 2-only items.
-    const titles = root.querySelectorAll(".awesomeado-tracking__item-title");
-    const titleTexts = Array.from(titles).map((t) => t.textContent);
-    expect(titleTexts).not.toContain("Platform Modernization");
-    expect(titleTexts).toContain("User Authentication");
-    // Sprint 2 items without ancestors in Sprint 1 should be hidden
-    expect(titleTexts).not.toContain("Data Migration");
+    // The Story "Login UI" and the Feature "Data Migration" are the Sprint 2 items. Their ancestor
+    // "User Authentication" is on Sprint 1 and matches nothing itself, but stays on the board so the
+    // matching Story is never orphaned from its path. The epic is summarized in the header.
+    expect(renderedRowTitles(root)).toEqual(["User Authentication", "Login UI", "Data Migration"]);
   });
 
   it("should not show sprint pills when filter ON", async () => {
@@ -1595,17 +1637,25 @@ describe("ProjectTrackingView — assignee writes", () => {
   });
 
   it("leaves the chip untouched when Azure DevOps rejects the write", async () => {
-    const { root } = await renderBoardWithWrites({
-      writeField: async () => ({ ok: false, error: "rejected" }),
+    const { root, writes } = await renderBoardWithWrites({
+      writeField: async (request) => {
+        writes.push(request);
+        return { ok: false, error: "rejected" };
+      },
       userDirectory: danaDirectory,
     });
 
     const { chip, label, search } = openRowPicker(root);
-    const before = label.textContent;
 
     await pickFromPicker(chip, search, "dana", "Dana Scott");
 
-    expect(label.textContent).toBe(before);
+    // The write has to have been ATTEMPTED: without this the test passes on a board that never
+    // enqueued anything, because "unchanged" is also what doing nothing looks like.
+    expect(writes).toEqual([
+      { id: 2, rev: 2, field: "System.AssignedTo", value: "dana@example.com" },
+    ]);
+    // The literal name the fixture assigned, not a value read back out of the code under test.
+    expect(label.textContent).toBe("Bob Jones");
   });
 });
 
@@ -2022,11 +2072,21 @@ describe("ProjectTrackingView — no-sprint toggle & theming", () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    const expandAll = root.querySelector(".awesomeado-tracking__expand-all") as HTMLButtonElement;
-    expect(expandAll).toBeTruthy();
-    // Assert theme CSS variables are present (not hard-coded light-only colors).
-    const expandStyle = expandAll.getAttribute("style") ?? "";
-    expect(expandStyle).toContain("var(");
+    const expandAll = root.querySelector<HTMLButtonElement>(".awesomeado-tracking__expand-all")!;
+    const collapseAll = root.querySelector<HTMLButtonElement>(
+      ".awesomeado-tracking__collapse-all",
+    )!;
+
+    // Named values, not just "contains var(": any style string with a single variable anywhere in it
+    // satisfied the old check, including one whose fill was a hard-coded light-theme color.
+    for (const button of [expandAll, collapseAll]) {
+      expect(button.style.background).toBe("var(--palette-neutral-4)");
+      expect(button.style.color).toBe("var(--text-primary-color)");
+      const style = button.getAttribute("style") ?? "";
+      expect(style).toContain("var(--control-border-strong)");
+      // A literal color cannot follow the theme, so neither button may carry one.
+      expect(style).not.toMatch(/#[0-9a-f]{3}|rgba?\(/i);
+    }
   });
 });
 
@@ -2054,13 +2114,18 @@ describe("ProjectTrackingView — themed layout", () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    const header = root.querySelector(".awesomeado-tracking__header") as HTMLElement;
-    expect(header).toBeTruthy();
-    // The header should have a themed background (panel), not a border-bottom.
+    const header = root.querySelector<HTMLElement>(".awesomeado-tracking__header")!;
+    // The header is a themed panel (an opaque callout surface, a themed border and a themed
+    // elevation shadow), not a rule under the title — and every one of those is named, because
+    // "contains background" and "contains var(" were satisfied by any style string at all.
+    expect(header.style.background).toBe("var(--callout-background-color)");
     const headerStyle = header.getAttribute("style") ?? "";
-    expect(headerStyle).toContain("background");
-    expect(headerStyle).toContain("var(");
+    expect(headerStyle).toContain("var(--control-border)");
+    expect(headerStyle).toContain("var(--palette-neutral-20)");
     expect(headerStyle).not.toContain("border-bottom");
+    // A literal color cannot follow the theme; a sticky header also needs an OPAQUE fill, which an
+    // rgba() would not be.
+    expect(headerStyle).not.toMatch(/#[0-9a-f]{3}|rgba?\(/i);
   });
 
   it("should render children with reduced indentation and vertical guide line", async () => {
@@ -2483,10 +2548,17 @@ describe("ProjectTrackingView — feature crew skip", () => {
       services,
     };
 
-    projectTrackingView.render(context);
-    await Promise.resolve();
-    await Promise.resolve();
+    const root = projectTrackingView.render(context);
+    // The seed chains its reconcile off the load promise, so it lands a macrotask later — the same
+    // wait its positive twin uses. Awaiting only microtasks reported "declined" for a call that
+    // simply had not run yet.
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
+    // Positive control: the board really did finish loading, so an empty request list means the
+    // reconcile was DECLINED rather than never reached.
+    expect(root.querySelector(".awesomeado-tracking__title")?.textContent).toBe(
+      "Platform Modernization",
+    );
     expect(requests).toHaveLength(0);
   });
 });
@@ -3345,7 +3417,17 @@ describe("ProjectTrackingView — the item's own menu commands", () => {
     save.click();
     await settleWrites();
 
-    expect(writes[0]).toMatchObject({ id: 2, field: "System.Title", value: "Sign-in" });
+    // The FULL array, exactly: one patch per user action, carrying the rev guard and the base value
+    // the rename was computed from. `writes[0]` would have ignored a duplicate enqueue behind it.
+    expect(writes).toEqual([
+      {
+        id: 2,
+        rev: 1,
+        field: "System.Title",
+        value: "Sign-in",
+        baseValue: "User Authentication",
+      },
+    ]);
     expect(root.querySelector(".awesomeado-tracking__item-title")?.textContent).toBe("Sign-in");
   });
 
@@ -3373,11 +3455,17 @@ describe("ProjectTrackingView — the item's own menu commands", () => {
     save.click();
     await settleWrites();
 
-    expect(writes[0]).toMatchObject({
-      field: "System.Description",
-      value: "**Bold** plan.",
-      multilineFormat: "Markdown",
-    });
+    // Names WHICH item too: without the id this passed for a save aimed at any row on the board.
+    expect(writes).toEqual([
+      {
+        id: 2,
+        rev: 1,
+        field: "System.Description",
+        value: "**Bold** plan.",
+        baseValue: "",
+        multilineFormat: "Markdown",
+      },
+    ]);
   });
 
   it("offers only the sprints the item is not already on and has not passed", async () => {
@@ -3410,7 +3498,7 @@ describe("ProjectTrackingView — the item's own menu commands", () => {
   });
 });
 
-describe("ProjectTrackingView — moving an item and reading its discussion", () => {
+describe("ProjectTrackingView — moving an item", () => {
   it("moves the item to the sprint that was picked", async () => {
     const { root, writes } = await renderRecordingBoard();
     await turnSprintFilterOff(root);
@@ -3420,11 +3508,17 @@ describe("ProjectTrackingView — moving an item and reading its discussion", ()
     root.querySelector<HTMLButtonElement>(".awesomeado-item-menu__submenu button")!.click();
     await settleWrites();
 
-    expect(writes[0]).toMatchObject({
-      id: 2,
-      field: "System.IterationPath",
-      value: "Project\\Sprint 2",
-    });
+    // ONE patch for the action, carrying both the rev guard and the path the move was computed from
+    // — the base value is what keeps the move alive across a rev bump nothing reported back.
+    expect(writes).toEqual([
+      {
+        id: 2,
+        rev: 1,
+        field: "System.IterationPath",
+        value: "Project\\Sprint 2",
+        baseValue: "Project\\Sprint 1",
+      },
+    ]);
   });
 
   it("changes the item's area path through the serialized field writer", async () => {
@@ -3446,7 +3540,9 @@ describe("ProjectTrackingView — moving an item and reading its discussion", ()
       baseValue: "Project\\Platform\\API",
     });
   });
+});
 
+describe("ProjectTrackingView — reading an item's discussion", () => {
   it("shows every note in the window, not the two days a row's panel is limited to", async () => {
     const root = await renderDeepBoard({
       noteLoader: {
@@ -3683,6 +3779,7 @@ describe("ProjectTrackingView — same-parent popup reordering", () => {
     );
 
     expect(root.querySelectorAll(".awesomeado-child-items__row")).toHaveLength(3);
+    root.remove();
   });
 
   it("accepts another popup reorder after repainting the first move", async () => {
@@ -3705,6 +3802,7 @@ describe("ProjectTrackingView — same-parent popup reordering", () => {
       expect(moves).toHaveLength(2);
       expect(root.querySelectorAll(".awesomeado-child-items__row")).toHaveLength(3);
     });
+    root.remove();
   });
 });
 
@@ -3765,6 +3863,7 @@ describe("ProjectTrackingView — popup hierarchy changes", () => {
         ),
       ).toContain("Wire the form"),
     );
+    root.remove();
   });
 });
 
@@ -3808,18 +3907,31 @@ function dragPopupChild(
   target.dispatchEvent(drop);
 }
 
+/**
+ * A deep board with the sprint filter off and the rollup popup open, recording every field write and
+ * answering each with `accepted`. Shared so each completion test is only its own click and outcome.
+ */
+async function renderRollupPopupBoard(
+  accepted: boolean,
+  overrides: Partial<EnhancedViewServices> = {},
+): Promise<{ root: HTMLElement; writes: WorkItemFieldWriteRequest[] }> {
+  const writes: WorkItemFieldWriteRequest[] = [];
+  const root = await renderDeepBoard({
+    writeField: async (request) => {
+      writes.push(request);
+      return accepted ? { ok: true, rev: 2 } : { ok: false, error: "rejected" };
+    },
+    ...overrides,
+  });
+  await turnSprintFilterOff(root);
+  rollupBadgeOf(root).click();
+  return { root, writes };
+}
+
 describe("ProjectTrackingView — rollup popup completion writes", () => {
   it("moves a rolled-up child to the completed column when its checkbox is ticked", async () => {
-    const writes: WorkItemFieldWriteRequest[] = [];
-    const root = await renderDeepBoard({
-      writeField: async (request) => {
-        writes.push(request);
-        return { ok: true, rev: 2 };
-      },
-    });
-    await turnSprintFilterOff(root);
+    const { root, writes } = await renderRollupPopupBoard(true);
 
-    rollupBadgeOf(root).click();
     // Task 5 ("Style the form") is Active, so ticking it writes Done's primary state.
     checkOfChildRow(root, 1).click();
     await Promise.resolve();
@@ -3833,16 +3945,8 @@ describe("ProjectTrackingView — rollup popup completion writes", () => {
   });
 
   it("reopens a completed rolled-up child onto the in-progress column", async () => {
-    const writes: WorkItemFieldWriteRequest[] = [];
-    const root = await renderDeepBoard({
-      writeField: async (request) => {
-        writes.push(request);
-        return { ok: true, rev: 2 };
-      },
-    });
-    await turnSprintFilterOff(root);
+    const { root, writes } = await renderRollupPopupBoard(true);
 
-    rollupBadgeOf(root).click();
     // Task 4 is Closed→Done; clearing it writes the primary state of board column 1 ("Active").
     checkOfChildRow(root, 0).click();
     await Promise.resolve();
@@ -3855,16 +3959,16 @@ describe("ProjectTrackingView — rollup popup completion writes", () => {
   });
 
   it("leaves the tick where ADO has it when the completion write is rejected", async () => {
-    const root = await renderDeepBoard({
-      writeField: async () => ({ ok: false, error: "rejected" }),
-    });
-    await turnSprintFilterOff(root);
+    const { root, writes } = await renderRollupPopupBoard(false);
 
-    rollupBadgeOf(root).click();
     checkOfChildRow(root, 1).click();
     await Promise.resolve();
     await Promise.resolve();
 
+    // Task 5 is Active, so its tick was already "false" before the click: the resting state below is
+    // identical to the pre-state, and only the attempted patch tells a refused write apart from one
+    // that was never sent.
+    expect(writes).toEqual([{ id: 5, rev: 1, field: "System.State", value: "Closed" }]);
     await vi.waitFor(() =>
       expect(checkOfChildRow(root, 1).getAttribute("aria-checked")).toBe("false"),
     );
@@ -3872,22 +3976,15 @@ describe("ProjectTrackingView — rollup popup completion writes", () => {
 
   it("writes nothing, and says why, when the child's type routes no state to the target column", async () => {
     const lines: string[] = [];
-    const writes: WorkItemFieldWriteRequest[] = [];
-    const root = await renderDeepBoard({
+    const { root, writes } = await renderRollupPopupBoard(true, {
       // A Task type with no column on the in-progress position, so a completed child cannot reopen.
       getTypes: () => [
         ...DEEP_TYPES.slice(0, 3),
         { ...DEEP_TYPES[3]!, columns: [{ column: "Done", states: ["Closed"] }] },
       ],
-      writeField: async (request) => {
-        writes.push(request);
-        return { ok: true, rev: 2 };
-      },
       logger: { info: (message) => lines.push(message), error: () => undefined },
     });
-    await turnSprintFilterOff(root);
 
-    rollupBadgeOf(root).click();
     checkOfChildRow(root, 0).click();
     await Promise.resolve();
     await Promise.resolve();
@@ -5132,16 +5229,26 @@ describe("ProjectTrackingView - flagging an item from its menu", () => {
   });
 
   it("adds the other team's tag alongside one the item already wears", async () => {
-    const { root, writes } = await renderFlaggedBoard(["Blocked"]);
+    const { root, writes, notes } = await renderFlaggedBoard(["Blocked"]);
 
     markerCommand(root, "Tag with Blocked by another team").click();
     submitMarkerReason(root, "Handed to Platform.");
     await settleWrites();
 
-    expect(writes[0]).toMatchObject({
-      field: "System.Tags",
-      value: "Blocked; Blocked by another team",
-    });
+    // The typed reason has to land SOMEWHERE, and the only place it may land is this same patch.
+    expect(writes).toEqual([
+      {
+        id: 2,
+        rev: 1,
+        field: "System.Tags",
+        value: "Blocked; Blocked by another team",
+        baseValue: "Blocked",
+        comment: "[ACCEPTED] Handed to Platform.",
+      },
+    ]);
+    // Posting it through the comments API would create its own revision and get this very patch
+    // rejected on its rev test, so nothing may reach the note writer.
+    expect(notes).toEqual([]);
   });
 
   it("names the tags it derived the change from, so a rev bump elsewhere cannot sink the write", async () => {
@@ -5168,6 +5275,18 @@ describe("ProjectTrackingView - flagging an item from its menu", () => {
     submitMarkerReason(root, "Waiting on the API.");
     await settleWrites();
 
+    // The refused patch has to have been SENT: an unflagged board is also the state it started in,
+    // so the resting assertions below say nothing on their own.
+    expect(writes).toEqual([
+      {
+        id: 2,
+        rev: 1,
+        field: "System.Tags",
+        value: "Blocked",
+        baseValue: "",
+        comment: "[BLOCKED] Waiting on the API.",
+      },
+    ]);
     // One patch means one outcome: the reason and the tag were refused together, so there is nothing
     // to undo — the pill never appears and the author keeps their words.
     expect(filterMarkerPills(root)).toEqual([]);
@@ -5291,13 +5410,21 @@ describe("ProjectTrackingView - the marker filter pills", () => {
 
 describe("ProjectTrackingView - when a flag write is rejected", () => {
   it("keeps showing a flag whose removal was refused", async () => {
-    const { root } = await renderFlaggedBoard(["Blocked"], {
-      writeField: async () => ({ ok: false, error: "HTTP 412" }),
+    const { root, writes } = await renderFlaggedBoard(["Blocked"], {
+      writeField: async (request) => {
+        writes.push(request);
+        return { ok: false, error: "HTTP 412" };
+      },
     });
 
     markerCommand(root, "Clear Blocked (internal)").click();
     await settleWrites();
 
+    // A still-flagged board is also the board's starting state, so the removal has to be shown to
+    // have been attempted before "still flagged" means "the refusal was honoured".
+    expect(writes).toEqual([
+      { id: 2, rev: 1, field: "System.Tags", value: "", baseValue: "Blocked" },
+    ]);
     expect(filterMarkerPills(root).map((pill) => pill.textContent)).toEqual(["Blocked (internal)"]);
   });
 });

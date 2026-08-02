@@ -77,6 +77,35 @@ function toggleSource(elements: DiagnosticsElements, source: string, checked: bo
   checkbox.dispatchEvent(new Event("change"));
 }
 
+/**
+ * Record what an export would hand the browser.
+ *
+ * Spied, not assigned: `restoreMocks` undoes a spy between tests, but a direct assignment to a
+ * global stays clobbered for the rest of the file and silently leaks into the next test.
+ */
+function captureDownload(): {
+  blobs: Blob[];
+  name: () => string;
+  createObjectURL: ReturnType<typeof vi.spyOn>;
+  revokeObjectURL: ReturnType<typeof vi.spyOn>;
+} {
+  const blobs: Blob[] = [];
+  let name = "";
+  const createObjectURL = vi
+    .spyOn(URL, "createObjectURL")
+    .mockImplementation((blob: Blob | MediaSource) => {
+      blobs.push(blob as Blob);
+      return "blob:mock";
+    });
+  const revokeObjectURL = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
+  vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
+    this: HTMLAnchorElement,
+  ) {
+    name = this.download;
+  });
+  return { blobs, name: () => name, createObjectURL, revokeObjectURL };
+}
+
 // Shared across the sibling describes below so each split group reuses one setup with zero
 // duplication (jscpd threshold is 0).
 let store: FakeLogStore;
@@ -153,7 +182,7 @@ describe("DiagnosticsController — rendering & filtering", () => {
   });
 });
 
-describe("DiagnosticsController — actions & lifecycle", () => {
+describe("DiagnosticsController — clearing", () => {
   it("clears the log when the clear button is clicked", async () => {
     await controller.init();
 
@@ -173,47 +202,77 @@ describe("DiagnosticsController — actions & lifecycle", () => {
 
     expect(reported).toEqual([failure]);
   });
+});
 
+describe("DiagnosticsController — export", () => {
   it("exports the shown lines as a timestamped text file", async () => {
     vi.spyOn(Date, "now").mockReturnValue(0);
-    const created: Blob[] = [];
-    let downloadName = "";
-    // Spied, not assigned: `restoreMocks` undoes a spy between tests, but a direct assignment to a
-    // global stays clobbered for the rest of the file and silently leaks into the next test.
-    const createObjectURL = vi
-      .spyOn(URL, "createObjectURL")
-      .mockImplementation((blob: Blob | MediaSource) => {
-        created.push(blob as Blob);
-        return "blob:mock";
-      });
-    const revokeObjectURL = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
-    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
-      this: HTMLAnchorElement,
-    ) {
-      downloadName = this.download;
-    });
+    const download = captureDownload();
 
     await controller.init();
     const entries = [info(10, "a"), error(20, "b")];
     store.emit(entries);
     elements.exportButton.click();
 
-    expect(createObjectURL).toHaveBeenCalledOnce();
-    expect(await created[0]?.text()).toBe(entries.map(formatLogEntry).join("\n"));
-    expect(downloadName).toBe("awesomeado-log-1970-01-01T00-00-00-000Z.txt");
-    expect(revokeObjectURL).toHaveBeenCalledWith("blob:mock");
+    expect(download.createObjectURL).toHaveBeenCalledOnce();
+    expect(await download.blobs[0]?.text()).toBe(entries.map(formatLogEntry).join("\n"));
+    expect(download.name()).toBe("awesomeado-log-1970-01-01T00-00-00-000Z.txt");
+    expect(download.revokeObjectURL).toHaveBeenCalledWith("blob:mock");
   });
 
   it("does not export when nothing is shown", async () => {
-    const createObjectURL = vi.spyOn(URL, "createObjectURL").mockImplementation(() => "blob:mock");
+    const download = captureDownload();
 
     await controller.init();
     store.emit([]);
     elements.exportButton.click();
 
-    expect(createObjectURL).not.toHaveBeenCalled();
+    expect(download.createObjectURL).not.toHaveBeenCalled();
   });
 
+  it("exports only what the errors-only filter left on screen, not the whole log", async () => {
+    const download = captureDownload();
+
+    await controller.init();
+    const kept = error(20, "kept");
+    store.emit([info(10, "hidden by the errors-only filter", "content/query-page"), kept]);
+    elements.errorsOnlyToggle.checked = true;
+    elements.errorsOnlyToggle.dispatchEvent(new Event("change"));
+    elements.exportButton.click();
+
+    // A file that disagrees with the screen is worse than no file: it is read as the whole log.
+    expect(messagesShown(elements)).toEqual(["kept"]);
+    expect(await download.blobs[0]?.text()).toBe(formatLogEntry(kept));
+  });
+
+  it("drops a hidden source from the exported file as well as from the list", async () => {
+    const download = captureDownload();
+
+    await controller.init();
+    const kept = info(20, "kept", "options/diagnostics");
+    store.emit([info(10, "hidden", "content/query-page"), kept]);
+    toggleSource(elements, "content/query-page", false);
+    elements.exportButton.click();
+
+    expect(messagesShown(elements)).toEqual(["kept"]);
+    expect(await download.blobs[0]?.text()).toBe(formatLogEntry(kept));
+  });
+
+  it("refuses to export once the filters have hidden every line", async () => {
+    const download = captureDownload();
+
+    await controller.init();
+    store.emit([info(10, "only an info line", "content/query-page")]);
+    elements.errorsOnlyToggle.checked = true;
+    elements.errorsOnlyToggle.dispatchEvent(new Event("change"));
+    elements.exportButton.click();
+
+    expect(elements.exportButton.disabled).toBe(true);
+    expect(download.createObjectURL).not.toHaveBeenCalled();
+  });
+});
+
+describe("DiagnosticsController — lifecycle", () => {
   it("rejects init and unsubscribes when the initial read fails", async () => {
     store.ready = Promise.reject(new Error("read failed"));
 

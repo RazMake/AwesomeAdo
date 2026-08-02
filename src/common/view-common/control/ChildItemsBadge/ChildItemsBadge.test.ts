@@ -104,7 +104,6 @@ describe("renderChildItemsBadge - badge and popup rendering", () => {
   });
 
   it("opens a popup with one row per child on click", () => {
-    document.body.innerHTML = "";
     const root = renderChildItemsBadge(document, {
       children: [childOf({ title: "First" }), childOf({ title: "Second" })],
       completedCount: 1,
@@ -113,8 +112,15 @@ describe("renderChildItemsBadge - badge and popup rendering", () => {
 
     badgeOf(root).click();
 
-    const rows = root.querySelectorAll(".awesomeado-child-items__row");
+    const rows = [...root.querySelectorAll<HTMLElement>(".awesomeado-child-items__row")];
     expect(rows).toHaveLength(2);
+    // The rows must carry the children the caller passed, in that order: the popup is the only
+    // place a rolled-up child is readable, so a duplicated or reversed list is silently wrong.
+    expect(
+      rows.map(
+        (row) => row.querySelector(".awesomeado-child-items__title-text")?.textContent ?? null,
+      ),
+    ).toEqual(["First", "Second"]);
   });
 
   it("reports popup open and close state", () => {
@@ -127,20 +133,6 @@ describe("renderChildItemsBadge - badge and popup rendering", () => {
     expect(onOpenChange).toHaveBeenLastCalledWith(false);
   });
 
-  it("waits until the rebuilt badge is mounted before reopening its popup", async () => {
-    const root = renderChildItemsBadge(document, {
-      children: [childOf()],
-      completedCount: 0,
-      initiallyOpen: true,
-    });
-
-    expect(popupOf(root)).toBeNull();
-    document.body.append(root);
-    await Promise.resolve();
-
-    expect(popupOf(root)).not.toBeNull();
-  });
-
   it("sizes the popup from its rows, not from the badge it is anchored inside", () => {
     const root = openPopup({ children: [childOf()], completedCount: 0 });
 
@@ -148,6 +140,56 @@ describe("renderChildItemsBadge - badge and popup rendering", () => {
     // pixels wide, so the width has to come from the content and be capped only by the viewport.
     expect(popupOf(root)!.style.width).toBe("max-content");
     expect(popupOf(root)!.style.maxWidth).toBe("calc(100vw - 24px)");
+  });
+});
+
+describe("renderChildItemsBadge - reopening a rebuilt badge", () => {
+  it("waits until the rebuilt badge is mounted before reopening its popup", async () => {
+    const detached = renderChildItemsBadge(document, {
+      children: [childOf()],
+      completedCount: 0,
+      initiallyOpen: true,
+    });
+
+    // The queued reopen gets its turn here, with the badge still detached. It has to decline: a
+    // zero-size anchor cannot be aligned against the viewport, so the popup would land pinned to
+    // the chip's top-left corner.
+    await Promise.resolve();
+    expect(popupOf(detached)).toBeNull();
+    expect(detached.isPopupOpen()).toBe(false);
+
+    // A reorder mounts the rebuilt badge in the same task that renders it, so by the time the
+    // queued reopen runs there is a measurable box to anchor to.
+    const root = renderChildItemsBadge(document, {
+      children: [childOf()],
+      completedCount: 0,
+      initiallyOpen: true,
+    });
+    document.body.append(root);
+    expect(popupOf(root)).toBeNull();
+
+    await Promise.resolve();
+
+    expect(popupOf(root)).not.toBeNull();
+    expect(root.isPopupOpen()).toBe(true);
+  });
+
+  it("leaves a popup that is already open alone when the queued reopen runs", async () => {
+    const root = renderChildItemsBadge(document, {
+      children: [childOf()],
+      completedCount: 0,
+      initiallyOpen: true,
+    });
+    document.body.append(root);
+
+    // Whoever opened it first wins; the queued reopen is a toggle, so unguarded it would shut it.
+    badgeOf(root).click();
+    expect(popupOf(root)).not.toBeNull();
+
+    await Promise.resolve();
+
+    expect(popupOf(root)).not.toBeNull();
+    expect(root.isPopupOpen()).toBe(true);
   });
 });
 
@@ -237,9 +279,12 @@ describe("renderChildItemsBadge - row content", () => {
     ];
     // The checkbox, the assignee and the ETA; the open glyph rides inside the title instead.
     expect(slots).toHaveLength(3);
+    // Both sides come from the module-private TITLE_LINE_HEIGHT_PX, so each is pinned to the literal
+    // it must produce; comparing them to each other would still pass if both were dropped.
+    expect(title.style.lineHeight).toBe("20px");
     for (const slot of slots) {
       expect(slot.style.alignItems).toBe("center");
-      expect(slot.style.minHeight).toBe(title.style.lineHeight);
+      expect(slot.style.minHeight).toBe("20px");
     }
   });
 });
