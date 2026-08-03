@@ -1,6 +1,6 @@
 ---
 name: changelog-versioning
-description: Steps for proposing a changelog bullet and checking release inputs for AwesomeADO.
+description: "Continuously maintain user-facing AwesomeADO release notes and cut versions. Use when work changes user-visible behavior, updates ChangeLog.md, or bumps a release version."
 ---
 
 # Changelog & Versioning Skill
@@ -8,12 +8,19 @@ description: Steps for proposing a changelog bullet and checking release inputs 
 Read [AGENTS.md](../../../AGENTS.md) before proceeding. Mandatory rules are in
 **Versioning & changelog rules** (§12).
 
-## Proposing a changelog bullet
+## Continuously accumulating release notes
 
-Every logical user-visible change proposes changelog input for `## Next Version` in `ChangeLog.md`.
-Parallel workers **return** the proposed input in their §4.1 response; they do not write to
-`ChangeLog.md` directly (only the serial coordinator edits shared files). Internal-only work returns
-`None`. Format:
+Do not wait for release preparation to reconstruct what changed. For every task:
+
+1. At the start, read the existing `## Next Version` section and classify the task as user-visible
+   or internal.
+2. For user-visible work, draft the release outcome as soon as the intended behavior is understood.
+3. Before final verification, the serial coordinator writes or merges that outcome into
+   `## Next Version`. Extend an existing capability bullet instead of adding a chronological update.
+4. For internal-only work, record `None` and do not add a changelog bullet.
+
+Parallel workers **return** proposed input in their §4.1 response; they do not edit `ChangeLog.md`
+directly. The serial coordinator owns the shared changelog edit. Format:
 
 ```markdown
 ## Next Version
@@ -23,6 +30,8 @@ Parallel workers **return** the proposed input in their §4.1 response; they do 
 
 Write release notes at the level users experience them:
 
+- Write for extension users who do not know the codebase. Prefer visible feature, control, and
+  workflow names; omit classes, files, APIs, storage, transport, tests, and internal safeguards.
 - Use one bullet per coherent capability or meaningful fix.
 - Combine related implementation changes and minor UX rearrangements into the capability they
   support; do not mirror development chronology.
@@ -32,7 +41,7 @@ Write release notes at the level users experience them:
 - For an initial release, summarize the finished product rather than listing each development step.
 
 The serial coordinator may merge, rewrite, or omit worker proposals to enforce this release-level
-shape.
+shape, but every completed user-visible outcome must remain represented before the task is complete.
 
 ## Version scheme
 

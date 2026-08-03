@@ -994,6 +994,10 @@ nodeMatchesChange`). Copied here, that makes an activity pill drag in items belo
   cosmetic iteration, and leaves an initial release reading like an internal build log. Base-version
   headings also match the release validator and the official `vMajor.Minor` release contract while
   CI remains free to assign the `Build` component.
+- Amendment: release notes are accumulated continuously rather than reconstructed when a version is
+  cut. Every task is classified as user-visible or internal at the start; before final verification,
+  the serial coordinator merges each completed user-visible outcome into `## Next Version` at the
+  capability level and leaves internal work out.
 
 ## ADR-055: Defer heavy view code and retain server reads at board-session scope
 

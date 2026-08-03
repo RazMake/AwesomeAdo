@@ -294,12 +294,19 @@ These are **non-negotiable**.
 - Changelog entries describe **user-visible release outcomes**, not implementation chronology. Use
   one bullet per coherent capability or meaningful fix; consolidate related work and minor UX
   rearrangements into that capability's bullet.
+- Write for extension users, not maintainers. Use product and UI language to explain what users can
+  now do or what works better; omit classes, modules, APIs, storage, transport, tests, and internal
+  safeguards unless a detail is necessary for users to understand the outcome.
 - Exclude refactors, tests, tooling, and internal architecture unless they change what users or
   operators experience. An initial-release section summarizes the finished product rather than its
   development history.
-- Every logical user-visible change proposes changelog input for `## Next Version`; internal-only
-  work returns `None`. Parallel workers return that input in their §4.1 response, and the serial
-  coordinator consolidates it into release-level bullets at wave barriers.
+- The changelog is maintained continuously, not reconstructed during release preparation. At the
+  start of every task, classify it as user-visible or internal and read the existing `## Next Version`
+  section before implementing user-visible work.
+- Every completed user-visible task must be represented in `## Next Version` before final verification.
+  Merge it into an existing capability bullet when appropriate; do not append implementation
+  chronology. Internal-only work returns `None`. Parallel workers return proposed input in their §4.1
+  response, and the serial coordinator writes or merges it at the next wave barrier.
 - When the developer bumps Major or Minor:
   1. Set `versionBuildOffset` to the latest CI workflow run number visible before the bump.
   2. Rename `## Next Version` to `## X.Y`.
