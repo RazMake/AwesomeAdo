@@ -7,6 +7,8 @@ import { BrowserSyncTeamConfigSourceStore, normalizeWorkItemId } from "./TeamCon
 
 class FakeStorage implements IBrowserSyncStorage {
   value: unknown;
+  listener: ((value: unknown) => void) | null = null;
+  readonly stop = vi.fn();
   readonly set = vi.fn(async (_key: string, value: unknown): Promise<void> => {
     this.value = value;
   });
@@ -15,8 +17,9 @@ class FakeStorage implements IBrowserSyncStorage {
     return this.value;
   }
 
-  subscribe(): () => void {
-    return () => {};
+  subscribe(_key: string, listener: (value: unknown) => void): () => void {
+    this.listener = listener;
+    return this.stop;
   }
 }
 
@@ -54,5 +57,24 @@ describe("BrowserSyncTeamConfigSourceStore", () => {
     await store.write(null);
     expect(storage.set).toHaveBeenLastCalledWith("teamConfig.workItemId", null);
     expect(log.info).toHaveBeenLastCalledWith("Team configuration disconnected");
+  });
+
+  it("emits the connection on subscribe and again whenever it changes", async () => {
+    const storage = new FakeStorage();
+    storage.value = 42;
+    const store = new BrowserSyncTeamConfigSourceStore(storage);
+    const seen: (number | null)[] = [];
+
+    const observation = store.observe((workItemId) => seen.push(workItemId));
+    await observation.ready;
+
+    // A disconnect elsewhere (another device, or the Disconnect button) must reach the subscriber as
+    // null rather than leave it showing a connection that no longer exists.
+    storage.listener?.(null);
+    storage.listener?.("not an id");
+    observation.unsubscribe();
+
+    expect(seen).toEqual([42, null, null]);
+    expect(storage.stop).toHaveBeenCalledTimes(1);
   });
 });

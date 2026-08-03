@@ -5,6 +5,11 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ## Next Version
 
+- Adds a Quick Bootstrap link to Configuration Sharing: one copyable Azure DevOps link that opens an
+  enhanced query already pointed at your team's shared configuration, so a teammate can be set up
+  over Teams or email without exporting or importing anything. It appears only once you are
+  connected to a configuration work item and have at least one enhanced query.
+
 ## 0.3
 
 - Makes Sprint and Project Tracking filters evaluate only Primary work, while preserving arbitrarily

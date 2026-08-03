@@ -36,6 +36,10 @@ import {
   type QueryBindingsElements,
 } from "./query-bindings/QueryBindingsController";
 import {
+  BootstrapLinkController,
+  type BootstrapLinkElements,
+} from "./settings-transfer/BootstrapLinkController";
+import {
   SettingsTransferController,
   type SettingsTransferElements,
 } from "./settings-transfer/SettingsTransferController";
@@ -271,6 +275,31 @@ if (
     .catch(report);
 } else {
   report(new Error("The options page is missing the team configuration controls."));
+}
+
+// The bootstrap link spans all three stores (identity, bindings, and the connected work item), so it
+// is wired here rather than inside either sharing controller.
+const bootstrapLinkSection = document.querySelector<HTMLElement>("#bootstrap-link-section");
+const bootstrapLink = document.querySelector<HTMLAnchorElement>("#bootstrap-link");
+const bootstrapLinkCopy = document.querySelector<HTMLButtonElement>("#bootstrap-link-copy");
+const bootstrapLinkStatus = document.querySelector<HTMLElement>("#bootstrap-link-status");
+
+if (bootstrapLinkSection && bootstrapLink && bootstrapLinkCopy && bootstrapLinkStatus) {
+  const bootstrapElements: BootstrapLinkElements = {
+    section: bootstrapLinkSection,
+    link: bootstrapLink,
+    copyButton: bootstrapLinkCopy,
+    status: bootstrapLinkStatus,
+  };
+  new BootstrapLinkController(
+    settingsStore,
+    bindingStore,
+    teamConfigSourceStore,
+    bootstrapElements,
+    report,
+  ).init();
+} else {
+  report(new Error("The options page is missing the bootstrap link controls."));
 }
 
 const adoOrganization = document.querySelector<HTMLInputElement>("#ado-organization");

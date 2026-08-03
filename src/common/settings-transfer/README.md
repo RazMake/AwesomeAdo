@@ -72,7 +72,11 @@ and `TeamConfigSynchronizer` never applies a source ID found in a remote payload
 
 - `TeamConfigSourceStore` / `BrowserSyncTeamConfigSourceStore` — read, save, or clear that trusted
   work item id.
-- `createTeamConfigSourceStore(logger?)` — composition factory backed by `ChromeSyncStorage`.
+- `ObservableTeamConfigSource` — the separate `observe(listener)` contract for following that id
+  live. Kept apart from `TeamConfigSourceStore` so the pull/publish collaborators that read it once
+  per operation are not forced to implement a subscription they never use.
+- `createTeamConfigSourceStore(logger?)` — composition factory backed by `ChromeSyncStorage`,
+  returning both contracts.
 - `TeamConfigReader` / `TeamConfigWriter` — focused transport contracts for Description reads and
   revision-guarded publishes. A successful publish can carry the canonical work item web URL for the
   options status link.

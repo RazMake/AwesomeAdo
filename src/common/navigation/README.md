@@ -88,6 +88,12 @@ item to read that query's configuration from.
 - **`parseSharedConfigWorkItemId(rawUrl)`** — the work item id the URL names, or `null` when it
   names none, when the value is not a positive whole number, or when the URL is not a hosted ADO
   location. A malformed value is deliberately "no link at all" rather than a partly-trusted one.
+- **`buildSharedQueryLink(target)`** / **`SharedQueryLinkTarget`** — the inverse: builds the URL from
+  a stored `{ organization, project, queryId, workItemId }` rather than from an open tab, so a link
+  can be offered with no ADO page open. It always addresses `dev.azure.com` (which every
+  organization answers on, including those whose members still browse the legacy
+  `{org}.visualstudio.com` host), and returns `null` when any part is missing — a half-built link
+  would look shareable and land the recipient nowhere.
 
 The parameter names a work item id and nothing else, so a link can never inject configuration
 values: it can only point at an item the recipient's own Azure DevOps session is allowed to read.

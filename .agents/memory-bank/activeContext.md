@@ -280,6 +280,11 @@ The extension is feature-complete for its current scope:
   `SharedQueryConfigResolver` reads each work item once, `src/content/shared-query` applies the
   publisher's settings/binding per query and per navigation, and the Query Bindings tab shows the
   query with read-only values, the source work item named, and Remove link in place of Delete.
+  Configuration Sharing ends with a **Quick Bootstrap link**: `BootstrapLinkController` composes one
+  such URL from the stored organization/project, the alphabetically first enhanced query, and the
+  connected work item (`buildSharedQueryLink` in `common/navigation/SharedQueryLink`), with a copy
+  button. It follows all three stores live — the connection through the new
+  `ObservableTeamConfigSource` — and hides itself whenever any part is missing.
 - Options page: Appearance (Dark/Light/Blue theme, Follow ADO dark/light resolution, default view +
   Configuration Sharing), Azure DevOps config (editable organization/project, team, sprint window,
   board mappings, marker tags, and

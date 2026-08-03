@@ -39,6 +39,11 @@ const REQUIRED_ELEMENT_IDS: readonly string[] = [
   "team-config-publish",
   "team-config-disconnect",
   "team-config-status",
+  // Quick Bootstrap link
+  "bootstrap-link-section",
+  "bootstrap-link",
+  "bootstrap-link-copy",
+  "bootstrap-link-status",
   // Azure DevOps configuration
   "ado-organization",
   "ado-organization-detected",
@@ -135,11 +140,15 @@ describe("options.html element contract", () => {
 
     expect(card.querySelector("h2")?.textContent).toBe("Configuration Sharing");
     expect(card.querySelector("h3")).toBeNull();
-    expect(card.querySelectorAll(".configuration-sharing__section")).toHaveLength(2);
+    expect(card.querySelectorAll(".configuration-sharing__section")).toHaveLength(3);
     expect(card.querySelector("#settings-export")).not.toBeNull();
     expect(card.querySelector("#team-config-work-item-id")).not.toBeNull();
     expect(guidance).toContain("Import replaces your current configuration");
     expect(guidance).toContain("Once connected, the configuration is pulled automatically");
+    expect(guidance).toContain("Quick Bootstrap link:");
+    // The link names a work item and a query, so it must start off screen rather than flash an
+    // empty anchor before the controller has confirmed both exist.
+    expect(requiredElement(doc, "bootstrap-link-section").hidden).toBe(true);
     expect(publish.textContent.trim()).toBe("Publish Config");
     expect(connect.classList.contains("button--connect")).toBe(true);
     expect(disconnect.classList.contains("button--danger")).toBe(true);

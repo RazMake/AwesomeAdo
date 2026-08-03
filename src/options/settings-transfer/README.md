@@ -1,8 +1,9 @@
 # `options/settings-transfer`
 
 Wires the Appearance tab's **Configuration Sharing** card to both the settings store and the query
-binding store. Its Import / Export controls capture and restore the user's whole configuration, and
-its Team configuration controls share that same configuration through an Azure DevOps work item. The
+binding store. Its Import / Export controls capture and restore the user's whole configuration, its
+Team configuration controls share that same configuration through an Azure DevOps work item, and its
+Quick Bootstrap link hands a teammate a single URL that does both. The
 file format and the pure serialize/parse logic live in
 [`common/settings-transfer`](../../common/settings-transfer/README.md); this controller is only the
 options-page glue.
@@ -66,3 +67,26 @@ fail. Disconnect only clears the locally stored source, so it stays available.
 Successful pulls notify the same options-page reload callback as file import, so read-once sections
 cannot display or later re-save stale values. Publish conflicts and malformed remote configuration
 remain connected but surface as failures in both the card and Diagnostics.
+
+### `BootstrapLinkController.ts`
+
+Drives the **Quick Bootstrap link** subsection at the end of Configuration Sharing: one Azure DevOps
+query URL carrying the connected configuration work item, so a teammate who opens it lands on an
+enhanced query with the team's shared configuration adopted and nothing to export or import.
+
+- `BootstrapLinkElements` — the `section` (hidden whole block), the `link` anchor, the `copyButton`,
+  and a `status` line.
+- `new BootstrapLinkController(settingsStore, bindingStore, teamConfigSource, elements, reportError)`
+  — `teamConfigSource` only needs `ObservableTeamConfigSource`.
+  - `init()` — attach Copy and start following all three stores.
+  - `dispose()` — unsubscribe and stop rendering.
+
+The block is shown **only** while a link would actually work: a configuration work item is
+connected, at least one query is enhanced, and the organization and project are known. All three
+inputs are observed rather than read once, so connecting, disconnecting, or enhancing a query
+reveals or withdraws the link immediately. Which query the link opens is chosen by name (id when a
+binding has none) so the same configuration always produces the same link.
+
+Copy writes the offered URL through `navigator.clipboard` and confirms it on the status line. A
+refused write fails invisibly in the browser, so it is recorded through `reportError` — Diagnostics
+is what answers "why is my clipboard still empty?".

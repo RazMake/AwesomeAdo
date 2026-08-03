@@ -112,6 +112,20 @@
         width: fit-content;
         color: var(--accent);
       }
+      /* The shareable link is a full ADO URL, so it is allowed to wrap anywhere rather than force
+         the card to scroll sideways; the Copy button follows it onto the next line when it does. */
+      .bootstrap-link {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 12px;
+      }
+      .bootstrap-link__url {
+        color: var(--accent);
+        font-size: 13px;
+        overflow-wrap: anywhere;
+      }
       /* A failed (or only partly applied) import differs from a clean one by wording alone, on a
          line the reader has already learned to skim as "done" — so the colour is what makes it
          land. Same red as the page-level .status and .banner--error. */
@@ -1172,6 +1186,24 @@
               </button>
             </div>
             <p id="team-config-status" class="card__hint" role="status" aria-live="polite"></p>
+          </div>
+
+          <div class="configuration-sharing__section" id="bootstrap-link-section" hidden>
+            <p class="card__hint">
+              <strong>Quick Bootstrap link:</strong> hand this to a teammate over Teams or email. It
+              opens one of your enhanced queries and points their AwesomeADO at the same
+              configuration work item, so they need nothing exported or imported. It appears only
+              while you are connected to a configuration work item and have at least one enhanced
+              query. The query parameter point so the shared config item:
+              <i>awesomeAdoConfig={itemId}</i>
+            </p>
+            <div class="bootstrap-link">
+              <a id="bootstrap-link" class="bootstrap-link__url"></a>
+              <button type="button" class="button button--subtle" id="bootstrap-link-copy">
+                Copy link
+              </button>
+            </div>
+            <p id="bootstrap-link-status" class="card__hint" role="status" aria-live="polite"></p>
           </div>
         </div>
       </section>
