@@ -18,20 +18,26 @@ Renders a single subtle-filled tile with these bands:
    query's own name), trimmed to the **two nearest folders** (the query's parent and its parent's
    parent); an empty array hides the trail. Each segment links to that folder's contents in ADO's
    query hub (`_queries/folder/?path=…`); a segment whose folder URL cannot be resolved falls back to
-   plain text. The caller-supplied ordering picker (`options.orderingPicker`) is pinned to the
-   **right** of this band — the tile's top-right corner — so the discrete sort indicator stays clear
-   of the board's controls. The band is rendered even when there are no breadcrumbs.
-2. **Write-queue status** — the caller-supplied write-queue status indicator
-   (`options.writeQueueStatus`) on its own right-aligned row directly above the sprint picker.
-   Omitted/`null` hides the row; the indicator itself stays hidden while no save is in flight.
-3. **Title + controls** — the project title (`options.title`, colored by `options.titleColor`) with
+   plain text. Pinned to the **right** of this band — the tile's top-right corner — is one group
+   holding the write-queue status (`options.writeQueueStatus`), the version marker
+   (`options.extensionVersion`) and the ordering picker (`options.orderingPicker`), in that order.
+   The ordering picker is always last, so the sort glyph holds the same corner position whether or
+   not the other two are there; the version marker is spaced away from it so a link to the store and
+   a control that changes the board do not read as one thing. The band is rendered even when there
+   are no breadcrumbs, and its height is reserved so a save starting or finishing cannot resize the
+   sticky header.
+2. **Title + controls** — the project title (`options.title`, colored by `options.titleColor`) with
    the expand-all (`+`), collapse-all (`−`) and refresh (`⟳`) buttons beside it. The compact area-path
    filter (`options.areaPathFilter`) and sprint picker (`options.sprintPicker`) form one filter group
    pinned to the right edge of the same band.
-4. **Tech Lead + ETA** — the caller-supplied Tech Lead control (`options.techLead`) followed by the
+3. **Tech Lead + ETA** — the caller-supplied Tech Lead control (`options.techLead`) followed by the
    caller-supplied ETA badge (`options.eta`, built with the shared
    [`renderEtaBadge`](../../../../common/view-common/control/EtaBadge/README.md) so the view owns its
    read/write wiring).
+
+The version marker shows the extension's **Major.Minor** release only and links to the store listing
+(see [`VersionLabel`](../../../../common/view-common/control/VersionLabel/README.md); the build
+segment is CI's run counter and names no published version).
 
 The `+`/`−` buttons are vertically centered against the two-line title/tech-lead block. `+` opens all
 parent rows first; when every parent is already open, its next click opens every visible item's notes.
@@ -53,7 +59,8 @@ it, so sitting them flush would read as one three-button group and invite the mi
 | `eta`                | The root item's ETA badge element (pre-built by the view), or `null` when view services are unavailable.                          |
 | `areaPathFilter`     | The compact area-path multi-select, grouped with the sprint picker at the right edge.                                             |
 | `sprintPicker`       | The sprint picker element, pinned to the right of the controls band.                                                              |
-| `writeQueueStatus`   | The write-queue status indicator, on its own row above the sprint picker (`null`/omitted hides the row).                          |
+| `writeQueueStatus`   | The write-queue status indicator, in the tile's top-right corner group (`null`/omitted omits it).                                 |
+| `extensionVersion`   | Built extension version, shown in the top-right corner group just left of the ordering picker.                                    |
 
 ### Handle
 

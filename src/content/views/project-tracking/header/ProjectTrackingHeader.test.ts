@@ -78,6 +78,30 @@ describe("renderProjectTrackingHeader - title & controls", () => {
     expect(style.includes("#ff6b6b") || style.includes("rgb(255, 107, 107)")).toBe(true);
   });
 
+  it("shows the extension version in the top corner, just left of the ordering picker", () => {
+    const orderingPicker = document.createElement("span");
+    orderingPicker.className = "awesomeado-ordering";
+
+    const { element } = renderProjectTrackingHeader(
+      document,
+      baseOptions({ extensionVersion: "0.3.42", orderingPicker }),
+    );
+
+    const corner = element.querySelector(".awesomeado-tracking__header-corner");
+    const version = corner?.querySelector<HTMLElement>(".awesomeado-version");
+    expect(version?.textContent).toBe("v 0.3");
+    expect(version?.nextElementSibling).toBe(orderingPicker);
+    // Spaced apart on purpose: flush together, a link to the store and a control that changes the
+    // board would read as one thing.
+    expect(version?.style.marginRight).toBe("16px");
+  });
+
+  it("leaves the corner to the ordering picker alone when no version is supplied", () => {
+    const { element } = renderProjectTrackingHeader(document, baseOptions());
+
+    expect(element.querySelector(".awesomeado-version")).toBeNull();
+  });
+
   it("reports a right-click on the title so the view can offer the root item's menu", () => {
     const seen: MouseEvent[] = [];
     const { element } = renderProjectTrackingHeader(

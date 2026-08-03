@@ -322,6 +322,7 @@ describe("ProjectTrackingView — services & load errors", () => {
       doc,
       queryId: "q1",
       properties: {},
+      extensionVersion: "0.3.42",
       services,
     };
 
@@ -332,6 +333,7 @@ describe("ProjectTrackingView — services & load errors", () => {
     await Promise.resolve();
 
     expect(root.textContent).toContain("Query execution failed");
+    expect(root.querySelector(".awesomeado-version")?.textContent).toBe("v 0.3");
   });
 
   it("should show error when query is not a tree query", async () => {

@@ -32,6 +32,10 @@ import {
   renderRefreshButton,
   type RefreshButtonHandle,
 } from "../../../../common/view-common/control/HeaderButtons/HeaderButtons";
+import {
+  renderVersionLabel,
+  VERSION_MARKER_GAP_PX,
+} from "../../../../common/view-common/control/VersionLabel/VersionLabel";
 
 export type { RefreshButtonHandle } from "../../../../common/view-common/control/HeaderButtons/HeaderButtons";
 
@@ -77,6 +81,8 @@ export interface ProjectTrackingHeaderOptions {
    * leaves the corner to the ordering indicator.
    */
   writeQueueStatus?: HTMLElement | null;
+  /** The built extension version, shown quietly at the bottom-right of the header tile. */
+  extensionVersion?: string;
 }
 
 /**
@@ -183,6 +189,19 @@ function renderHeaderFilters(doc: Document, options: ProjectTrackingHeaderOption
   return filters;
 }
 
+function appendVersionMarker(
+  doc: Document,
+  corner: HTMLElement,
+  extensionVersion: string | undefined,
+): void {
+  if (!extensionVersion) {
+    return;
+  }
+  const version = renderVersionLabel(doc, extensionVersion);
+  version.style.marginRight = `${VERSION_MARKER_GAP_PX}px`;
+  corner.append(version);
+}
+
 /**
  * Renders the Project Tracking header tile. The view mounts `element` and wires the returned
  * expand/collapse buttons to the tree's twisties.
@@ -241,6 +260,8 @@ export function renderProjectTrackingHeader(
 
   // Grouped and pushed right together, so the ordering glyph keeps the same corner position whether
   // or not a save is in flight — the status grows leftward into the gap instead of displacing it.
+  // The version marker sits immediately left of the glyph for the same reason: anchored to it, it
+  // stays put while the status comes and goes further left.
   const corner = doc.createElement("div");
   corner.className = "awesomeado-tracking__header-corner";
   corner.style.cssText = ["display:flex", "align-items:center", "gap:8px", "margin-left:auto"].join(
@@ -249,6 +270,7 @@ export function renderProjectTrackingHeader(
   if (options.writeQueueStatus) {
     corner.append(options.writeQueueStatus);
   }
+  appendVersionMarker(doc, corner, options.extensionVersion);
   corner.append(options.orderingPicker);
   topRow.append(corner);
   header.append(topRow);

@@ -1089,11 +1089,15 @@ function findItem(items: readonly TrackedWorkItem[], id: number): TrackedWorkIte
 
 function applyReportedRanks(
   items: readonly TrackedWorkItem[],
-  ranks: readonly { id: number; rank: number }[],
+  ranks: readonly { id: number; rank: number; rev?: number }[],
 ): void {
-  for (const { id, rank } of ranks) {
+  for (const { id, rank, rev } of ranks) {
     const item = findItem(items, id);
-    if (item !== null) item.importance = rank;
+    if (item === null) continue;
+    item.importance = rank;
+    // A rank write is a revision too, so an item renumbered here keeps a usable rev; without this
+    // the next edit to any sibling the renumber touched is refused as a conflict.
+    if (rev !== undefined) item.rev = rev;
   }
 }
 

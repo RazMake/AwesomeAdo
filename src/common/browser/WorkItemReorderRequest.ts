@@ -48,6 +48,7 @@ export type ReorderStage = "state" | "relations" | "reparent" | "order";
 export interface ReorderWorkItemResponse {
   ok: boolean;
   order?: number;
+  /** The item's `System.Rev` after the move, re-read once the ranking landed (ranking bumps it). */
   rev?: number;
   error?: string;
   /**
@@ -66,9 +67,10 @@ export interface ReorderWorkItemResponse {
   stateChanged?: boolean;
   /**
    * Every rank the worker wrote directly, when Azure DevOps refused to order the item itself.
-   * Placing one item can renumber its whole level, so this names each item whose rank changed.
+   * Placing one item can renumber its whole level, so this names each item whose rank changed, with
+   * the `System.Rev` that write produced where ADO reported one.
    */
-  ranks?: readonly { id: number; rank: number }[];
+  ranks?: readonly { id: number; rank: number; rev?: number }[];
   /**
    * The raw body Azure DevOps returned with a rejected request, truncated.
    *

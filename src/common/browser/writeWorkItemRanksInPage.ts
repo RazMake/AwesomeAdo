@@ -18,6 +18,15 @@ export interface WriteWorkItemRanksResponse {
   ok: boolean;
   /** The ids that were written, so a partial failure still says what did change. */
   written?: number[];
+  /**
+   * The `System.Rev` each written item ended up at.
+   *
+   * A rank write is still a work item revision, so an item renumbered here and left holding its old
+   * rev has its NEXT field write refused with HTTP 412 — and a renumber touches the whole level, not
+   * just the item someone dragged. ADO returns the updated item from each patch, so this costs
+   * nothing beyond reading what already came back.
+   */
+  revs?: { id: number; rev: number }[];
   error?: string;
 }
 
@@ -48,7 +57,25 @@ export function writeWorkItemRanksInPage(
 ): Promise<WriteWorkItemRanksResponse> {
   const path = "/fields/" + config.field;
   const written: number[] = [];
+  const revs: { id: number; rev: number }[] = [];
   const failures: string[] = [];
+
+  // The rev rides back on the patch response, so reading it costs no extra request. Started from a
+  // resolved promise so a body that is absent, empty or not JSON becomes a rejection this swallows:
+  // the rank IS written by now, and losing the rev must never turn a landed write into a failure.
+  const recordRev = (id: number, response: Response): Promise<null> =>
+    Promise.resolve()
+      .then(() => response.json())
+      .then(
+        (json) => {
+          const rev = (json as { rev?: unknown }).rev;
+          // Finite, not merely "a number": a NaN would travel on as the item's rev and serialize
+          // into the next patch as `null`, turning this fix into the bug it exists to prevent.
+          if (typeof rev === "number" && Number.isFinite(rev)) revs.push({ id: id, rev: rev });
+          return null;
+        },
+        () => null,
+      );
 
   const writeOne = (target: {
     id: number;
@@ -63,7 +90,7 @@ export function writeWorkItemRanksInPage(
     }).then((response) => {
       if (response.ok) {
         written.push(target.id);
-        return null;
+        return recordRev(target.id, response);
       }
       const status = "HTTP " + String(response.status);
       return response.text().then(
@@ -87,7 +114,8 @@ export function writeWorkItemRanksInPage(
     .then(() => ({
       ok: failures.length === 0,
       written: written,
+      revs: revs,
       error: failures.length === 0 ? undefined : failures.join("; "),
     }))
-    .catch((err) => ({ ok: false, written: written, error: String(err) }));
+    .catch((err) => ({ ok: false, written: written, revs: revs, error: String(err) }));
 }

@@ -50,7 +50,13 @@ export interface WorkItemReorderResult {
    * so a later re-sort keeps the item where it was dropped instead of snapping back to its old rank.
    */
   order?: number;
-  /** The item's new `System.Rev` when the re-parent patch ran; undefined when the parent was kept. */
+  /**
+   * The item's `System.Rev` after the move, re-read once the ranking landed.
+   *
+   * Ranking bumps the revision — the rank IS a field on the item — but the order endpoint answers
+   * with positions only, so this is read back rather than reported by ADO. The caller folds it onto
+   * its copy or the item's next field write is refused as a conflict with the move it just made.
+   */
   rev?: number;
   /**
    * Whether the hierarchy link was changed, reported even when the move then failed to rank the
@@ -63,9 +69,10 @@ export interface WorkItemReorderResult {
   /**
    * Every rank written directly, when Azure DevOps refused to rank the item itself. Placing an item
    * can renumber its whole level, so this names each item whose rank changed — not just the moved
-   * one — and the caller refreshes all of them or its next re-sort scrambles the level.
+   * one — and the caller refreshes all of them or its next re-sort scrambles the level. Each entry
+   * also carries that item's new `System.Rev` where the write reported one.
    */
-  ranks?: readonly { id: number; rank: number }[];
+  ranks?: readonly { id: number; rank: number; rev?: number }[];
   /** A short error description when ok is false. */
   error?: string;
 }

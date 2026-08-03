@@ -9,6 +9,15 @@ const url = (id: number): string => `https://ado.example/contoso/_apis/wit/worki
 const reply = (ok: boolean, status = 200, text = ""): Response =>
   ({ ok, status, text: () => Promise.resolve(text) }) as unknown as Response;
 
+/** A 200 that also describes the updated item back, the way Azure DevOps really answers a patch. */
+const replyWithRev = (rev: number): Response =>
+  ({
+    ok: true,
+    status: 200,
+    text: () => Promise.resolve(""),
+    json: () => Promise.resolve({ rev }),
+  }) as unknown as Response;
+
 type Call = [string, RequestInit | undefined];
 
 /** Stubs `fetch` with a per-URL outcome, recording the calls in the order they were made. */
@@ -47,7 +56,40 @@ describe("writeWorkItemRanksInPage", () => {
     expect(JSON.parse(init?.body as string)).toEqual([
       { op: "add", path: `/fields/${FIELD}`, value: 1500 },
     ]);
-    expect(result).toEqual({ ok: true, written: [1], error: undefined });
+    expect(result).toEqual({ ok: true, written: [1], revs: [], error: undefined });
+  });
+
+  // A rank write is a revision like any other. Reporting it is what stops every item a renumber
+  // touched from failing its NEXT edit with HTTP 412.
+  it("reports the revision each write produced", async () => {
+    stubFetch({ [url(1)]: replyWithRev(12), [url(2)]: replyWithRev(4) });
+
+    const result = await writeWorkItemRanksInPage({
+      field: FIELD,
+      writes: [
+        { id: 1, url: url(1), rank: 100 },
+        { id: 2, url: url(2), rank: 200 },
+      ],
+    });
+
+    expect(result.revs).toEqual([
+      { id: 1, rev: 12 },
+      { id: 2, rev: 4 },
+    ]);
+  });
+
+  it("still counts a write whose body says nothing about the revision", async () => {
+    // The rank IS written by then; losing the rev must never report a landed write as failed.
+    stubFetch({ [url(1)]: replyWithRev(NaN) });
+
+    const result = await writeWorkItemRanksInPage({
+      field: FIELD,
+      writes: [{ id: 1, url: url(1), rank: 100 }],
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.written).toEqual([1]);
+    expect(result.revs).toEqual([]);
   });
 
   it("sends no rev test, unlike every other patch the extension makes", async () => {
@@ -98,7 +140,7 @@ describe("writeWorkItemRanksInPage - failures", () => {
       writes: [{ id: 1, url: url(1), rank: 100 }],
     });
 
-    expect(result).toEqual({ ok: false, written: [], error: "1: HTTP 500" });
+    expect(result).toEqual({ ok: false, written: [], revs: [], error: "1: HTTP 500" });
   });
 
   it("truncates a long error body so one failure cannot flood a bounded log", async () => {
@@ -118,6 +160,7 @@ describe("writeWorkItemRanksInPage - failures", () => {
     expect(await writeWorkItemRanksInPage({ field: FIELD, writes: [] })).toEqual({
       ok: true,
       written: [],
+      revs: [],
       error: undefined,
     });
     expect(calls).toEqual([]);

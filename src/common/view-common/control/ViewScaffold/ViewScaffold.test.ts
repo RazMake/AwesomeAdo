@@ -36,4 +36,16 @@ describe("renderViewScaffold", () => {
     // The root uses the ADO theme's primary text color token so views respect light/dark themes.
     expect(root.style.color).toContain("var(--text-primary-color");
   });
+
+  it("shows the built version in a quiet bottom-right marker when provided", () => {
+    const root = renderViewScaffold(document, {
+      title: "T",
+      message: "M",
+      extensionVersion: "0.3.42",
+    });
+
+    const version = root.querySelector<HTMLElement>(".awesomeado-version");
+    expect(version?.textContent).toBe("v 0.3");
+    expect(version?.style.bottom).toBe("16px");
+  });
 });

@@ -430,7 +430,12 @@ const trackingServices: EnhancedViewServices = {
 // what to render) and the top-bar menu (to check the active row and to write the user's choice).
 const sessionActiveViews = new SessionActiveViewOverrides();
 const controller = new QueryPageController(
-  new EnhancedViewSurface(document, trackingServices),
+  new EnhancedViewSurface(
+    document,
+    trackingServices,
+    undefined,
+    chrome.runtime.getManifest().version,
+  ),
   location.href,
   sessionActiveViews,
   loggers.forSource("content/query-page"),

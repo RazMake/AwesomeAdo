@@ -17,7 +17,8 @@ This is a flattened snapshot of what exists now, not a build log.
 - **Views** (`src/content/views`, contracts in `src/common/view-common`): per-view folders each
   holding a `ViewType` config (in the `VIEW_TYPES` catalog) and an `EnhancedView` renderer (in the
   eager/lazy enhanced-view registry), a shared placeholder shell (`renderViewScaffold`), and
-  `sprint` / `project-tracking` views. Project Tracking ships as an on-demand ESM renderer; store
+  `sprint` / `project-tracking` views. Every enhanced-view header displays the built extension version
+  discreetly in its lower-right corner. Project Tracking ships as an on-demand ESM renderer; store
   builds minify it and the always-loaded runtime. Its hierarchy renders Primary work and planning
   ancestors as rows while rolling implementation-detail children into compact badges, and an open
   view redraws immediately when settings-backed configuration changes. Project

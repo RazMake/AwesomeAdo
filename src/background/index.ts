@@ -139,6 +139,7 @@ import {
   type LoadWorkItemNotesResponse,
   type RawWorkItemNotes,
   type WriteWorkItemNoteMessage,
+  type WriteWorkItemNoteConfig,
   type WriteWorkItemNoteResponse,
 } from "../common/browser/WorkItemNoteRequest";
 import {
@@ -173,6 +174,7 @@ import { fetchWorkItemNotesInPage } from "../common/browser/fetchWorkItemNotesIn
 import { findFeatureCrewInPage } from "../common/browser/findFeatureCrewInPage";
 import { readInterruptAcceptance as readInterruptAcceptancePages } from "../common/browser/readInterruptAcceptance";
 import { readWorkItemRanksInPage } from "../common/browser/readWorkItemRanksInPage";
+import { readWorkItemRevInPage } from "../common/browser/readWorkItemRevInPage";
 import {
   reorderWorkItemInPage,
   type ReorderWorkItemConfig,
@@ -1037,7 +1039,8 @@ const reorderWorkItem = async (
     });
     const rawResult = (results[0]?.result as ReorderWorkItemResponse | undefined) ?? null;
     const result = withPreparedState(rawResult ?? { ok: false, error: "no result" }, preparation);
-    return finishReorder(message, preparedMessage, tabId, tabUrl, result);
+    const outcome = await finishReorder(message, preparedMessage, tabId, tabUrl, result);
+    return withCurrentRev(tabId, config.itemUrl, outcome);
   } catch (error) {
     // Injection fails on a closed/navigated/restricted tab; report the failure so the view degrades.
     logger.error(`Could not reorder work item ${message.id}`, error);
@@ -1076,6 +1079,30 @@ async function finishReorder(
 
 function orderDescription(order: number | undefined): number | string {
   return order === undefined ? "unchanged" : order;
+}
+
+/**
+ * Re-read the moved item's revision once the move has settled.
+ *
+ * Ranking and re-parenting both bump `System.Rev`, but `_apis/work/workitemsorder` reports positions
+ * only — so whatever rev the response carries is already behind. Left uncorrected, the board keeps
+ * it and the item's NEXT field write is refused with HTTP 412 until the page is reloaded. Done here,
+ * once, rather than inside the injected move: that function is serialized into the page and every
+ * line in it is a line no unit test can reach.
+ *
+ * Skipped when nothing landed, since the rev cannot have moved. A read that fails leaves the outcome
+ * as it was — the move itself already succeeded, and reporting it as failed would be a lie.
+ */
+async function withCurrentRev(
+  tabId: number,
+  itemUrl: string,
+  outcome: ReorderWorkItemResponse,
+): Promise<ReorderWorkItemResponse> {
+  if (!outcome.ok && outcome.reparented !== true && outcome.stateChanged !== true) {
+    return outcome;
+  }
+  const rev = await runInTab(tabId, readWorkItemRevInPage, { itemUrl });
+  return typeof rev === "number" ? { ...outcome, rev } : outcome;
 }
 
 // Rank the level by writing the rank field directly, for the moves ADO's backlog-order endpoint
@@ -1176,7 +1203,7 @@ async function writeRanksInTab(
   tabId: number,
   tabUrl: string,
   writes: readonly { id: number; rank: number }[],
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<{ ok: boolean; error?: string; revs?: readonly { id: number; rev: number }[] }> {
   const targets = buildRankTargets(writes, tabUrl);
   if (targets === null) {
     return { ok: false, error: "could not build the work item URL for a rank write" };
@@ -1492,22 +1519,40 @@ chrome.runtime.onMessage.addListener(
 // built (`isWriteWorkItemNoteMessage`), and the only thing this can express is "post/rewrite one
 // comment on one item". Azure DevOps itself rejects an edit from anyone but the note's author, so
 // authorization stays on the server rather than being asserted here.
+const noteWriteConfig = (
+  message: WriteWorkItemNoteMessage,
+  tabUrl: string,
+): WriteWorkItemNoteConfig | null => {
+  const isEdit = message.noteId !== null;
+  const url = isEdit
+    ? buildEditNoteUrl(tabUrl, message.workItemId, message.noteId as number)
+    : buildAddNoteUrl(tabUrl, message.workItemId);
+  return url === null
+    ? null
+    : {
+        url,
+        method: isEdit ? "PATCH" : "POST",
+        text: message.text,
+        // A comment creates a new work item revision that the comments API says nothing about, so
+        // the item is re-read and the fresh rev handed back — otherwise the board's cached rev falls
+        // one behind here and its next field write on this item is refused with HTTP 412.
+        workItemUrl: buildWorkItemUpdateUrl(tabUrl, message.workItemId) ?? undefined,
+      };
+};
+
 const writeWorkItemNote = async (
   message: WriteWorkItemNoteMessage,
   tabId: number,
   tabUrl: string,
 ): Promise<WriteWorkItemNoteResponse> => {
-  const isEdit = message.noteId !== null;
   // Logged on ARRIVAL, before anything can go wrong — same reason as the read above. The note's TEXT
   // is never logged, only its length (AGENTS.md §9).
   logger.info(
-    `Note ${isEdit ? `edit ${String(message.noteId)}` : "add"} requested on work item ` +
-      `${message.workItemId} (${message.text.length} characters).`,
+    `Note ${message.noteId === null ? "add" : `edit ${String(message.noteId)}`} requested on work ` +
+      `item ${message.workItemId} (${message.text.length} characters).`,
   );
-  const url = isEdit
-    ? buildEditNoteUrl(tabUrl, message.workItemId, message.noteId as number)
-    : buildAddNoteUrl(tabUrl, message.workItemId);
-  if (url === null) {
+  const config = noteWriteConfig(message, tabUrl);
+  if (config === null) {
     logger.info(
       `Note write skipped for work item ${message.workItemId}: tab is not a project-scoped ADO URL.`,
     );
@@ -1518,7 +1563,7 @@ const writeWorkItemNote = async (
       target: { tabId },
       world: "MAIN",
       func: writeWorkItemNoteInPage,
-      args: [url, isEdit ? "PATCH" : "POST", message.text],
+      args: [config],
     });
     const result = firstScriptResult(results) as WriteWorkItemNoteResponse | null;
     if (result === null) {
@@ -1530,7 +1575,10 @@ const writeWorkItemNote = async (
         `Note write on work item ${message.workItemId} failed: ${result.error ?? "unknown"}.`,
       );
     } else {
-      logger.info(`Note write on work item ${message.workItemId} accepted by Azure DevOps.`);
+      logger.info(
+        `Note write on work item ${message.workItemId} accepted by Azure DevOps, ` +
+          `rev=${result.rev ?? "none"}.`,
+      );
     }
     return result;
   } catch (error) {

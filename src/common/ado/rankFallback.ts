@@ -16,6 +16,14 @@ const MAX_BATCH_IDS = 200;
 export interface RankWrite {
   id: number;
   rank: number;
+  /**
+   * The item's `System.Rev` after the rank landed, when the write reported one.
+   *
+   * A rank write is a work item revision like any other, and a renumber rewrites the whole level —
+   * so without this every sibling the user never touched is left holding a stale rev, and the next
+   * edit to any of them is refused with HTTP 412 until the board reloads.
+   */
+  rev?: number;
 }
 
 /**
@@ -208,8 +216,10 @@ export interface RankFallbackResult {
 /** Reads the current ranks of a page of work items; resolves with the raw batch body, or null. */
 export type ReadRanks = (ids: readonly number[]) => Promise<unknown>;
 
-/** Applies rank writes; resolves with whether they all landed. */
-export type WriteRanks = (writes: readonly RankWrite[]) => Promise<{ ok: boolean; error?: string }>;
+/** Applies rank writes; resolves with whether they all landed, and the revisions they produced. */
+export type WriteRanks = (
+  writes: readonly RankWrite[],
+) => Promise<{ ok: boolean; error?: string; revs?: readonly { id: number; rev: number }[] }>;
 
 /**
  * Rank a level by writing the rank field directly, for the moves Azure DevOps' own backlog-order
@@ -250,7 +260,22 @@ export async function applyRankFallback(options: {
   if (!written.ok) {
     return { ok: false, error: written.error, reseeded: plan.reseeded };
   }
-  return { ok: true, order, ranks: plan.writes, reseeded: plan.reseeded };
+  return { ok: true, order, ranks: withRevs(plan.writes, written.revs), reseeded: plan.reseeded };
+}
+
+/** Attach the revision each write produced, so the caller can keep every renumbered item current. */
+function withRevs(
+  writes: readonly RankWrite[],
+  revs: readonly { id: number; rev: number }[] | undefined,
+): RankWrite[] {
+  if (revs === undefined || revs.length === 0) {
+    return [...writes];
+  }
+  const byId = new Map(revs.map((entry) => [entry.id, entry.rev]));
+  return writes.map((write) => {
+    const rev = byId.get(write.id);
+    return rev === undefined ? write : { ...write, rev };
+  });
 }
 
 /** Read every sibling's rank, one request-sized page at a time, merged into one map. */

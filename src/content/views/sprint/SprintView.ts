@@ -701,6 +701,17 @@ function renderHeaderStatuses(options: SprintHeaderRenderOptions): {
   return { refresh, queueStatus, bulkMoveStatus };
 }
 
+function renderHeaderTeamPills(options: SprintHeaderRenderOptions): HTMLElement[] {
+  return renderTeamPills(
+    options.context.doc,
+    options.data.teamMembers.members,
+    options.baseItems,
+    options.types,
+    options.session,
+    options.repaint,
+  );
+}
+
 function renderBoardHeader(options: SprintHeaderRenderOptions): {
   header: HTMLElement;
   refresh: RefreshButtonHandle;
@@ -766,14 +777,8 @@ function renderBoardHeader(options: SprintHeaderRenderOptions): {
       refresh,
       queueStatus: queueStatus.element,
       bulkMoveStatus,
-      teamPills: renderTeamPills(
-        context.doc,
-        data.teamMembers.members,
-        options.baseItems,
-        options.types,
-        session,
-        repaint,
-      ),
+      extensionVersion: context.extensionVersion,
+      teamPills: renderHeaderTeamPills(options),
       onTitleContextMenu: options.onTitleContextMenu,
     }),
     refresh,
@@ -1176,6 +1181,7 @@ function renderLoadFailure(context: EnhancedViewContext, root: HTMLElement, erro
     renderViewScaffold(context.doc, {
       title: "Sprint View",
       message: "Could not load this sprint.",
+      extensionVersion: context.extensionVersion,
     }),
   );
 }

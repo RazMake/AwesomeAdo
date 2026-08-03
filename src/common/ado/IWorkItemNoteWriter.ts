@@ -24,6 +24,14 @@ export interface EditNoteRequest {
 export interface NoteWriteResult {
   ok: boolean;
   note?: WorkItemNote;
+  /**
+   * The item's `System.Rev` once the note had landed; absent when it could not be read.
+   *
+   * A note is not a side conversation: Azure DevOps records it as a work item REVISION, so an item
+   * whose cached rev is not moved on here has every later field write refused as a conflict against
+   * a change the same person just made. Callers holding the item fold this back onto it.
+   */
+  rev?: number;
   /** A short error description when `ok` is false. */
   error?: string;
 }

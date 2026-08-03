@@ -1,3 +1,5 @@
+import { renderVersionLabel } from "../VersionLabel/VersionLabel";
+
 /**
  * The placeholder surface every enhanced view starts from.
  *
@@ -12,6 +14,8 @@ export interface ViewScaffoldContent {
   title: string;
   /** One line describing what the view shows (a "hello world" placeholder for a new view). */
   message: string;
+  /** The built extension version, displayed when the scaffold is rendered as a fallback view. */
+  extensionVersion?: string;
 }
 
 /** Build the standard centered title + message shell for a view, in the given document. */
@@ -31,6 +35,7 @@ export function renderViewScaffold(doc: Document, content: ViewScaffoldContent):
     "min-height:100%",
     "box-sizing:border-box",
     "padding:32px",
+    "position:relative",
     "text-align:center",
     "font-family:inherit",
     "color:var(--text-primary-color)",
@@ -47,5 +52,12 @@ export function renderViewScaffold(doc: Document, content: ViewScaffoldContent):
   body.style.cssText = "margin:0;font-size:14px;opacity:0.8";
 
   root.append(heading, body);
+  if (content.extensionVersion) {
+    const version = renderVersionLabel(doc, content.extensionVersion);
+    version.style.position = "absolute";
+    version.style.right = "16px";
+    version.style.bottom = "16px";
+    root.append(version);
+  }
   return root;
 }

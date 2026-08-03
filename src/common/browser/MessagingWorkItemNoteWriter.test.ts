@@ -101,6 +101,14 @@ describe("MessagingWorkItemNoteWriter — outcomes", () => {
     expect(result).toEqual({ ok: true, note: undefined });
   });
 
+  it("passes on the revision the note created, so the caller's next edit is not a conflict", async () => {
+    const { writer } = createWriter({ ok: true, raw: SAVED_COMMENT, rev: 13 });
+
+    const result = await writer.addNote({ workItemId: WORK_ITEM_ID, text: NOTE_TEXT });
+
+    expect(result.rev).toBe(13);
+  });
+
   it("reports and records a write Azure DevOps refused", async () => {
     const { writer, error } = createWriter({ ok: false, error: "HTTP 403" });
 

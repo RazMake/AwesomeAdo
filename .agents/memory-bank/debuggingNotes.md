@@ -354,7 +354,7 @@ bindings ...` / `Pulled team configuration ...`.
 - `System.History` is an **HTML** field, so the MAIN-world patch escapes `& < >` and turns newlines
   into `<br>`. A comment written there still shows up in the Comments API the notes panel reads.
 - Related, already recorded below: reordering also bumps `System.Rev` but the order API never reports
-  the new one — never treat a post-move cached rev as authoritative.
+  the new one — the worker re-reads it now, for the same reason a note write does.
 
 ## A cached `System.Rev` goes stale ON ITS OWN — `baseValue` is the one licensed rebase
 
@@ -376,6 +376,51 @@ rev 15)`) reappearing on a marker-tag command that was ALREADY one patch. One pa
 - Comparison is a trimmed string compare, which is exact for `System.Tags` because
   `formatWorkItemTags` joins with ADO's own `"; "`. A field whose stored form differs from what the
   extension would write simply never rebases (it fails as before) — it can never rebase wrongly.
+
+## A note posted from the panel left the board's rev behind — now the item is re-read
+
+- SYMPTOM: after adding or correcting a note in the notes panel, EVERY later change to that item was
+  refused (`HTTP 412`) until the board was reloaded — status, assignee, ETA and child completion hard
+  failed, while title / description / sprint / area path survived only because they pass `baseValue`
+  and burn their one licensed rebase on it.
+- ROOT CAUSE: the two entries above, reached from the other end. `NotesPanel.submitNote` wrote through
+  `IWorkItemNoteWriter` (the comments API), which bumps `System.Rev` and reports nothing about the
+  item — so nothing folded a new rev onto `TrackedWorkItem` and `currentRev()` kept handing out the
+  pre-note value. The "one JSON Patch" rule does not reach this case: a discussion note IS the user's
+  action, not the explanation of another one, so there is no field write to ride along with.
+- FIX / RULE: **anything that writes a work item must leave the item's rev current.** The injected
+  `writeWorkItemNoteInPage` now takes a `workItemUrl` and re-reads the item after the note lands;
+  `rev` travels back on `WriteWorkItemNoteResponse` → `NoteWriteResult` → the panel's
+  `onItemRevision` callback → `item.rev` at all three notes surfaces (row panel, marker-reasons pill,
+  "View all notes"). The extra GET is the price of an API that reports no rev.
+- The note is already stored when that read happens, so a failed re-read reports **no rev** rather
+  than a failed write — telling an author their stored note was lost invites a duplicate.
+- `writeWorkItemNoteInPage` took positional arguments; `workItemUrl` is optional, so it had to become
+  a config object first (an `undefined` entry in `args` makes `executeScript` reject the injection).
+
+## A reorder left the board's rev behind too — the item AND every renumbered sibling
+
+- SYMPTOM: after dragging a card, the next edit to it failed — `Work item 7691600 field write failed:
+HTTP 412` / `Field write for item 7691600 → "System.State" failed (base rev 9)`. Identical shape to
+  the note bug above, and the same root cause reached from a third direction.
+- ROOT CAUSE: the backlog rank IS a field on the item, so `_apis/work/workitemsorder` creates a
+  revision — but it answers with POSITIONS only and never mentions the rev. `reorderWorkItemInPage`
+  was reporting the rev from the RE-PARENT patch, which the ranking then superseded; on a pure
+  reorder (parent unchanged) it reported no rev at all, so `item.rev` never moved.
+- SECOND, WIDER INSTANCE: the ADR-042 rank fallback (`writeWorkItemRanksInPage`) patches a rank onto
+  every item in the level and reported only which ids landed. A renumber therefore left EVERY sibling
+  holding a stale rev — so the 412 could hit a card the user never touched.
+- FIX / RULE: the worker re-reads the item with the new `readWorkItemRevInPage` once a move has
+  settled (`withCurrentRev` in `background/index.ts`), and the rank writer now returns `revs` which
+  `applyRankFallback` folds onto `RankWrite` → `applyRanksToTree` / `applyReportedRanks` → `item.rev`.
+- The rev read is its OWN injected function, not more lines inside `reorderWorkItemInPage`: that
+  function was already at the `max-lines-per-function` ceiling, and every line inside an injected
+  function is a line no unit test can reach. Splitting it satisfied the linter by improving the code
+  rather than by silencing it.
+- A failed rev read reports NOTHING (`null`), never a guess — the move has already landed, and a
+  fabricated rev would poison the very next write.
+- Guard revs with `Number.isFinite`, not `typeof rev === "number"`: `NaN` passes the typeof check and
+  then serializes into the next patch's `test /rev` as `null`, failing every write from then on.
 
 ## An identity PRECONDITION is compared literally — the sign-in address always fails HTTP 412
 
@@ -637,7 +682,8 @@ outside of its immediate parent.` — every single time, for the same item, with
   plain-English line; the background logs which items were re-ranked and whether the level was
   renumbered. If a drop "worked" but the row jumped somewhere odd, look for `renumbered` there.
 - Reordering DOES bump `System.Rev` (the rank is a field on the item) but the order API never reports
-  the new rev — so never treat a post-move cached rev as authoritative.
+  the new rev — so never treat a post-move cached rev as authoritative. The worker now re-reads it
+  (`readWorkItemRevInPage`); see "A reorder left the board's rev behind too" above.
 
 ## Terminology (per developer, use consistently)
 

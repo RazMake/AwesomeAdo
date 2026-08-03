@@ -159,6 +159,8 @@ export interface EnhancedViewContext {
    * view bound to two queries can therefore render differently.
    */
   properties: Record<string, string>;
+  /** The built extension version shown in each view header. */
+  extensionVersion?: string;
   /**
    * Injected data/services for data-driven views (tree loader, user directory, type catalog, sprints,
    * clock, logger). Absent for placeholder views — views that need data must check this before using

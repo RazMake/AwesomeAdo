@@ -75,7 +75,35 @@ export interface WriteWorkItemNoteResponse {
   ok: boolean;
   /** The saved comment body, so the caller can show exactly what ADO stored. */
   raw?: unknown;
+  /**
+   * The item's `System.Rev` once the note had landed; absent when it could not be re-read.
+   *
+   * Reported because Azure DevOps creates a new work item REVISION for a comment while the comments
+   * API answers with nothing about the item — so a caller that kept its own rev would be one behind
+   * from this moment on, and every later field write on the item refused with HTTP 412.
+   */
+  rev?: number;
   error?: string;
+}
+
+/**
+ * What the background worker hands the MAIN-world note write: the author's text, plus the URLs the
+ * worker built from the SENDER's own trusted tab URL (which is why this is not simply the message).
+ *
+ * ONE object rather than an argument each, for the same reason `UpdateWorkItemFieldConfig` is:
+ * `chrome.scripting.executeScript` requires every entry of `args` to be JSON-serializable and
+ * `undefined` is not, so an omitted optional argument leaves an unserializable hole in that array
+ * and Chrome rejects the whole injection before it runs. Optional *properties* simply disappear.
+ */
+export interface WriteWorkItemNoteConfig {
+  /** The comments endpoint: the item's collection for a new note, the comment's own URL for an edit. */
+  url: string;
+  /** `POST` creates, `PATCH` rewrites; the two differ only in this verb and the id already in `url`. */
+  method: string;
+  /** The note's Markdown source. */
+  text: string;
+  /** The item's `_apis/wit/workitems/{id}` endpoint, re-read for `rev`; absent on a non-ADO URL. */
+  workItemUrl?: string;
 }
 
 /** A work item id: a positive integer, since it is interpolated into the request URL. */

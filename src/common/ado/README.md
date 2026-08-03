@@ -496,8 +496,11 @@ The normalized model for a work item **note** — one entry in its Azure DevOps 
 ### `IWorkItemNoteWriter.ts`
 
 - `AddNoteRequest` — `{ workItemId, text }`; `EditNoteRequest` — `{ workItemId, noteId, text }`.
-- `NoteWriteResult` — `{ ok, note?, error? }`; the saved note comes back so a list can show exactly
-  what ADO stored rather than echoing what was typed.
+- `NoteWriteResult` — `{ ok, note?, rev?, error? }`; the saved note comes back so a list can show
+  exactly what ADO stored rather than echoing what was typed, and `rev` is the item's revision AFTER
+  the note landed. Azure DevOps records a note AS a work item revision, so a caller holding the item
+  folds `rev` back onto it (`item.rev = result.rev`) — otherwise its very next field write is refused
+  as a conflict with the note the same person just wrote.
 - `IWorkItemNoteWriter` — `addNote` / `editNote`. Kept separate from the loader (Interface
   Segregation): showing notes and authoring them are different capabilities.
 

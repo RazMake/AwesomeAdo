@@ -768,6 +768,23 @@ there would reject harmlessly concurrent moves of unrelated items. Every URL in 
 the worker from the sender's own trusted tab URL (see `common/ado/reorderWorkItems`). Serialized with
 `Function.prototype.toString`, so it references only its parameter and page globals.
 
+The rev this reports is **not** the item's final one: ranking bumps `System.Rev` and the order
+endpoint never mentions it. The worker corrects it with `readWorkItemRevInPage` (below) once the move
+has settled.
+
+### `readWorkItemRevInPage(config)` — `readWorkItemRevInPage.ts`
+
+Reads one item's current `System.Rev` (`{ itemUrl }` → `number | null`). The worker runs it after a
+move that landed — fully, or only its re-parent/state half — because the backlog rank IS a field on
+the item, so ranking creates a revision that `_apis/work/workitemsorder` reports nothing about. A
+caller left holding the rev it moved the item with has its **next** field write refused with
+`HTTP 412` until the board reloads.
+
+`null` means the revision could not be read, never a guess: the move has already landed by then, so
+the caller keeps what it had rather than treating an applied move as failed. It is deliberately its
+own injected function rather than a few more lines inside `reorderWorkItemInPage` — every line inside
+an injected function is a line no unit test can reach, so the small, testable piece is kept separate.
+
 ### `readWorkItemRanksInPage(config)` / `writeWorkItemRanksInPage(config)`
 
 The pair the worker injects when ADO **refuses** to rank an item (`TF400486`) and the rank has to be
@@ -777,9 +794,12 @@ written directly instead — see `common/ado/rankFallback` for when and why.
   ids and hands the body back **unparsed**; reading ranks out of it is module code that can be tested.
   The caller pages the ids (the endpoint caps a request at 200).
 - `writeWorkItemRanksInPage({ field, writes })` PATCHes `{ id, url, rank }` one item after another and
-  reports which ids landed. It sends **no `test /rev`** guard, unlike every other patch here: a rank
-  is a position the operation just computed rather than a value a person authored, and guarding it
-  would leave a renumbered level half-written whenever anyone had touched an unrelated field.
+  reports which ids landed, plus the `System.Rev` each write produced (`revs`). It sends **no
+  `test /rev`** guard, unlike every other patch here: a rank is a position the operation just computed
+  rather than a value a person authored, and guarding it would leave a renumbered level half-written
+  whenever anyone had touched an unrelated field. The revisions are reported because a renumber
+  rewrites the **whole level** — every sibling it touched would otherwise be left holding a stale rev
+  and fail its next edit with `HTTP 412`.
 
 Both are serialized with `Function.prototype.toString` and reference only their parameter and page
 globals. Every URL is built by the worker from the sender's own trusted tab URL.
@@ -805,7 +825,10 @@ from the **sender's own trusted tab URL**.
 - `LoadWorkItemNotesResponse` (`{ raw, error? }`).
 - `WRITE_WORK_ITEM_NOTE_MESSAGE` / `WriteWorkItemNoteMessage`
   (`{ type, workItemId, noteId, text }`) — post a note (`noteId: null`) or rewrite one.
-- `WriteWorkItemNoteResponse` (`{ ok, raw?, error? }`) — the saved comment body on success.
+- `WriteWorkItemNoteResponse` (`{ ok, raw?, rev?, error? }`) — the saved comment body on success,
+  plus the item's `System.Rev` once the note landed (see `writeWorkItemNoteInPage` below).
+- `WriteWorkItemNoteConfig` (`{ url, method, text, workItemUrl? }`) — what the worker hands the
+  injected write; every URL on it is built from the SENDER's own tab, never from the message.
 - `isLoadWorkItemNotesMessage(value)` / `isWriteWorkItemNoteMessage(value)` — the guards: a positive
   integer work item id, a parseable `sinceIso`, a non-blank `text` no longer than `MAX_NOTE_LENGTH`,
   and a `noteId` that is either `null` or a real id.
@@ -846,11 +869,18 @@ token. Every response is read as **text** first, so a 200 carrying ADO's HTML si
 classified as `sign-in` rather than parsed as "no notes". A failed identity read is not a failed
 notes read — the panel still shows every note, it just cannot offer to edit any of them.
 
-### `writeWorkItemNoteInPage(url, method, text)`
+### `writeWorkItemNoteInPage(config)`
 
-The self-contained function the worker injects to `POST` a new note or `PATCH` an existing one. Azure
-DevOps itself rejects an edit from anyone but the note's original author, so authorization stays on
-the server rather than being asserted in the page world.
+The self-contained function the worker injects to `POST` a new note or `PATCH` an existing one, taking
+one `WriteWorkItemNoteConfig` (`{ url, method, text, workItemUrl? }`) rather than an argument each —
+an omitted optional ARGUMENT is `undefined`, which `executeScript` cannot serialize, and Chrome
+rejects the whole injection over it. Azure DevOps itself rejects an edit from anyone but the note's
+original author, so authorization stays on the server rather than being asserted in the page world.
+
+A stored note is followed by a read of `workItemUrl`, and the item's `System.Rev` comes back on the
+response: ADO records a comment AS a new work item revision but never mentions it, so without that
+read the caller's cached rev is one behind and its next field write on the item is refused with
+`HTTP 412`. The note is already saved by then, so a failed read reports no rev rather than a failure.
 
 Both are serialized with `Function.prototype.toString` and reference only their parameters and page
 globals.

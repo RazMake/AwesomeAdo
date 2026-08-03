@@ -1000,6 +1000,11 @@ function createItemNotes(
     sinceIso: options.notesSinceIso,
     services,
     state: panelState,
+    // A note is a work item revision: without this the row's status, assignee and ETA controls would
+    // all be writing against a rev the reader's own note had already superseded.
+    onItemRevision: (rev) => {
+      item.rev = rev;
+    },
     onNoteCountKnown: (count) => {
       hasNotes = count > 0;
       // Written back to the model so a later repaint seeds from the truth rather than from ADO's
@@ -2068,6 +2073,7 @@ function renderHeader(
     sprintPicker: sprintPickerHandle.element,
     orderingPicker: boardControls.orderingPicker,
     writeQueueStatus: boardControls.writeQueueStatus,
+    extensionVersion: context.extensionVersion,
   });
 
   return { header, setHeaderTitle, sprintPickerHandle, expandAll, collapseAll, refresh, techLead };
@@ -3196,9 +3202,14 @@ function renderBoard(params: RenderBoardParams): BoardHandle {
 /**
  * Renders an error scaffold for a validation failure.
  */
-function renderValidationError(root: HTMLElement, doc: Document, message: string): void {
+function renderValidationError(
+  root: HTMLElement,
+  doc: Document,
+  message: string,
+  extensionVersion: string | undefined,
+): void {
   root.innerHTML = "";
-  root.append(renderViewScaffold(doc, { title: "Project Tracking", message }));
+  root.append(renderViewScaffold(doc, { title: "Project Tracking", message, extensionVersion }));
 }
 
 /**
@@ -3209,27 +3220,33 @@ function validateRoot(
   root: HTMLElement,
   doc: Document,
   firstType: string | undefined,
+  extensionVersion: string | undefined,
 ): TrackedWorkItem | null {
   const rootCount = result.roots.length;
 
   if (rootCount === 0) {
-    renderValidationError(root, doc, "This query returned no items.");
+    renderValidationError(root, doc, "This query returned no items.", extensionVersion);
     return null;
   }
 
   if (rootCount > 1) {
-    renderValidationError(root, doc, "This query must have exactly one root item.");
+    renderValidationError(
+      root,
+      doc,
+      "This query must have exactly one root item.",
+      extensionVersion,
+    );
     return null;
   }
 
   const treeRoot = result.roots[0];
   if (!treeRoot) {
-    renderValidationError(root, doc, "This query returned no items.");
+    renderValidationError(root, doc, "This query returned no items.", extensionVersion);
     return null;
   }
 
   if (firstType && treeRoot.type !== firstType) {
-    renderValidationError(root, doc, `The root item must be a ${firstType}.`);
+    renderValidationError(root, doc, `The root item must be a ${firstType}.`, extensionVersion);
     return null;
   }
 
@@ -3249,6 +3266,7 @@ function validateAndRenderErrors(
   root: HTMLElement,
   doc: Document,
   services: EnhancedViewServices,
+  extensionVersion: string | undefined,
 ): TrackedWorkItem | null {
   const types = services.getTypes();
   const firstType = types[0]?.name;
@@ -3262,16 +3280,21 @@ function validateAndRenderErrors(
   );
 
   if (result.error) {
-    renderValidationError(root, doc, result.error);
+    renderValidationError(root, doc, result.error, extensionVersion);
     return null;
   }
 
   if (!isTreeQuery) {
-    renderValidationError(root, doc, "Project Tracking requires a tree (work item links) query.");
+    renderValidationError(
+      root,
+      doc,
+      "Project Tracking requires a tree (work item links) query.",
+      extensionVersion,
+    );
     return null;
   }
 
-  return validateRoot(result, root, doc, firstType);
+  return validateRoot(result, root, doc, firstType, extensionVersion);
 }
 
 /**
@@ -3417,7 +3440,13 @@ function renderLoadedBoard(params: RenderLoadedBoardParams): BoardHandle | null 
   // Remove title and loading, render error or board.
   root.innerHTML = "";
 
-  const treeRoot = validateAndRenderErrors(result, root, context.doc, services);
+  const treeRoot = validateAndRenderErrors(
+    result,
+    root,
+    context.doc,
+    services,
+    context.extensionVersion,
+  );
   if (treeRoot === null) {
     return null;
   }
@@ -3506,6 +3535,7 @@ function renderTreeLoadFailure(
     renderViewScaffold(context.doc, {
       title: "Project Tracking",
       message: "Could not load this query.",
+      extensionVersion: context.extensionVersion,
     }),
   );
 }

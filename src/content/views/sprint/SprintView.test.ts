@@ -157,6 +157,7 @@ async function render(
     doc: document,
     queryId: "query-id",
     properties,
+    extensionVersion: "0.3.42",
     services: services(overrides),
   });
   const host = document.createElement("div");
@@ -280,9 +281,13 @@ describe("Sprint View breadcrumbs", () => {
     const header = root.querySelector(".awesomeado-sprint__header")!;
     const breadcrumbs = header.querySelector(".awesomeado-breadcrumbs")!;
     const topRow = header.querySelector(".awesomeado-sprint__header-top")!;
-    const ordering = topRow.querySelector<HTMLElement>(".awesomeado-ordering")!;
-    expect(topRow.lastElementChild).toBe(ordering);
-    expect(ordering.style.marginLeft).toBe("auto");
+    const corner = topRow.querySelector<HTMLElement>(".awesomeado-sprint__header-corner")!;
+    const ordering = corner.querySelector<HTMLElement>(".awesomeado-ordering")!;
+    // The corner group is what pins the pair right, and the glyph is its LAST child so it holds the
+    // same position whether or not a version marker sits beside it.
+    expect(topRow.lastElementChild).toBe(corner);
+    expect(corner.lastElementChild).toBe(ordering);
+    expect(corner.style.marginLeft).toBe("auto");
     const labels = [...breadcrumbs.querySelectorAll(".awesomeado-breadcrumb")].map(
       (segment) => segment.textContent,
     );
@@ -303,6 +308,9 @@ describe("Sprint View header", () => {
     const sprintSelect = root.querySelector<HTMLSelectElement>(".awesomeado-sprint-picker__select");
 
     expect(root.querySelector(".awesomeado-sprint__title")?.textContent).toBe("Sprint View");
+    expect(
+      root.querySelector(".awesomeado-sprint__header-corner .awesomeado-version")?.textContent,
+    ).toBe("v 0.3");
     expect(root.querySelector(".awesomeado-sprint-picker__button")).toBeNull();
     expect(sprintSelect?.disabled).toBe(false);
     expect(root.querySelector(".awesomeado-sprint__team")?.textContent).not.toContain("Team:");

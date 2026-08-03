@@ -104,12 +104,17 @@ function findParentOf(root: TrackedWorkItem, id: number): TrackedWorkItem | null
  */
 export function applyRanksToTree(
   root: TrackedWorkItem,
-  ranks: readonly { id: number; rank: number }[],
+  ranks: readonly { id: number; rank: number; rev?: number }[],
 ): void {
-  for (const { id, rank } of ranks) {
+  for (const { id, rank, rev } of ranks) {
     const item = findItem(root, id);
     if (item !== null) {
       item.importance = rank;
+      // A rank write is a revision too, so an item renumbered here keeps a usable rev; without this
+      // the next edit to any sibling the renumber touched is refused as a conflict.
+      if (rev !== undefined) {
+        item.rev = rev;
+      }
     }
   }
 }

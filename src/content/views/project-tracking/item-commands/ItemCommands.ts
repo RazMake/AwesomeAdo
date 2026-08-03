@@ -252,6 +252,11 @@ function viewAllNotesCommand(options: ItemCommandsOptions): ItemContextMenuComma
         sinceIso: options.notesSinceIso,
         services,
         showAllInWindow: true,
+        // Writing a note advances the item's revision, and the next command on this very menu is
+        // tested against it — so a note followed by a rename must not read as a conflict.
+        onItemRevision: (rev) => {
+          item.rev = rev;
+        },
       });
       // The panel is built for life under a row: hidden until expanded, and indented to clear the
       // tree's gutter. Neither is true here, so it is opened and un-indented before it is shown.

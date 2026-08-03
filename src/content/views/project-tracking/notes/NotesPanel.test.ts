@@ -54,8 +54,8 @@ function mountPanel(
     notes?: WorkItemNote[];
     currentUser?: NoteAuthor | null;
     loadError?: string | null;
-    addResult?: { ok: boolean; note?: WorkItemNote };
-    editResult?: { ok: boolean; note?: WorkItemNote };
+    addResult?: { ok: boolean; note?: WorkItemNote; rev?: number };
+    editResult?: { ok: boolean; note?: WorkItemNote; rev?: number };
     mentionNames?: Map<string, string>;
     showAllInWindow?: boolean;
     state?: NotesPanelState;
@@ -74,6 +74,7 @@ function mountPanel(
   const error = vi.fn();
   const knownMentions = overrides.mentionNames ?? new Map<string, string>();
   const resolveNames = vi.fn(() => Promise.resolve(knownMentions));
+  const onItemRevision = vi.fn();
   const handle = renderNotesPanel({
     doc: document,
     workItemId: WORK_ITEM_ID,
@@ -91,8 +92,9 @@ function mountPanel(
     },
     state: overrides.state,
     showAllInWindow: overrides.showAllInWindow,
+    onItemRevision,
   });
-  return { handle, loadNotes, addNote, editNote, resolveNames, info, error };
+  return { handle, loadNotes, addNote, editNote, resolveNames, onItemRevision, info, error };
 }
 
 /** The note rows the panel is currently showing. */
@@ -398,6 +400,27 @@ describe("renderNotesPanel — adding a note", () => {
     expect(handle.element.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe(
       "Never stored.",
     );
+  });
+
+  // A note is a work item revision; an owner left holding the old one has its next edit refused.
+  it("reports the revision the stored note created", async () => {
+    const { handle, onItemRevision } = mountPanel({
+      addResult: { ok: true, note: posted, rev: 13 },
+    });
+    await expand(handle);
+
+    await addThroughComposer(handle, "Just added.");
+
+    expect(onItemRevision).toHaveBeenCalledWith(13);
+  });
+
+  it("reports no revision when Azure DevOps described none, rather than inventing one", async () => {
+    const { handle, onItemRevision } = mountPanel({ addResult: { ok: true, note: posted } });
+    await expand(handle);
+
+    await addThroughComposer(handle, "Just added.");
+
+    expect(onItemRevision).not.toHaveBeenCalled();
   });
 });
 

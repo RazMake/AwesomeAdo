@@ -56,6 +56,11 @@ export function renderMarkerReasonsPill(options: MarkerReasonsPillOptions): HTML
     state: notesState(options.item),
     onlyCommentPrefix: tags.commentTag,
     hideOnlyCommentPrefix: true,
+    // A corrected marker note is a new revision of the item, so the row's own controls must be
+    // tested against that one rather than the rev the board last read.
+    onItemRevision: (rev) => {
+      options.item.rev = rev;
+    },
     onNoteCountKnown: (count) => {
       if (count === 0) {
         renderStatic("No notes");

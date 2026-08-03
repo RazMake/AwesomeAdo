@@ -5,10 +5,19 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ## Next Version
 
+- Shows the AwesomeADO release version discreetly in the lower-right corner of every enhanced-view
+  header, so a bug report can name the version it came from. Clicking it opens the extension's store
+  listing, where you can check for a newer release.
 - Adds a Quick Bootstrap link to Configuration Sharing: one copyable Azure DevOps link that opens an
   enhanced query already pointed at your team's shared configuration, so a teammate can be set up
   over Teams or email without exporting or importing anything. It appears only once you are
   connected to a configuration work item and have at least one enhanced query.
+- Fixes edits being refused after you add or correct a note: adding a note counts as a change to the
+  work item in Azure DevOps, so every later change to that item — its title, description, sprint,
+  area path, status, assignee, ETA or priority — was rejected until the page was reloaded.
+- Fixes the same problem after dragging an item to a new position or parent, which could also leave
+  later edits rejected — on the item you moved and, when a drop renumbered a whole level, on other
+  items in it that you never touched.
 
 ## 0.3
 

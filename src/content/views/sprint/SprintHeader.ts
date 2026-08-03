@@ -3,6 +3,10 @@ import {
   type BreadcrumbSegment,
 } from "../../../common/view-common/control/Breadcrumbs/Breadcrumbs";
 import type { RefreshButtonHandle } from "../../../common/view-common/control/HeaderButtons/HeaderButtons";
+import {
+  renderVersionLabel,
+  VERSION_MARKER_GAP_PX,
+} from "../../../common/view-common/control/VersionLabel/VersionLabel";
 
 export interface SprintHeaderOptions {
   breadcrumbs: BreadcrumbSegment[];
@@ -14,6 +18,7 @@ export interface SprintHeaderOptions {
   queueStatus: HTMLElement;
   bulkMoveStatus: HTMLElement;
   teamPills: readonly HTMLElement[];
+  extensionVersion?: string;
   onTitleContextMenu: (event: MouseEvent) => void;
 }
 
@@ -44,8 +49,18 @@ export function renderSprintHeader(doc: Document, options: SprintHeaderOptions):
   topRow.className = "awesomeado-sprint__header-top";
   topRow.style.cssText = "display:flex;align-items:center;min-height:16px";
   if (breadcrumbs) topRow.append(breadcrumbs);
-  options.orderingPicker.style.marginLeft = "auto";
-  topRow.append(options.orderingPicker);
+  // The version marker and the ordering glyph share one right-pinned group, so the glyph holds the
+  // same corner position whether or not a version was supplied.
+  const corner = doc.createElement("div");
+  corner.className = "awesomeado-sprint__header-corner";
+  corner.style.cssText = "display:flex;align-items:center;margin-left:auto";
+  if (options.extensionVersion) {
+    const version = renderVersionLabel(doc, options.extensionVersion);
+    version.style.marginRight = `${VERSION_MARKER_GAP_PX}px`;
+    corner.append(version);
+  }
+  corner.append(options.orderingPicker);
+  topRow.append(corner);
   header.append(topRow);
 
   const controls = doc.createElement("div");

@@ -269,7 +269,7 @@ Split into component subfolders (each with its own `README.md`):
   `EnhancedView` renderer). `viewCatalog.ts` owns configs; `enhancedViewRegistry.ts` resolves eager
   and deferred renderers by id. Sprint is eager; Project Tracking is a separately built,
   web-accessible ESM module cached after first use. `shared/` holds per-view building blocks (today
-  `renderViewScaffold`). Sprint is a data-driven lane-by-state card table over flat or tree queries and loads the
+  `renderViewScaffold`, `VersionLabel`). Sprint is a data-driven lane-by-state card table over flat or tree queries and loads the
   configured team's complete paged roster before executing its tree on every refresh. The original
   saved WIQL loads independently and is rewritten with the selected sprint's current-iteration
   offset; results retain team-assigned or unassigned work plus their parent chains. Its first four
@@ -477,6 +477,27 @@ definitions and data shapes live in `common/ado`; `common/view-common` is UX onl
 - **Read back** the changed properties after each committed write to reconcile the optimistic model
   against server-side rule effects.
 - Track `System.Rev` per item for optimistic concurrency.
+
+#### Every write must leave the item's rev current (non-negotiable)
+
+Every patch this extension sends is guarded by `{ op: "test", path: "/rev" }`, so an item whose
+cached `rev` was not moved on has **every** later write on it refused with `HTTP 412` until the board
+is reloaded. The failure never surfaces where it was caused: it lands on the _next_, unrelated edit.
+
+Therefore, when adding or reviewing **any** operation that changes a work item — a field patch, a
+comment, a reorder, a re-parent, a rank write, a batch write, a new REST call — answer both questions
+before it ships:
+
+1. **Does this bump `System.Rev`?** Assume yes for anything that touches an item. A discussion note
+   does, even though it goes through the comments API; a reorder does, even though it carries no rev.
+2. **Does the new rev get back onto the model?** If the API reports one, fold it (`item.rev =
+result.rev`). If it does **not** report one (comments, `workitemsorder`), **re-read the item** and
+   report the rev back to whoever owns it — do not leave the caller holding a value it cannot know is
+   stale.
+
+`baseValue` is a safety net for a rev that drifted for reasons we do not control (someone editing in
+ADO's own tab), **not** a substitute for this: it licenses exactly one rebase, only for a change
+derived from the field's current value, and only while that field is unchanged.
 
 ### 6. Undo
 

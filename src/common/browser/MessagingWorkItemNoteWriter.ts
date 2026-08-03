@@ -82,9 +82,10 @@ export class MessagingWorkItemNoteWriter implements IWorkItemNoteWriter {
       // (AGENTS.md §9): a note routinely names people and customers.
       const note = parseWorkItemNote(response.raw, workItemId) ?? undefined;
       this.logger.info(
-        `Note ${what} on work item ${workItemId} saved (parsed=${note !== undefined}).`,
+        `Note ${what} on work item ${workItemId} saved (parsed=${note !== undefined}, ` +
+          `rev=${response.rev ?? "unknown"}).`,
       );
-      return { ok: true, note };
+      return { ok: true, note, rev: response.rev };
     } catch (error) {
       this.logger.error(`Could not ${what} a note on work item ${workItemId}`, error);
       return { ok: false, error: "could not reach Azure DevOps" };

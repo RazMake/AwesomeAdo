@@ -94,6 +94,7 @@ export class EnhancedViewSurface {
     private readonly doc: Document,
     private readonly services?: EnhancedViewServices,
     private readonly views: EnhancedViewRegistry = enhancedViewRegistry,
+    private readonly extensionVersion = "0.0.0",
   ) {}
 
   /** Show `request`'s view, or restore ADO's own page when `request` is null or its view is unknown. */
@@ -321,6 +322,7 @@ export class EnhancedViewSurface {
       doc: this.doc,
       queryId: request.queryId,
       properties: request.properties,
+      extensionVersion: this.extensionVersion,
       services: this.services,
     });
     this.renderedView = view;

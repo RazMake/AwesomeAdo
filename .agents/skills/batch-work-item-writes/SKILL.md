@@ -123,14 +123,21 @@ await writeField(target, {
 ## Still HTTP 412 with one patch? The rev drifted on its own
 
 One patch fixes "my own comment invalidated my own write". It does **not** fix a cached rev that was
-already behind. A drag-reorder, the ADR-042 rank fallback, a note posted from the notes panel, and
-any edit in ADO's own tab all bump `System.Rev` **without reporting the new value**, so `item.rev`
-goes stale by itself and every later write is refused until the board reloads.
+already behind. A drag-reorder, the ADR-042 rank fallback, and any edit in ADO's own tab all bump
+`System.Rev` **without reporting the new value**, so `item.rev` goes stale by itself and every later
+write is refused until the board reloads.
 
 When the new value is **derived** from the field's current value, pass that current value as
 `baseValue`. On a 412/409 the injected patch re-reads the item and retries once against the server's
 rev — but only while the field still holds `baseValue`, so a genuine concurrent change to that field
 is still reported rather than overwritten.
+
+**A standalone note is the one write that cannot ride in a patch** — the panel's note IS the user's
+action, not the reason for another one, and an edit needs the comment id. It goes through the
+comments API, which bumps `System.Rev` and says nothing about the item, so
+`writeWorkItemNoteInPage` re-reads the item and `rev` travels back to the caller
+(`NoteWriteResult.rev` → `NotesPanel.onItemRevision` → `item.rev`). Anything else that writes an item
+outside the field patch owes the same debt: **leave the item's rev current, or the next write fails.**
 
 ## Still HTTP 412 with a current rev? A `test` op is being refused
 
@@ -146,6 +153,7 @@ bisected one at a time against a real item.
 
 ## Red flags in review
 
+- A new write path that never assigns `item.rev` — and no re-read when the API reports no rev.
 - Two `await`ed writes to the same item id inside one handler.
 - `noteWriter.addNote(...)` next to a `queue.enqueue(...)` for the same item.
 - A compensating "undo the first write" branch — that is the symptom, not the fix; merge the writes.

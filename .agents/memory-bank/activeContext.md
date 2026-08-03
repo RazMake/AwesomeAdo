@@ -22,7 +22,7 @@ The extension is feature-complete for its current scope:
   `enhancedViewRegistry.ts`). The pure contracts (`ViewType`, `EnhancedView`) live in
   `src/common/view-common`. Options imports only `content/views/viewCatalog` (config) — a scoped,
   lint-enforced §6 exception (ADR-027) so it still never bundles view DOM. Shared per-view building
-  blocks live in `common/view-common/control/**`: `renderViewScaffold` (placeholder shell) plus the reusable controls
+  blocks live in `common/view-common/control/**`: `renderViewScaffold` (placeholder shell), `VersionLabel` (the subdued built-version marker shared by every enhanced-view header) plus the reusable controls
   `DateLabel` (PST date + time-on-hover), `EtaBadge` (ETA date + countdown, colored by urgency for
   active items and by on-time/late outcome for completed items),
   `AssignedTo` (assignee label + inline directory-search picker), `ItemTypeIcon` (the ADO type icon,

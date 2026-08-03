@@ -53,6 +53,14 @@ export interface NotesPanelOptions {
   /** Called when the discussion could not be read, so a trigger need not stay in a loading state. */
   onNoteLoadFailed?: () => void;
   /**
+   * Called with the item's `System.Rev` after a note was stored, when Azure DevOps reported it.
+   *
+   * A note is recorded as a work item revision, so the owner of the item has to move its rev on or
+   * its very next edit — a title, a sprint move, a status — is refused as a conflict with the note
+   * the same person had just written, and stays refused until the board is reloaded.
+   */
+  onItemRevision?: (rev: number) => void;
+  /**
    * Show EVERY note inside the Updates window instead of only the two most recent days with notes.
    *
    * The two-day rule exists because a panel under a ROW is a glance — dozens of them are on screen at
@@ -260,6 +268,9 @@ async function submitNote(
       : await options.services.noteWriter.editNote({ ...request, noteId });
   if (!result.ok) {
     return false;
+  }
+  if (result.rev !== undefined) {
+    options.onItemRevision?.(result.rev);
   }
   if (result.note !== undefined) {
     state.notes = sortNotesNewestFirst([

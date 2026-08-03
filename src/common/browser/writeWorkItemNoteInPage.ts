@@ -1,4 +1,4 @@
-import type { WriteWorkItemNoteResponse } from "./WorkItemNoteRequest";
+import type { WriteWorkItemNoteConfig, WriteWorkItemNoteResponse } from "./WorkItemNoteRequest";
 
 /**
  * Post a new discussion note, or rewrite an existing one, from inside the ADO page's MAIN world.
@@ -17,17 +17,39 @@ import type { WriteWorkItemNoteResponse } from "./WorkItemNoteRequest";
  * only in that verb and the id already baked into the URL. Azure DevOps rejects an edit from anyone
  * but the note's original author, so authorization stays where it belongs (the server) rather than
  * being asserted here.
+ *
+ * A stored note is followed by a re-read of the ITEM, because writing a comment creates a new work
+ * item revision that the comments API never mentions: without this the caller's cached `System.Rev`
+ * is one behind from here on, and its next field write on that item is refused with HTTP 412 until
+ * the board is reloaded. The note is already saved by then, so a failed re-read degrades to "no rev
+ * to report" rather than turning a successful write into a failure.
  */
 export function writeWorkItemNoteInPage(
-  url: string,
-  method: string,
-  text: string,
+  config: WriteWorkItemNoteConfig,
 ): Promise<WriteWorkItemNoteResponse> {
-  return fetch(url, {
-    method: method,
+  function withCurrentRev(
+    saved: WriteWorkItemNoteResponse,
+  ): Promise<WriteWorkItemNoteResponse> | WriteWorkItemNoteResponse {
+    if (!config.workItemUrl) {
+      return saved;
+    }
+    return fetch(config.workItemUrl, {
+      credentials: "include",
+      headers: { Accept: "application/json" },
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((body: { rev?: unknown } | null) => {
+        const rev = body === null ? null : body.rev;
+        return typeof rev === "number" ? { ok: true, raw: saved.raw, rev: rev } : saved;
+      })
+      .catch(() => saved);
+  }
+
+  return fetch(config.url, {
+    method: config.method,
     credentials: "include",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify({ text: text }),
+    body: JSON.stringify({ text: config.text }),
   })
     .then((response) => {
       if (!response.ok) {
@@ -37,10 +59,7 @@ export function writeWorkItemNoteInPage(
         };
         return failed;
       }
-      return response.json().then((json) => {
-        const saved: WriteWorkItemNoteResponse = { ok: true, raw: json };
-        return saved;
-      });
+      return response.json().then((json) => withCurrentRev({ ok: true, raw: json }));
     })
     .catch((err) => {
       const failed: WriteWorkItemNoteResponse = { ok: false, error: String(err) };
