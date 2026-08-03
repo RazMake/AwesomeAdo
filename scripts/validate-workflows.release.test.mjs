@@ -101,6 +101,20 @@ describe("validateWorkflowFiles — Release canonical fixture", () => {
     assert.match(codeowners, /^\/\.github\/workflows\/ @RazMake$/m);
     assert.doesNotMatch(codeowners, /@RazMake\//);
   });
+
+  it("requires administrator bypass on the store environment", () => {
+    const release = yaml.parse(committedReleaseYaml);
+    const steps = /** @type {Array<{ name?: unknown, run?: unknown }>} */ (
+      release.jobs.publish_stores.steps
+    );
+    const policyStep = steps.find(
+      (step) => step.name === "Verify version tag and protected environment policy",
+    );
+
+    assert.ok(policyStep);
+    assert.match(String(policyStep.run), /\.can_admins_bypass == true/);
+    assert.doesNotMatch(String(policyStep.run), /\.can_admins_bypass == false/);
+  });
 });
 
 // ─── Job presence ─────────────────────────────────────────────────────────────

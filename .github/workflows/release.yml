@@ -852,7 +852,7 @@ jobs:
           environment="$(gh api \
             "repos/$GITHUB_REPOSITORY/environments/browser-extension-stores")"
           jq -e '
-            .can_admins_bypass == false and
+            .can_admins_bypass == true and
             .deployment_branch_policy.protected_branches == false and
             .deployment_branch_policy.custom_branch_policies == true and
             ([.protection_rules[] | select(.type == "required_reviewers")] | length) == 1 and

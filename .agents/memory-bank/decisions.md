@@ -1053,6 +1053,9 @@ Markdown` in one `/rev`-guarded JSON Patch. The PATCH is not retried; a concurre
   publisher requires strict repository enablement when it starts and rechecks it immediately before
   publishing an official release; it does not require the organization-only field. The existing
   baseline version remains the identifier for this reviewed personal-owner control set.
+- Amendment: the protected `browser-extension-stores` environment intentionally allows administrator
+  bypass. The release gate requires `can_admins_bypass == true` while retaining its `main`-only
+  deployment policy, required reviewer, and self-review prevention checks.
 
 ## ADR-058: Hierarchy delivery classification uses Primary work
 

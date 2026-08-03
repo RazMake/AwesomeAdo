@@ -155,7 +155,7 @@ two repository-owned tag rulesets; do not create organization rulesets or transf
    token with repository Administration read access as repository secret
    `IMMUTABLE_RELEASES_READ_TOKEN`. A personal repository reports this direct setting as
    `enabled: true` and `enforced_by_owner: false`; owner enforcement is an organization-only policy.
-4. Create the `browser-extension-stores` environment. Disable administrator bypass, allow only the
+4. Create the `browser-extension-stores` environment. Allow administrator bypass, allow only the
    `main` branch, require at least one reviewer, and prevent self-review. A personal repository
    therefore needs another collaborator who can approve this environment.
 5. Add the Chrome and Edge credentials listed in [store-assets/README.md](store-assets/README.md) as
