@@ -36,12 +36,15 @@ This is a flattened snapshot of what exists now, not a build log.
   lightly tinted at rest and gain 90%-opaque backdrops while cards scroll beneath them at half the
   header card's resting gap below
   the sticky controls while filter pills scroll beneath them. Per-lane names and item counts stick
-  vertically until the next lane pushes them away, with no table-wide total. Only Primary-work types
+  vertically until the next lane pushes them away, with no table-wide total. Sprint, Lane, Project,
+  person, marker, and activity filters evaluate only Primary work. Arbitrarily deep planning chains
+  remain available as context and complete non-primary descendant trees remain visible in indented
+  child rollups. Only Primary-work types
   render as cards, and the shared
-  child-items badge lists each card's direct children on large cards only. Both card sizes anchor ID and a tag-free
+  child-items badge lists each card's non-primary descendants on large cards only. Both card sizes anchor ID and a tag-free
   shared assignee control in their top corners, then align ETA left and child progress right below
   the title. Compact Done cards keep their own assignee and ETA read-only until expanded. A top-right
-  ordering picker defaults cards and direct children to backlog rank and applies title/ETA sorting to
+  ordering picker defaults cards and descendant rows to backlog rank and applies title/ETA sorting to
   both. Child popup rows provide completion toggles, shared assignee/ETA controls, and sibling drag
   ordering under backlog rank while suspending card drag for the popup lifetime; Done parents keep
   those controls and child ordering read-only after expansion. Completion repaints preserve the open
@@ -60,7 +63,7 @@ This is a flattened snapshot of what exists now, not a build log.
   eligible sprint work, prefixed by type icons, colored by type with stronger themed contrast, and searchable by title without dropping matching parents;
   long labels use available viewport width before truncating. Team and
   marker pills use compact counters with hover explanations. Member and Unassigned totals count only
-  Primary work and its recursively configured child types. Marker pills show one total except Interrupt's waiting /
+  Primary work. Marker pills show one total except Interrupt's waiting /
   accepted-current-lifetime split; every pill matches Project Tracking's Feature Crew tag scale, Unassigned is
   derived from the loaded work. Sprint changes replace the DOM/session, reset all filters, and
   reload team members, work, Lane choices, and Project choices. Both views keep filter pills at full opacity and distinguish non-activity from

@@ -1,7 +1,7 @@
 # ChildItemsBadge Control
 
-A "completed / total" badge for an item's direct children — tinted from their work item type — with
-a click-through popup listing each child.
+A "completed / total" badge for an item's descendant work — tinted from its work item type — with
+an indented click-through popup listing each child.
 
 ## Usage
 
@@ -30,7 +30,7 @@ const badge = renderChildItemsBadge(document, {
 
 ### `ChildItemsBadgeOptions`
 
-- **`children: ChildItemDescriptor[]`** — The direct children summarized by the badge and listed in
+- **`children: ChildItemDescriptor[]`** — The descendants summarized by the badge and listed in
   its popup. `children.length` is the denominator of "completed / total".
 - **`initiallyOpen?: boolean`** — Opens the popup as soon as the badge is rendered. Defaults to
   `false`; useful when a caller replaces the badge while preserving an in-progress interaction. The
@@ -45,6 +45,8 @@ const badge = renderChildItemsBadge(document, {
 
 ### `ChildItemDescriptor`
 
+- **`depth?: number`** — Zero-based depth in the summarized descendant tree. Deeper rows are
+  indented; omitted values render at the first child level.
 - **`assignee: HTMLElement | null`** — The child's assignee control, built by the caller (typically
   the shared [`AssignedTo`](../AssignedTo/README.md)) so the write path stays with the owning view;
   `null` renders no assignee for that row.
@@ -79,6 +81,19 @@ toggles a popup with one row per child:
 The returned element also exposes `closePopup()` and `isPopupOpen()`. A caller replacing the badge
 after a persisted action must close the old popup first so its document-level dismissal listeners do
 not survive on detached DOM; it can preserve the logical open state and reopen the rebuilt badge.
+
+### `collectRolledUpDescendants(parent, isRolledUp, orderingPolicy): RolledUpDescendant[]`
+
+Flattens everything a badge rolls up beneath `parent` — every level, not just the first — into the
+list `children` is built from. A view stops rendering rows somewhere (at implementation detail, or at
+a depth cap), and each level below that point has to arrive somewhere or it is simply lost from the
+board. `isRolledUp(child, depth)` is the view's own "this one is summarized rather than rendered"
+rule, and ordering is applied **per level** so each level keeps the reader's chosen order underneath
+the item it belongs to.
+
+Each entry carries `{ item, parent, siblingIds, depth }`: `depth` is the zero-based popup depth to
+pass straight to `ChildItemDescriptor.depth`, while `parent` and the full ordered `siblingIds` are
+what a drag needs to rank a move against the level it actually belongs to.
 
 ## Features
 

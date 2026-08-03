@@ -55,25 +55,31 @@ describe("itemHasMarker", () => {
 });
 
 describe("collectMarkersInUse", () => {
-  it("finds markers anywhere in the tree, in the settings' presentation order", () => {
-    const tree = item(1, [], [item(2, ["Blocked by another team"]), item(3, ["Blocked"])]);
+  it("reports the markers the given items carry, in the settings' presentation order", () => {
+    const items = [item(1, []), item(2, ["Blocked by another team"]), item(3, ["Blocked"])];
 
-    expect(collectMarkersInUse(tree, DEFAULT_MARKER_TAGS)).toEqual([
+    expect(collectMarkersInUse(items, DEFAULT_MARKER_TAGS)).toEqual([
       "blocked",
       "blockedByOtherTeam",
     ]);
   });
 
-  it("reports nothing when no item carries a configured tag", () => {
-    const tree = item(1, ["Some other tag"], [item(2, [])]);
+  it("ignores markers worn only by items the caller left out", () => {
+    // The caller decides what the pills answer for; children it did not pass must not create a pill
+    // that then narrows the list to nothing.
+    const parent = item(1, [], [item(2, ["Blocked"])]);
 
-    expect(collectMarkersInUse(tree, DEFAULT_MARKER_TAGS)).toEqual([]);
+    expect(collectMarkersInUse([parent], DEFAULT_MARKER_TAGS)).toEqual([]);
+  });
+
+  it("reports nothing when no item carries a configured tag", () => {
+    const items = [item(1, ["Some other tag"]), item(2, [])];
+
+    expect(collectMarkersInUse(items, DEFAULT_MARKER_TAGS)).toEqual([]);
   });
 
   it("skips a marker the team left blank even when an item wears that literal word", () => {
-    const tree = item(1, ["Interrupt"]);
-
-    expect(collectMarkersInUse(tree, noInterrupt)).toEqual([]);
+    expect(collectMarkersInUse([item(1, ["Interrupt"])], noInterrupt)).toEqual([]);
   });
 });
 

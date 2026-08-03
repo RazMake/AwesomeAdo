@@ -123,6 +123,19 @@ describe("renderChildItemsBadge - badge and popup rendering", () => {
     ).toEqual(["First", "Second"]);
   });
 
+  it("indents deeper descendant rows", () => {
+    const root = openPopup({
+      children: [childOf({ title: "Child" }), childOf({ title: "Grandchild", depth: 1 })],
+      completedCount: 0,
+    });
+    const rows = root.querySelectorAll<HTMLElement>(".awesomeado-child-items__row");
+
+    expect(rows[0]?.dataset.depth).toBe("0");
+    expect(rows[0]?.style.paddingLeft).toBe("10px");
+    expect(rows[1]?.dataset.depth).toBe("1");
+    expect(rows[1]?.style.paddingLeft).toBe("26px");
+  });
+
   it("reports popup open and close state", () => {
     const onOpenChange = vi.fn();
     const root = openPopup({ children: [childOf()], completedCount: 0, onOpenChange });

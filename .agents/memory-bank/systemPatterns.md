@@ -38,7 +38,10 @@ source AND ADO's own rendering) plus the pure windowing rules — `noteWindowSta
 decide what a view shows and in which order, so no view can hold its own copy: `workItemTypeColor` /
 `workItemTypeTextColor` (the `#`-prefixed hex, with an unset color reported as `null` rather than a
 bare `#`), the primary-work closures (`primaryWorkTypes`, `primaryWorkWithDescendants`,
-`primaryWorkAncestors`, `primaryWorkWithAncestors`), and `orderTrackedItems` — the ONE adapter
+`primaryWorkAncestors`, `primaryWorkWithAncestors`), Primary-only filter candidates and recursive
+hierarchy visibility (`flattenWorkItems`, `primaryFilterEligibility`,
+`workItemsEligibleForPrimaryFilter`, `workItemIdsVisibleUnderPrimaryFilter`),
+and `orderTrackedItems` — the ONE adapter
 between a tracked item and `common/ordering`, which stays free of any ADO shape.
 
 ### `src/common/browser`
@@ -275,8 +278,8 @@ Split into component subfolders (each with its own `README.md`):
   backings only while pinned over scrolling cards at half the header card's resting gap below the sticky control header; area paths form
   rows whose names and per-row item counts stick vertically until the next row pushes them away. No
   table-wide total is shown. Only explicitly
-  configured Primary-work types become cards; each card delegates its
-  direct-child progress and level-one popup to the shared `ChildItemsBadge` on large cards only; ID and the tag-free
+  configured Primary-work types become cards; each card delegates its complete non-primary
+  descendant progress and indented popup to the shared `ChildItemsBadge` on large cards only; ID and the tag-free
   shared `AssignedTo` control occupy the top corners in both card sizes, while the shared `?` details
   control and Priority chip remain available in either size. Priority is read-only while Done is
   compact and editable after expansion. The title right-click menu copies the query URL and, only for
@@ -290,7 +293,7 @@ Split into component subfolders (each with its own `README.md`):
   The Accept action stays disabled until a reason exists. ETA and child progress share
   the row below the title, aligned left and right. Assigned To and ETA are read-only while a Done card
   is compact and become editable when it expands. The shared top-right ordering picker defaults cards
-  and direct child rows to backlog rank and applies title/ETA sorting to both. Child rows use shared
+  and descendant rows to backlog rank and applies title/ETA sorting to both. Child rows use shared
   completion, Assigned To and ETA controls, and title-handle sibling reorder under backlog-rank mode;
   a Done parent keeps all four read-only after expansion, and opening the popup suspends the owning card's drag
   source until every dismissal path closes it. Completion repaints explicitly close the old popup's
@@ -312,7 +315,7 @@ Split into component subfolders (each with its own `README.md`):
   options are derived only from that retained tree. Sprint changes replace the whole DOM and session,
   resetting all filters and re-deriving Lane/Project options. Its Lane filter offers only
   represented leaf area paths, excluding any represented ancestor path. Member and Unassigned pill
-  counts include only Primary work and recursively configured child types, and every pill counter
+  counts include only Primary work, and every pill counter
   exposes its semantic label and value on hover. Its shared sprint picker
   omits the optional filter toggle, keeping the view intrinsically scoped to one sprint; Project
   Tracking retains the toggle for its broader board. **Scoped §6 exception (ADR-027):** options

@@ -74,6 +74,16 @@ boards that disagree about the same query.
   trackable delivery does not stop it from holding work below it.
 - `primaryWorkWithAncestors(types)` — primary work plus the ancestors needed to reach it: the types a
   tree renders as rows.
+- `flattenWorkItems(roots)` — every item under `roots`, the roots included, in the order a reader
+  sees them top to bottom.
+- `primaryFilterEligibility(types)` — a predicate for "is this an item the filters get to judge?".
+  Returned as a predicate so a caller holding an already-flattened board can narrow it without
+  walking the tree again. Everything qualifies while primary work is unconfigured.
+- `workItemsEligibleForPrimaryFilter(roots, types)` — the same rule applied to whole trees.
+- `workItemIdsVisibleUnderPrimaryFilter(roots, types, matches)` — the ids a filter pass leaves on
+  screen. A matching primary-work item carries its planning ancestors and its implementation
+  descendants with it, while nested primary work still has to match for itself; an unclassified
+  catalog keeps the legacy "every item can match, and a match keeps its ancestors" rule.
 - `orderTrackedItems(entries, itemOf, policy)` — the one adapter between a tracked item and
   `common/ordering`. That module stays free of any ADO shape, so this is where an item's ISO ETA
   becomes the epoch milliseconds the policy compares. `itemOf` lets a caller order its own wrappers
@@ -316,9 +326,13 @@ board's filters and the tagging commands all share one interpretation of the fie
 - `applyFeatureCrewTags(roots, members)` — projects each roster member's tag onto the matching
   `assignedTo` across the tree (matched by alias, case-insensitively); a person absent from the roster
   or with an empty tag is set to `null` (the neutral "??" bucket).
-- `collectAssignedTags(roots)` — the distinct tags worn by assigned people across the tree, first-seen
+- `assignedTagKey(item)` — the tag one item filters under: its assignee's tag, `null` for the "??"
+  untagged bucket, `undefined` when the item is unassigned so no tag pill ever matches it. The pill
+  list and the filter predicate both go through here so a lit pill can never narrow to nothing.
+- `assignedTagsOf(items)` — the distinct tags worn by assigned people across `items`, first-seen
   order, with `null` (the "??" bucket) appended last when any assignee has no tag. Unassigned items
   contribute nothing.
+- `collectAssignedTags(roots)` — `assignedTagsOf` over whole trees, roots included.
 - `collectAssignedDirectoryUsers(roots)` — the distinct assignees across the tree as `TrackedUser`s
   (first-seen order), each keeping the crew tag `applyFeatureCrewTags` projected onto them — the crew
   an assignee picker offers, and tags, before anything is typed. Read from the tree rather than the

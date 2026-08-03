@@ -26,6 +26,9 @@ halves of the view — its configuration and its renderer.
   - **Single-root requirement**: the query must return exactly one root item of the first configured
     work item type (typically Epic). Shows validation messages for non-tree queries, empty queries,
     multiple roots, or wrong root type.
+  - **Emptied board**: when the active filters leave no row to draw, the tree is replaced by the
+    shared [`EmptyState`](../../../common/view-common/control/EmptyState/README.md) panel saying the
+    filters — not a failed load — are why nothing is listed.
   - **Header panel**: rendered by the view-specific
     [`header`](./header/README.md) control — a themed tile (subtle background, card-like) with three
     bands:
@@ -117,14 +120,16 @@ halves of the view — its configuration and its renderer.
     forced OFF, toggle disabled.
   - **Area-path filter**: the compact
     [`AreaPathFilter`](../../../common/view-common/control/AreaPathFilter/README.md) in the sticky
-    header lists every full `System.AreaPath` represented by an item that has not aged out under the
-    resolved-item window. Sprint and pill filters do not remove options. Checkboxes return and filter
+    header lists every full `System.AreaPath` represented by Primary work that has not aged out under
+    the resolved-item window. Sprint and pill filters do not remove options. Checkboxes return and filter
     by full path values, while their labels use only the shortest unique suffix (`API`, or
     `Platform › API` when the leaf is ambiguous). Selected paths OR together and AND with the sprint,
-    crew-tag, activity, marker, and resolved-window filters. Ancestors of matching descendants remain
-    visible, and the selection survives an in-place Refresh. Every item's right-click menu also has
-    **Change area path**, using this exact eligible path list and these exact labels, omitting only
-    that item's current path and showing the full path in each destination's tooltip.
+    crew-tag, activity, marker, and resolved-window filters. Arbitrarily deep planning ancestors of
+    matching Primary work remain visible, and every non-primary descendant below matching work stays
+    in its rollup. The selection survives an in-place Refresh. Every item's right-click menu also has
+    **Change area path**; unlike the filter, this edit command offers eligible paths represented by
+    the complete hierarchy, omitting only that item's current path and showing each full destination
+    in its tooltip.
   - **Tree rows**: the tree renders every configured **Primary work** type plus the planning-context
     types above it. Marking the leaf type as Primary work therefore shows leaf items as rows; leaving
     it unchecked keeps those implementation details in the child-items badge. Configurations saved
@@ -163,14 +168,15 @@ halves of the view — its configuration and its renderer.
     emphasized, with P2 at medium weight below the extra-bold P0 and P1; P3 and later use muted secondary text at normal weight. The compact label sits close
     to Status. Clicking it opens P0-P4 as identically formatted chips, omits the current value, and writes the selected
     `Microsoft.VSTS.Common.Priority` through the same serialized queue.
-  - **Rolled-up minor children**: implementation-detail children below the deepest Primary-work
+  - **Rolled-up minor children**: implementation-detail descendants below the deepest Primary-work
     level are summarized inline by
     [`ChildItemsBadge`](../../../common/view-common/control/ChildItemsBadge/README.md) — a
     "completed / total" chip (e.g. `1 / 3`) tinted with a discrete wash of the **last configured work
     item type's** color. "Completed" is the last board column _before_ Removed (Done), so an
-    abandoned child never counts as finished. The rollup honors the active sprint and tag filters, so
-    it always agrees with what the board claims to be showing, and a deepest row therefore has no
-    twisty (there is no branch to expand). Clicking the chip opens a popup with one row per child:
+    abandoned child never counts as finished. Filtering is decided by the owning Primary-work item,
+    so all of its non-primary descendants remain visible regardless of their own sprint, area,
+    assignee, marker, activity, or age values. A deepest Primary-work row therefore has no twisty.
+    Clicking the chip opens a depth-first, indented popup with one row per descendant:
     `{done checkbox} {Assigned To + Feature Crew tag pill} {title in its type color}{open-in-ADO glyph} {ETA}`.
     The assignee carries (and can edit) the crew tag pill just like a tree row, because a rolled-up
     child is the only place its assignee is shown. The popup
@@ -236,21 +242,21 @@ halves of the view — its configuration and its renderer.
     [`MarkerPill`](../../../common/view-common/control/MarkerPill/README.md) filter pills together,
     then [`ActivityFilter`](../../../common/view-common/control/ActivityFilter/README.md) pills after
     a larger gap. The board re-renders the row whole on any change.
-    - **Tag pills**: once the Feature Crew roster resolves, one clickable pill per tag worn across
-      the tree. Clicking pills narrows to items assigned to people wearing any of the selected tags
+    - **Tag pills**: once the Feature Crew roster resolves, one clickable pill per tag worn by
+      Primary work. Clicking pills narrows to Primary work assigned to people wearing any selected tag
       (an **OR** across the selection; empty = show everyone), combined with the sprint filter. The
-      neutral **"??"** pill narrows to assigned-but-untagged people. Ancestors of a matching item
-      stay visible so a match is never orphaned from its path.
+      neutral **"??"** pill narrows to assigned-but-untagged people. Ancestors and implementation
+      descendants follow a matching Primary-work item recursively.
     - **Recent-activity pills**: three slightly larger pills — **Newly created**, **Newly updated**
       and **New notes** — each narrowing the board to items that moved inside the binding's `hours`
       window (named in each pill's tooltip). Lit pills **OR** together and combine with the sprint
       and tag filters; the window is re-measured on every repaint. "New notes" is the only one whose
       answer is not already in the loaded tree (ADO reports a comment TOTAL, never a comment date),
-      so lighting it reads the discussions of the items ADO says have one — on demand, bounded, and
+      so lighting it reads discussions only for Primary work ADO says has one — on demand, bounded, and
       at most once per board. Until those reads land the pill reads `New notes…` and the board stays
       wide, so it narrows once rather than emptying and repopulating.
     - **Marker pills**: one pill per recognized condition (**Blocked (internal)**, **Blocked by
-      another team**, **Interrupt**) that something in the tree is actually tagged with, using the
+      another team**, **Interrupt**) that some Primary work is actually tagged with, using the
       team's own tags from _Options → Azure DevOps → Marker tags_. A pill appears the moment any item
       carries its tag and goes away with the last one. Lit pills **OR** together and the group
       **AND**s with the tag and activity groups, exactly like the other two.

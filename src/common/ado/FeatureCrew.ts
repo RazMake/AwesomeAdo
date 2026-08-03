@@ -1,6 +1,7 @@
 import type { TrackedUser, TrackedWorkItem } from "./TrackedWorkItem";
 import { ADO_API_VERSION } from "./adoApi";
 import { resolveAdoProjectContext } from "./fetchAdoMetadata";
+import { flattenWorkItems } from "./workItemTypes";
 
 /**
  * The pure, chrome-free "Feature Crew" domain: the roster of everyone assigned to a project's work,
@@ -160,36 +161,43 @@ export function applyFeatureCrewTags(roots: TrackedWorkItem[], members: FeatureC
 }
 
 /**
- * Collect the distinct tags worn by assigned people across the tree, in first-seen order, so the
+ * The tag a work item filters under: its assignee's tag (`null` = the untagged "??" bucket), or
+ * `undefined` when the item is unassigned so no tag pill ever matches it.
+ *
+ * The pill list and the filter predicate both go through here on purpose: two copies of this
+ * bucketing rule drift into a pill that lights up but narrows to nothing.
+ */
+export function assignedTagKey(item: TrackedWorkItem): string | null | undefined {
+  if (item.assignedTo === null) return undefined;
+  const tag = item.assignedTo.tag;
+  return tag !== undefined && tag !== null && tag.length > 0 ? tag : null;
+}
+
+/**
+ * Collect the distinct tags worn by assigned people across `items`, in first-seen order, so the
  * filter panel can offer one pill per tag actually in use. `null` (the neutral "??" bucket for
  * assigned-but-untagged people) is appended last when any assignee lacks a tag, so it always reads as
  * the trailing catch-all. Unassigned items contribute nothing — a tag filter only ever narrows to
  * people who wear that tag.
  */
-export function collectAssignedTags(roots: TrackedWorkItem[]): (string | null)[] {
+export function assignedTagsOf(items: readonly TrackedWorkItem[]): (string | null)[] {
   const seen = new Set<string>();
   const tags: string[] = [];
   let hasUntagged = false;
-  const visit = (item: TrackedWorkItem): void => {
-    if (item.assignedTo !== null) {
-      const tag = item.assignedTo.tag;
-      if (tag !== undefined && tag !== null && tag.length > 0) {
-        if (!seen.has(tag)) {
-          seen.add(tag);
-          tags.push(tag);
-        }
-      } else {
-        hasUntagged = true;
-      }
+  for (const item of items) {
+    const tag = assignedTagKey(item);
+    if (tag === null) hasUntagged = true;
+    else if (tag !== undefined && !seen.has(tag)) {
+      seen.add(tag);
+      tags.push(tag);
     }
-    for (const child of item.children) {
-      visit(child);
-    }
-  };
-  for (const root of roots) {
-    visit(root);
   }
   return hasUntagged ? [...tags, null] : tags;
+}
+
+/** `assignedTagsOf` over whole trees, roots included. */
+export function collectAssignedTags(roots: TrackedWorkItem[]): (string | null)[] {
+  return assignedTagsOf(flattenWorkItems(roots));
 }
 
 // One roster line: `- {alias} ({fullName}). `{tag}``. The tag always keeps its backticks even when

@@ -5,6 +5,15 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ## Next Version
 
+- Makes Sprint and Project Tracking filters evaluate only Primary work, while preserving arbitrarily
+  deep planning context and showing the complete implementation-detail tree beneath matching work.
+- Adds a color-matched count to every Sprint View column heading, showing how much Primary work sits
+  in that column across all lanes and staying readable while the headings are stuck to the top. Lane
+  totals now match those counts exactly.
+- Tells you when the filters have hidden everything in Sprint View and Project Tracking, instead of
+  leaving a blank area that looks like the view failed to load. The diagnostics log records the
+  filter selections that emptied the board, so an empty board can be explained after the fact.
+
 ## 0.2
 
 - Introduces Sprint View, a team-focused lane-by-status board with sprint, Lane, Project, team

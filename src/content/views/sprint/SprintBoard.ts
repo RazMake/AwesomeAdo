@@ -19,10 +19,12 @@ import {
   renderChildItemsBadge,
   type ChildItemsBadgeHandle as ChildItemsBadgeControlHandle,
 } from "../../../common/view-common/control/ChildItemsBadge/ChildItemsBadge";
+import { collectRolledUpDescendants } from "../../../common/view-common/control/ChildItemsBadge/rolledUpDescendants";
 import {
   DragReorderController,
   type PlannedMove,
 } from "../../../common/view-common/control/DragReorder/DragReorderController";
+import { renderEmptyState } from "../../../common/view-common/control/EmptyState/EmptyState";
 import {
   renderEtaBadge,
   type EtaBadgeHandle,
@@ -78,6 +80,14 @@ const COLUMN_FOREGROUNDS = [
   "var(--status-yellow-foreground)",
   "var(--status-green-foreground)",
 ] as const;
+// The stronger same-hue edge token, used as the count chip's fill: it reads as a deliberate step up
+// from the column's own quiet tint in both the resting and the stuck header states.
+const COLUMN_COUNT_BACKGROUNDS = [
+  "var(--status-neutral-border)",
+  "var(--status-blue-border)",
+  "var(--status-yellow-border)",
+  "var(--status-green-border)",
+] as const;
 
 export interface SprintBoardItem {
   item: TrackedWorkItem;
@@ -99,6 +109,11 @@ interface SprintBoardOptions {
   contextMenu: ItemContextMenu;
   menuTarget: (item: TrackedWorkItem) => ItemContextMenuTarget;
   onItemChanged: () => void;
+  /**
+   * How many cards this pass painted. The view owns the log line because the SELECTIONS that
+   * emptied the board live there; the board only knows the number they came out to.
+   */
+  onCardsShown: (count: number) => void;
   cardDrag?: SprintCardDragController;
   dragReorder?: DragReorderController;
 }
@@ -247,22 +262,22 @@ function renderChildrenBadge(
   options: SprintBoardOptions,
   onOpenChange: (open: boolean) => void,
 ): ChildBadgeHandle | null {
-  if (item.children.length === 0) return null;
-  const parentDone = stateOrdinal(item, options.types.get(item.type)) === 3;
-  const orderedChildren = orderTrackedItems(
-    item.children,
-    (child) => child,
+  const childEntries = collectRolledUpDescendants(
+    item,
+    (child) => options.types.get(child.type)?.isPrimaryWork !== true,
     options.orderingPolicy,
   );
-  const siblingIds = orderedChildren.map((child) => child.id);
+  if (childEntries.length === 0) return null;
+  const parentDone = stateOrdinal(item, options.types.get(item.type)) === 3;
   const controls: ChildRowControls[] = [];
   const badge: { handle?: ChildItemsBadgeControlHandle } = {};
-  const children = orderedChildren.map((child) => {
+  const children = childEntries.map(({ item: child, parent, siblingIds, depth }) => {
     const childType = options.types.get(child.type);
     const assignee = renderItemAssignee(context, child, options, !parentDone);
     const eta = renderItemEta(context, child, options, !parentDone);
     controls.push({ assignee, eta });
     return {
+      depth,
       assignee,
       done: stateOrdinal(child, childType) === 3,
       onToggleDone: parentDone
@@ -278,7 +293,9 @@ function renderChildrenBadge(
       onContextMenu: (event: MouseEvent) =>
         options.contextMenu.openAt(event, options.menuTarget(child)),
       onRowReady:
-        options.dragReorder === undefined || parentDone
+        // Only the first popup level is reorderable: a deeper row's level is not the one the badge's
+        // drop targets describe, so letting it drag would rank it against the wrong siblings.
+        options.dragReorder === undefined || parentDone || depth > 0
           ? undefined
           : (
               row: HTMLElement,
@@ -289,7 +306,7 @@ function renderChildrenBadge(
                 id: child.id,
                 depth: 1,
                 hasChildren: child.children.length > 0,
-                parentId: item.id,
+                parentId: parent.id,
                 destinationType: null,
                 siblingIds,
                 handle: title,
@@ -895,6 +912,57 @@ function renderCell(
   return cell;
 }
 
+/** Total Primary work cards routed to each visible board column, across every lane. */
+function countPrimaryWorkPerColumn(
+  items: readonly SprintBoardItem[],
+  options: SprintBoardOptions,
+): number[] {
+  const counts = Array.from({ length: VISIBLE_COLUMN_COUNT }, () => 0);
+  for (const { item } of items) {
+    const ordinal = stateOrdinal(item, options.types.get(item.type));
+    if (ordinal >= 0 && ordinal < VISIBLE_COLUMN_COUNT) {
+      counts[ordinal] = (counts[ordinal] ?? 0) + 1;
+    }
+  }
+  return counts;
+}
+
+function totalOf(counts: readonly number[]): number {
+  return counts.reduce((total, count) => total + count, 0);
+}
+
+function renderColumnCount(doc: Document, ordinal: number, count: number): HTMLElement {
+  const badge = doc.createElement("span");
+  badge.className = "awesomeado-sprint__column-count";
+  badge.dataset.count = String(count);
+  badge.textContent = String(count);
+  const label = `${count} Primary work item${count === 1 ? "" : "s"}`;
+  badge.title = label;
+  badge.setAttribute("aria-label", label);
+  // The chip is a sibling of the backdrop, not a child, so the header's stuck 90% opacity dims the
+  // fill behind the count without ever dimming the count itself.
+  badge.style.cssText = [
+    "position:relative",
+    "flex:none",
+    "display:inline-flex",
+    "align-items:center",
+    "justify-content:center",
+    "box-sizing:border-box",
+    "min-width:22px",
+    "padding:1px 6px",
+    "border-radius:9px",
+    `background:${COLUMN_COUNT_BACKGROUNDS[ordinal]}`,
+    "border-width:1px",
+    "border-style:solid",
+    `border-color:${COLUMN_FOREGROUNDS[ordinal]}`,
+    "font-size:11px",
+    "font-weight:700",
+    "line-height:1.4",
+    `color:${COLUMN_FOREGROUNDS[ordinal]}`,
+  ].join(";");
+  return badge;
+}
+
 function renderColumnHighlight(doc: Document): HTMLElement {
   const highlight = doc.createElement("span");
   highlight.className = "awesomeado-sprint__column-title-highlight";
@@ -910,9 +978,64 @@ function renderColumnHighlight(doc: Document): HTMLElement {
   return highlight;
 }
 
+function renderColumnTitle(
+  doc: Document,
+  ordinal: number,
+  label: string,
+  count: number,
+): HTMLElement {
+  const heading = doc.createElement("div");
+  heading.className = "awesomeado-sprint__column-title";
+  heading.dataset.restingBackground = COLUMN_HEADER_BACKGROUNDS[ordinal];
+  heading.dataset.stickyBackground = STICKY_COLUMN_HEADER_BACKGROUNDS[ordinal];
+  heading.dataset.restingOpacity = "1";
+  heading.dataset.stickyOpacity = String(STICKY_HEADER_OPACITY);
+  heading.style.cssText = [
+    "position:relative",
+    "display:flex",
+    "align-items:center",
+    "justify-content:space-between",
+    "gap:8px",
+    "padding:9px 10px",
+    "font-size:12px",
+    "font-weight:800",
+    `color:${COLUMN_FOREGROUNDS[ordinal]}`,
+    "background:transparent",
+    "border-right:1px solid var(--control-border)",
+    "border-bottom:1px solid var(--control-border)",
+  ].join(";");
+  heading.style.setProperty(
+    "--sprint-column-header-background",
+    COLUMN_HEADER_BACKGROUNDS[ordinal] ?? COLUMN_HEADER_BACKGROUNDS[0],
+  );
+  heading.style.setProperty("--sprint-column-header-opacity", "1");
+  const backdrop = doc.createElement("span");
+  backdrop.className = "awesomeado-sprint__column-title-backdrop";
+  backdrop.setAttribute("aria-hidden", "true");
+  backdrop.style.cssText = [
+    "position:absolute",
+    "inset:0",
+    "pointer-events:none",
+    "background:var(--sprint-column-header-background)",
+    "opacity:var(--sprint-column-header-opacity)",
+  ].join(";");
+  const title = doc.createElement("span");
+  title.className = "awesomeado-sprint__column-title-label";
+  title.textContent = label;
+  title.style.cssText = "position:relative;min-width:0;overflow-wrap:anywhere";
+  heading.append(
+    backdrop,
+    title,
+    renderColumnCount(doc, ordinal, count),
+    renderColumnHighlight(doc),
+  );
+  return heading;
+}
+
 function renderColumnHeader(
   doc: Document,
   boardColumns: readonly string[],
+  counts: readonly number[],
 ): { element: HTMLElement; grid: HTMLElement; titles: HTMLElement[] } {
   const header = doc.createElement("div");
   header.className = "awesomeado-sprint__board-header";
@@ -941,42 +1064,12 @@ function renderColumnHeader(
   ].join(";");
   const titles: HTMLElement[] = [];
   for (let ordinal = 0; ordinal < VISIBLE_COLUMN_COUNT; ordinal += 1) {
-    const heading = doc.createElement("div");
-    heading.className = "awesomeado-sprint__column-title";
-    heading.dataset.restingBackground = COLUMN_HEADER_BACKGROUNDS[ordinal];
-    heading.dataset.stickyBackground = STICKY_COLUMN_HEADER_BACKGROUNDS[ordinal];
-    heading.dataset.restingOpacity = "1";
-    heading.dataset.stickyOpacity = String(STICKY_HEADER_OPACITY);
-    heading.style.cssText = [
-      "position:relative",
-      "padding:9px 10px",
-      "font-size:12px",
-      "font-weight:800",
-      `color:${COLUMN_FOREGROUNDS[ordinal]}`,
-      "background:transparent",
-      "border-right:1px solid var(--control-border)",
-      "border-bottom:1px solid var(--control-border)",
-    ].join(";");
-    heading.style.setProperty(
-      "--sprint-column-header-background",
-      COLUMN_HEADER_BACKGROUNDS[ordinal] ?? COLUMN_HEADER_BACKGROUNDS[0],
+    const heading = renderColumnTitle(
+      doc,
+      ordinal,
+      boardColumns[ordinal] ?? "",
+      counts[ordinal] ?? 0,
     );
-    heading.style.setProperty("--sprint-column-header-opacity", "1");
-    const backdrop = doc.createElement("span");
-    backdrop.className = "awesomeado-sprint__column-title-backdrop";
-    backdrop.setAttribute("aria-hidden", "true");
-    backdrop.style.cssText = [
-      "position:absolute",
-      "inset:0",
-      "pointer-events:none",
-      "background:var(--sprint-column-header-background)",
-      "opacity:var(--sprint-column-header-opacity)",
-    ].join(";");
-    const label = doc.createElement("span");
-    label.className = "awesomeado-sprint__column-title-label";
-    label.textContent = boardColumns[ordinal] ?? "";
-    label.style.cssText = "position:relative";
-    heading.append(backdrop, label, renderColumnHighlight(doc));
     titles.push(heading);
     grid.append(heading);
   }
@@ -1116,7 +1209,6 @@ function renderLane(
   context: DataDrivenViewContext,
   lane: Lane,
   laneItems: readonly SprintBoardItem[],
-  allItems: readonly SprintBoardItem[],
   options: SprintBoardOptions,
 ): { element: HTMLElement; grid: HTMLElement } {
   const section = context.doc.createElement("section");
@@ -1156,7 +1248,10 @@ function renderLane(
   laneName.style.fontSize = "13.2px";
   const laneCount = context.doc.createElement("span");
   laneCount.className = "awesomeado-sprint__lane-count";
-  laneCount.textContent = `${laneItems.length} item${laneItems.length === 1 ? "" : "s"}`;
+  // Count the same cards the lane actually renders, so a lane total always equals the sum of the
+  // column badges above it — Primary work routed outside the four visible columns is not shown.
+  const laneTotal = totalOf(countPrimaryWorkPerColumn(laneItems, options));
+  laneCount.textContent = `${laneTotal} item${laneTotal === 1 ? "" : "s"}`;
   laneCount.style.cssText =
     "font-size:10px;font-weight:500;color:var(--text-secondary-color);opacity:0.65";
   laneLabel.append(laneName, laneCount);
@@ -1196,11 +1291,18 @@ export function renderSprintBoard(
   const cardItems = items.filter(
     ({ item }) => options.types.get(item.type)?.isPrimaryWork === true,
   );
-  if (cardItems.length === 0) {
-    const empty = context.doc.createElement("p");
-    empty.textContent = "No items match the current filters.";
-    empty.style.cssText = "margin:16px 10px;color:var(--text-secondary-color)";
-    section.append(empty);
+  // Guard on the cards the board would actually paint, not on the matches: lanes and column titles
+  // wrapped around zero cards read as a failed load just as much as a bare empty rectangle does.
+  const columnCounts = countPrimaryWorkPerColumn(cardItems, options);
+  const visibleCardCount = totalOf(columnCounts);
+  options.onCardsShown(visibleCardCount);
+  if (visibleCardCount === 0) {
+    section.append(
+      renderEmptyState(context.doc, {
+        message: "No items match the current filters.",
+        hint: "Clear or widen a filter above to bring items back.",
+      }),
+    );
     return section;
   }
   section.style.cssText = "border:1px solid var(--control-border);border-radius:4px";
@@ -1224,14 +1326,14 @@ export function renderSprintBoard(
           context.services.logger,
         );
   const renderOptions = { ...options, cardDrag, dragReorder };
-  const header = renderColumnHeader(context.doc, options.boardColumns);
+  const header = renderColumnHeader(context.doc, options.boardColumns, columnCounts);
   header.titles.forEach((title, ordinal) => cardDrag.registerColumnTitle(ordinal, title));
   const laneGrids: HTMLElement[] = [];
   const lanes = context.doc.createElement("div");
   lanes.className = "awesomeado-sprint__lanes";
   for (const lane of lanesOf(cardItems)) {
     const laneItems = cardItems.filter(({ item }) => item.areaPath === lane.areaPath);
-    const rendered = renderLane(context, lane, laneItems, cardItems, renderOptions);
+    const rendered = renderLane(context, lane, laneItems, renderOptions);
     laneGrids.push(rendered.grid);
     lanes.append(rendered.element);
   }

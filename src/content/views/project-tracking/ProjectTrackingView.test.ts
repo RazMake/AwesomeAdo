@@ -3178,6 +3178,91 @@ describe("ProjectTrackingView — rolled-up minor children", () => {
     expect(titles).toEqual(["User Authentication", "Login UI"]);
   });
 
+  it("applies sprint filtering only to Primary work and carries its hierarchy", async () => {
+    const tree = createDeepTree();
+    const feature = tree.children[0]!;
+    const matchingStory = feature.children[0]!;
+    feature.sprintName = "Sprint 2";
+    matchingStory.children.forEach((child) => {
+      child.sprintName = "Sprint 2";
+    });
+    feature.children.push(
+      createItem({
+        id: 7,
+        type: "Story",
+        title: "Future primary work",
+        sprintName: "Sprint 2",
+        children: [createItem({ id: 8, title: "Current implementation detail" })],
+      }),
+    );
+    const root = await renderDeepBoard({
+      loadTree: async () => ({ isTreeQuery: true, roots: [tree], error: null }),
+    });
+
+    const titles = [...root.querySelectorAll(".awesomeado-tracking__item-title")].map(
+      (title) => title.textContent,
+    );
+    expect(titles).toEqual(["User Authentication", "Login UI"]);
+    expect(rollupBadgeOf(root).textContent).toBe("1 / 3");
+  });
+});
+
+describe("ProjectTrackingView — an emptied board", () => {
+  it("says the filters emptied it rather than leaving a blank panel", async () => {
+    const tree = createDeepTree();
+    // The only Primary work now sits outside the sprint the filter defaults to.
+    const story = tree.children[0]!.children[0]!;
+    story.iterationPath = "Project\\Sprint 2";
+    story.sprintName = "Sprint 2";
+    const root = await renderDeepBoard({
+      loadTree: async () => ({ isTreeQuery: true, roots: [tree], error: null }),
+    });
+
+    expect(root.querySelectorAll(".awesomeado-tracking__item-title")).toHaveLength(0);
+    const empty = root.querySelector<HTMLElement>(".awesomeado-empty-state")!;
+    expect(empty.textContent).toContain("No items match the current filters.");
+    expect(empty.textContent).toContain("Clear or widen a filter above to bring items back.");
+  });
+
+  it("logs the filters that emptied it, and logs again only when that answer flips", async () => {
+    const logger = { info: vi.fn(), error: vi.fn() };
+    const tree = createDeepTree();
+    const story = tree.children[0]!.children[0]!;
+    story.iterationPath = "Project\\Sprint 2";
+    story.sprintName = "Sprint 2";
+    const root = await renderDeepBoard({
+      logger,
+      loadTree: async () => ({ isTreeQuery: true, roots: [tree], error: null }),
+    });
+
+    const emptied = logger.info.mock.calls.map(([line]) => String(line)).filter(hidEveryRow);
+    expect(emptied).toHaveLength(1);
+    // The signals that decided it, so "why is my board empty?" is answerable from the log alone.
+    expect(emptied[0]).toContain("rows=0");
+    expect(emptied[0]).toContain("sprint=Sprint 1");
+    expect(emptied[0]).toContain("areaPaths=0");
+    expect(emptied[0]).toContain("tags=0");
+    expect(emptied[0]).toContain("activity=[]");
+    expect(emptied[0]).toContain("markers=[]");
+
+    // Turning the sprint filter off brings the rows back: a flip, so exactly one more line — and no
+    // second copy of the "hid every row" conclusion the repaints in between kept reaching.
+    await turnSprintFilterOff(root);
+
+    expect(logger.info.mock.calls.map(([line]) => String(line)).filter(hidEveryRow)).toHaveLength(
+      1,
+    );
+    expect(
+      logger.info.mock.calls
+        .map(([line]) => String(line))
+        .filter((line) => line.includes("Project Tracking tree is showing rows")),
+    ).toHaveLength(1);
+  });
+});
+
+const hidEveryRow = (line: string): boolean => line.includes("Project Tracking tree hid every row");
+
+describe("ProjectTrackingView — Primary-work row classification", () => {
   it("renders leaf items as tree children when their type is primary work", async () => {
     const root = await renderDeepBoard({
       getTypes: () =>
@@ -4177,6 +4262,29 @@ describe("ProjectTrackingView — resolved item window", () => {
   });
 });
 
+describe("ProjectTrackingView — deep minor descendants", () => {
+  it("lists implementation descendants deeper than one level", async () => {
+    const tree = createDeepTree();
+    tree.children[0]!.children[0]!.children[1]!.children.push(
+      createItem({ id: 7, type: "Subtask", title: "Nested implementation detail" }),
+    );
+    const root = await renderDeepBoard({
+      loadTree: async () => ({ isTreeQuery: true, roots: [tree], error: null }),
+    });
+    rollupBadgeOf(root).click();
+
+    expect(rollupBadgeOf(root).textContent).toBe("1 / 4");
+    const rows = root.querySelectorAll<HTMLElement>(".awesomeado-child-items__row");
+    expect([...rows].map((row) => row.textContent)).toEqual([
+      expect.stringContaining("Wire the form"),
+      expect.stringContaining("Style the form"),
+      expect.stringContaining("Nested implementation detail"),
+      expect.stringContaining("Drop the old form"),
+    ]);
+    expect(rows[2]?.dataset.depth).toBe("1");
+  });
+});
+
 describe("ProjectTrackingView — item ordering", () => {
   /** Three Features whose rank, title and ETA orders are all different, so each policy is visible. */
   function unorderedFeatures(): TrackedWorkItem {
@@ -5129,6 +5237,8 @@ async function renderFlaggedBoard(
   // posted comment advances the item's rev and gets the tag patch rejected with HTTP 412.
   const notes: { workItemId: number; text: string }[] = [];
   const root = await renderDeepBoard({
+    getTypes: () =>
+      DEEP_TYPES.map((type) => (type.name === "Feature" ? { ...type, isPrimaryWork: true } : type)),
     loadTree: async () => ({
       isTreeQuery: true,
       roots: [

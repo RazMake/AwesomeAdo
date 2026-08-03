@@ -6,6 +6,7 @@ import type {
   NoteActivityResult,
 } from "../../../ado/INoteActivityReader";
 import type { TrackedWorkItem } from "../../../ado/TrackedWorkItem";
+import { flattenWorkItems } from "../../../ado/workItemTypes";
 import type { ILogger } from "../../../logging/ILogger";
 
 import { RecentNotesIndex } from "./RecentNotesIndex";
@@ -84,12 +85,17 @@ async function settle(): Promise<void> {
   }
 }
 
+/** The index probes an explicit list; a board still reaches it as the tree the view flattened. */
+function probeBoard(index: RecentNotesIndex, root: TrackedWorkItem): void {
+  index.ensureProbed(flattenWorkItems([root]));
+}
+
 describe("RecentNotesIndex — what it asks for", () => {
   it("asks about every commented item under the root, in one read", async () => {
     const reader = fakeReader(datesNothing);
     const index = new RecentNotesIndex(reader, fakeLogger());
 
-    index.ensureProbed(item(1, 0, [item(2, 0), item(3, 4, [item(4, 1)])]));
+    probeBoard(index, item(1, 0, [item(2, 0), item(3, 4, [item(4, 1)])]));
     await settle();
 
     // One round-trip for the whole board, and the item ADO says has no comments is left out of it.
@@ -97,11 +103,23 @@ describe("RecentNotesIndex — what it asks for", () => {
     expect([...(reader.asked[0] ?? [])].sort()).toEqual([3, 4]);
   });
 
+  it("asks about exactly the items it was handed, never descending into their children", async () => {
+    const reader = fakeReader(datesNothing);
+    const index = new RecentNotesIndex(reader, fakeLogger());
+
+    // The caller filtered the board down to item 3; item 4 is work its filter cannot judge, so
+    // reading that discussion would spend a round-trip on an answer nothing will ever ask for.
+    index.ensureProbed([item(3, 4, [item(4, 1)])]);
+    await settle();
+
+    expect(reader.asked).toEqual([[3]]);
+  });
+
   it("asks for nothing at all when no item under the root has a discussion", async () => {
     const reader = fakeReader(datesNothing);
     const index = new RecentNotesIndex(reader, fakeLogger());
 
-    index.ensureProbed(item(1, 0, [item(2, 0)]));
+    probeBoard(index, item(1, 0, [item(2, 0)]));
     await settle();
 
     expect(reader.asked).toEqual([]);
@@ -116,8 +134,8 @@ describe("RecentNotesIndex — what it asks for", () => {
     const index = new RecentNotesIndex(reader, fakeLogger());
     const tree = item(1, 0, [item(2, 1)]);
 
-    index.ensureProbed(tree);
-    index.ensureProbed(tree);
+    probeBoard(index, tree);
+    probeBoard(index, tree);
     expect(reader.asked).toHaveLength(1);
 
     release({ activity: [], error: null });
@@ -132,7 +150,7 @@ describe("RecentNotesIndex — what it asks for", () => {
     });
     const index = new RecentNotesIndex(reader, fakeLogger(), ["[BLOCKED]", "[ACCEPTED]"]);
 
-    index.ensureProbed(item(1, 0, [item(2, 1)]));
+    probeBoard(index, item(1, 0, [item(2, 1)]));
     await settle();
 
     expect(requests[0]?.excludedPrefixes).toEqual(["[BLOCKED]", "[ACCEPTED]"]);
@@ -144,7 +162,7 @@ describe("RecentNotesIndex — what it records", () => {
     const reader = fakeReader(datesEverything);
     const index = new RecentNotesIndex(reader, fakeLogger());
 
-    index.ensureProbed(item(1, 0, [item(2, 1)]));
+    probeBoard(index, item(1, 0, [item(2, 1)]));
     await settle();
 
     expect(index.hasRecentNote(item(2, 1), WINDOW_START)).toBe(true);
@@ -157,7 +175,7 @@ describe("RecentNotesIndex — what it records", () => {
   it("never claims activity for an item that has no comment date", async () => {
     const index = new RecentNotesIndex(fakeReader(datesNothing), fakeLogger());
 
-    index.ensureProbed(item(1, 0, [item(2, 1)]));
+    probeBoard(index, item(1, 0, [item(2, 1)]));
     await settle();
 
     // Even against a window that reaches back years, an item nobody has commented on never matches.
@@ -176,10 +194,10 @@ describe("RecentNotesIndex — what it re-reads", () => {
     const reader = fakeReader(datesEverything);
     const index = new RecentNotesIndex(reader, fakeLogger());
 
-    index.ensureProbed(item(1, 0, [item(2, 1)]));
+    probeBoard(index, item(1, 0, [item(2, 1)]));
     await settle();
     // A refresh: same board, same counts, so nothing is worth another round-trip.
-    index.ensureProbed(item(1, 0, [item(2, 1)]));
+    probeBoard(index, item(1, 0, [item(2, 1)]));
     await settle();
 
     expect(reader.asked).toHaveLength(1);
@@ -189,10 +207,10 @@ describe("RecentNotesIndex — what it re-reads", () => {
     const reader = fakeReader(datesEverything);
     const index = new RecentNotesIndex(reader, fakeLogger());
 
-    index.ensureProbed(item(1, 0, [item(2, 1), item(3, 1)]));
+    probeBoard(index, item(1, 0, [item(2, 1), item(3, 1)]));
     await settle();
     // The refreshed tree says item 3 gained a comment; item 2 is untouched.
-    index.ensureProbed(item(1, 0, [item(2, 1), item(3, 2)]));
+    probeBoard(index, item(1, 0, [item(2, 1), item(3, 2)]));
     await settle();
 
     expect(reader.asked[1]).toEqual([3]);
@@ -202,13 +220,13 @@ describe("RecentNotesIndex — what it re-reads", () => {
     const reader = fakeReader(() => ({ activity: [], error: "sign-in (HTTP 200)" }));
     const index = new RecentNotesIndex(reader, fakeLogger());
 
-    index.ensureProbed(item(1, 0, [item(2, 1)]));
+    probeBoard(index, item(1, 0, [item(2, 1)]));
     await settle();
-    index.ensureProbed(item(1, 0, [item(2, 1)]));
+    probeBoard(index, item(1, 0, [item(2, 1)]));
     await settle();
     expect(reader.asked).toHaveLength(1);
 
-    index.ensureProbed(item(1, 0, [item(2, 2)]));
+    probeBoard(index, item(1, 0, [item(2, 2)]));
     await settle();
     expect(reader.asked).toHaveLength(2);
   });
@@ -217,10 +235,10 @@ describe("RecentNotesIndex — what it re-reads", () => {
     const reader = fakeReader(datesEverything);
     const index = new RecentNotesIndex(reader, fakeLogger());
 
-    index.ensureProbed(item(1, 0, [item(2, 1)]));
+    probeBoard(index, item(1, 0, [item(2, 1)]));
     await settle();
     index.retain(new Set([1]));
-    index.ensureProbed(item(1, 0, [item(2, 1)]));
+    probeBoard(index, item(1, 0, [item(2, 1)]));
     await settle();
 
     expect(reader.asked).toEqual([[2], [2]]);
@@ -234,10 +252,10 @@ describe("RecentNotesIndex — what it re-reads", () => {
     });
     const index = new RecentNotesIndex(reader, fakeLogger());
 
-    index.ensureProbed(item(1, 0, [item(2, 1)]));
+    probeBoard(index, item(1, 0, [item(2, 1)]));
     await settle();
     index.retain(new Set([1]));
-    index.ensureProbed(item(1, 0, [item(2, 1)]));
+    probeBoard(index, item(1, 0, [item(2, 1)]));
     await settle();
 
     expect(reader.asked).toEqual([[2], [2]]);
@@ -254,7 +272,7 @@ describe("RecentNotesIndex — what it reports", () => {
     const index = new RecentNotesIndex(reader, fakeLogger());
     const settled = vi.fn();
 
-    index.ensureProbed(item(1, 0, [item(2, 1)]));
+    probeBoard(index, item(1, 0, [item(2, 1)]));
     expect(index.isPending()).toBe(true);
     void index.whenSettled().then(settled);
 
@@ -283,7 +301,7 @@ describe("RecentNotesIndex — what it reports", () => {
     const logger = fakeLogger();
     const index = new RecentNotesIndex(reader, logger);
 
-    index.ensureProbed(item(1, 0, [item(2, 1)]));
+    probeBoard(index, item(1, 0, [item(2, 1)]));
     await settle();
 
     expect(index.hasRecentNote(item(2, 1), WINDOW_START)).toBe(false);
@@ -298,7 +316,7 @@ describe("RecentNotesIndex — what it reports", () => {
     }));
     const index = new RecentNotesIndex(reader, fakeLogger());
 
-    index.ensureProbed(item(1, 0, [item(2, 1), item(3, 1)]));
+    probeBoard(index, item(1, 0, [item(2, 1), item(3, 1)]));
     await settle();
 
     expect(index.hasRecentNote(item(2, 1), WINDOW_START)).toBe(true);
@@ -312,7 +330,7 @@ describe("RecentNotesIndex — what it reports", () => {
     const logger = fakeLogger();
     const index = new RecentNotesIndex(reader, logger);
 
-    index.ensureProbed(item(1, 0, [item(2, 1)]));
+    probeBoard(index, item(1, 0, [item(2, 1)]));
     await settle();
 
     expect(index.hasRecentNote(item(2, 1), WINDOW_START)).toBe(false);

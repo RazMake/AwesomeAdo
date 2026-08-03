@@ -15,20 +15,14 @@ export function itemHasMarker(
   return hasWorkItemTag(item.tags, markerTags[marker].tag);
 }
 
-/** Markers present somewhere in a tree, in the settings' presentation order. */
+/** Markers carried by at least one of `items`, in the settings' presentation order. */
 export function collectMarkersInUse(
-  root: TrackedWorkItem,
+  items: readonly TrackedWorkItem[],
   markerTags: WorkItemMarkerTags,
 ): WorkItemMarker[] {
-  const found = new Set<WorkItemMarker>();
-  const visit = (item: TrackedWorkItem): void => {
-    for (const { key } of WORK_ITEM_MARKERS) {
-      if (!found.has(key) && itemHasMarker(item, key, markerTags)) found.add(key);
-    }
-    for (const child of item.children) visit(child);
-  };
-  visit(root);
-  return WORK_ITEM_MARKERS.map(({ key }) => key).filter((key) => found.has(key));
+  return WORK_ITEM_MARKERS.map(({ key }) => key).filter((key) =>
+    items.some((item) => itemHasMarker(item, key, markerTags)),
+  );
 }
 
 /** Build the OR predicate for a selected marker set; an empty set matches every item. */

@@ -68,11 +68,13 @@ The extension is feature-complete for its current scope:
   its horizontally synchronized column titles stay pinned at half the header card's resting gap below the sticky control header while
   filter pills scroll beneath them. Each lane's name and per-lane item count stick vertically until
   the next lane pushes them away; there is no table-wide total. Queue through Waiting use tall cards;
-  Done cards start compact and expand on activation. Only explicitly configured Primary-work types
+  Done cards start compact and expand on activation. Filters evaluate only explicitly configured
+  Primary-work items; their planning ancestors remain as context and their complete non-primary
+  descendant trees remain visible in indented child rollups at arbitrary depth. Only Primary-work types
   render as cards. Cards expose title, ID, a tag-free shared assignee control, type color, and ETA;
   their row below the title aligns ETA left and, on large cards only, the shared completed/total child badge right. Both
   sizes put ID and assignee in their top corners; compact Done cards keep their own assignee and ETA
-  read-only until expanded. A top-right shared ordering picker defaults cards and direct-child rows
+  read-only until expanded. A top-right shared ordering picker defaults cards and descendant rows
   to backlog rank and can switch both to title or ETA for the session. Child rows expose shared
   completion toggles, Assigned To and ETA controls, plus sibling-only title drag ordering under
   backlog-rank mode; all four stay read-only when the parent card is Done. An open popup suspends its owning card's drag
@@ -92,8 +94,9 @@ The extension is feature-complete for its current scope:
   only reorder. Interactive parent
   controls cannot initiate the card drag. The
   Project filter lists only ancestor chains of work
-  surviving the sprint and other active filters, without narrowing its own alternatives. Team pills
-  show queue + active counters limited to Primary work and its recursively configured descendants;
+  surviving the sprint and other active filters, without narrowing its own alternatives. Lane,
+  person, marker, and activity filter choices and counts are likewise derived only from Primary work. Team pills
+  show queue + active counters limited to Primary work;
   planning-context ancestors do not contribute to member or Unassigned totals. Every pill counter
   explains itself on hover. Marker-tag
   pills show one selected-sprint total except Interrupt, which splits not-yet-accepted from
@@ -115,7 +118,7 @@ The extension is feature-complete for its current scope:
   ancestor chains. The title's right-click menu always copies the query URL; on a past sprint it can
   bulk-move a confirmed snapshot of visible, assigned, non-Done Primary-work cards to a current/future
   sprint, summarized by Lane and assignee. Filtered-out, unassigned, descendant-only, and newly arrived
-  items never enter the snapshot; fresh State/Lane/assignee guards skip changed cards. Cards and direct children reuse Project Tracking item
+  items never enter the snapshot; fresh State/Lane/assignee guards skip changed cards. Cards and descendant rows reuse Project Tracking item
   commands, then add Sprint-only Interrupt Tag/Accept/Clear commands. New Interrupts retain the inline
   Accepted checkbox preview, but choosing acceptance opens the shared titled Markdown/mention editor;
   Accept stays disabled until a reason exists, and the configured token plus reason rides with the
@@ -155,8 +158,10 @@ The extension is feature-complete for its current scope:
   `RecentNotesIndex`) plus a captured scroll offset, so a refresh keeps
   their place; it awaits `WorkItemWriteQueue.whenIdle()` first, keeps the board and reports on the
   button when the re-read fails, and never touches ADO's own hidden grid (ADR-029). The tree renders
-  every Primary-work type and the planning-context types above it; implementation-detail children
-  below the deepest Primary-work level are rolled up inline by the shared `ChildItemsBadge` control
+  every Primary-work type and the planning-context types above it; all filters evaluate Primary work
+  only, retaining arbitrarily deep ancestor chains when any Primary descendant matches.
+  Implementation-detail descendants below the deepest Primary-work level are rolled up recursively
+  by the shared `ChildItemsBadge` control
   as a `completed / total` chip (completed = the last board column before Removed) tinted from the
   last configured type's color, whose popup lists each child as
   `{AssignedTo} {title} {ETA} {type icon → ADO}`. Mixed sibling types can show Primary-work rows and

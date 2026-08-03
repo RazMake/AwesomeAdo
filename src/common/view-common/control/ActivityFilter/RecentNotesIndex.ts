@@ -45,15 +45,14 @@ export class RecentNotesIndex {
     }
   }
 
-  ensureProbed(root: TrackedWorkItem): void {
-    this.ensureItemsProbed(root.children);
-  }
-
-  ensureItemsProbed(roots: readonly TrackedWorkItem[]): void {
+  /**
+   * Reads the discussion dates of exactly `items` — no descending. The caller already knows which
+   * items its filter can judge, and probing the ones it cannot spends round-trips on answers nothing
+   * will ever ask for.
+   */
+  ensureProbed(items: readonly TrackedWorkItem[]): void {
     if (this.reading) return;
-    const stale = descendantsIncluding(roots).filter(
-      (item) => item.noteCount > 0 && this.needsReading(item),
-    );
+    const stale = items.filter((item) => item.noteCount > 0 && this.needsReading(item));
     if (stale.length === 0) return;
     this.logger.info(
       `New notes filter: reading ${stale.length} discussion date(s); ` +
@@ -134,16 +133,4 @@ function epochOf(iso: string | null): number {
   if (iso === null) return Number.NEGATIVE_INFINITY;
   const at = Date.parse(iso);
   return Number.isNaN(at) ? Number.NEGATIVE_INFINITY : at;
-}
-
-function descendantsIncluding(roots: readonly TrackedWorkItem[]): TrackedWorkItem[] {
-  const collected: TrackedWorkItem[] = [];
-  const pending = [...roots];
-  while (pending.length > 0) {
-    const item = pending.pop();
-    if (item === undefined) break;
-    collected.push(item);
-    pending.push(...item.children);
-  }
-  return collected;
 }

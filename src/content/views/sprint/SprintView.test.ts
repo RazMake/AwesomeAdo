@@ -489,9 +489,55 @@ function expectParentHierarchyPopup(card: HTMLElement): void {
   ]);
 }
 
+function expectColumnCountBadges(headings: readonly HTMLElement[]): void {
+  const badges = headings.map((heading) =>
+    heading.querySelector<HTMLElement>(".awesomeado-sprint__column-count")!,
+  );
+  // Only the two Primary work cards count: one Queue ("New") and one Done.
+  expect(badges.map((badge) => badge.textContent)).toEqual(["1", "0", "0", "1"]);
+  expect(badges.map((badge) => badge.title)).toEqual([
+    "1 Primary work item",
+    "0 Primary work items",
+    "0 Primary work items",
+    "1 Primary work item",
+  ]);
+  expect(badges.map((badge) => badge.getAttribute("aria-label"))).toEqual(
+    badges.map((badge) => badge.title),
+  );
+  expect(badges.map((badge) => badge.style.background)).toEqual([
+    "var(--status-neutral-border)",
+    "var(--status-blue-border)",
+    "var(--status-yellow-border)",
+    "var(--status-green-border)",
+  ]);
+  expect(badges.map((badge) => badge.style.color)).toEqual(
+    headings.map((heading) => heading.style.color),
+  );
+  expect(badges.map((badge) => badge.style.borderColor)).toEqual([
+    "var(--status-neutral-foreground)",
+    "var(--status-blue-foreground)",
+    "var(--status-yellow-foreground)",
+    "var(--status-green-foreground)",
+  ]);
+  // The chip must sit outside the dimmed backdrop so a stuck header never fades the count away.
+  expect(badges.map((badge) => badge.style.position)).toEqual(
+    Array.from({ length: 4 }, () => "relative"),
+  );
+  expect(badges.map((badge) => badge.parentElement)).toEqual([...headings]);
+}
+
 function expectWorkCards(root: HTMLElement): void {
   const headings = [...root.querySelectorAll<HTMLElement>(".awesomeado-sprint__column-title")];
-  expect(headings.map((heading) => heading.textContent)).toEqual(CUSTOM_COLUMNS.slice(0, 4));
+  expect(
+    headings.map(
+      (heading) =>
+        heading.querySelector<HTMLElement>(".awesomeado-sprint__column-title-label")!.textContent,
+    ),
+  ).toEqual(CUSTOM_COLUMNS.slice(0, 4));
+  expect(headings.map((heading) => heading.style.justifyContent)).toEqual(
+    Array.from({ length: 4 }, () => "space-between"),
+  );
+  expectColumnCountBadges(headings);
   expect(headings.map((heading) => heading.style.color)).toEqual([
     "var(--status-neutral-foreground)",
     "var(--status-blue-foreground)",
@@ -551,7 +597,7 @@ function expectWorkCards(root: HTMLElement): void {
   const footer = queued.querySelector<HTMLElement>(".awesomeado-sprint-card__footer")!;
   expect(title.nextElementSibling).toBe(footer);
   expect(footer.firstElementChild?.textContent).toBe("ETA 08/10/2026");
-  expect(footer.lastElementChild?.textContent).toBe("0 / 1");
+  expect(footer.lastElementChild?.textContent).toBe("0 / 2");
   expect(footer.lastElementChild?.getAttribute("style")).toContain("margin-left: auto");
   expectParentHierarchyPopup(queued);
   expect(queued.style.getPropertyValue("--sprint-item-type-color")).toBe("#0078d4");
@@ -561,13 +607,13 @@ function expectWorkCards(root: HTMLElement): void {
   }
 }
 
-function expectDirectChildBadge(root: HTMLElement): void {
+function expectDescendantBadge(root: HTMLElement): void {
   const queued = root.querySelector<HTMLElement>('[data-item-id="2"]')!;
-  expect(queued.querySelector(".awesomeado-child-items__badge")?.textContent).toBe("0 / 1");
+  expect(queued.querySelector(".awesomeado-child-items__badge")?.textContent).toBe("0 / 2");
   queued.querySelector<HTMLButtonElement>(".awesomeado-child-items__badge")!.click();
   const popupText = queued.querySelector(".awesomeado-child-items__popup")?.textContent;
   expect(popupText).toContain("Queued child");
-  expect(popupText).not.toContain("Nested grandchild");
+  expect(popupText).toContain("Nested grandchild");
 }
 
 function expectCompactDoneCard(root: HTMLElement): void {
@@ -624,15 +670,44 @@ async function verifyWorkCardRendering(): Promise<void> {
     getTypes: workCardTypes,
   });
   expectWorkCards(root);
-  expectDirectChildBadge(root);
+  expectDescendantBadge(root);
   expectCompactDoneCard(root);
 }
 
 describe("Sprint View board", () => {
   it(
-    "renders only work-flagged cards and direct children in the shared badge",
+    "renders only work-flagged cards and their descendants in the shared badge",
     verifyWorkCardRendering,
   );
+
+  it("tallies only Primary work the board actually shows in the column and lane counts", async () => {
+    const root = await render({
+      loadTree: async () => ({
+        isTreeQuery: false,
+        roots: [
+          item(1, "Queued story"),
+          item(2, "Second queued story"),
+          item(3, "Active story", { state: "Active" }),
+          // Routed to the 5th column, so no card renders for it in the four visible columns.
+          item(4, "Removed story", { state: "Removed" }),
+          item(5, "Implementation detail", { type: "Task" }),
+        ],
+        error: null,
+      }),
+      getTypes: () => [
+        ...services().getTypes(),
+        { ...services().getTypes()[0]!, name: "Task", isPrimaryWork: false },
+      ],
+    });
+
+    expect(
+      [...root.querySelectorAll(".awesomeado-sprint__column-count")].map(
+        (badge) => badge.textContent,
+      ),
+    ).toEqual(["2", "1", "0", "0"]);
+    expect(root.querySelector(".awesomeado-sprint__lane-count")?.textContent).toBe("3 items");
+    expect(root.querySelectorAll(".awesomeado-sprint__item")).toHaveLength(3);
+  });
 
   it("persists assignee and ETA changes through the card controls", async () => {
     const writeField = vi
@@ -965,9 +1040,13 @@ describe("Sprint View title context menu", () => {
 
 describe("Sprint View item context menus", () => {
   it("offers the same item commands on cards and direct child rows", async () => {
-    const parent = item(1, "Parent", { children: [item(2, "Child")] });
+    const parent = item(1, "Parent", { children: [item(2, "Child", { type: "Task" })] });
     const root = await render({
       loadTree: async () => ({ isTreeQuery: true, roots: [parent], error: null }),
+      getTypes: () => [
+        { ...services().getTypes()[0]!, children: ["Task"] },
+        { ...services().getTypes()[0]!, name: "Task", isPrimaryWork: false, children: [] },
+      ],
     });
     const expected = [
       "Copy Item ID",
@@ -1517,8 +1596,10 @@ describe("Sprint View column drag and drop", () => {
     )!;
     expect(highlight.style.borderColor).toBe(columnTitle.style.color);
     expect(highlight.style.borderColor).toBe("var(--status-blue-foreground)");
+    // The highlight paints over everything the header shows, including the count chip.
+    expect(highlight.nextElementSibling).toBeNull();
     expect(highlight.previousElementSibling).toBe(
-      columnTitle.querySelector(".awesomeado-sprint__column-title-label"),
+      columnTitle.querySelector(".awesomeado-sprint__column-count"),
     );
     dispatchDrag(target, "drop", dataTransfer);
     await vi.waitFor(() => expect(writeField).toHaveBeenCalledOnce());
@@ -1775,7 +1856,7 @@ describe("Sprint View card drag initiation", () => {
 });
 
 describe("Sprint View team counts", () => {
-  it("counts only primary work and its descendants for members and Unassigned", async () => {
+  it("counts only Primary work for members and Unassigned", async () => {
     const roots = [
       item(1, "Alice planning context", { type: "Feature", state: "Active" }),
       item(2, "Alice primary work", { state: "Active" }),
@@ -1804,10 +1885,10 @@ describe("Sprint View team counts", () => {
     const alice = root.querySelector('[data-person="alice@example.com"]')!;
     const unassigned = root.querySelector('[data-person="__unassigned__"]')!;
 
-    expect(metric(alice, "queue")).toBe("2");
+    expect(metric(alice, "queue")).toBe("1");
     expect(metric(alice, "active")).toBe("1");
-    expect(metric(unassigned, "queue")).toBe("2");
-    expect(metric(unassigned, "active")).toBe("1");
+    expect(metric(unassigned, "queue")).toBe("1");
+    expect(metric(unassigned, "active")).toBe("0");
   });
 });
 
@@ -1883,7 +1964,125 @@ describe("Sprint View header", () => {
   });
 });
 
+function deepFilterTree(): TrackedWorkItem[] {
+  const deepChild = item(6, "Deep implementation detail", {
+    type: "Subtask",
+    areaPath: "Project\\Implementation",
+    tags: ["Blocked"],
+  });
+  const primary = item(4, "Primary work", {
+    areaPath: "Project\\Delivery",
+    children: [item(5, "Implementation detail", { type: "Task", children: [deepChild] })],
+  });
+  return [
+    item(1, "Portfolio", {
+      type: "Portfolio",
+      sprintName: "Backlog",
+      children: [
+        item(2, "Epic", {
+          type: "Epic",
+          sprintName: "Backlog",
+          children: [
+            item(3, "Feature", {
+              type: "Feature",
+              sprintName: "Backlog",
+              children: [primary],
+            }),
+          ],
+        }),
+      ],
+    }),
+  ];
+}
+
+function deepFilterTypes() {
+  const base = services().getTypes()[0]!;
+  return [
+    { ...base, name: "Portfolio", isPrimaryWork: false, children: ["Epic"] },
+    { ...base, name: "Epic", isPrimaryWork: false, children: ["Feature"] },
+    { ...base, name: "Feature", isPrimaryWork: false, children: ["Story"] },
+    { ...base, name: "Story", isPrimaryWork: true, children: ["Task"] },
+    { ...base, name: "Task", isPrimaryWork: false, children: ["Subtask"] },
+    { ...base, name: "Subtask", isPrimaryWork: false, children: [] },
+  ];
+}
+
+describe("Sprint View emptied board", () => {
+  it("says the filters emptied it rather than leaving a blank panel", async () => {
+    const root = await render();
+    // Bob's only item belongs to the next sprint, so his pill leaves nothing for the board to draw.
+    root.querySelector<HTMLButtonElement>('[data-person="bob@example.com"]')!.click();
+
+    expect(root.querySelectorAll(".awesomeado-sprint__item")).toHaveLength(0);
+    expect(root.querySelector(".awesomeado-sprint__column-title")).toBeNull();
+    const empty = root.querySelector<HTMLElement>(".awesomeado-empty-state")!;
+    expect(empty.textContent).toContain("No items match the current filters.");
+    expect(empty.textContent).toContain("Clear or widen a filter above to bring items back.");
+  });
+
+  it("logs the filters that emptied it, and logs again only when that answer flips", async () => {
+    const logger = { info: vi.fn(), error: vi.fn() };
+    const hidEveryCard = (line: string): boolean => line.includes("Sprint board hid every card");
+    const showingCards = (line: string): boolean => line.includes("Sprint board is showing cards");
+    const lines = (): string[] => logger.info.mock.calls.map(([line]) => String(line));
+    const root = await render({ logger });
+
+    // The first painted board had cards, so the flip to empty is what has to be recorded next.
+    expect(lines().filter(showingCards)).toHaveLength(1);
+    expect(lines().filter(hidEveryCard)).toHaveLength(0);
+    root.querySelector<HTMLButtonElement>('[data-person="bob@example.com"]')!.click();
+
+    const emptied = lines().filter(hidEveryCard);
+    expect(emptied).toHaveLength(1);
+    // The signals that decided it, so "why is my board empty?" is answerable from the log alone.
+    expect(emptied[0]).toContain("cards=0");
+    expect(emptied[0]).toContain("filterable=4");
+    expect(emptied[0]).toContain("people=1");
+    expect(emptied[0]).toContain("areaPaths=0");
+    expect(emptied[0]).toContain("markers=[]");
+    expect(emptied[0]).toContain("activity=[]");
+
+    // Unselecting Bob brings the cards back: one more line, and still only ONE "hid every card"
+    // despite the repaints that kept reaching that same conclusion in between.
+    root.querySelector<HTMLButtonElement>('[data-person="bob@example.com"]')!.click();
+
+    expect(lines().filter(hidEveryCard)).toHaveLength(1);
+    expect(lines().filter(showingCards)).toHaveLength(2);
+  });
+});
+
 describe("Sprint View filters", () => {
+  it("derives filters only from Primary work across deep hierarchy chains", async () => {
+    const root = await render({
+      loadTree: async () => ({ isTreeQuery: true, roots: deepFilterTree(), error: null }),
+      getTypes: deepFilterTypes,
+    });
+
+    root.querySelector<HTMLButtonElement>(".awesomeado-area-filter__trigger")!.click();
+    const lanes = [...root.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')].map(
+      (input) => input.value,
+    );
+    expect(lanes).toEqual(["Project\\Delivery"]);
+    expect(metric(root.querySelector('[data-marker="blocked"]')!, "total")).toBe("0");
+    expect(root.querySelector(".awesomeado-sprint__item")?.textContent).toContain("Primary work");
+    const childBadge = root.querySelector<HTMLButtonElement>(".awesomeado-child-items__badge")!;
+    expect(childBadge.textContent).toBe("0 / 2");
+    childBadge.click();
+    const childRows = root.querySelectorAll<HTMLElement>(".awesomeado-child-items__row");
+    expect([...childRows].map((row) => row.textContent)).toEqual([
+      expect.stringContaining("Implementation detail"),
+      expect.stringContaining("Deep implementation detail"),
+    ]);
+    expect(childRows[1]?.dataset.depth).toBe("1");
+
+    root.querySelector<HTMLButtonElement>(".awesomeado-hierarchy-filter__trigger")!.click();
+    expect(
+      [...root.querySelectorAll<HTMLElement>(".awesomeado-hierarchy-filter__option")].map(
+        (option) => option.dataset.itemId,
+      ),
+    ).toEqual(["", "1", "2", "3"]);
+  });
+
   it("offers only leaf area paths as Lanes", async () => {
     const roots = [
       item(1, "Project root", { areaPath: "Project" }),

@@ -2,11 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import type { TrackedWorkItem, TypeCatalogEntry } from "./TrackedWorkItem";
 import {
+  flattenWorkItems,
   orderTrackedItems,
   primaryWorkAncestors,
   primaryWorkTypes,
   primaryWorkWithAncestors,
   primaryWorkWithDescendants,
+  workItemIdsVisibleUnderPrimaryFilter,
+  workItemsEligibleForPrimaryFilter,
   workItemTypeColor,
   workItemTypeTextColor,
 } from "./workItemTypes";
@@ -104,6 +107,148 @@ describe("primary work type closures", () => {
     const unconfigured = [type("Epic", ["Feature"]), type("Feature", [])];
     expect([...primaryWorkWithAncestors(unconfigured)]).toEqual([]);
     expect([...primaryWorkWithDescendants(unconfigured)]).toEqual([]);
+  });
+});
+
+/**
+ * Portfolio → Epic → Feature → two Stories. Story 3 matches and owns a Task and a Subtask below it;
+ * Story 5 does not match but owns a Task that does, so "a match under a non-match" is covered too.
+ */
+const DEEP_TREE = item({
+  id: 0,
+  type: "Portfolio",
+  children: [
+    item({
+      id: 1,
+      type: "Epic",
+      children: [
+        item({
+          id: 2,
+          type: "Feature",
+          children: [
+            item({
+              id: 3,
+              type: "Story",
+              title: "matching",
+              children: [
+                item({
+                  id: 4,
+                  type: "Task",
+                  title: "does not match",
+                  children: [item({ id: 7, type: "Subtask", title: "does not match" })],
+                }),
+              ],
+            }),
+            item({
+              id: 5,
+              type: "Story",
+              title: "does not match",
+              children: [item({ id: 6, type: "Task", title: "matching" })],
+            }),
+          ],
+        }),
+      ],
+    }),
+  ],
+});
+
+const ascending = (left: number, right: number): number => left - right;
+
+describe("workItemIdsVisibleUnderPrimaryFilter", () => {
+  it("filters Primary work across arbitrarily deep ancestor and implementation chains", () => {
+    const visible = workItemIdsVisibleUnderPrimaryFilter(
+      [DEEP_TREE],
+      CATALOG,
+      (candidate) => candidate.title === "matching",
+    );
+
+    expect([...visible].sort(ascending)).toEqual([0, 1, 2, 3, 4, 7]);
+  });
+
+  it("keeps the legacy per-item matching rule when Primary work is not configured", () => {
+    const visible = workItemIdsVisibleUnderPrimaryFilter(
+      [DEEP_TREE],
+      CATALOG.map((entry) => ({ ...entry, isPrimaryWork: false })),
+      (candidate) => candidate.id === 5,
+    );
+
+    // Item 5's ancestors come with it, but its child 6 does NOT: with no classification, an item is
+    // only ever on screen because it matched for itself or an ancestor of one that did.
+    expect([...visible].sort(ascending)).toEqual([0, 1, 2, 5]);
+  });
+
+  it("never asks the filter about work it is not allowed to judge", () => {
+    const asked: number[] = [];
+    workItemIdsVisibleUnderPrimaryFilter([DEEP_TREE], CATALOG, (candidate) => {
+      asked.push(candidate.id);
+      return false;
+    });
+
+    expect(asked.sort(ascending)).toEqual([3, 5]);
+  });
+
+  it("hides everything, ancestors included, when no Primary work matches", () => {
+    expect([...workItemIdsVisibleUnderPrimaryFilter([DEEP_TREE], CATALOG, () => false)]).toEqual(
+      [],
+    );
+  });
+
+  it("stops walking ancestors once the same id turns up at two depths", () => {
+    // Defensive: a query that returns one item twice at different depths makes the parent links
+    // circular, and a render pass must narrow the board rather than hang on it.
+    const repeated = item({
+      id: 1,
+      type: "Feature",
+      children: [
+        item({
+          id: 2,
+          type: "Story",
+          title: "matching",
+          children: [
+            item({ id: 3, type: "Task", children: [item({ id: 1, type: "Story", title: "x" })] }),
+          ],
+        }),
+      ],
+    });
+
+    const visible = workItemIdsVisibleUnderPrimaryFilter(
+      [repeated],
+      CATALOG,
+      (candidate) => candidate.title === "matching",
+    );
+
+    expect([...visible].sort(ascending)).toEqual([1, 2, 3]);
+  });
+});
+
+describe("workItemsEligibleForPrimaryFilter", () => {
+  it("returns only Primary-work items as filter candidates", () => {
+    expect(workItemsEligibleForPrimaryFilter([DEEP_TREE], CATALOG).map(({ id }) => id)).toEqual([
+      3, 5,
+    ]);
+  });
+
+  it("treats every item as a candidate while Primary work is unconfigured", () => {
+    const unconfigured = CATALOG.map((entry) => ({ ...entry, isPrimaryWork: false }));
+
+    expect(
+      workItemsEligibleForPrimaryFilter([DEEP_TREE], unconfigured).map(({ id }) => id),
+    ).toEqual([0, 1, 2, 3, 4, 7, 5, 6]);
+  });
+});
+
+describe("flattenWorkItems", () => {
+  it("lists the roots and every descendant, parents ahead of their children", () => {
+    const flattened = flattenWorkItems([
+      item({ id: 1, children: [item({ id: 2, children: [item({ id: 3 })] }), item({ id: 4 })] }),
+      item({ id: 5 }),
+    ]);
+
+    expect(flattened.map(({ id }) => id)).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it("has nothing to list for no roots", () => {
+    expect(flattenWorkItems([])).toEqual([]);
   });
 });
 

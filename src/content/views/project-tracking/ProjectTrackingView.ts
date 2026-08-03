@@ -1,5 +1,7 @@
 import {
   applyFeatureCrewTags,
+  assignedTagKey,
+  assignedTagsOf,
   collectAssignedDirectoryUsers,
   collectAssignedTags,
   collectFeatureCrewAssignees,
@@ -21,8 +23,11 @@ import { ASSIGNED_TO_FIELD, identityFieldValue } from "../../../common/ado/adoAp
 import { buildQueryFolderUrl, buildWorkItemUrl } from "../../../common/ado/fetchAdoTree";
 import type { SprintWindow } from "../../../common/ado/sprintWindow";
 import {
+  flattenWorkItems,
   orderTrackedItems,
   primaryWorkWithAncestors,
+  workItemIdsVisibleUnderPrimaryFilter,
+  workItemsEligibleForPrimaryFilter,
   workItemTypeColor,
 } from "../../../common/ado/workItemTypes";
 import { resolveMentionsIn } from "../../../common/browser/MessagingMentionDirectory";
@@ -56,9 +61,14 @@ import {
   type ChildItemDescriptor,
 } from "../../../common/view-common/control/ChildItemsBadge/ChildItemsBadge";
 import {
+  collectRolledUpDescendants,
+  type RolledUpDescendant,
+} from "../../../common/view-common/control/ChildItemsBadge/rolledUpDescendants";
+import {
   DragReorderController,
   type PlannedMove,
 } from "../../../common/view-common/control/DragReorder/DragReorderController";
+import { renderEmptyState } from "../../../common/view-common/control/EmptyState/EmptyState";
 import {
   renderEtaBadge,
   type EtaBadgeHandle,
@@ -152,19 +162,6 @@ function statusLabelOf(item: TrackedWorkItem, entry: TypeCatalogEntry | undefine
 }
 
 /**
- * The tag a work item filters under: its assignee's tag (`null` = the "??" untagged bucket), or
- * `undefined` when the item is unassigned so no tag pill ever matches it. Mirrors how
- * `collectAssignedTags` buckets people, so a selected pill and the tree agree on who wears it.
- */
-function itemTagKey(item: TrackedWorkItem): string | null | undefined {
-  if (item.assignedTo === null) {
-    return undefined;
-  }
-  const tag = item.assignedTo.tag;
-  return tag !== undefined && tag !== null && tag.length > 0 ? tag : null;
-}
-
-/**
  * Everything one render pass narrows the tree by, bundled so the recursive visibility test and the
  * rollup badge apply exactly the same rules and can never fall out of step.
  */
@@ -199,31 +196,24 @@ interface TreeFilter {
  * filtered out.
  */
 function matchesLitPills(item: TrackedWorkItem, filter: TreeFilter): boolean {
-  const key = itemTagKey(item);
+  const key = assignedTagKey(item);
   const matchesTags = filter.tags.size === 0 || (key !== undefined && filter.tags.has(key));
   // The activity and marker halves already answer `true` for every item when nothing in their group
   // is lit, so the "an unlit group imposes nothing" rule needs no second check for either here.
   return matchesTags && filter.matchesRecentActivity(item) && filter.matchesMarkers(item);
 }
 
-/**
- * Predicate: is this item (or any of its descendants) visible under the active filters? An item
- * self-matches when it passes the sprint filter, the lit pills (see `matchesLitPills`) AND has not
- * been resolved for longer than the binding allows. An ancestor stays visible when any descendant
- * self-matches, so a matching item is never orphaned from its path — which is also what keeps a
- * long-resolved parent on the board while unresolved work sits beneath it.
- */
-function isVisibleUnderFilter(item: TrackedWorkItem, filter: TreeFilter): boolean {
+/** Whether one filterable work item passes every active filter group. */
+function matchesTreeFilter(item: TrackedWorkItem, filter: TreeFilter): boolean {
   const matchesSprint = !filter.sprint || item.sprintName === filter.sprint;
   const matchesAreaPath =
     filter.areaPaths.size === 0 || (item.areaPath !== null && filter.areaPaths.has(item.areaPath));
-  const selfMatches =
+  return (
     matchesSprint &&
     matchesAreaPath &&
     matchesLitPills(item, filter) &&
-    !filter.isResolvedPastWindow(item);
-  if (selfMatches) return true;
-  return item.children.some((child) => isVisibleUnderFilter(child, filter));
+    !filter.isResolvedPastWindow(item)
+  );
 }
 
 /**
@@ -425,8 +415,8 @@ interface TreeRenderOptions {
   statusWidthCh: number;
   /** The team's global board columns in order; a status colors by its position in this list. */
   boardColumns: string[];
-  /** What narrows the tree on this pass: the sprint, the tags, and the resolved-age window. */
-  filter: TreeFilter;
+  /** Work items retained after Primary-work filtering and hierarchy expansion. */
+  visibleItemIds: ReadonlySet<number>;
   /** How the items within each level are ordered, straight from the binding. */
   orderingPolicy: OrderingPolicy;
   showSprintPills: boolean;
@@ -1264,17 +1254,16 @@ function itemMenuTarget(item: TrackedWorkItem, options: TreeRenderOptions): Item
  * re-dated exactly like a row rather than being a read-only echo.
  */
 function describeMinorChild(
-  child: TrackedWorkItem,
+  entry: RolledUpDescendant,
   options: TreeRenderOptions,
-  depth: number,
-  parentId: number,
-  destinationType: string | null,
-  siblingIds: readonly number[],
+  treeDepth: number,
 ): ChildItemDescriptor {
   const { doc, typeMap, queue, context, boardColumns } = options;
+  const { item: child, parent, siblingIds, depth } = entry;
   const url = itemUrl(doc, child.id);
   const eta = createItemEtaBadge(doc, child, typeMap, boardColumns, queue, context.services.now());
   return {
+    depth,
     // Tagged like a tree row: a rolled-up child is the ONLY place its assignee appears, so hiding
     // the crew pill here hid which crew owns that work entirely — and left the popup the one place
     // a person could not be retagged.
@@ -1299,10 +1288,10 @@ function describeMinorChild(
         : (row, title, dragContext) =>
             options.dragReorder?.register({
               id: child.id,
-              depth,
+              depth: treeDepth,
               hasChildren: child.children.length > 0,
-              parentId,
-              destinationType,
+              parentId: parent.id,
+              destinationType: options.typeMap.get(parent.type)?.children?.[0] ?? null,
               siblingIds,
               handle: title,
               row,
@@ -1329,17 +1318,15 @@ function createMinorChildrenBadge(
   options: TreeRenderOptions,
   childDepth: number,
 ): HTMLElement | null {
-  const children = orderTrackedItems(
-    item.children.filter((child) => !rendersAsTreeRow(child, options, childDepth)),
-    (child) => child,
+  const children = collectRolledUpDescendants(
+    item,
+    (child, depth) => !rendersAsTreeRow(child, options, childDepth + depth),
     options.orderingPolicy,
   );
   if (children.length === 0) return null;
 
-  const siblingIds = children.map((child) => child.id);
-  const destinationType = options.typeMap.get(item.type)?.children?.[0] ?? null;
   const descriptors = children.map((child) =>
-    describeMinorChild(child, options, childDepth, item.id, destinationType, siblingIds),
+    describeMinorChild(child, options, childDepth + child.depth),
   );
 
   const badge = renderChildItemsBadge(options.doc, {
@@ -1754,7 +1741,7 @@ function renderTree(
   const ordered = orderTrackedItems(parent.children, (child) => child, options.orderingPolicy);
   const siblingIds = ordered.map((item) => item.id);
   const visible = ordered.filter(
-    (item) => rendersAsTreeRow(item, options, depth) && isVisibleUnderFilter(item, options.filter),
+    (item) => rendersAsTreeRow(item, options, depth) && options.visibleItemIds.has(item.id),
   );
   return visible.map((item) => {
     const { row, childrenContainer, twisty, line, title } = renderRow(item, options, depth);
@@ -1809,6 +1796,8 @@ interface BoardSession {
   selectedActivity: Set<RecentActivityKind>;
   /** The marker pills the reader lit (OR across them; empty = no marker filter). */
   selectedMarkers: Set<WorkItemMarker>;
+  /** Whether the last painted tree was empty, or null before the first one. Dedupes the log line. */
+  boardWasEmpty: boolean | null;
   /** The sprint filter as the reader last left it, or null while they have not touched the picker. */
   sprint: { selectedName: string | null; filterActive: boolean } | null;
   /** The order the reader picked this session, or null while the binding's configured order applies. */
@@ -1834,6 +1823,7 @@ function createBoardSession(services: EnhancedViewServices): BoardSession {
     selectedAreaPaths: new Set<string>(),
     selectedActivity: new Set<RecentActivityKind>(),
     selectedMarkers: new Set<WorkItemMarker>(),
+    boardWasEmpty: null,
     sprint: null,
     orderingPolicy: null,
     reopenMinorChildPopupId: null,
@@ -1865,11 +1855,11 @@ function renderSprintControls(
 
 /** Collect paths that can survive the board's non-optional resolved-age rule. */
 function collectAreaPaths(
-  root: TrackedWorkItem,
+  items: readonly TrackedWorkItem[],
   isResolvedPastWindow: (item: TrackedWorkItem) => boolean,
 ): string[] {
   const paths = new Set<string>();
-  const visit = (item: TrackedWorkItem): void => {
+  for (const item of items) {
     if (
       !isResolvedPastWindow(item) &&
       typeof item.areaPath === "string" &&
@@ -1877,13 +1867,28 @@ function collectAreaPaths(
     ) {
       paths.add(item.areaPath);
     }
-    for (const child of item.children) visit(child);
-  };
-  for (const child of root.children) visit(child);
+  }
   return [...paths].sort((left, right) => left.localeCompare(right));
 }
 
-/** Resolve the one eligible path list shared by the header filter and every item menu. */
+/**
+ * The board's resolved-age rule, rebuilt per call rather than cached: "now" moves, so a board left
+ * open long enough ages an item out the next time anything asks.
+ */
+function boardResolvedWindowFilter(
+  context: DataDrivenViewContext,
+  typeMap: Map<string, TypeCatalogEntry>,
+  boardColumns: string[],
+): (item: TrackedWorkItem) => boolean {
+  return createResolvedWindowFilter(
+    typeMap,
+    boardColumns,
+    hideResolvedAfterDays(context.properties),
+    context.services.now(),
+  );
+}
+
+/** The paths the header's Lanes filter offers: only the Primary work the filters actually judge. */
 function collectBoardAreaPaths(
   root: TrackedWorkItem,
   context: DataDrivenViewContext,
@@ -1891,13 +1896,24 @@ function collectBoardAreaPaths(
   boardColumns: string[],
 ): string[] {
   return collectAreaPaths(
-    root,
-    createResolvedWindowFilter(
-      typeMap,
-      boardColumns,
-      hideResolvedAfterDays(context.properties),
-      context.services.now(),
-    ),
+    workItemsEligibleForPrimaryFilter([root], [...typeMap.values()]),
+    boardResolvedWindowFilter(context, typeMap, boardColumns),
+  );
+}
+
+/**
+ * The paths an item's edit menu offers. Wider than the header's on purpose: an implementation detail
+ * can be moved to an area no Primary work sits in yet, and the root's own path is not a destination.
+ */
+function collectItemAreaPaths(
+  root: TrackedWorkItem,
+  context: DataDrivenViewContext,
+  typeMap: Map<string, TypeCatalogEntry>,
+  boardColumns: string[],
+): string[] {
+  return collectAreaPaths(
+    flattenWorkItems(root.children),
+    boardResolvedWindowFilter(context, typeMap, boardColumns),
   );
 }
 
@@ -2280,6 +2296,31 @@ interface BoardTreeRendererParams {
   repaintBoard: () => void;
 }
 
+function createTreeFilter(params: BoardTreeRendererParams, sprint: string | null): TreeFilter {
+  const { properties } = params.context;
+  return {
+    sprint,
+    areaPaths: params.session.selectedAreaPaths,
+    tags: params.session.selectedTags,
+    isResolvedPastWindow: createResolvedWindowFilter(
+      params.typeMap,
+      params.metrics.boardColumns,
+      hideResolvedAfterDays(properties),
+      params.context.services.now(),
+    ),
+    matchesRecentActivity: createRecentActivityFilter(
+      properties,
+      params.context.services.now(),
+      params.session.selectedActivity,
+      params.recentNotes,
+    ),
+    matchesMarkers: createMarkerFilter(
+      params.context.services.markerTags(),
+      params.session.selectedMarkers,
+    ),
+  };
+}
+
 /**
  * Rebuilds the tree under the current sprint, tag and recent-activity filters. Returned as a single
  * command because that is all a caller ever wants from it: a repaint.
@@ -2293,19 +2334,18 @@ function createBoardTreeRenderer(params: BoardTreeRendererParams): () => void {
   // Same reason, opposite default, for the opened discussions: a notes panel fetches when it opens,
   // so the rows that were OPENED are what has to survive — recording the closed ones would make every
   // newly-rendered row start by loading a discussion nobody asked to see.
-  const { collapsedIds, expandedNoteIds, notePanelStates, selectedTags } = params.session;
-  const { selectedAreaPaths, selectedActivity, selectedMarkers } = params.session;
+  const { collapsedIds, expandedNoteIds, notePanelStates } = params.session;
 
   const renderTreeContent = (): void => {
     const filterOn = sprintPickerHandle.isFilterActive();
     const expandableRows: ExpandableRow[] = [];
     const noteExpansions: ExpansionControl[] = [];
     const descriptionExpansions: ExpansionControl[] = [];
-    const properties = params.context.properties;
     const orderingPolicy = params.currentOrderingPolicy();
     // Every element from the previous pass is about to be discarded, so the controller's row map is
     // cleared before the new rows register themselves against it.
     params.dragReorder?.reset();
+    const filter = createTreeFilter(params, filterOn ? sprintPickerHandle.selectedSprint() : null);
     const options: TreeRenderOptions = {
       doc,
       context: params.context,
@@ -2313,31 +2353,11 @@ function createBoardTreeRenderer(params: BoardTreeRendererParams): () => void {
       queue: params.fieldWrites,
       statusWidthCh: params.metrics.statusWidthCh,
       boardColumns: params.metrics.boardColumns,
-      filter: {
-        sprint: filterOn ? sprintPickerHandle.selectedSprint() : null,
-        areaPaths: selectedAreaPaths,
-        tags: selectedTags,
-        // Rebuilt on every pass rather than once per board: "now" moves, so a board left open long
-        // enough ages an item out the next time anything repaints it.
-        isResolvedPastWindow: createResolvedWindowFilter(
-          params.typeMap,
-          params.metrics.boardColumns,
-          hideResolvedAfterDays(properties),
-          params.context.services.now(),
-        ),
-        // Same rolling-window reasoning, from the other end: an item stops being "newly" anything
-        // once the configured hours have passed under it.
-        matchesRecentActivity: createRecentActivityFilter(
-          properties,
-          params.context.services.now(),
-          selectedActivity,
-          params.recentNotes,
-        ),
-        // Read per pass rather than captured, for the same reason the windows are: the team can
-        // change its marker vocabulary in Options while the board is open, and the tree must narrow
-        // by the tags the pills are currently showing.
-        matchesMarkers: createMarkerFilter(params.context.services.markerTags(), selectedMarkers),
-      },
+      visibleItemIds: workItemIdsVisibleUnderPrimaryFilter(
+        [params.root],
+        [...params.typeMap.values()],
+        (item) => matchesTreeFilter(item, filter),
+      ),
       orderingPolicy,
       // Sprint pills only earn their space when the sprint filter is not already narrowing the board.
       showSprintPills: !filterOn,
@@ -2379,7 +2399,20 @@ function createBoardTreeRenderer(params: BoardTreeRendererParams): () => void {
     treeContainer.innerHTML = "";
     // The epic is already summarized in the header (title + TechLead), so the tree lists its
     // children downward rather than repeating the epic as the top row.
-    treeContainer.append(...renderTree(root, options, 0));
+    const rows = renderTree(root, options, 0);
+    logBoardEmptinessFlip(params.context, params.session, rows.length, filter);
+    // The query itself is known to have returned items by this point, so an empty tree can only mean
+    // the filters hid all of them — say so rather than leaving a blank panel that reads as a failure.
+    treeContainer.append(
+      ...(rows.length === 0
+        ? [
+            renderEmptyState(doc, {
+              message: "No items match the current filters.",
+              hint: "Clear or widen a filter above to bring items back.",
+            }),
+          ]
+        : rows),
+    );
     restripeVisibleRows(treeContainer);
 
     wireExpandCollapseButtons(
@@ -2394,6 +2427,29 @@ function createBoardTreeRenderer(params: BoardTreeRendererParams): () => void {
   };
 
   return renderTreeContent;
+}
+
+/**
+ * Records the tree flipping between showing rows and hiding everything, with the selections that
+ * decided it. "Why is my board empty?" has to be answerable from the log alone, and the filters are
+ * the only thing that can answer it. Only the FLIP is recorded: every pill click repaints, and an
+ * unchanged conclusion logged each time would push the errors that matter out of the ring buffer.
+ */
+function logBoardEmptinessFlip(
+  context: DataDrivenViewContext,
+  session: BoardSession,
+  rowCount: number,
+  filter: TreeFilter,
+): void {
+  const empty = rowCount === 0;
+  if (session.boardWasEmpty === empty) return;
+  session.boardWasEmpty = empty;
+  context.services.logger.info(
+    `Project Tracking tree ${empty ? "hid every row" : "is showing rows"}: rows=${rowCount}, ` +
+      `sprint=${filter.sprint ?? "any"}, areaPaths=${filter.areaPaths.size}, ` +
+      `tags=${filter.tags.size}, activity=[${[...session.selectedActivity].join(", ")}], ` +
+      `markers=[${[...session.selectedMarkers].join(", ")}].`,
+  );
 }
 
 /** The one word that introduces the filter row, sized and colored to sit quietly beside the pills. */
@@ -2430,6 +2486,7 @@ function createFilterRowRenderer(params: {
   const { doc, root, context, container, recentNotes } = params;
   const { selectedTags, selectedActivity, selectedMarkers } = params.session;
   const windowHours = recentChangesWindowHours(context.properties);
+  const filterItems = workItemsEligibleForPrimaryFilter([root], context.services.getTypes());
 
   // True while a repaint is already queued behind the index's in-flight read. Without it, every
   // render that happens while the discussions are being read would queue another repaint against the
@@ -2439,7 +2496,7 @@ function createFilterRowRenderer(params: {
   const render = (): void => {
     // Dropping a selected tag nobody in the tree wears any more is what keeps the filter from
     // getting stuck on a tag that has no pill left to unclick.
-    const tags = collectAssignedTags([root]);
+    const tags = assignedTagsOf(filterItems);
     for (const selected of [...selectedTags]) {
       if (!tags.includes(selected)) selectedTags.delete(selected);
     }
@@ -2447,7 +2504,7 @@ function createFilterRowRenderer(params: {
     // Same reason, for the markers: a pill only exists while something in the tree carries it, so a
     // selection left over from before an item was un-blocked has to go with the pill it belonged to.
     const markerTags = context.services.markerTags();
-    const markers = collectMarkersInUse(root, markerTags);
+    const markers = collectMarkersInUse(filterItems, markerTags);
     for (const selected of [...selectedMarkers]) {
       if (!markers.includes(selected)) selectedMarkers.delete(selected);
     }
@@ -2460,7 +2517,7 @@ function createFilterRowRenderer(params: {
     if (selectedActivity.has("notes")) {
       // Idempotent: the index only re-reads a discussion whose recorded answer is missing or has gone
       // stale, so calling this on every repaint costs nothing once the board has been covered.
-      recentNotes.ensureProbed(root);
+      recentNotes.ensureProbed(filterItems);
       if (recentNotes.isPending() && !repaintQueuedOnNotes) {
         // The pills and the tree both answer "New notes" out of the index, so both are repainted
         // ONCE — when the read lands — rather than flickering as individual answers arrive.
@@ -2905,7 +2962,7 @@ function mountBoardBody(params: {
   contextMenu: ItemContextMenu;
   /** The team's sprint window, forwarded to the tree so an item's menu can offer sprint moves. */
   sprintWindow: SprintWindow;
-  /** The full paths shared by the header filter and every item menu. */
+  /** Every eligible destination path offered by item edit menus. */
   areaPaths: readonly string[];
   core: BoardCore;
   expandAll: HTMLButtonElement;
@@ -2983,6 +3040,7 @@ function mountBoardHeader(params: {
   context: DataDrivenViewContext;
   typeMap: Map<string, TypeCatalogEntry>;
   sprintWindow: SprintWindow;
+  itemAreaPaths: readonly string[];
   areaPaths: readonly string[];
   session: BoardSession;
   core: BoardCore;
@@ -3015,7 +3073,7 @@ function mountBoardHeader(params: {
             context,
             queue: core.writes,
             sprintWindow,
-            areaPaths: params.areaPaths,
+            areaPaths: params.itemAreaPaths,
             onChanged: params.onRootChanged,
           }),
         ),
@@ -3060,6 +3118,7 @@ function renderBoard(params: RenderBoardParams): BoardHandle {
   });
   const { chipContext, writeStatus } = core;
   const areaPaths = collectBoardAreaPaths(root, context, typeMap, core.metrics.boardColumns);
+  const itemAreaPaths = collectItemAreaPaths(root, context, typeMap, core.metrics.boardColumns);
 
   // Late-bound because the root's own commands have to repaint the tree AND re-label the header, and
   // neither exists until after the call below that consumes this handler.
@@ -3075,6 +3134,7 @@ function renderBoard(params: RenderBoardParams): BoardHandle {
       context,
       typeMap,
       sprintWindow,
+      itemAreaPaths,
       areaPaths,
       session,
       core,
@@ -3097,7 +3157,7 @@ function renderBoard(params: RenderBoardParams): BoardHandle {
     chipContext,
     contextMenu,
     sprintWindow,
-    areaPaths,
+    areaPaths: itemAreaPaths,
     core,
     expandAll,
     collapseAll,

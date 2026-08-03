@@ -110,6 +110,106 @@ export function primaryWorkWithAncestors(types: readonly TypeCatalogEntry[]): Re
   return new Set([...primary, ...typesAbove(types, primary)]);
 }
 
+interface WorkItemIndex {
+  /** Every item under the roots, roots included, parents ahead of their children. */
+  items: TrackedWorkItem[];
+  /** Child id → parent id, so a match can be walked back up without re-searching the tree. */
+  parentIds: Map<number, number>;
+}
+
+// One walk answers both questions a filter pass asks, because a board repaints on every pill click
+// and re-walking the whole tree once per question is work the reader waits through.
+function indexWorkItems(roots: readonly TrackedWorkItem[]): WorkItemIndex {
+  const items: TrackedWorkItem[] = [];
+  const parentIds = new Map<number, number>();
+  const visit = (item: TrackedWorkItem, parentId: number | null): void => {
+    items.push(item);
+    if (parentId !== null) parentIds.set(item.id, parentId);
+    for (const child of item.children) visit(child, item.id);
+  };
+  for (const root of roots) visit(root, null);
+  return { items, parentIds };
+}
+
+/** Every item under `roots`, the roots included, in the order a reader sees them top to bottom. */
+export function flattenWorkItems(roots: readonly TrackedWorkItem[]): TrackedWorkItem[] {
+  return indexWorkItems(roots).items;
+}
+
+function addAncestorIds(
+  id: number,
+  parentIds: ReadonlyMap<number, number>,
+  visible: Set<number>,
+): void {
+  let currentId: number | undefined = id;
+  // Stopping at the first already-recorded id is not just a shortcut: sibling matches share most of
+  // their chain, and a query that returns one item at two depths makes the parent links circular.
+  while (currentId !== undefined && !visible.has(currentId)) {
+    visible.add(currentId);
+    currentId = parentIds.get(currentId);
+  }
+}
+
+function addImplementationDescendantIds(
+  item: TrackedWorkItem,
+  primaryTypes: ReadonlySet<string>,
+  visible: Set<number>,
+): void {
+  for (const child of item.children) {
+    if (primaryTypes.has(child.type)) continue;
+    visible.add(child.id);
+    addImplementationDescendantIds(child, primaryTypes, visible);
+  }
+}
+
+/**
+ * Whether an item is one the filters get to judge.
+ *
+ * Returned as a predicate so a caller that already holds a flattened list — a board that wrapped
+ * each item in its own row entry, say — can narrow it without walking the tree a second time.
+ * Everything qualifies while Primary work remains unconfigured, which is what keeps an unclassified
+ * catalog on the legacy "every item can match" rule.
+ */
+export function primaryFilterEligibility(
+  types: readonly TypeCatalogEntry[],
+): (item: TrackedWorkItem) => boolean {
+  const primaryTypes = primaryWorkTypes(types);
+  return (item) => primaryTypes.size === 0 || primaryTypes.has(item.type);
+}
+
+/** The work items filters evaluate, or every item while Primary work remains unconfigured. */
+export function workItemsEligibleForPrimaryFilter(
+  roots: readonly TrackedWorkItem[],
+  types: readonly TypeCatalogEntry[],
+): TrackedWorkItem[] {
+  return flattenWorkItems(roots).filter(primaryFilterEligibility(types));
+}
+
+/**
+ * Resolves hierarchy visibility when filters describe independently trackable delivery.
+ *
+ * A matching Primary-work item carries its planning ancestors and implementation descendants with
+ * it. Another Primary-work node still has to match for itself, so nested delivery does not bypass
+ * the filter merely because its parent matched. Catalogs without classification preserve the legacy
+ * rule where every item can match and matching descendants retain their ancestor chain.
+ */
+export function workItemIdsVisibleUnderPrimaryFilter(
+  roots: readonly TrackedWorkItem[],
+  types: readonly TypeCatalogEntry[],
+  matches: (item: TrackedWorkItem) => boolean,
+): ReadonlySet<number> {
+  const primaryTypes = primaryWorkTypes(types);
+  const isEligible = primaryFilterEligibility(types);
+  const { items, parentIds } = indexWorkItems(roots);
+  const visible = new Set<number>();
+  for (const item of items) {
+    if (!isEligible(item) || !matches(item)) continue;
+    addAncestorIds(item.id, parentIds, visible);
+    if (primaryTypes.size > 0) addImplementationDescendantIds(item, primaryTypes, visible);
+  }
+  return visible;
+}
+
 /**
  * Orders work items by a binding's policy.
  *

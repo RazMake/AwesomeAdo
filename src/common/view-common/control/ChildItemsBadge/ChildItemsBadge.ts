@@ -9,6 +9,8 @@ import { createSvgCanvas } from "../svgIcon/svgIcon";
  * theme, or a persisted field.
  */
 export interface ChildItemDescriptor {
+  /** Zero-based depth within the summarized descendant tree. Defaults to the first child level. */
+  depth?: number;
   /**
    * The child's assignee control, built by the caller (typically the shared `AssignedTo`) so the
    * write path — which item to reassign, and the queue that serializes it — stays with the owning
@@ -59,7 +61,7 @@ export interface ChildItemDescriptor {
 
 /** Options for rendering a child-items badge. */
 export interface ChildItemsBadgeOptions {
-  /** The direct children summarized by the badge and listed in its popup. */
+  /** The descendants summarized by the badge and listed in its popup. */
   children: ChildItemDescriptor[];
   /** Whether the popup opens immediately when the badge is rendered. Defaults to false. */
   initiallyOpen?: boolean;
@@ -318,12 +320,14 @@ function renderChildRow(
 ): HTMLElement {
   const row = doc.createElement("div");
   row.className = "awesomeado-child-items__row";
+  row.dataset.depth = String(child.depth ?? 0);
+  const leftPadding = 10 + Math.max(0, child.depth ?? 0) * 16;
   row.style.cssText = [
     "display:flex",
     // Top-aligned so the side controls keep their line-one anchoring under a wrapped title.
     "align-items:flex-start",
     "gap:10px",
-    "padding:7px 10px",
+    `padding:7px 10px 7px ${leftPadding}px`,
     `border-radius:${ROW_RADIUS_PX}px`,
   ].join(";");
   // Hovering a row marks which one the checkbox, assignee and ETA under the pointer belong to; on a

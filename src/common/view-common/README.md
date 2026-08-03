@@ -95,6 +95,7 @@ view — regardless of which bundle renders it — reuses the same consistent pa
 | `AssignedTo`       | [`control/AssignedTo`](./control/AssignedTo/README.md)             | The assignee's name as clickable text that opens a people picker popup.                           |
 | `Breadcrumbs`      | [`control/Breadcrumbs`](./control/Breadcrumbs/README.md)           | A trail of clickable segments separated by a glyph (a "you are here").                            |
 | `DateLabel`        | [`control/DateLabel`](./control/DateLabel/README.md)               | A `MM/DD/YYYY` PST date label with a full-timestamp hover tooltip.                                |
+| `EmptyState`       | [`control/EmptyState`](./control/EmptyState/README.md)             | The "every item is filtered out" panel a view shows in place of its list.                         |
 | `EtaBadge`         | [`control/EtaBadge`](./control/EtaBadge/README.md)                 | An ETA date badge with severity color, a countdown tooltip, and an optional editable date picker. |
 | `ItemTypeIcon`     | [`control/ItemTypeIcon`](./control/ItemTypeIcon/README.md)         | The ADO work item type icon, sized to the title it precedes, colored/drained and loud/receded.    |
 | `MarkdownText`     | [`control/MarkdownText`](./control/MarkdownText/README.md)         | Author-written content (descriptions, notes) rendered as safe DOM, with images and @-mentions.    |

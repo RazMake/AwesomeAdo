@@ -10,8 +10,8 @@ import { buildQueryFolderUrl, buildWorkItemUrl } from "../../../common/ado/fetch
 import { filterTreeForSprintRoster, wiqlForSprint } from "../../../common/ado/sprintQuery";
 import type { SprintWindow, SprintWindowEntry } from "../../../common/ado/sprintWindow";
 import {
+  primaryFilterEligibility,
   primaryWorkAncestors,
-  primaryWorkWithDescendants,
   workItemTypeTextColor,
 } from "../../../common/ado/workItemTypes";
 import { MANUAL_ORDERING_POLICY, type OrderingPolicy } from "../../../common/ordering/ItemOrdering";
@@ -94,6 +94,8 @@ interface SprintSession {
   selectedActivity: Set<RecentActivityKind>;
   recentNotes: RecentNotesIndex;
   repaintQueuedOnNotes: boolean;
+  /** Whether the last painted board was empty, or null before the first one. Dedupes the log line. */
+  boardWasEmpty: boolean | null;
   expandedDoneIds: Set<number>;
   openChildPopupIds: Set<number>;
   orderingPolicy: OrderingPolicy | null;
@@ -253,6 +255,7 @@ function createSession(context: DataDrivenViewContext): SprintSession {
       markerPrefixes(context),
     ),
     repaintQueuedOnNotes: false,
+    boardWasEmpty: null,
     expandedDoneIds: new Set<number>(),
     openChildPopupIds: new Set<number>(),
     orderingPolicy: null,
@@ -304,10 +307,6 @@ function metricsFor(
     total: items.length,
     active: items.filter(({ item }) => isActiveItem(item, types)).length,
   };
-}
-
-function isDeliveryWorkItem(item: TrackedWorkItem, workTypes: ReadonlySet<string>): boolean {
-  return workTypes.has(item.type);
 }
 
 function selectedSprintEntry(
@@ -559,17 +558,15 @@ function renderTeamPills(
   onChange: () => void,
 ): HTMLElement[] {
   const pills: HTMLElement[] = [];
-  const workTypes = primaryWorkWithDescendants([...types.values()]);
-  const countedItems = items.filter(({ item }) => isDeliveryWorkItem(item, workTypes));
   const validKeys = new Set(members.map(personKey));
-  const unassigned = countedItems.filter(({ item }) => item.assignedTo === null);
+  const unassigned = items.filter(({ item }) => item.assignedTo === null);
   if (unassigned.length > 0) validKeys.add(UNASSIGNED_KEY);
   for (const selected of [...session.selectedPeople]) {
     if (!validKeys.has(selected)) session.selectedPeople.delete(selected);
   }
   for (const member of members) {
     const key = personKey(member);
-    const assigned = countedItems.filter(({ item }) => personKey(item.assignedTo) === key);
+    const assigned = items.filter(({ item }) => personKey(item.assignedTo) === key);
     pills.push(
       renderPersonPill(
         doc,
@@ -627,12 +624,12 @@ function renderMarkerPills(
 }
 
 function scheduleNotesRepaint(
-  data: LoadedSprintData,
+  filterItems: readonly DisplayItem[],
   session: SprintSession,
   repaint: () => void,
 ): void {
   if (!session.selectedActivity.has("notes")) return;
-  session.recentNotes.ensureItemsProbed(data.result.roots);
+  session.recentNotes.ensureProbed(filterItems.map(({ item }) => item));
   if (!session.recentNotes.isPending() || session.repaintQueuedOnNotes) return;
   session.repaintQueuedOnNotes = true;
   void session.recentNotes.whenSettled().then(() => {
@@ -933,10 +930,36 @@ function createSprintContextMenu(params: {
   };
 }
 
+/**
+ * Records the board flipping between showing cards and hiding everything, with the selections that
+ * decided it. "Why is my board empty?" has to be answerable from the log alone, and the filters are
+ * the only thing that can answer it. Only the FLIP is recorded: every pill click repaints, and an
+ * unchanged conclusion logged each time would push the errors that matter out of the ring buffer.
+ */
+function logBoardEmptinessFlip(
+  context: DataDrivenViewContext,
+  session: SprintSession,
+  shownCards: number,
+  filterableItems: number,
+): void {
+  const empty = shownCards === 0;
+  if (session.boardWasEmpty === empty) return;
+  session.boardWasEmpty = empty;
+  context.services.logger.info(
+    `Sprint board ${empty ? "hid every card" : "is showing cards"}: cards=${shownCards}, ` +
+      `filterable=${filterableItems}, sprint=${session.sprintName ?? "current"}, ` +
+      `areaPaths=${session.selectedAreaPaths.size}, people=${session.selectedPeople.size}, ` +
+      `parentId=${session.selectedParentId ?? "any"}, ` +
+      `markers=[${[...session.selectedMarkers].join(", ")}], ` +
+      `activity=[${[...session.selectedActivity].join(", ")}].`,
+  );
+}
+
 function renderSprintQueue(params: {
   context: DataDrivenViewContext;
   data: LoadedSprintData;
   session: SprintSession;
+  filterItems: readonly DisplayItem[];
   visibleItems: readonly DisplayItem[];
   types: ReadonlyMap<string, TypeCatalogEntry>;
   writes: WorkItemWriteQueue;
@@ -963,6 +986,8 @@ function renderSprintQueue(params: {
     contextMenu: params.menus.menu,
     menuTarget: params.menus.target,
     onItemChanged: params.repaint,
+    onCardsShown: (count) =>
+      logBoardEmptinessFlip(context, session, count, params.filterItems.length),
   });
 }
 
@@ -986,10 +1011,47 @@ function persistSprintAreaPaths(
 
 function sprintBoardCollections(context: DataDrivenViewContext, data: LoadedSprintData) {
   const allItems = flattenItems(data.result.roots);
+  const types = new Map(context.services.getTypes().map((type) => [type.name, type]));
+  // Narrowed off the already-flattened board rather than off the roots, so classifying the items
+  // does not cost a second walk of a tree this pass has just finished walking.
+  const isFilterable = primaryFilterEligibility([...types.values()]);
+  const filterItems = allItems.filter(({ item }) => isFilterable(item));
   return {
     allItems,
-    areaPaths: areaPathsOf(allItems),
-    types: new Map(context.services.getTypes().map((type) => [type.name, type])),
+    filterItems,
+    areaPaths: areaPathsOf(filterItems),
+    types,
+  };
+}
+
+/**
+ * Everything one board pass narrows to, in the order each step depends on the last: the filterable
+ * items, then what the Lanes and hierarchy pickers may still offer, then the queue itself. It also
+ * drops selections whose option has gone, so a stale pick cannot silently hide the whole board.
+ */
+function sprintBoardSelection(
+  context: DataDrivenViewContext,
+  data: LoadedSprintData,
+  session: SprintSession,
+) {
+  const { allItems, filterItems, areaPaths, types } = sprintBoardCollections(context, data);
+  pruneSelectedAreaPaths(areaPaths, session);
+  const shownWithoutProject = filteredQueue(
+    selectedSprintItems(areaScope(filterItems, session), session),
+    context,
+    session,
+  );
+  const projectOptions = hierarchyOptions(allItems, shownWithoutProject, types);
+  normalizeProjectSelection(projectOptions, session);
+  const base = baseQueue(filterItems, session);
+  return {
+    allItems,
+    filterItems,
+    areaPaths,
+    types,
+    projectOptions,
+    base,
+    visibleItems: filteredQueue(base, context, session),
   };
 }
 
@@ -1004,25 +1066,16 @@ function renderBoard(
   writeState: SprintWriteState,
   bulkMove: SprintBulkMoveController,
 ): { element: DocumentFragment; handle: SprintBoardHandle } {
-  const { allItems, areaPaths, types } = sprintBoardCollections(context, data);
-  pruneSelectedAreaPaths(areaPaths, session);
-  scheduleNotesRepaint(data, session, repaint);
-  const shownWithoutProject = filteredQueue(
-    selectedSprintItems(areaScope(allItems, session), session),
-    context,
-    session,
-  );
-  const options = hierarchyOptions(allItems, shownWithoutProject, types);
-  normalizeProjectSelection(options, session);
-  const base = baseQueue(allItems, session);
-  const visibleItems = filteredQueue(base, context, session);
+  const { allItems, filterItems, areaPaths, types, projectOptions, base, visibleItems } =
+    sprintBoardSelection(context, data, session);
+  scheduleNotesRepaint(filterItems, session, repaint);
   let openTitleMenu: (event: MouseEvent) => void = () => {};
   const controls = renderBoardHeader({
     context,
     data,
     session,
     areaPaths,
-    projectOptions: options,
+    projectOptions,
     baseItems: base,
     types,
     repaint,
@@ -1056,21 +1109,33 @@ function renderBoard(
     controls.header,
     renderFilterPanel(
       context,
-      boardScope(allItems, session),
+      boardScope(filterItems, session),
       base,
       data.interruptAcceptance,
       session,
       repaint,
     ),
-    renderSprintQueue({ context, data, session, visibleItems, types, writes, menus, repaint }),
+    renderSprintQueue({
+      context,
+      data,
+      session,
+      filterItems,
+      visibleItems,
+      types,
+      writes,
+      menus,
+      repaint,
+    }),
   );
+  return { element: fragment, handle: boardHandleOf(controls) };
+}
+
+/** The three live controls the view keeps re-targeting after every repaint. */
+function boardHandleOf(controls: ReturnType<typeof renderBoardHeader>): SprintBoardHandle {
   return {
-    element: fragment,
-    handle: {
-      refresh: controls.refresh,
-      queueStatus: controls.queueStatus,
-      bulkMoveStatus: controls.bulkMoveStatus,
-    },
+    refresh: controls.refresh,
+    queueStatus: controls.queueStatus,
+    bulkMoveStatus: controls.bulkMoveStatus,
   };
 }
 

@@ -71,9 +71,12 @@ The pills are returned **loose** so each view can place them in its shared activ
 
 ### `new RecentNotesIndex(reader, logger, excludedPrefixes?)`
 
-- **`ensureProbed(root)`** — idempotent; reads the newest-comment date of any item under `root`
-  whose answer is missing or whose comment count has moved since it was read. A no-op while a read
-  is already in flight.
+- **`ensureProbed(items)`** — idempotent; reads the newest-comment date of any item in `items` whose
+  answer is missing or whose comment count has moved since it was read. It probes **exactly** those
+  items and never descends into their children, so a view passes the items its filters can judge
+  rather than spending round-trips on answers nothing will ask for (`flattenWorkItems` from
+  [`common/ado`](../../../ado/README.md) turns a tree into that list). A no-op while a read is
+  already in flight.
 - **`hasRecentNote(item, sinceMs): boolean`** — whether the item's newest known comment falls at or
   after `sinceMs`. `false` for anything unread or failed; a view never claims activity it did not
   confirm.

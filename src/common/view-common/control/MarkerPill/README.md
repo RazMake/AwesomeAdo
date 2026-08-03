@@ -48,11 +48,13 @@ callers that need the text alone (a tooltip, a log line).
 | Function                                   | Answers                                                       |
 | ------------------------------------------ | ------------------------------------------------------------- |
 | `itemHasMarker(item, marker, markerTags)`  | Does this item wear the tag configured for this marker?       |
-| `collectMarkersInUse(root, markerTags)`    | Which markers are present anywhere in the tree, in order?     |
+| `collectMarkersInUse(items, markerTags)`   | Which markers are carried by at least one of these items?     |
 | `createMarkerFilter(markerTags, selected)` | The predicate the view narrows by (OR within, unlit = passes) |
 
 Tag comparison is **case-insensitive**, matching Azure DevOps itself — see
-[`common/ado`](../../../ado/README.md).
+[`common/ado`](../../../ado/README.md). `collectMarkersInUse` answers for exactly the items it is
+handed and never descends into their children: a view passes the items its filters can judge, so no
+pill appears for a marker worn only by work the filters skip over.
 
 ## `renderMarkerFilterPills(doc, options): HTMLElement[]`
 

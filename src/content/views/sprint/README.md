@@ -14,8 +14,11 @@ Lane selection.
   marker, and recent-activity controls; and shows the filtered card table.
 - `SprintBoard.ts` -> `renderSprintBoard` - groups cards by exact area-path lane and the first four
   configured application-state columns (Queue through Done), keeps their horizontally synchronized
-  titles sticky below the control header, keeps each lane's name and item count visible until the
-  next lane pushes it away, and persists card and direct-child drag-and-drop moves.
+  titles and per-column Primary work counts sticky below the control header, keeps each lane's name
+  and item count visible until the next lane pushes it away, and persists card and direct-child
+  drag-and-drop moves. When no card would be drawn it renders the shared
+  [`EmptyState`](../../../common/view-common/control/EmptyState/README.md) panel instead of an empty
+  lane table, so a fully filtered board never reads as a failed load.
 - `SprintHeader.ts` -> `renderSprintHeader` - assembles the sticky, theme-aware control card with
   the query's clickable parent-folder breadcrumb trail at the top.
 - `SprintBulkMoveDialog.ts` -> `buildSprintBulkMovePlan` / `renderSprintBulkMoveDialog` - snapshots
@@ -48,7 +51,7 @@ finishes the current write and skips the remainder, and the header reports moved
 counts with failures linked to Diagnostics. The header status stays live and clickable throughout —
 it is the one region the interaction guard never blocks.
 
-Right-clicking a card or direct-child row opens Project Tracking's item commands: copy/open, title,
+Right-clicking a card or descendant row opens Project Tracking's item commands: copy/open, title,
 description, sprint, area, notes, and both blocker markers. Sprint alone opts into Interrupt
 Tag/Accept/Clear commands. **Tag with Interrupt** carries an inline **Accepted** checkbox: toggling it
 updates the pill preview and leaves the menu open. A proposed Interrupt writes directly. An accepted
@@ -61,9 +64,9 @@ Team pills come from the configured team's complete paged roster, in server orde
 **Unassigned** when the loaded queue contains unassigned work. Query results retain only items
 assigned to those members or unassigned, plus the parent chains needed to reach them. Every Lane and
 Project choice is derived after that pruning, so out-of-team branches cannot contribute filter
-options. Team pill queue and active counts include only configured Primary work types and their
-recursively configured child types; planning-context ancestors do not inflate either member or
-Unassigned totals. Counter tooltips explain each displayed metric. Marker-tag pills
+options. Team pill queue and active counts include only configured Primary work; planning-context
+ancestors and implementation descendants do not inflate either member or Unassigned totals. Counter
+tooltips explain each displayed metric. Marker-tag pills
 report one selected-sprint total, except **Interrupt**: it reports not-yet-accepted work followed by
 accepted work in the current tagged lifetime, and collapses to one total when no interrupts are
 waiting for acceptance.
@@ -73,8 +76,8 @@ survive an untag/re-tag cycle.
 The **Project** filter offers only items whose configured types are parents of Primary-work types,
 recursively through their planning ancestors, and whose branches contain work surviving the
 selected sprint and other active filters. Primary-work and implementation-detail items are omitted.
-The **Lane** filter derives its choices from represented area paths and offers only leaves, omitting
-any root path that is an ancestor of another choice.
+The **Lane** filter derives its choices only from represented Primary-work area paths and offers only
+leaves, omitting any root path that is an ancestor of another choice.
 Each Sprint View query binding can define full area paths initially selected when a sprint has no
 team-shared Lane choice. Options edits them one at a time with autocomplete from the live project
 area hierarchy and a remove button per path. A saved sprint selection, including an explicitly empty
@@ -88,7 +91,7 @@ The popup puts each work-item type icon before its title, colors options by type
 window margin for long titles, and offers title search that keeps a matching item's parent chain
 visible.
 The header's top-right ordering indicator uses the shared Project Tracking picker. Backlog rank is
-the default; title and ETA choices apply immediately to cards and direct-child popup rows for the
+the default; title and ETA choices apply immediately to cards and descendant popup rows for the
 current session.
 All filter pills stay at full opacity; marker and recent-activity pills occupy separate wrapping
 families with a larger gap between them.
@@ -100,15 +103,21 @@ toggle because an unfiltered mode would contradict the view's purpose.
 
 The card table uses the user's configured labels for Queue, Active, Waiting, and Done. Theme-owned
 neutral, blue, amber, and green foregrounds make those labels distinct while the matching column
-fills stay quiet. The title row stays lightly tinted in its resting position, then switches to an
+fills stay quiet. Each title also carries a right-aligned count chip of the Primary work the column
+holds across every lane, tinted in that column's own hue and painted outside the title's backdrop so
+it stays fully legible while the row is stuck. The title row stays lightly tinted in its resting
+position, then switches to an
 90%-opaque themed backdrop while sticky so cards passing beneath remain subtly visible.
 It remains immediately below the dynamic-height control header; the filter pills scroll beneath it.
 Each lane heading shows the only item total for that lane and
 sticks vertically below the title row until the next lane pushes it away; its area name is emphasized
-while the supporting count stays muted. Only types explicitly
-marked as Primary work in the configuration render as cards. Their direct children are summarized on large cards by the shared completed/total child-items
-badge; its popup lists only that first child level, regardless of which types render as cards, ordered
-by the active policy with the shared Assigned To and ETA controls. Queue,
+while the supporting count stays muted. Column chips and lane totals count only the Primary work the
+board actually renders, so a lane's total always equals the sum of its four column counts. Only types explicitly
+marked as Primary work in the configuration render as cards. Their complete non-primary descendant
+trees are summarized on large cards by the shared completed/total child-items badge; its popup lists
+every level in depth-first order with indentation, stopping at nested Primary work because that work
+filters independently and renders as its own card. Each sibling level follows the active ordering
+policy and uses the shared Assigned To and ETA controls. Queue,
 Active, and Waiting cards use the tall format; Done cards start compact and expand on click or
 keyboard activation. Both formats place the ID in the top-left corner and a tag-free shared Assigned
 To control in the top-right, followed by the wrapped title. The shared `?` button beside the ID opens
