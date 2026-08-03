@@ -5,6 +5,8 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ## Next Version
 
+## 0.3
+
 - Makes Sprint and Project Tracking filters evaluate only Primary work, while preserving arbitrarily
   deep planning context and showing the complete implementation-detail tree beneath matching work.
 - Adds a color-matched count to every Sprint View column heading, showing how much Primary work sits
