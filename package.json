@@ -1,10 +1,10 @@
 {
   "name": "awesome-ado",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Browser extension that enhances Azure DevOps Query pages.",
   "private": true,
   "type": "module",
-  "versionBuildOffset": 97,
+  "versionBuildOffset": 105,
   "engines": {
     "node": ">=24"
   },

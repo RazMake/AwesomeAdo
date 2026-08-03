@@ -5,6 +5,8 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ## Next Version
 
+## 0.4
+
 - Shows the AwesomeADO release version discreetly in the lower-right corner of every enhanced-view
   header, so a bug report can name the version it came from. Clicking it opens the extension's store
   listing, where you can check for a newer release.
