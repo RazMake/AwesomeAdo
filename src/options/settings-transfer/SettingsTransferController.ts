@@ -2,8 +2,10 @@ import type { IQueryBindingStore } from "../../common/bindings/IQueryBindingStor
 import type { ISettingsStore } from "../../common/settings/ISettingsStore";
 import {
   CONFIG_FILE_NAME,
+  CONNECTION_FILE_NAME,
   ConfigImportError,
   exportConfig,
+  exportConnectionConfig,
   importConfig,
   mergeImportedSettings,
 } from "../../common/settings-transfer/AwesomeAdoConfig";
@@ -14,6 +16,8 @@ import { renderTransferStatus } from "./transferStatus";
 /** The options-page elements the controller drives. Passed in so the controller stays testable. */
 export interface SettingsTransferElements {
   exportButton: HTMLButtonElement;
+  /** Exports only the shared work item connection, so a teammate adopts the team's live source. */
+  exportConnectionButton: HTMLButtonElement;
   importButton: HTMLButtonElement;
   /** Hidden `<input type="file">` the Import button opens; kept out of the visible layout. */
   fileInput: HTMLInputElement;
@@ -57,6 +61,7 @@ export class SettingsTransferController {
 
   init(): void {
     this.elements.exportButton.addEventListener("click", this.handleExport);
+    this.elements.exportConnectionButton.addEventListener("click", this.handleExportConnection);
     this.elements.importButton.addEventListener("click", this.handleImport);
     this.elements.fileInput.addEventListener("change", this.handleFileChosen);
   }
@@ -64,12 +69,17 @@ export class SettingsTransferController {
   dispose(): void {
     this.disposed = true;
     this.elements.exportButton.removeEventListener("click", this.handleExport);
+    this.elements.exportConnectionButton.removeEventListener("click", this.handleExportConnection);
     this.elements.importButton.removeEventListener("click", this.handleImport);
     this.elements.fileInput.removeEventListener("change", this.handleFileChosen);
   }
 
   private readonly handleExport = (): void => {
     void this.export();
+  };
+
+  private readonly handleExportConnection = (): void => {
+    void this.exportConnection();
   };
 
   private async export(): Promise<void> {
@@ -87,6 +97,25 @@ export class SettingsTransferController {
       this.setStatus(`Exported your configuration to ${CONFIG_FILE_NAME}.`);
     } catch (error: unknown) {
       this.fail("export your configuration", error);
+    }
+  }
+
+  private async exportConnection(): Promise<void> {
+    try {
+      const [settings, teamConfigWorkItemId] = await Promise.all([
+        this.settingsStore.read(),
+        this.teamConfigSourceStore.read(),
+      ]);
+      if (teamConfigWorkItemId === null) {
+        this.setStatus("Connect to a configuration work item before exporting a connection.", true);
+        return;
+      }
+      this.download(CONNECTION_FILE_NAME, exportConnectionConfig(settings, teamConfigWorkItemId));
+      this.setStatus(
+        `Exported the connection to work item ${teamConfigWorkItemId} as ${CONNECTION_FILE_NAME}.`,
+      );
+    } catch (error: unknown) {
+      this.fail("export your connection", error);
     }
   }
 
@@ -108,14 +137,15 @@ export class SettingsTransferController {
     try {
       const imported = importConfig(await file.text());
       const settings = mergeImportedSettings(await this.settingsStore.read(), imported);
-      const { enhancedQueries, teamConfigWorkItemId, problems } = imported;
+      const { enhancedQueries, replacesBindings, teamConfigWorkItemId, problems } = imported;
       // Persist whatever the file offered. Settings arrive as a partial, so a value the file omitted
       // or got wrong keeps what the user has today; bindings are replaced wholesale so the file is
-      // authoritative about which queries are enhanced.
-      const writes: Promise<void>[] = [
-        this.settingsStore.write(settings),
-        this.bindingStore.replaceAll(enhancedQueries),
-      ];
+      // authoritative about which queries are enhanced — except for a connection-only file, which
+      // describes no bindings and must therefore leave the user's own set alone.
+      const writes: Promise<void>[] = [this.settingsStore.write(settings)];
+      if (replacesBindings) {
+        writes.push(this.bindingStore.replaceAll(enhancedQueries));
+      }
       if (teamConfigWorkItemId !== undefined) {
         writes.push(this.teamConfigSourceStore.write(teamConfigWorkItemId));
       }
@@ -124,7 +154,7 @@ export class SettingsTransferController {
       // reporting success: leaving it stale would both hide the import and let the next edit save
       // the old values back over it.
       this.onImported();
-      this.reportImported(problems);
+      this.reportImported(problems, replacesBindings);
     } catch (error: unknown) {
       this.fail("import the selected file", error);
     } finally {
@@ -138,17 +168,15 @@ export class SettingsTransferController {
    * in full and shown in red — because the parts that were skipped are exactly the ones the user
    * would otherwise go looking for later, long after "Imported your configuration." scrolled by.
    */
-  private reportImported(problems: readonly string[]): void {
+  private reportImported(problems: readonly string[], replacedBindings: boolean): void {
+    const what = replacedBindings ? "your configuration" : "the team connection";
     if (problems.length === 0) {
-      this.setStatus("Imported your configuration.");
+      this.setStatus(`Imported ${what}.`);
       return;
     }
     this.reportError(new ConfigImportError(problems));
     const count = `${problems.length} problem${problems.length === 1 ? "" : "s"}`;
-    this.setStatus(
-      `Imported your configuration, but skipped ${count}: ${problems.join(" ")}`,
-      true,
-    );
+    this.setStatus(`Imported ${what}, but skipped ${count}: ${problems.join(" ")}`, true);
   }
 
   private download(filename: string, contents: string): void {

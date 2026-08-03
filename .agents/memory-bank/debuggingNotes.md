@@ -377,6 +377,29 @@ rev 15)`) reappearing on a marker-tag command that was ALREADY one patch. One pa
   `formatWorkItemTags` joins with ADO's own `"; "`. A field whose stored form differs from what the
   extension would write simply never rebases (it fails as before) — it can never rebase wrongly.
 
+## An identity PRECONDITION is compared literally — the sign-in address always fails HTTP 412
+
+- SYMPTOM: Sprint bulk move failed on EVERY card (`Work item 7607727 field update failed: HTTP 412` /
+  `Field write for item 7607727 → "System.IterationPath" failed (base rev 8)`), while the same move
+  from a single card's right-click menu worked. The run then ground through its pass budget retrying,
+  which is why cancelling and reaching the log felt stuck.
+- DO NOT re-diagnose this as a stale rev. The rev was CURRENT (the item really was at rev 8) and a
+  request carrying `preconditions` deliberately never rebases, so a `baseValue` cannot mask it either.
+  The difference from the working single-item command is the preconditions, not the rev.
+- ROOT CAUSE: `{ op: "test", path: "/fields/System.AssignedTo" }` is compared **literally** against
+  the identity's stored display form. Setting an identity resolves whatever handle it is given, so
+  `identityFieldValue`'s sign-in address is right for a WRITE and wrong for a TEST.
+- FIX / RULE: guard an identity field with `identityTestValue` (`Display Name <unique.name>`), write
+  it with `identityFieldValue`. Verified live against work item 7607727 — `Razvan Popov
+<razvanp@microsoft.com>` → 200; `razvanp@microsoft.com`, `Razvan Popov`, `<razvanp@microsoft.com>`,
+  the identity GUID, and a case-shifted display form → 412 each. `System.State` and `System.AreaPath`
+  test fine as plain strings.
+- RECIPE for any "which op is ADO refusing?" question: send a patch of ONLY `test` ops from the ADO
+  tab's own console/MAIN world. Nothing is written, `200` means every test passed and `412` means one
+  did not, so tests can be bisected one field at a time against a real item.
+- A permanently conflicting item no longer costs the whole run: a card is re-validated on a fresh
+  pass at most three times before it is reported as failed.
+
 ## Clearing a tag "succeeded" and changed nothing — `add` APPENDS to `System.Tags`
 
 - SYMPTOM: **Clear ‹marker›** reported success (pill gone, no failed-write count, Diagnostics logging
@@ -1470,3 +1493,44 @@ reviewing any test here.
   `title.style.lineHeight`) degrades to `expect("").toBe("")` when both regress. Pin the literal.
 - A settle gate must observe the NEW state (picker value / new item ids), not merely "not the loading
   text" — any error banner or the previous render satisfies the negative form.
+
+## "No response from the worker" almost always means a STALE service worker, not a broken call
+
+- SYMPTOM: `Could not read the signed-in Azure DevOps identity (no response).` while, in the same
+  millisecond, `Team-members read completed: members=10.` succeeded through the SAME
+  content -> background -> MAIN-world path. The user reasonably concluded the identity read was
+  broken, since a roster read only succeeds for an authenticated session.
+- NOT THE CAUSE: the endpoint. Probing `_apis/ConnectionData?api-version=7.1-preview.1` live in the
+  ADO page returned HTTP 200 with `authenticatedUser` **both with and without** the
+  `X-TFS-FedAuthRedirect: Suppress` header, so neither the URL nor the headers were at fault.
+- ROOT CAUSE: the running MV3 service worker predated the build. Chrome re-reads an unpacked
+  extension's **content scripts from disk on every page load**, but the **service worker keeps
+  running the code it was started with**. So a rebuild + page reload silently produces a page whose
+  content script knows a message type the live worker has never heard of. `sendMessage` then resolves
+  `undefined` (nothing claimed it) in ~0 ms — which is why the failure arrived BEFORE the slower
+  roster read it was issued alongside.
+- FIX / RULE: after `pnpm build`, **reload the extension**, not just the ADO tab. Any new
+  content->background message type is dead until you do.
+- RULE for code: never report a data-less reply as "no response". `common/browser/workerReply`
+  exists for this: `UNHANDLED_BY_WORKER` names the stale/stopped-worker case in words that tell the
+  reader to reload the extension. A messaging client must keep three outcomes apart — the message was
+  not claimed (`response === undefined`), the worker served it and the read failed
+  (`raw === null`, report `error` or `HTTP status`), and Azure DevOps answered but named nobody.
+  Collapsing them is what turned a 30-second fix into a hunt for a network fault.
+
+### Live recipe: is a worker listener actually registered?
+
+Send the message from the extension's OWN options page over CDP and look at what comes back. An
+extension page in a tab still supplies `sender.tab`, so a registered handler answers with a refusal
+(e.g. `sender tab URL is not a supported project-scoped ADO location`) instead of `undefined`:
+
+```js
+// Runtime.evaluate against the chrome-extension://<id>/options/options.html target on port 9222
+chrome.runtime.sendMessage({ type: "awesomeado:read-current-user" });
+// undefined  -> no listener claimed it: the worker is stale or failed to start
+// { ... }    -> the listener is live; read its error for the real reason
+```
+
+`chrome.runtime.reload()` evaluated in that same page restarts the worker from disk, after which the
+same probe answers. That two-step (probe, reload, probe again) turns "is my code even running?" from
+a guess into a fact.

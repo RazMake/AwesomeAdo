@@ -5,6 +5,18 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ## Next Version
 
+- Adds a way to share one enhanced query with someone outside your team. Appending
+  `?awesomeAdoConfig={workItemId}` to a saved query's URL tells the recipient's extension which
+  configuration work item to read that query from. If they are on that item's team, it simply becomes
+  their configuration source, exactly as if they had connected on the options page. If they are not,
+  they get a read-only view of that one query and nothing else: their own settings, their own
+  enhanced queries, and any team they do belong to are untouched. The Query Bindings tab lists such a
+  query with the publisher's values shown but not editable, names the work item they come from, and
+  offers Remove link instead of Delete. Several queries shared from the same work item read it once.
+- Adds Export Connection alongside Export, which saves only the connected configuration work item
+  (plus the organization and project needed to reach it). Hand it to a teammate so they follow the
+  team's live shared configuration instead of inheriting a snapshot of yours; importing it adopts the
+  connection and leaves their enhanced queries alone.
 - Makes the Azure DevOps organization and project editable settings instead of read-only detections.
   They are filled in from the open query tab the first time, then saved — so the options page keeps
   working with no ADO tab open — and travel with exported and team-shared configuration. When the

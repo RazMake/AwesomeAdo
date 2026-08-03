@@ -37,11 +37,7 @@ function isActionable(status: SprintBulkMoveProgress): boolean {
   return status.failed > 0 || status.phase === "failed" || status.phase === "limited";
 }
 
-function cancelButton(
-  doc: Document,
-  cancelRequested: boolean,
-  onCancel: () => void,
-): HTMLButtonElement {
+function cancelButton(doc: Document, onCancel: () => void): HTMLButtonElement {
   const button = doc.createElement("button");
   button.type = "button";
   button.className = "awesomeado-sprint__cancel-bulk";
@@ -57,8 +53,6 @@ function cancelButton(
     "font-size:11px",
     "cursor:pointer",
   ].join(";");
-  button.disabled = cancelRequested;
-  button.textContent = cancelRequested ? "Cancelling…" : "Cancel";
   button.addEventListener("click", onCancel);
   return button;
 }
@@ -69,6 +63,8 @@ export class SprintBulkMoveController {
   private cancelRequested = false;
   private progress: SprintBulkMoveProgress | null = null;
   private statusRoot: HTMLElement | null = null;
+  private summary: HTMLElement | null = null;
+  private cancelControl: HTMLButtonElement | null = null;
   private releaseGuards = (): void => undefined;
 
   constructor(private readonly options: SprintBulkMoveControllerOptions) {}
@@ -78,7 +74,10 @@ export class SprintBulkMoveController {
   }
 
   attachStatus(root: HTMLElement): void {
+    // A repaint hands over a brand-new slot, so the cached controls belong to a detached one.
     this.statusRoot = root;
+    this.summary = null;
+    this.cancelControl = null;
     this.paintStatus();
   }
 
@@ -168,24 +167,53 @@ export class SprintBulkMoveController {
     const root = this.statusRoot;
     const status = this.progress;
     if (root === null) return;
-    root.replaceChildren();
-    if (status === null) return;
-    const text = this.options.doc.createElement(isActionable(status) ? "button" : "span");
-    text.className = "awesomeado-sprint__bulk-move-summary";
-    text.textContent = statusText(status);
-    text.style.cssText =
-      "border:0;padding:0;background:transparent;color:var(--text-secondary-color);font:inherit;font-size:11px";
-    if (isActionable(status)) this.wireDiagnostics(text as HTMLButtonElement, status);
-    root.append(text);
-    if (status.phase === "running") {
-      root.append(cancelButton(this.options.doc, this.cancelRequested, () => this.cancel()));
+    if (status === null) {
+      root.replaceChildren();
+      this.summary = null;
+      this.cancelControl = null;
+      return;
     }
+    this.paintSummary(root, status);
+    this.paintCancel(root, status);
   }
 
-  private wireDiagnostics(button: HTMLButtonElement, status: SprintBulkMoveProgress): void {
+  // Both controls are UPDATED, never rebuilt: every single write repaints this status, and a button
+  // replaced between pointerdown and pointerup never receives the click at all — which is why Cancel
+  // and the failure link used to take several tries to land during a busy run.
+  private paintSummary(root: HTMLElement, status: SprintBulkMoveProgress): void {
+    const actionable = isActionable(status);
+    const tag = actionable ? "button" : "span";
+    if (this.summary === null || this.summary.localName !== tag) {
+      const element = this.options.doc.createElement(tag);
+      element.className = "awesomeado-sprint__bulk-move-summary";
+      element.style.cssText =
+        "border:0;padding:0;background:transparent;color:var(--text-secondary-color);font:inherit;font-size:11px";
+      if (actionable) this.wireDiagnostics(element as HTMLButtonElement);
+      this.summary?.remove();
+      this.summary = element;
+      root.prepend(element);
+    }
+    this.summary.textContent = statusText(status);
+    if (actionable) this.summary.title = status.lastError ?? "Open Diagnostics";
+  }
+
+  private paintCancel(root: HTMLElement, status: SprintBulkMoveProgress): void {
+    if (status.phase !== "running") {
+      this.cancelControl?.remove();
+      this.cancelControl = null;
+      return;
+    }
+    if (this.cancelControl === null) {
+      this.cancelControl = cancelButton(this.options.doc, () => this.cancel());
+      root.append(this.cancelControl);
+    }
+    this.cancelControl.disabled = this.cancelRequested;
+    this.cancelControl.textContent = this.cancelRequested ? "Cancelling…" : "Cancel";
+  }
+
+  private wireDiagnostics(button: HTMLButtonElement): void {
     button.type = "button";
     button.style.cursor = "pointer";
-    button.title = status.lastError ?? "Open Diagnostics";
     button.addEventListener("click", this.options.openDiagnosticsLog);
   }
 }
@@ -216,7 +244,9 @@ function failedProgress(
 function installGuards(doc: Document, requestCancel: () => void): () => void {
   const block = (event: Event): void => {
     const target = event.target instanceof Element ? event.target : null;
-    if (target?.closest(".awesomeado-sprint__cancel-bulk") !== null) return;
+    // The whole status region stays live: it carries Cancel AND the link to the failure log, which
+    // are exactly the two things a user needs WHILE the run is holding the rest of the view shut.
+    if (target?.closest(".awesomeado-sprint__bulk-move-status") !== null) return;
     event.preventDefault();
     event.stopImmediatePropagation();
   };

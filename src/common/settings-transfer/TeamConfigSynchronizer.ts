@@ -118,6 +118,13 @@ export class TeamConfigSynchronizer {
       if (imported.problems.length > 0) {
         throw new ConfigImportError(imported.problems);
       }
+      if (!imported.replacesBindings) {
+        // A connection-only payload names a source; it never IS one. Adopting it would replace the
+        // team's shared bindings with its empty set on every client that pulled it.
+        throw new ConfigImportError([
+          "The shared work item does not hold a complete AwesomeADO configuration.",
+        ]);
+      }
       const [currentSettings, currentBindings] = await Promise.all([
         this.settingsStore.read(),
         this.bindingStore.read(),

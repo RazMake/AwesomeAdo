@@ -115,6 +115,30 @@ boards that disagree about the same query.
 - `buildAdoTeamMembersUrl(href, team)` - builds the paged project/team members URL.
 - `parseTeamMembers(body)` - validates and deduplicates ADO team-member identities by id.
 
+### `currentUser.ts`
+
+The signed-in identity, shared by everything that has to ask "who am I to Azure DevOps?".
+
+- `ICurrentUserReader` — loads that identity; the real implementation runs a credentialed
+  MAIN-world fetch through the background worker, a test fake answers directly.
+- `buildAdoConnectionDataUrl(href)` — the org-level `ConnectionData` URL, or `null` when `href` is
+  not project-scoped. Pinned to `ADO_CONNECTION_DATA_API_VERSION`, a **preview** version: it is
+  served under no other kind, and a released one answers `400` with an error envelope that parses as
+  "nobody is signed in".
+- `parseCurrentUser(rawConnection)` — the signed-in `NoteAuthor`, or `null` when neither the identity
+  GUID nor the sign-in address is present (an identity nothing could ever match).
+
+### `TeamMembership.ts`
+
+- `ITeamMembershipReader` — answers whether the signed-in person belongs to one team.
+- `TeamMembershipReader` — the pure implementation: it looks for the signed-in identity in the team's
+  own roster, matching on identity GUID or sign-in address (case-insensitively).
+
+It answers `true`, `false`, **or `null`**, and the third is not a detail: `null` means the question
+could not be answered (the roster or the identity was unreadable). A caller that grants trust on
+membership must be able to tell an authoritative "no" apart from an unread roster and treat only the
+former as a decision.
+
 ### `IWorkItemTreeLoader.ts`
 
 - `WorkItemTreeResult` — `{ isTreeQuery, roots, error, folderPath? }`; returned by the tree loader.
@@ -310,6 +334,10 @@ board's filters and the tagging commands all share one interpretation of the fie
   refuses to order an item itself.
 - `identityFieldValue(user)` — the string an identity field is patched with for a picked person: the
   unique name when known (ADO resolves identities from it), otherwise the display name.
+- `identityTestValue(user)` — the string a JSON Patch `test` on an identity field must carry instead:
+  `Display Name <unique.name>`, because a precondition is compared literally rather than resolved.
+  Use it for guards; use `identityFieldValue` for writes. Passing the write form as a precondition
+  fails every patch with `HTTP 412`.
 
 ### `IFeatureCrewWriter.ts`
 
@@ -434,14 +462,10 @@ The normalized model for a work item **note** — one entry in its Azure DevOps 
 ### `fetchWorkItemNotes.ts`
 
 - `buildWorkItemNotesUrls(href, workItemId)` — the comments URL (newest first, `$expand=renderedText`
-  so mentions resolve to names) plus the org's `ConnectionData` URL; `null` when `href` is not
-  project-scoped. `ConnectionData` is pinned to `ADO_CONNECTION_DATA_API_VERSION`, a **preview**
-  version: it is served under no other kind, and a released one answers `400` with an error envelope
-  that parses as "nobody is signed in".
+  so mentions resolve to names) plus the org's `ConnectionData` URL (built by `currentUser.ts`);
+  `null` when `href` is not project-scoped.
 - `buildAddNoteUrl(href, workItemId)` / `buildEditNoteUrl(href, workItemId, noteId)` — the Markdown
   (`format=0`) write endpoints; `null` when `href` is not project-scoped.
-- `parseCurrentUser(rawConnection)` — the signed-in `NoteAuthor`, or `null` when neither handle is
-  present (no note is then editable).
 - `parseWorkItemNotes(rawPages, workItemId, sinceIso)` — the notes inside the Updates window.
 - `parseWorkItemNote(rawComment, workItemId)` — one note; `null` without a numeric id and a parseable
   `createdDate`.

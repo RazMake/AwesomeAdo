@@ -906,8 +906,8 @@ async function verifyPastSprintBulkMove(): Promise<void> {
   // Every non-Done ASSIGNED card is guarded on its OWN lane and assignee; the Done card, the
   // unassigned one, and the card that already sits in the destination are never written at all.
   expect(writeField.mock.calls.map(([request]) => request)).toEqual([
-    pastSprintMove(4, "Project\\Apps", "bob@example.com"),
-    pastSprintMove(1, "Project\\Platform", "alice@example.com"),
+    pastSprintMove(4, "Project\\Apps", "Bob <bob@example.com>"),
+    pastSprintMove(1, "Project\\Platform", "Alice <alice@example.com>"),
   ]);
   expect(writeField).not.toHaveBeenCalledWith(expect.objectContaining({ id: 3 }));
 }

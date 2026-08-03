@@ -11,8 +11,8 @@ options-page glue.
 
 ### `SettingsTransferController.ts`
 
-- `SettingsTransferElements` — the elements the controller drives: `exportButton`, `importButton`,
-  the hidden `fileInput`, and a `status` line.
+- `SettingsTransferElements` — the elements the controller drives: `exportButton`,
+  `exportConnectionButton`, `importButton`, the hidden `fileInput`, and a `status` line.
 - `new SettingsTransferController(settingsStore, bindingStore, teamConfigSourceStore, elements,
 reportError?, onImported?)` — construct with all three store abstractions.
   - `init()` — attach the click/change listeners.
@@ -23,11 +23,18 @@ reportError?, onImported?)` — construct with all three store abstractions.
     configuration the file just replaced. It is not called when a file is rejected outright.
 
 **Export** reads all three stores, builds the `AwesomeADO.config` JSON (including the trusted team
-configuration work item ID), and downloads it. **Import** opens
+configuration work item ID), and downloads it.
+
+**Export Connection** downloads `AwesomeADO.connection.config` instead: only the connected work item
+ID plus the organization and project needed to reach it. It is what you hand a teammate who should
+follow the team's **live** shared configuration rather than inherit a snapshot of yours, and it
+refuses to produce a file while no work item is connected. **Import** opens
 the hidden file input, reads the chosen file, applies every setting and binding the file supplies
 usably — settings as a partial (so a value the file omitted or got wrong keeps what the user has
 today) and bindings via **`replaceAll`**, so the file is authoritative about which queries are
-enhanced. A file that yields nothing usable is reported and never touches either store.
+enhanced. A connection file is the exception: it describes no bindings, so it adopts the connection
+and leaves the user's enhanced queries alone. A file that yields nothing usable is reported and never
+touches either store.
 
 The `status` line reports the outcome and carries `card__hint--error` when that outcome is a
 failure. A file that imported only **partly** counts as one: the skipped values are recorded through

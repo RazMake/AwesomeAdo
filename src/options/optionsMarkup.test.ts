@@ -27,6 +27,7 @@ const REQUIRED_ELEMENT_IDS: readonly string[] = [
   "default-view-select",
   // Configuration import/export
   "settings-export",
+  "settings-export-connection",
   "settings-import",
   "settings-import-file",
   "settings-transfer-status",
@@ -68,6 +69,7 @@ const REQUIRED_ELEMENT_IDS: readonly string[] = [
   "binding-view-select",
   "binding-properties",
   "binding-save",
+  "binding-shared-notice",
   "binding-status",
   // Diagnostics
   "log-list",

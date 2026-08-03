@@ -77,3 +77,18 @@ theme.
   **`isAdoThemeRequest(value)`** — the request/response message the options page sends to an ADO
   content script (via `chrome.tabs.sendMessage`) to read the rendered theme. The content script
   answers with `detectAdoTheme(document)`.
+
+### `SharedQueryLink.ts`
+
+The extra data a shared query URL carries so a recipient's extension knows which Azure DevOps work
+item to read that query's configuration from.
+
+- **`SHARED_CONFIG_PARAM`** — `"awesomeAdoConfig"`, the query-string parameter. A shareable link is
+  an ordinary saved-query URL with `?awesomeAdoConfig={workItemId}` appended.
+- **`parseSharedConfigWorkItemId(rawUrl)`** — the work item id the URL names, or `null` when it
+  names none, when the value is not a positive whole number, or when the URL is not a hosted ADO
+  location. A malformed value is deliberately "no link at all" rather than a partly-trusted one.
+
+The parameter names a work item id and nothing else, so a link can never inject configuration
+values: it can only point at an item the recipient's own Azure DevOps session is allowed to read.
+What happens next is decided by `common/settings-transfer/SharedQueryLinkService`.

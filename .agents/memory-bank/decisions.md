@@ -1188,9 +1188,16 @@ Markdown` in one `/rev`-guarded JSON Patch. The PATCH is not retried; a concurre
 - Decision: each snapshot ID is freshly read before writing and its `System.IterationPath` patch
   atomically tests `System.State`, `System.AreaPath`, and `System.AssignedTo`. Changed, missing, Done,
   or unassigned cards are skipped. A preconditioned write never uses the primary-field-only rebase;
-  409/412 returns to a fresh complete pass. Transient failures receive three retries with backoff;
+  409/412 returns to a fresh complete pass, at most three times per card before that card is reported
+  as failed, so one permanently conflicting card cannot spend the whole pass budget. The identity
+  precondition carries `identityTestValue` (`Display Name <unique.name>`), not the sign-in address
+  that SETS the field: ADO compares a `test` literally, so the write form refuses every patch with
+  HTTP 412. Transient failures receive three retries with backoff;
   execution is bounded to 100 passes and 10,000 confirmed IDs.
-- Decision: while active, view interactions are blocked and unload receives the browser warning.
+- Decision: while active, view interactions are blocked and unload receives the browser warning —
+  except the header status region, whose controls stay clickable and are updated in place rather than
+  rebuilt, because Cancel and the link to the failure log are exactly what a user needs while the run
+  holds everything else shut.
   Cancel or Escape finishes the current write and abandons the remainder. Header progress reports
   moved/failed/skipped counts and links failures to Diagnostics; completion refreshes the sprint.
 - Rationale: the visible filtered table is the user's team/scope boundary. Re-evaluating filters or
@@ -1226,3 +1233,55 @@ Markdown` in one `/rev`-guarded JSON Patch. The PATCH is not retried; a concurre
   refreshes and be identical for every viewer. Storing date bounds with each record makes the
   ten-sprint retention rule deterministic even after a sprint falls outside the configured picker
   window.
+
+## ADR-064: A shared query link grants a read-only, single-query connection to non-members
+
+- Decision: a saved-query URL may carry `?awesomeAdoConfig={workItemId}` (parsed by
+  `common/navigation/SharedQueryLink`). The parameter names a work item id and nothing else, so a
+  link can never inject configuration values; it can only point at an item the recipient's own ADO
+  session is allowed to read.
+- Decision: what the link is allowed to change depends on Azure DevOps' own team roster, never on
+  the link. `SharedQueryLinkService` resolves the item, reads the team it names, and asks
+  `common/ado/TeamMembership` whether the signed-in identity is in that team's roster. A **member**
+  adopts the item as their `teamConfig.workItemId` outright and pulls, identically to connecting on
+  the options page. A **non-member** gets an entry in a separate synced map
+  (`sharedQueries.workItemIds`, one work item id per query id) and nothing else changes: their
+  settings, their bindings, and any team they do belong to are untouched.
+- Decision: membership is a three-valued answer. `TeamMembershipReader` returns `null` when the
+  roster or the signed-in identity could not be read, and an undetermined answer takes the
+  non-member path. An unread roster is not permission, and the narrow outcome is the only one that
+  changes nothing the user owns.
+- Decision: a shared query's configuration is applied per query, not per tab.
+  `content/shared-query` re-resolves on every SPA navigation and layers the publisher's settings over
+  the reader's own (`overlaySettings`) while substituting only that one query's binding
+  (`overlayBindings`). Leaving the query takes the publisher's configuration with it.
+- Decision: `SharedQueryConfigResolver` reads each configuration work item at most once per
+  resolver, failed reads included. Teams commonly share several queries from one item, so a
+  per-query read would multiply a credentialed round trip for an answer that cannot differ; the
+  options page invalidates the resolver before a reload rather than bypassing it.
+- Decision: a work item that cannot be read leaves the link in place and renders nothing. Dropping
+  the link on a transient failure would silently un-enhance the query permanently.
+- Decision: the Options Query Bindings tab lists a shared query with the publisher's values rendered
+  as read-only text rather than as disabled inputs, hides Save, and turns Delete into Remove link.
+  Those values live in a work item this user cannot write to, so an enabled Save could only ever
+  produce a local copy that diverges from what everyone else sees.
+- Rationale: sharing an enhanced query with someone outside the team is the common case (a partner
+  team, a manager, an on-call reader). Connecting them to the whole configuration would silently
+  replace their own; giving them nothing would make the link useless. A narrow read-only connection
+  is the only outcome that is both useful to the recipient and harmless to them.
+
+## ADR-065: Configuration export has a full form and a connection-only form
+
+- Decision: `exportConfig` keeps writing the whole configuration to `AwesomeADO.config`.
+  `exportConnectionConfig` writes `AwesomeADO.connection.config`, carrying only
+  `teamConfigWorkItemId` plus the organization and project needed to reach it, marked
+  `configScope: "connection"`. A file with no scope is a full configuration, so every export written
+  before this field existed still reads as one.
+- Decision: `ImportedConfig` gained `replacesBindings`. A connection file comes back with it `false`,
+  and callers skip `IQueryBindingStore.replaceAll` — adopting a connection must never delete the
+  enhanced queries the file never described. `TeamConfigSynchronizer` and
+  `SharedQueryConfigResolver` both refuse a payload with `replacesBindings: false`, because a
+  connection file names a source instead of being one.
+- Rationale: handing a teammate the full file also hands them a snapshot that starts drifting the
+  moment the team publishes again. The connection file makes them follow the live source instead,
+  which is what "join the team's configuration" actually means.

@@ -1,10 +1,8 @@
 import type { NoteAuthor, WorkItemNote } from "./WorkItemNote";
-import {
-  ADO_COMMENTS_API_VERSION,
-  ADO_COMMENTS_WRITE_API_VERSION,
-  ADO_CONNECTION_DATA_API_VERSION,
-} from "./adoApi";
+import { ADO_COMMENTS_API_VERSION, ADO_COMMENTS_WRITE_API_VERSION } from "./adoApi";
+import { buildAdoConnectionDataUrl } from "./currentUser";
 import { resolveAdoProjectContext } from "./fetchAdoMetadata";
+import { asRecord, nonEmptyString } from "./rawJson";
 
 /**
  * The largest page Azure DevOps serves from the comments collection. Requesting more is silently
@@ -53,23 +51,16 @@ export function buildWorkItemCommentsUrl(
  * project-scoped ADO location.
  */
 export function buildWorkItemNotesUrls(href: string, workItemId: number): WorkItemNotesUrls | null {
-  const resolved = resolveAdoProjectContext(href);
-  if (resolved === null) {
+  const connectionUrl = buildAdoConnectionDataUrl(href);
+  if (connectionUrl === null) {
     return null;
   }
-  const { base } = resolved;
   const commentsUrl = buildWorkItemCommentsUrl(
     href,
     workItemId,
     `?api-version=${ADO_COMMENTS_API_VERSION}&$top=${NOTES_PAGE_SIZE}&order=desc&$expand=renderedText`,
   );
-  if (commentsUrl === null) {
-    return null;
-  }
-  return {
-    commentsUrl,
-    connectionUrl: `${base}/_apis/ConnectionData?api-version=${ADO_CONNECTION_DATA_API_VERSION}`,
-  };
+  return commentsUrl === null ? null : { commentsUrl, connectionUrl };
 }
 
 /**
@@ -93,32 +84,6 @@ export function buildEditNoteUrl(href: string, workItemId: number, noteId: numbe
     workItemId,
     `/${noteId}?format=0&api-version=${ADO_COMMENTS_WRITE_API_VERSION}`,
   );
-}
-
-/**
- * Parse the signed-in identity out of a raw ConnectionData body, or null when it carries none.
- *
- * The sign-in address lives in a typed property bag (`properties.Account.$value`), not as a plain
- * field, so it is read defensively: a tenant that omits it still yields a usable identity from the
- * GUID alone.
- */
-export function parseCurrentUser(rawConnection: unknown): NoteAuthor | null {
-  const user = asRecord(asRecord(rawConnection)?.authenticatedUser);
-  if (user === null) {
-    return null;
-  }
-  const id = nonEmptyString(user.id);
-  const uniqueName = nonEmptyString(asRecord(asRecord(user.properties)?.Account)?.$value);
-  if (id === null && uniqueName === null) {
-    // An identity that can be matched on neither handle cannot authorize an edit; reporting none is
-    // what leaves every note read-only rather than offering an edit ADO would reject.
-    return null;
-  }
-  return {
-    displayName: nonEmptyString(user.providerDisplayName) ?? uniqueName ?? "",
-    id,
-    uniqueName,
-  };
 }
 
 /**
@@ -177,25 +142,12 @@ export function parseWorkItemNote(rawComment: unknown, workItemId: number): Work
 /** Parse a raw ADO identity reference into a note author; unknown fields degrade to a blank name. */
 function parseNoteAuthor(rawUser: unknown): NoteAuthor {
   const user = asRecord(rawUser);
+  // `nonEmptyString` matters here specifically: ADO reports "this identity has no address" as an
+  // EMPTY string rather than by omitting the field, and two empty handles compared against each
+  // other would make two anonymous identities look like the same person.
   return {
     displayName: nonEmptyString(user?.displayName) ?? "",
     id: nonEmptyString(user?.id),
     uniqueName: nonEmptyString(user?.uniqueName),
   };
-}
-
-/**
- * A present, non-empty string, or null.
- *
- * Shared by every field read here because ADO reports "this identity has no address" as an EMPTY
- * string rather than by omitting the field — and an empty handle compared against another empty
- * handle would make two anonymous identities look like the same person.
- */
-function nonEmptyString(value: unknown): string | null {
-  return typeof value === "string" && value.length > 0 ? value : null;
-}
-
-/** Narrow an unknown JSON value to an indexable object, or null when it is not one. */
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : null;
 }

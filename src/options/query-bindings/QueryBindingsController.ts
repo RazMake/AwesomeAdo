@@ -1,5 +1,7 @@
 import type { IQueryBindingStore } from "../../common/bindings/IQueryBindingStore";
 import type { QueryBinding, QueryBindings } from "../../common/bindings/QueryBinding";
+import type { SharedQueryConfigResolver } from "../../common/settings-transfer/SharedQueryConfigResolver";
+import type { SharedQuerySourceStore } from "../../common/settings-transfer/SharedQuerySourceStore";
 import {
   resolveViewTypePropertyValue,
   viewTypePropertyKind,
@@ -36,12 +38,27 @@ export interface QueryBindingsElements {
   /** Container the controller fills with one input per property of the selected view. */
   properties: HTMLElement;
   saveButton: HTMLButtonElement;
+  /** Explains, for a shared query, that its configuration is owned by someone else's work item. */
+  sharedNotice: HTMLElement;
 
   /** Shared line confirming a save/delete or surfacing a failure to the user. */
   status: HTMLElement;
 }
 
 type RecordError = (error: unknown) => void;
+
+/** Where the read-only shared queries and their published configuration are read from. */
+export interface SharedQueryAccess {
+  sources: SharedQuerySourceStore;
+  /** Memoizes per work item, so many queries shared from one item cost a single read. */
+  resolver: SharedQueryConfigResolver;
+}
+
+/** One query whose configuration is published by a work item this user may not write to. */
+interface SharedQueryLink {
+  workItemId: number;
+  binding: QueryBinding | null;
+}
 
 /** The optional collaborators, grouped so no caller ever passes a positional `undefined`. */
 export interface QueryBindingsOptions {
@@ -53,6 +70,8 @@ export interface QueryBindingsOptions {
   resolveAreaPaths?: () => Promise<readonly string[]>;
   /** Publishes the proposed full binding map before local observers can trigger a stale pull. */
   publishBindings?: (bindings: QueryBindings) => Promise<void>;
+  /** The shared queries this user reads but cannot change. Absent means there are none. */
+  sharedQueries?: SharedQueryAccess;
 }
 
 interface PropertyControl {
@@ -86,6 +105,8 @@ export type CurrentQueryIdResolver = () => Promise<string | null>;
 export class QueryBindingsController {
   private readonly propertyInputs = new Map<string, PropertyControl>();
   private readonly queryNames = new Map<string, string | null>();
+  /** Queries whose configuration is published by a work item this user may not write to. */
+  private shared = new Map<string, SharedQueryLink>();
   private bindings: QueryBindings = {};
   private selectedQueryId: string | null = null;
   private editing: QueryBinding | undefined;
@@ -94,6 +115,7 @@ export class QueryBindingsController {
   private readonly resolveCurrentQueryId: CurrentQueryIdResolver;
   private readonly resolveAreaPaths: () => Promise<readonly string[]>;
   private readonly publishBindings: (bindings: QueryBindings) => Promise<void>;
+  private readonly sharedQueries: SharedQueryAccess | undefined;
   private areaPaths: readonly string[] = [];
 
   // `recordError` is REQUIRED, not defaulted: local status gives the user the failure while this
@@ -109,6 +131,7 @@ export class QueryBindingsController {
     this.resolveCurrentQueryId = options.resolveCurrentQueryId ?? (async () => null);
     this.resolveAreaPaths = options.resolveAreaPaths ?? (async () => []);
     this.publishBindings = options.publishBindings ?? (async () => {});
+    this.sharedQueries = options.sharedQueries;
   }
 
   /**
@@ -124,9 +147,10 @@ export class QueryBindingsController {
     this.elements.saveButton.addEventListener("click", this.handleSave);
     this.elements.deleteButton.addEventListener("click", this.handleDelete);
 
-    [this.bindings, this.areaPaths] = await Promise.all([
+    [this.bindings, this.areaPaths, this.shared] = await Promise.all([
       this.readBindings(),
       this.readAreaPaths(),
+      this.readSharedQueries(),
     ]);
     this.syncQueryNames();
     await this.show(queryId, queryName);
@@ -139,7 +163,10 @@ export class QueryBindingsController {
    * added since) and the form is re-populated for `queryId` in place.
    */
   async revealFixedQuery(queryId: string, queryName: string | null): Promise<void> {
-    this.bindings = await this.readBindings();
+    [this.bindings, this.shared] = await Promise.all([
+      this.readBindings(),
+      this.readSharedQueries(),
+    ]);
     this.syncQueryNames();
     await this.show(queryId, queryName);
   }
@@ -150,7 +177,13 @@ export class QueryBindingsController {
    * what a save writes back, so leaving it stale would re-save the bindings the file just replaced.
    */
   async reload(): Promise<void> {
-    this.bindings = await this.readBindings();
+    // A pull or import can have changed which work item a shared query reads from, and what that
+    // item says, so the memoized reads are dropped before the links are resolved again.
+    this.sharedQueries?.resolver.invalidate();
+    [this.bindings, this.shared] = await Promise.all([
+      this.readBindings(),
+      this.readSharedQueries(),
+    ]);
     this.syncQueryNames();
     await this.show(null, null);
   }
@@ -182,11 +215,43 @@ export class QueryBindingsController {
     }
   }
 
+  /**
+   * Resolve every read-only shared query to the binding its work item publishes.
+   *
+   * The resolver memoizes per work item, so a team that shares five queries from one item is read
+   * once rather than five times. A link whose item cannot be read is still listed — with no binding
+   * — so the user can see (and remove) a link that has stopped resolving.
+   */
+  private async readSharedQueries(): Promise<Map<string, SharedQueryLink>> {
+    const access = this.sharedQueries;
+    if (access === undefined) {
+      return new Map();
+    }
+    try {
+      const sources = Object.entries(await access.sources.read());
+      const links = await Promise.all(
+        sources.map(async ([queryId, workItemId]): Promise<[string, SharedQueryLink]> => {
+          const config = await access.resolver.resolve(workItemId);
+          return [queryId, { workItemId, binding: config?.bindings[queryId] ?? null }];
+        }),
+      );
+      return new Map(links);
+    } catch (error: unknown) {
+      this.recordError(error);
+      return new Map();
+    }
+  }
+
   /** Rebuild the id → name lookup from the current bindings so the pickers and labels agree. */
   private syncQueryNames(): void {
     this.queryNames.clear();
     for (const [id, binding] of Object.entries(this.bindings)) {
       this.queryNames.set(id, binding.name ?? null);
+    }
+    // A shared query's name comes from its publisher, and overrides any stale local copy, because
+    // everything the user sees for that query is the publisher's.
+    for (const [id, link] of this.shared) {
+      this.queryNames.set(id, link.binding?.name ?? null);
     }
   }
 
@@ -197,7 +262,7 @@ export class QueryBindingsController {
    */
   private async show(queryId: string | null, queryName: string | null): Promise<void> {
     if (queryId !== null) {
-      if (this.bindings[queryId] !== undefined) {
+      if (this.bindings[queryId] !== undefined || this.shared.has(queryId)) {
         // A freshly scraped name fills in a binding that never captured one, so its picker option
         // and any re-save carry a human label instead of "Unnamed query".
         if (queryName !== null && (this.queryNames.get(queryId) ?? null) === null) {
@@ -218,11 +283,13 @@ export class QueryBindingsController {
     this.enterEdit(current ?? firstBound ?? "");
   }
 
-  /** The current ADO tab's query id, but only when it is one of the bound queries; else null. */
+  /** The current ADO tab's query id, but only when it is one this tab can show; else null. */
   private async currentBoundQueryId(): Promise<string | null> {
     try {
       const current = await this.resolveCurrentQueryId();
-      return current !== null && this.bindings[current] !== undefined ? current : null;
+      return current !== null && (this.bindings[current] !== undefined || this.shared.has(current))
+        ? current
+        : null;
     } catch (error: unknown) {
       // Preselection is a convenience; a tab-read failure must not block editing existing bindings.
       this.recordError(error);
@@ -233,6 +300,7 @@ export class QueryBindingsController {
   private enterEmpty(): void {
     this.selectedQueryId = null;
     this.editing = undefined;
+    this.applySharedLink(undefined);
     this.elements.emptyState.hidden = false;
     this.elements.addCard.hidden = true;
     this.elements.editCard.hidden = true;
@@ -278,7 +346,7 @@ export class QueryBindingsController {
   private renderQueryOptions(): void {
     this.elements.querySelect.replaceChildren();
     const doc = this.elements.querySelect.ownerDocument;
-    for (const queryId of Object.keys(this.bindings)) {
+    for (const queryId of this.allQueryIds()) {
       const option = doc.createElement("option");
       option.value = queryId;
       const name = this.queryNames.get(queryId) ?? "Unnamed query";
@@ -289,20 +357,58 @@ export class QueryBindingsController {
     }
   }
 
+  /** Every query this tab can show: the user's own bindings first, then the shared ones. */
+  private allQueryIds(): string[] {
+    const own = Object.keys(this.bindings);
+    return [...own, ...[...this.shared.keys()].filter((id) => !own.includes(id))];
+  }
+
   /** Load `queryId`'s binding into the view-configuration card without rebuilding the picker. */
   private selectQuery(queryId: string): void {
     this.selectedQueryId = queryId;
-    this.editing = this.bindings[queryId];
+    const link = this.shared.get(queryId);
+    this.editing = link === undefined ? this.bindings[queryId] : (link.binding ?? undefined);
     this.elements.querySelect.value = queryId;
-    // Preselect the bound view; a binding whose view this build does not know falls back to the
-    // first view in the catalog.
-    this.elements.viewSelect.value = this.editing?.view ?? this.viewTypes[0]?.id ?? "";
-    if (this.elements.viewSelect.value === "") {
-      this.elements.viewSelect.value = this.viewTypes[0]?.id ?? "";
-    }
+    this.elements.viewSelect.value = this.viewToShow();
+    this.applySharedLink(link);
     this.renderProperties();
-    this.elements.deleteButton.disabled = this.editing === undefined;
+    this.elements.deleteButton.disabled = this.editing === undefined && link === undefined;
     this.setStatus("");
+  }
+
+  /**
+   * The view to preselect: the bound one, falling back to the first in the catalog when this build
+   * does not know it (a binding written by a newer version, or none at all).
+   */
+  private viewToShow(): string {
+    const fallback = this.viewTypes[0]?.id ?? "";
+    const bound = this.editing?.view;
+    return bound !== undefined && this.viewTypes.some((view) => view.id === bound)
+      ? bound
+      : fallback;
+  }
+
+  /**
+   * Present a shared query as what it is: someone else's configuration, shown but not editable.
+   *
+   * Editing is removed rather than merely discouraged — the values on screen live in a work item
+   * this user cannot write to, so an enabled Save could only ever produce a local copy that silently
+   * diverges from the query everyone else is looking at.
+   */
+  private applySharedLink(link: SharedQueryLink | undefined): void {
+    this.elements.viewSelect.disabled = link !== undefined;
+    this.elements.saveButton.hidden = link !== undefined;
+    this.elements.deleteButton.textContent = link === undefined ? "Delete" : "Remove link";
+    this.elements.sharedNotice.hidden = link === undefined;
+    if (link === undefined) {
+      this.elements.sharedNotice.textContent = "";
+      return;
+    }
+    this.elements.sharedNotice.textContent =
+      link.binding === null
+        ? `Shared from work item ${link.workItemId}, which does not currently enhance this query.`
+        : `Shared from work item ${link.workItemId}. These settings are read-only and follow that ` +
+          `work item; remove the link to stop using them.`;
   }
 
   private populateViews(select: HTMLSelectElement): void {
@@ -327,9 +433,12 @@ export class QueryBindingsController {
     // switching view type starts the new view's inputs from their own defaults.
     const prefill = this.editing?.view === view.id ? this.editing.properties : undefined;
     const doc = this.elements.properties.ownerDocument;
+    const readOnly = this.selectedQueryId !== null && this.shared.has(this.selectedQueryId);
     for (const property of view.properties) {
       this.elements.properties.append(
-        this.createPropertyField(doc, property, prefill?.[property.key]),
+        readOnly
+          ? createReadOnlyPropertyField(doc, property, prefill?.[property.key])
+          : this.createPropertyField(doc, property, prefill?.[property.key]),
       );
     }
     this.updateSaveEnabled();
@@ -482,7 +591,9 @@ export class QueryBindingsController {
 
   private updateSaveEnabled(): void {
     this.elements.saveButton.disabled =
-      this.selectedQueryId === null || !this.hasAllRequiredProperties();
+      this.selectedQueryId === null ||
+      this.shared.has(this.selectedQueryId) ||
+      !this.hasAllRequiredProperties();
   }
 
   private setStatus(message: string, failed = false): void {
@@ -586,38 +697,81 @@ export class QueryBindingsController {
 
   private readonly handleDelete = (): void => {
     const queryId = this.selectedQueryId;
-    if (queryId === null || this.editing === undefined) {
+    if (queryId === null) {
       return;
     }
-    const nextQueryId = this.queryIdAfter(queryId);
+    if (this.shared.has(queryId)) {
+      this.removeSharedLink(queryId);
+      return;
+    }
+    if (this.editing === undefined) {
+      return;
+    }
     const nextBindings = { ...this.bindings };
     delete nextBindings[queryId];
-    this.elements.deleteButton.disabled = true;
-    void this.publishBindings(nextBindings)
-      .then(() => this.store.unbind(queryId))
-      .then(() => {
+    this.removeQuery(queryId, {
+      remove: async () => {
+        await this.publishBindings(nextBindings);
+        await this.store.unbind(queryId);
         delete this.bindings[queryId];
+      },
+      success: "Deleted.",
+      failure: "Could not delete the query enhancement.",
+    });
+  };
+
+  /** Stop reading a query's configuration from its publisher's work item. */
+  private removeSharedLink(queryId: string): void {
+    const access = this.sharedQueries;
+    if (access === undefined) {
+      return;
+    }
+    this.removeQuery(queryId, {
+      remove: async () => {
+        await access.sources.unlink(queryId);
+        this.shared.delete(queryId);
+      },
+      success: "Removed the shared link.",
+      failure: "Could not remove the shared link.",
+    });
+  }
+
+  /**
+   * Drop one query from the tab, whichever kind it was, and leave the picker on a valid selection.
+   *
+   * The selection to move to is computed BEFORE the removal, while the query is still in the list:
+   * afterwards there is no position left to reason from.
+   */
+  private removeQuery(
+    queryId: string,
+    step: { remove: () => Promise<void>; success: string; failure: string },
+  ): void {
+    const nextQueryId = this.queryIdAfter(queryId);
+    this.elements.deleteButton.disabled = true;
+    void step
+      .remove()
+      .then(() => {
         this.queryNames.delete(queryId);
         this.editing = undefined;
         if (nextQueryId !== null) {
-          // Move to the query that took the deleted one's place so the picker keeps a valid selection.
+          // Move to the query that took the removed one's place so the picker stays valid.
           this.renderQueryOptions();
           this.selectQuery(nextQueryId);
         } else {
-          // Nothing bound is left, and a new binding must start from a query's page, so show guidance.
+          // Nothing is left, and a new binding must start from a query's page, so show guidance.
           this.enterEmpty();
         }
-        this.setStatus("Deleted.");
+        this.setStatus(step.success);
       })
       .catch((error: unknown) => {
-        this.reportFailure("Could not delete the query enhancement.", error);
+        this.reportFailure(step.failure, error);
         this.elements.deleteButton.disabled = false;
       });
-  };
+  }
 
-  /** The binding to select after removing `queryId`: the next one in order, else the last remaining. */
+  /** The query to select after removing `queryId`: the next one in order, else the last remaining. */
   private queryIdAfter(queryId: string): string | null {
-    const ids = Object.keys(this.bindings);
+    const ids = this.allQueryIds();
     const index = ids.indexOf(queryId);
     const remaining = ids.filter((id) => id !== queryId);
     if (remaining.length === 0) {
@@ -625,6 +779,47 @@ export class QueryBindingsController {
     }
     return remaining[Math.min(index, remaining.length - 1)] ?? null;
   }
+}
+
+/** One label plus the published value, for a query whose configuration the user cannot change. */
+function createReadOnlyPropertyField(
+  doc: Document,
+  property: ViewTypeProperty,
+  stored: string | undefined,
+): HTMLElement {
+  const setting = doc.createElement("div");
+  setting.className = "setting";
+  const field = doc.createElement("div");
+  field.className = "field";
+  const label = doc.createElement("span");
+  label.className = "field__label";
+  label.textContent = property.label;
+  const value = doc.createElement("output");
+  value.className = "binding__readonly";
+  value.textContent = describePropertyValue(property, stored);
+  field.append(label, value);
+  setting.append(field);
+  if (property.hint !== undefined) {
+    const hint = doc.createElement("p");
+    hint.className = "field__hint";
+    hint.textContent = property.hint;
+    setting.append(hint);
+  }
+  return setting;
+}
+
+/** The published value as the user reads it, not as it is stored. */
+function describePropertyValue(property: ViewTypeProperty, stored: string | undefined): string {
+  const value = resolveViewTypePropertyValue(property, stored);
+  const kind = viewTypePropertyKind(property);
+  if (kind === "select") {
+    return property.options?.find((option) => option.value === value)?.label ?? value;
+  }
+  if (kind === "area-path-list") {
+    const paths = value.split(/\r?\n/).filter((path) => path.trim().length > 0);
+    return paths.length === 0 ? "None" : paths.join(", ");
+  }
+  return value.length === 0 ? "Not set" : value;
 }
 
 function propertyDescription(property: ViewTypeProperty): string {

@@ -6,7 +6,7 @@ import type { ILogger } from "../logging/ILogger";
 import { DEFAULT_SETTINGS, type ExtensionSettings } from "../settings/ExtensionSettings";
 import type { ISettingsStore } from "../settings/ISettingsStore";
 
-import { exportConfig } from "./AwesomeAdoConfig";
+import { exportConfig, exportConnectionConfig } from "./AwesomeAdoConfig";
 import type { TeamConfigSourceStore } from "./TeamConfigSourceStore";
 import {
   TeamConfigSynchronizer,
@@ -157,6 +157,23 @@ describe("TeamConfigSynchronizer pull", () => {
     await harness.synchronizer.pull();
 
     expect(harness.sourceStore.write).not.toHaveBeenCalled();
+  });
+});
+
+describe("TeamConfigSynchronizer pull rejections", () => {
+  it("refuses a connection-only payload, which names a source instead of being one", async () => {
+    // Adopting it would replace the team's shared bindings with its empty set on every client.
+    const harness = makeHarness();
+    vi.mocked(harness.reader.read).mockResolvedValue({
+      ok: true,
+      text: exportConnectionConfig(DEFAULT_SETTINGS, 42),
+    });
+
+    const result = await harness.synchronizer.pull();
+
+    expect(result.status).toBe("failed");
+    expect(harness.settingsStore.write).not.toHaveBeenCalled();
+    expect(harness.bindingStore.replaceAll).not.toHaveBeenCalled();
   });
 });
 

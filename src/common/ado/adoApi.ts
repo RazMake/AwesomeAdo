@@ -89,3 +89,21 @@ export function identityFieldValue(user: {
     ? user.uniqueName
     : user.displayName;
 }
+
+/**
+ * The string a JSON Patch `test` on an identity field must carry to match.
+ *
+ * Setting an identity resolves whatever handle it is given, but TESTING one does not resolve
+ * anything: Azure DevOps compares the value literally against the identity's stored display form,
+ * `Display Name <unique.name>`. The sign-in address `identityFieldValue` writes is therefore refused
+ * with HTTP 412 as a precondition — verified against a live item, where only this exact form passed.
+ * An identity with no address is stored as its display name alone, which is the fallback here.
+ */
+export function identityTestValue(user: {
+  displayName: string;
+  uniqueName: string | null;
+}): string {
+  return user.uniqueName !== null && user.uniqueName.length > 0
+    ? `${user.displayName} <${user.uniqueName}>`
+    : user.displayName;
+}

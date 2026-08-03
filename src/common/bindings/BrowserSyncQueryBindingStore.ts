@@ -1,5 +1,6 @@
 import type { IBrowserSyncStorage } from "../browser/IBrowserSyncStorage";
 import { observeStorageKeys, type StorageObservation } from "../browser/observeStorageKeys";
+import { removeSyncedMapEntry } from "../browser/syncedMap";
 import type { ILogger } from "../logging/ILogger";
 
 import type { IQueryBindingStore } from "./IQueryBindingStore";
@@ -39,17 +40,16 @@ export class BrowserSyncQueryBindingStore implements IQueryBindingStore {
   }
 
   async unbind(queryId: string): Promise<void> {
-    // Same read-modify-write on the shared map. Rewriting without the key is how a single binding is
-    // removed, since the storage layer only knows how to set a whole key's value.
-    const current = await this.read();
-    if (current[queryId] === undefined) {
-      // No transition happened, so nothing is logged — the log only records real state changes.
-      return;
+    const removed = await removeSyncedMapEntry(
+      this.storage,
+      BINDINGS_KEY,
+      await this.read(),
+      queryId,
+    );
+    // No transition happened, so nothing is logged — the log only records real state changes.
+    if (removed !== null) {
+      this.logger?.info(`Unbound query ${queryId}: was view=${removed.view}`);
     }
-    const rest = { ...current };
-    delete rest[queryId];
-    await this.storage.set(BINDINGS_KEY, rest);
-    this.logger?.info(`Unbound query ${queryId}: was view=${current[queryId].view}`);
   }
 
   async replaceAll(bindings: QueryBindings): Promise<void> {

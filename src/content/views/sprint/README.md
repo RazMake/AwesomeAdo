@@ -40,11 +40,13 @@ unassigned visible cards are counted as excluded, filtered-out cards and impleme
 children never enter it, and later query arrivals are never added. During execution each snapshot ID
 is freshly read and guarded atomically by its State, Area Path, and Assigned To values before its
 `System.IterationPath` changes. A card that became Done, unassigned, reassigned, or moved Lane is
-skipped. Transient failures retry three times with backoff; conflicts return to a fresh validation
-pass, bounded to 100 passes and 10,000 confirmed items. Refresh, sprint/filter actions, and other
+skipped. Transient failures retry three times with backoff; a conflict returns to a fresh validation
+pass, up to three times per card before that card is reported as failed, bounded overall to 100
+passes and 10,000 confirmed items. Refresh, sprint/filter actions, and other
 page interactions are blocked while the operation runs; leaving the page warns, Escape or **Cancel**
 finishes the current write and skips the remainder, and the header reports moved/failed/skipped
-counts with failures linked to Diagnostics.
+counts with failures linked to Diagnostics. The header status stays live and clickable throughout —
+it is the one region the interaction guard never blocks.
 
 Right-clicking a card or direct-child row opens Project Tracking's item commands: copy/open, title,
 description, sprint, area, notes, and both blocker markers. Sprint alone opts into Interrupt

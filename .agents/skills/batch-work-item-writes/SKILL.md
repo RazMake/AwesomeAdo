@@ -132,12 +132,25 @@ When the new value is **derived** from the field's current value, pass that curr
 rev — but only while the field still holds `baseValue`, so a genuine concurrent change to that field
 is still reported rather than overwritten.
 
+## Still HTTP 412 with a current rev? A `test` op is being refused
+
+`preconditions` become `test` ops too, and a refused one is the same 412 as a stale rev — with the
+rev perfectly current, and with no rebase available (a preconditioned request never rebases). A
+`test` is compared **literally**, so a value ADO would happily RESOLVE on a write can still fail as a
+guard: `System.AssignedTo` must be tested as `identityTestValue(user)`
+(`Display Name <unique.name>`), never as the sign-in address `identityFieldValue` writes.
+
+To find which op is refused, send a patch of **only** `test` ops from the ADO tab's own MAIN world:
+nothing is written, `200` means every test passed, `412` means one did not, and the fields can be
+bisected one at a time against a real item.
+
 ## Red flags in review
 
 - Two `await`ed writes to the same item id inside one handler.
 - `noteWriter.addNote(...)` next to a `queue.enqueue(...)` for the same item.
 - A compensating "undo the first write" branch — that is the symptom, not the fix; merge the writes.
 - A new `HTTP 412` appearing only for a command that also comments.
+- A `precondition` on an identity field carrying a sign-in address instead of `identityTestValue`.
 - A new **positional** parameter on anything passed to `executeScript` as `func`.
 - A write failing with no HTTP status in the message — that is the injection being rejected, not ADO.
 

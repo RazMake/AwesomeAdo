@@ -6,11 +6,14 @@ import { DEFAULT_SETTINGS, type ExtensionSettings } from "../settings/ExtensionS
 import {
   CONFIG_FILE_NAME,
   CONFIG_FORMAT_VERSION,
+  CONNECTION_FILE_NAME,
   exportCompactConfig,
   exportConfig,
+  exportConnectionConfig,
   importConfig,
   mergeImportedSettings,
   type AwesomeAdoConfig,
+  type AwesomeAdoConnectionConfig,
 } from "./AwesomeAdoConfig";
 
 const sampleSettings: ExtensionSettings = {
@@ -52,6 +55,71 @@ function withoutPrimaryWork(settings: ExtensionSettings): ExtensionSettings {
     }),
   };
 }
+
+describe("exportConnectionConfig", () => {
+  it("names the connection file distinctly from a full export", () => {
+    expect(CONNECTION_FILE_NAME).toBe("AwesomeADO.connection.config");
+    expect(CONNECTION_FILE_NAME).not.toBe(CONFIG_FILE_NAME);
+  });
+
+  it("carries the work item plus only what is needed to reach it", () => {
+    const parsed = JSON.parse(
+      exportConnectionConfig({ ...sampleSettings, organization: "contoso", project: "Web" }, 12345),
+    ) as AwesomeAdoConnectionConfig;
+
+    expect(parsed.configScope).toBe("connection");
+    expect(parsed.teamConfigWorkItemId).toBe(12345);
+    expect(parsed.settings).toEqual({ organization: "contoso", project: "Web" });
+  });
+
+  it("carries no snapshot of the configuration the work item itself supplies", () => {
+    // Handing over the full file would also hand over a copy that starts drifting the moment the
+    // team publishes again.
+    const parsed = JSON.parse(exportConnectionConfig(sampleSettings, 1)) as Record<string, unknown>;
+
+    expect(parsed).not.toHaveProperty("enhancedQueries");
+    expect(parsed.settings).not.toHaveProperty("theme");
+    expect(parsed.settings).not.toHaveProperty("workItemTypes");
+  });
+});
+
+describe("importConfig of a connection file", () => {
+  it("applies the connection without claiming authority over the reader's bindings", () => {
+    const imported = importConfig(
+      exportConnectionConfig({ ...sampleSettings, organization: "contoso", project: "Web" }, 777),
+    );
+
+    expect(imported.teamConfigWorkItemId).toBe(777);
+    expect(imported.replacesBindings).toBe(false);
+    expect(imported.enhancedQueries).toEqual({});
+    expect(imported.settings.organization).toBe("contoso");
+    expect(imported.problems).toEqual([]);
+  });
+
+  it("reports a connection file that names no work item", () => {
+    const imported = importConfig(
+      JSON.stringify({
+        awesomeAdoConfigVersion: CONFIG_FORMAT_VERSION,
+        configScope: "connection",
+        settings: { organization: "contoso" },
+      }),
+    );
+
+    expect(imported.problems).toContain(
+      "The selected connection file does not name a configuration work item ID.",
+    );
+  });
+
+  it("still rejects a connection file with no settings section at all", () => {
+    expect(() =>
+      importConfig(JSON.stringify({ awesomeAdoConfigVersion: 2, configScope: "connection" })),
+    ).toThrow(/not a usable AwesomeADO connection/);
+  });
+
+  it("treats a full export as authoritative about bindings", () => {
+    expect(importConfig(exportConfig(sampleSettings, sampleBindings)).replacesBindings).toBe(true);
+  });
+});
 
 describe("exportConfig", () => {
   it("names the export file AwesomeADO.config", () => {

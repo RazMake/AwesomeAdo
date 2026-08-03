@@ -116,7 +116,9 @@ describe("runSprintBulkMove write guard", () => {
       preconditions: [
         { field: "System.State", value: "Active" },
         { field: "System.AreaPath", value: "Project\\API" },
-        { field: "System.AssignedTo", value: "alice@example.com" },
+        // ADO compares an identity `test` literally against its stored display form; the sign-in
+        // address that SETS the field is refused with HTTP 412 as a precondition.
+        { field: "System.AssignedTo", value: "Alice <alice@example.com>" },
       ],
     });
     // The rev guard is the whole point of the resolver: it must report the rev of the item this
@@ -139,6 +141,25 @@ describe("runSprintBulkMove write guard", () => {
       ["running", 1],
       ["completed", 1],
     ]);
+  });
+
+  it("guards an addressless identity by its display name, which is all ADO stores for one", async () => {
+    const moving = item(1);
+    moving.assignedTo = { displayName: "Alice", uniqueName: null, imageUrl: null };
+    const enqueue = enqueueSpy().mockResolvedValue({ ok: true, rev: 2 });
+
+    await runSprintBulkMove(
+      options({
+        loadRoots: async () => [moving],
+        candidates: [{ ...candidate(1), assigneeValue: "Alice" }],
+        writes: { enqueue },
+      }),
+    );
+
+    expect(enqueue.mock.calls[0]![0].preconditions).toContainEqual({
+      field: "System.AssignedTo",
+      value: "Alice",
+    });
   });
 });
 
@@ -246,6 +267,27 @@ describe("runSprintBulkMove retries", () => {
       ["running", 1],
       ["completed", 1],
     ]);
+  });
+
+  it("gives a conflicted item a fresh pass, then gives up instead of spending the pass budget", async () => {
+    const enqueue = enqueueSpy().mockResolvedValue({ ok: false, error: "HTTP 412" });
+
+    const result = await runSprintBulkMove(
+      options({
+        loadRoots: async () => [item(1)],
+        writes: { enqueue },
+        limits: { maxPasses: 50, maxItems: 10 },
+      }),
+    );
+
+    expect(enqueuedIds(enqueue)).toEqual([1, 1, 1]);
+    expect(result).toMatchObject({
+      phase: "completed",
+      pass: 3,
+      moved: 0,
+      failed: 1,
+      lastError: "HTTP 412",
+    });
   });
 });
 

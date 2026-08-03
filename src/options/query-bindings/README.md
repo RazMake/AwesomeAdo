@@ -20,6 +20,19 @@ tab has two mutually exclusive layouts, chosen from what is in context:
 It supports two entry paths: a fixed query deep-linked from a query's top-bar button, and free
 selection from the options page itself.
 
+### Shared (read-only) queries
+
+A query opened from someone else's shared link, when the user is **not** on that publisher's team,
+is listed here alongside their own bindings but is **read-only**: the view picker is disabled, Save
+is hidden, and each property is shown as its published value rather than as an input. Editing is
+removed rather than merely discouraged — those values live in a work item this user cannot write to,
+so an enabled Save could only ever produce a local copy that silently diverges from the query
+everyone else is looking at.
+
+A notice names the work item the configuration comes from, and Delete becomes **Remove link**, which
+drops the link instead of deleting a binding the user never owned. Values refresh the same way the
+ordinary path does: the tab re-resolves the work item whenever the configuration is reloaded.
+
 This component does not log; it surfaces failures through the options page's shared error sink.
 
 ## Public API
@@ -44,6 +57,10 @@ This component does not log; it surfaces failures through the options page's sha
   stays testable without a real DOM.
 - **`CurrentQueryIdResolver`** — an injected `() => Promise<string | null>` the controller uses to
   preselect the query the active ADO tab is on.
+- **`SharedQueryAccess`** — `{ sources, resolver }`: the synced read-only links and the memoizing
+  reader for the work items they point at. Optional; omitting it means this build shows no shared
+  queries. The resolver memoizes per work item, so a team that shares five queries from one item is
+  read once, and `reload()` invalidates it before re-resolving.
 
 ### `AreaPathListEditor.ts`
 

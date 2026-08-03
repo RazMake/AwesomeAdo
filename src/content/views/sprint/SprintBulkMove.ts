@@ -1,6 +1,6 @@
 import type { TrackedWorkItem, TypeCatalogEntry } from "../../../common/ado/TrackedWorkItem";
 import type { WorkItemWriteQueue } from "../../../common/ado/WorkItemWriteQueue/WorkItemWriteQueue";
-import { identityFieldValue } from "../../../common/ado/adoApi";
+import { identityFieldValue, identityTestValue } from "../../../common/ado/adoApi";
 import type { ILogger } from "../../../common/logging/ILogger";
 
 const ITERATION_PATH_FIELD = "System.IterationPath";
@@ -12,6 +12,7 @@ const DEFAULT_MAX_PASSES = 100;
 const DEFAULT_MAX_ITEMS = 10_000;
 const TRANSIENT_RETRIES = 3;
 const INITIAL_RETRY_DELAY_MS = 250;
+const MAX_CONFLICT_DEFERRALS = 3;
 
 export type SprintBulkMovePhase = "running" | "completed" | "cancelled" | "limited" | "failed";
 
@@ -134,7 +135,12 @@ async function moveOne(
       preconditions: [
         { field: STATE_FIELD, value: item.state },
         { field: AREA_PATH_FIELD, value: candidate.areaPath },
-        { field: ASSIGNED_TO_FIELD, value: candidate.assigneeValue },
+        // The freshly read identity, in the display form ADO compares a `test` against: the sign-in
+        // address that SETS this field is refused as a precondition, failing every move with 412.
+        {
+          field: ASSIGNED_TO_FIELD,
+          value: item.assignedTo === null ? null : identityTestValue(item.assignedTo),
+        },
       ],
     });
     if (result.ok) {
@@ -160,6 +166,7 @@ interface BulkMoveRunState {
   failedIds: Set<number>;
   skippedIds: Set<number>;
   examinedIds: Set<number>;
+  conflictCounts: Map<number, number>;
   lastError?: string;
 }
 
@@ -172,6 +179,7 @@ function createRunState(candidates: readonly SprintBulkMoveCandidate[]): BulkMov
     failedIds: new Set<number>(),
     skippedIds: new Set<number>(),
     examinedIds: new Set<number>(),
+    conflictCounts: new Map<number, number>(),
   };
 }
 
@@ -213,6 +221,17 @@ function candidatesForPass(
   return eligible;
 }
 
+/**
+ * A conflict earns a fresh pass, but only a few: an item that keeps losing the race would otherwise
+ * hold the whole run — and every remaining item behind it — for the full 100-pass budget, each pass
+ * paying for another complete re-read. Giving up on it reports the failure while the run moves on.
+ */
+function exhaustedConflicts(state: BulkMoveRunState, itemId: number): boolean {
+  const seen = (state.conflictCounts.get(itemId) ?? 0) + 1;
+  state.conflictCounts.set(itemId, seen);
+  return seen >= MAX_CONFLICT_DEFERRALS;
+}
+
 function recordOutcome(
   state: BulkMoveRunState,
   itemId: number,
@@ -221,8 +240,10 @@ function recordOutcome(
 ): void {
   state.lastError = error ?? state.lastError;
   if (outcome === "moved") state.movedIds.add(itemId);
-  if (outcome === "failed") state.failedIds.add(itemId);
-  if (outcome === "moved" || outcome === "failed") state.remainingIds.delete(itemId);
+  const givenUp =
+    outcome === "failed" || (outcome === "defer" && exhaustedConflicts(state, itemId));
+  if (givenUp) state.failedIds.add(itemId);
+  if (outcome === "moved" || givenUp) state.remainingIds.delete(itemId);
 }
 
 async function runPass(

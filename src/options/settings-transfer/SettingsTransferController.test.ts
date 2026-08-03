@@ -4,7 +4,10 @@ import type { IQueryBindingStore } from "../../common/bindings/IQueryBindingStor
 import type { QueryBindings } from "../../common/bindings/QueryBinding";
 import { DEFAULT_SETTINGS, type ExtensionSettings } from "../../common/settings/ExtensionSettings";
 import type { ISettingsStore } from "../../common/settings/ISettingsStore";
-import { exportConfig } from "../../common/settings-transfer/AwesomeAdoConfig";
+import {
+  exportConfig,
+  exportConnectionConfig,
+} from "../../common/settings-transfer/AwesomeAdoConfig";
 import type { TeamConfigSourceStore } from "../../common/settings-transfer/TeamConfigSourceStore";
 
 import {
@@ -45,6 +48,7 @@ class FakeTeamConfigSourceStore implements TeamConfigSourceStore {
 function makeElements(): SettingsTransferElements {
   return {
     exportButton: document.createElement("button"),
+    exportConnectionButton: document.createElement("button"),
     importButton: document.createElement("button"),
     fileInput: document.createElement("input"),
     status: document.createElement("p"),
@@ -181,6 +185,31 @@ describe("SettingsTransferController export", () => {
   });
 });
 
+describe("SettingsTransferController connection export", () => {
+  it("downloads only the connection to the shared work item", async () => {
+    const h = setup();
+
+    h.elements.exportConnectionButton.dispatchEvent(new Event("click"));
+    await flush();
+
+    expect(h.downloaded.name).toBe("AwesomeADO.connection.config");
+    const parsed = JSON.parse(await h.downloaded.blobs[0]!.text()) as Record<string, unknown>;
+    expect(parsed.teamConfigWorkItemId).toBe(42);
+    expect(parsed).not.toHaveProperty("enhancedQueries");
+    expect(h.elements.status.textContent).toContain("42");
+  });
+
+  it("refuses to export a connection that does not exist yet", async () => {
+    const h = setup({ teamConfigWorkItemId: null });
+
+    h.elements.exportConnectionButton.dispatchEvent(new Event("click"));
+    await flush();
+
+    expect(h.downloaded.blobs).toHaveLength(0);
+    expect(h.elements.status.textContent).toContain("Connect to a configuration work item");
+  });
+});
+
 describe("SettingsTransferController import", () => {
   it("opens the hidden file input when Import is clicked", () => {
     const h = setup();
@@ -228,6 +257,22 @@ describe("SettingsTransferController import", () => {
     // An absent ID means "this file predates the connection", never "disconnect me".
     expect(h.teamConfigSourceStore.write).not.toHaveBeenCalled();
     expect(await h.teamConfigSourceStore.read()).toBe(42);
+  });
+
+  it("adopts a connection file without deleting the enhanced queries it never described", async () => {
+    const h = setup();
+
+    chooseFile(
+      h.elements.fileInput,
+      exportConnectionConfig({ ...DEFAULT_SETTINGS, organization: "contoso" }, 777),
+    );
+    await flush();
+
+    expect(h.teamConfigSourceStore.write).toHaveBeenCalledWith(777);
+    expect(h.settingsStore.written?.organization).toBe("contoso");
+    // The whole point of the narrow file: it points at a source, so it must not replace the set.
+    expect(h.bindingStore.replaceAll).not.toHaveBeenCalled();
+    expect(h.elements.status.textContent).toContain("Imported the team connection.");
   });
 });
 

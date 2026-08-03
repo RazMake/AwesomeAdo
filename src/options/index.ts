@@ -14,7 +14,9 @@ import { ChromeAdoTabReader } from "../common/browser/ChromeAdoTabReader";
 import { ChromeTeamConfigClient } from "../common/browser/ChromeTeamConfigClient";
 import { createLogging } from "../common/logging/createLogger";
 import { createSettingsStore } from "../common/settings/createSettingsStore";
+import { SharedQueryConfigResolver } from "../common/settings-transfer/SharedQueryConfigResolver";
 import { TeamConfigSynchronizer } from "../common/settings-transfer/TeamConfigSynchronizer";
+import { createSharedQuerySourceStore } from "../common/settings-transfer/createSharedQuerySourceStore";
 import { createTeamConfigSourceStore } from "../common/settings-transfer/createTeamConfigSourceStore";
 
 import {
@@ -122,6 +124,16 @@ const teamConfigSynchronizer = new TeamConfigSynchronizer(
   loggers.forSource("common/settings-transfer"),
 );
 
+// Queries shared read-only from someone else's configuration work item. The resolver memoizes per
+// work item, so listing several queries shared from one item costs a single credentialed read.
+const sharedQuerySourceStore = createSharedQuerySourceStore(
+  loggers.forSource("common/settings-transfer"),
+);
+const sharedConfigResolver = new SharedQueryConfigResolver(
+  teamConfigClient,
+  loggers.forSource("common/settings-transfer"),
+);
+
 // One tab reader shared by the controllers that read from the active ADO tab: the Appearance panel
 // resolves "auto" from its theme, and the Query Bindings picker asks it which query that tab is on.
 const adoTabReader = new ChromeAdoTabReader();
@@ -174,13 +186,23 @@ if (themeSelect && defaultViewSelect) {
 // Import/Export lives on the Appearance tab and spans both stores, so a single file captures and
 // restores the whole configuration (settings + every enhanced-query binding).
 const settingsExportButton = document.querySelector<HTMLButtonElement>("#settings-export");
+const settingsExportConnectionButton = document.querySelector<HTMLButtonElement>(
+  "#settings-export-connection",
+);
 const settingsImportButton = document.querySelector<HTMLButtonElement>("#settings-import");
 const settingsImportFile = document.querySelector<HTMLInputElement>("#settings-import-file");
 const settingsTransferStatus = document.querySelector<HTMLElement>("#settings-transfer-status");
 
-if (settingsExportButton && settingsImportButton && settingsImportFile && settingsTransferStatus) {
+if (
+  settingsExportButton &&
+  settingsExportConnectionButton &&
+  settingsImportButton &&
+  settingsImportFile &&
+  settingsTransferStatus
+) {
   const transferElements: SettingsTransferElements = {
     exportButton: settingsExportButton,
+    exportConnectionButton: settingsExportConnectionButton,
     importButton: settingsImportButton,
     fileInput: settingsImportFile,
     status: settingsTransferStatus,
@@ -335,6 +357,7 @@ const bindingViewConfigCard = document.querySelector<HTMLElement>("#binding-view
 const bindingViewSelect = document.querySelector<HTMLSelectElement>("#binding-view-select");
 const bindingProperties = document.querySelector<HTMLElement>("#binding-properties");
 const bindingSave = document.querySelector<HTMLButtonElement>("#binding-save");
+const bindingSharedNotice = document.querySelector<HTMLElement>("#binding-shared-notice");
 const bindingStatus = document.querySelector<HTMLElement>("#binding-status");
 
 if (
@@ -350,6 +373,7 @@ if (
   bindingViewSelect &&
   bindingProperties &&
   bindingSave &&
+  bindingSharedNotice &&
   bindingStatus
 ) {
   const bindingElements: QueryBindingsElements = {
@@ -365,6 +389,7 @@ if (
     viewSelect: bindingViewSelect,
     properties: bindingProperties,
     saveButton: bindingSave,
+    sharedNotice: bindingSharedNotice,
     status: bindingStatus,
   };
   const queryId = readQueryIdFromSearch(location.search);
@@ -387,6 +412,7 @@ if (
           throw new Error(`Could not publish team configuration: ${result.error}`);
         }
       },
+      sharedQueries: { sources: sharedQuerySourceStore, resolver: sharedConfigResolver },
     },
   );
   void bindings.init(queryId, queryName).catch((error: unknown) => {

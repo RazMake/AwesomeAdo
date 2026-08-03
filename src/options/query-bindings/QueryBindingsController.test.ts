@@ -6,7 +6,11 @@ import { DEFAULT_SETTINGS } from "../../common/settings/ExtensionSettings";
 import { exportConfig } from "../../common/settings-transfer/AwesomeAdoConfig";
 import type { ViewType } from "../../common/view-common/ViewType";
 
-import { QueryBindingsController, type QueryBindingsElements } from "./QueryBindingsController";
+import {
+  QueryBindingsController,
+  type QueryBindingsElements,
+  type SharedQueryAccess,
+} from "./QueryBindingsController";
 
 const GUID_A = "12345678-1234-1234-1234-123456789abc";
 const GUID_B = "abcdef00-0000-0000-0000-000000000000";
@@ -125,8 +129,9 @@ function makeElements(): QueryBindingsElements {
   const viewSelect = create<HTMLSelectElement>("select");
   const properties = create<HTMLElement>("div");
   const saveButton = create<HTMLButtonElement>("button");
+  const sharedNotice = create<HTMLElement>("p");
   const status = create<HTMLElement>("span");
-  viewConfigCard.append(viewSelect, properties, saveButton, status);
+  viewConfigCard.append(viewSelect, properties, saveButton, sharedNotice, status);
 
   const root = create<HTMLElement>("div");
   root.append(emptyState, addCard, editCard, viewConfigCard);
@@ -144,6 +149,7 @@ function makeElements(): QueryBindingsElements {
     viewSelect,
     properties,
     saveButton,
+    sharedNotice,
     status,
   };
 }
@@ -912,5 +918,141 @@ describe("view property kinds — clamping & selects", () => {
 
     expect(propInput("orderField")?.value).toBe("Microsoft.VSTS.Common.StackRank");
     expect(propInput("weeks")?.value).toBe("2");
+  });
+});
+
+/** The binding a shared work item publishes for GUID_B, used by both shared-query groups. */
+const SHARED_BINDING: QueryBinding = {
+  view: "config",
+  properties: { orderField: "Custom.Rank", weeks: "6", ordering: "title" },
+  name: "Their board",
+};
+
+const sharedAccess = (
+  links: Record<string, number>,
+  bindings: QueryBindings = { [GUID_B]: SHARED_BINDING },
+) => ({
+  sources: {
+    read: vi.fn(async () => links),
+    link: vi.fn(async () => {}),
+    unlink: vi.fn(async (queryId: string) => {
+      delete links[queryId];
+    }),
+    observe: vi.fn(() => ({ ready: Promise.resolve(), unsubscribe: vi.fn() })),
+  },
+  resolver: {
+    resolve: vi.fn(async (workItemId: number) => ({
+      workItemId,
+      settings: {},
+      bindings,
+      teamId: "team-guid",
+    })),
+    invalidate: vi.fn(),
+  },
+});
+
+const controllerWithShared = (
+  store: FakeStore,
+  shared: ReturnType<typeof sharedAccess>,
+): QueryBindingsController =>
+  new QueryBindingsController(
+    store as unknown as IQueryBindingStore,
+    elements,
+    reportError as unknown as (error: unknown) => void,
+    { viewTypes: CONFIG_VIEWS, sharedQueries: shared as unknown as SharedQueryAccess },
+  );
+
+const readOnlyValues = (): string[] =>
+  [...elements.properties.querySelectorAll("output")].map((output) => output.textContent ?? "");
+
+describe("QueryBindingsController shared queries", () => {
+  it("lists a shared query alongside the user's own bindings", async () => {
+    const shared = sharedAccess({ [GUID_B]: 42 });
+    await controllerWithShared(
+      makeStore({ [GUID_A]: { view: "sprint", properties: {}, name: "Mine" } }),
+      shared,
+    ).init(null, null);
+
+    expect([...elements.querySelect.options].map((option) => option.value)).toEqual([
+      GUID_A,
+      GUID_B,
+    ]);
+    expect(elements.querySelect.options[1]?.textContent).toContain("Their board");
+  });
+
+  it("reads one work item once however many queries are shared from it", async () => {
+    const shared = sharedAccess(
+      { [GUID_B]: 42, [GUID_C]: 42 },
+      { [GUID_B]: SHARED_BINDING, [GUID_C]: SHARED_BINDING },
+    );
+    await controllerWithShared(makeStore(), shared).init(null, null);
+
+    // The resolver is asked per query but memoizes per work item; the options page must not defeat
+    // that by resolving each link through a fresh reader.
+    expect(shared.resolver.resolve).toHaveBeenCalledWith(42);
+    expect(new Set(shared.resolver.resolve.mock.calls.map(([id]) => id))).toEqual(new Set([42]));
+  });
+
+  it("drops its memoized reads before re-resolving after an import or pull", async () => {
+    const shared = sharedAccess({ [GUID_B]: 42 });
+    const controller = controllerWithShared(makeStore(), shared);
+    await controller.init(null, null);
+
+    await controller.reload();
+
+    expect(shared.resolver.invalidate).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("QueryBindingsController shared query configuration card", () => {
+  it("shows the publisher's values read-only, with no way to change them", async () => {
+    const shared = sharedAccess({ [GUID_B]: 42 });
+    await controllerWithShared(makeStore(), shared).init(GUID_B, null);
+
+    expect(elements.viewSelect.value).toBe("config");
+    expect(elements.viewSelect.disabled).toBe(true);
+    expect(elements.saveButton.hidden).toBe(true);
+    expect(elements.properties.querySelectorAll("input, select")).toHaveLength(0);
+    expect(readOnlyValues()).toEqual(["Custom.Rank", "6", "By title"]);
+    expect(elements.sharedNotice.hidden).toBe(false);
+    expect(elements.sharedNotice.textContent).toContain("work item 42");
+  });
+
+  it("says so when the publisher does not enhance the shared query", async () => {
+    const shared = sharedAccess({ [GUID_B]: 42 }, {});
+    await controllerWithShared(makeStore(), shared).init(GUID_B, null);
+
+    expect(elements.sharedNotice.textContent).toContain("does not currently enhance this query");
+  });
+
+  it("removes the link instead of deleting a binding the user does not own", async () => {
+    const shared = sharedAccess({ [GUID_B]: 42 });
+    const store = makeStore();
+    await controllerWithShared(store, shared).init(GUID_B, null);
+
+    expect(elements.deleteButton.textContent).toBe("Remove link");
+    elements.deleteButton.click();
+    await settle();
+
+    expect(shared.sources.unlink).toHaveBeenCalledWith(GUID_B);
+    expect(store.unbind).not.toHaveBeenCalled();
+    expect(elements.status.textContent).toBe("Removed the shared link.");
+  });
+
+  it("restores an editable card when the user selects one of their own queries", async () => {
+    const shared = sharedAccess({ [GUID_B]: 42 });
+    await controllerWithShared(
+      makeStore({ [GUID_A]: { view: "config", properties: {}, name: "Mine" } }),
+      shared,
+    ).init(GUID_B, null);
+
+    elements.querySelect.value = GUID_A;
+    elements.querySelect.dispatchEvent(new Event("change"));
+
+    expect(elements.viewSelect.disabled).toBe(false);
+    expect(elements.saveButton.hidden).toBe(false);
+    expect(elements.deleteButton.textContent).toBe("Delete");
+    expect(elements.sharedNotice.hidden).toBe(true);
+    expect(propInput("orderField")).not.toBeNull();
   });
 });

@@ -8,6 +8,7 @@ import { buildAdoQueryDefinitionUrl } from "../common/ado/QueryDefinition";
 import { buildAdoIterationsUrl } from "../common/ado/TeamIteration";
 import { buildAdoTeamMembersUrl } from "../common/ado/TeamMembers";
 import { IMPORTANCE_FIELD } from "../common/ado/adoApi";
+import { buildAdoConnectionDataUrl } from "../common/ado/currentUser";
 import { buildAdoIdentitySearchRequest } from "../common/ado/fetchAdoIdentities";
 import {
   buildAdoTreeUrls,
@@ -86,6 +87,12 @@ import {
   type LoadQueryTreeMessage,
   type LoadQueryTreeResponse,
 } from "../common/browser/AdoTreeRequest";
+import {
+  isReadCurrentUserMessage,
+  READ_CURRENT_USER_MESSAGE,
+  type ReadCurrentUserMessage,
+  type ReadCurrentUserResponse,
+} from "../common/browser/CurrentUserRequest";
 import {
   isReconcileFeatureCrewMessage,
   type ReconcileFeatureCrewMessage,
@@ -408,6 +415,25 @@ chrome.runtime.onMessage.addListener(
   }),
 );
 
+// One credentialed page GET in the sender's own tab. Shared by every handler whose whole job is
+// "read this URL as the signed-in user", so the injection shape and the "injection produced nothing"
+// outcome are written once instead of once per operation.
+const readInPage = async (tabId: number, url: string): Promise<AdoPageRequestOutcome> => {
+  const results = await chrome.scripting.executeScript({
+    target: { tabId },
+    world: "MAIN",
+    func: executeAdoRequestInPage,
+    args: [{ operation: "read", url }],
+  });
+  return (
+    (firstScriptResult(results) as AdoPageRequestOutcome | undefined) ?? {
+      raw: null,
+      status: 0,
+      error: "MAIN-world injection returned no result",
+    }
+  );
+};
+
 const loadQueryDefinition = async (
   message: LoadQueryDefinitionMessage,
   tabId: number,
@@ -420,18 +446,7 @@ const loadQueryDefinition = async (
     return { raw: null, status: 0, error };
   }
   try {
-    const results = await chrome.scripting.executeScript({
-      target: { tabId },
-      world: "MAIN",
-      func: executeAdoRequestInPage,
-      args: [{ operation: "read", url: queryUrl }],
-    });
-    const outcome = results[0]?.result as LoadQueryDefinitionResponse | undefined;
-    if (outcome === undefined) {
-      const error = "MAIN-world injection returned no result";
-      logger.error(`Query-definition read failed for ${message.queryId}: ${error}.`);
-      return { raw: null, status: 0, error };
-    }
+    const outcome = await readInPage(tabId, queryUrl);
     if (outcome.raw === null) {
       logger.error(
         `Query-definition read failed for ${message.queryId}: ${outcome.error ?? `HTTP ${outcome.status}`}.`,
@@ -575,6 +590,52 @@ chrome.runtime.onMessage.addListener(
       response: { raw: null, status: 0, error: "message has no sender tab" },
     }),
     serve: loadTeamMembers,
+  }),
+);
+
+// Membership in a team can only be judged against the identity Azure DevOps itself considers
+// signed in, and that is served from the org's ConnectionData endpoint — reachable only from the
+// tab's credentialed MAIN world. The message carries nothing: the org comes from the SENDER's own
+// trusted tab URL, so a content script can never redirect this read at another collection.
+const readCurrentUser = async (
+  _message: ReadCurrentUserMessage,
+  tabId: number,
+  tabUrl: string,
+): Promise<ReadCurrentUserResponse> => {
+  const connectionUrl = buildAdoConnectionDataUrl(tabUrl);
+  if (connectionUrl === null) {
+    const error = "sender tab URL is not a supported project-scoped ADO location";
+    logger.error(`Signed-in identity read cannot start: ${error}.`);
+    return { raw: null, status: 0, error };
+  }
+  try {
+    const outcome = await readInPage(tabId, connectionUrl);
+    if (outcome.raw === null) {
+      logger.error(`Signed-in identity read failed: ${outcome.error ?? `HTTP ${outcome.status}`}.`);
+    }
+    return outcome;
+  } catch (caught) {
+    const detail = caught instanceof Error ? `${caught.name}: ${caught.message}` : String(caught);
+    logger.error(`Signed-in identity injection failed: ${detail}.`, caught);
+    return { raw: null, status: 0, error: `injection failed: ${detail}` };
+  }
+};
+
+chrome.runtime.onMessage.addListener(
+  tabRequestListener<ReadCurrentUserMessage, ReadCurrentUserResponse>(logger, {
+    claims: (message) => claimsMessageType(message, READ_CURRENT_USER_MESSAGE),
+    malformed: (message) =>
+      isReadCurrentUserMessage(message)
+        ? null
+        : {
+            log: "Signed-in identity request rejected: invalid message.",
+            response: { raw: null, status: 0, error: "invalid message" },
+          },
+    unscriptable: () => ({
+      log: "Cannot read the signed-in identity: message has no sender tab.",
+      response: { raw: null, status: 0, error: "message has no sender tab" },
+    }),
+    serve: readCurrentUser,
   }),
 );
 
@@ -1298,21 +1359,7 @@ const readInterruptAcceptance = async (
         updatePageSize: INTERRUPT_UPDATES_PAGE_SIZE,
         maxUpdatePages: MAX_INTERRUPT_UPDATE_PAGES,
       },
-      async (url) => {
-        const results = await chrome.scripting.executeScript({
-          target: { tabId },
-          world: "MAIN",
-          func: executeAdoRequestInPage,
-          args: [{ operation: "read", url }],
-        });
-        return (
-          (firstScriptResult(results) as AdoPageRequestOutcome | null) ?? {
-            raw: null,
-            status: 0,
-            error: "no result",
-          }
-        );
-      },
+      (url) => readInPage(tabId, url),
     );
     logger.info(
       `Interrupt acceptance read finished: evidence=${raw.evidence.length}, ` +

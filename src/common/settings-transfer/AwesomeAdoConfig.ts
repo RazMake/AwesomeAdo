@@ -12,11 +12,20 @@ import { normalizeWorkItemId } from "./TeamConfigSourceStore";
 /** File name proposed to the user when exporting, and expected (by convention) when importing. */
 export const CONFIG_FILE_NAME = "AwesomeADO.config";
 
+/** File name proposed for the connection-only export that just points at the shared work item. */
+export const CONNECTION_FILE_NAME = "AwesomeADO.connection.config";
+
 /**
  * Format version stamped into every exported file. Version 2 makes the nested Primary Work
  * classification authoritative; version 1 payloads can predate that field and are migrated.
  */
 export const CONFIG_FORMAT_VERSION = 2;
+
+/**
+ * Marks a file that carries only what bootstraps a team connection. A file without a scope is a
+ * full configuration, so every export written before this field existed still reads as one.
+ */
+export const CONNECTION_CONFIG_SCOPE = "connection";
 
 /**
  * The on-disk shape of an exported `AwesomeADO.config` file.
@@ -34,6 +43,21 @@ export interface AwesomeAdoConfig {
   teamConfigWorkItemId?: number | null;
 }
 
+/**
+ * The on-disk shape of a connection-only export.
+ *
+ * It deliberately carries no bindings and no presentation settings: its whole job is to let a
+ * teammate adopt the shared work item, which then supplies everything else. Only the organization
+ * and project travel with it, because the connection cannot be resolved without knowing which ADO
+ * collection the work item lives in.
+ */
+export interface AwesomeAdoConnectionConfig {
+  awesomeAdoConfigVersion: number;
+  configScope: typeof CONNECTION_CONFIG_SCOPE;
+  settings: Pick<ExtensionSettings, "organization" | "project">;
+  teamConfigWorkItemId: number | null;
+}
+
 /** The normalized configuration an import yields, ready to persist to the two stores. */
 export interface ImportedConfig {
   /**
@@ -46,6 +70,12 @@ export interface ImportedConfig {
   hasPrimaryWorkClassification: boolean;
   /** Every binding the file described usably. Bindings are replaced wholesale, so this is the set. */
   enhancedQueries: QueryBindings;
+  /**
+   * Whether `enhancedQueries` is authoritative. A connection-only file describes no bindings at all,
+   * so replacing the user's set with its empty one would silently delete every enhanced query they
+   * have — the opposite of what adopting a team connection is for.
+   */
+  replacesBindings: boolean;
   /** Absent for older files and shared payloads, so the current trusted source is preserved. */
   teamConfigWorkItemId?: number | null;
   /** Everything the file got wrong, in words the user can act on. Empty means it imported cleanly. */
@@ -91,6 +121,26 @@ export function exportCompactConfig(
   return serializeConfig(settings, enhancedQueries);
 }
 
+/**
+ * Serialize only what a teammate needs to adopt this team's shared configuration work item.
+ *
+ * Handing someone the full file would also hand them a snapshot that starts drifting the moment the
+ * team publishes again; this one deliberately carries nothing the work item itself will supply.
+ */
+export function exportConnectionConfig(
+  settings: ExtensionSettings,
+  teamConfigWorkItemId: number | null,
+): string {
+  const { organization, project } = normalizeSettings(settings);
+  const config: AwesomeAdoConnectionConfig = {
+    awesomeAdoConfigVersion: CONFIG_FORMAT_VERSION,
+    configScope: CONNECTION_CONFIG_SCOPE,
+    settings: { organization, project },
+    teamConfigWorkItemId: normalizeWorkItemId(teamConfigWorkItemId),
+  };
+  return JSON.stringify(config, null, 2);
+}
+
 function serializeConfig(
   settings: ExtensionSettings,
   enhancedQueries: QueryBindings,
@@ -133,29 +183,44 @@ export function importConfig(text: string): ImportedConfig {
   if (!isRecord(raw)) {
     throw new ConfigImportError(["The selected file is not an AwesomeADO configuration."]);
   }
-  if (!isRecord(raw.settings) || !isRecord(raw.enhancedQueries)) {
+  const connectionOnly = raw.configScope === CONNECTION_CONFIG_SCOPE;
+  if (!isRecord(raw.settings) || (!connectionOnly && !isRecord(raw.enhancedQueries))) {
     throw new ConfigImportError([
-      "The selected file is not a complete AwesomeADO configuration: it must contain both a " +
-        "settings and an enhancedQueries section.",
+      connectionOnly
+        ? "The selected file is not a usable AwesomeADO connection: it must contain a settings " +
+          "section naming the organization and project."
+        : "The selected file is not a complete AwesomeADO configuration: it must contain both a " +
+          "settings and an enhancedQueries section.",
     ]);
   }
   const settings = importSettings(raw.settings);
   const teamConfigSource = importTeamConfigWorkItemId(raw.teamConfigWorkItemId);
+  const enhancedQueries = isRecord(raw.enhancedQueries) ? raw.enhancedQueries : {};
   return {
     settings: settings.accepted,
     hasPrimaryWorkClassification: carriesPrimaryWorkClassification(
       raw.awesomeAdoConfigVersion,
       raw.settings.workItemTypes,
     ),
-    enhancedQueries: normalizeBindings(raw.enhancedQueries),
+    enhancedQueries: connectionOnly ? {} : normalizeBindings(enhancedQueries),
+    replacesBindings: !connectionOnly,
     teamConfigWorkItemId: teamConfigSource.accepted,
     problems: [
       ...collectVersionProblems(raw.awesomeAdoConfigVersion),
       ...settings.problems,
-      ...collectQueryProblems(raw.enhancedQueries),
+      ...(connectionOnly
+        ? collectConnectionProblems(teamConfigSource.accepted)
+        : collectQueryProblems(enhancedQueries)),
       ...teamConfigSource.problems,
     ],
   };
+}
+
+/** A connection file that names no work item bootstraps nothing, so say so instead of applying it. */
+function collectConnectionProblems(workItemId: number | null | undefined): string[] {
+  return workItemId === undefined || workItemId === null
+    ? ["The selected connection file does not name a configuration work item ID."]
+    : [];
 }
 
 /** Merge a parsed payload with current settings, migrating legacy Primary Work omissions. */

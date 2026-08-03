@@ -410,6 +410,24 @@ boundary as iterations.
   transient network, 408, 429, and 5xx failures. The URL is built from the trusted sender tab plus
   the typed team identifier; callers cannot supply an arbitrary URL.
 
+## Reading the signed-in identity
+
+Deciding whether the current user belongs to a team needs the identity Azure DevOps itself considers
+signed in, which is only reachable from a credentialed MAIN-world fetch.
+
+- `CurrentUserRequest.ts` defines and guards the message. It carries **no parameters**: the org is
+  derived from the sender's own trusted tab, so a content script can never redirect the read at
+  another collection.
+- `MessagingCurrentUserReader` implements `common/ado`'s `ICurrentUserReader` over that message,
+  parsing the raw body through `parseCurrentUser` and recording every failure. It never throws \u2014 an
+  unreadable identity comes back as `null`, which callers treat as "undetermined". It keeps three
+  outcomes apart, because they need opposite fixes: the message was never claimed (reported with
+  `UNHANDLED_BY_WORKER` — a service worker running older code than the page), the worker served it
+  and the read failed (its `error`, else the HTTP status), or Azure DevOps answered but named nobody.
+- The worker serves it with `executeAdoRequestInPage({ operation: "read" })` against
+  `buildAdoConnectionDataUrl(tabUrl)`, so it inherits the same three-attempt transient retry as every
+  other page GET.
+
 ## Loading a saved query definition
 
 `AdoQueryDefinitionRequest`, `MessagingQueryDefinitionLoader`, and `executeAdoRequestInPage` read

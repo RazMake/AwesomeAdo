@@ -3,7 +3,8 @@ import type {
   WorkItemNotesRequest,
   WorkItemNotesResult,
 } from "../ado/IWorkItemNoteLoader";
-import { parseCurrentUser, parseWorkItemNotes } from "../ado/fetchWorkItemNotes";
+import { parseCurrentUser } from "../ado/currentUser";
+import { parseWorkItemNotes } from "../ado/fetchWorkItemNotes";
 import type { ILogger } from "../logging/ILogger";
 
 import {

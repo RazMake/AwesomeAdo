@@ -4,7 +4,6 @@ import {
   buildAddNoteUrl,
   buildEditNoteUrl,
   buildWorkItemNotesUrls,
-  parseCurrentUser,
   parseWorkItemNote,
   parseWorkItemNotes,
 } from "./fetchWorkItemNotes";
@@ -72,58 +71,6 @@ describe("buildAddNoteUrl and buildEditNoteUrl", () => {
     expect(buildEditNoteUrl(NOT_ADO, WORK_ITEM_ID, 7)).toBeNull();
     expect(buildAddNoteUrl(ORG_HREF, WORK_ITEM_ID)).toBeNull();
     expect(buildEditNoteUrl(ORG_HREF, WORK_ITEM_ID, 7)).toBeNull();
-  });
-});
-
-describe("parseCurrentUser", () => {
-  it("reads the identity GUID and the sign-in address out of the property bag", () => {
-    const connection = {
-      authenticatedUser: {
-        id: "guid-one",
-        providerDisplayName: "Alice Smith",
-        properties: { Account: { $value: "alice@example.com" } },
-      },
-    };
-
-    expect(parseCurrentUser(connection)).toEqual({
-      displayName: "Alice Smith",
-      id: "guid-one",
-      uniqueName: "alice@example.com",
-    });
-  });
-
-  it("still identifies a reader a tenant returned no address for", () => {
-    const connection = { authenticatedUser: { id: "guid-one", providerDisplayName: "Alice" } };
-
-    expect(parseCurrentUser(connection)).toEqual({
-      displayName: "Alice",
-      id: "guid-one",
-      uniqueName: null,
-    });
-  });
-
-  it("falls back to the sign-in address as the display name when no name was supplied", () => {
-    const connection = {
-      authenticatedUser: { properties: { Account: { $value: "alice@example.com" } } },
-    };
-
-    expect(parseCurrentUser(connection)).toEqual({
-      displayName: "alice@example.com",
-      id: null,
-      uniqueName: "alice@example.com",
-    });
-  });
-
-  it("reports no reader when neither handle is present, so every note stays read-only", () => {
-    expect(parseCurrentUser({ authenticatedUser: { providerDisplayName: "Alice" } })).toBeNull();
-    expect(parseCurrentUser({ authenticatedUser: { id: "", properties: {} } })).toBeNull();
-  });
-
-  it("reports no reader for a body that is not a connection response at all", () => {
-    expect(parseCurrentUser(null)).toBeNull();
-    expect(parseCurrentUser("nope")).toBeNull();
-    expect(parseCurrentUser(42)).toBeNull();
-    expect(parseCurrentUser({})).toBeNull();
   });
 });
 

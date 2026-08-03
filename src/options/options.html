@@ -1099,12 +1099,18 @@
               Export saves <strong>everything</strong> to an <code>AwesomeADO.config</code> file:
               your theme, default view, current team name, sprint counts, board columns, work item
               types, team configuration work item ID, and every enhanced query (which queries are
-              enhanced and each one's view settings). Import replaces your current configuration
-              with the contents of a file you previously exported.
+              enhanced and each one's view settings). Export Connection saves only the configuration
+              work item ID (plus the organization and project needed to reach it), so a teammate can
+              adopt your team's live shared configuration without also inheriting a snapshot of it.
+              Import replaces your current configuration with the contents of a file you previously
+              exported; a connection file leaves your enhanced queries untouched.
             </p>
             <div class="log-toolbar">
               <button type="button" class="button button--subtle" id="settings-export">
                 Export…
+              </button>
+              <button type="button" class="button button--subtle" id="settings-export-connection">
+                Export Connection…
               </button>
               <button type="button" class="button button--subtle" id="settings-import">
                 Import…
@@ -1456,6 +1462,7 @@
         <div class="card binding" id="binding-view-config-card" hidden>
           <h2 class="card__title">Query Enhancement Configuration</h2>
           <p class="card__hint">Choose and configure the enhanced view for the selected query.</p>
+          <p class="card__hint binding__shared-notice" id="binding-shared-notice" hidden></p>
 
           <div class="binding__fields">
             <div class="field field--view-select">

@@ -1,3 +1,4 @@
+import { TeamMembershipReader } from "../common/ado/TeamMembership";
 import { buildSprintWindow } from "../common/ado/sprintWindow";
 import {
   OPEN_BINDING_SETTINGS_MESSAGE,
@@ -5,7 +6,7 @@ import {
   type OpenBindingSettingsMessage,
   type OpenOptionsMessage,
 } from "../common/bindings/BindingRequest";
-import type { ActiveView } from "../common/bindings/QueryBinding";
+import type { ActiveView, QueryBindings } from "../common/bindings/QueryBinding";
 import { createQueryBindingStore } from "../common/bindings/createQueryBindingStore";
 import {
   type ResolveAdoIdentityNamesMessage,
@@ -32,6 +33,10 @@ import {
   type LoadQueryTreeResponse,
 } from "../common/browser/AdoTreeRequest";
 import {
+  type ReadCurrentUserMessage,
+  type ReadCurrentUserResponse,
+} from "../common/browser/CurrentUserRequest";
+import {
   type ReconcileFeatureCrewMessage,
   type ReconcileFeatureCrewResponse,
 } from "../common/browser/FeatureCrewRequest";
@@ -39,6 +44,10 @@ import {
   type ReadInterruptAcceptanceMessage,
   type ReadInterruptAcceptanceResponse,
 } from "../common/browser/InterruptAcceptanceRequest";
+import {
+  MessagingCurrentUserReader,
+  type SendCurrentUserRequest,
+} from "../common/browser/MessagingCurrentUserReader";
 import {
   MessagingFeatureCrewWriter,
   type SendReconcileRequest,
@@ -133,8 +142,11 @@ import {
   normalizeMarkerTags,
 } from "../common/settings/ExtensionSettings";
 import { createSettingsStore } from "../common/settings/createSettingsStore";
+import { SharedQueryConfigResolver } from "../common/settings-transfer/SharedQueryConfigResolver";
+import { SharedQueryLinkService } from "../common/settings-transfer/SharedQueryLinkService";
 import { TeamConfigSynchronizer } from "../common/settings-transfer/TeamConfigSynchronizer";
 import { TeamSprintAreaPathStore } from "../common/settings-transfer/TeamSprintAreaPathStore";
+import { createSharedQuerySourceStore } from "../common/settings-transfer/createSharedQuerySourceStore";
 import { createTeamConfigSourceStore } from "../common/settings-transfer/createTeamConfigSourceStore";
 import type { EnhancedViewServices } from "../common/view-common/EnhancedView";
 
@@ -149,6 +161,11 @@ import {
 } from "./query-binding/QueryBindingController";
 import { EnhancedViewSurface } from "./query-page/EnhancedViewSurface";
 import { QueryPageController } from "./query-page/QueryPageController";
+import {
+  SharedQueryController,
+  type SharedQueryConfiguration,
+} from "./shared-query/SharedQueryController";
+import { overlayBindings, overlaySettings } from "./shared-query/sharedQueryOverlay";
 
 // Performance posture: this script is injected on every hosted ADO page, because host-wide
 // injection is the only way to catch SPA navigation into a Query route (see navigation/README.md).
@@ -447,6 +464,78 @@ const pullTeamConfigForQuery = (url: string): void => {
   }
 };
 
+// A query opened from a shared link reads its configuration from someone else's work item. The
+// resolver is built per page so several queries sharing one item cost a single credentialed read,
+// and so a reload always sees what that item says today.
+const sharedQuerySourceStore = createSharedQuerySourceStore(
+  loggers.forSource("common/settings-transfer"),
+);
+const sharedConfigResolver = new SharedQueryConfigResolver(
+  new MessagingTeamConfigReader(sendTeamConfigRequest),
+  loggers.forSource("common/settings-transfer"),
+);
+const sendCurrentUserRequest: SendCurrentUserRequest = (message) =>
+  chrome.runtime.sendMessage<ReadCurrentUserMessage, ReadCurrentUserResponse | undefined>(message);
+const sharedQueryLinkService = new SharedQueryLinkService(
+  sharedConfigResolver,
+  teamConfigSourceStore,
+  sharedQuerySourceStore,
+  new TeamMembershipReader(
+    teamMembersLoader,
+    new MessagingCurrentUserReader(
+      sendCurrentUserRequest,
+      loggers.forSource("common/settings-transfer"),
+    ),
+    loggers.forSource("common/settings-transfer"),
+  ),
+  async (workItemId) => {
+    await teamConfigSourceStore.write(workItemId);
+    await teamConfig.pull();
+  },
+  loggers.forSource("common/settings-transfer"),
+);
+
+// The publisher's settings and binding stand in for the reader's own, but only while the page is on
+// the shared query — hence the re-application on every navigation rather than a one-time swap.
+let localSettings: ExtensionSettings | null = null;
+let localBindings: QueryBindings = {};
+let sharedQuery: SharedQueryConfiguration | null = null;
+
+const applyConfiguration = (): void => {
+  if (localSettings !== null) {
+    const settings = overlaySettings(localSettings, sharedQuery);
+    latestSettings = settings;
+    controller.applySettings(settings);
+    bindingMenu.applyTheme(settings.theme);
+    // The menu's check marks resolve a bound query's default presentation from this same setting.
+    bindingController.applyDefaultView(settings.defaultView);
+    // Incomplete ADO settings force bound queries back to ADO's view, so the menu hides the swap
+    // options; the same snapshot the blanker uses drives that decision.
+    bindingController.applyConfigured(isAdoConfigured(settings));
+  }
+  const bindings = overlayBindings(localBindings, sharedQuery);
+  // The same snapshot drives the button's menu and the per-query blanking decision.
+  bindingController.applyBindings(bindings);
+  controller.applyBindings(bindings);
+};
+
+const sharedQueryController = new SharedQueryController(
+  sharedQueryLinkService,
+  sharedQuerySourceStore,
+  sharedConfigResolver,
+  (configuration) => {
+    sharedQuery = configuration;
+    applyConfiguration();
+  },
+  loggers.forSource("content/shared-query"),
+);
+
+const resolveSharedQuery = (url: string): void => {
+  void sharedQueryController.navigate(url).catch((error: unknown) => {
+    logger.error("Could not resolve the shared configuration for this query", error);
+  });
+};
+
 const actions: QueryMenuActions = {
   openOptions() {
     logger.info("Top-bar menu: open Options");
@@ -465,6 +554,11 @@ const actions: QueryMenuActions = {
   },
   disableEnhancedView(queryId) {
     logger.info(`Top-bar menu: disable enhanced view for query ${queryId}`);
+    // A shared query has no local binding to remove; dropping its link is what stops enhancing it.
+    if (sharedQueryController.isReadOnly(queryId)) {
+      void sharedQueryController.release(queryId);
+      return;
+    }
     void bindingStore.unbind(queryId);
   },
   setActiveView(queryId: string, active: ActiveView) {
@@ -492,14 +586,8 @@ const bindingController = new QueryBindingController(
 );
 
 const observation = store.observe((settings) => {
-  latestSettings = settings;
-  controller.applySettings(settings);
-  bindingMenu.applyTheme(settings.theme);
-  // The menu's check marks resolve a bound query's default presentation from this same setting.
-  bindingController.applyDefaultView(settings.defaultView);
-  // Incomplete ADO settings force bound queries back to ADO's view, so the menu hides the swap
-  // options; the same snapshot the blanker uses drives that decision.
-  bindingController.applyConfigured(isAdoConfigured(settings));
+  localSettings = settings;
+  applyConfiguration();
 });
 void observation.ready.catch((error: unknown) => {
   observation.unsubscribe();
@@ -507,9 +595,8 @@ void observation.ready.catch((error: unknown) => {
 });
 
 const bindingObservation = bindingStore.observe((bindings) => {
-  // The same snapshot drives the button's menu and the per-query blanking decision.
-  bindingController.applyBindings(bindings);
-  controller.applyBindings(bindings);
+  localBindings = bindings;
+  applyConfiguration();
 });
 void bindingObservation.ready.catch((error: unknown) => {
   bindingObservation.unsubscribe();
@@ -517,12 +604,14 @@ void bindingObservation.ready.catch((error: unknown) => {
 });
 
 pullTeamConfigForQuery(location.href);
+resolveSharedQuery(location.href);
 
 chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {
   if (isAdoNavigationMessage(message)) {
     controller.navigate(message.url);
     bindingController.navigate(message.url);
     pullTeamConfigForQuery(message.url);
+    resolveSharedQuery(message.url);
     return;
   }
   // The options page asks this ADO tab which theme it is rendering so it can resolve "auto".

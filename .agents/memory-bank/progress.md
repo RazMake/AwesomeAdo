@@ -91,12 +91,18 @@ This is a flattened snapshot of what exists now, not a build log.
   and keyboard-driven ADO `@`-mention insertion across note/comment and description editors; inline
   notes and New notes activity omit configured marker-comment prefixes while View all stays complete.
 - **Settings transfer** (`src/common/settings-transfer` + `src/options/settings-transfer`):
-  `AwesomeADO.config` export/import and Azure DevOps work-item sharing of the whole configuration,
-  grouped in the Appearance tab's Configuration Sharing card.
+  `AwesomeADO.config` export/import, the narrow `AwesomeADO.connection.config` export that carries
+  only the connected work item (ADR-065), and Azure DevOps work-item sharing of the whole
+  configuration, grouped in the Appearance tab's Configuration Sharing card.
 - **Team configuration sharing** (`common/settings-transfer`, `common/browser`, and Options): one
   same-organization ADO work item Description is the permissioned full-config source; clients
   automatically pull it on saved-query entry and editors explicitly publish with revision conflict
   protection. The connected read-only work item ID links directly to that item in ADO.
+- **Shared queries** (`common/navigation/SharedQueryLink`, `common/settings-transfer`,
+  `common/ado/TeamMembership`, `src/content/shared-query`, `src/options/query-bindings`): a
+  saved-query URL carrying `?awesomeAdoConfig={workItemId}` connects a team member outright and gives
+  everyone else a read-only, single-query link that changes nothing else. Each work item is read once
+  per resolver however many queries point at it (ADR-064).
 - **Navigation** (`src/common/navigation`): `AdoHost` single-source host matching, query-route and
   identity parsing, navigation + theme + query-name message contracts, `NavigationNotifier`.
 - **Browser isolation** (`src/common/browser`): `ChromeSyncStorage`, the two ADO tab readers, and

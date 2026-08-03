@@ -211,7 +211,25 @@ back to JSON text and decodes entities before `importConfig` parses it.
 The trusted work item id is persisted separately under `teamConfig.workItemId`, so downloaded JSON
 cannot redirect a client to a different source. `TeamConfigSynchronizer` rejects partial remote
 data, replaces both stores only when the normalized snapshot changed, and coalesces concurrent
-pulls. A successful item read with an empty Description is a neutral connected/unpublished outcome:
+pulls.
+
+Export has two forms. `exportConfig` writes the whole configuration; `exportConnectionConfig` writes
+`AwesomeADO.connection.config`, carrying only the connected work item id plus the organization and
+project needed to reach it and marked `configScope: "connection"`. `ImportedConfig.replacesBindings`
+is how a caller tells the two apart: a connection file never runs `replaceAll`, and both
+`TeamConfigSynchronizer` and `SharedQueryConfigResolver` refuse it as a source. See ADR-065.
+
+**Shared queries** are the read-only counterpart to a team connection. A saved-query URL may carry
+`?awesomeAdoConfig={workItemId}` (`common/navigation/SharedQueryLink`). `SharedQueryLinkService`
+asks `common/ado/TeamMembership` whether the signed-in identity is in the roster of the team that
+item names: a member adopts the item as their own `teamConfig.workItemId`; a non-member — or an
+undetermined answer — gets one entry in the synced `sharedQueries.workItemIds` map
+(`SharedQuerySourceStore`) and nothing else changes. `SharedQueryConfigResolver` reads each work item
+at most once per resolver, failed reads included, so several queries shared from one item cost one
+credentialed round trip. `src/content/shared-query` applies the result per query and per navigation;
+`src/options/query-bindings` renders it read-only. See ADR-064.
+
+A successful item read with an empty Description is a neutral connected/unpublished outcome:
 it neither logs an error nor changes local configuration. Content pulls on saved-query entry through
 the background/MAIN-world bridge; Options pulls
 or explicitly publishes through the current ADO query tab. Publish reads the current revision and
@@ -241,6 +259,9 @@ Split into component subfolders (each with its own `README.md`):
   button's visibility policy and the menu it opens. Logs under `content/query-binding`.
 - `ado-probe/` — `AdoThemeProbe` / `AdoQueryNameProbe` read the rendered theme / query name from the
   DOM, only when the options page asks for them.
+- `shared-query/` — `SharedQueryController` applies a shared query link and reports the publisher's
+  configuration for the query on screen; `sharedQueryOverlay` folds it over the reader's own
+  settings and bindings for that one query. Logs under `content/shared-query`.
 - `views/` — the concrete enhanced views, each whole in one folder (`<view>/` = `ViewType` config +
   `EnhancedView` renderer). `viewCatalog.ts` owns configs; `enhancedViewRegistry.ts` resolves eager
   and deferred renderers by id. Sprint is eager; Project Tracking is a separately built,
@@ -336,6 +357,15 @@ extension in a real browser.
 - **Synced-storage observation** lives once in `observeStorageKeys`. The settings store, the bindings
   store and the diagnostics log store all delegate to it, so the subtle race logic cannot drift
   between them (ADR-036).
+- **Removing one entry from a single-key synced map** lives once in `removeSyncedMapEntry`, shared by
+  the bindings store and the shared-query source store, so the "nothing to remove, so write nothing"
+  short-circuit that keeps a no-op from emitting a change event cannot drift between them.
+- **Narrowing a raw ADO JSON value** lives once in `common/ado/rawJson` (`asRecord`,
+  `nonEmptyString`), so no two parsers can disagree about whether `""` is an answer.
+- **"Who am I to Azure DevOps?"** lives once in `common/ado/currentUser` (the `ConnectionData` URL
+  and the identity parse), used by both note editing and team-membership checks.
+- **One credentialed page GET in the sender's tab** lives once in the worker's `readInPage`, so every
+  read-only operation shares one injection shape and one "injection produced nothing" outcome.
 - **Serving a content-side request in the worker** lives once in `tabRequestListener`: the sender's
   tab as the trust boundary, always answering a claimed message, and holding the channel open. Every
   credentialed operation in `background/index.ts` registers through it.

@@ -258,12 +258,23 @@ The extension is feature-complete for its current scope:
 - Configuration import/export: `src/common/settings-transfer` serializes the whole configuration
   (all settings + every binding) to/from an `AwesomeADO.config` file; `src/options/settings-transfer`
   wires file transfer and team sharing into the Appearance tab's unified Configuration Sharing card.
-  Import replaces bindings wholesale via `IQueryBindingStore.replaceAll`.
+  Import replaces bindings wholesale via `IQueryBindingStore.replaceAll`. **Export Connection**
+  writes the narrow `AwesomeADO.connection.config` instead (the connected work item id plus the
+  organization and project needed to reach it, marked `configScope: "connection"`); importing one
+  adopts the connection and, because `ImportedConfig.replacesBindings` is false, never touches the
+  reader's enhanced queries (ADR-065).
 - Team configuration sharing: Options connects to a same-organization Azure DevOps work item whose
   Description is the authoritative full configuration. Saved-query navigation automatically pulls
   it; Pull Now and explicit conflict-aware Publish controls are available in Appearance. The trusted
   item id syncs separately and becomes a direct ADO link while connected; unchanged pulls do not
   rewrite storage, and Disconnect leaves the last pulled local snapshot intact.
+- Shared queries (ADR-064): a saved-query URL may carry `?awesomeAdoConfig={workItemId}`. On a member
+  of that item's ADO team it simply connects them to the item; on anyone else (or when membership
+  cannot be determined) it creates a read-only link for that ONE query in the synced
+  `sharedQueries.workItemIds` map, leaving their settings, bindings, and own team untouched.
+  `SharedQueryConfigResolver` reads each work item once, `src/content/shared-query` applies the
+  publisher's settings/binding per query and per navigation, and the Query Bindings tab shows the
+  query with read-only values, the source work item named, and Remove link in place of Delete.
 - Options page: Appearance (Dark/Light/Blue theme, Follow ADO dark/light resolution, default view +
   Configuration Sharing), Azure DevOps config (editable organization/project, team, sprint window,
   board mappings, marker tags, and
