@@ -21,10 +21,11 @@ export const FEATURE_CREW_TITLE = "Feature Crew";
 export const FEATURE_CREW_STATE = "Removed";
 
 /**
- * The ADO relation added on the Feature Crew item pointing at the project root (the first configured
- * type, e.g. the Epic). `Affects-Reverse` is ADO's reference name for the "Affected By" link, so the
- * root reads as being *affected by* the crew roster — and the lookup uses this exact relation to tell
- * a real Feature Crew item apart from an unrelated same-titled one in another project.
+ * The ADO relation added on the Feature Crew item pointing at the board's root item (whichever
+ * planning item that board is rooted at). `Affects-Reverse` is ADO's reference name for the
+ * "Affected By" link, so the root reads as being *affected by* the crew roster — and the lookup uses
+ * this exact relation to tell a real Feature Crew item apart from an unrelated same-titled one in
+ * another project.
  */
 export const FEATURE_CREW_AFFECTED_BY_REL = "Microsoft.VSTS.Common.Affects-Reverse";
 

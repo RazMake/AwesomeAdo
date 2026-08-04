@@ -428,10 +428,10 @@ describe("ProjectTrackingView — query shape errors", () => {
     expect(root.textContent).toContain("exactly one root");
   });
 
-  it("should show error when root type does not match first type", async () => {
+  it("should show error when root type cannot hold work", async () => {
     const doc = document;
 
-    const wrongRoot = { ...createFixtureTree(), type: "Feature" };
+    const wrongRoot = { ...createFixtureTree(), type: "Story" };
 
     const services = createFakeServices({
       loadTree: async () => ({
@@ -452,7 +452,70 @@ describe("ProjectTrackingView — query shape errors", () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(root.textContent).toContain("must be a Epic");
+    expect(root.textContent).toContain("must be a planning item (Epic, Feature)");
+  });
+});
+
+describe("ProjectTrackingView — root type eligibility", () => {
+  it("should accept a root below the top of the hierarchy", async () => {
+    const doc = document;
+
+    const featureRoot = { ...createFixtureTree(), type: "Feature" };
+
+    const services = createFakeServices({
+      loadTree: async () => ({
+        isTreeQuery: true,
+        roots: [featureRoot],
+        error: null,
+      }),
+    });
+
+    const context: EnhancedViewContext = {
+      doc,
+      queryId: "q1",
+      properties: {},
+      services,
+    };
+
+    const root = projectTrackingView.render(context);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(root.textContent).not.toContain("must be a planning item");
+    expect(root.textContent).toContain("TechLead");
+  });
+
+  it("should accept a root of a Primary-work ancestor type when Primary work is configured", async () => {
+    const doc = document;
+
+    // Story is flagged as Primary work here, so Epic and Feature are the planning context above it.
+    const primaryWorkTypes = FIXTURE_TYPES.map((type) =>
+      type.name === "Story" ? { ...type, isPrimaryWork: true } : type,
+    );
+    const featureRoot = { ...createFixtureTree(), type: "Feature" };
+
+    const services = createFakeServices({
+      getTypes: () => primaryWorkTypes,
+      loadTree: async () => ({
+        isTreeQuery: true,
+        roots: [featureRoot],
+        error: null,
+      }),
+    });
+
+    const context: EnhancedViewContext = {
+      doc,
+      queryId: "q1",
+      properties: {},
+      services,
+    };
+
+    const root = projectTrackingView.render(context);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(root.textContent).not.toContain("must be a planning item");
+    expect(root.textContent).toContain("TechLead");
   });
 });
 
@@ -2298,7 +2361,7 @@ describe("ProjectTrackingView — validation logging", () => {
     expect(validationLog?.message).toContain("isTreeQuery=true");
     expect(validationLog?.message).toContain("rootCount=1");
     expect(validationLog?.message).toContain("rootType=Epic");
-    expect(validationLog?.message).toContain("expectedType=Epic");
+    expect(validationLog?.message).toContain("allowedRootTypes=[Epic, Feature]");
   });
 
   it("should handle missing assignee with Unassigned text", async () => {

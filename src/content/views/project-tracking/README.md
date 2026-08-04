@@ -23,9 +23,11 @@ halves of the view — its configuration and its renderer.
 
 - `ProjectTrackingView.ts` → `projectTrackingView: EnhancedView` — the renderer. Renders a live
   tree board with the following features:
-  - **Single-root requirement**: the query must return exactly one root item of the first configured
-    work item type (typically Epic). Shows validation messages for non-tree queries, empty queries,
-    multiple roots, or wrong root type.
+  - **Single-root requirement**: the query must return exactly one root item, and that item's type
+    must be one the team configured as planning context above its Primary work — any planning level,
+    not only the top one. (A catalog with no Primary work flagged falls back to "a type that holds
+    children".) Shows validation messages for non-tree queries, empty queries, multiple roots, or a
+    root whose type cannot hold work; the last of those names the types that would be accepted.
   - **Emptied board**: when the active filters leave no row to draw, the tree is replaced by the
     shared [`EmptyState`](../../../common/view-common/control/EmptyState/README.md) panel saying the
     filters — not a failed load — are why nothing is listed.

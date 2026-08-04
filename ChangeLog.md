@@ -5,6 +5,11 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ## Next Version
 
+- The Project Tracking board can now be bound to a query rooted at any of your planning levels, not
+  only the top one. Teams that do not use Epics — or that track a single feature, milestone or
+  scenario on its own board — no longer get turned away. Anything you configured as planning context
+  above your delivery work is accepted, and the message shown for a query rooted at the wrong kind of
+  item now names the types that would work.
 - The Query Bindings settings now open straight away instead of sitting blank while Azure DevOps is
   read; the suggestion lists fill themselves in a moment later. The query folder box also reaches the
   whole project now: Azure DevOps only hands over the top of a large query hierarchy, so the folders

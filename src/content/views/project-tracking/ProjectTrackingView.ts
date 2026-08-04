@@ -25,6 +25,7 @@ import {
   boardColumnOrdinal,
   flattenWorkItems,
   orderTrackedItems,
+  primaryWorkAncestors,
   primaryWorkWithAncestors,
   workItemIdsVisibleUnderPrimaryFilter,
   workItemsEligibleForPrimaryFilter,
@@ -3466,13 +3467,31 @@ function renderValidationError(
 }
 
 /**
+ * The types a board may be rooted at: the planning context configured above Primary work.
+ *
+ * Any planning level qualifies, not only the top one. Teams name and nest their planning levels
+ * differently, and plenty of them never create an Epic at all, so pinning the board to whichever
+ * type happens to lead the catalog would refuse every query rooted one level down. A catalog with no
+ * Primary work flagged has no planning context to derive, so the legacy rule stands in: a board is
+ * rooted at a type that holds children, never at a leaf.
+ */
+function boardRootTypeNames(types: readonly TypeCatalogEntry[]): string[] {
+  const planning = primaryWorkAncestors(types);
+  const canRoot =
+    planning.size > 0
+      ? (type: TypeCatalogEntry): boolean => planning.has(type.name)
+      : (type: TypeCatalogEntry): boolean => (type.children?.length ?? 0) > 0;
+  return types.filter(canRoot).map(({ name }) => name);
+}
+
+/**
  * Validates root count and type. Returns the valid root or null if validation failed (error already rendered).
  */
 function validateRoot(
   result: WorkItemTreeResult,
   root: HTMLElement,
   doc: Document,
-  firstType: string | undefined,
+  rootTypes: readonly string[],
   extensionVersion: string | undefined,
 ): TrackedWorkItem | null {
   const rootCount = result.roots.length;
@@ -3498,8 +3517,15 @@ function validateRoot(
     return null;
   }
 
-  if (firstType && treeRoot.type !== firstType) {
-    renderValidationError(root, doc, `The root item must be a ${firstType}.`, extensionVersion);
+  // An empty list means the catalog says nothing about what can hold work, and refusing every query
+  // on the strength of an unconfigured catalog helps nobody.
+  if (rootTypes.length > 0 && !rootTypes.includes(treeRoot.type)) {
+    renderValidationError(
+      root,
+      doc,
+      `The root item must be a planning item (${rootTypes.join(", ")}).`,
+      extensionVersion,
+    );
     return null;
   }
 
@@ -3521,15 +3547,14 @@ function validateAndRenderErrors(
   services: EnhancedViewServices,
   extensionVersion: string | undefined,
 ): TrackedWorkItem | null {
-  const types = services.getTypes();
-  const firstType = types[0]?.name;
+  const rootTypes = boardRootTypeNames(services.getTypes());
 
   // Validation: log the conclusion exactly once.
   const isTreeQuery = result.isTreeQuery;
   const rootCount = result.roots.length;
   const rootType = result.roots[0]?.type;
   services.logger.info(
-    `Project Tracking validation: isTreeQuery=${isTreeQuery}, rootCount=${rootCount}, rootType=${rootType ?? "N/A"}, expectedType=${firstType ?? "N/A"}`,
+    `Project Tracking validation: isTreeQuery=${isTreeQuery}, rootCount=${rootCount}, rootType=${rootType ?? "N/A"}, allowedRootTypes=[${rootTypes.join(", ")}]`,
   );
 
   if (result.error) {
@@ -3547,7 +3572,7 @@ function validateAndRenderErrors(
     return null;
   }
 
-  return validateRoot(result, root, doc, firstType, extensionVersion);
+  return validateRoot(result, root, doc, rootTypes, extensionVersion);
 }
 
 /**

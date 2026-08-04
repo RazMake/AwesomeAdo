@@ -138,8 +138,10 @@ The extension is feature-complete for its current scope:
   (`TrackedWorkItem`, `TrackedUser`, `TypeCatalogEntry`, `TeamIteration`, `IWorkItemTreeLoader`,
   `ITeamIterationsLoader`, `IUserDirectory`); PST date/ETA math lives in `common/datetime`. `EnhancedViewSurface` takes the
   services once at the content composition root and forwards them per render. Project Tracking renders a
-  single-root tree (validates: tree query, exactly one root, root is the first configured type), titles
-  the page with the epic (in its type color), shows the epic's assignee as TechLead, a compact area-path
+  single-root tree (validates: tree query, exactly one root, root is any planning-context type — a
+  `primaryWorkAncestors` member, or any type with children while Primary work is unconfigured — never
+  only the catalog's first type), titles
+  the page with the root item (in its type color), shows the root's assignee as TechLead, a compact area-path
   multi-select, a sprint dropdown +
   on/off filter toggle (pills when off; clicking one offers the other current/future sprints with the
   dropdown's relation styling and moves the item through the shared write queue), per-item expand/collapse,
