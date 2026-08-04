@@ -63,6 +63,23 @@ describe("DropIndicator - the insertion line", () => {
     expect(line.style.boxShadow).toContain("var(--palette-neutral-8)");
   });
 
+  it("takes no layout space, so showing it cannot slide the row out from under the pointer", () => {
+    const { container, first } = buildLevel();
+
+    new DropIndicator(document).show(first, "before", {
+      reparenting: false,
+      parentContainer: null,
+    });
+
+    // Height 2px against -1px margins top and bottom: the line paints over the boundary between two
+    // rows without advancing anything below it. A line that pushed the rows down would move the row
+    // under the pointer away, ending the drag over no drop target at all — a gesture that looks
+    // accepted and is silently discarded.
+    const line = lineIn(container)!;
+    expect(line.style.height).toBe("2px");
+    expect(line.style.margin).toBe("-1px 0px");
+  });
+
   it("moves the one line rather than adding another as the pointer travels", () => {
     const { container, first, second } = buildLevel();
     const indicator = new DropIndicator(document);

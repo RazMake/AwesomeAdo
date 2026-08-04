@@ -15,7 +15,7 @@ export class AreaPathListEditor {
   constructor(
     doc: Document,
     stored: string,
-    private readonly suggestions: readonly string[],
+    private suggestions: readonly string[],
     description: string,
     private readonly onChange: () => void,
   ) {
@@ -54,6 +54,15 @@ export class AreaPathListEditor {
 
   get value(): string {
     return this.paths.join("\n");
+  }
+
+  /** Replace what every row and the Add box suggest, for a vocabulary that was still loading. */
+  setSuggestions(values: readonly string[]): void {
+    this.suggestions = values;
+    this.addAutocomplete.setOptions(values);
+    for (const autocomplete of this.rowAutocompletes) {
+      autocomplete.setOptions(values);
+    }
   }
 
   dispose(): void {

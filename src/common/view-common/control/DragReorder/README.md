@@ -21,9 +21,12 @@ rejected move must leave the item visibly where it started.
 - **`DraggableRow`** — what one row tells the controller: its `id`, `depth`, `hasChildren`,
   `parentId`, the parent's default `destinationType`, the level's **full unfiltered** `siblingIds` in
   display order, and three elements — the `handle` (the title), the `row` line box (whose midpoint
-  decides above/below), and the `wrapper` the insertion line slots against. Popup rows also provide
-  their `dragSurface` and `onLeaveSurface`: drag events remain local while the pointer is inside that
-  surface, then reaching a legal target outside it dismisses the popup without ending the drag.
+  decides above/below), and the `wrapper` the insertion line slots against. A row whose chrome extends
+  past `row` — trailing padding, a description or notes panel — also passes a `dropZone` covering all
+  of it; only the drop TARGET widens, so `row` still decides which side the drop lands on. Popup rows
+  also provide their `dragSurface` and `onLeaveSurface`: drag events remain local while the pointer is
+  inside that surface, then reaching a legal target outside it dismisses the popup without ending the
+  drag.
 - **`PlannedMove`** — a resolved drop: `{ id, currentParentId, parentId, previousId, nextId,
 siblingIds, type? }`, handed to `onMove` for the caller to persist.
 
@@ -44,7 +47,10 @@ siblingIds, type? }`, handed to `onMove` for the caller to persist.
 - **`new DropIndicator(doc)`** with **`show(wrapper, side, { reparenting, parentContainer })`** and
   **`clear()`** — the insertion line, plus the wash that names the destination when the drop also
   changes parent. Same-parent ordering uses the theme accent; reparenting uses the theme success
-  color, so the marker communicates which operation will happen without fixed light-only colors.
+  color, so the marker communicates which operation will happen without fixed light-only colors. The
+  line paints over the boundary and occupies **no** layout space: a marker that pushed the rows below
+  it down would move the target away from the pointer mid-drag and leave the drop with nowhere to
+  land.
 
 ## Usage guidance
 
@@ -52,6 +58,13 @@ Register every rendered row on each pass, calling `reset()` first. Pass the leve
 list, not the filtered one — ranking against only the visible rows would place the item relative to
 whatever the view's filters happened to leave on screen, so clearing a filter afterwards would reveal
 it somewhere the user never dropped it.
+
+**Leave no band between two rows unclaimed.** A drop that reaches no registered row is discarded in
+silence — no error, no log line, nothing moved — which reads as a broken gesture rather than a
+refused one. Two things guarantee it cannot happen: the insertion line takes **no layout space**
+(negative margins cancel its height), so showing it never slides the target row out from under the
+pointer; and a row's `dropZone` covers every pixel the row owns, so the space between two rows
+belongs to one of them.
 
 Hierarchy changes move one level at a time. Dropping a child between rows one level above promotes it
 under their parent; dropping a leaf among rows one level below demotes it under their parent at the

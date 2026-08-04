@@ -1,11 +1,13 @@
 # AreaPathFilter Control
 
-A compact, theme-aware multi-select for Azure DevOps area paths. The trigger keeps a button-sized
-footprint and opens a checkbox popup through the shared [`popupHost`](../popupHost/README.md).
+A compact, theme-aware multi-select for Azure DevOps area paths. It is the shared
+[`CheckboxFilter`](../CheckboxFilter/README.md) given the area-path vocabulary, so its trigger,
+popup, and dismissal behave identically to every other filter in a view header.
 
 The control always receives and returns **full area paths**. Display labels use the shortest unique
 suffix: a unique path renders as `API`; two paths ending in `API` expand only as far as needed, such
-as `Platform › API` and `Commerce › API`. Each row's tooltip retains the full path.
+as `Platform › API` and `Commerce › API`. Each row's tooltip retains the full path. No quick-search
+is offered: the labels are already collapsed to the text a reader would have typed.
 
 ## Usage
 

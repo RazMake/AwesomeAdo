@@ -282,42 +282,7 @@ describe("EnhancedViewSurface - keep-alive", () => {
   });
 
   it("forwards injected services to rendered views without breaking apply/restore", () => {
-    // A minimal fake services object — views that don't use services ignore it.
-    const fakeServices: EnhancedViewServices = {
-      loadTree: () => Promise.resolve({ isTreeQuery: true, roots: [], error: null }),
-      featureCrew: { reconcile: () => Promise.resolve({ ok: true, changed: false }) },
-      noteLoader: {
-        loadNotes: () => Promise.resolve({ notes: [], currentUser: null, error: null }),
-      },
-      noteActivity: {
-        readNoteActivity: () => Promise.resolve({ activity: [], error: null }),
-      },
-      interruptAcceptance: {
-        readInterruptAcceptance: () =>
-          Promise.resolve({ acceptedWorkItemIds: [], failedWorkItemIds: [], error: null }),
-      },
-      noteWriter: {
-        addNote: () => Promise.resolve({ ok: true }),
-        editNote: () => Promise.resolve({ ok: true }),
-      },
-      userDirectory: { search: () => Promise.resolve([]), resolve: () => Promise.resolve(null) },
-      mentionDirectory: {
-        resolveNames: () => Promise.resolve(new Map<string, string>()),
-        knownNames: () => new Map<string, string>(),
-      },
-      getTypes: () => [],
-      getBoardColumns: () => [],
-      markerTags: () => normalizeMarkerTags(undefined),
-      loadSprintWindow: () => Promise.resolve({ entries: [], currentName: null }),
-      loadTeamMembers: () => Promise.resolve({ members: [], error: null }),
-      now: () => new Date(),
-      logger: { info: () => {}, error: () => {} },
-      writeField: () => Promise.resolve({ ok: true }),
-      reorderItem: () => Promise.resolve({ ok: true }),
-      currentTeam: () => null,
-      openDiagnosticsLog: () => {},
-    };
-    const surfaceWithServices = new EnhancedViewSurface(document, fakeServices, loadedRegistry);
+    const surfaceWithServices = new EnhancedViewSurface(document, fakeServices(), loadedRegistry);
 
     // The surface with services should still apply/restore correctly.
     surfaceWithServices.apply(sprint);
@@ -333,6 +298,54 @@ describe("EnhancedViewSurface - keep-alive", () => {
     expect(hostEl()).toBeNull();
   });
 });
+
+/** A minimal fake services object — views that don't use services ignore it. */
+function fakeServices(): EnhancedViewServices {
+  return {
+    loadTree: () => Promise.resolve({ isTreeQuery: true, roots: [], error: null }),
+    featureCrew: { reconcile: () => Promise.resolve({ ok: true, changed: false }) },
+    noteLoader: {
+      loadNotes: () => Promise.resolve({ notes: [], currentUser: null, error: null }),
+    },
+    noteActivity: {
+      readNoteActivity: () => Promise.resolve({ activity: [], error: null }),
+    },
+    interruptAcceptance: {
+      readInterruptAcceptance: () =>
+        Promise.resolve({ acceptedWorkItemIds: [], failedWorkItemIds: [], error: null }),
+    },
+    noteWriter: {
+      addNote: () => Promise.resolve({ ok: true }),
+      editNote: () => Promise.resolve({ ok: true }),
+    },
+    userDirectory: { search: () => Promise.resolve([]), resolve: () => Promise.resolve(null) },
+    mentionDirectory: {
+      resolveNames: () => Promise.resolve(new Map<string, string>()),
+      knownNames: () => new Map<string, string>(),
+    },
+    getTypes: () => [],
+    getBoardColumns: () => [],
+    markerTags: () => normalizeMarkerTags(undefined),
+    loadSprintWindow: () => Promise.resolve({ entries: [], currentName: null }),
+    loadTeamMembers: () => Promise.resolve({ members: [], error: null }),
+    now: () => new Date(),
+    logger: { info: () => {}, error: () => {} },
+    writeField: () => Promise.resolve({ ok: true }),
+    reorderItem: () => Promise.resolve({ ok: true }),
+    createWorkItem: { create: () => Promise.resolve({ ok: true, id: 1, rev: 1 }) },
+    projectQueries: {
+      readLinks: () => Promise.resolve({ links: [], error: null }),
+      create: () => Promise.resolve({ ok: true, queryId: "q", rev: 2 }),
+      remove: () => Promise.resolve({ ok: true, rev: 3 }),
+    },
+    queryBindings: {
+      bind: () => Promise.resolve(),
+      unbind: () => Promise.resolve(),
+    },
+    currentTeam: () => null,
+    openDiagnosticsLog: () => {},
+  };
+}
 
 describe("EnhancedViewSurface - theming", () => {
   it("pins the chosen theme's tokens on the host so every control follows it", () => {

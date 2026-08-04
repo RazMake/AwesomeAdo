@@ -33,6 +33,10 @@ import {
   type LoadQueryTreeResponse,
 } from "../common/browser/AdoTreeRequest";
 import {
+  type CreateWorkItemMessage,
+  type CreateWorkItemResponse,
+} from "../common/browser/CreateWorkItemRequest";
+import {
   type ReadCurrentUserMessage,
   type ReadCurrentUserResponse,
 } from "../common/browser/CurrentUserRequest";
@@ -65,6 +69,10 @@ import {
   type SendNoteActivityRequest,
 } from "../common/browser/MessagingNoteActivityReader";
 import {
+  MessagingProjectQueryService,
+  type SendProjectQueryRequest,
+} from "../common/browser/MessagingProjectQueryService";
+import {
   MessagingQueryDefinitionLoader,
   type SendQueryDefinitionRequest,
 } from "../common/browser/MessagingQueryDefinitionLoader";
@@ -89,6 +97,10 @@ import {
   type SendIdentitySearchRequest,
 } from "../common/browser/MessagingUserDirectory";
 import {
+  MessagingWorkItemCreator,
+  type SendCreateWorkItemRequest,
+} from "../common/browser/MessagingWorkItemCreator";
+import {
   MessagingWorkItemFieldWriter,
   type SendUpdateFieldRequest,
 } from "../common/browser/MessagingWorkItemFieldWriter";
@@ -112,6 +124,10 @@ import {
   type ReadNoteActivityMessage,
   type ReadNoteActivityResponse,
 } from "../common/browser/NoteActivityRequest";
+import {
+  type ProjectQueryMessage,
+  type ProjectQueryResponse,
+} from "../common/browser/ProjectQueryRequest";
 import {
   type ReadTeamConfigMessage,
   type ReadTeamConfigResponse,
@@ -185,6 +201,11 @@ const loggers = createLoggerFactory();
 const logger = loggers.forSource("content");
 
 const store = createSettingsStore(loggers.forSource("common/settings"));
+
+// Built before the view services because a view that creates a project's tracking query records the
+// binding for it (and removes it again when the query is deleted), so the services below hold a
+// narrowed reference to this store.
+const bindingStore = createQueryBindingStore(loggers.forSource("common/bindings"));
 
 // Services the enhanced views depend on. The Project Tracking tree is fetched live: a content script
 // cannot reach the credentialed ADO REST API from its isolated world, so the loader messages the
@@ -344,6 +365,22 @@ const noteWriter = new MessagingWorkItemNoteWriter(
   loggers.forSource("content/views"),
 );
 
+// Adding a project and giving it its own tracking query are ADO writes like every other one here:
+// the isolated content world cannot reach the credentialed REST API, so both message the background
+// worker, which builds every URL from this tab and runs the MAIN-world request.
+const sendCreateWorkItemRequest: SendCreateWorkItemRequest = (message) =>
+  chrome.runtime.sendMessage<CreateWorkItemMessage, CreateWorkItemResponse | undefined>(message);
+const workItemCreator = new MessagingWorkItemCreator(
+  sendCreateWorkItemRequest,
+  loggers.forSource("content/views"),
+);
+const sendProjectQueryRequest: SendProjectQueryRequest = (message) =>
+  chrome.runtime.sendMessage<ProjectQueryMessage, ProjectQueryResponse | undefined>(message);
+const projectQueryService = new MessagingProjectQueryService(
+  sendProjectQueryRequest,
+  loggers.forSource("content/views"),
+);
+
 // A content script cannot open extension pages itself, so the general options page, the per-query
 // binding form, and the Diagnostics log are all requested from the background service worker.
 // Rejections are surfaced (rather than silently swallowed) so a broken round-trip is diagnosable
@@ -409,6 +446,14 @@ const trackingServices: EnhancedViewServices = {
   logger: loggers.forSource("content/views"),
   writeField: (request) => workItemFieldWriter.writeField(request),
   reorderItem: (request) => workItemReorderWriter.reorder(request),
+  createWorkItem: workItemCreator,
+  projectQueries: projectQueryService,
+  // Narrowed to bind/unbind on the way in: a view records the binding for a query it created and
+  // removes it again, and must never be able to reach `replaceAll`.
+  queryBindings: {
+    bind: (queryId, binding) => bindingStore.bind(queryId, binding),
+    unbind: (queryId) => bindingStore.unbind(queryId),
+  },
   // The team's stable id, not its display name: it is the URL segment the backlog-order endpoint is
   // reached through, and a GUID is safe there where a name containing spaces or slashes is not.
   currentTeam: () => {
@@ -440,8 +485,6 @@ const controller = new QueryPageController(
   sessionActiveViews,
   loggers.forSource("content/query-page"),
 );
-
-const bindingStore = createQueryBindingStore(loggers.forSource("common/bindings"));
 
 const teamConfigSourceStore = createTeamConfigSourceStore(
   loggers.forSource("common/settings-transfer"),

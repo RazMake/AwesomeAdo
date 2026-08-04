@@ -265,6 +265,32 @@ halves of the view — its configuration and its renderer.
     that reason (prefixed with the team's configured token) as **one** JSON Patch — a separately
     posted comment would advance `System.Rev` and get the tag patch rejected with HTTP 412. Clearing
     asks for nothing. See [`item-commands`](./item-commands/README.md).
+  - **Adding work**: the project title's menu offers **Add new milestone/phase** and every row whose
+    children ARE the team's delivery offers **New work identified**. Both create an item of the
+    parent type's **first** configured child type — the same default a hierarchy drag re-types to —
+    through the shared
+    [`NewItemRow`](../../../common/view-common/control/NewItemRow/README.md): a box opens at the top
+    of the list it will join, asks only for the title, and states the parent, area path and iteration
+    the item inherits. Nothing else is asked, because work identified under an item belongs where
+    that item is until someone deliberately moves it.
+    - The new item is **born under its parent**, tagged and parented in the same creation revision,
+      so it never exists for a moment as an orphan no tree contains.
+    - It is spliced into the loaded tree rather than triggering a re-read, which would throw away
+      every branch and discussion the reader had open to learn something already known.
+    - It lands at the **top** of its level, and a backlog rank is written so it stays there. The rank
+      is written whatever the board is currently sorted by, since it is a property of the item rather
+      than of this reader's sort. With no team configured there is no backlog to rank against, so the
+      position holds for the session only and the log says so.
+    - It stays visible whatever the filters say. The board shows only planning context that leads to
+      Primary work, so a milestone created a moment ago — which by definition holds nothing yet —
+      would otherwise vanish as it was created and read as a failed command.
+    - Only one box is open at a time, and re-opening one already asking for a title is refused with a
+      reason rather than silently ignored. A collapsed branch is opened first, so the box asked for
+      is never hidden behind a twisty closed earlier.
+  - **Retiring the project**: the title's **Mark completed** opens the shared
+    [`ConfirmPanel`](../../../common/view-common/control/ConfirmPanel/README.md) naming the exact
+    state the project will land in and what happens to its tracking query. See
+    [`item-commands`](./item-commands/README.md).
 
 Because every property is stored on the binding, the same view bound to two queries can use
 different windows. Both halves are registered centrally: the config in `../viewCatalog.ts`, the

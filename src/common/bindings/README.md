@@ -38,12 +38,22 @@ storage into a safe map, dropping malformed entries while preserving bindings wh
 build does not recognize (forward-compatibility), keeping `name` only when valid, and dropping a
 legacy `active` field written by an older build.
 
+### `IQueryBindingWriter` (interface) — `IQueryBindingWriter.ts`
+
+Creating and removing the binding for ONE query — `bind` and `unbind`, and nothing else.
+`IQueryBindingStore` extends it, so the real store satisfies both.
+
+Depend on this instead of the whole store wherever a feature only records or cleans up a single
+query (Interface Segregation): an enhanced view that creates a project's tracking query needs exactly
+these two, and handing it the store would also hand it `replaceAll`, which discards every other
+query's binding in one call.
+
 ### `IQueryBindingStore` (interface) — `IQueryBindingStore.ts`
 
 The abstraction features depend on:
 
 ```typescript
-interface IQueryBindingStore {
+interface IQueryBindingStore extends IQueryBindingWriter {
   read(): Promise<QueryBindings>;
   bind(queryId: string, binding: QueryBinding): Promise<void>;
   unbind(queryId: string): Promise<void>;

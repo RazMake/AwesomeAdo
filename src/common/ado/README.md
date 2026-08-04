@@ -216,9 +216,15 @@ former as a decision.
 
 ### `fetchAdoMetadata.ts`
 
-- `buildAdoMetadataUrls(href)` — parses the org/project from the tab URL and returns the
-  `{ teamsUrl, workItemTypesUrl, fieldsUrl, areaPathsUrl }` to fetch, or `null` for a non-project
-  (org/folder) URL.
+- `buildAdoMetadataUrls(href)` — parses the org/project from the tab URL and returns the endpoints to
+  fetch (teams, work item types, fields, area paths, iteration paths, saved-query folders), or `null`
+  for a non-project (org/folder) URL.
+- `buildQueryFolderChildrenUrl(href, folderPath)` — the endpoint listing ONE folder's contents, or
+  `null` when the href is not project-scoped or no folder is named. Each segment is encoded while the
+  separators stay literal, and either separator is accepted. **Why it exists:** Azure DevOps answers
+  the query hierarchy at most two levels deep and caps a node at 1000 children, so a large project's
+  folders cannot be enumerated — walking the tree is both very slow and still incomplete. The folders
+  below that boundary are read one folder at a time, when someone actually asks about that folder.
 - `parseTeams(body)` — turns the raw teams REST body into a sorted `AdoTeam[]`; **best-effort** (a
   missing/malformed body yields `[]`).
 - `parseAreaPaths(body)` — flattens the project classification tree into deduplicated, sorted full
@@ -248,8 +254,7 @@ former as a decision.
   project-scoped or `team` is blank. Shared by every team-owned endpoint (a team's iterations, its
   backlog order) so they cannot drift on encoding or on the "no team means no URL" rule.
   `apiVersion` is a parameter because not every team-scoped route has left preview.
-- `AdoMetadataUrls` — the `{ teamsUrl, workItemTypesUrl, fieldsUrl }` shape
-  `buildAdoMetadataUrls` returns.
+- `AdoMetadataUrls` — the endpoint set `buildAdoMetadataUrls` returns.
 
 ### `adoAttachment.ts`
 
@@ -298,6 +303,16 @@ former as a decision.
 ### `QueryDefinition.ts` and `sprintQuery.ts`
 
 - `buildAdoQueryDefinitionUrl` / `parseQueryDefinition` read a saved query's original expanded WIQL.
+- `parseQueryTagFilter(wiql)` — the first literal tag a `[System.Tags] CONTAINS [WORDS] '…'` clause
+  requires, or `null`. A plain `=` is ignored: it compares the whole semicolon-separated tag string,
+  so its value is not one tag.
+- `queryPathFolderSegments(path)` — a query `path`'s ancestor folders, outermost first, split on
+  either separator with the query's own name dropped. Shared with `parseQueryFolderPath` so both
+  readers of a query path agree.
+- `parseQueryFolder(rawQuery)` — the folder a saved query lives in, spelled the way the query
+  hierarchy reports folders (forward slashes, built-in root container **kept**), or `null` when the
+  body names no folder. Unlike the breadcrumb trail, the root is kept: it really is where a query
+  filed directly under it lives, and where a sibling query has to be created.
 - `wiqlForSprint` replaces an existing `@CurrentIteration` or `@CurrentSprint` offset from that
   original body, and `filterTreeForSprintRoster` keeps team members, unassigned work, and only
   the parent chains needed to reach them.
@@ -410,6 +425,57 @@ board's filters and the tagging commands all share one interpretation of the fie
   `IWorkItemFieldWriter` (Interface Segregation): a re-parent changes the item's **links** and its
   rank lives behind a team-scoped backlog endpoint, so neither is a field patch, and a consumer that
   only edits fields must not be handed the ability to restructure a tree.
+
+### `createWorkItem.ts` + `IWorkItemCreator.ts`
+
+Creating a work item — the persistence behind a catalog view adding a project, and behind Project
+Tracking adding a milestone or newly identified work. Its own capability rather than a method on the
+field writer (Interface Segregation): every other write here changes an item that already exists and
+is guarded by that item's revision, while creation has neither.
+
+- `buildCreateWorkItemUrl(href, type)` — the project-scoped `_apis/wit/workitems/${type}` endpoint,
+  with Azure DevOps' `$` create-marker encoded together with the type name so a type containing a
+  space still resolves. `null` for a non-project URL or a blank type.
+- `buildParentLinkUrl(href, parentId)` — the organization-scoped `_apis/wit/workItems/${id}` address
+  a `System.LinkTypes.Hierarchy-Reverse` relation points at. Organization-scoped because that is what
+  ADO stores in a relation; `null` for a URL that names no organization.
+- `buildCreateWorkItemPatch(item, parentUrl?)` — title, tags, area path, iteration path **and the
+  parent link** in **one** JSON Patch. They must not be separate writes: the query or tree that is
+  about to show the item selects on exactly those values, so an item created first and tagged (or
+  parented) second exists for a moment as something nothing returns — and permanently so if the
+  second write fails. Empty optional values are omitted rather than written blank.
+- `parseCreatedWorkItem(raw)` — `{ id, rev }`, or `null` when ADO reported no usable id.
+- `IWorkItemCreator` / `WorkItemCreateResult` — the contract views depend on.
+
+### `projectQuery.ts` + `IProjectQueryService.ts`
+
+A project's own saved **tracking query**: which projects have one, creating and linking one, and
+unlinking plus deleting it again. All three sit on one contract because they are the same fact seen
+from three sides — a project either owns a tracking query or it does not — and splitting them would
+let a caller offer to create a second query for a project it never asked about.
+
+- `buildProjectQueryWiql(projectId)` — the recursive `WorkItemLinks` tree query covering the project
+  and everything beneath it. A **tree** query, because that is what Project Tracking consumes. Both
+  ends of every link are pinned to `@project` — the macro ADO resolves to the project the saved query
+  lives in, so no caller has to supply a name that could point somewhere else — and `Removed` targets
+  are excluded; the selected columns and the assignee ordering are what a human sees when they open
+  the saved query in Azure DevOps.
+- `projectQueryName(title)` / `uniqueProjectQueryName(title, id)` — the query's name, with the
+  characters ADO refuses replaced rather than the command failed, and the second candidate tried when
+  the folder already holds that name.
+- `buildCreateQueryUrl(href, folderPath)`, `buildDeleteQueryUrl(href, queryId)`,
+  `buildQueryWebUrl(href, queryId)` — the REST create/delete endpoints and the human-facing hub link
+  the hyperlink carries. `buildDeleteQueryUrlParts(href)` and `buildQueryWebUrlPrefix(href)` expose the
+  same URLs **split where the id goes**, because the page-world writer only learns a created query's
+  id after Azure DevOps answers — and cannot import a URL builder at all.
+- `DEFAULT_QUERY_FOLDER` — where a query lands when the catalog's own folder cannot be determined.
+- `HYPERLINK_RELATION` / `PROJECT_QUERY_LINK_COMMENT` — ADO's name for a web link, and the comment
+  stamped on the ones this extension creates. The stamp decides **ownership**, not recognition: only
+  a stamped query may be deleted again.
+- `parseCreatedQuery(raw)` and `parseProjectQueryLinks(raw)` — the created query's id, and one
+  `ProjectQueryLink` (work item id, query id, the link's own URL, and whether this extension made it)
+  per expanded item. The stamped link wins; failing that a **lone** saved-query hyperlink is adopted
+  and reported as not ours, and several unstamped candidates name none rather than guess.
 
 ### `reorderWorkItems.ts`
 

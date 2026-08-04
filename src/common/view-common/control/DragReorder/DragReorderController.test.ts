@@ -46,6 +46,8 @@ interface Board {
   containerA: HTMLElement;
   containerB: HTMLElement;
   rows: Map<number, DraggableRow>;
+  /** Each row's drop zone, so a test can aim at the band a drop between two rows lands in. */
+  surfaces: Map<number, HTMLElement>;
 }
 
 /**
@@ -66,6 +68,7 @@ function buildBoard(): Board {
   document.body.append(containerA, containerB);
 
   const rows = new Map<number, DraggableRow>();
+  const surfaces = new Map<number, HTMLElement>();
   const add = (
     id: number,
     depth: number,
@@ -76,10 +79,14 @@ function buildBoard(): Board {
     hasChildren = false,
   ): void => {
     const wrapper = document.createElement("div");
+    // The row's line sits inside a surface that also carries its trailing space, exactly as the
+    // tree renders it — so the suite exercises the widened drop zone rather than the bare line.
+    const surface = document.createElement("div");
     const row = document.createElement("div");
     const handle = document.createElement("span");
     row.append(handle);
-    wrapper.append(row);
+    surface.append(row);
+    wrapper.append(surface);
     container.append(wrapper);
     row.getBoundingClientRect = () => ({ top, height: 20, bottom: top + 20 }) as DOMRect;
     const descriptor: DraggableRow = {
@@ -92,9 +99,11 @@ function buildBoard(): Board {
       handle,
       row,
       wrapper,
+      dropZone: surface,
     };
     controller.register(descriptor);
     rows.set(id, descriptor);
+    surfaces.set(id, surface);
   };
 
   add(1, 1, 10, [1, 2, 3], containerA, 0, true);
@@ -106,7 +115,7 @@ function buildBoard(): Board {
   rows.get(1)!.wrapper.append(nested);
   add(6, 2, 1, [6], nested, 200);
 
-  return { controller, moves, infos, containerA, containerB, rows };
+  return { controller, moves, infos, containerA, containerB, rows, surfaces };
 }
 
 function startDrag(board: Board, id: number, withTransfer = true): FakeDataTransfer {
@@ -393,6 +402,46 @@ describe("DragReorderController - completing a same-level drop", () => {
 
     expect(anyLine()).toBeNull();
     expect(board.rows.get(1)!.wrapper.style.opacity).toBe("");
+  });
+});
+
+describe("DragReorderController - the band between two rows", () => {
+  /** Fires a drag event on the row's own surface, outside its line box, as the trailing space is. */
+  const onSurface = (board: Board, id: number, type: string, clientY: number): Event =>
+    fire(board.surfaces.get(id)!, type, { clientY, dataTransfer: fakeTransfer() });
+
+  it("accepts a drop aimed at the space below a row rather than discarding it", () => {
+    const board = buildBoard();
+    startDrag(board, 3);
+
+    // 22 is past row 2's line (top 20, height 20 → midpoint 30 is below it, so this reads "before")
+    // yet still inside the surface that carries row 2's trailing space.
+    const event = onSurface(board, 2, "drop", 22);
+
+    expect(board.moves).toEqual([
+      { id: 3, currentParentId: 10, parentId: 10, previousId: 1, nextId: 2, siblingIds: [1, 3, 2] },
+    ]);
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it("previews that same landing, so the line is never shown where the drop is refused", () => {
+    const board = buildBoard();
+    startDrag(board, 3);
+
+    const event = onSurface(board, 2, "dragover", 22);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(layoutOf(board.containerA)).toEqual(["row", "line", "row", "row"]);
+  });
+
+  it("still decides the side from the row's own line, not from the surface around it", () => {
+    const board = buildBoard();
+    startDrag(board, 1);
+
+    // Below row 2's line midpoint (30), so the drop lands after it however tall the surface is.
+    onSurface(board, 2, "drop", 38);
+
+    expect(board.moves[0]).toMatchObject({ previousId: 2, nextId: 3 });
   });
 });
 

@@ -11,6 +11,8 @@ import {
 import { createQueryBindingStore } from "../common/bindings/createQueryBindingStore";
 import { ChromeAdoMetadataReader } from "../common/browser/ChromeAdoMetadataReader";
 import { ChromeAdoTabReader } from "../common/browser/ChromeAdoTabReader";
+import { ChromeQueryFactsReader } from "../common/browser/ChromeQueryFactsReader";
+import { ChromeQueryFolderReader } from "../common/browser/ChromeQueryFolderReader";
 import { ChromeTeamConfigClient } from "../common/browser/ChromeTeamConfigClient";
 import { createLogging } from "../common/logging/createLogger";
 import { createSettingsStore } from "../common/settings/createSettingsStore";
@@ -35,6 +37,7 @@ import {
   QueryBindingsController,
   type QueryBindingsElements,
 } from "./query-bindings/QueryBindingsController";
+import { suggestionsFromMetadata } from "./query-bindings/suggestionSources";
 import {
   BootstrapLinkController,
   type BootstrapLinkElements,
@@ -141,6 +144,14 @@ const sharedConfigResolver = new SharedQueryConfigResolver(
 // One tab reader shared by the controllers that read from the active ADO tab: the Appearance panel
 // resolves "auto" from its theme, and the Query Bindings picker asks it which query that tab is on.
 const adoTabReader = new ChromeAdoTabReader();
+
+// Reads what a saved query itself says (its tag filter and the folder it lives in), so a catalog
+// binding opens with those already filled in rather than asking the user to retype them.
+const queryFactsReader = new ChromeQueryFactsReader();
+
+// Azure DevOps will not list a large project's saved-query folders in one read, so the ones inside a
+// folder are fetched only once the user reaches into it.
+const queryFolderReader = new ChromeQueryFolderReader();
 
 // The saved scope lets the metadata read address the configured project even from an ADO tab that
 // names none (an org home page or a folder route), so the pickers still fill away from a query.
@@ -434,7 +445,13 @@ if (
     (error) => bindingLogger.error("Query binding operation failed", error),
     {
       resolveCurrentQueryId: () => adoTabReader.readCurrentQueryId(),
-      resolveAreaPaths: async () => (await readAdoMetadata())?.areaPaths ?? [],
+      resolveSuggestions: async (source) =>
+        suggestionsFromMetadata((await readAdoMetadata()) ?? null, source),
+      resolveFolderChildren: (folderPath) => queryFolderReader.readChildFolders(folderPath),
+      resolveDerivedValues: async (id) => {
+        const facts = await queryFactsReader.read(id);
+        return { "query-tag": facts.tag, "query-folder": facts.folder };
+      },
       publishBindings: async (proposed) => {
         const result = await teamConfigSynchronizer.publishBindings(teamConfigClient, proposed);
         if (result.status === "failed") {

@@ -1,6 +1,7 @@
 import type { StorageObservation } from "../browser/observeStorageKeys";
 
-import type { QueryBinding, QueryBindings } from "./QueryBinding";
+import type { IQueryBindingWriter } from "./IQueryBindingWriter";
+import type { QueryBindings } from "./QueryBinding";
 
 /**
  * Abstraction over the persisted, browser-synced list of query bindings.
@@ -8,15 +9,9 @@ import type { QueryBinding, QueryBindings } from "./QueryBinding";
  * Features depend on THIS, never on chrome.storage directly (Dependency Inversion), which is what
  * makes the top-bar prompt and the options binding form unit-testable with a fake store.
  */
-export interface IQueryBindingStore {
+export interface IQueryBindingStore extends IQueryBindingWriter {
   /** Read the current bindings, normalized to a complete map. */
   read(): Promise<QueryBindings>;
-
-  /** Create or replace the binding for a single query. Other queries are left untouched. */
-  bind(queryId: string, binding: QueryBinding): Promise<void>;
-
-  /** Remove the binding for a single query. Other queries are left untouched; a no-op if absent. */
-  unbind(queryId: string): Promise<void>;
 
   /**
    * Replace the entire bindings map in one write. Unlike `bind`/`unbind`, this does not merge with

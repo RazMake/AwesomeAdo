@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   adoCollectionBaseUrl,
   buildAdoMetadataUrls,
+  buildQueryFolderChildrenUrl,
   parseAreaPaths,
   parseDateFieldReferenceNames,
   parseTeams,
@@ -68,6 +69,10 @@ describe("buildAdoMetadataUrls", () => {
       fieldsUrl: "https://dev.azure.com/contoso/web/_apis/wit/fields?api-version=7.1",
       areaPathsUrl:
         "https://dev.azure.com/contoso/web/_apis/wit/classificationnodes/areas?$depth=100&api-version=7.1",
+      iterationPathsUrl:
+        "https://dev.azure.com/contoso/web/_apis/wit/classificationnodes/iterations?$depth=100&api-version=7.1",
+      queryFoldersUrl:
+        "https://dev.azure.com/contoso/web/_apis/wit/queries?$depth=5&api-version=7.1",
     });
   });
 
@@ -81,6 +86,10 @@ describe("buildAdoMetadataUrls", () => {
         fieldsUrl: "https://contoso.visualstudio.com/web/_apis/wit/fields?api-version=7.1",
         areaPathsUrl:
           "https://contoso.visualstudio.com/web/_apis/wit/classificationnodes/areas?$depth=100&api-version=7.1",
+        iterationPathsUrl:
+          "https://contoso.visualstudio.com/web/_apis/wit/classificationnodes/iterations?$depth=100&api-version=7.1",
+        queryFoldersUrl:
+          "https://contoso.visualstudio.com/web/_apis/wit/queries?$depth=5&api-version=7.1",
       },
     );
   });
@@ -107,6 +116,27 @@ describe("buildAdoMetadataUrls", () => {
 
   it("returns null for an org-level URL with no project", () => {
     expect(buildAdoMetadataUrls("https://dev.azure.com/contoso/_queries")).toBeNull();
+  });
+});
+
+describe("buildQueryFolderChildrenUrl", () => {
+  const href = "https://dev.azure.com/contoso/O365%20Core/_queries";
+
+  it("addresses one folder, encoding each segment but keeping the separators literal", () => {
+    expect(buildQueryFolderChildrenUrl(href, "Shared Queries/Team A")).toBe(
+      "https://dev.azure.com/contoso/O365%20Core/_apis/wit/queries/Shared%20Queries/Team%20A?$depth=5&api-version=7.1",
+    );
+  });
+
+  it("accepts either separator, since ADO surfaces folder paths both ways", () => {
+    expect(buildQueryFolderChildrenUrl(href, "Shared Queries\\Team A")).toBe(
+      buildQueryFolderChildrenUrl(href, "Shared Queries/Team A"),
+    );
+  });
+
+  it("returns null without a project-scoped URL or a folder to ask about", () => {
+    expect(buildQueryFolderChildrenUrl("https://example.com/", "Shared Queries")).toBeNull();
+    expect(buildQueryFolderChildrenUrl(href, "   ")).toBeNull();
   });
 });
 

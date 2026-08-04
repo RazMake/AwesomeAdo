@@ -332,13 +332,16 @@ function buildMenu(
   // groups that answer different questions, so a mis-click cannot cross between "tell me about this"
   // and "change this".
   if (target.commands?.length) {
-    if (standard.length > 0) commands.append(renderSeparator(doc));
+    // One rule per gap: the boundary under the standard commands and a `separatorBefore` on the
+    // caller's FIRST command describe the same gap, so drawing both put two lines there.
+    let separateNext = standard.length > 0;
     for (const command of target.commands) {
       // A caller can split its own list further; the rule reads the same as the one above so the
       // menu has one visual language for "these answer a different question".
-      if (command.separatorBefore) {
+      if (separateNext || command.separatorBefore === true) {
         commands.append(renderSeparator(doc));
       }
+      separateNext = false;
       commands.append(renderCustomCommand(doc, command, menu, close, panelBounds));
     }
   }

@@ -45,9 +45,19 @@ export interface AdoMetadata {
   teams: AdoTeam[];
   /** Every full area path configured for the project, offered by binding editors. */
   areaPaths: string[];
+  /** Every full iteration path configured for the project, offered by binding editors. */
+  iterationPaths: string[];
+  /** Every saved-query folder the project holds, offered where a binding names one. */
+  queryFolders: string[];
   /** The project's work item types with their states, for the work-item-types picker. */
   workItemTypes: AdoWorkItemType[];
 }
 
 /** The empty result used whenever metadata cannot be determined, so callers never see `undefined`. */
-export const EMPTY_ADO_METADATA: AdoMetadata = { teams: [], areaPaths: [], workItemTypes: [] };
+export const EMPTY_ADO_METADATA: AdoMetadata = {
+  teams: [],
+  areaPaths: [],
+  iterationPaths: [],
+  queryFolders: [],
+  workItemTypes: [],
+};

@@ -1,4 +1,4 @@
-import type { AdoTeam } from "../../common/ado/AdoMetadata";
+import { EMPTY_ADO_METADATA, type AdoTeam } from "../../common/ado/AdoMetadata";
 import type {
   AdoMetadataContext,
   IAdoMetadataReader,
@@ -44,9 +44,7 @@ const defaultReportError: ReportError = (error) =>
 const EMPTY_METADATA_CONTEXT: AdoMetadataContext = {
   organization: "",
   project: null,
-  teams: [],
-  areaPaths: [],
-  workItemTypes: [],
+  ...EMPTY_ADO_METADATA,
 };
 
 /**

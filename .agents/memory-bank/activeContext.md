@@ -302,6 +302,28 @@ The extension is feature-complete for its current scope:
   selections round-trip in file and team configuration; connected binding saves publish the proposed
   map before local mutation so an automatic pull cannot erase them. Project Tracking continues deriving its
   eligible paths from live work.
+- `projects` (All Projects Catalog View) is the many-root sibling of Project Tracking (ADR-066):
+  it lists every top-level item a query returns as a collapsed project that opens into its own tree.
+  Rows carry type icon, ADO deep-linked title, the child count beside it, and the item's own tags;
+  child
+  DOM is built only while a row is open, and open/closed state lives outside the DOM. Its sticky
+  header composes the query breadcrumbs, a board-local ordering picker in the top-right corner,
+  expand-all/collapse-all, refresh, the shared write-queue status, and a tag filter whose
+  options are every tag worn anywhere in the tree (with a quick-search). A tag every project carries
+  is the query's own condition and is shown nowhere. Selected tags OR together
+  and keep the match, its ancestors, and its whole subtree; each load prunes selections to the tags
+  the query still offers and logs what it dropped. It is a deferred renderer
+  (`content/projects-view.js`), like Project Tracking.
+  It also **authors**: its title menu copies the query URL and adds a project through an inline title
+  row (first configured type, `projectTag` defaulted from the query's WIQL,
+  `newProjectAreaPath`, and `newProjectIterationPath` defaulted to the project root, in one creation
+  patch — ADR-069). `projectQueryFolder` overrides the catalog query's own folder; every row carries the shared Copy/Open and
+  item-editing commands plus tag add/clear commands that complete against the tree's vocabulary and
+  never offer the query's own condition tag; each PROJECT row adds the shared **Create Project Query**
+  and **Mark completed** pair (ADR-067, ADR-068), which Project Tracking also shows on its title
+  (without the create half — that board already is a project's query). Under the manual ordering a
+  project title is a drag handle that re-ranks it in the team's backlog and never re-parents anything
+  (ADR-070). Every write is persist-then-reflect through one serialized `WorkItemWriteQueue`.
 - SPA-aware navigation via the background service worker.
 - Device-local, source-tagged diagnostics log (`src/common/logging`): every line carries the
   component folder that owns the emitting code (e.g. `content/query-page`, `common/settings`,
@@ -327,6 +349,17 @@ The extension is feature-complete for its current scope:
   (source is the owning component folder by convention, e.g. `content/query-page` / `common/settings`,
   a free-form string); injected from composition roots so no class hard-codes its own source. Shared
   stores take the logger as an optional argument (absent = no-op).
+- `renderCheckboxFilter` (`common/view-common/control/CheckboxFilter`) — the one compact
+  trigger + checkbox-popup multi-select. It exchanges opaque values and takes a per-instance
+  `classPrefix`, so `AreaPathFilter` and the All Projects Catalog View tag filter share every
+  behaviour while
+  keeping their own selectors. Pass `searchPlaceholder` to add a quick-search for an unbounded list.
+- `workItemStatusLabel` / `boardColumnOrdinal` (`common/ado/workItemTypes`) — the one mapping from an
+  ADO `System.State` to the team's board-column label and to that column's position (which owns the
+  status color).
+- `DEFERRED_VIEWS` (`content/views/enhancedViewRegistry`) — the one list of views whose renderer ships
+  as its own web-accessible ESM bundle; a single generic loader resolves any of them and rejects a
+  bundle whose exported view id does not match.
 
 ## Pending (developer owned)
 

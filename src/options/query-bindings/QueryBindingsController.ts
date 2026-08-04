@@ -6,9 +6,13 @@ import {
   resolveViewTypePropertyValue,
   viewTypePropertyKind,
   type ViewType,
+  type ViewTypeDerivedSource,
+  type ViewTypeDerivedValues,
   type ViewTypeProperty,
+  type ViewTypeSuggestionSource,
 } from "../../common/view-common/ViewType";
 import { VIEW_TYPES } from "../../content/views/viewCatalog";
+import { AutocompleteInput } from "../ado-config/AutocompleteInput";
 
 import { AreaPathListEditor } from "./AreaPathListEditor";
 
@@ -66,17 +70,38 @@ export interface QueryBindingsOptions {
   viewTypes?: readonly ViewType[];
   /** Resolves the query id of the ADO tab the user is on. Defaults to "none". */
   resolveCurrentQueryId?: CurrentQueryIdResolver;
-  /** Loads full project area paths for the Sprint binding's autocomplete editors. */
-  resolveAreaPaths?: () => Promise<readonly string[]>;
+  /** Loads the Azure DevOps vocabulary one autocomplete source suggests from. */
+  resolveSuggestions?: (source: ViewTypeSuggestionSource) => Promise<readonly string[]>;
+  /** Lists the folders nested inside one saved-query folder, read only when the user asks for it. */
+  resolveFolderChildren?: (folderPath: string) => Promise<readonly string[]>;
+  /** Reads what a saved query itself says, used to pre-fill the properties derived from it. */
+  resolveDerivedValues?: (queryId: string) => Promise<ViewTypeDerivedValues>;
   /** Publishes the proposed full binding map before local observers can trigger a stale pull. */
   publishBindings?: (bindings: QueryBindings) => Promise<void>;
   /** The shared queries this user reads but cannot change. Absent means there are none. */
   sharedQueries?: SharedQueryAccess;
 }
 
+/**
+ * Every vocabulary the form can suggest from, all answered from ONE memoized metadata read.
+ *
+ * That read is broad and credentialed (it walks the project's whole area, iteration, and saved-query
+ * hierarchies), so the form never waits for it: it opens with empty lists and each live control is
+ * refreshed when the values land.
+ */
+const SUGGESTION_SOURCES: readonly ViewTypeSuggestionSource[] = [
+  "area-paths",
+  "iteration-paths",
+  "query-folders",
+];
+
 interface PropertyControl {
   element: HTMLElement;
   read(): string;
+  /** Replaces the value. Absent on controls no derived value can seed (the area-path list). */
+  write?(value: string): void;
+  /** Re-reads the form's vocabularies. Absent on controls that offer no suggestions. */
+  refreshSuggestions?(): void;
   dispose(): void;
 }
 
@@ -113,10 +138,18 @@ export class QueryBindingsController {
 
   private readonly viewTypes: readonly ViewType[];
   private readonly resolveCurrentQueryId: CurrentQueryIdResolver;
-  private readonly resolveAreaPaths: () => Promise<readonly string[]>;
+  private readonly resolveSuggestions: (
+    source: ViewTypeSuggestionSource,
+  ) => Promise<readonly string[]>;
+  private readonly resolveFolderChildren: (folderPath: string) => Promise<readonly string[]>;
+  private readonly resolveDerivedValues: (queryId: string) => Promise<ViewTypeDerivedValues>;
   private readonly publishBindings: (bindings: QueryBindings) => Promise<void>;
   private readonly sharedQueries: SharedQueryAccess | undefined;
-  private areaPaths: readonly string[] = [];
+  private suggestions = new Map<ViewTypeSuggestionSource, readonly string[]>();
+  /** Folders already asked about, so re-typing inside one costs nothing. */
+  private readonly expandedFolders = new Set<string>();
+  /** Each query's own answers, read at most once: the saved query is not going to change here. */
+  private readonly derivedValues = new Map<string, ViewTypeDerivedValues>();
 
   // `recordError` is REQUIRED, not defaulted: local status gives the user the failure while this
   // callback preserves its detail in diagnostics. The remaining collaborators are grouped in an
@@ -129,7 +162,9 @@ export class QueryBindingsController {
   ) {
     this.viewTypes = options.viewTypes ?? VIEW_TYPES;
     this.resolveCurrentQueryId = options.resolveCurrentQueryId ?? (async () => null);
-    this.resolveAreaPaths = options.resolveAreaPaths ?? (async () => []);
+    this.resolveSuggestions = options.resolveSuggestions ?? (async () => []);
+    this.resolveFolderChildren = options.resolveFolderChildren ?? (async () => []);
+    this.resolveDerivedValues = options.resolveDerivedValues ?? (async () => ({}));
     this.publishBindings = options.publishBindings ?? (async () => {});
     this.sharedQueries = options.sharedQueries;
   }
@@ -147,13 +182,23 @@ export class QueryBindingsController {
     this.elements.saveButton.addEventListener("click", this.handleSave);
     this.elements.deleteButton.addEventListener("click", this.handleDelete);
 
-    [this.bindings, this.areaPaths, this.shared] = await Promise.all([
+    [this.bindings, this.shared] = await Promise.all([
       this.readBindings(),
-      this.readAreaPaths(),
       this.readSharedQueries(),
     ]);
     this.syncQueryNames();
     await this.show(queryId, queryName);
+    // Deliberately not awaited: the vocabularies come from a broad Azure DevOps read, and holding the
+    // whole tab blank until it lands is what made this page feel like it never opened.
+    void this.loadSuggestions();
+  }
+
+  /** Fill every rendered suggestion list once the project's vocabularies have been read. */
+  private async loadSuggestions(): Promise<void> {
+    this.suggestions = await this.readSuggestions();
+    for (const control of this.propertyInputs.values()) {
+      control.refreshSuggestions?.();
+    }
   }
 
   /**
@@ -206,13 +251,75 @@ export class QueryBindingsController {
     }
   }
 
-  private async readAreaPaths(): Promise<readonly string[]> {
-    try {
-      return await this.resolveAreaPaths();
-    } catch (error: unknown) {
-      this.recordError(error);
-      return [];
+  private async readSuggestions(): Promise<Map<ViewTypeSuggestionSource, readonly string[]>> {
+    const entries = await Promise.all(
+      SUGGESTION_SOURCES.map(async (source) => {
+        try {
+          return [source, await this.resolveSuggestions(source)] as const;
+        } catch (error: unknown) {
+          // One unavailable vocabulary must not cost the others their suggestions.
+          this.recordError(error);
+          return [source, [] as readonly string[]] as const;
+        }
+      }),
+    );
+    return new Map(entries);
+  }
+
+  /** The values one autocomplete property offers, empty when its source answered nothing. */
+  private suggestionsFor(source: ViewTypeSuggestionSource | undefined): readonly string[] {
+    return source === undefined ? [] : (this.suggestions.get(source) ?? []);
+  }
+
+  /**
+   * Add the folders inside the one the user is typing in, once per folder.
+   *
+   * Azure DevOps will not enumerate a large project's saved-query hierarchy — it answers two levels
+   * deep and caps a node's children — so the offered folders start shallow and grow as the user
+   * reaches further in. "Reaching in" is either naming a known folder outright or typing a path
+   * beneath it; the deepest such folder is the one worth opening.
+   */
+  private async expandTypedFolder(typed: string): Promise<void> {
+    const folder = this.folderToExpand(typed);
+    if (folder === null) {
+      return;
     }
+    this.expandedFolders.add(folder.toLocaleLowerCase());
+    try {
+      const children = await this.resolveFolderChildren(folder);
+      if (children.length === 0) {
+        return;
+      }
+      this.suggestions.set(
+        "query-folders",
+        mergeSorted(this.suggestionsFor("query-folders"), children),
+      );
+      for (const control of this.propertyInputs.values()) {
+        control.refreshSuggestions?.();
+      }
+    } catch (error: unknown) {
+      // Suggestions are a convenience; a refused read must leave the typed path perfectly usable.
+      this.recordError(error);
+    }
+  }
+
+  /** The deepest already-offered folder the typed text names or sits inside, if it is still closed. */
+  private folderToExpand(typed: string): string | null {
+    const text = typed.trim().toLocaleLowerCase();
+    if (text === "") {
+      return null;
+    }
+    let deepest: string | null = null;
+    for (const folder of this.suggestionsFor("query-folders")) {
+      const candidate = folder.toLocaleLowerCase();
+      if (text !== candidate && !text.startsWith(`${candidate}/`)) continue;
+      if (deepest === null || folder.length > deepest.length) {
+        deepest = folder;
+      }
+    }
+    return deepest !== null && !this.expandedFolders.has(deepest.toLocaleLowerCase())
+      ? deepest
+      : null;
   }
 
   /**
@@ -442,6 +549,58 @@ export class QueryBindingsController {
       );
     }
     this.updateSaveEnabled();
+    void this.applyDerivedSeeds(view);
+  }
+
+  /**
+   * Fill any property the view derives from the bound query, but only where the user has none.
+   *
+   * A seed, never an override: a stored value is the user's own answer, and replacing it with the
+   * query's would quietly undo a deliberate choice. The read is asynchronous, so the selection is
+   * re-checked before anything is written — the user can pick another query while it is in flight.
+   */
+  private async applyDerivedSeeds(view: ViewType): Promise<void> {
+    const queryId = this.selectedQueryId;
+    const derived = view.properties.filter(isDerivedProperty);
+    if (queryId === null || derived.length === 0 || this.shared.has(queryId)) {
+      return;
+    }
+    const values = await this.queryDerivedValues(queryId);
+    if (this.selectedQueryId !== queryId || this.selectedView()?.id !== view.id) {
+      return;
+    }
+    for (const property of derived) {
+      this.seedProperty(property.key, values[property.derivedFrom]);
+    }
+    this.updateSaveEnabled();
+  }
+
+  /** Write a query-derived value into a property the user has left empty; leave any other alone. */
+  private seedProperty(key: string, value: string | null | undefined): void {
+    const seed = (value ?? "").trim();
+    const control = this.propertyInputs.get(key);
+    if (seed === "" || control?.write === undefined || control.read().trim() !== "") {
+      return;
+    }
+    control.write(seed);
+  }
+
+  /** What the query itself says, read at most once per query for the life of the tab. */
+  private async queryDerivedValues(queryId: string): Promise<ViewTypeDerivedValues> {
+    const cached = this.derivedValues.get(queryId);
+    if (cached !== undefined) {
+      return cached;
+    }
+    try {
+      const values = await this.resolveDerivedValues(queryId);
+      this.derivedValues.set(queryId, values);
+      return values;
+    } catch (error: unknown) {
+      // Pre-filling is a convenience; a refused read must not stop the binding being edited.
+      this.recordError(error);
+      this.derivedValues.set(queryId, {});
+      return {};
+    }
   }
 
   /** Build one labeled input (plus its optional hint) for a property, seeded from the binding. */
@@ -471,68 +630,96 @@ export class QueryBindingsController {
     return setting;
   }
 
-  /** The value control for a property: a dropdown for `select`, otherwise a text/number input. */
+  /**
+   * The value control for a property, chosen by its kind.
+   *
+   * Every kind is handed the already-resolved value (stored, else the property's default, clamped)
+   * so no builder can seed a field differently from what a save would store.
+   */
   private createPropertyControl(
     doc: Document,
     property: ViewTypeProperty,
     stored: string | undefined,
   ): PropertyControl {
     const kind = viewTypePropertyKind(property);
+    const value = resolveViewTypePropertyValue(property, stored);
     if (kind === "select") {
-      const select = doc.createElement("select");
-      select.dataset.propertyKey = property.key;
-      for (const option of property.options ?? []) {
-        const element = doc.createElement("option");
-        element.value = option.value;
-        element.textContent = option.label;
-        select.append(element);
-      }
-      // Seed the stored value, or the property's default when the binding has none or stored an
-      // option this build no longer offers.
-      select.value = resolveViewTypePropertyValue(property, stored);
-      return this.domControl(select, "change", this.handleInput);
+      return this.createSelectControl(doc, property, value);
+    }
+    if (kind === "autocomplete") {
+      return this.createAutocompleteControl(doc, property, value);
     }
     if (kind === "area-path-list") {
       const editor = new AreaPathListEditor(
         doc,
-        resolveViewTypePropertyValue(property, stored),
-        this.areaPaths,
+        value,
+        this.suggestionsFor("area-paths"),
         propertyDescription(property),
         () => this.updateSaveEnabled(),
       );
-      return { element: editor.root, read: () => editor.value, dispose: () => editor.dispose() };
-    }
-    const input = doc.createElement("input");
-    input.type = kind === "number" ? "number" : "text";
-    input.dataset.propertyKey = property.key;
-    if (kind === "number") {
-      input.inputMode = "numeric";
-      input.step = "1";
-      if (property.min !== undefined) {
-        input.min = String(property.min);
-      }
-      if (property.max !== undefined) {
-        input.max = String(property.max);
-      }
-    }
-    // Seed the stored value, or the property's default when the binding has none, so an unconfigured
-    // field opens with the behavior the view expects.
-    input.value = resolveViewTypePropertyValue(property, stored);
-    if (kind === "number") {
-      // A number is forced into range only once the user leaves the field, so deleting digits mid-edit
-      // is not fought.
-      input.addEventListener("input", this.handleInput);
-      input.addEventListener("change", this.handleNumberChange);
       return {
-        element: input,
-        read: () => input.value,
-        dispose: () => {
-          input.removeEventListener("input", this.handleInput);
-          input.removeEventListener("change", this.handleNumberChange);
-        },
+        element: editor.root,
+        read: () => editor.value,
+        refreshSuggestions: () => editor.setSuggestions(this.suggestionsFor("area-paths")),
+        dispose: () => editor.dispose(),
       };
     }
+    if (kind === "number") {
+      return this.createNumberControl(doc, property, value);
+    }
+    const input = doc.createElement("input");
+    input.type = "text";
+    input.dataset.propertyKey = property.key;
+    input.value = value;
     return this.domControl(input, "input", this.handleInput);
+  }
+
+  private createSelectControl(
+    doc: Document,
+    property: ViewTypeProperty,
+    value: string,
+  ): PropertyControl {
+    const select = doc.createElement("select");
+    select.dataset.propertyKey = property.key;
+    for (const option of property.options ?? []) {
+      const element = doc.createElement("option");
+      element.value = option.value;
+      element.textContent = option.label;
+      select.append(element);
+    }
+    select.value = value;
+    return this.domControl(select, "change", this.handleInput);
+  }
+
+  private createNumberControl(
+    doc: Document,
+    property: ViewTypeProperty,
+    value: string,
+  ): PropertyControl {
+    const input = doc.createElement("input");
+    input.type = "number";
+    input.dataset.propertyKey = property.key;
+    input.inputMode = "numeric";
+    input.step = "1";
+    if (property.min !== undefined) {
+      input.min = String(property.min);
+    }
+    if (property.max !== undefined) {
+      input.max = String(property.max);
+    }
+    input.value = value;
+    // A number is forced into range only once the user leaves the field, so deleting digits mid-edit
+    // is not fought.
+    input.addEventListener("input", this.handleInput);
+    input.addEventListener("change", this.handleNumberChange);
+    return {
+      element: input,
+      read: () => input.value,
+      dispose: () => {
+        input.removeEventListener("input", this.handleInput);
+        input.removeEventListener("change", this.handleNumberChange);
+      },
+    };
   }
 
   private domControl(
@@ -544,7 +731,51 @@ export class QueryBindingsController {
     return {
       element,
       read: () => element.value,
+      write: (value) => {
+        element.value = value;
+      },
       dispose: () => element.removeEventListener(event, listener),
+    };
+  }
+
+  /** A single-line text field whose suggestions come from the project's own Azure DevOps data. */
+  private createAutocompleteControl(
+    doc: Document,
+    property: ViewTypeProperty,
+    value: string,
+  ): PropertyControl {
+    const input = doc.createElement("input");
+    input.type = "text";
+    input.dataset.propertyKey = property.key;
+    input.setAttribute("aria-label", property.label);
+    input.value = value;
+    const autocomplete = new AutocompleteInput(input);
+    autocomplete.setOptions(this.suggestionsFor(property.suggestions));
+    input.addEventListener("input", this.handleInput);
+    // A saved-query folder is the one vocabulary Azure DevOps cannot hand over in full, so the
+    // folders inside the one being typed are fetched as the user reaches for them.
+    const expand =
+      property.suggestions === "query-folders"
+        ? () => void this.expandTypedFolder(input.value)
+        : null;
+    if (expand !== null) {
+      input.addEventListener("input", expand);
+    }
+    return {
+      // The control's own wrapper, not the raw input: the suggestion list lives inside it.
+      element: autocomplete.root,
+      read: () => input.value,
+      write: (value) => {
+        input.value = value;
+      },
+      refreshSuggestions: () => autocomplete.setOptions(this.suggestionsFor(property.suggestions)),
+      dispose: () => {
+        input.removeEventListener("input", this.handleInput);
+        if (expand !== null) {
+          input.removeEventListener("input", expand);
+        }
+        autocomplete.dispose();
+      },
     };
   }
 
@@ -779,6 +1010,25 @@ export class QueryBindingsController {
     }
     return remaining[Math.min(index, remaining.length - 1)] ?? null;
   }
+}
+
+/** A property the bound query can pre-fill, narrowed so its source can be looked up directly. */
+function isDerivedProperty(
+  property: ViewTypeProperty,
+): property is ViewTypeProperty & { derivedFrom: ViewTypeDerivedSource } {
+  return property.derivedFrom !== undefined;
+}
+
+/** One sorted list of both inputs, matched case-insensitively so ADO's own casing survives. */
+function mergeSorted(current: readonly string[], added: readonly string[]): string[] {
+  const merged = new Map(current.map((value) => [value.toLocaleLowerCase(), value]));
+  for (const value of added) {
+    const key = value.toLocaleLowerCase();
+    if (!merged.has(key)) {
+      merged.set(key, value);
+    }
+  }
+  return [...merged.values()].sort((left, right) => left.localeCompare(right));
 }
 
 /** One label plus the published value, for a query whose configuration the user cannot change. */

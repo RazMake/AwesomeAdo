@@ -4,7 +4,11 @@ import type { IQueryBindingStore } from "../../common/bindings/IQueryBindingStor
 import type { QueryBinding, QueryBindings } from "../../common/bindings/QueryBinding";
 import { DEFAULT_SETTINGS } from "../../common/settings/ExtensionSettings";
 import { exportConfig } from "../../common/settings-transfer/AwesomeAdoConfig";
-import type { ViewType } from "../../common/view-common/ViewType";
+import type {
+  ViewType,
+  ViewTypeDerivedValues,
+  ViewTypeSuggestionSource,
+} from "../../common/view-common/ViewType";
 
 import {
   QueryBindingsController,
@@ -80,6 +84,26 @@ const AREA_PATH_VIEWS: readonly ViewType[] = [
         label: "Default Lane area paths",
         required: false,
         kind: "area-path-list",
+      },
+    ],
+  },
+];
+
+// A catalog whose view pre-fills one property from the query's tag filter and another from the
+// folder that query lives in, used by the derived-seed tests.
+const DERIVED_VIEWS: readonly ViewType[] = [
+  {
+    id: "catalog",
+    label: "Catalog",
+    properties: [
+      { key: "projectTag", label: "Tag", required: false, kind: "text", derivedFrom: "query-tag" },
+      {
+        key: "projectQueryFolder",
+        label: "Project query folder",
+        required: false,
+        kind: "autocomplete",
+        suggestions: "query-folders",
+        derivedFrom: "query-folder",
       },
     ],
   },
@@ -176,14 +200,21 @@ const controllerFor = (
   store: FakeStore,
   views: readonly ViewType[] = VIEWS,
   resolveCurrentQueryId?: () => Promise<string | null>,
-  resolveAreaPaths?: () => Promise<readonly string[]>,
+  resolveSuggestions?: (source: ViewTypeSuggestionSource) => Promise<readonly string[]>,
   publishBindings?: (bindings: QueryBindings) => Promise<void>,
+  resolveDerivedValues?: (queryId: string) => Promise<ViewTypeDerivedValues>,
 ) =>
   new QueryBindingsController(
     store as unknown as IQueryBindingStore,
     elements,
     reportError as unknown as (error: unknown) => void,
-    { viewTypes: views, resolveCurrentQueryId, resolveAreaPaths, publishBindings },
+    {
+      viewTypes: views,
+      resolveCurrentQueryId,
+      resolveSuggestions,
+      publishBindings,
+      resolveDerivedValues,
+    },
   );
 
 const propInput = (key: string): HTMLInputElement | null =>
@@ -763,6 +794,223 @@ describe("view property kinds — area-path lists", () => {
     expect(
       JSON.parse(exportConfig(DEFAULT_SETTINGS, persisted)).enhancedQueries[GUID_A],
     ).toHaveProperty("properties.defaultAreaPaths", "Project\\API\nProject\\Web");
+  });
+});
+
+describe("properties derived from the bound query", () => {
+  let store: FakeStore;
+  let resolveDerivedValues: (queryId: string) => Promise<ViewTypeDerivedValues>;
+
+  const seeded = (queryId: string) =>
+    controllerFor(
+      store,
+      DERIVED_VIEWS,
+      undefined,
+      async () => ["Shared Queries/Team A"],
+      undefined,
+      resolveDerivedValues,
+    ).init(queryId, "Catalog");
+
+  beforeEach(() => {
+    store = makeStore({
+      [GUID_A]: { view: "catalog", properties: {}, name: "Catalog" },
+      [GUID_B]: {
+        view: "catalog",
+        properties: { projectTag: "Chosen", projectQueryFolder: "Shared Queries/Mine" },
+        name: "Other",
+      },
+    });
+    resolveDerivedValues = async () => ({
+      "query-tag": "FromQuery",
+      "query-folder": "Shared Queries/Team A",
+    });
+  });
+
+  it("seeds the tag and folder a query answers into the fields the user left empty", async () => {
+    await seeded(GUID_A);
+    await settle();
+
+    expect(propInput("projectTag")?.value).toBe("FromQuery");
+    expect(propInput("projectQueryFolder")?.value).toBe("Shared Queries/Team A");
+  });
+
+  it("never overwrites a value the user already stored", async () => {
+    await seeded(GUID_B);
+    await settle();
+
+    expect(propInput("projectTag")?.value).toBe("Chosen");
+    expect(propInput("projectQueryFolder")?.value).toBe("Shared Queries/Mine");
+  });
+
+  it("reads one query at most once, however often its properties are re-rendered", async () => {
+    const reads = vi.fn(async () => ({ "query-tag": "FromQuery" }));
+    resolveDerivedValues = reads;
+    await seeded(GUID_A);
+    await settle();
+    setView("catalog");
+    await settle();
+
+    expect(reads).toHaveBeenCalledTimes(1);
+    expect(reads).toHaveBeenCalledWith(GUID_A);
+  });
+
+  it("records a refused read and leaves the fields editable", async () => {
+    resolveDerivedValues = async () => {
+      throw new Error("no ADO tab");
+    };
+    await seeded(GUID_A);
+    await settle();
+
+    expect(reportError).toHaveBeenCalled();
+    expect(propInput("projectTag")?.value).toBe("");
+    expect(elements.saveButton.disabled).toBe(false);
+  });
+});
+
+// The vocabularies come from a broad credentialed Azure DevOps read; the form must not wait on it.
+describe("suggestions that arrive after the form is on screen", () => {
+  const openWith = (
+    views: readonly ViewType[],
+    resolveSuggestions: (source: ViewTypeSuggestionSource) => Promise<readonly string[]>,
+  ) =>
+    controllerFor(
+      makeStore({ [GUID_A]: { view: views[0]!.id, properties: {}, name: "Alpha" } }),
+      views,
+      undefined,
+      resolveSuggestions,
+    ).init(GUID_A, "Alpha");
+
+  const optionsOf = (input: HTMLInputElement): string[] => {
+    input.dispatchEvent(new FocusEvent("focus"));
+    return [...(input.parentElement?.querySelectorAll<HTMLElement>(".combobox__option") ?? [])].map(
+      (option) => option.textContent ?? "",
+    );
+  };
+
+  it("renders the form before the vocabularies have been read", async () => {
+    let release = (): void => {};
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    await openWith(DERIVED_VIEWS, async () => {
+      await pending;
+      return ["Shared Queries/Team A"];
+    });
+
+    // The property is on screen with an empty list rather than the whole tab waiting on the read.
+    const folder = propInput("projectQueryFolder")!;
+    expect(optionsOf(folder)).toEqual([]);
+
+    release();
+    await settle();
+
+    expect(optionsOf(folder)).toEqual(["Shared Queries/Team A"]);
+  });
+
+  it("fills the area-path editor's rows once its vocabulary lands", async () => {
+    let release = (): void => {};
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    await openWith(AREA_PATH_VIEWS, async () => {
+      await pending;
+      return ["Project\\Apps", "Project\\Platform"];
+    });
+    release();
+    await settle();
+
+    const add = elements.properties.querySelector<HTMLInputElement>(
+      '[aria-label="New default Lane area path"]',
+    )!;
+    expect(optionsOf(add)).toEqual(["Project\\Apps", "Project\\Platform"]);
+  });
+});
+
+// Azure DevOps answers the saved-query hierarchy two levels deep and caps a node's children, so a
+// large project's deeper folders exist only once someone asks for them.
+describe("saved-query folders expanded as the user types", () => {
+  const SHALLOW = ["Shared Queries", "Shared Queries/Team A"];
+
+  let resolveFolderChildren: ReturnType<typeof vi.fn<(folderPath: string) => Promise<string[]>>>;
+
+  const openFolderForm = () =>
+    new QueryBindingsController(
+      makeStore({
+        [GUID_A]: { view: "catalog", properties: {}, name: "Alpha" },
+      }) as unknown as IQueryBindingStore,
+      elements,
+      reportError as unknown as (error: unknown) => void,
+      {
+        viewTypes: DERIVED_VIEWS,
+        resolveSuggestions: async () => SHALLOW,
+        resolveFolderChildren,
+      },
+    ).init(GUID_A, "Alpha");
+
+  const folderOptions = (): string[] => {
+    const input = propInput("projectQueryFolder")!;
+    input.dispatchEvent(new FocusEvent("focus"));
+    return [...(input.parentElement?.querySelectorAll<HTMLElement>(".combobox__option") ?? [])].map(
+      (option) => option.textContent ?? "",
+    );
+  };
+
+  beforeEach(() => {
+    resolveFolderChildren = vi.fn(async (path: string) =>
+      path === "Shared Queries/Team A" ? ["Shared Queries/Team A/Reports"] : [],
+    );
+  });
+
+  it("offers the folders inside the one being typed into", async () => {
+    await openFolderForm();
+    await settle();
+    expect(folderOptions()).toEqual(SHALLOW);
+
+    fillProp("projectQueryFolder", "Shared Queries/Team A/");
+    await settle();
+
+    expect(resolveFolderChildren).toHaveBeenCalledWith("Shared Queries/Team A");
+    expect(folderOptions()).toContain("Shared Queries/Team A/Reports");
+  });
+
+  it("expands the deepest folder the typed path sits inside, not its parent", async () => {
+    await openFolderForm();
+    await settle();
+
+    fillProp("projectQueryFolder", "Shared Queries/Team A/anything");
+    await settle();
+
+    expect(resolveFolderChildren).toHaveBeenCalledTimes(1);
+    expect(resolveFolderChildren).toHaveBeenCalledWith("Shared Queries/Team A");
+  });
+
+  it("asks about one folder only once, however much more the user types", async () => {
+    await openFolderForm();
+    await settle();
+
+    fillProp("projectQueryFolder", "Shared Queries/Team A");
+    await settle();
+    fillProp("projectQueryFolder", "Shared Queries/Team A/Rep");
+    await settle();
+
+    expect(resolveFolderChildren).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves a typed path usable when the folder cannot be read", async () => {
+    resolveFolderChildren = vi.fn(async () => {
+      throw new Error("no ADO tab");
+    });
+    await openFolderForm();
+    await settle();
+
+    fillProp("projectQueryFolder", "Shared Queries/Team A/Reports");
+    await settle();
+
+    expect(reportError).toHaveBeenCalled();
+    expect(propInput("projectQueryFolder")?.value).toBe("Shared Queries/Team A/Reports");
+    expect(elements.saveButton.disabled).toBe(false);
   });
 });
 

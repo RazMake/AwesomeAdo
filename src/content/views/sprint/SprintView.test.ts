@@ -70,6 +70,55 @@ function noInterruptAcceptance(): EnhancedViewServices["interruptAcceptance"] {
   };
 }
 
+/** The fixture team, whose roster every sprint board is painted against. */
+function defaultTeamMembers(): Awaited<ReturnType<EnhancedViewServices["loadTeamMembers"]>> {
+  return {
+    members: [
+      { id: "alice-id", displayName: "Alice", uniqueName: "alice@example.com", imageUrl: null },
+      { id: "bob-id", displayName: "Bob", uniqueName: "bob@example.com", imageUrl: null },
+    ],
+    error: null,
+  };
+}
+
+/** The fixture's one work item type, with the five board columns the lanes are derived from. */
+function defaultTypes(): EnhancedViewServices["getTypes"] {
+  return () => [
+    {
+      name: "Story",
+      color: "#0078d4",
+      icon: "icon",
+      isPrimaryWork: true,
+      etaField: null,
+      columns: [
+        { column: "Queue", states: ["New"] },
+        { column: "Active", states: ["Active"] },
+        { column: "Waiting", states: ["Waiting"] },
+        { column: "Done", states: ["Done"] },
+        { column: "Removed", states: ["Removed"] },
+      ],
+    },
+  ];
+}
+
+/** The write-side services, none of which the default fixtures exercise. */
+function defaultWriters(): Pick<
+  EnhancedViewServices,
+  "writeField" | "reorderItem" | "createWorkItem" | "projectQueries" | "queryBindings"
+> {
+  return {
+    writeField: async () => ({ ok: true }),
+    reorderItem: async () => ({ ok: true }),
+    createWorkItem: { create: async () => ({ ok: true, id: 900, rev: 1 }) },
+    projectQueries: {
+      readLinks: async () => ({ links: [], error: null }),
+      create: async () => ({ ok: true, queryId: "q", rev: 2 }),
+      remove: async () => ({ ok: true, rev: 3 }),
+    },
+    queryBindings: { bind: async () => undefined, unbind: async () => undefined },
+  };
+}
+
 function services(overrides: Partial<EnhancedViewServices> = {}): EnhancedViewServices {
   return {
     loadTree: async () => ({ isTreeQuery: false, roots: defaultTree(), error: null }),
@@ -96,34 +145,8 @@ function services(overrides: Partial<EnhancedViewServices> = {}): EnhancedViewSe
       ],
       currentName: "Sprint 1",
     }),
-    loadTeamMembers: async () => ({
-      members: [
-        {
-          id: "alice-id",
-          displayName: "Alice",
-          uniqueName: "alice@example.com",
-          imageUrl: null,
-        },
-        { id: "bob-id", displayName: "Bob", uniqueName: "bob@example.com", imageUrl: null },
-      ],
-      error: null,
-    }),
-    getTypes: () => [
-      {
-        name: "Story",
-        color: "#0078d4",
-        icon: "icon",
-        isPrimaryWork: true,
-        etaField: null,
-        columns: [
-          { column: "Queue", states: ["New"] },
-          { column: "Active", states: ["Active"] },
-          { column: "Waiting", states: ["Waiting"] },
-          { column: "Done", states: ["Done"] },
-          { column: "Removed", states: ["Removed"] },
-        ],
-      },
-    ],
+    loadTeamMembers: async () => defaultTeamMembers(),
+    getTypes: defaultTypes(),
     getBoardColumns: () => ["Queue", "Active", "Waiting", "Done", "Removed"],
     markerTags: () => normalizeMarkerTags(undefined),
     now: () => new Date("2026-07-31T12:00:00Z"),
@@ -141,8 +164,7 @@ function services(overrides: Partial<EnhancedViewServices> = {}): EnhancedViewSe
       knownNames: () => new Map<string, string>(),
     },
     featureCrew: { reconcile: async () => ({ ok: true, changed: false }) },
-    writeField: async () => ({ ok: true }),
-    reorderItem: async () => ({ ok: true }),
+    ...defaultWriters(),
     currentTeam: () => "team-id",
     openDiagnosticsLog: vi.fn(),
     ...overrides,

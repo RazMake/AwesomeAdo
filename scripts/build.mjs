@@ -45,12 +45,13 @@ const options = {
   plugins: [copyPlugin],
 };
 
-// Classic manifest content scripts cannot themselves be ESM entries, so the large optional view is
+// Classic manifest content scripts cannot themselves be ESM entries, so the large optional views are
 // emitted separately and loaded by URL through the registry's dynamic import.
 /** @type {import("esbuild").BuildOptions} */
-const projectTrackingOptions = {
+const deferredViewOptions = {
   entryPoints: {
     "content/project-tracking": "src/content/views/project-tracking/ProjectTrackingView.ts",
+    "content/projects-view": "src/content/views/projects-view/ProjectsView.ts",
   },
   outdir,
   bundle: true,
@@ -75,14 +76,14 @@ async function copyStatic() {
 await rm(outdir, { recursive: true, force: true });
 
 if (watch) {
-  const [mainContext, projectTrackingContext] = await Promise.all([
+  const [mainContext, deferredViewContext] = await Promise.all([
     context(options),
-    context(projectTrackingOptions),
+    context(deferredViewOptions),
   ]);
   console.warn("esbuild: starting watch");
-  await Promise.all([mainContext.watch(), projectTrackingContext.watch()]);
+  await Promise.all([mainContext.watch(), deferredViewContext.watch()]);
   console.warn("esbuild: watching for changes");
 } else {
-  await Promise.all([build(options), build(projectTrackingOptions)]);
+  await Promise.all([build(options), build(deferredViewOptions)]);
   console.warn(`esbuild: built AwesomeADO ${fullVersion}`);
 }

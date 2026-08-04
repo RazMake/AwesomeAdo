@@ -9,7 +9,31 @@
  */
 
 /** How a view property is entered on the binding form and validated before it is stored. */
-export type ViewTypePropertyKind = "text" | "area-path-list" | "number" | "select";
+export type ViewTypePropertyKind = "text" | "area-path-list" | "number" | "select" | "autocomplete";
+
+/**
+ * The Azure DevOps vocabulary an `autocomplete` property suggests from.
+ *
+ * Named rather than supplied as a list because a `ViewType` is pure configuration read by the
+ * options bundle: the values are project-scoped and credentialed, so the form resolves them.
+ */
+export type ViewTypeSuggestionSource = "area-paths" | "iteration-paths" | "query-folders";
+
+/**
+ * A value the binding form can read off the bound query itself, used to seed an empty property.
+ *
+ * Only a seed: it fills a field the user has not answered, and once saved the stored value wins, so
+ * an intentional override is never silently replaced by the query's own answer.
+ */
+export type ViewTypeDerivedSource = "query-tag" | "query-folder";
+
+/**
+ * What the bound query answered for each derived source, keyed by the source itself so the form can
+ * seed a property straight from what it declared without knowing where any value came from.
+ *
+ * A missing or null entry simply leaves that property alone.
+ */
+export type ViewTypeDerivedValues = Partial<Record<ViewTypeDerivedSource, string | null>>;
 
 /** One choice offered by a `select` property: the stored `value` and the label shown for it. */
 export interface ViewTypeOption {
@@ -29,6 +53,10 @@ export interface ViewTypeProperty {
   kind?: ViewTypePropertyKind;
   /** The choices offered by a `select` property, in the order they appear; ignored otherwise. */
   options?: readonly ViewTypeOption[];
+  /** Where an `autocomplete` property's suggestions come from; ignored for every other kind. */
+  suggestions?: ViewTypeSuggestionSource;
+  /** What the form seeds this property from when the binding stores no value of its own. */
+  derivedFrom?: ViewTypeDerivedSource;
   /**
    * Value applied when a binding stores none: seeded into a fresh input and substituted at save
    * time, so an unconfigured field still behaves. Absent leaves the field empty until the user

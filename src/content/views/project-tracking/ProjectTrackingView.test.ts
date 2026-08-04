@@ -3,12 +3,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { FeatureCrewAssignee } from "../../../common/ado/FeatureCrew";
 import type { FeatureCrewReconcileRequest } from "../../../common/ado/IFeatureCrewWriter";
 import type { WorkItemFieldWriteRequest } from "../../../common/ado/IWorkItemFieldWriter";
+import type { WorkItemReorderRequest } from "../../../common/ado/IWorkItemReorderWriter";
 import type {
   TrackedUser,
   TrackedWorkItem,
   TypeCatalogEntry,
 } from "../../../common/ado/TrackedWorkItem";
 import type { WorkItemNote } from "../../../common/ado/WorkItemNote";
+import type { NewWorkItem } from "../../../common/ado/createWorkItem";
 import { normalizeMarkerTags } from "../../../common/settings/ExtensionSettings";
 import type {
   EnhancedViewContext,
@@ -139,6 +141,15 @@ function createFakeServices(overrides?: Partial<EnhancedViewServices>): Enhanced
     },
     writeField: async () => ({ ok: true, rev: 1 }),
     reorderItem: async () => ({ ok: true }),
+    // Nothing in the fixtures creates a project or a tracking query, so the defaults answer "nothing
+    // linked, nothing written"; the tests covering those commands override them with recorders.
+    createWorkItem: { create: async () => ({ ok: true, id: 900, rev: 1 }) },
+    projectQueries: {
+      readLinks: async () => ({ links: [], error: null }),
+      create: async () => ({ ok: true, queryId: "q", rev: 2 }),
+      remove: async () => ({ ok: true, rev: 3 }),
+    },
+    queryBindings: { bind: async () => undefined, unbind: async () => undefined },
     // A configured team by default, so drag-to-reorder is available in the fixtures that exercise it.
     // Tests covering the "no team" degradation override this with null.
     currentTeam: () => "team-guid",
@@ -3431,9 +3442,11 @@ describe("ProjectTrackingView — the item right-click menu", () => {
       "View all notes",
       "Tag with Blocked (internal)",
       "Tag with Blocked by another team",
+      "New work identified",
     ]);
-    // Two rules: one under the commands that only DESCRIBE the item, one above the flags.
-    expect(root.querySelectorAll(".awesomeado-item-menu__separator")).toHaveLength(2);
+    // Three rules: under the commands that only DESCRIBE the item, above the flags, and above the
+    // one command that creates something rather than changing what is there.
+    expect(root.querySelectorAll(".awesomeado-item-menu__separator")).toHaveLength(3);
   });
 
   it("copies the id of the row that was right-clicked", async () => {
@@ -5538,5 +5551,360 @@ describe("ProjectTrackingView - when a flag write is rejected", () => {
       { id: 2, rev: 1, field: "System.Tags", value: "", baseValue: "Blocked" },
     ]);
     expect(filterMarkerPills(root).map((pill) => pill.textContent)).toEqual(["Blocked (internal)"]);
+  });
+});
+
+describe("ProjectTrackingView — retiring the project from its title", () => {
+  it("offers Mark completed on the root, and never a second query for the board it is already on", async () => {
+    const root = await renderDeepBoard();
+
+    rightClick(root.querySelector(".awesomeado-tracking__title")!);
+    const labels = menuCommands(root).map((command) => command.textContent?.replace("\u203A", ""));
+
+    expect(labels).toContain("Mark completed");
+    expect(labels).not.toContain("Create Project Query");
+  });
+
+  it("offers the project lifecycle nowhere but the root", async () => {
+    const root = await renderDeepBoard();
+    await turnSprintFilterOff(root);
+
+    rightClick(root.querySelector(".awesomeado-tracking__row")!);
+
+    expect(menuCommands(root).map((command) => command.textContent)).not.toContain(
+      "Mark completed",
+    );
+  });
+
+  it("says so rather than guessing when the root's type has no final board column", async () => {
+    const root = await renderDeepBoard();
+
+    rightClick(root.querySelector(".awesomeado-tracking__title")!);
+
+    const command = commandNamed(root, "Mark completed");
+    expect(command.disabled).toBe(true);
+    expect(command.title).toContain("No board column is configured");
+  });
+
+  it("sets the root to its type's final board state and leaves the query alone", async () => {
+    const remove = vi.fn(async () => ({ ok: true, rev: 3 }));
+    const { root, writes } = await renderCompletableBoard(remove);
+
+    rightClick(root.querySelector(".awesomeado-tracking__title")!);
+    commandNamed(root, "Mark completed").click();
+    completionButton(root, "Complete").click();
+    await settleWrites();
+
+    expect(writes).toEqual([
+      { id: 1, rev: 1, field: "System.State", value: "Closed", baseValue: "Active" },
+    ]);
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it("deletes the board's own query and drops its binding when the reader asks", async () => {
+    const remove = vi.fn(async () => ({ ok: true, rev: 3 }));
+    const unbind = vi.fn(async () => undefined);
+    const { root } = await renderCompletableBoard(remove, unbind);
+
+    rightClick(root.querySelector(".awesomeado-tracking__title")!);
+    commandNamed(root, "Mark completed").click();
+    completionButton(root, "Complete and delete query").click();
+    await settleWrites();
+
+    // The board IS this project's tracking query, so the query it offers to delete is its own.
+    expect(remove).toHaveBeenCalledWith({ projectId: 1, queryId: "q1", rev: 2 });
+    await vi.waitFor(() => expect(unbind).toHaveBeenCalledWith("q1"));
+  });
+
+  it("keeps the binding when the query could not be deleted", async () => {
+    const remove = vi.fn(async () => ({ ok: false, error: "HTTP 403" }));
+    const unbind = vi.fn(async () => undefined);
+    const { root } = await renderCompletableBoard(remove, unbind);
+
+    rightClick(root.querySelector(".awesomeado-tracking__title")!);
+    commandNamed(root, "Mark completed").click();
+    completionButton(root, "Complete and delete query").click();
+    await settleWrites();
+
+    expect(remove).toHaveBeenCalledOnce();
+    expect(unbind).not.toHaveBeenCalled();
+  });
+
+  it("changes nothing when the reader backs out", async () => {
+    const remove = vi.fn(async () => ({ ok: true, rev: 3 }));
+    const { root, writes } = await renderCompletableBoard(remove);
+
+    rightClick(root.querySelector(".awesomeado-tracking__title")!);
+    commandNamed(root, "Mark completed").click();
+    completionButton(root, "Cancel").click();
+    await settleWrites();
+
+    expect(writes).toEqual([]);
+    expect(remove).not.toHaveBeenCalled();
+  });
+});
+
+/** A board whose writes are recorded and whose tracking query is removable. */
+async function renderCompletableBoard(
+  remove: EnhancedViewServices["projectQueries"]["remove"],
+  unbind: EnhancedViewServices["queryBindings"]["unbind"] = async () => undefined,
+): Promise<{ root: HTMLElement; writes: WorkItemFieldWriteRequest[] }> {
+  const writes: WorkItemFieldWriteRequest[] = [];
+  const root = await renderDeepBoard({
+    // The deep fixture's Epic has no board columns at all, which is exactly the case that leaves
+    // "completed" undefined — so a board that CAN complete has to say where its root ends up.
+    getTypes: () => [
+      { ...DEEP_TYPES[0]!, columns: [{ column: "Done", states: ["Closed"] }] },
+      ...DEEP_TYPES.slice(1),
+    ],
+    writeField: async (request) => {
+      writes.push(request);
+      return { ok: true, rev: request.rev + 1 };
+    },
+    projectQueries: {
+      readLinks: async () => ({ links: [], error: null }),
+      create: async () => ({ ok: true, queryId: "query-1", rev: 2 }),
+      remove,
+    },
+    queryBindings: { bind: async () => undefined, unbind },
+  });
+  return { root, writes };
+}
+
+/** One answer in the completion confirmation the menu opened in place of its commands. */
+function completionButton(root: HTMLElement, label: string): HTMLButtonElement {
+  const button = [
+    ...root.querySelectorAll<HTMLButtonElement>(".awesomeado-project-complete button"),
+  ].find((candidate) => candidate.textContent === label);
+  if (button === undefined) throw new Error(`Missing completion answer "${label}".`);
+  return button;
+}
+
+/** The inline box asking for a new item's title, wherever the board opened it. */
+const newItemRow = (root: HTMLElement): HTMLElement | null =>
+  root.querySelector<HTMLElement>(".awesomeado-new-item");
+
+/** Types `title` into the open box and submits it. */
+function submitNewItem(root: HTMLElement, title: string): void {
+  const row = newItemRow(root);
+  if (row === null) throw new Error("No new-item box is open.");
+  const input = row.querySelector("input")!;
+  input.value = title;
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  [...row.querySelectorAll("button")]
+    .find((button) => button.textContent?.startsWith("Add "))!
+    .click();
+}
+
+/** A board that records everything it was asked to create. */
+async function renderCreatingBoard(
+  overrides: Partial<EnhancedViewServices> = {},
+): Promise<{ root: HTMLElement; created: NewWorkItem[]; reorders: WorkItemReorderRequest[] }> {
+  const created: NewWorkItem[] = [];
+  const reorders: WorkItemReorderRequest[] = [];
+  const root = await renderDeepBoard({
+    createWorkItem: {
+      create: async (item) => {
+        created.push(item);
+        return {
+          ok: true,
+          id: 900 + created.length,
+          rev: 1,
+          // What ADO answers a create with: the fields it was given, plus the ones the process
+          // defaulted and nobody asked for.
+          fields: {
+            "System.WorkItemType": item.type,
+            "System.Title": item.title,
+            "System.State": "Active",
+            "Microsoft.VSTS.Common.Priority": 2,
+            "System.AreaPath": item.areaPath ?? "Project",
+            "System.IterationPath": item.iterationPath ?? "Project",
+          },
+        };
+      },
+    },
+    reorderItem: async (request) => {
+      reorders.push(request);
+      // The rank ADO reports for an item dropped at the top of the level, below every sibling's.
+      return { ok: true, order: 1 };
+    },
+    ...overrides,
+  });
+  return { root, created, reorders };
+}
+
+describe("ProjectTrackingView — adding a milestone from the title", () => {
+  it("offers the command on the title, naming nothing the reader has to choose", async () => {
+    const root = await renderDeepBoard();
+
+    rightClick(root.querySelector(".awesomeado-tracking__title")!);
+
+    expect(commandNamed(root, "Add new milestone/phase").disabled).toBe(false);
+  });
+
+  it("opens a box at the top of the list, stating what it will create", async () => {
+    const { root } = await renderCreatingBoard();
+
+    rightClick(root.querySelector(".awesomeado-tracking__title")!);
+    commandNamed(root, "Add new milestone/phase").click();
+
+    const tree = root.querySelector(".awesomeado-tracking__tree")!;
+    expect(tree.firstElementChild?.classList.contains("awesomeado-new-item")).toBe(true);
+    // The Epic's first configured child type is what a milestone is on this board.
+    expect(newItemRow(root)?.textContent).toContain("Created as a Feature under Platform");
+  });
+
+  it("refuses to re-open a box that is already asking for a title", async () => {
+    const root = await renderDeepBoard();
+
+    rightClick(root.querySelector(".awesomeado-tracking__title")!);
+    commandNamed(root, "Add new milestone/phase").click();
+    rightClick(root.querySelector(".awesomeado-tracking__title")!);
+
+    expect(commandNamed(root, "Add new milestone/phase").disabled).toBe(true);
+  });
+
+  it("creates the milestone under the project, inheriting where the project sits", async () => {
+    const { root, created } = await renderCreatingBoard();
+
+    rightClick(root.querySelector(".awesomeado-tracking__title")!);
+    commandNamed(root, "Add new milestone/phase").click();
+    submitNewItem(root, "Phase 2");
+
+    await vi.waitFor(() =>
+      expect(created).toEqual([
+        {
+          type: "Feature",
+          title: "Phase 2",
+          tags: [],
+          areaPath: null,
+          iterationPath: "Project\\Sprint 1",
+          parentId: 1,
+        },
+      ]),
+    );
+  });
+
+  it("shows the new milestone at the top of the list and ranks it there", async () => {
+    const { root, reorders } = await renderCreatingBoard();
+
+    rightClick(root.querySelector(".awesomeado-tracking__title")!);
+    commandNamed(root, "Add new milestone/phase").click();
+    submitNewItem(root, "Phase 2");
+    await settleWrites();
+    await turnSprintFilterOff(root);
+
+    expect(rowTitles(root)[0]).toBe("Phase 2");
+    // Ranked ahead of the level it joined, so the position survives the next load.
+    expect(reorders).toEqual([
+      expect.objectContaining({ id: 901, parentId: 1, previousId: 0, nextId: 2 }),
+    ]);
+  });
+
+  it("shows what the process defaulted straight away, not only after the next refresh", async () => {
+    const { root } = await renderCreatingBoard();
+
+    rightClick(root.querySelector(".awesomeado-tracking__title")!);
+    commandNamed(root, "Add new milestone/phase").click();
+    submitNewItem(root, "Phase 2");
+    await settleWrites();
+    await turnSprintFilterOff(root);
+
+    // The reader was never asked for a priority or a state; ADO chose both, and the row says so.
+    const added = root.querySelector(".awesomeado-tracking__row")!;
+    expect(added.querySelector(".awesomeado-priority__badge")?.textContent).toContain("P2");
+    expect(added.querySelector(".awesomeado-status__badge")?.textContent).toContain("Active");
+  });
+
+  it("closes the box and writes nothing when the reader backs out", async () => {
+    const { root, created } = await renderCreatingBoard();
+
+    rightClick(root.querySelector(".awesomeado-tracking__title")!);
+    commandNamed(root, "Add new milestone/phase").click();
+    [...newItemRow(root)!.querySelectorAll("button")]
+      .find((button) => button.textContent === "Cancel")!
+      .click();
+    await settleWrites();
+
+    expect(newItemRow(root)).toBeNull();
+    expect(created).toEqual([]);
+  });
+});
+
+describe("ProjectTrackingView — recording newly identified work", () => {
+  it("offers the command only where the children ARE the team's delivery", async () => {
+    const root = await renderDeepBoard();
+    await turnSprintFilterOff(root);
+
+    const rows = [...root.querySelectorAll(".awesomeado-tracking__row")];
+    rightClick(rows[0]!);
+    const onFeature = menuCommands(root).map((command) => command.textContent);
+    rightClick(rows[1]!);
+    const onStory = menuCommands(root).map((command) => command.textContent);
+
+    // A Feature's children are Stories (Primary work); a Story's children are Tasks, which are not.
+    expect(onFeature).toContain("New work identified");
+    expect(onStory).not.toContain("New work identified");
+  });
+
+  it("opens the box at the top of that item's own children", async () => {
+    const { root } = await renderCreatingBoard();
+    await turnSprintFilterOff(root);
+
+    rightClick(root.querySelector(".awesomeado-tracking__row")!);
+    commandNamed(root, "New work identified").click();
+
+    const children = root.querySelector(".awesomeado-tracking__children")!;
+    expect(children.firstElementChild?.classList.contains("awesomeado-new-item")).toBe(true);
+    expect(newItemRow(root)?.textContent).toContain("Created as a Story under User Authentication");
+  });
+
+  it("creates the work under that item, inheriting its area and sprint", async () => {
+    const { root, created } = await renderCreatingBoard();
+    await turnSprintFilterOff(root);
+
+    rightClick(root.querySelector(".awesomeado-tracking__row")!);
+    commandNamed(root, "New work identified").click();
+    submitNewItem(root, "Password reset");
+
+    await vi.waitFor(() =>
+      expect(created).toEqual([
+        {
+          type: "Story",
+          title: "Password reset",
+          tags: [],
+          areaPath: "Project\\Platform\\API",
+          iterationPath: "Project\\Sprint 1",
+          parentId: 2,
+        },
+      ]),
+    );
+  });
+
+  it("keeps the box open with the typed title when Azure DevOps refuses the creation", async () => {
+    const { root } = await renderCreatingBoard({
+      createWorkItem: { create: async () => ({ ok: false, error: "HTTP 403" }) },
+    });
+    await turnSprintFilterOff(root);
+
+    rightClick(root.querySelector(".awesomeado-tracking__row")!);
+    commandNamed(root, "New work identified").click();
+    submitNewItem(root, "Password reset");
+    await settleWrites();
+
+    expect(newItemRow(root)?.querySelector("input")?.value).toBe("Password reset");
+  });
+
+  it("keeps the new item at the top for the session when no team can rank it", async () => {
+    const { root, reorders } = await renderCreatingBoard({ currentTeam: () => null });
+    await turnSprintFilterOff(root);
+
+    rightClick(root.querySelector(".awesomeado-tracking__row")!);
+    commandNamed(root, "New work identified").click();
+    submitNewItem(root, "Password reset");
+    await settleWrites();
+
+    expect(reorders).toEqual([]);
+    expect(rowTitles(root)).toContain("Password reset");
   });
 });

@@ -9,6 +9,9 @@ const API_VERSION = ADO_API_VERSION;
 // round-trips as possible, then let it page $skip to the end (see fetchAdoRawInPage).
 const TEAMS_PAGE_SIZE = 1000;
 
+/** Azure DevOps expands the saved-query hierarchy at most two levels per request. */
+const QUERY_FOLDER_DEPTH = 5;
+
 /** The ADO REST endpoints the options page reads for a project: teams, types, and fields. */
 export interface AdoMetadataUrls {
   teamsUrl: string;
@@ -17,6 +20,10 @@ export interface AdoMetadataUrls {
   fieldsUrl: string;
   /** The project's complete area hierarchy, used to suggest valid full area paths. */
   areaPathsUrl: string;
+  /** The project's complete iteration hierarchy, used to suggest valid full iteration paths. */
+  iterationPathsUrl: string;
+  /** The project's saved-query hierarchy, used to suggest the folders a query can be created in. */
+  queryFoldersUrl: string;
 }
 
 /**
@@ -122,38 +129,107 @@ export function buildAdoMetadataUrls(href: string): AdoMetadataUrls | null {
     // list is read alongside it purely to learn which of those fields are date-typed.
     fieldsUrl: `${base}/${project}/_apis/wit/fields?api-version=${API_VERSION}`,
     areaPathsUrl: `${base}/${project}/_apis/wit/classificationnodes/areas?$depth=100&api-version=${API_VERSION}`,
+    iterationPathsUrl: `${base}/${project}/_apis/wit/classificationnodes/iterations?$depth=100&api-version=${API_VERSION}`,
+    // Azure DevOps caps the query hierarchy at two levels of expansion per request, so anything
+    // deeper is reached one folder at a time — see `buildQueryFolderChildrenUrl`.
+    queryFoldersUrl: `${base}/${project}/_apis/wit/queries?$depth=${QUERY_FOLDER_DEPTH}&api-version=${API_VERSION}`,
   };
+}
+
+/**
+ * The URL that lists one folder's own contents, or null when `href` is not project-scoped.
+ *
+ * Azure DevOps answers the hierarchy endpoint two levels deep and caps a node's children, so a large
+ * project simply cannot be enumerated in one read — the folders below that boundary are reached by
+ * asking the folder the user is actually interested in. The folder's slashes stay literal while each
+ * segment is encoded, because ADO reads the trailing path as a hierarchy.
+ */
+export function buildQueryFolderChildrenUrl(href: string, folderPath: string): string | null {
+  const resolved = resolveAdoProjectContext(href);
+  const path = folderPath.trim();
+  if (resolved === null || path.length === 0) {
+    return null;
+  }
+  const encoded = path
+    .split(/[/\\]/)
+    .filter((segment) => segment.length > 0)
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+  return `${resolved.base}/${resolved.project}/_apis/wit/queries/${encoded}?$depth=${QUERY_FOLDER_DEPTH}&api-version=${API_VERSION}`;
 }
 
 /** Parse the project area hierarchy into full `System.AreaPath` values for autocomplete. */
 export function parseAreaPaths(body: unknown): string[] {
+  return parseClassificationPaths(body, "area");
+}
+
+/** Parse the project iteration hierarchy into full `System.IterationPath` values for autocomplete. */
+export function parseIterationPaths(body: unknown): string[] {
+  return parseClassificationPaths(body, "iteration");
+}
+
+/**
+ * Both classification trees share a shape and a trap: ADO reports each node's `path` with the
+ * structure's own segment (`\Project\Area\…`, `\Project\Iteration\…`) that the work item field never
+ * carries, so it is stripped once here rather than by every caller.
+ */
+function parseClassificationPaths(body: unknown, structure: string): string[] {
   const paths: string[] = [];
   const seen = new Set<string>();
-  collectAreaPaths(body, "", paths, seen);
+  collectClassificationPaths(body, "", structure, paths, seen);
   return paths.sort((left, right) => left.localeCompare(right));
 }
 
-interface AreaNode {
+/** Parse the saved-query hierarchy into the folder paths a new query can be created in. */
+export function parseQueryFolders(body: unknown): string[] {
+  const folders: string[] = [];
+  const seen = new Set<string>();
+  collectQueryFolders((body as { value?: unknown } | null)?.value ?? body, folders, seen);
+  return folders.sort((left, right) => left.localeCompare(right));
+}
+
+function collectQueryFolders(value: unknown, folders: string[], seen: Set<string>): void {
+  if (Array.isArray(value)) {
+    for (const entry of value) collectQueryFolders(entry, folders, seen);
+    return;
+  }
+  if (typeof value !== "object" || value === null) return;
+  const raw = value as { path?: unknown; isFolder?: unknown; children?: unknown };
+  const path = typeof raw.path === "string" ? raw.path.trim().replace(/^\/+/, "") : "";
+  const key = path.toLocaleLowerCase();
+  // Only a folder can hold a new query; a saved query's own path would be refused by ADO.
+  if (raw.isFolder === true && path !== "" && !seen.has(key)) {
+    seen.add(key);
+    folders.push(path);
+  }
+  collectQueryFolders(raw.children, folders, seen);
+}
+
+interface ClassificationNode {
   path: string;
   children: readonly unknown[];
 }
 
-function parseAreaNode(value: unknown, parentPath: string): AreaNode | null {
+function parseClassificationNode(
+  value: unknown,
+  parentPath: string,
+  structure: string,
+): ClassificationNode | null {
   if (typeof value !== "object" || value === null) return null;
   const raw = value as { name?: unknown; path?: unknown; children?: unknown };
   const name = typeof raw.name === "string" ? raw.name.trim() : "";
   const supplied =
-    typeof raw.path === "string" ? systemAreaPathFromClassificationPath(raw.path) : "";
+    typeof raw.path === "string" ? workItemPathFromClassificationPath(raw.path, structure) : "";
   const path = supplied || (parentPath === "" ? name : `${parentPath}\\${name}`);
   return { path: name === "" && supplied === "" ? "" : path, children: toChildren(raw.children) };
 }
 
-function systemAreaPathFromClassificationPath(path: string): string {
+function workItemPathFromClassificationPath(path: string, structure: string): string {
   const parts = path
     .split("\\")
     .map((part) => part.trim())
     .filter((part) => part.length > 0);
-  if (parts[1]?.toLocaleLowerCase() === "area") parts.splice(1, 1);
+  if (parts[1]?.toLocaleLowerCase() === structure) parts.splice(1, 1);
   return parts.join("\\");
 }
 
@@ -161,13 +237,14 @@ function toChildren(value: unknown): readonly unknown[] {
   return Array.isArray(value) ? value : [];
 }
 
-function collectAreaPaths(
+function collectClassificationPaths(
   value: unknown,
   parentPath: string,
+  structure: string,
   paths: string[],
   seen: Set<string>,
 ): void {
-  const node = parseAreaNode(value, parentPath);
+  const node = parseClassificationNode(value, parentPath, structure);
   if (node === null) return;
   const key = node.path.toLocaleLowerCase();
   if (node.path !== "" && !seen.has(key)) {
@@ -175,7 +252,8 @@ function collectAreaPaths(
     paths.push(node.path);
   }
   const childParent = node.path || parentPath;
-  for (const child of node.children) collectAreaPaths(child, childParent, paths, seen);
+  for (const child of node.children)
+    collectClassificationPaths(child, childParent, structure, paths, seen);
 }
 
 /**

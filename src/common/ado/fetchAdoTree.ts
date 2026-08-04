@@ -1,4 +1,5 @@
 import type { QueryFolderCrumb, WorkItemTreeResult } from "./IWorkItemTreeLoader";
+import { queryPathFolderSegments } from "./QueryDefinition";
 import type { TrackedUser, TrackedWorkItem } from "./TrackedWorkItem";
 import {
   ADO_API_VERSION,
@@ -146,13 +147,7 @@ const MAX_FOLDER_CRUMBS = 2;
  * one as a single opaque segment would silently collapse the whole trail to empty.
  */
 export function parseQueryFolderPath(rawQuery: unknown): QueryFolderCrumb[] {
-  const path = (rawQuery as { path?: unknown } | null)?.path;
-  if (typeof path !== "string" || path.length === 0) {
-    return [];
-  }
-  const segments = path.split(/[/\\]/).filter((segment) => segment.length > 0);
-  // Drop the leaf: the last segment is the query's own name, not a folder.
-  segments.pop();
+  const segments = queryPathFolderSegments((rawQuery as { path?: unknown } | null)?.path);
   // Anchor each folder to its full path from the root so its link resolves; the paths always use "/"
   // regardless of which separator the source `path` used, because that is the separator ADO's folder
   // deep link expects.
@@ -446,8 +441,12 @@ function parseOptionalString(value: unknown): string | null {
  * Hydrate a TrackedWorkItem's own fields from a batch item (children are attached by the caller). The
  * nested `field`/`readString` closures keep the many repeated `fields[...] ?? ""` reads out of this
  * function's own branching so it stays simple to follow.
+ *
+ * Exported because the CREATE response carries the same `{ rev, fields }` shape: a view showing a
+ * just-created item reads it through this one mapper, so an item that was created and an item that
+ * was loaded can never disagree about what a field means.
  */
-function hydrateTrackedWorkItem(
+export function hydrateTrackedWorkItem(
   id: number,
   item: object,
   etaFieldByType: ReadonlyMap<string, string>,

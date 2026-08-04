@@ -54,15 +54,36 @@ contextMenu.openAt(event, {
 `ItemContextMenuCommand[]` for the shared
 [`ItemContextMenu`](../../../../common/view-common/control/ItemContextMenu/README.md).
 
-| Option          | Meaning                                                                                                         |
-| --------------- | --------------------------------------------------------------------------------------------------------------- |
-| `item`          | The item the commands act on. **Mutated in place** on a successful write, like every row control.               |
-| `services`      | `EnhancedViewServices` — the note loader/writer, the mention directory, the marker tags, the logger.            |
-| `queue`         | The board's single `WorkItemWriteQueue`, so these edits cannot race the row controls on `System.Rev`.           |
-| `onChanged`     | Repaints the board, so a changed title, sprint or flag shows without a re-read.                                 |
-| `sprintWindow`  | (editing commands) The team's sprint window; the move submenu is built from its current and future entries.     |
-| `areaPaths`     | (editing commands) The same eligible full paths offered by the board's area-path filter.                        |
-| `notesSinceIso` | (editing commands) Start of the binding's **Updates window (weeks)** — how far back **View all notes** reaches. |
+Two further entry points exist so other views can reuse parts of this menu without inheriting the
+board-specific destinations:
+
+- `buildItemEditingCommands(options)` — just **Update title**, **Update description** and **View all
+  notes**. Takes an `ItemCommandTarget` plus `notesSinceIso`; no sprint window and no area paths, so
+  a view with neither can still offer the three commands that edit the item itself.
+- `buildProjectLifecycleCommands(options)` (`ProjectLifecycleCommands.ts`) — **Create Project Query**
+  and **Mark completed**, the two commands that govern a project rather than a work item's fields.
+  Used by the All Projects Catalog View on each project row and by this view on its own title.
+- `buildNewChildCommand(label, options)` (`NewChildCommands.ts`) — the one command that **creates**
+  something: **Add new milestone/phase** on the board's title, **New work identified** on a row whose
+  children are the team's delivery. Same builder, different label, because both add an item of the
+  parent type's first configured child type. The file also exports `childTypeOf`,
+  `isImmediateParentOfPrimaryWork` (which rows may offer it), `newChildSummary` (the line stating
+  what the reader is not being asked to type) and `newChildItem` (the in-memory item the created one
+  is shown as, ranked ahead of its level).
+
+| Option          | Meaning                                                                                                                                                                              |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `item`          | The item the commands act on. **Mutated in place** on a successful write, like every row control.                                                                                    |
+| `services`      | `EnhancedViewServices` — the note loader/writer, the mention directory, the marker tags, the logger.                                                                                 |
+| `queue`         | The board's single `WorkItemWriteQueue`, so these edits cannot race the row controls on `System.Rev`.                                                                                |
+| `onChanged`     | Repaints the board, so a changed title, sprint or flag shows without a re-read.                                                                                                      |
+| `sprintWindow`  | (editing commands) The team's sprint window; the move submenu is built from its current and future entries.                                                                          |
+| `areaPaths`     | (editing commands) The same eligible full paths offered by the board's area-path filter.                                                                                             |
+| `notesSinceIso` | (editing commands) Start of the binding's **Updates window (weeks)** — how far back **View all notes** reaches.                                                                      |
+| `types`         | (lifecycle) The configured type catalog, from which a completed project's final state is read.                                                                                       |
+| `queryLink`     | (lifecycle) The project's tracking query, or `null` when it owns none. Its `managed` flag says whether this extension created it; only a managed query is ever offered for deletion. |     | `queryLinkKnown` | (lifecycle) Whether a `null` link means "owns none" rather than "the read that would have found one failed". |     | `queryFolderPath` | (lifecycle) The folder a new tracking query is created in. |
+| `offerCreate`   | (lifecycle) Whether **Create Project Query** appears at all — false where the board already is one.                                                                                  |
+| `onReload`      | (lifecycle) Re-reads the surface after a change the loaded data cannot represent.                                                                                                    |
 
 ## Behaviour
 
@@ -109,6 +130,19 @@ contextMenu.openAt(event, {
 - **Clearing a flag asks for nothing.** Deliberately asymmetric: applying one is about to tell the
   whole board the item is stuck, whereas removing it only says that is no longer true — and a
   mandatory box in the way of that would leave stale flags on the board rather than prevent them.
+- **Completing a project always asks first**, through the shared
+  [`ConfirmPanel`](../../../../common/view-common/control/ConfirmPanel/README.md), so it reads the
+  same on the catalog row and on the Project Tracking title. The panel names the exact state the
+  project will land in and says what happens to its tracking query. When the query link could not be
+  read — a refused or failed secondary request — it says so instead of claiming there is nothing to
+  clean up, and **Create Project Query** is disabled for the same reason: neither command may treat
+  "unknown" as "none".
+- **Adding is asked for once and stated in full.** The create commands open a box only for the
+  title; the parent, area path and iteration are inherited from the parent item and named in the
+  summary line, because work identified under an item belongs where that item is until someone moves
+  it deliberately. **New work identified** appears only where the children ARE the team's delivery:
+  offering it on planning context above that would create structure under the guise of finding work,
+  and below it would create implementation detail nobody asked for.
 - **A marker the team never configured stays visible but inert**, saying where to set it, rather than
   vanishing from the menu: settings the reader cannot see from here must not silently change what
   the menu contains.
@@ -123,3 +157,25 @@ contextMenu.openAt(event, {
   reported as the conflict it is, rather than silently overwritten. Every editing command does the
   same with the value it is replacing (the title, the description, the sprint), so no command in this
   menu is left needing a board reload to work.
+
+## Project lifecycle
+
+- **Creating a query is three steps, each only after the last one landed**: Azure DevOps creates the
+  saved query, the project gets a stamped `Hyperlink` to it, and AwesomeADO records the binding that
+  opens it in Project Tracking View. A failed link deletes the query it just made, because a query
+  nothing points at is invisible litter in a shared folder. A failed binding is deliberately NOT
+  rolled back: the query exists and is reachable either way, so the worst case is one the user
+  enables the enhanced view on by hand.
+- **The command is disabled, not hidden, once a project owns a query.** Creating a second is not an
+  undo — it would leave the first linked and bound with nothing pointing at it.
+- **"Completed" is the team's own word.** The state written is the primary Azure DevOps state of the
+  LAST board column configured for that item's type; a type with no columns leaves the command
+  visible but inert rather than guessing at "Closed".
+- **Deleting the query is asked, never assumed.** A completed project's query is usually clutter, but
+  a team that reports on finished work would lose that report with no way back. The state change goes
+  first: a completion whose cleanup failed is recoverable, whereas a query deleted for a project that
+  was never completed is not. The binding is dropped only once the query is actually gone.
+- **The link is located at removal time, not remembered.** JSON Patch addresses a relation by index,
+  and an index read minutes ago is exactly what a concurrent edit invalidates — so the worker reads
+  the item's relations and removes the matching link in one round trip, guarded by both the revision
+  and the link's own URL. A project that carries no link still has its query deleted.

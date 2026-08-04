@@ -1,6 +1,7 @@
 import type { ViewType } from "../../common/view-common/ViewType";
 
 import { projectTrackingViewType } from "./project-tracking/projectTrackingViewType";
+import { projectsViewType } from "./projects-view/projectsViewType";
 import { sprintViewType } from "./sprint/sprintViewType";
 
 /**
@@ -10,7 +11,11 @@ import { sprintViewType } from "./sprint/sprintViewType";
  * configuration lives beside its renderer rather than in one central list. Adding a view is a folder
  * plus one line here — see `src/content/views/README.md` and the `add-enhanced-view` skill.
  */
-export const VIEW_TYPES: readonly ViewType[] = [sprintViewType, projectTrackingViewType];
+export const VIEW_TYPES: readonly ViewType[] = [
+  sprintViewType,
+  projectTrackingViewType,
+  projectsViewType,
+];
 
 /** Look up a view by its stored id, or undefined when the id is unknown (e.g. a newer build). */
 export function getViewType(id: string): ViewType | undefined {

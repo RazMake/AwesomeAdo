@@ -8,6 +8,12 @@ import { buildAdoQueryDefinitionUrl } from "../common/ado/QueryDefinition";
 import { buildAdoIterationsUrl } from "../common/ado/TeamIteration";
 import { buildAdoTeamMembersUrl } from "../common/ado/TeamMembers";
 import { IMPORTANCE_FIELD } from "../common/ado/adoApi";
+import {
+  buildCreateWorkItemPatch,
+  buildCreateWorkItemUrl,
+  buildParentLinkUrl,
+  parseCreatedWorkItem,
+} from "../common/ado/createWorkItem";
 import { buildAdoConnectionDataUrl } from "../common/ado/currentUser";
 import { buildAdoIdentitySearchRequest } from "../common/ado/fetchAdoIdentities";
 import {
@@ -31,6 +37,18 @@ import {
   MAX_MENTION_IDS,
   MENTION_REQUEST_CONCURRENCY,
 } from "../common/ado/mentionIdentities";
+import {
+  buildCreateQueryUrl,
+  buildDeleteQueryUrl,
+  buildDeleteQueryUrlParts,
+  buildProjectQueryWiql,
+  buildQueryWebUrl,
+  buildQueryWebUrlPrefix,
+  HYPERLINK_RELATION,
+  projectQueryName,
+  PROJECT_QUERY_LINK_COMMENT,
+  uniqueProjectQueryName,
+} from "../common/ado/projectQuery";
 import { applyRankFallback, buildWorkItemsBatchUrl } from "../common/ado/rankFallback";
 import {
   buildFeatureCrewApplyConfig,
@@ -88,6 +106,12 @@ import {
   type LoadQueryTreeResponse,
 } from "../common/browser/AdoTreeRequest";
 import {
+  CREATE_WORK_ITEM_MESSAGE,
+  createWorkItemMessageProblem,
+  type CreateWorkItemMessage,
+  type CreateWorkItemResponse,
+} from "../common/browser/CreateWorkItemRequest";
+import {
   isReadCurrentUserMessage,
   READ_CURRENT_USER_MESSAGE,
   type ReadCurrentUserMessage,
@@ -111,6 +135,15 @@ import {
   type ReadNoteActivityMessage,
   type ReadNoteActivityResponse,
 } from "../common/browser/NoteActivityRequest";
+import {
+  isProjectQueryMessage,
+  projectQueryMessageProblem,
+  type CreateProjectQueryMessage,
+  type ProjectQueryMessage,
+  type ProjectQueryResponse,
+  type ReadProjectQueryLinksMessage,
+  type RemoveProjectQueryMessage,
+} from "../common/browser/ProjectQueryRequest";
 import { prepareReorderState, withPreparedState } from "../common/browser/ReorderStateChange";
 import {
   isReadTeamConfigMessage,
@@ -154,6 +187,11 @@ import {
   applyFeatureCrewInPage,
   type FeatureCrewApplyResult,
 } from "../common/browser/applyFeatureCrewInPage";
+import { createProjectQueryInPage } from "../common/browser/createProjectQueryInPage";
+import {
+  createWorkItemInPage,
+  type CreateWorkItemOutcome,
+} from "../common/browser/createWorkItemInPage";
 import {
   executeAdoRequestInPage,
   type AdoPageRequestOutcome,
@@ -173,8 +211,10 @@ import { fetchTeamConfigInPage } from "../common/browser/fetchTeamConfigInPage";
 import { fetchWorkItemNotesInPage } from "../common/browser/fetchWorkItemNotesInPage";
 import { findFeatureCrewInPage } from "../common/browser/findFeatureCrewInPage";
 import { readInterruptAcceptance as readInterruptAcceptancePages } from "../common/browser/readInterruptAcceptance";
+import { readProjectQueryLinksInPage } from "../common/browser/readProjectQueryLinksInPage";
 import { readWorkItemRanksInPage } from "../common/browser/readWorkItemRanksInPage";
 import { readWorkItemRevInPage } from "../common/browser/readWorkItemRevInPage";
+import { removeProjectQueryInPage } from "../common/browser/removeProjectQueryInPage";
 import {
   reorderWorkItemInPage,
   type ReorderWorkItemConfig,
@@ -1605,5 +1645,257 @@ chrome.runtime.onMessage.addListener(
       response: { ok: false, error: "no sender tab" },
     }),
     serve: writeWorkItemNote,
+  }),
+);
+
+// The "add a project" / "add a child item" commands. The initial fields come from the
+// content side; the endpoint is built here from the SENDER's own trusted tab URL, so this stays a
+// closed "create one work item in the project on screen" operation.
+const createWorkItem = async (
+  message: CreateWorkItemMessage,
+  tabId: number,
+  tabUrl: string,
+): Promise<CreateWorkItemResponse> => {
+  const createUrl = buildCreateWorkItemUrl(tabUrl, message.itemType);
+  if (createUrl === null) {
+    const error = "sender tab URL is not a supported project-scoped ADO location";
+    logger.error(`Could not create a ${message.itemType}: ${error}.`);
+    return { ok: false, error };
+  }
+  // Built from the trusted tab URL too, so a content script can name a parent id but never the
+  // organization the link resolves against.
+  const parentUrl =
+    message.parentId === undefined || message.parentId === null
+      ? null
+      : buildParentLinkUrl(tabUrl, message.parentId);
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: "MAIN",
+      func: createWorkItemInPage,
+      args: [
+        {
+          createUrl,
+          patch: buildCreateWorkItemPatch(
+            {
+              type: message.itemType,
+              title: message.title,
+              tags: message.tags,
+              areaPath: message.areaPath,
+              iterationPath: message.iterationPath,
+            },
+            parentUrl,
+          ),
+        },
+      ],
+    });
+    const outcome = firstScriptResult(results) as CreateWorkItemOutcome | null;
+    if (outcome === null || !outcome.ok) {
+      const error = outcome?.error ?? "MAIN-world injection returned no result";
+      logger.error(`Could not create a ${message.itemType}: ${error}.`);
+      return { ok: false, error };
+    }
+    const created = parseCreatedWorkItem(outcome.raw);
+    if (created === null) {
+      logger.error(`Created a ${message.itemType} but Azure DevOps reported no id.`);
+      return { ok: false, error: "Azure DevOps reported no work item id" };
+    }
+    logger.info(`Created ${message.itemType} ${created.id} (rev ${created.rev}).`);
+    return { ok: true, id: created.id, rev: created.rev, fields: created.fields };
+  } catch (error) {
+    logger.error(`Could not create a ${message.itemType}`, error);
+    return { ok: false, error: `injection failed: ${String(error)}` };
+  }
+};
+
+chrome.runtime.onMessage.addListener(
+  tabRequestListener<CreateWorkItemMessage, CreateWorkItemResponse>(logger, {
+    claims: (message) => claimsMessageType(message, CREATE_WORK_ITEM_MESSAGE),
+    malformed: (message) => {
+      const problem = createWorkItemMessageProblem(message);
+      return problem === null
+        ? null
+        : {
+            log: `Rejected a malformed create-work-item request: ${problem}.`,
+            response: { ok: false, error: problem },
+          };
+    },
+    unscriptable: () => ({
+      log: "Cannot create a work item: message has no sender tab.",
+      response: { ok: false, error: "no sender tab" },
+    }),
+    serve: createWorkItem,
+  }),
+);
+
+const NOT_A_PROJECT_TAB = "sender tab URL is not a supported project-scoped ADO location";
+
+/**
+ * Run one project-query injection and normalize what came back.
+ *
+ * Shared by all three operations so "the page returned nothing", "the operation refused itself" and
+ * "the injection threw" are each described once — the outcomes differ only in which request ran.
+ */
+const runProjectQueryInjection = async (
+  operation: string,
+  inject: () => Promise<{ result?: unknown }[]>,
+): Promise<ProjectQueryResponse> => {
+  try {
+    const outcome = firstScriptResult(await inject()) as ProjectQueryResponse | null;
+    if (outcome === null) {
+      logger.error(`Project-query ${operation} returned no result from the page.`);
+      return { ok: false, error: "MAIN-world injection returned no result" };
+    }
+    if (!outcome.ok) {
+      logger.error(`Project-query ${operation} failed: ${outcome.error ?? "unknown error"}.`);
+    }
+    return outcome;
+  } catch (error) {
+    logger.error(`Could not run project-query ${operation}`, error);
+    return { ok: false, error: `injection failed: ${String(error)}` };
+  }
+};
+
+/** Which of the named projects already carry an AwesomeADO tracking-query link. */
+const readProjectQueryLinks = (
+  message: ReadProjectQueryLinksMessage,
+  tabId: number,
+  tabUrl: string,
+): Promise<ProjectQueryResponse> => {
+  const batchUrl = buildWorkItemsBatchUrl(tabUrl);
+  if (batchUrl === null) {
+    logger.error(`Project-query read-links rejected: ${NOT_A_PROJECT_TAB}.`);
+    return Promise.resolve({ ok: false, error: NOT_A_PROJECT_TAB });
+  }
+  return runProjectQueryInjection("read-links", () =>
+    chrome.scripting.executeScript({
+      target: { tabId },
+      world: "MAIN",
+      func: readProjectQueryLinksInPage,
+      args: [{ batchUrl, ids: message.ids }],
+    }),
+  );
+};
+
+/** Create one project's tracking query and hang it off the project as a hyperlink. */
+const createProjectQuery = (
+  message: CreateProjectQueryMessage,
+  tabId: number,
+  tabUrl: string,
+): Promise<ProjectQueryResponse> => {
+  const workItemUrl = buildWorkItemUpdateUrl(tabUrl, message.projectId);
+  const createQueryUrl = buildCreateQueryUrl(tabUrl, message.folderPath);
+  const webUrlPrefix = buildQueryWebUrlPrefix(tabUrl);
+  const deleteUrl = buildDeleteQueryUrlParts(tabUrl);
+  if (
+    workItemUrl === null ||
+    createQueryUrl === null ||
+    webUrlPrefix === null ||
+    deleteUrl === null
+  ) {
+    logger.error(`Project-query create rejected: ${NOT_A_PROJECT_TAB}.`);
+    return Promise.resolve({ ok: false, error: NOT_A_PROJECT_TAB });
+  }
+  return runProjectQueryInjection("create", () =>
+    chrome.scripting.executeScript({
+      target: { tabId },
+      world: "MAIN",
+      func: createProjectQueryInPage,
+      args: [
+        {
+          createQueryUrl,
+          wiql: buildProjectQueryWiql(message.projectId),
+          names: [
+            projectQueryName(message.projectTitle),
+            uniqueProjectQueryName(message.projectTitle, message.projectId),
+          ],
+          webUrlPrefix,
+          deleteUrlPrefix: deleteUrl.prefix,
+          deleteUrlSuffix: deleteUrl.suffix,
+          workItemUrl,
+          rev: message.rev,
+          relationType: HYPERLINK_RELATION,
+          linkComment: PROJECT_QUERY_LINK_COMMENT,
+        },
+      ],
+    }),
+  );
+};
+
+/** Unlink one project's tracking query and delete the query itself. */
+const removeProjectQuery = (
+  message: RemoveProjectQueryMessage,
+  tabId: number,
+  tabUrl: string,
+): Promise<ProjectQueryResponse> => {
+  const workItemUrl = buildWorkItemUpdateUrl(tabUrl, message.projectId);
+  const relationsUrl = buildWorkItemRelationsUrl(tabUrl, message.projectId);
+  const relationUrl = buildQueryWebUrl(tabUrl, message.queryId);
+  const deleteQueryUrl = buildDeleteQueryUrl(tabUrl, message.queryId);
+  if (
+    workItemUrl === null ||
+    relationsUrl === null ||
+    relationUrl === null ||
+    deleteQueryUrl === null
+  ) {
+    logger.error(`Project-query remove rejected: ${NOT_A_PROJECT_TAB}.`);
+    return Promise.resolve({ ok: false, error: NOT_A_PROJECT_TAB });
+  }
+  return runProjectQueryInjection("remove", () =>
+    chrome.scripting.executeScript({
+      target: { tabId },
+      world: "MAIN",
+      func: removeProjectQueryInPage,
+      args: [
+        {
+          workItemUrl,
+          relationsUrl,
+          rev: message.rev,
+          relationUrl,
+          linkComment: PROJECT_QUERY_LINK_COMMENT,
+          deleteQueryUrl,
+        },
+      ],
+    }),
+  );
+};
+
+/**
+ * Serve one project-query operation against the sender's own trusted tab.
+ *
+ * Every URL is built here from that tab, never from anything the content side supplied, so this
+ * stays a closed "manage the tracking query of a project in the project on screen" operation rather
+ * than a create-and-delete-anything proxy.
+ */
+const serveProjectQuery = (
+  message: ProjectQueryMessage,
+  tabId: number,
+  tabUrl: string,
+): Promise<ProjectQueryResponse> => {
+  if (message.operation === "read-links") {
+    return readProjectQueryLinks(message, tabId, tabUrl);
+  }
+  return message.operation === "create"
+    ? createProjectQuery(message, tabId, tabUrl)
+    : removeProjectQuery(message, tabId, tabUrl);
+};
+
+chrome.runtime.onMessage.addListener(
+  tabRequestListener<ProjectQueryMessage, ProjectQueryResponse>(logger, {
+    claims: isProjectQueryMessage,
+    malformed: (message) => {
+      const problem = projectQueryMessageProblem(message);
+      return problem === null
+        ? null
+        : {
+            log: `Rejected a malformed project-query request: ${problem}.`,
+            response: { ok: false, error: problem },
+          };
+    },
+    unscriptable: (message) => ({
+      log: `Cannot run project-query ${message.operation}: message has no sender tab.`,
+      response: { ok: false, error: "no sender tab" },
+    }),
+    serve: serveProjectQuery,
   }),
 );

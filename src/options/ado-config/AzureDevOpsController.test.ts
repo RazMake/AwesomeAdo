@@ -149,6 +149,8 @@ const CONTEXT: AdoMetadataContext = {
   organization: "contoso",
   project: "web",
   areaPaths: ["web", "web\\Platform"],
+  iterationPaths: ["web", "web\\Sprint 1"],
+  queryFolders: ["Shared Queries"],
   teams: [
     { id: "1", name: "Alpha" },
     { id: "2", name: "Beta" },

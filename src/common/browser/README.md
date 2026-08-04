@@ -305,15 +305,46 @@ Construct `ChromeAdoMetadataReader` only in the composition root (`src/options/i
 code depends on `IAdoMetadataReader`. Injecting into the ADO tab requires the `scripting` permission
 and the `host_permissions` declared in `manifest.json`.
 
-### `fetchAdoRawInPage(teamsUrl, workItemTypesUrl, fieldsUrl)` — `fetchAdoRawInPage.ts`
+### `fetchAdoRawInPage(urls)` — `fetchAdoRawInPage.ts`
 
 The self-contained function `ChromeAdoMetadataReader` injects into the ADO tab's MAIN world. It runs
 in the page's first-party origin, so its `fetch` is same-origin and sends the user's session cookies.
 It is serialized with `Function.prototype.toString`, so it must reference only its parameters and
-page globals — never an import or module-scoped value. It returns the raw
-`{ teams, workItemTypes, fields }` JSON (each `null` on failure) for the reader to parse with
-`parseTeams` / `parseWorkItemTypes` (the `fields` body resolves which of a type's fields are
-date-typed via `parseDateFieldReferenceNames`).
+page globals — never an import or module-scoped value (a TypeScript type is fine: it is erased). It
+returns the raw `{ teams, workItemTypes, fields, areaPaths, iterationPaths, queryFolders }` JSON
+(each `null` on failure) for the reader to parse with `parseTeams` / `parseWorkItemTypes` (the
+`fields` body resolves which of a type's fields are date-typed via `parseDateFieldReferenceNames`).
+
+Two of the reads are more than a single request, because ADO will not answer them in one:
+
+- **Teams** are paged: `$skip` advances by the count actually returned until a page comes back empty,
+  so a large org's teams are not silently truncated at the server's page cap.
+- **Saved-query folders** are **not** walked here. ADO answers the hierarchy two levels deep and caps
+  a node at 1000 children, so one read can only ever see the top of a large project's tree; the rest
+  is read on demand by `ChromeQueryFolderReader`.
+
+### `ChromeQueryFolderReader` (class) — `ChromeQueryFolderReader.ts`
+
+`readChildFolders(folderPath)` lists the folders nested inside one saved-query folder, through the
+same MAIN-world route. Feature code depends on `IQueryFolderReader`.
+
+This exists because a project's query folders **cannot** be enumerated up front: ADO expands two
+levels per request and caps a node at 1000 children, so an O365-sized project keeps thousands of
+folders below that boundary. Fetching them all would be enormously slow and still incomplete, so the
+binding form asks about a folder only once the user reaches into it. Every failure answers an empty
+list — this only adds suggestions to a field the user can type by hand.
+
+### `ChromeQueryFactsReader` (class) — `ChromeQueryFactsReader.ts`
+
+Reads what a saved query itself says, so the binding form can pre-fill the properties a view derives
+from it: `read(queryId)` answers `QueryFacts` — `{ tag, folder }`, the tag the query selects its
+results by and the folder it is filed in. Both come from ONE MAIN-world read of the expanded query
+record (the same route the metadata takes), because asking twice would only double the cost of
+pre-filling a form the user can fill in by hand.
+
+Never throws: a closed tab, a non-ADO tab, or a refused read answers `{ tag: null, folder: null }`,
+leaving the fields empty for the user to type. Feature code depends on `IQueryFactsReader`; construct
+the class only in the options composition root.
 
 ## Loading a query's work-item tree
 
@@ -749,6 +780,42 @@ A thrown send, a missing reply, or an `ok: false` response is logged and reporte
 so a move never throws. A successful move logs the ids it moved between — never a title, since the
 diagnostics log is exported into bug reports. Constructed only in the composition root
 (`src/content/index.ts`); feature code depends on `IWorkItemReorderWriter`.
+
+### `createWorkItemInPage(config)` — `createWorkItemInPage.ts`
+
+POSTs a JSON Patch to the project's create endpoint and hands the body back unparsed. The patch may
+carry a `/relations/-` operation, so an item is born under its parent in the same revision rather
+than being parented by a second write. It is the one injected write here that is **never retried**:
+every read retries because a repeated GET costs nothing, whereas repeating a POST that may already
+have succeeded would leave a duplicate item behind — far worse than reporting the error.
+
+The worker builds **both** URLs in the patch — the create endpoint and the parent link — from the
+sender tab's own trusted address, so a content script can name a parent id but never the
+organization that id resolves against.
+
+### The project tracking-query trio
+
+Three injected functions rather than one, because each line inside an injected function is a line no
+unit test can reach and each operation stands alone:
+
+- `readProjectQueryLinksInPage({ batchUrl, ids })` POSTs `_apis/wit/workitemsbatch` with
+  `$expand: "Relations"`, paging past ADO's 200-id cap, and hands the expanded items back unparsed —
+  `common/ado/projectQuery.parseProjectQueryLinks` reads the links out of them.
+- `createProjectQueryInPage(config)` creates the saved query, then PATCHes a stamped `Hyperlink` onto
+  the project under a `test /rev` guard. Both in **one** injection so the second failure can roll the
+  first one back: a query nothing points at is invisible litter in a shared folder. `config.names` is
+  tried in order, because ADO answers a duplicate query name with `400`; any other status is reported
+  rather than retried under another name. The id is appended to `webUrlPrefix` / `deleteUrlPrefix`
+  here, because the page world is the only place a freshly created query's id exists.
+- `removeProjectQueryInPage(config)` GETs the item with `$expand=relations`, finds the stamped link
+  whose URL matches, PATCHes it away (guarded by the revision **and** the link's own URL), then
+  DELETEs the query. The index is resolved here rather than supplied, because JSON Patch addresses a
+  relation positionally and an index read minutes ago on a board is exactly what a concurrent edit
+  invalidates. A project with no link still has its query deleted; a `404` on the delete is success,
+  since that is the state the command was asked to reach.
+
+Every URL in each `config` is built by the worker from the sender's own trusted tab URL, so these stay
+closed operations rather than a create-and-delete-anything proxy.
 
 ### `reorderWorkItemInPage(config)` — `reorderWorkItemInPage.ts`
 

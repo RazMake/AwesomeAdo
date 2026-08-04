@@ -84,6 +84,30 @@ here so every agent, teammate, and clone sees them.
   reconciles it to a represented `Project\\...` lane. Reset persists the reconciled paths so existing
   bindings repair themselves without misreading a real, exact lane named `Area`.
 
+## The saved-query hierarchy CANNOT be enumerated — measured limits on `_apis/wit/queries`
+
+- SYMPTOM: the binding form's **Project query folder** suggestions were missing folders, twice. The
+  first attempt (walk every folder ADO reported as `hasChildren` with no `children`) was ALSO the
+  cause of a "the page takes forever to load" report.
+- MEASURED on `o365exchange/O365 Core` by probing the signed-in tab (10416 nodes, 1275 folders at
+  `$depth=5`):
+  - `$depth` is capped at **5**. A folder at the boundary comes back with `hasChildren: true` and
+    **no `children` key at all** — never an empty array (`emptyChildArrayFolders: 0`).
+  - A node's `children` is capped at **1000**. `Shared Queries` returned exactly 1000 direct children
+    (444 of them folders), and **`$top` is ignored** (`$top=5` still returned 1000). There is no
+    `$skip` on this endpoint, so the children past 1000 are simply unreachable.
+  - There were **800** boundary folders at depth 2 alone, so any fixed request budget (the first fix
+    used 200) silently drops most of the tree, and lifting the budget means ~800+ requests that each
+    reveal more.
+  - `$filter` DOES search the whole hierarchy at any depth and returns full paths, but it matches
+    **query names only** — every probe returned `folders: 0`. A folder is only discoverable through a
+    child query whose name happens to match, so it cannot enumerate folders either.
+- RULE: **never try to load all query folders.** The bulk metadata read stays ONE `$depth=5` request.
+  Anything deeper is read on demand, one folder at a time, by `ChromeQueryFolderReader`
+  (`buildQueryFolderChildrenUrl`), triggered when the user names a folder or types a path beneath one
+  (`QueryBindingsController.expandTypedFolder`). A typed path always stays valid, so an unreachable
+  folder is never a dead end.
+
 ## A binding Save was immediately undone by Sprint's team pull
 
 - SYMPTOM: Options reported `Saved.`, but default area paths vanished on reload and were absent from
@@ -253,6 +277,34 @@ bindings ...` / `Pulled team configuration ...`.
   re-resolve the concrete palette. Do not observe the whole subtree's attributes: view controls
   change their own classes/styles frequently, which would add churn and can make theme writes
   self-triggering. Disconnect the theme observer for concrete themes and when the surface restores.
+
+## A drop aimed BETWEEN two rows was silently discarded
+
+- SYMPTOM: dragging a Project Tracking row onto the row above it (a swap) sometimes did nothing at
+  all — no error, no logged refusal, no visual breakage; the gesture simply evaporated. Intermittent,
+  and most likely when aiming right at the boundary between two rows, which is exactly where a reader
+  aims to land above or below an item.
+- ROOT CAUSE — TWO independent defects producing the same symptom, both of them "the pointer ended
+  up over no registered drop target":
+  1. `DropIndicator`'s line was `height:2px; margin:1px 0`, a real 4px block in normal flow. Showing
+     it pushed the target row (and everything below) DOWN by 4px — sliding the row out from under the
+     pointer that was hovering its top edge. `dragover` then fired on the container, which registers
+     nothing and so never calls `preventDefault()`; the browser refused the drop. The line stays on
+     screen (it is only cleared by a preview over a registered row, or by `dragend`), so the drag
+     LOOKED accepted right up to the release.
+  2. `.awesomeado-tracking__item-surface` carries `padding-bottom: 4px`, which sits INSIDE the
+     wrapper but OUTSIDE the `row` line element that the controller listened on. That 4px band
+     between every pair of rows reached no `dragover`/`drop` handler at all — and, because no preview
+     ran there, it did not even clear the previously shown line.
+- FIX / RULE: **drag feedback must never take layout space** — the line is now `margin:-1px 0`
+  against its 2px height, so it paints over the boundary and advances nothing. And **a row's drop
+  target must cover every pixel the row owns**: `DraggableRow.dropZone` (defaulting to `row`) lets an
+  owner nominate a wider element; Project Tracking passes the item surface. Only the TARGET widens —
+  `dropSide` still measures `row`, so an insertion never re-anchors itself to a description or notes
+  panel the reader happened to have open. The surface is a sibling of the children container, not its
+  ancestor, so widening it cannot capture a nested row's events.
+- WATCH FOR: any future drag affordance that inserts itself into the flow, and any row chrome
+  (padding, margins, separators) added outside the element the controller listens on.
 
 ## A popup reorder immediately previewed a hierarchy change
 
@@ -1580,3 +1632,46 @@ chrome.runtime.sendMessage({ type: "awesomeado:read-current-user" });
 `chrome.runtime.reload()` evaluated in that same page restarts the worker from disk, after which the
 same probe answers. That two-step (probe, reload, probe again) turns "is my code even running?" from
 a guess into a fact.
+
+## The All Projects catalog reported "no tracking query" for projects that plainly had one
+
+- SYMPTOM: rows whose project carried a saved-query hyperlink (e.g. `7588013`, `7604481`) still
+  showed the query control disabled and still offered **Create Project Query**.
+- CAUSE: `parseProjectQueryLinks` accepted a `Hyperlink` relation ONLY when
+  `attributes.comment === "AwesomeADO project tracking query"`. Real teams link the project's
+  tracking query through Azure DevOps' own "link to a saved query", which stamps
+  `"Saved query: <name>"`. Every such link was invisible, so the catalog reported none.
+- RULE: the stamp decides **ownership, not recognition**. Recognition falls back in order: the
+  stamped link, else a LONE saved-query hyperlink (adopted, `managed: false`), else none — several
+  unstamped candidates name none rather than pick whichever ADO listed first. Deletion
+  (`Mark completed` → "Complete and delete query") is gated on `managed`, because a query somebody
+  else saved is not this extension's to remove.
+- `ProjectQueryLink` also carries the link's own `url`: a hand-made link can point at a query in
+  another project of the organization, and rebuilding the address from the board's own page would
+  silently redirect it.
+
+### Live recipe: what does the work item ACTUALLY link?
+
+`Runtime.evaluate` this in the ADO tab (port 9222) — it is the same call the worker injects, so what
+it prints is exactly what the parser is handed:
+
+```js
+fetch(
+  location.origin +
+    "/" +
+    location.pathname.split("/").filter(Boolean)[0] +
+    "/_apis/wit/workitemsbatch?api-version=7.1",
+  {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids: [7588013], $expand: "Relations" }),
+  },
+)
+  .then((r) => r.json())
+  .then((b) =>
+    b.value[0].relations
+      .filter((x) => x.rel === "Hyperlink")
+      .map((x) => [x.url, x.attributes && x.attributes.comment]),
+  );
+```

@@ -28,6 +28,20 @@ This is a flattened snapshot of what exists now, not a build log.
   the bottom of each item, and they are re-striped in visible tree order after outline changes.
   Options imports only `content/views/viewCatalog` (scoped §6
   exception, ADR-027, lint-enforced).
+- **All Projects Catalog View** (`content/views/projects-view`): the many-root sibling of
+  Project
+  Tracking (ADR-066). Lists every top-level item a query returns as a collapsed project that opens
+  into its own tree; rows show type icon, ADO-linked title, the child count beside it, and the item's
+  own tags. Child DOM is built only while a row is open, and open/closed state lives outside the DOM so
+  it survives repaints and in-place refreshes. Its sticky header carries the query breadcrumbs, a
+  board-local ordering picker in the top-right corner,
+  expand-all/collapse-all, refresh, and a searchable tag filter listing every tag worn anywhere in
+  the tree except the ones every project carries (the query's own condition); selections OR together,
+  keep a match's ancestors and subtree, and are pruned (and
+  logged) whenever a refreshed query no longer wears them. Per-query settings define the catalog tag,
+  new-project area and iteration paths, and generated-query folder; tag, iteration, and folder default
+  from the saved query, Azure DevOps project root, and catalog query folder. New projects receive all
+  initial fields in one patch. Ships as its own on-demand ESM renderer.
 - **Sprint View** (`content/views/sprint`): accepts flat or tree queries; loads the selected
   team's complete paged member roster before executing an offset-adjusted copy of the original WIQL;
   retains only team members' or unassigned work plus parent chains; and renders clickable query-folder breadcrumbs plus an always-active Sprint

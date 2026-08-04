@@ -14,6 +14,18 @@ export interface DraggableRow {
   handle: HTMLElement;
   row: HTMLElement;
   wrapper: HTMLElement;
+  /**
+   * The element that accepts the drop; defaults to `row`.
+   *
+   * An owner whose rows carry trailing space or detail panels OUTSIDE `row` passes the element that
+   * covers all of it, so the band between two rows belongs to one of them. Left uncovered, a drop
+   * aimed at the boundary — which is exactly where a reader aims to land above or below an item —
+   * reaches no registered row at all and is discarded without a word.
+   *
+   * Only the drop TARGET widens: `row` is still what decides which side of the item the drop lands
+   * on, so an insertion never re-anchors itself to a panel the reader happened to have open.
+   */
+  dropZone?: HTMLElement;
   dragSurface?: HTMLElement;
   onLeaveSurface?: () => void;
 }
@@ -55,8 +67,9 @@ export class DragReorderController {
     row.handle.style.cursor = "grab";
     row.handle.addEventListener("dragstart", (event) => this.startDrag(event, row));
     row.handle.addEventListener("dragend", () => this.endSession());
-    row.row.addEventListener("dragover", (event) => this.previewDrop(event, row));
-    row.row.addEventListener("drop", (event) => this.completeDrop(event, row));
+    const zone = row.dropZone ?? row.row;
+    zone.addEventListener("dragover", (event) => this.previewDrop(event, row));
+    zone.addEventListener("drop", (event) => this.completeDrop(event, row));
   }
 
   private startDrag(event: Event, row: DraggableRow): void {

@@ -2,6 +2,15 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { fetchAdoRawInPage } from "./fetchAdoRawInPage";
 
+const URLS = {
+  teamsUrl: "teams-url",
+  workItemTypesUrl: "wit-url",
+  fieldsUrl: "fields-url",
+  areaPathsUrl: "areas-url",
+  iterationPathsUrl: "iterations-url",
+  queryFoldersUrl: "folders-url",
+};
+
 function jsonResponse(body: unknown, ok = true, status = ok ? 200 : 400): Response {
   return { ok, status, json: () => Promise.resolve(body) } as unknown as Response;
 }
@@ -39,7 +48,7 @@ describe("fetchAdoRawInPage - metadata", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    expect(await fetchAdoRawInPage("teams-url", "wit-url", "fields-url", "areas-url")).toEqual({
+    expect(await fetchAdoRawInPage(URLS)).toEqual({
       teams: {
         value: [
           { id: "1", name: "Alpha" },
@@ -50,6 +59,8 @@ describe("fetchAdoRawInPage - metadata", () => {
       workItemTypes: { value: [{ name: "Bug" }] },
       fields: { value: [{ referenceName: "System.CreatedDate" }] },
       areaPaths: { name: "Web" },
+      iterationPaths: { name: "Web" },
+      queryFolders: { name: "Web" },
     });
     // Credentials must be included so ADO's SameSite session cookies ride along on the page-world call.
     expect(fetchMock).toHaveBeenCalledWith("teams-url&$skip=0", {
@@ -75,11 +86,13 @@ describe("fetchAdoRawInPage - metadata", () => {
       "fetch",
       vi.fn(() => Promise.resolve(jsonResponse(null, false))),
     );
-    expect(await fetchAdoRawInPage("teams-url", "wit-url", "fields-url", "areas-url")).toEqual({
+    expect(await fetchAdoRawInPage(URLS)).toEqual({
       teams: null,
       workItemTypes: null,
       fields: null,
       areaPaths: null,
+      iterationPaths: null,
+      queryFolders: null,
     });
   });
 });
@@ -91,13 +104,15 @@ describe("fetchAdoRawInPage - area-path retries", () => {
       "fetch",
       vi.fn(() => Promise.reject(new Error("offline"))),
     );
-    const result = fetchAdoRawInPage("teams-url", "wit-url", "fields-url", "areas-url");
+    const result = fetchAdoRawInPage(URLS);
     await vi.runAllTimersAsync();
     await expect(result).resolves.toEqual({
       teams: null,
       workItemTypes: null,
       fields: null,
       areaPaths: null,
+      iterationPaths: null,
+      queryFolders: null,
     });
   });
 
@@ -114,7 +129,7 @@ describe("fetchAdoRawInPage - area-path retries", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = fetchAdoRawInPage("teams-url", "wit-url", "fields-url", "areas-url");
+    const result = fetchAdoRawInPage(URLS);
     await vi.runAllTimersAsync();
 
     await expect(result).resolves.toMatchObject({ areaPaths: { name: "Project" } });

@@ -23,11 +23,13 @@ import { ASSIGNED_TO_FIELD, identityFieldValue } from "../../../common/ado/adoAp
 import { buildQueryFolderUrl, buildWorkItemUrl } from "../../../common/ado/fetchAdoTree";
 import type { SprintWindow } from "../../../common/ado/sprintWindow";
 import {
+  boardColumnOrdinal,
   flattenWorkItems,
   orderTrackedItems,
   primaryWorkWithAncestors,
   workItemIdsVisibleUnderPrimaryFilter,
   workItemsEligibleForPrimaryFilter,
+  workItemStatusLabel,
   workItemTypeColor,
 } from "../../../common/ado/workItemTypes";
 import { resolveMentionsIn } from "../../../common/browser/MessagingMentionDirectory";
@@ -93,6 +95,7 @@ import {
   createMarkerFilter,
   itemHasMarker,
 } from "../../../common/view-common/control/MarkerPill/markerPresence";
+import { renderNewItemRow } from "../../../common/view-common/control/NewItemRow/NewItemRow";
 import { renderOrderingPicker } from "../../../common/view-common/control/OrderingPicker/OrderingPicker";
 import {
   renderPriorityBadge,
@@ -119,6 +122,14 @@ import {
 } from "./header/ProjectTrackingHeader";
 import { buildItemCommands, buildSprintMoveCommands } from "./item-commands/ItemCommands";
 import { buildMarkerCommands } from "./item-commands/MarkerCommands";
+import {
+  buildNewChildCommand,
+  childTypeOf,
+  isImmediateParentOfPrimaryWork,
+  newChildItem,
+  newChildSummary,
+} from "./item-commands/NewChildCommands";
+import { buildProjectLifecycleCommands } from "./item-commands/ProjectLifecycleCommands";
 import { renderMarkerReasonsPill } from "./marker-reasons/MarkerReasonsPill";
 import { createNotesPanelState, renderNotesPanel, type NotesPanelState } from "./notes/NotesPanel";
 import { markerCommentPrefixes } from "./notes/markerNotes";
@@ -150,16 +161,7 @@ function lastTypeColor(types: TypeCatalogEntry[]): string | null {
  * is routed onto. Falls back to the raw ADO State when the type declares no matching column, so an
  * unmapped state is still shown rather than blanked.
  */
-function statusLabelOf(item: TrackedWorkItem, entry: TypeCatalogEntry | undefined): string {
-  // Match case/whitespace-insensitively: ADO can echo a state with different casing than the one the
-  // team recorded in its column config, and an exact compare would then miss the mapping and leak the
-  // raw ADO State into the badge instead of the intended application Status.
-  const itemState = item.state.trim().toLowerCase();
-  const column = entry?.columns.find((col) =>
-    col.states.some((state) => state.trim().toLowerCase() === itemState),
-  );
-  return column?.column ?? item.state;
-}
+const statusLabelOf = workItemStatusLabel;
 
 /**
  * Everything one render pass narrows the tree by, bundled so the recursive visibility test and the
@@ -289,17 +291,6 @@ function widestStatusLabelLength(
     pending.push(...item.children);
   }
   return widest;
-}
-
-/**
- * The zero-based position of a status label in the team's global board-column order, or -1 when the
- * label maps to no board column. Status color is keyed off this position so the same board column
- * reads identically for every work-item type. Matched case/whitespace-insensitively because ADO can
- * echo a column label with different casing than the team recorded.
- */
-function boardColumnOrdinal(label: string, boardColumns: string[]): number {
-  const target = label.trim().toLowerCase();
-  return boardColumns.findIndex((column) => column.trim().toLowerCase() === target);
 }
 
 /**
@@ -482,6 +473,8 @@ interface TreeRenderOptions {
   minorChildColor: string | null;
   /** Primary-work types and every planning-context type on a path above them. */
   treeRowTypes: ReadonlySet<string>;
+  /** The board's "add a child under this item" affordance, shared by every row and by the root. */
+  newChild: NewChildSurface;
   /** Consumes the one rolled-up child popup that should reopen after its successful reorder. */
   reopenMinorChildPopup: (parentId: number) => boolean;
   /** Reassigns zebra stripes after a branch changes which rows are visible. */
@@ -1197,6 +1190,160 @@ function boardNotesSince(context: DataDrivenViewContext): string {
 }
 
 /**
+ * The board's one "add a child under this item" affordance.
+ *
+ * One surface rather than a handler per caller because the board allows exactly one open box at a
+ * time: the title's menu and every row's menu are asking the same question, and two boxes on screen
+ * would leave it ambiguous which list a typed title is being added to.
+ */
+interface NewChildSurface {
+  /** Whether the box asking for a title is already open under `parent`. */
+  isOpen(parent: TrackedWorkItem): boolean;
+  /** Opens it under `parent`, closing whichever one was open, and repaints. */
+  open(parent: TrackedWorkItem): void;
+  /** The box itself when it belongs under `parent`; null otherwise. */
+  row(parent: TrackedWorkItem): HTMLElement | null;
+}
+
+/** What creating one child under a board item needs beyond the parent and the typed title. */
+interface NewChildContext {
+  doc: Document;
+  root: TrackedWorkItem;
+  context: DataDrivenViewContext;
+  typeMap: Map<string, TypeCatalogEntry>;
+  session: BoardSession;
+  queue: WorkItemWriteQueue;
+  repaint: () => void;
+}
+
+/** Builds the board's single add-a-child surface over the session that remembers what is open. */
+function createNewChildSurface(ctx: NewChildContext): NewChildSurface {
+  const { session } = ctx;
+  return {
+    isOpen: (parent) => session.addingChildOf === parent.id,
+    open: (parent) => {
+      session.addingChildOf = parent.id;
+      // A collapsed branch would hide the very box that was just asked for, and the reader has no
+      // way to connect the missing box to the twisty they closed earlier.
+      session.collapsedIds.delete(parent.id);
+      ctx.repaint();
+    },
+    row: (parent) => (session.addingChildOf === parent.id ? newChildRow(parent, ctx) : null),
+  };
+}
+
+/** The inline box asking for the new child's title, wired to this board's configuration. */
+function newChildRow(parent: TrackedWorkItem, ctx: NewChildContext): HTMLElement | null {
+  const type = childTypeOf(parent, ctx.typeMap);
+  if (type === null) return null;
+  const entry = ctx.typeMap.get(type);
+  return renderNewItemRow({
+    doc: ctx.doc,
+    typeName: type,
+    iconUrl: entry?.icon ?? null,
+    color: workItemTypeColor(entry?.color),
+    summary: newChildSummary(parent, type),
+    onSubmit: (title) => addChildItem(parent, type, title, ctx),
+    onCancel: () => {
+      ctx.session.addingChildOf = null;
+      ctx.repaint();
+    },
+  });
+}
+
+/**
+ * Creates the child the reader typed a title for and shows it at the top of its level.
+ *
+ * Spliced into the loaded tree rather than re-read: the query that built this board returns the
+ * whole project, so the new item is already inside it by construction, and a reload would throw away
+ * everything the reader had open to learn something already known.
+ */
+async function addChildItem(
+  parent: TrackedWorkItem,
+  type: string,
+  title: string,
+  ctx: NewChildContext,
+): Promise<boolean> {
+  const { services } = ctx.context;
+  const result = await services.createWorkItem.create({
+    type,
+    title,
+    tags: [],
+    // Inherited, not asked: work identified under an item belongs to the same area and sprint as the
+    // item it was identified from until someone deliberately moves it.
+    areaPath: parent.areaPath,
+    iterationPath: parent.iterationPath,
+    parentId: parent.id,
+  });
+  if (!result.ok || result.id === undefined) return false;
+  const siblingIds = orderTrackedItems(
+    parent.children,
+    (child) => child,
+    MANUAL_ORDERING_POLICY,
+  ).map((child) => child.id);
+  const created = newChildItem({
+    id: result.id,
+    rev: result.rev ?? 1,
+    fields: result.fields,
+    type,
+    title,
+    parent,
+    types: ctx.typeMap,
+    createdAt: services.now().toISOString(),
+  });
+  parent.children.unshift(created);
+  ctx.session.addingChildOf = null;
+  ctx.session.addedIds.add(created.id);
+  services.logger.info(
+    `Project Tracking added ${type} ${created.id} under ${parent.id}, ahead of ${siblingIds.length} sibling(s).`,
+  );
+  ctx.repaint();
+  rankChildFirst(created, parent, siblingIds, ctx);
+  return true;
+}
+
+/**
+ * Persists the new item's place at the top of its level.
+ *
+ * Written even when the board is showing a derived order: the backlog rank is a property of the
+ * item, not of what this reader is currently sorted by, and leaving it unset would drop the item to
+ * the bottom of the list the moment anyone opened it under the manual order.
+ */
+function rankChildFirst(
+  created: TrackedWorkItem,
+  parent: TrackedWorkItem,
+  siblingIds: readonly number[],
+  ctx: NewChildContext,
+): void {
+  const team = ctx.context.services.currentTeam();
+  if (team === null) {
+    ctx.context.services.logger.info(
+      `Left ${created.id} at the top of its level for this session only: no team is configured, ` +
+        "and backlog rank is per team in Azure DevOps.",
+    );
+    return;
+  }
+  void ctx.queue
+    .enqueueReorder({
+      id: created.id,
+      currentRev: () => created.rev,
+      parentId: parent.id,
+      // Born under the parent already, so only the rank is written; the link patch is skipped.
+      currentParentId: parent.id,
+      previousId: 0,
+      nextId: siblingIds[0] ?? 0,
+      siblingIds: [created.id, ...siblingIds],
+      team,
+    })
+    .then((result) => {
+      if (result.rev !== undefined) created.rev = result.rev;
+      if (result.order !== undefined) created.importance = result.order;
+      if (result.ranks !== undefined) applyRanksToTree(ctx.root, result.ranks);
+      ctx.repaint();
+    });
+}
+
+/**
  * What the right-click menu acts on for one item: how to name it in Azure DevOps, and the commands
  * that change it.
  *
@@ -1241,7 +1388,7 @@ function menuTargetFor(params: {
 
 /** The menu target for an item rendered by the tree, drawn from the current pass's options. */
 function itemMenuTarget(item: TrackedWorkItem, options: TreeRenderOptions): ItemContextMenuTarget {
-  return menuTargetFor({
+  const target = menuTargetFor({
     doc: options.doc,
     item,
     context: options.context,
@@ -1250,6 +1397,23 @@ function itemMenuTarget(item: TrackedWorkItem, options: TreeRenderOptions): Item
     areaPaths: options.areaPaths,
     onChanged: options.repaint,
   });
+  // Offered only on the level that actually holds the team's delivery: adding "new work" anywhere
+  // else would create planning structure or implementation detail nobody asked for.
+  if (!isImmediateParentOfPrimaryWork(item, options.typeMap)) {
+    return target;
+  }
+  return {
+    ...target,
+    commands: [
+      ...(target.commands ?? []),
+      buildNewChildCommand("New work identified", {
+        parent: item,
+        types: options.typeMap,
+        adding: options.newChild.isOpen(item),
+        onAdd: () => options.newChild.open(item),
+      }),
+    ],
+  };
 }
 
 /**
@@ -1594,6 +1758,8 @@ function renderRow(
   twisty: HTMLButtonElement | null;
   /** The row's own line box, whose midpoint tells a drag whether a drop lands above or below it. */
   line: HTMLElement;
+  /** Everything belonging to this item bar its children, so no band between rows accepts nothing. */
+  surface: HTMLElement;
   /** The title, which doubles as the drag handle when reordering is available. */
   title: HTMLElement;
 } {
@@ -1669,6 +1835,11 @@ function renderRow(
     childrenStyles.push("border-left:1px solid var(--control-border-emphasis)");
   }
   childrenContainer.style.cssText = childrenStyles.join(";");
+  // First inside the branch, so the title being typed sits at the top of the list it joins.
+  const newChild = options.newChild.row(item);
+  if (newChild !== null) {
+    childrenContainer.append(newChild);
+  }
 
   const rowWrapper = doc.createElement("div");
   rowWrapper.className = ITEM_WRAPPER_CLASS;
@@ -1681,7 +1852,14 @@ function renderRow(
     wireTwisty(twisty, childrenContainer, item.id, options.collapsedIds, options.restripeRows);
   }
 
-  return { row: rowWrapper, childrenContainer, twisty, line: row, title: titleSpan };
+  return {
+    row: rowWrapper,
+    childrenContainer,
+    twisty,
+    line: row,
+    surface: itemSurface,
+    title: titleSpan,
+  };
 }
 
 /**
@@ -1749,7 +1927,11 @@ function renderTree(
     (item) => rendersAsTreeRow(item, options, depth) && options.visibleItemIds.has(item.id),
   );
   return visible.map((item) => {
-    const { row, childrenContainer, twisty, line, title } = renderRow(item, options, depth);
+    const { row, childrenContainer, twisty, line, surface, title } = renderRow(
+      item,
+      options,
+      depth,
+    );
     if (twisty) options.expandableRows.push({ id: item.id, twisty });
 
     options.dragReorder?.register({
@@ -1762,6 +1944,9 @@ function renderTree(
       handle: title,
       row: line,
       wrapper: row,
+      // The surface carries the row's trailing padding and its description/notes panels, so the band
+      // between two rows belongs to the one above it instead of swallowing the drop.
+      dropZone: surface,
     });
 
     if (item.children.some((child) => rendersAsTreeRow(child, options, depth + 1))) {
@@ -1809,6 +1994,20 @@ interface BoardSession {
   orderingPolicy: OrderingPolicy | null;
   /** One-shot parent id whose rolled-up child popup reopens after a successful reorder repaint. */
   reopenMinorChildPopupId: number | null;
+  /**
+   * The item whose "add a child" box is open, or null when none is. One at a time by design: two
+   * open boxes on one board make it ambiguous which list a typed title is being added to.
+   */
+  addingChildOf: number | null;
+  /**
+   * Items added from this board, kept visible whatever the filters say.
+   *
+   * The board only shows planning context that LEADS to primary work, so a milestone created a
+   * moment ago — which by definition holds nothing yet — would vanish the instant it was created and
+   * read as a failed command. What the reader just asked for is not something the filters get to
+   * hide from them.
+   */
+  addedIds: Set<number>;
   /** Acceptance evidence is reloaded with the tree and updated by Sprint-only commands elsewhere. */
   interruptAcceptance: InterruptAcceptanceState;
 }
@@ -1832,6 +2031,8 @@ function createBoardSession(services: EnhancedViewServices): BoardSession {
     sprint: null,
     orderingPolicy: null,
     reopenMinorChildPopupId: null,
+    addingChildOf: null,
+    addedIds: new Set<number>(),
     interruptAcceptance: { acceptedIds: new Set<number>(), failedIds: new Set<number>() },
   };
 }
@@ -2342,6 +2543,18 @@ function createBoardTreeRenderer(params: BoardTreeRendererParams): () => void {
   // newly-rendered row start by loading a discussion nobody asked to see.
   const { collapsedIds, expandedNoteIds, notePanelStates } = params.session;
 
+  // Built once, not per pass: the box it hands out is the one the reader is typing into, and a fresh
+  // one on every repaint would take the caret (and the typed title) away mid-word.
+  const newChild = createNewChildSurface({
+    doc,
+    root,
+    context: params.context,
+    typeMap: params.typeMap,
+    session: params.session,
+    queue: params.fieldWrites,
+    repaint: () => params.repaintBoard(),
+  });
+
   const renderTreeContent = (): void => {
     const filterOn = sprintPickerHandle.isFilterActive();
     const expandableRows: ExpandableRow[] = [];
@@ -2359,10 +2572,12 @@ function createBoardTreeRenderer(params: BoardTreeRendererParams): () => void {
       queue: params.fieldWrites,
       statusWidthCh: params.metrics.statusWidthCh,
       boardColumns: params.metrics.boardColumns,
-      visibleItemIds: workItemIdsVisibleUnderPrimaryFilter(
-        [params.root],
-        [...params.typeMap.values()],
-        (item) => matchesTreeFilter(item, filter),
+      visibleItemIds: visibleWithAddedItems(
+        workItemIdsVisibleUnderPrimaryFilter([params.root], [...params.typeMap.values()], (item) =>
+          matchesTreeFilter(item, filter),
+        ),
+        params.root,
+        params.session.addedIds,
       ),
       orderingPolicy,
       // Sprint pills only earn their space when the sprint filter is not already narrowing the board.
@@ -2389,6 +2604,7 @@ function createBoardTreeRenderer(params: BoardTreeRendererParams): () => void {
       mentionNames: params.context.services.mentionDirectory.knownNames(),
       minorChildColor: params.metrics.minorChildColor,
       treeRowTypes: params.metrics.treeRowTypes,
+      newChild,
       reopenMinorChildPopup: (parentId) => {
         if (params.session.reopenMinorChildPopupId !== parentId) {
           return false;
@@ -2407,18 +2623,7 @@ function createBoardTreeRenderer(params: BoardTreeRendererParams): () => void {
     // children downward rather than repeating the epic as the top row.
     const rows = renderTree(root, options, 0);
     logBoardEmptinessFlip(params.context, params.session, rows.length, filter);
-    // The query itself is known to have returned items by this point, so an empty tree can only mean
-    // the filters hid all of them — say so rather than leaving a blank panel that reads as a failure.
-    treeContainer.append(
-      ...(rows.length === 0
-        ? [
-            renderEmptyState(doc, {
-              message: "No items match the current filters.",
-              hint: "Clear or widen a filter above to bring items back.",
-            }),
-          ]
-        : rows),
-    );
+    fillTreeContainer(doc, treeContainer, rows, newChild.row(root));
     restripeVisibleRows(treeContainer);
 
     wireExpandCollapseButtons(
@@ -2433,6 +2638,33 @@ function createBoardTreeRenderer(params: BoardTreeRendererParams): () => void {
   };
 
   return renderTreeContent;
+}
+
+/**
+ * Fills the tree with one pass's rows, or with the panel that explains why there are none.
+ *
+ * The box asking for a new item's title goes above everything, the empty state included: it is the
+ * answer to why the list is about to change, and a board the filters have emptied is exactly when
+ * adding to it is useful.
+ */
+function fillTreeContainer(
+  doc: Document,
+  treeContainer: HTMLElement,
+  rows: readonly HTMLElement[],
+  newChildRow: HTMLElement | null,
+): void {
+  // The query itself is known to have returned items by this point, so an empty tree can only mean
+  // the filters hid all of them — say so rather than leaving a blank panel that reads as a failure.
+  const body =
+    rows.length === 0
+      ? [
+          renderEmptyState(doc, {
+            message: "No items match the current filters.",
+            hint: "Clear or widen a filter above to bring items back.",
+          }),
+        ]
+      : rows;
+  treeContainer.append(...(newChildRow === null ? [] : [newChildRow]), ...body);
 }
 
 /**
@@ -2730,6 +2962,41 @@ function findTrackedItem(root: TrackedWorkItem, id: number): TrackedWorkItem | n
     }
   }
   return null;
+}
+
+/** The ids from `root` down to `id` inclusive, or null when this tree does not hold it. */
+function pathToTrackedItem(
+  root: TrackedWorkItem,
+  id: number,
+  trail: number[] = [],
+): number[] | null {
+  const path = [...trail, root.id];
+  if (root.id === id) {
+    return path;
+  }
+  for (const child of root.children) {
+    const found = pathToTrackedItem(child, id, path);
+    if (found !== null) {
+      return found;
+    }
+  }
+  return null;
+}
+
+/** Adds the items this reader created — and the branches leading to them — to what a pass shows. */
+function visibleWithAddedItems(
+  visible: ReadonlySet<number>,
+  root: TrackedWorkItem,
+  addedIds: ReadonlySet<number>,
+): ReadonlySet<number> {
+  if (addedIds.size === 0) {
+    return visible;
+  }
+  const withAdded = new Set(visible);
+  for (const id of addedIds) {
+    for (const ancestor of pathToTrackedItem(root, id) ?? []) withAdded.add(ancestor);
+  }
+  return withAdded;
 }
 
 /**
@@ -3071,22 +3338,78 @@ function mountBoardHeader(params: {
       orderingPicker: core.ordering.element,
       onAreaPathChange: params.onAreaPathChange,
       onTitleContextMenu: (event) =>
-        params.contextMenu.openAt(
-          event,
-          menuTargetFor({
-            doc,
-            item: root,
-            context,
-            queue: core.writes,
-            sprintWindow,
-            areaPaths: params.itemAreaPaths,
-            onChanged: params.onRootChanged,
-          }),
-        ),
+        params.contextMenu.openAt(event, rootMenuTarget(params, root, context, sprintWindow)),
     },
     params.folderPath,
     core.writes,
   );
+}
+
+/**
+ * The root's menu: everything an item's menu offers, plus the commands that govern the PROJECT.
+ *
+ * "Mark completed" belongs here rather than on any row because the root is the project this board
+ * exists to report on — and the query being viewed is that project's tracking query, which is
+ * exactly what completing it offers to clean up. "Create Project Query" is left out: the board is
+ * already standing on one, so a second could only ever be a duplicate.
+ *
+ * "Add new milestone/phase" belongs here for the same reason in reverse: the root's own children are
+ * the board's top level, and the title is the only place that level can be added to.
+ */
+function rootMenuTarget(
+  params: Parameters<typeof mountBoardHeader>[0],
+  root: TrackedWorkItem,
+  context: DataDrivenViewContext,
+  sprintWindow: SprintWindow,
+): ItemContextMenuTarget {
+  const target = menuTargetFor({
+    doc: params.doc,
+    item: root,
+    context,
+    queue: params.core.writes,
+    sprintWindow,
+    areaPaths: params.itemAreaPaths,
+    onChanged: params.onRootChanged,
+  });
+  return {
+    ...target,
+    commands: [
+      ...(target.commands ?? []),
+      buildNewChildCommand("Add new milestone/phase", {
+        parent: root,
+        types: params.typeMap,
+        adding: params.session.addingChildOf === root.id,
+        onAdd: () => {
+          params.session.addingChildOf = root.id;
+          params.onRootChanged();
+        },
+      }),
+      ...buildProjectLifecycleCommands({
+        doc: params.doc,
+        item: root,
+        services: context.services,
+        queue: params.core.writes,
+        onChanged: params.onRootChanged,
+        types: params.typeMap,
+        // The board IS this project's tracking query, so the link is known without reading it; the
+        // worker locates the hyperlink itself and simply skips it when the project carries none.
+        // Deletable whoever saved it: the reader is standing on this query and bound this view to
+        // it, so "delete the query" here names the one thing on screen.
+        queryLink: {
+          workItemId: root.id,
+          queryId: context.queryId,
+          url: params.doc.location?.href ?? "",
+          managed: true,
+        },
+        queryLinkKnown: true,
+        queryFolderPath: "",
+        offerCreate: false,
+        // Deliberately a repaint, not a re-read: completing may have just deleted the very query
+        // this board loads from, and re-reading it would replace the result with a load failure.
+        onReload: params.onRootChanged,
+      }),
+    ],
+  };
 }
 
 /** Build the board-wide menu against the stable enhanced-view surface rather than the viewport. */

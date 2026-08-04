@@ -12,7 +12,12 @@ export class DropIndicator {
     this.line.setAttribute("aria-hidden", "true");
     this.line.style.cssText = [
       "height:2px",
-      "margin:1px 0",
+      // Negative margins cancel the height so the line occupies NO layout space. Showing it in the
+      // flow used to push every row below it down by its own height, which slid the row under the
+      // pointer out from beneath it: `dragover` then stopped reaching any registered row, the
+      // browser refused the drop, and the gesture ended with the line still on screen and nothing
+      // moved — a drag that looked accepted and was silently discarded.
+      "margin:-1px 0",
       "border-radius:1px",
       "pointer-events:none",
       "background:var(--communication-background)",

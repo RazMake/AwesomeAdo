@@ -32,6 +32,7 @@ async function createMinimalDist(distDir, version) {
   await writeFile(join(distDir, "background/service-worker.js"), "// sw");
   await writeFile(join(distDir, "content/awesomeado-content.js"), "// content");
   await writeFile(join(distDir, "content/project-tracking.js"), "// project tracking");
+  await writeFile(join(distDir, "content/projects-view.js"), "// projects view");
   await writeFile(join(distDir, "options/options.js"), "// options");
   await writeFile(join(distDir, "options/options.html"), "<html></html>");
 }

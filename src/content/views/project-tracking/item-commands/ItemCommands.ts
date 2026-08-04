@@ -27,6 +27,9 @@ export interface ItemCommandsOptions extends ItemCommandTarget {
 /** The subset needed anywhere the board offers a direct sprint move. */
 export type SprintMoveOptions = ItemCommandTarget & Pick<ItemCommandsOptions, "sprintWindow">;
 
+/** The subset the whole-discussion command needs: an item, and how far back the window reaches. */
+export type NotesCommandOptions = ItemCommandTarget & Pick<ItemCommandsOptions, "notesSinceIso">;
+
 const TITLE_FIELD = "System.Title";
 const DESCRIPTION_FIELD = "System.Description";
 const ITERATION_PATH_FIELD = "System.IterationPath";
@@ -68,8 +71,23 @@ export function buildItemCommands(options: ItemCommandsOptions): ItemContextMenu
   ];
 }
 
+/**
+ * The three commands that edit the item itself, in the order every menu shows them.
+ *
+ * Split out so a view with no sprints and no area-path filter (the projects catalog) can offer
+ * exactly these without either re-implementing them or inheriting board-specific destinations that
+ * mean nothing on its surface.
+ */
+export function buildItemEditingCommands(options: NotesCommandOptions): ItemContextMenuCommand[] {
+  return [
+    updateTitleCommand(options),
+    updateDescriptionCommand(options),
+    viewAllNotesCommand(options),
+  ];
+}
+
 /** Renames the item; the board repaints so every place showing the title agrees. */
-function updateTitleCommand(options: ItemCommandsOptions): ItemContextMenuCommand {
+function updateTitleCommand(options: ItemCommandTarget): ItemContextMenuCommand {
   const { doc, item } = options;
   return {
     label: "Update title",
@@ -107,7 +125,7 @@ function updateTitleCommand(options: ItemCommandsOptions): ItemContextMenuComman
  * throw away markup they never saw. Saving puts the field into Markdown, so what they typed is what
  * ADO stores and re-renders.
  */
-function updateDescriptionCommand(options: ItemCommandsOptions): ItemContextMenuCommand {
+function updateDescriptionCommand(options: ItemCommandTarget): ItemContextMenuCommand {
   const { doc, item } = options;
   return {
     label: "Update description",
@@ -236,7 +254,7 @@ function buildAreaPathChangeCommands(options: ItemCommandsOptions): ItemContextM
  * The panel under a row deliberately shows only the last two days with notes, because dozens of
  * those are on screen at once. This surface was asked for, so it shows everything the window holds.
  */
-function viewAllNotesCommand(options: ItemCommandsOptions): ItemContextMenuCommand {
+function viewAllNotesCommand(options: NotesCommandOptions): ItemContextMenuCommand {
   const { doc, item, services } = options;
   return {
     label: "View all notes",

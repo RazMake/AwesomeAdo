@@ -258,6 +258,19 @@ describe("createItemContextMenu with the caller's own commands", () => {
     expect(mount.querySelector(".awesomeado-item-menu__separator")).toBeNull();
   });
 
+  it("draws one rule, not two, when the caller groups from its first command", () => {
+    openWithCommands([
+      { label: "Rename", separatorBefore: true, run: () => undefined },
+      { label: "Delete", separatorBefore: true, run: () => undefined },
+    ]);
+
+    // The gap under the standard commands is the same gap "Rename" asked to be separated from.
+    const rows = [...mount.querySelectorAll(".awesomeado-item-menu__commands > *")];
+    const isRule = (row: Element | undefined): boolean => row?.getAttribute("role") === "separator";
+    expect(rows.filter((row) => isRule(row))).toHaveLength(2);
+    expect(rows.some((row, index) => isRule(row) && isRule(rows[index + 1]))).toBe(false);
+  });
+
   it("runs an action and closes", () => {
     const run = vi.fn();
     openWithCommands([{ label: "Rename", run }]);

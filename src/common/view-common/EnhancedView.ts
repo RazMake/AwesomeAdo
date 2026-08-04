@@ -11,7 +11,9 @@ import type { IFeatureCrewWriter } from "../ado/IFeatureCrewWriter";
 import type { IInterruptAcceptanceReader } from "../ado/IInterruptAcceptanceReader";
 import type { IMentionDirectory } from "../ado/IMentionDirectory";
 import type { INoteActivityReader } from "../ado/INoteActivityReader";
+import type { IProjectQueryService } from "../ado/IProjectQueryService";
 import type { IUserDirectory } from "../ado/IUserDirectory";
+import type { IWorkItemCreator } from "../ado/IWorkItemCreator";
 import type {
   WorkItemFieldWriteRequest,
   WorkItemFieldWriteResult,
@@ -24,6 +26,7 @@ import type { QueryDefinitionResult } from "../ado/QueryDefinition";
 import type { TeamMembersResult } from "../ado/TeamMembers";
 import type { TypeCatalogEntry } from "../ado/TrackedWorkItem";
 import type { SprintWindow } from "../ado/sprintWindow";
+import type { IQueryBindingWriter } from "../bindings/IQueryBindingWriter";
 import type { ILogger } from "../logging/ILogger";
 import type { WorkItemMarkerTags } from "../settings/ExtensionSettings";
 import type { SprintAreaPathConfigurationService } from "../settings/SprintAreaPaths";
@@ -131,6 +134,27 @@ export interface EnhancedViewServices {
    * LINK and re-ranks it through a team-scoped backlog endpoint.
    */
   reorderItem(request: WorkItemReorderRequest): Promise<WorkItemReorderResult>;
+  /**
+   * Creates a work item in Azure DevOps — the persistence behind a catalog view adding a project.
+   *
+   * Kept apart from `writeField` (Interface Segregation): every other write here changes an item
+   * that already exists and is guarded by that item's revision, while creation has neither.
+   */
+  createWorkItem: IWorkItemCreator;
+  /**
+   * The lifecycle of a project's own saved tracking query: which projects already have one, creating
+   * and linking one, and unlinking plus deleting it again.
+   */
+  projectQueries: IProjectQueryService;
+  /**
+   * Records or removes the AwesomeADO binding for ONE query.
+   *
+   * A view reaches for this only when it creates or deletes the query itself: a project that gets
+   * its own tracking query should open enhanced without anyone visiting the options page, and a
+   * project whose query is deleted must not leave a binding pointing at a query that no longer
+   * exists.
+   */
+  queryBindings: IQueryBindingWriter;
   /**
    * The team whose backlog order applies, or `null` when no team is configured. Backlog rank is
    * per-team in Azure DevOps, so a view must refuse to reorder rather than guess a team — a move

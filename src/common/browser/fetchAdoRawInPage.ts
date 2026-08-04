@@ -5,10 +5,30 @@ export interface AdoRawMetadata {
   /** The project field list, read only to learn which of a type's fields are date-typed. */
   fields: unknown;
   areaPaths: unknown;
+  iterationPaths: unknown;
+  queryFolders: unknown;
 }
 
 /**
- * Fetch the raw ADO teams, work-item-types, and field-list JSON from inside the ADO page.
+ * The endpoints one metadata read fetches, handed over as ONE object.
+ *
+ * `chrome.scripting.executeScript` requires every entry of `args` to be JSON-serializable, and an
+ * omitted positional argument is an unserializable hole that rejects the whole injection before it
+ * runs; an absent object property simply disappears. Declared here rather than imported so the
+ * injected function keeps no module references.
+ */
+export interface AdoMetadataFetchUrls {
+  teamsUrl: string;
+  workItemTypesUrl: string;
+  fieldsUrl: string;
+  areaPathsUrl: string;
+  iterationPathsUrl: string;
+  queryFoldersUrl: string;
+}
+
+/**
+ * Fetch the raw ADO teams, work-item-types, field-list, classification, and saved-query JSON from
+ * inside the ADO page.
  *
  * WHY this exists / why it must stay self-contained: In Manifest V3 the extension's content script
  * runs in an isolated world whose origin is `chrome-extension://…`, so its cross-origin fetch to ADO
@@ -20,34 +40,28 @@ export interface AdoRawMetadata {
  * helper — only its parameters and page globals (`fetch`, `Promise`). Promise chaining (not
  * async/await) avoids any transpiler helper being hoisted out of the function body.
  */
-export function fetchAdoRawInPage(
-  teamsUrl: string,
-  workItemTypesUrl: string,
-  fieldsUrl: string,
-  areaPathsUrl: string,
-): Promise<AdoRawMetadata> {
+export function fetchAdoRawInPage(urls: AdoMetadataFetchUrls): Promise<AdoRawMetadata> {
   const get = (url: string): Promise<unknown> =>
     fetch(url, { credentials: "include", headers: { Accept: "application/json" } })
       .then((response) => (response.ok ? response.json() : null))
       .catch(() => null);
 
-  const getAreaPaths = (attempt = 1): Promise<unknown> =>
-    fetch(areaPathsUrl, { credentials: "include", headers: { Accept: "application/json" } })
+  // The hierarchy reads are the broad ones ADO throttles first, so each gets bounded retries.
+  const getWithRetry = (url: string, attempt = 1): Promise<unknown> => {
+    // One shared back-off so a refused response and a network error cannot drift apart.
+    const retry = (): Promise<unknown> =>
+      new Promise<void>((resolve) => setTimeout(resolve, 100 * 2 ** (attempt - 1))).then(() =>
+        getWithRetry(url, attempt + 1),
+      );
+    return fetch(url, { credentials: "include", headers: { Accept: "application/json" } })
       .then((response) => {
         if (response.ok) return response.json();
         const transient =
           response.status === 408 || response.status === 429 || response.status >= 500;
-        if (!transient || attempt >= 3) return null;
-        return new Promise<void>((resolve) => setTimeout(resolve, 100 * 2 ** (attempt - 1))).then(
-          () => getAreaPaths(attempt + 1),
-        );
+        return !transient || attempt >= 3 ? null : retry();
       })
-      .catch(() => {
-        if (attempt >= 3) return null;
-        return new Promise<void>((resolve) => setTimeout(resolve, 100 * 2 ** (attempt - 1))).then(
-          () => getAreaPaths(attempt + 1),
-        );
-      });
+      .catch(() => (attempt >= 3 ? null : retry()));
+  };
 
   // The teams endpoint pages its results, so walk $skip until a page comes back empty; reading only
   // the first page hides most teams in a large org (thousands are common). Advance $skip by the count
@@ -58,13 +72,9 @@ export function fetchAdoRawInPage(
     const teams: unknown[] = [];
     const readPage = (skip: number, pagesLeft: number): Promise<unknown> =>
       get(`${baseUrl}&$skip=${skip}`).then((body) => {
-        const value =
-          body !== null && Array.isArray((body as { value?: unknown }).value)
-            ? (body as { value: unknown[] }).value
-            : [];
-        for (const team of value) {
-          teams.push(team);
-        }
+        const page = (body as { value?: unknown } | null)?.value;
+        const value = Array.isArray(page) ? (page as unknown[]) : [];
+        teams.push(...value);
         if (value.length === 0 || pagesLeft <= 1) {
           // Preserve a "could not read" signal only when the very first request itself failed.
           return skip === 0 && body === null ? null : { value: teams };
@@ -75,14 +85,18 @@ export function fetchAdoRawInPage(
   };
 
   return Promise.all([
-    getAllTeams(teamsUrl),
-    get(workItemTypesUrl),
-    get(fieldsUrl),
-    getAreaPaths(),
+    getAllTeams(urls.teamsUrl),
+    get(urls.workItemTypesUrl),
+    get(urls.fieldsUrl),
+    getWithRetry(urls.areaPathsUrl),
+    getWithRetry(urls.iterationPathsUrl),
+    getWithRetry(urls.queryFoldersUrl),
   ]).then((bodies) => ({
     teams: bodies[0],
     workItemTypes: bodies[1],
     fields: bodies[2],
     areaPaths: bodies[3],
+    iterationPaths: bodies[4],
+    queryFolders: bodies[5],
   }));
 }

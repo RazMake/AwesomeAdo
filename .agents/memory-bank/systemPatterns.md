@@ -34,6 +34,15 @@ source AND ADO's own rendering) plus the pure windowing rules — `noteWindowSta
 `fetchWorkItemNotes` and the `IWorkItemNoteLoader` / `IWorkItemNoteWriter` contracts split apart
 (Interface Segregation: showing notes and authoring them are different capabilities). See ADR-043.
 
+Creating an item and a project's own saved **tracking query** are modelled here too: `createWorkItem`
+(`IWorkItemCreator`) builds the project-scoped create endpoint and the ONE patch that gives a new item
+its title, tags, area path and iteration path together; `projectQuery` (`IProjectQueryService`) owns the recursive
+tree WIQL, the query naming rules, the create/delete/web URLs (with the prefix/suffix halves the page
+world needs, because a created query's id exists only there), and the parse of the stamped
+`Hyperlink` that identifies a tracking query. Both are their own capabilities rather than methods on
+the field writer: creation has no revision to guard, and a query's lifecycle is not a field patch.
+See ADR-067, ADR-068 and ADR-069.
+
 `workItemTypes.ts` owns every derivation over the configured **type catalog** — the answers that
 decide what a view shows and in which order, so no view can hold its own copy: `workItemTypeColor` /
 `workItemTypeTextColor` (the `#`-prefixed hex, with an unset color reported as `null` rather than a
@@ -53,15 +62,18 @@ it. Four groups live here:
    `chrome.storage`), `ChromeAdoTabReader` / `ChromeAdoMetadataReader` (the only users of
    `chrome.tabs`), `observeStorageKeys`, `onStorageAreaChange`, `requestFromTab`, `pickAdoQueryTab`.
 2. **Message contracts** — `AdoTreeRequest`, `AdoIterationsRequest`, `FeatureCrewRequest`,
-   `WorkItemFieldRequest`, `WorkItemNoteRequest`: the typed content↔background shapes plus their
-   guards. Pure data.
+   `WorkItemFieldRequest`, `WorkItemNoteRequest`, `CreateWorkItemRequest`, `ProjectQueryRequest`: the
+   typed content↔background shapes plus their guards. Pure data.
 3. **MAIN-world fetchers** — `fetchAdoTreeInPage`, `fetchAdoIterationsInPage`, `fetchAdoRawInPage`,
    `fetchWorkItemNotesInPage`, `writeWorkItemNoteInPage`,
-   `findFeatureCrewInPage`, `applyFeatureCrewInPage`, `updateWorkItemFieldInPage`. Each is
+   `findFeatureCrewInPage`, `applyFeatureCrewInPage`, `updateWorkItemFieldInPage`,
+   `createWorkItemInPage`, `readProjectQueryLinksInPage`, `createProjectQueryInPage`,
+   `removeProjectQueryInPage`. Each is
    serialized by `chrome.scripting.executeScript` and must therefore stay import-free.
 4. **Messaging adapters** implementing `common/ado` contracts — `MessagingWorkItemTreeLoader`,
    `MessagingWorkItemNoteLoader`, `MessagingWorkItemNoteWriter`,
-   `MessagingTeamIterationsLoader`, `MessagingFeatureCrewWriter`, `MessagingWorkItemFieldWriter`.
+   `MessagingTeamIterationsLoader`, `MessagingFeatureCrewWriter`, `MessagingWorkItemFieldWriter`,
+   `MessagingWorkItemCreator`, `MessagingProjectQueryService`.
 
 Key members:
 
@@ -99,6 +111,9 @@ below it are implementation details.
 implemented by `BrowserSyncQueryBindingStore` (the whole map under one synced key, with
 `bind`/`unbind`/`setActiveView`/`replaceAll`); `createQueryBindingStore()` factory; `BindingRequest`
 (the typed messages and extension-relative URLs for opening the options page for one query).
+`IQueryBindingWriter` is the narrowed `bind`/`unbind` half `IQueryBindingStore` extends, and the only
+thing an enhanced view is handed — a view that records the binding for a query it created must not
+also be able to reach `replaceAll`.
 
 ### `src/common/view-common`
 
@@ -321,6 +336,18 @@ Split into component subfolders (each with its own `README.md`):
   Tracking retains the toggle for its broader board. **Scoped §6 exception (ADR-027):** options
   may import only `views/viewCatalog` (view config), enforced by an `import-x/no-restricted-paths`
   lint zone.
+  `views/projects-view` is the many-root **All Projects Catalog View** (ADR-066). Beyond listing and
+  filtering, it authors: its title menu copies the query URL and opens an inline row that creates a
+  project as the FIRST configured type, tagged with `projectTag` (defaulted from the query's WIQL),
+  under `newProjectAreaPath`, and in `newProjectIterationPath` (defaulted to the project root), all in
+  one creation patch (ADR-069). `projectQueryFolder` overrides the catalog query's own folder for
+  generated tracking queries; each row
+  carries the shared Copy/Open commands, the shared item-editing commands, and tag commands that
+  complete against the tree's own vocabulary while never offering to clear the tag that keeps the
+  project in the query; each PROJECT row also carries the shared project-lifecycle pair (ADR-067,
+  ADR-068). Under the manual ordering a project title is a drag handle that re-ranks it in the team's
+  backlog and never re-parents anything (ADR-070). Every write rides one serialized
+  `WorkItemWriteQueue` whose status sits in the header corner.
 
 ### `src/options`
 
@@ -372,6 +399,13 @@ extension in a real browser.
 - **Serving a content-side request in the worker** lives once in `tabRequestListener`: the sender's
   tab as the trust boundary, always answering a claimed message, and holding the channel open. Every
   credentialed operation in `background/index.ts` registers through it.
+- **What "completed" means for an item** lives once in `ProjectLifecycleCommands.completionStateOf`
+  (the primary state of the type's LAST configured board column), shared by the catalog's rows and
+  Project Tracking's title — so the word cannot mean one state on one surface and another next door.
+- **Which saved query is a project's tracking query** lives once in `common/ado/projectQuery`: a
+  `Hyperlink` stamped with `PROJECT_QUERY_LINK_COMMENT` whose URL still resolves to a single query.
+  The link's relation INDEX is deliberately not modelled — the worker locates it immediately before
+  removing it, because an index read earlier is exactly what a concurrent edit invalidates.
 - **ISO timestamp → epoch milliseconds** lives once in `common/datetime/isoEpoch`, so "no timestamp"
   cannot mean `NaN` in one comparator and `0` in the next.
 - **Type-catalog derivations** (a type's color, which types are primary work / its ancestors / its

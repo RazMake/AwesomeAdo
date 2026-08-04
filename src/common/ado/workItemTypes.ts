@@ -36,6 +36,37 @@ export function workItemTypeTextColor(color: string | null | undefined): string 
   return workItemTypeColor(color) ?? "var(--text-primary-color)";
 }
 
+/**
+ * Maps a work item's ADO State (`System.State`) to the application Status — the board-column label
+ * it is routed onto. Falls back to the raw ADO State when the type declares no matching column, so
+ * an unmapped state is still shown rather than blanked.
+ *
+ * Matched case/whitespace-insensitively: ADO can echo a state with different casing than the one the
+ * team recorded in its column config, and an exact compare would then miss the mapping and leak the
+ * raw ADO State into the badge instead of the intended application Status.
+ */
+export function workItemStatusLabel(
+  item: TrackedWorkItem,
+  entry: TypeCatalogEntry | undefined,
+): string {
+  const itemState = item.state.trim().toLowerCase();
+  const column = entry?.columns.find((col) =>
+    col.states.some((state) => state.trim().toLowerCase() === itemState),
+  );
+  return column?.column ?? item.state;
+}
+
+/**
+ * The zero-based position of a status label in the team's global board-column order, or -1 when the
+ * label maps to no board column. Status color is keyed off this position so the same board column
+ * reads identically for every work-item type. Matched case/whitespace-insensitively for the same
+ * reason as the status label itself.
+ */
+export function boardColumnOrdinal(label: string, boardColumns: readonly string[]): number {
+  const target = label.trim().toLowerCase();
+  return boardColumns.findIndex((column) => column.trim().toLowerCase() === target);
+}
+
 /** Every type reachable from `seeds` by walking parent → child links. */
 function typesBelow(
   types: readonly TypeCatalogEntry[],

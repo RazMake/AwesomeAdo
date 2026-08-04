@@ -14,13 +14,15 @@ content/views/
   enhancedViewRegistry.ts   the eager/lazy renderer registry (EnhancedView)
   sprint/                   sprintViewType.ts (config) + SprintView.ts (renderer)
   project-tracking/         projectTrackingViewType.ts + ProjectTrackingView.ts
+  projects-view/            projectsViewType.ts + ProjectsView.ts
 ```
 
 Every entry in `VIEW_TYPES` has a matching id in `enhancedViewRegistry`, pinned by
 `enhancedViewRegistry.test.ts`. `VIEW_TYPES` order **is** user-visible — it is the order the options
-page offers the views in, pinned by `viewCatalog.test.ts`. Sprint is available synchronously;
-Project Tracking is resolved once from its web-accessible ESM bundle and cached for the session, so
-its much larger renderer does not parse on every ADO page.
+page offers the views in, pinned by `viewCatalog.test.ts`. Sprint is available synchronously; Project
+Tracking and All Projects Catalog View are each resolved once from their own web-accessible ESM
+bundle and cached
+for the session, so their much larger renderers do not parse on every ADO page.
 
 ## The one cross-layer import (an intentional, scoped exception)
 
@@ -50,9 +52,10 @@ as an ADR in `.agents/memory-bank/decisions.md`. Because `viewCatalog` imports o
 ### `enhancedViewRegistry.ts` — renderer resolution (content only)
 
 - `enhancedViewRegistry` — the runtime registry; `has(id)` recognizes configured ids, `getLoaded(id)`
-  returns a renderer already available, and `load(id)` resolves and caches a deferred renderer.
+  returns a renderer already available, and `load(id)` resolves and caches a deferred renderer. A
+  failed load is forgotten, so a later attempt retries instead of replaying the same failure.
 - `createEnhancedViewRegistry(loader?)` — creates an isolated registry; tests inject a deterministic
-  Project Tracking loader through it.
+  loader for the deferred views through it.
 
 ## Adding a view
 

@@ -1292,3 +1292,138 @@ Markdown` in one `/rev`-guarded JSON Patch. The PATCH is not retried; a concurre
 - Rationale: handing a teammate the full file also hands them a snapshot that starts drifting the
   moment the team publishes again. The connection file makes them follow the live source instead,
   which is what "join the team's configuration" actually means.
+
+## ADR-066: All Projects Catalog View is the many-root, read-only sibling of Project Tracking
+
+- Decision: `content/views/projects-view` (id `projects`) lists EVERY top-level item a query returns
+  as a collapsed "project" that opens into its own tree. Project Tracking keeps its single-root
+  requirement; the two answer different questions ("how is this one epic going?" vs. "what is going
+  on across all of them?"), and widening Project Tracking to many roots would have made its header
+  (one title, one Tech Lead, one ETA) meaningless.
+- Decision: the view is **read-only** — no status/priority/assignee/ETA editing and therefore no
+  write queue. Its job is to report across many trees; the editing surface for one tree already
+  exists, and duplicating it here would have doubled the write paths that must agree about
+  `System.Rev`.
+- Decision: rows start CLOSED at every level and child DOM is built only while a row is open. A
+  query that returns many roots returns many trees; materializing all of them up front spends that
+  cost on branches nobody looked at. Open/closed state is remembered by work item id **outside** the
+  DOM, so it survives repaints and in-place refreshes (same rule as ADR-047).
+- Decision: a row carries only what distinguishes one project from another — type icon, title, child
+  count, own tags. No status badge and no assignee: across many trees those columns are noise the
+  reader has to scan past, and the one tree they matter for already has Project Tracking.
+- Decision: a tag EVERY project carries is the query's own condition, so it is neither offered in the
+  filter nor drawn as a pill. Measured over the top-level results (that is what the condition
+  selected) and only when there are at least two of them, because one project gives nothing to tell
+  its own tags apart from the query's.
+- Decision: the header carries the shared `OrderingPicker` in its top-right corner, board-local per
+  ADR-039 — a pick re-sorts from the items already loaded and never writes back to the binding.
+- Decision: the tag filter's vocabulary is every tag worn ANYWHERE in the loaded tree, not just the
+  projects' own; tags differing only in case are one option. A selected tag keeps the matching item,
+  its ancestors (so the project stays reachable), and its whole subtree (so a match never looks
+  childless). Selected tags OR together, consistent with ADR-049's within-group rule.
+- Decision: on every load, tag selections are pruned to what the freshly loaded tree still offers,
+  and the drop is logged. The filter only ever offers tags that exist, so a retained stale selection
+  would empty the board while the filter chip read "nothing selected" — a blank list with no visible
+  cause. Pruning is what makes the "no project matches" state unreachable rather than merely rare.
+- Consequence: `enhancedViewRegistry` no longer hard-codes one deferred view. `DEFERRED_VIEWS` maps
+  each deferred view id to its bundle and export name, and one generic loader resolves any of them,
+  rejecting a bundle whose export id does not match the id asked for. A failed load is forgotten so a
+  later attempt retries. Adding a deferred view is one entry there plus the build/manifest/package
+  entries (ADR-055 still governs why they are deferred at all).
+- Consequence: the compact checkbox multi-select moved out of `AreaPathFilter` into the shared
+  `common/view-common/control/CheckboxFilter`, which exchanges opaque values and takes a per-instance
+  `classPrefix` so each filter keeps its own selectors (`awesomeado-area-filter`,
+  `awesomeado-tag-filter`). `AreaPathFilter` is now that control plus the shortest-unique-label rule;
+  the tag filter is that control plus a quick-search, because a team's tag vocabulary is unbounded
+  while an area-path list is already collapsed to its distinguishing suffix.
+- Consequence: `workItemStatusLabel` and `boardColumnOrdinal` moved to `common/ado/workItemTypes`;
+  both views now map an ADO State onto a board column through one definition.
+
+## ADR-067: A project's tracking query is created, linked and bound as one operation
+
+- Context: the All Projects Catalog View lists projects, and the natural next step from a project is
+  the Project Tracking board that reports on it. Producing one by hand means creating a saved query
+  in Azure DevOps, remembering which project it belongs to, and enabling the enhanced view for it —
+  three places to get wrong, and nothing to tie them together afterwards.
+- Decision: **Create Project Query** does all three. Azure DevOps creates a recursive
+  `WorkItemLinks` tree query over the project and its descendants, saved in the binding's
+  `projectQueryFolder` or, when blank, the CATALOG query's own folder; the project gains a `Hyperlink`
+  to it, stamped with `PROJECT_QUERY_LINK_COMMENT`; and
+  AwesomeADO records the binding that opens that query in Project Tracking View.
+- Decision: the stamped comment — not the URL — is what identifies a tracking query. A work item may
+  carry any number of hyperlinks, and matching on "is an ADO query URL" alone would adopt any saved
+  query anyone ever pasted and then offer to delete it.
+- Decision: the create and the link ride in ONE MAIN-world injection, and a failed link deletes the
+  query it just created. A query nothing points at is invisible litter in a shared folder. The
+  binding is written last and is deliberately NOT rolled back on its own failure: the query exists
+  and is reachable from the project either way, so the worst case is one the user enables the
+  enhanced view on by hand.
+- Decision: the command is disabled — not hidden — once the project owns a query. Creating a second
+  is not an undo; it would leave the first linked and bound with nothing pointing at it. The catalog
+  learns which projects own one from a single `$expand=Relations` batch read taken with each load,
+  and a failure of that read never fails the load: showing the projects is the view's whole reason to
+  exist.
+- Consequence: `common/ado/projectQuery` owns the WIQL, the naming rules, the query URLs (including
+  the prefix/suffix halves the page world needs, because the created query's id only exists there),
+  and the link parsing. `IProjectQueryService` carries all three operations, because they are one
+  fact seen from three sides.
+
+## ADR-068: "Completed" is the team's last board column, and its query cleanup is asked
+
+- Context: retiring a project has two halves that are not equally reversible — the project's own
+  state, and the saved query that reports on it. A team that reports on finished work would lose that
+  report if the query went automatically, with no way to get it back.
+- Decision: **Mark completed** writes the primary Azure DevOps state of the LAST board column
+  configured for that item's type. "Completed" is the team's own word — one process calls it Closed,
+  the next Done — so it is read from the configured catalog rather than named in code. A type with no
+  columns leaves the command visible but inert instead of guessing.
+- Decision: deleting the tracking query is a separate, explicit answer in the confirmation. The state
+  change goes first: a completion whose cleanup failed is a correct and recoverable outcome, whereas
+  a query deleted for a project that was never completed is not. The AwesomeADO binding is dropped
+  only once Azure DevOps confirms the query is gone.
+- Decision: the hyperlink to remove is located by the worker immediately before it is removed, never
+  named by the caller. JSON Patch addresses a relation by INDEX, and an index read minutes ago on a
+  board is precisely what a concurrent edit invalidates — removing whatever now sits at that slot.
+  The removal is guarded by both the revision and the link's own URL, and a project carrying no link
+  still has its query deleted.
+- Consequence: the command pair lives in `content/views/project-tracking/item-commands/
+ProjectLifecycleCommands`, shared by the catalog (per project row) and by Project Tracking (on its
+  title, where **Create Project Query** is suppressed because the board already is one). Keeping them
+  in one place is what stops "completed" from meaning one state on one surface and another next door.
+
+## ADR-069: What a catalog-created project is born with comes from the query, then the binding
+
+- Context: "Add new project" is only useful if the project it creates appears in the catalog that
+  created it — which means being born with whatever the bound query selects on.
+- Decision: `projectTag` defaults from the first `System.Tags CONTAINS` membership filter in the saved
+  query's WIQL. That remains correct for a catalog holding only one project, where inspecting results
+  cannot distinguish the query condition from the project's own tags. Older or unusual query shapes
+  fall back to tags every returned project carries; legacy `newProjectTags` bindings remain readable.
+- Decision: `newProjectAreaPath` and `newProjectIterationPath` place the item in the requested
+  classification paths. A blank area path accepts Azure DevOps' project default; a blank iteration
+  path resolves to the current Azure DevOps project's root. `projectQueryFolder` is governed by
+  ADR-067.
+- Decision: the type is the FIRST entry of the configured type catalog, never a setting of its own.
+  The top of that list is the process's outermost type by construction, which is exactly what a
+  project is here.
+- Decision: title, tags, area path, and iteration path are written as ONE creation patch. The catalog
+  query selects on those values, so an item created first and classified later exists for a moment as
+  a row no query returns — and permanently so if the later write fails. The board is then re-read
+  rather than splicing the new project in, because only the query decides what belongs to this catalog.
+
+## ADR-070: The catalog re-ranks projects, and only under the manual ordering
+
+- Context: the catalog is where a team decides which projects matter most, but that order lives in
+  Azure DevOps' per-team backlog rank.
+- Decision: a project's TITLE is the drag handle, and only top-level rows are registered — a
+  project's own backlog position is what this catalog reports on, while the work beneath it is ranked
+  on the board that tracks it.
+- Decision: a drop always reports ADO's "no parent" sentinel as both the current and the intended
+  parent. This catalog re-ranks; it never re-parents, so a drop can never restructure the tree.
+- Decision: dragging is offered only under `MANUAL_ORDERING_POLICY`, exactly as on Project Tracking:
+  every other policy is derived from the items themselves, so a hand-made move would be undone by the
+  very next sort.
+- Decision: the move is persist-then-reflect through the same serialized `WorkItemWriteQueue` the
+  view's field writes use, and the list repaints only from the ranks Azure DevOps reported back —
+  every reported rank, not just the moved project's, since placing one item can renumber its level.
+  With no configured team the move is refused and logged rather than ranked against a guess.

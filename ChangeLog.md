@@ -5,6 +5,56 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ## Next Version
 
+- The Query Bindings settings now open straight away instead of sitting blank while Azure DevOps is
+  read; the suggestion lists fill themselves in a moment later. The query folder box also reaches the
+  whole project now: Azure DevOps only hands over the top of a large query hierarchy, so the folders
+  inside one are looked up as you type your way into it.
+- Adds All Projects Catalog View: bind it to a query that returns several top-level items and you get
+  one row per project, each opening into its own tree of child items with their tags and child
+  counts. Expand or collapse everything at once, re-sort the whole board from the header, refresh it
+  in place without losing what you had open, and narrow it with a tag filter that lists every tag
+  used anywhere in the results and offers a search box for finding one quickly. A tag that every
+  project carries is the query's own condition, so it is left out of both the rows and the filter.
+  Each catalog can override the tag, the area and iteration paths new projects start in, and the
+  folder used for project queries. The settings open already filled in from the query you are binding
+  — its own tag filter and the folder it lives in — and the path and folder boxes suggest the real
+  area paths, iterations, and query folders in your project as you type, matching anywhere in the
+  path.
+  Right-click the view's title to copy the query's link or add a new project: a title box opens at the
+  top of the list and the project is created as your first configured work item type, already tagged
+  so the query returns it, and under the area and iteration paths set on the binding. While the board is sorted
+  by importance you can also drag a project by its title to re-rank it in the team's backlog.
+- Adds a right-click menu to every row of the All Projects Catalog View: copy the item's ID or link,
+  open it in Azure DevOps, rename it, rewrite its description, and read or add to its whole
+  discussion. Projects can also be tagged from a list of the tags already in use (or a new one you
+  type), have a tag cleared again — never the one that keeps the project in the query — be given
+  their own tracking query, and be marked completed.
+- Adds Create Project Query: one click gives a project its own Azure DevOps query covering it and
+  everything beneath it, saved in the catalog's configured query folder, linked from the project itself, and
+  already set up to open in Project Tracking View. Opened in Azure DevOps it is readable on its own —
+  it shows title, assignee, state, target and due dates, tags and iteration, ordered by assignee, and
+  it leaves out removed work and anything linked in from another project. It is offered only while
+  the project has no tracking query yet. A query you linked to the project yourself in Azure DevOps
+  counts as its tracking query too: the catalog now shows the link on that row and opens it, instead
+  of treating the project as having none.
+- Adds Mark completed, on both a catalog row and the Project Tracking View title: it sets the project
+  to the last state of its configured board and asks whether to delete its tracking query too,
+  removing the query, its link and its AwesomeADO setup together so nothing stale is left behind. A
+  query AwesomeADO did not create is never deleted — it says so and leaves it alone. If
+  Azure DevOps could not be asked which query a project owns, it now says so rather than telling you
+  there is nothing to clean up — and Create Project Query waits too, instead of risking a second one.
+- You can now add work straight from the Project Tracking board. Right-click the project title for
+  "Add new milestone/phase", or right-click any item whose children are the work your team tracks for
+  "New work identified". Either opens a box at the top of the list you are adding to, asks only for a
+  title, and tells you what the new item inherits — its parent, its area path and its sprint. It is
+  created as the first work item type your configured hierarchy allows underneath, appears at the top
+  of that list straight away, and is ranked there so it stays put. The new row shows what Azure
+  DevOps itself filled in — its priority, its starting state — right away, instead of blanks that
+  only fill in on the next refresh.
+- Fixes drags that were silently thrown away on the Project Tracking board: dropping an item right at
+  the line between two rows — which is where you aim to land above or below one — could do nothing at
+  all, with no error and the insertion line still showing.
+
 ## 0.4
 
 - Shows the AwesomeADO release version discreetly in the lower-right corner of every enhanced-view

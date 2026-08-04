@@ -29,7 +29,12 @@ A view is deliberately split into two contracts so the options page never bundle
 
 - `ViewType` — a view's id, label, and the `ViewTypeProperty[]` a binding must satisfy.
 - `ViewTypeProperty`, `ViewTypePropertyKind`, `ViewTypeOption` — the per-property shape (text /
-  number / select, defaults, bounds, hint).
+  number / select / autocomplete / area-path-list, defaults, bounds, hint).
+- `ViewTypeSuggestionSource` — the Azure DevOps vocabulary an `autocomplete` property offers
+  (`area-paths`, `iteration-paths`, `query-folders`); the form resolves the values.
+- `ViewTypeDerivedSource` / `ViewTypeDerivedValues` — what a property may be pre-filled from off the
+  bound query (`query-tag`, `query-folder`) and the answers the form seeds from. A seed only: a
+  value the user already stored is never replaced.
 - `viewTypePropertyKind(property)` — the property's kind, defaulting to `"text"`.
 - `resolveViewTypePropertyValue(property, stored)` — the effective value for a property given what a
   binding stored (applies the default when nothing was stored, clamps numbers, drops orphaned
@@ -48,13 +53,21 @@ renderer.
   views (carrying the tree/query-definition loaders, user directory, type catalog, sprint window/team roster loaders,
   clock, logger), absent for placeholder views.
 - `EnhancedViewServices` — the cross-view data/service singletons injected at the composition root:
-  `loadTree`, `loadQueryDefinition`, `featureCrew`, `writeField`, `reorderItem`, `currentTeam`, `userDirectory`, `mentionDirectory`, `getTypes`,
+  `loadTree`, `loadQueryDefinition`, `featureCrew`, `writeField`, `reorderItem`, `createWorkItem`,
+  `projectQueries`, `queryBindings`, `currentTeam`, `userDirectory`, `mentionDirectory`, `getTypes`,
   `getBoardColumns`, `markerTags`, `loadSprintWindow`, `loadTeamMembers`, `now`, `logger`,
   `openDiagnosticsLog`. `writeField` persists
   a single work item
   field change (e.g.
   `System.State` or a type's ETA date field) back to Azure DevOps, using the item's last-known rev as
   an optimistic-concurrency guard; a `null` value clears the field.
+  `createWorkItem` creates one, which is deliberately not a `writeField` call: every other write here
+  changes an item that already exists and is guarded by that item's revision, while creation has
+  neither.
+  `projectQueries` is the lifecycle of a project's own saved tracking query — which projects already
+  have one, creating and linking one, and unlinking plus deleting it again.
+  `queryBindings` records or removes the AwesomeADO binding for ONE query, narrowed to `bind`/`unbind`
+  so a view can never reach `replaceAll`; a view uses it only for a query it created or deleted itself.
   `reorderItem` persists a drag-reorder: it moves an item to a new position among its siblings and,
   when it changed, under a new parent. It is kept separate from `writeField` because it is not a field
   patch — it moves the item's hierarchy **link** and re-ranks it through a team-scoped backlog
@@ -94,12 +107,15 @@ view — regardless of which bundle renders it — reuses the same consistent pa
 | `AreaPathFilter`   | [`control/AreaPathFilter`](./control/AreaPathFilter/README.md)     | A compact full-path multi-select with shortest unique labels and configurable noun.               |
 | `AssignedTo`       | [`control/AssignedTo`](./control/AssignedTo/README.md)             | The assignee's name as clickable text that opens a people picker popup.                           |
 | `Breadcrumbs`      | [`control/Breadcrumbs`](./control/Breadcrumbs/README.md)           | A trail of clickable segments separated by a glyph (a "you are here").                            |
+| `CheckboxFilter`   | [`control/CheckboxFilter`](./control/CheckboxFilter/README.md)     | A compact multi-select of checkboxes, with an optional quick-search for long lists.               |
+| `ConfirmPanel`     | [`control/ConfirmPanel`](./control/ConfirmPanel/README.md)         | The one confirmation surface: what a command will do, and the answers it accepts.                 |
 | `DateLabel`        | [`control/DateLabel`](./control/DateLabel/README.md)               | A `MM/DD/YYYY` PST date label with a full-timestamp hover tooltip.                                |
 | `EmptyState`       | [`control/EmptyState`](./control/EmptyState/README.md)             | The "every item is filtered out" panel a view shows in place of its list.                         |
 | `EtaBadge`         | [`control/EtaBadge`](./control/EtaBadge/README.md)                 | An ETA date badge with severity color, a countdown tooltip, and an optional editable date picker. |
 | `ItemTypeIcon`     | [`control/ItemTypeIcon`](./control/ItemTypeIcon/README.md)         | The ADO work item type icon, sized to the title it precedes, colored/drained and loud/receded.    |
 | `MarkdownText`     | [`control/MarkdownText`](./control/MarkdownText/README.md)         | Author-written content (descriptions, notes) rendered as safe DOM, with images and @-mentions.    |
 | `MarkerPill`       | [`control/MarkerPill`](./control/MarkerPill/README.md)             | A fixed-color pill for a recognized condition (blocked, blocked by another team, interrupt).      |
+| `NewItemRow`       | [`control/NewItemRow`](./control/NewItemRow/README.md)             | The inline "add an item" row: a type icon, a title box, and what is decided for the reader.       |
 | `OrderingPicker`   | [`control/OrderingPicker`](./control/OrderingPicker/README.md)     | A discrete sort glyph naming the ordering policy in force, with a menu to change it.              |
 | `PriorityBadge`    | [`control/PriorityBadge`](./control/PriorityBadge/README.md)       | A P0-P4 chip emphasizing P0-P2 and muting later priorities, with a matching selection popup.      |
 | `TagPill`          | [`control/TagPill`](./control/TagPill/README.md)                   | A colored Feature Crew tag pill (a neutral "??" pill when untagged).                              |
