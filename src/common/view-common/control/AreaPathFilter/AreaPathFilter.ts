@@ -115,13 +115,15 @@ export function renderAreaPathFilter(
     classPrefix: CLASS_PREFIX,
     options: paths.map((path) => ({ value: path, label: labels.get(path) ?? path, title: path })),
     selected: options.selectedAreaPaths,
-    onChange: options.onChange,
+    // An item lives at exactly one area path, so the condition can only ever be "one of these":
+    // excluding a path or AND-ing two of them would describe a work item that cannot exist.
+    onChange: (selection) => options.onChange?.(selection.included),
     onPopupClosed: options.onPopupClosed,
   });
 
   return {
     element: filter.element,
-    selectedAreaPaths: filter.selectedValues,
+    selectedAreaPaths: () => filter.selection().included,
     setSelectedAreaPaths: filter.setSelectedValues,
   };
 }

@@ -216,27 +216,82 @@ export function workItemsEligibleForPrimaryFilter(
   return flattenWorkItems(roots).filter(primaryFilterEligibility(types));
 }
 
+/** Whether any item beneath `item` is Primary work — the only thing that can speak for a branch. */
+function holdsPrimaryWork(item: TrackedWorkItem, primaryTypes: ReadonlySet<string>): boolean {
+  return item.children.some(
+    (child) => primaryTypes.has(child.type) || holdsPrimaryWork(child, primaryTypes),
+  );
+}
+
+/**
+ * Whether a planning item is one nothing beneath it can answer for.
+ *
+ * An empty branch has no Primary work to speak for it, so judging it by its descendants would hide
+ * it forever — a milestone created before its first story could never be seen again, let alone
+ * filled. Implementation detail below Primary work is deliberately excluded; it is carried by the
+ * work it belongs to.
+ */
+function unspokenForPlanning(
+  types: readonly TypeCatalogEntry[],
+): (item: TrackedWorkItem) => boolean {
+  const primaryTypes = primaryWorkTypes(types);
+  const planningTypes = primaryWorkAncestors(types);
+  return (item) => planningTypes.has(item.type) && !holdsPrimaryWork(item, primaryTypes);
+}
+
+/**
+ * Why a filter pass is judging an item, so a caller can apply only the filters that can speak to it.
+ *
+ * A milestone holding no delivery is not scheduled, staffed or in progress the way Primary work is,
+ * so a board narrowed by those things has to decide what a milestone means to each filter rather
+ * than testing it as if it were work in flight.
+ */
+export type FilterSubject = "primary-work" | "planning-without-work";
+
+/** What each item is to a filter pass, or null for the ones no filter may judge on their own. */
+function filterSubjects(
+  types: readonly TypeCatalogEntry[],
+): (item: TrackedWorkItem) => FilterSubject | null {
+  const isPrimary = primaryFilterEligibility(types);
+  const isUnspokenFor = unspokenForPlanning(types);
+  return (item) => {
+    if (isPrimary(item)) return "primary-work";
+    return isUnspokenFor(item) ? "planning-without-work" : null;
+  };
+}
+
 /**
  * Resolves hierarchy visibility when filters describe independently trackable delivery.
  *
  * A matching Primary-work item carries its planning ancestors and implementation descendants with
  * it. Another Primary-work node still has to match for itself, so nested delivery does not bypass
- * the filter merely because its parent matched. Catalogs without classification preserve the legacy
- * rule where every item can match and matching descendants retain their ancestor chain.
+ * the filter merely because its parent matched. A planning item with no Primary work anywhere
+ * beneath it is judged on its own — nothing below it can answer for it — and one with no children at
+ * all is shown unasked, since it has no work, no schedule and no history for any filter to read.
+ * Catalogs without classification preserve the legacy rule where every item can match and matching
+ * descendants retain their ancestor chain.
  */
 export function workItemIdsVisibleUnderPrimaryFilter(
   roots: readonly TrackedWorkItem[],
   types: readonly TypeCatalogEntry[],
-  matches: (item: TrackedWorkItem) => boolean,
+  matches: (item: TrackedWorkItem, subject: FilterSubject) => boolean,
 ): ReadonlySet<number> {
   const primaryTypes = primaryWorkTypes(types);
-  const isEligible = primaryFilterEligibility(types);
+  const subjectOf = filterSubjects(types);
   const { items, parentIds } = indexWorkItems(roots);
   const visible = new Set<number>();
   for (const item of items) {
-    if (!isEligible(item) || !matches(item)) continue;
+    const subject = subjectOf(item);
+    if (subject === null) continue;
+    // Hiding an empty milestone would put the only row work can be added to out of reach.
+    const unjudgeable = subject === "planning-without-work" && item.children.length === 0;
+    if (!unjudgeable && !matches(item, subject)) continue;
     addAncestorIds(item.id, parentIds, visible);
-    if (primaryTypes.size > 0) addImplementationDescendantIds(item, primaryTypes, visible);
+    // Only Primary work brings its subtree along: every planning item below is judged in its own
+    // right, so pulling them down here would put an unmatched milestone back on a filtered board.
+    if (subject === "primary-work" && primaryTypes.size > 0) {
+      addImplementationDescendantIds(item, primaryTypes, visible);
+    }
   }
   return visible;
 }

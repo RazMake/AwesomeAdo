@@ -1,5 +1,25 @@
 import type { TrackedWorkItem } from "../../../common/ado/TrackedWorkItem";
 
+/**
+ * The condition the header's tag filter currently expresses, all keys lower-cased.
+ *
+ * Lower-cased because Azure DevOps treats tags case-insensitively while storing whichever spelling
+ * arrived first: comparing on the spelling would split one tag into two half-answers.
+ */
+export interface TagCondition {
+  /** Tags an item must carry. */
+  required: ReadonlySet<string>;
+  /** Tags an item must NOT carry. */
+  excluded: ReadonlySet<string>;
+  /** Whether EVERY required tag must be present, rather than any one of them. */
+  matchAll: boolean;
+}
+
+/** Whether the condition narrows anything at all. */
+export function isEmptyTagCondition(condition: TagCondition): boolean {
+  return condition.required.size === 0 && condition.excluded.size === 0;
+}
+
 /** The item's tags, trimmed, blank-free, and lower-cased for comparison. */
 function tagKeys(item: TrackedWorkItem): string[] {
   return item.tags.map((tag) => tag.trim().toLowerCase()).filter((tag) => tag.length > 0);
@@ -69,9 +89,17 @@ export function tagsInUse(
   );
 }
 
-/** Whether an item carries at least one of the selected tags (an empty selection matches nothing). */
-export function carriesAnyTag(item: TrackedWorkItem, selected: ReadonlySet<string>): boolean {
-  return item.tags.some((tag) => selected.has(tag.trim().toLowerCase()));
+/** Whether an item carries every tag the condition requires, or any one of them. */
+function carriesRequiredTags(item: TrackedWorkItem, condition: TagCondition): boolean {
+  const worn = new Set(tagKeys(item));
+  return condition.matchAll
+    ? [...condition.required].every((tag) => worn.has(tag))
+    : [...condition.required].some((tag) => worn.has(tag));
+}
+
+/** Whether an item carries any tag the condition rules out. */
+function carriesExcludedTag(item: TrackedWorkItem, condition: TagCondition): boolean {
+  return tagKeys(item).some((tag) => condition.excluded.has(tag));
 }
 
 /** Add an item and everything beneath it to `into`. */
@@ -83,21 +111,57 @@ function addSubtreeIds(item: TrackedWorkItem, into: Set<number>): void {
 }
 
 /**
- * The ids the tag filter keeps: every matching item, the ancestors that lead to it, and everything
- * beneath it.
+ * The branches an excluded tag leaves standing.
  *
- * Ancestors are kept because a project whose only tagged work is three levels down still has to be
- * reachable — dropping it would answer "no projects use this tag" when several do. The subtree is
- * kept because the match is a statement about that branch of work, and hiding the untagged detail
- * under it would leave a matching item looking childless.
+ * The exclusion is read the way the reader asked it — "projects that do not CONTAIN this tag" — so
+ * it climbs as well as descends: an item is ruled out when it or anything beneath it wears the tag,
+ * and it takes its whole subtree with it. Matching only the wearer would answer "hide the projects
+ * using X" by showing every one of them minus a row somewhere in the middle.
  */
-export function idsKeptByTags(
+function idsSurvivingExclusions(
   roots: readonly TrackedWorkItem[],
-  matches: (item: TrackedWorkItem) => boolean,
-): ReadonlySet<number> {
+  condition: TagCondition,
+): Set<number> {
+  const ruledOut = new Set<number>();
+  const mark = (item: TrackedWorkItem): boolean => {
+    // Every child is visited before the verdict: a clean branch beside a ruled-out one still has to
+    // be walked, or its own descendants would never be judged.
+    const below = item.children.map(mark).includes(true);
+    if (below || carriesExcludedTag(item, condition)) ruledOut.add(item.id);
+    return ruledOut.has(item.id);
+  };
+  const surviving = new Set<number>();
+  for (const root of roots) mark(root);
+  for (const root of roots) {
+    // Anything left is clean all the way down, so the subtree can be taken whole.
+    if (!ruledOut.has(root.id)) addSubtreeIds(root, surviving);
+  }
+  return surviving;
+}
+
+/**
+ * The ids the tag condition keeps, or `null` when it narrows nothing and every item is kept.
+ *
+ * Two stages, because "must not have" and "must have" are different questions about the tree.
+ * Exclusions PRUNE whole projects (see `idsSurvivingExclusions`). Requirements NARROW what is left
+ * to the branches that satisfy them, keeping the ancestors that lead to a match — a project whose
+ * only matching work is three levels down still has to be reachable, or the board would answer "no
+ * projects use this tag" when several do — and the subtree beneath it, because the match is a
+ * statement about that branch and hiding the untagged detail under it would leave a matching item
+ * looking childless.
+ */
+export function idsKeptByTagCondition(
+  roots: readonly TrackedWorkItem[],
+  condition: TagCondition,
+): ReadonlySet<number> | null {
+  if (isEmptyTagCondition(condition)) return null;
+  const surviving = idsSurvivingExclusions(roots, condition);
+  if (condition.required.size === 0) return surviving;
+
   const kept = new Set<number>();
   const visit = (item: TrackedWorkItem, ancestorIds: readonly number[]): void => {
-    if (matches(item)) {
+    if (!surviving.has(item.id)) return;
+    if (carriesRequiredTags(item, condition)) {
       for (const id of ancestorIds) kept.add(id);
       addSubtreeIds(item, kept);
     }

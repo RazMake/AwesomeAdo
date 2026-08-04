@@ -10,16 +10,25 @@ builds use the repository's `Major.Minor.Build` release versioning.
   whole project now: Azure DevOps only hands over the top of a large query hierarchy, so the folders
   inside one are looked up as you type your way into it.
 - Adds All Projects Catalog View: bind it to a query that returns several top-level items and you get
-  one row per project, each opening into its own tree of child items with their tags and child
-  counts. Every project row also shows who it is assigned to, editable right there from the same
-  searchable people picker the Project Tracking board uses. Every row in the tree — the project and
-  all the work beneath it — ends with its ETA, so a project's date can be read against the dates of
-  the work it depends on; set or clear any of them from the date picker at the end of the row.
+  one row per project, each opening into its own tree of child items with their child counts. Every
+  row — the project and all the work beneath it — shows who it is assigned to, editable right there
+  from the same searchable people picker the Project Tracking board uses, and ends with its ETA, so a
+  project's date can be read against the dates of the work it depends on; set or clear any of them
+  from the date picker at the end of the row. Rows alternate between two background shades so a long
+  tree stays easy to follow, highlight under the pointer, and highlight more strongly while you hold
+  Ctrl+Shift+Alt — the same as the Project Tracking board. Clicking a row does nothing: everything a
+  row can do, including opening it in Azure DevOps, is in its right-click menu, so a stray click
+  while scrolling or dragging can no longer navigate you away.
   Expand or collapse everything at
   once, re-sort the whole board from the header, refresh it
   in place without losing what you had open, and narrow it with a tag filter that lists every tag
-  used anywhere in the results and offers a search box for finding one quickly. A tag that every
-  project carries is the query's own condition, so it is left out of both the rows and the filter.
+  used anywhere in the results and offers a search box for finding one quickly. The filter builds a
+  real condition: tick the tags a project must have, switch between "any of them" and "all of them",
+  and mark tags it must NOT have — a project that uses an excluded tag anywhere beneath it drops out
+  of the list. It also keeps up with your edits, so a tag you add or clear from a row's menu appears
+  in — or leaves — the filter straight away. A tag that every project carries is the query's own
+  condition, so it is left out of the filter. Tags are not repeated on the rows themselves, keeping
+  the list narrow and readable.
   Each catalog can override the tag, the area and iteration paths new projects start in, and the
   folder used for project queries. The settings open already filled in from the query you are binding
   — its own tag filter and the folder it lives in — and the path and folder boxes suggest the real
@@ -33,18 +42,24 @@ builds use the repository's `Major.Minor.Build` release versioning.
   open it in Azure DevOps, rename it, rewrite its description, and read or add to its whole
   discussion. Projects can also be tagged from a list of the tags already in use (or a new one you
   type), have a tag cleared again — never the one that keeps the project in the query — be given
-  their own tracking query, and be marked completed.
-- Adds Create Project Query: one click gives a project its own Azure DevOps query covering it and
-  everything beneath it, saved in the catalog's configured query folder, linked from the project itself, and
+  their own tracking query, be marked completed, and gain a new milestone or phase: the same command
+  the Project Tracking board offers on its title, so a title box opens at the top of the project's
+  own level and the item is created under it, in the project's area and iteration.
+- Adds Create Project Query: one click gives any item in the catalog — a project, or a milestone or
+  phase beneath one — its own Azure DevOps query covering it and
+  everything beneath it, saved in the catalog's configured query folder, linked from the item itself, and
   already set up to open in Project Tracking View. Opened in Azure DevOps it is readable on its own —
   it shows title, assignee, state, target and due dates, tags and iteration, ordered by assignee, and
   it leaves out removed work and anything linked in from another project. It is offered only while
-  the project has no tracking query yet. A query you linked to the project yourself in Azure DevOps
+  the item has no tracking query yet. A query you linked to the item yourself in Azure DevOps
   counts as its tracking query too: the catalog now shows the link on that row and opens it, instead
-  of treating the project as having none.
+  of treating the item as having none. Every row in the tree carries that link, so a phase with its
+  own board is one click away from the project that owns it.
 - Adds Mark completed, on both a catalog row and the Project Tracking View title: it sets the project
   to the last state of its configured board and asks whether to delete its tracking query too,
-  removing the query, its link and its AwesomeADO setup together so nothing stale is left behind. A
+  removing the query, its link and its AwesomeADO setup together so nothing stale is left behind.
+  When your team shares one configuration, that removal now reaches the shared configuration as well,
+  so the deleted query's setup does not return on the next sync and pile up there over time. A
   query AwesomeADO did not create is never deleted — it says so and leaves it alone. If
   Azure DevOps could not be asked which query a project owns, it now says so rather than telling you
   there is nothing to clean up — and Create Project Query waits too, instead of risking a second one.
@@ -56,9 +71,16 @@ builds use the repository's `Major.Minor.Build` release versioning.
   of that list straight away, and is ranked there so it stays put. The new row shows what Azure
   DevOps itself filled in — its priority, its starting state — right away, instead of blanks that
   only fill in on the next refresh.
+- Fixes milestones disappearing from the Project Tracking board as soon as the page was reloaded: a
+  milestone or phase with no work under it yet was hidden, so the board that offers to add that work
+  could never show it. An empty milestone now stays on the board whatever sprint you are filtered to
+  — nobody schedules a milestone into a sprint — and one that has picked up work is narrowed by that
+  work as before.
 - Fixes drags that were silently thrown away on the Project Tracking board: dropping an item right at
   the line between two rows — which is where you aim to land above or below one — could do nothing at
   all, with no error and the insertion line still showing.
+- The Project Tracking board's stronger row highlight now needs Ctrl+Shift+Alt rather than
+  Ctrl+Shift, which collided with everyday browser and Azure DevOps shortcuts.
 
 ## 0.4
 

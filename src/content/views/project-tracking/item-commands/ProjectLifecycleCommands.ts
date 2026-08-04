@@ -36,9 +36,17 @@ export interface ProjectLifecycleOptions extends ItemCommandTarget {
    * Whether "Create Project Query" is offered at all.
    *
    * The Project Tracking board IS a project's query, so offering to make it another one there would
-   * only ever produce a duplicate; the catalog, where a project may have none, offers it.
+   * only ever produce a duplicate; the catalog, where an item may have none, offers it.
    */
   offerCreate: boolean;
+  /**
+   * Whether "Mark completed" is offered at all.
+   *
+   * Retiring is a decision about a catalog ENTRY — it sets the item's final state and may take its
+   * query with it. Work beneath a project is finished on the board that tracks it, where its state
+   * sits beside the rest of the branch, so the command is not offered on those rows.
+   */
+  offerComplete: boolean;
   /** Re-read the surface after a change that altered which projects or queries exist. */
   onReload: () => void;
 }
@@ -58,17 +66,19 @@ export function buildProjectLifecycleCommands(
   if (options.offerCreate) {
     commands.push(createProjectQueryCommand(options));
   }
-  commands.push({ ...markCompletedCommand(options), separatorBefore: commands.length === 0 });
+  if (options.offerComplete) {
+    commands.push({ ...markCompletedCommand(options), separatorBefore: commands.length === 0 });
+  }
   return commands;
 }
 
 /**
- * Gives the project its own saved tracking query and binds that query to the Project Tracking view.
+ * Gives the item its own saved tracking query and binds that query to the Project Tracking view.
  *
- * Disabled once the project owns one, rather than hidden: a menu whose commands come and go between
+ * Disabled once the item owns one, rather than hidden: a menu whose commands come and go between
  * rows is harder to use than one whose commands stay put and say why they cannot run. A second query
  * is also not an undo — it would leave the first one linked and bound with nothing pointing at it.
- * An unread link disables it for the same reason: creating a second query for a project that may
+ * An unread link disables it for the same reason: creating a second query for an item that may
  * already have one is the mistake this command exists to prevent.
  */
 function createProjectQueryCommand(options: ProjectLifecycleOptions): ItemContextMenuCommand {
@@ -83,11 +93,11 @@ function createProjectQueryCommand(options: ProjectLifecycleOptions): ItemContex
 /** Why a tracking query cannot be created right now, or null when it can. */
 function createQueryRefusal(options: ProjectLifecycleOptions): string | null {
   if (options.queryLink !== null) {
-    return "This project already has a tracking query linked.";
+    return "This item already has a tracking query linked.";
   }
   return options.queryLinkKnown
     ? null
-    : "Azure DevOps could not be asked whether this project already has a tracking query. Refresh and try again.";
+    : "Azure DevOps could not be asked whether this item already has a tracking query. Refresh and try again.";
 }
 
 /**

@@ -6,7 +6,6 @@ import type { EnhancedViewServices } from "../../../common/view-common/EnhancedV
 
 import { renderProjectRow, type ProjectRowContext } from "./ProjectRow";
 
-const QUERY_URL = "https://dev.azure.com/contoso/Web/_queries/query/abc-123";
 const NOW = new Date("2026-07-15T00:00:00Z");
 
 const TYPES: TypeCatalogEntry[] = [
@@ -80,18 +79,17 @@ afterEach(() => {
 function context(overrides?: Partial<ProjectRowContext>): ProjectRowContext {
   return {
     doc: document,
-    href: QUERY_URL,
     services: services(),
     queue: writeQueue(async () => ({ ok: true, rev: 2 })),
     types: new Map(TYPES.map((entry) => [entry.name, entry])),
     policy: "importance",
     expandedIds: new Set<number>(),
     keptIds: null,
-    hiddenTags: new Set<string>(),
     dragReorder: null,
     projectSiblingIds: [],
     queryUrlOf: () => null,
     assigneeSuggestions: () => [],
+    newChildRow: () => null,
     onContextMenu: () => undefined,
     repaint: () => undefined,
     ...overrides,
@@ -99,32 +97,20 @@ function context(overrides?: Partial<ProjectRowContext>): ProjectRowContext {
 }
 
 describe("renderProjectRow", () => {
-  it("links the title to the work item, in a tab that cannot reach back into ADO", () => {
+  it("leaves the title inert, so a click while scanning the tree cannot navigate away", () => {
     const row = renderProjectRow(item({ id: 42 }), context(), 0);
-    const link = row.querySelector<HTMLAnchorElement>("a.awesomeado-projects__title")!;
-
-    expect(link.href).toBe("https://dev.azure.com/contoso/Web/_workitems/edit/42");
-    expect(link.target).toBe("_blank");
-    expect(link.rel).toBe("noopener noreferrer");
-  });
-
-  it("falls back to plain text when the page is not an addressable ADO query", () => {
-    const row = renderProjectRow(item({ id: 42 }), context({ href: "https://example.com/" }), 0);
 
     expect(row.querySelector("a.awesomeado-projects__title")).toBeNull();
-    expect(row.querySelector("span.awesomeado-projects__title")?.textContent).toBe("Item 42");
+    const title = row.querySelector<HTMLElement>("span.awesomeado-projects__title")!;
+    expect(title.textContent).toBe("Item 42");
+    expect(title.title).toBe("Epic 42: Item 42");
   });
 
-  it("wears the item's own tags but not the ones the query put on every project", () => {
-    const row = renderProjectRow(
-      item({ id: 1, tags: ["Catalog", "Platform"] }),
-      context({ hiddenTags: new Set(["catalog"]) }),
-      0,
-    );
+  it("wears no tag pills at all, so the catalog reads as one narrow column of work", () => {
+    const row = renderProjectRow(item({ id: 1, tags: ["Catalog", "Platform"] }), context(), 0);
 
-    expect(
-      [...row.querySelectorAll(".awesomeado-projects__tags span")].map((el) => el.textContent),
-    ).toEqual(["Platform"]);
+    expect(row.querySelector(".awesomeado-projects__tags")).toBeNull();
+    expect(row.querySelector(".awesomeado-tag-pill")).toBeNull();
   });
 
   it("keeps an uncolored type readable by falling back to the theme foreground", () => {
@@ -191,11 +177,11 @@ describe("renderProjectRow - project query link", () => {
     expect(link.title).toContain("Open the tracking query");
   });
 
-  it("keeps the control in place but inert while the project has no query", () => {
+  it("keeps the control in place but inert while the item has no query", () => {
     const row = renderProjectRow(item({ id: 42 }), context(), 0);
     const link = row.querySelector<HTMLElement>(".awesomeado-projects__query-link")!;
 
-    // Held rather than hidden, so the column does not shuffle as projects gain queries.
+    // Held rather than hidden, so the column does not shuffle as items gain queries.
     expect(link.tagName).toBe("SPAN");
     expect(link.getAttribute("aria-disabled")).toBe("true");
     expect(link.title).toContain("no tracking query yet");
@@ -209,7 +195,7 @@ describe("renderProjectRow - project query link", () => {
     expect(count.nextElementSibling?.className).toBe("awesomeado-projects__query-link");
   });
 
-  it("gives the work beneath a project no query link of its own", () => {
+  it("gives the work beneath a project a query link of its own", () => {
     const parent = item({ id: 1, children: [item({ id: 2 })] });
     const row = renderProjectRow(
       parent,
@@ -217,7 +203,7 @@ describe("renderProjectRow - project query link", () => {
       0,
     );
 
-    expect(row.querySelectorAll(".awesomeado-projects__query-link")).toHaveLength(1);
+    expect(row.querySelectorAll(".awesomeado-projects__query-link")).toHaveLength(2);
   });
 });
 
@@ -283,21 +269,21 @@ describe("renderProjectRow - assignee", () => {
     expect(row.querySelector(".awesomeado-assigned__name")?.textContent).toBe("Bob");
   });
 
-  it("gives the work beneath a project no assignee control of its own", () => {
+  it("gives the work beneath a project an assignee control of its own", () => {
     const parent = item({ id: 1, children: [item({ id: 2 })] });
     const row = renderProjectRow(parent, context({ expandedIds: new Set([1]) }), 0);
 
-    expect(row.querySelectorAll(".awesomeado-assigned")).toHaveLength(1);
+    expect(row.querySelectorAll(".awesomeado-assigned")).toHaveLength(2);
   });
 });
 
 describe("renderProjectRow - ETA", () => {
-  it("sits last on the line, after the tags that push it to the right edge", () => {
+  it("sits last on the line, pinned to the right edge by its own auto margin", () => {
     const row = renderProjectRow(item({ id: 1, tags: ["Platform"] }), context(), 0);
     const line = row.querySelector<HTMLElement>(".awesomeado-projects__row")!;
-    const tags = row.querySelector<HTMLElement>(".awesomeado-projects__tags")!;
+    const badge = row.querySelector<HTMLElement>(".awesomeado-eta")!;
 
-    expect(tags.style.marginLeft).toBe("auto");
+    expect(badge.style.marginLeft).toBe("auto");
     expect(line.lastElementChild?.className).toBe("awesomeado-eta");
   });
 

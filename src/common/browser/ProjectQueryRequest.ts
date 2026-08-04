@@ -47,8 +47,8 @@ export interface ProjectQueryResponse {
   error?: string;
 }
 
-/** A bound on how many projects one read may ask about, keeping the operation closed. */
-const MAX_LINK_IDS = 1000;
+/** A bound on how many work items one read may ask about, keeping the operation closed. */
+export const MAX_LINK_IDS = 1000;
 
 /** A generous bound on a project title and a query folder path. */
 const MAX_TITLE_LENGTH = 255;

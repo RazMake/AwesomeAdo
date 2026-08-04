@@ -2,7 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import type { TrackedWorkItem } from "../../../common/ado/TrackedWorkItem";
 
-import { carriesAnyTag, idsKeptByTags, queryWideTags, tagsInUse } from "./projectTags";
+import {
+  idsKeptByTagCondition,
+  isEmptyTagCondition,
+  queryWideTags,
+  tagsInUse,
+  type TagCondition,
+} from "./projectTags";
 
 /** A minimal tracked item: only the fields these helpers read ever vary between cases. */
 function item(id: number, tags: string[], children: TrackedWorkItem[] = []): TrackedWorkItem {
@@ -71,37 +77,61 @@ describe("queryWideTags", () => {
   });
 });
 
-describe("carriesAnyTag", () => {
-  it("matches any one of the selected tags, ignoring case", () => {
-    expect(carriesAnyTag(item(1, ["Api"]), new Set(["api", "security"]))).toBe(true);
-  });
-
-  it("does not match an item carrying none of them", () => {
-    expect(carriesAnyTag(item(1, ["docs"]), new Set(["api"]))).toBe(false);
-  });
-});
-
-describe("idsKeptByTags", () => {
+describe("idsKeptByTagCondition", () => {
   const tree = [
-    item(1, [], [item(2, ["api"], [item(3, [])]), item(4, [])]),
+    item(1, [], [item(2, ["api"], [item(3, [])]), item(4, ["api", "legacy"])]),
     item(5, [], [item(6, ["docs"])]),
   ];
-  const keptFor = (tag: string) => idsKeptByTags(tree, (candidate) => candidate.tags.includes(tag));
+  const condition = (
+    required: string[],
+    excluded: string[] = [],
+    matchAll = false,
+  ): TagCondition => ({
+    required: new Set(required),
+    excluded: new Set(excluded),
+    matchAll,
+  });
+  const ids = (kept: ReadonlySet<number> | null): number[] =>
+    kept === null ? [] : [...kept].sort((a, b) => a - b);
+
+  it("keeps everything when the condition narrows nothing", () => {
+    expect(idsKeptByTagCondition(tree, condition([]))).toBeNull();
+    expect(isEmptyTagCondition(condition([]))).toBe(true);
+  });
 
   it("keeps a match, the ancestors that lead to it, and everything beneath it", () => {
-    expect([...keptFor("api")].sort((a, b) => a - b)).toEqual([1, 2, 3]);
+    expect(ids(idsKeptByTagCondition(tree, condition(["docs"])))).toEqual([5, 6]);
   });
 
   it("drops the branches with no match at all", () => {
-    expect(keptFor("api").has(4)).toBe(false);
-    expect(keptFor("api").has(5)).toBe(false);
-  });
-
-  it("keeps every project that has a match somewhere beneath it", () => {
-    expect([...keptFor("docs")].sort((a, b) => a - b)).toEqual([5, 6]);
+    expect(ids(idsKeptByTagCondition(tree, condition(["api"])))).toEqual([1, 2, 3, 4]);
   });
 
   it("keeps nothing when no item matches", () => {
-    expect(keptFor("missing").size).toBe(0);
+    expect(ids(idsKeptByTagCondition(tree, condition(["missing"])))).toEqual([]);
+  });
+
+  it("requires any one tag by default and every tag once the caller asks for all", () => {
+    expect(ids(idsKeptByTagCondition(tree, condition(["api", "docs"])))).toEqual([
+      1, 2, 3, 4, 5, 6,
+    ]);
+    expect(ids(idsKeptByTagCondition(tree, condition(["api", "legacy"], [], true)))).toEqual([
+      1, 4,
+    ]);
+  });
+
+  it("prunes a project that contains an excluded tag anywhere beneath it", () => {
+    // Only item 6 wears "docs", yet its project (5) goes too: the reader asked for the projects that
+    // do not CONTAIN the tag, not for the tree minus one row in the middle of it.
+    expect(ids(idsKeptByTagCondition(tree, condition([], ["docs"])))).toEqual([1, 2, 3, 4]);
+  });
+
+  it("leaves the projects that contain none of the excluded tags alone", () => {
+    expect(ids(idsKeptByTagCondition(tree, condition([], ["legacy"])))).toEqual([5, 6]);
+  });
+
+  it("answers a requirement only from the branches the exclusions left standing", () => {
+    // Item 2 wears "api", but its project also holds the "legacy" item 4, so the project is gone.
+    expect(ids(idsKeptByTagCondition(tree, condition(["api"], ["legacy"])))).toEqual([]);
   });
 });

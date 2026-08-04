@@ -11,6 +11,22 @@ export interface CheckboxFilterOption {
   title?: string;
 }
 
+/**
+ * The condition the reader has built out of the offered values.
+ *
+ * A condition rather than a list because a list cannot say "these two but not that one": the three
+ * parts are AND-ed — every excluded value must be absent, and the included ones must be present
+ * either all together or one at a time.
+ */
+export interface CheckboxFilterSelection {
+  /** Values that must be present. */
+  included: string[];
+  /** Values that must be absent. Always empty unless the caller enabled `combining`. */
+  excluded: string[];
+  /** Whether EVERY included value must be present, rather than any one of them. */
+  matchAll: boolean;
+}
+
 /** Options for the compact multi-select filter. */
 export interface CheckboxFilterOptions {
   /** Visible noun used by the trigger and the popup heading (e.g. `Area`, `Tags`). */
@@ -19,6 +35,18 @@ export interface CheckboxFilterOptions {
   options: readonly CheckboxFilterOption[];
   /** Values selected initially. Values absent from `options` are ignored. */
   selected?: readonly string[];
+  /** Values excluded initially. Ignored unless `combining` is set. */
+  excluded?: readonly string[];
+  /** Whether the included values start AND-ed rather than OR-ed. Ignored unless `combining` is set. */
+  matchAll?: boolean;
+  /**
+   * Offers the two controls that turn a list of values into a condition: a "must NOT have" state on
+   * every row, and the switch between requiring any of the ticked values and requiring all of them.
+   *
+   * Off by default, because a filter over values an item can only hold one of (an area path, a
+   * parent) has nothing to combine — every extra control there is one more thing to dismiss.
+   */
+  combining?: boolean;
   /**
    * The class-name stem every element of this instance is marked with (e.g. `awesomeado-tag-filter`).
    *
@@ -31,8 +59,8 @@ export interface CheckboxFilterOptions {
    * search box over four values is a control the reader has to dismiss rather than a shortcut.
    */
   searchPlaceholder?: string;
-  /** Called after a checkbox or Clear changes the selection. */
-  onChange?(selected: string[]): void;
+  /** Called after a checkbox, an exclusion, the match mode, or Clear changes the condition. */
+  onChange?(selection: CheckboxFilterSelection): void;
   /** Called after an open popup closes by trigger, outside pointer, Escape, or Clear. */
   onPopupClosed?(): void;
 }
@@ -40,8 +68,19 @@ export interface CheckboxFilterOptions {
 /** The mounted control plus its selection API. */
 export interface CheckboxFilterHandle {
   element: HTMLElement;
-  selectedValues(): string[];
+  /** The condition currently in force. */
+  selection(): CheckboxFilterSelection;
   setSelectedValues(values: readonly string[]): void;
+}
+
+/** The three states one offered value can be in. */
+type OptionState = "neutral" | "include" | "exclude";
+
+/** The live condition the popup mutates in place and the trigger is repainted from. */
+interface FilterState {
+  included: Set<string>;
+  excluded: Set<string>;
+  matchAll: boolean;
 }
 
 /** Trim, drop blanks, and deduplicate while preserving the caller's order. */
@@ -68,18 +107,31 @@ function renderFilterIcon(doc: Document): SVGSVGElement {
   return svg;
 }
 
-/** Paint the trigger from the current selection without changing its fixed footprint. */
+/** What the trigger's tooltip says the filter is doing right now. */
+function filterSummary(label: string, selection: CheckboxFilterSelection): string {
+  const parts: string[] = [];
+  if (selection.included.length > 0) {
+    parts.push(`${selection.matchAll ? "all of" : "any of"} ${selection.included.join(", ")}`);
+  }
+  if (selection.excluded.length > 0) {
+    parts.push(`none of ${selection.excluded.join(", ")}`);
+  }
+  // Spelled out rather than counted: "2 selected" cannot tell a required value from an excluded one,
+  // and that difference is the whole reason the condition exists.
+  return parts.length === 0 ? `Filter by ${label.toLowerCase()}` : `${label}: ${parts.join("; ")}`;
+}
+
+/** Paint the trigger from the current condition without changing its fixed footprint. */
 function paintTrigger(
   trigger: HTMLButtonElement,
   count: HTMLElement,
-  selectedCount: number,
+  selection: CheckboxFilterSelection,
   label: string,
 ): void {
+  const selectedCount = selection.included.length + selection.excluded.length;
   const active = selectedCount > 0;
   trigger.setAttribute("aria-pressed", String(active));
-  trigger.title = active
-    ? `${label} filter: ${selectedCount} selected`
-    : `Filter by ${label.toLowerCase()}`;
+  trigger.title = filterSummary(label, selection);
   trigger.setAttribute("aria-label", trigger.title);
   trigger.style.background = active ? "var(--communication-background)" : "transparent";
   trigger.style.color = active
@@ -94,16 +146,58 @@ function paintTrigger(
   count.style.display = active ? "inline-flex" : "none";
 }
 
-/** Build one hoverable checkbox row while preserving the full value as its value and tooltip. */
-function renderOptionRow(
+/** Paint the per-row "must NOT have" toggle, which reads as a warning only while it is on. */
+function paintExcludeToggle(toggle: HTMLButtonElement, excluded: boolean): void {
+  toggle.setAttribute("aria-pressed", String(excluded));
+  toggle.style.background = excluded ? "var(--status-red-background)" : "transparent";
+  toggle.style.color = excluded ? "var(--status-red-foreground)" : "var(--text-secondary-color)";
+  toggle.style.borderColor = excluded ? "var(--status-red-border)" : "var(--control-border-strong)";
+}
+
+/** The per-row toggle that turns a value into "and none of this one". */
+function renderExcludeToggle(
   doc: Document,
   option: CheckboxFilterOption,
   classPrefix: string,
-  checked: boolean,
-  onToggle: (checked: boolean) => void,
+  onToggle: () => void,
+): HTMLButtonElement {
+  const toggle = doc.createElement("button");
+  toggle.type = "button";
+  toggle.className = `${classPrefix}__exclude`;
+  toggle.textContent = "not";
+  toggle.title = `Keep only items WITHOUT ${option.label ?? option.value}`;
+  toggle.setAttribute("aria-label", toggle.title);
+  toggle.style.cssText = [
+    "flex:0 0 auto",
+    "border:1px solid var(--control-border-strong)",
+    "border-radius:4px",
+    "padding:0 5px",
+    "font:inherit",
+    "font-size:10px",
+    "line-height:16px",
+    "cursor:pointer",
+  ].join(";");
+  toggle.addEventListener("click", onToggle);
+  return toggle;
+}
+
+/** Everything one option row needs to paint itself and report the state the reader put it in. */
+interface OptionRowParams {
+  classPrefix: string;
+  /** Whether the row offers the "must NOT have" toggle beside its checkbox. */
+  combining: boolean;
+  state: OptionState;
+  onChange(state: OptionState): void;
+}
+
+/** Build one hoverable option row while preserving the full value as its value and tooltip. */
+function renderOptionRow(
+  doc: Document,
+  option: CheckboxFilterOption,
+  params: OptionRowParams,
 ): HTMLElement {
-  const row = doc.createElement("label");
-  row.className = `${classPrefix}__option`;
+  const row = doc.createElement("div");
+  row.className = `${params.classPrefix}__option`;
   row.title = option.title ?? option.label ?? option.value;
   row.style.cssText = [
     "display:flex",
@@ -111,23 +205,44 @@ function renderOptionRow(
     "gap:8px",
     "padding:6px 8px",
     "border-radius:4px",
-    "cursor:pointer",
     "white-space:nowrap",
   ].join(";");
 
+  const include = doc.createElement("label");
+  include.style.cssText = "display:flex;align-items:center;gap:8px;flex:1 1 auto;cursor:pointer";
   const checkbox = doc.createElement("input");
   checkbox.type = "checkbox";
   checkbox.value = option.value;
-  checkbox.checked = checked;
+  checkbox.checked = params.state === "include";
   checkbox.style.cssText = "margin:0;accent-color:var(--communication-background)";
-  checkbox.addEventListener("change", () => onToggle(checkbox.checked));
+  include.append(checkbox, doc.createTextNode(option.label ?? option.value));
+  row.append(include);
+
+  // Required and excluded are the same question answered two ways, so setting either one clears the
+  // other rather than leaving a row that claims a value must be both present and absent.
+  let state = params.state;
+  let toggle: HTMLButtonElement | null = null;
+  const setState = (next: OptionState): void => {
+    state = next;
+    checkbox.checked = next === "include";
+    if (toggle !== null) paintExcludeToggle(toggle, next === "exclude");
+    params.onChange(next);
+  };
+  if (params.combining) {
+    toggle = renderExcludeToggle(doc, option, params.classPrefix, () =>
+      setState(state === "exclude" ? "neutral" : "exclude"),
+    );
+    paintExcludeToggle(toggle, state === "exclude");
+    row.append(toggle);
+  }
+
+  checkbox.addEventListener("change", () => setState(checkbox.checked ? "include" : "neutral"));
   row.addEventListener("mouseenter", () => {
     row.style.background = "var(--control-background-hover)";
   });
   row.addEventListener("mouseleave", () => {
     row.style.background = "transparent";
   });
-  row.append(checkbox, doc.createTextNode(option.label ?? option.value));
   return row;
 }
 
@@ -165,19 +280,56 @@ function renderSearchBox(
 interface PopupParams {
   doc: Document;
   options: readonly CheckboxFilterOption[];
-  selected: ReadonlySet<string>;
+  /** The live condition, mutated in place so the caller keeps the single source of truth. */
+  state: FilterState;
   label: string;
   classPrefix: string;
   searchPlaceholder: string | undefined;
-  toggle(value: string, checked: boolean): void;
+  combining: boolean;
+  /** Records the state the reader put one value in and reports the new condition. */
+  set(value: string, state: OptionState): void;
+  /** Flips between requiring any ticked value and requiring all of them. */
+  setMatchAll(matchAll: boolean): void;
   clear(): void;
 }
 
+/** How many values the condition names, in either direction. */
+function conditionSize(state: FilterState): number {
+  return state.included.size + state.excluded.size;
+}
+
+/** The switch that decides whether the ticked values are OR-ed or AND-ed. */
+function renderMatchModeToggle(params: PopupParams): HTMLButtonElement {
+  const toggle = params.doc.createElement("button");
+  toggle.type = "button";
+  toggle.className = `${params.classPrefix}__match-mode`;
+  toggle.style.cssText = [
+    "border:1px solid var(--control-border-strong)",
+    "border-radius:4px",
+    "background:transparent",
+    "color:var(--text-primary-color)",
+    "font:inherit",
+    "font-size:11px",
+    "padding:1px 6px",
+    "cursor:pointer",
+  ].join(";");
+  const paint = (): void => {
+    toggle.textContent = params.state.matchAll ? "All" : "Any";
+    toggle.title = params.state.matchAll
+      ? "Every ticked value must be present. Click to require any one instead."
+      : "Any one ticked value is enough. Click to require all of them instead.";
+    toggle.setAttribute("aria-label", toggle.title);
+  };
+  paint();
+  toggle.addEventListener("click", () => {
+    params.setMatchAll(!params.state.matchAll);
+    paint();
+  });
+  return toggle;
+}
+
 /** The popup's heading band: the noun on the left, the Clear shortcut on the right. */
-function renderHeading(
-  params: PopupParams,
-  selectedCount: number,
-): [HTMLElement, HTMLButtonElement] {
+function renderHeading(params: PopupParams): [HTMLElement, HTMLButtonElement] {
   const { doc, classPrefix } = params;
   const heading = doc.createElement("div");
   heading.style.cssText = "display:flex;align-items:center;gap:12px;padding:0 4px 6px";
@@ -187,7 +339,7 @@ function renderHeading(
   clear.type = "button";
   clear.className = `${classPrefix}__clear`;
   clear.textContent = "Clear";
-  clear.disabled = selectedCount === 0;
+  clear.disabled = conditionSize(params.state) === 0;
   clear.style.cssText = [
     "margin-left:auto",
     "border:none",
@@ -198,13 +350,21 @@ function renderHeading(
     "padding:2px 4px",
   ].join(";");
   clear.addEventListener("click", params.clear);
-  heading.append(title, clear);
+  heading.append(title);
+  if (params.combining) heading.append(renderMatchModeToggle(params));
+  heading.append(clear);
   return [heading, clear];
+}
+
+/** Which state the popup should open one offered value in. */
+function stateOf(state: FilterState, value: string): OptionState {
+  if (state.included.has(value)) return "include";
+  return state.excluded.has(value) ? "exclude" : "neutral";
 }
 
 /** Build the lazily-mounted checkbox popup. */
 function renderPopup(params: PopupParams): HTMLElement {
-  const { doc, selected, classPrefix } = params;
+  const { doc, classPrefix } = params;
   const popup = doc.createElement("div");
   popup.className = `${classPrefix}__popup`;
   popup.setAttribute("role", "dialog");
@@ -227,15 +387,20 @@ function renderPopup(params: PopupParams): HTMLElement {
     "z-index:1000",
   ].join(";");
 
-  const [heading, clear] = renderHeading(params, selected.size);
+  const [heading, clear] = renderHeading(params);
 
   const list = doc.createElement("div");
   list.className = `${classPrefix}__list`;
   list.style.cssText = "display:flex;flex-direction:column;max-height:280px;overflow:auto";
   const rows = params.options.map((option) => {
-    const row = renderOptionRow(doc, option, classPrefix, selected.has(option.value), (checked) => {
-      params.toggle(option.value, checked);
-      clear.disabled = selected.size === 0;
+    const row = renderOptionRow(doc, option, {
+      classPrefix,
+      combining: params.combining,
+      state: stateOf(params.state, option.value),
+      onChange: (next) => {
+        params.set(option.value, next);
+        clear.disabled = conditionSize(params.state) === 0;
+      },
     });
     list.append(row);
     return { option, row };
@@ -329,19 +494,31 @@ export function renderCheckboxFilter(
   options: CheckboxFilterOptions,
 ): CheckboxFilterHandle {
   const { label, classPrefix } = options;
+  const combining = options.combining === true;
   const known = new Map(options.options.map((option) => [option.value, option] as const));
   const values = [...known.keys()];
-  const selected = new Set(
-    uniqueValues(options.selected ?? []).filter((value) => known.has(value)),
-  );
+  const offered = (candidates: readonly string[] | undefined): Set<string> =>
+    new Set(uniqueValues(candidates ?? []).filter((value) => known.has(value)));
+  const state: FilterState = {
+    included: offered(options.selected),
+    excluded: combining ? offered(options.excluded) : new Set(),
+    matchAll: combining && options.matchAll === true,
+  };
+  // A value can be required or excluded, never both, so a caller seeding it twice is resolved once
+  // here rather than leaving the popup and the condition disagreeing about that row.
+  for (const value of state.included) state.excluded.delete(value);
   const { root, trigger, count } = renderTrigger(doc, classPrefix, values.length === 0, label);
 
-  const selectedValues = (): string[] => values.filter((value) => selected.has(value));
+  const selection = (): CheckboxFilterSelection => ({
+    included: values.filter((value) => state.included.has(value)),
+    excluded: values.filter((value) => state.excluded.has(value)),
+    matchAll: state.matchAll,
+  });
   const changed = (): void => {
-    paintTrigger(trigger, count, selected.size, label);
-    options.onChange?.(selectedValues());
+    paintTrigger(trigger, count, selection(), label);
+    options.onChange?.(selection());
   };
-  paintTrigger(trigger, count, selected.size, label);
+  paintTrigger(trigger, count, selection(), label);
 
   const popupHost = createPopupHost({
     doc,
@@ -353,17 +530,25 @@ export function renderCheckboxFilter(
       renderPopup({
         doc,
         options: [...known.values()],
-        selected,
+        state,
         label,
         classPrefix,
+        combining,
         searchPlaceholder: options.searchPlaceholder,
-        toggle: (value, checked) => {
-          if (checked) selected.add(value);
-          else selected.delete(value);
+        set: (value, next) => {
+          state.included.delete(value);
+          state.excluded.delete(value);
+          if (next === "include") state.included.add(value);
+          if (next === "exclude") state.excluded.add(value);
+          changed();
+        },
+        setMatchAll: (matchAll) => {
+          state.matchAll = matchAll;
           changed();
         },
         clear: () => {
-          selected.clear();
+          state.included.clear();
+          state.excluded.clear();
           changed();
           popupHost.close();
         },
@@ -372,14 +557,12 @@ export function renderCheckboxFilter(
 
   return {
     element: root,
-    selectedValues,
+    selection,
     setSelectedValues: (next) => {
-      selected.clear();
-      for (const value of uniqueValues(next)) {
-        if (known.has(value)) selected.add(value);
-      }
+      state.included = offered(next);
+      for (const value of state.included) state.excluded.delete(value);
       popupHost.close();
-      paintTrigger(trigger, count, selected.size, label);
+      paintTrigger(trigger, count, selection(), label);
     },
   };
 }

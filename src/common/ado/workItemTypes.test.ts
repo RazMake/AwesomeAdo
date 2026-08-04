@@ -221,6 +221,90 @@ describe("workItemIdsVisibleUnderPrimaryFilter", () => {
   });
 });
 
+/** Epic → the milestones given, the shape a project has while its phases are being planned. */
+const milestoneTree = (...features: TrackedWorkItem[]): TrackedWorkItem =>
+  item({ id: 1, type: "Epic", title: "project", children: features });
+
+/** A milestone with implementation detail but no delivery under it, so the filters DO judge it. */
+const startedMilestone = (id: number, title: string): TrackedWorkItem =>
+  item({ id, type: "Feature", title, children: [item({ id: id * 10, type: "Task", title })] });
+
+const matchingTitles = (candidate: TrackedWorkItem): boolean => candidate.title === "matching";
+
+describe("workItemIdsVisibleUnderPrimaryFilter — planning nothing can speak for", () => {
+  it("shows a childless planning item without asking the filters at all", () => {
+    const asked: number[] = [];
+    const visible = workItemIdsVisibleUnderPrimaryFilter(
+      [milestoneTree(item({ id: 2, type: "Feature" }))],
+      CATALOG,
+      (candidate) => {
+        asked.push(candidate.id);
+        return false;
+      },
+    );
+
+    // Nothing about a milestone nobody has filled can answer a filter, so it is shown unasked.
+    expect([...visible].sort(ascending)).toEqual([1, 2]);
+    expect(asked).not.toContain(2);
+  });
+
+  it("still judges a planning item that holds something, rather than pinning it on screen", () => {
+    const tree = milestoneTree(
+      startedMilestone(2, "matching"),
+      startedMilestone(3, "does not match"),
+    );
+
+    const visible = workItemIdsVisibleUnderPrimaryFilter([tree], CATALOG, matchingTitles);
+
+    expect([...visible].sort(ascending)).toEqual([1, 2]);
+  });
+
+  it("tells the caller what it is judging, so a filter that cannot speak to one can stand down", () => {
+    const subjects: string[] = [];
+    workItemIdsVisibleUnderPrimaryFilter([DEEP_TREE], CATALOG, (candidate, subject) => {
+      subjects.push(`${candidate.type}:${subject}`);
+      return false;
+    });
+
+    expect(subjects).toEqual(["Story:primary-work", "Story:primary-work"]);
+    expect(
+      workItemIdsVisibleUnderPrimaryFilter(
+        [milestoneTree(startedMilestone(2, "x"))],
+        CATALOG,
+        (_candidate, subject) => subject === "planning-without-work",
+      ).has(2),
+    ).toBe(true);
+  });
+
+  it("never lets a planning item drag the unmatched milestones under it along", () => {
+    const tree = milestoneTree(startedMilestone(2, "does not match"));
+    tree.title = "matching";
+
+    expect([...workItemIdsVisibleUnderPrimaryFilter([tree], CATALOG, matchingTitles)]).toEqual([1]);
+  });
+
+  it("leaves a planning item that HOLDS Primary work to be spoken for by that work", () => {
+    // Feature 2 is filtered out only because its Story is: an empty-branch rule that also caught
+    // this one would put every unmatched milestone back on a filtered board.
+    const tree = milestoneTree(
+      item({ id: 2, type: "Feature", children: [item({ id: 3, type: "Story", title: "no" })] }),
+    );
+
+    expect([...workItemIdsVisibleUnderPrimaryFilter([tree], CATALOG, () => false)]).toEqual([]);
+  });
+
+  it("never judges implementation detail on its own, however empty it is", () => {
+    const asked: string[] = [];
+    workItemIdsVisibleUnderPrimaryFilter([DEEP_TREE], CATALOG, (candidate) => {
+      asked.push(candidate.type);
+      return false;
+    });
+
+    expect(asked).not.toContain("Task");
+    expect(asked).not.toContain("Subtask");
+  });
+});
+
 describe("workItemsEligibleForPrimaryFilter", () => {
   it("returns only Primary-work items as filter candidates", () => {
     expect(workItemsEligibleForPrimaryFilter([DEEP_TREE], CATALOG).map(({ id }) => id)).toEqual([

@@ -23,22 +23,27 @@ This is a flattened snapshot of what exists now, not a build log.
   ancestors as rows while rolling implementation-detail children into compact badges, and an open
   view redraws immediately when settings-backed configuration changes. Project
   Tracking rows use theme-owned alternating
-  backgrounds, with subtle hover and stronger `Ctrl+Shift` emphasis filling each row and its open details as one
-  continuous surface while excluding child rows. Their unchanged total spacing is balanced toward
+  backgrounds, with subtle hover and stronger `Ctrl+Shift+Alt` emphasis filling each row and its open details as one
+  continuous surface while excluding child rows (shared `common/view-common/control/RowEmphasis`). Their unchanged total spacing is balanced toward
   the bottom of each item, and they are re-striped in visible tree order after outline changes.
   Options imports only `content/views/viewCatalog` (scoped §6
   exception, ADR-027, lint-enforced).
 - **All Projects Catalog View** (`content/views/projects-view`): the many-root sibling of
   Project
   Tracking (ADR-066). Lists every top-level item a query returns as a collapsed project that opens
-  into its own tree; rows show type icon, ADO-linked title, the child count beside it, and the item's
-  own tags. Child DOM is built only while a row is open, and open/closed state lives outside the DOM so
+  into its own tree; rows show type icon, an inert title (opening in ADO is a menu command), the
+  child count beside it, then the item's tracking-query link, assignee chip, and ETA — at every level.
+  Rows wear no tag pills and use the shared `RowEmphasis` stripe/hover/`Ctrl+Shift+Alt` treatment.
+  Child DOM is built only while a row is open, and open/closed state lives outside the DOM so
   it survives repaints and in-place refreshes. Its sticky header carries the query breadcrumbs, a
   board-local ordering picker in the top-right corner,
   expand-all/collapse-all, refresh, and a searchable tag filter listing every tag worn anywhere in
-  the tree except the ones every project carries (the query's own condition); selections OR together,
-  keep a match's ancestors and subtree, and are pruned (and
-  logged) whenever a refreshed query no longer wears them. Per-query settings define the catalog tag,
+  the tree except the ones every project carries (the query's own condition). The filter builds a
+  condition: required tags combined Any/All, plus excluded tags that rule out every project
+  containing them anywhere beneath. Required matches keep their ancestors and subtree. The
+  vocabulary is re-derived on every paint and the condition pruned (and logged) when a tag leaves the
+  tree. **Create Project Query** is offered on every row; **Mark completed** on projects only.
+  Per-query settings define the catalog tag,
   new-project area and iteration paths, and generated-query folder; tag, iteration, and folder default
   from the saved query, Azure DevOps project root, and catalog query folder. New projects receive all
   initial fields in one patch. Ships as its own on-demand ESM renderer.

@@ -291,12 +291,13 @@ function marginRightOf(element: Element | null | undefined): string {
 // Three things in this file outlive the test that created them, and none of them is a mock, so
 // Vitest's `restoreMocks`/`clearMocks` cannot undo any of them: a board mounted into the shared
 // jsdom body, the fake clipboard defined onto the shared `navigator`, and the document-level
-// Ctrl+Shift highlight tracker, which latches its state and re-applies it to every board registered
-// afterwards. Left behind, each one silently changes the starting conditions of every later test.
+// Ctrl+Shift+Alt highlight tracker, which latches its state and re-applies it to every board
+// registered afterwards. Left behind, each one silently changes the starting conditions of every
+// later test.
 afterEach(() => {
   document.body.replaceChildren();
   Reflect.deleteProperty(window.navigator, "clipboard");
-  // No modifiers held: the tracker keys off the event's ctrl/shift flags, so this releases the latch.
+  // No modifiers held: the tracker keys off the event's modifier flags, so this releases the latch.
   document.dispatchEvent(new KeyboardEvent("keyup", { key: "Shift" }));
 });
 
@@ -706,9 +707,9 @@ describe("ProjectTrackingView — row backgrounds", () => {
     expect(surface.contains(children)).toBe(false);
 
     document.dispatchEvent(
-      new KeyboardEvent("keydown", { key: "Shift", ctrlKey: true, shiftKey: true }),
+      new KeyboardEvent("keydown", { key: "Alt", ctrlKey: true, shiftKey: true, altKey: true }),
     );
-    expect(root.classList.contains("awesomeado-tracking--modifier-highlight")).toBe(true);
+    expect(root.classList.contains("awesomeado--modifier-highlight")).toBe(true);
     expect(surface.querySelector<HTMLElement>(":scope > .awesomeado-notes")?.style.display).toBe(
       "block",
     );
@@ -726,8 +727,10 @@ describe("ProjectTrackingView — row backgrounds", () => {
     ).toBe("2px 0px");
     expect(styles).not.toContain(".awesomeado-tracking__children:hover");
 
-    document.dispatchEvent(new KeyboardEvent("keyup", { key: "Shift", ctrlKey: true }));
-    expect(root.classList.contains("awesomeado-tracking--modifier-highlight")).toBe(false);
+    document.dispatchEvent(
+      new KeyboardEvent("keyup", { key: "Alt", ctrlKey: true, shiftKey: true }),
+    );
+    expect(root.classList.contains("awesomeado--modifier-highlight")).toBe(false);
     root.remove();
   });
 });
@@ -3274,6 +3277,54 @@ describe("ProjectTrackingView — an emptied board", () => {
 });
 
 const hidEveryRow = (line: string): boolean => line.includes("Project Tracking tree hid every row");
+
+describe("ProjectTrackingView — milestones with no work under them yet", () => {
+  const milestonesOnly = (overrides?: Partial<TrackedWorkItem>): TrackedWorkItem =>
+    createItem({
+      id: 1,
+      type: "Epic",
+      title: "Test Project",
+      children: [
+        createItem({ id: 2, type: "Feature", title: "Phase 1", ...overrides }),
+        createItem({ id: 3, type: "Feature", title: "Phase 2", ...overrides }),
+      ],
+    });
+
+  const boardOf = async (root: TrackedWorkItem): Promise<HTMLElement> =>
+    renderDeepBoard({ loadTree: async () => ({ isTreeQuery: true, roots: [root], error: null }) });
+
+  it("shows them, so the work they were created to hold can still be added later", async () => {
+    expect(renderedRowTitles(await boardOf(milestonesOnly()))).toEqual(["Phase 1", "Phase 2"]);
+  });
+
+  it("shows them whatever sprint the board is on, since nobody scheduled them into one", async () => {
+    // Teams leave a milestone on the project's own iteration, so the board's sprint can never match.
+    const root = await boardOf(milestonesOnly({ iterationPath: "Project", sprintName: null }));
+
+    expect(renderedRowTitles(root)).toEqual(["Phase 1", "Phase 2"]);
+  });
+
+  it("still hides a milestone whose own work sits outside the board's sprint", async () => {
+    const filled = milestonesOnly();
+    filled.children[0]!.children.push(
+      createItem({
+        id: 4,
+        type: "Story",
+        title: "Login UI",
+        iterationPath: "Project\\Sprint 2",
+        sprintName: "Sprint 2",
+      }),
+    );
+    const root = await boardOf(filled);
+
+    // Phase 2 holds nothing, so it stays; Phase 1 is spoken for by its Story, which is elsewhere.
+    expect(renderedRowTitles(root)).toEqual(["Phase 2"]);
+
+    await turnSprintFilterOff(root);
+
+    expect(renderedRowTitles(root)).toEqual(["Phase 1", "Login UI", "Phase 2"]);
+  });
+});
 
 describe("ProjectTrackingView — Primary-work row classification", () => {
   it("renders leaf items as tree children when their type is primary work", async () => {

@@ -101,6 +101,12 @@ import {
   type PriorityBadgeHandle,
 } from "../../../common/view-common/control/PriorityBadge/PriorityBadge";
 import {
+  createRowEmphasisStyle,
+  modifierHighlightTracker,
+  restripeVisibleRows,
+  type RowEmphasisClasses,
+} from "../../../common/view-common/control/RowEmphasis/RowEmphasis";
+import {
   renderSprintPicker,
   type SprintPickerHandle,
 } from "../../../common/view-common/control/SprintPicker/SprintPicker";
@@ -204,6 +210,17 @@ function matchesLitPills(item: TrackedWorkItem, filter: TreeFilter): boolean {
   // The activity and marker halves already answer `true` for every item when nothing in their group
   // is lit, so the "an unlit group imposes nothing" rule needs no second check for either here.
   return matchesTags && filter.matchesRecentActivity(item) && filter.matchesMarkers(item);
+}
+
+/**
+ * The same filters, minus the sprint, for an item nobody scheduled.
+ *
+ * A milestone holding no delivery yet sits outside every sprint — teams leave it on the project's
+ * own iteration — so testing it against the sprint the board is on would hide every milestone that
+ * has not been filled, including the one just created to be filled.
+ */
+function unscheduledFilter(filter: TreeFilter): TreeFilter {
+  return { ...filter, sprint: null };
 }
 
 /** Whether one filterable work item passes every active filter group. */
@@ -493,96 +510,18 @@ const ITEM_WRAPPER_CLASS = "awesomeado-tracking__item";
 const ITEM_SURFACE_CLASS = "awesomeado-tracking__item-surface";
 const CHILDREN_CLASS = "awesomeado-tracking__children";
 
-/** Whether every ancestor branch between one item and the tree is currently open. */
-function isRenderedRowVisible(row: HTMLElement, treeContainer: HTMLElement): boolean {
-  for (let ancestor = row.parentElement; ancestor && ancestor !== treeContainer;) {
-    if (ancestor.classList.contains(CHILDREN_CLASS) && ancestor.style.display === "none") {
-      return false;
-    }
-    ancestor = ancestor.parentElement;
-  }
-  return true;
-}
+/** The board's own DOM, named for the shared stripe/hover/emphasis treatment. */
+const ROW_EMPHASIS_CLASSES: RowEmphasisClasses = {
+  wrapper: ITEM_WRAPPER_CLASS,
+  surface: ITEM_SURFACE_CLASS,
+  children: CHILDREN_CLASS,
+};
 
-/** Keeps zebra-striping based on visible reading order rather than nested DOM sibling positions. */
-function restripeVisibleRows(treeContainer: HTMLElement): void {
-  let visibleIndex = 0;
-  for (const row of treeContainer.querySelectorAll<HTMLElement>(`.${ITEM_WRAPPER_CLASS}`)) {
-    if (!isRenderedRowVisible(row, treeContainer)) {
-      delete row.dataset.rowStripe;
-      continue;
-    }
-    row.dataset.rowStripe = visibleIndex % 2 === 0 ? "base" : "alternate";
-    visibleIndex += 1;
-  }
-}
-
-/** The board-scoped style sheet for striped rows and pointer emphasis. */
-function createItemRowStyle(doc: Document): HTMLStyleElement {
-  const style = doc.createElement("style");
-  // Half the former row padding trails the whole surface instead, preserving item height while
-  // leaving breathing room below whichever description or notes section is last.
-  style.textContent = `
-.${ITEM_WRAPPER_CLASS} > .${ITEM_SURFACE_CLASS} {
-  padding-bottom: 4px;
-}
-.${ITEM_WRAPPER_CLASS}[data-row-stripe="base"] > .${ITEM_SURFACE_CLASS} {
-  background-color: var(--item-row-background);
-}
-.${ITEM_WRAPPER_CLASS}[data-row-stripe="alternate"] > .${ITEM_SURFACE_CLASS} {
-  background-color: var(--item-row-alternate-background);
-}
-.${ITEM_WRAPPER_CLASS} > .${ITEM_SURFACE_CLASS}:hover {
-  background-color: var(--item-row-hover-background);
-}
-.awesomeado-tracking--modifier-highlight .${ITEM_WRAPPER_CLASS} > .${ITEM_SURFACE_CLASS}:hover {
-  background-color: var(--item-row-emphasis-background);
-}`;
-  return style;
-}
-
-interface ModifierHighlightTracker {
-  register(root: HTMLElement): void;
-  unregister(root: HTMLElement): void;
-}
-
-const MODIFIER_HIGHLIGHT_TRACKERS = new WeakMap<Document, ModifierHighlightTracker>();
-
-/** Shares one document-level modifier listener across every Project Tracking view in that document. */
-function modifierHighlightTracker(doc: Document): ModifierHighlightTracker {
-  const existing = MODIFIER_HIGHLIGHT_TRACKERS.get(doc);
-  if (existing) return existing;
-
-  const roots = new Set<HTMLElement>();
-  let active = false;
-  const apply = (next: boolean): void => {
-    active = next;
-    for (const root of roots) {
-      if (!root.isConnected) {
-        roots.delete(root);
-        continue;
-      }
-      root.classList.toggle("awesomeado-tracking--modifier-highlight", active);
-    }
-  };
-  const onKey = (event: KeyboardEvent): void => apply(event.ctrlKey && event.shiftKey);
-  doc.addEventListener("keydown", onKey);
-  doc.addEventListener("keyup", onKey);
-  doc.defaultView?.addEventListener("blur", () => apply(false));
-
-  const tracker: ModifierHighlightTracker = {
-    register: (root) => {
-      roots.add(root);
-      root.classList.toggle("awesomeado-tracking--modifier-highlight", active);
-    },
-    unregister: (root) => {
-      roots.delete(root);
-      root.classList.remove("awesomeado-tracking--modifier-highlight");
-    },
-  };
-  MODIFIER_HIGHLIGHT_TRACKERS.set(doc, tracker);
-  return tracker;
-}
+/**
+ * Half the former row padding trails the whole surface instead, preserving item height while leaving
+ * breathing room below whichever description or notes section is last.
+ */
+const ITEM_SURFACE_EXTRA_CSS = "padding-bottom: 4px;";
 
 /**
  * How far the "completed" board column sits from the end of the board order. The last column is the
@@ -2506,6 +2445,28 @@ function createTreeFilter(params: BoardTreeRendererParams, sprint: string | null
  * Rebuilds the tree under the current sprint, tag and recent-activity filters. Returned as a single
  * command because that is all a caller ever wants from it: a repaint.
  */
+/**
+ * The ids one pass leaves on screen, each item judged by only the filters that can speak to it.
+ *
+ * A milestone holding no delivery is the case worth naming: it is tested against everything except
+ * the sprint, because nobody schedules a milestone into one.
+ */
+function visibleIdsForPass(
+  params: BoardTreeRendererParams,
+  filter: TreeFilter,
+): ReadonlySet<number> {
+  return visibleWithAddedItems(
+    workItemIdsVisibleUnderPrimaryFilter(
+      [params.root],
+      [...params.typeMap.values()],
+      (item, subject) =>
+        matchesTreeFilter(item, subject === "primary-work" ? filter : unscheduledFilter(filter)),
+    ),
+    params.root,
+    params.session.addedIds,
+  );
+}
+
 function createBoardTreeRenderer(params: BoardTreeRendererParams): () => void {
   const { doc, root, treeContainer, sprintPickerHandle, expandAll, collapseAll } = params;
 
@@ -2546,13 +2507,7 @@ function createBoardTreeRenderer(params: BoardTreeRendererParams): () => void {
       queue: params.fieldWrites,
       statusWidthCh: params.metrics.statusWidthCh,
       boardColumns: params.metrics.boardColumns,
-      visibleItemIds: visibleWithAddedItems(
-        workItemIdsVisibleUnderPrimaryFilter([params.root], [...params.typeMap.values()], (item) =>
-          matchesTreeFilter(item, filter),
-        ),
-        params.root,
-        params.session.addedIds,
-      ),
+      visibleItemIds: visibleIdsForPass(params, filter),
       orderingPolicy,
       // Sprint pills only earn their space when the sprint filter is not already narrowing the board.
       showSprintPills: !filterOn,
@@ -2586,7 +2541,7 @@ function createBoardTreeRenderer(params: BoardTreeRendererParams): () => void {
         params.session.reopenMinorChildPopupId = null;
         return true;
       },
-      restripeRows: () => restripeVisibleRows(treeContainer),
+      restripeRows: () => restripeVisibleRows(treeContainer, ROW_EMPHASIS_CLASSES),
       // Manual drag order only means anything while the board is showing the manual rank; under any
       // other policy a dropped row would be re-sorted straight back out of the slot it landed in.
       dragReorder: orderingPolicy === MANUAL_ORDERING_POLICY ? params.dragReorder : null,
@@ -2598,7 +2553,7 @@ function createBoardTreeRenderer(params: BoardTreeRendererParams): () => void {
     const rows = renderTree(root, options, 0);
     logBoardEmptinessFlip(params.context, params.session, rows.length, filter);
     fillTreeContainer(doc, treeContainer, rows, newChild.row(root));
-    restripeVisibleRows(treeContainer);
+    restripeVisibleRows(treeContainer, ROW_EMPHASIS_CLASSES);
 
     wireExpandCollapseButtons(
       expandAll,
@@ -3378,6 +3333,7 @@ function rootMenuTarget(
         queryLinkKnown: true,
         queryFolderPath: "",
         offerCreate: false,
+        offerComplete: true,
         // Deliberately a repaint, not a re-read: completing may have just deleted the very query
         // this board loads from, and re-reading it would replace the result with a load failure.
         onReload: params.onRootChanged,
@@ -3402,7 +3358,7 @@ function renderBoard(params: RenderBoardParams): BoardHandle {
   // Trim the top padding to 2px so the header card sits close to the top of the view; the sides and
   // bottom keep the board's shared edge padding.
   board.style.cssText = `padding:2px ${BOARD_EDGE_PADDING_PX}px ${BOARD_EDGE_PADDING_PX}px`;
-  board.append(createItemRowStyle(doc));
+  board.append(createRowEmphasisStyle(doc, ROW_EMPHASIS_CLASSES, ITEM_SURFACE_EXTRA_CSS));
 
   // One menu for the whole board: only one context menu can ever be open, and its pointer anchor has
   // to outlive the rows a repaint throws away — so it is mounted on the board rather than in the tree

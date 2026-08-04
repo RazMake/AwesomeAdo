@@ -126,7 +126,10 @@ halves of the view — its configuration and its renderer.
     `Platform › API` when the leaf is ambiguous). Selected paths OR together and AND with the sprint,
     crew-tag, activity, marker, and resolved-window filters. Arbitrarily deep planning ancestors of
     matching Primary work remain visible, and every non-primary descendant below matching work stays
-    in its rollup. The selection survives an in-place Refresh. Every item's right-click menu also has
+    in its rollup. A planning item holding no Primary work at all — a milestone added before its first
+    story exists — is judged in its own right and is never narrowed by the **sprint**, which nobody
+    scheduled it into; one with no children at all is shown outright, so the row work has to be added
+    to stays reachable. The selection survives an in-place Refresh. Every item's right-click menu also has
     **Change area path**; unlike the filter, this edit command offers eligible paths represented by
     the complete hierarchy, omitting only that item's current path and showing each full destination
     in its tooltip.
@@ -145,12 +148,14 @@ halves of the view — its configuration and its renderer.
     sprint omitted and each destination highlighted on hover or focus), and ETA badge (right-aligned;
     editable — click to pick a date or clear it when the item's type has an ETA field configured).
     Clicking the twisty expands/collapses that node's children.
-    Visible rows use subtle alternating backgrounds from the resolved AwesomeADO theme. The board
+    Visible rows use subtle alternating backgrounds from the resolved AwesomeADO theme, painted by
+    the shared [`RowEmphasis`](../../../common/view-common/control/RowEmphasis/README.md) control.
+    The board
     reassigns the sequence in depth-first reading order whenever a branch opens or closes, so nested
     rows never break the alternation. Hovering anywhere in an item's title, open description, or
     open notes applies one continuous, subtle themed wash without including its child rows. Holding
-    `Ctrl+Shift` while hovering clearly strengthens that same complete item surface for deliberate visual
-    tracking. The surface keeps the existing distance between items while reserving more of that
+    `Ctrl+Shift+Alt` while hovering clearly strengthens that same complete item surface for deliberate
+    visual tracking. The surface keeps the existing distance between items while reserving more of that
     space below the item's final visible row, so descriptions and notes do not end against the edge.
     Rows open expanded, and a row you collapse **stays** collapsed across every repaint — a
     drag-reorder, a re-sort, a sprint or tag filter change — because each pass builds new elements

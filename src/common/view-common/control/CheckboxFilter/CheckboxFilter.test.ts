@@ -101,14 +101,18 @@ describe("renderCheckboxFilter - selection", () => {
     boxes[1]!.click();
     boxes[0]!.click();
 
-    expect(onChange).toHaveBeenLastCalledWith(["api", "docs"]);
-    expect(handle.selectedValues()).toEqual(["api", "docs"]);
+    expect(onChange).toHaveBeenLastCalledWith({
+      included: ["api", "docs"],
+      excluded: [],
+      matchAll: false,
+    });
+    expect(handle.selection().included).toEqual(["api", "docs"]);
   });
 
   it("ignores an initial selection the caller never offered", () => {
     const { handle } = mount({ selected: ["api", "not-offered"] });
 
-    expect(handle.selectedValues()).toEqual(["api"]);
+    expect(handle.selection().included).toEqual(["api"]);
   });
 
   it("accepts a replacement selection without re-entering the caller's change handler", () => {
@@ -116,7 +120,7 @@ describe("renderCheckboxFilter - selection", () => {
 
     handle.setSelectedValues(["docs"]);
 
-    expect(handle.selectedValues()).toEqual(["docs"]);
+    expect(handle.selection().included).toEqual(["docs"]);
     expect(onChange).not.toHaveBeenCalled();
   });
 
@@ -126,5 +130,98 @@ describe("renderCheckboxFilter - selection", () => {
     expect(handle.element.querySelector<HTMLButtonElement>(`.${PREFIX}__trigger`)?.disabled).toBe(
       true,
     );
+  });
+});
+
+describe("renderCheckboxFilter - combining", () => {
+  const excludeToggles = (handle: { element: HTMLElement }): HTMLButtonElement[] => [
+    ...handle.element.querySelectorAll<HTMLButtonElement>(`.${PREFIX}__exclude`),
+  ];
+
+  it("offers no exclusion or match-mode control unless the caller asks to combine", () => {
+    const { handle } = mount();
+    open(handle);
+
+    expect(excludeToggles(handle)).toHaveLength(0);
+    expect(handle.element.querySelector(`.${PREFIX}__match-mode`)).toBeNull();
+    expect(handle.selection()).toEqual({ included: [], excluded: [], matchAll: false });
+  });
+
+  it("ignores a seeded exclusion and match mode the caller did not enable combining for", () => {
+    const { handle } = mount({ excluded: ["api"], matchAll: true });
+
+    expect(handle.selection()).toEqual({ included: [], excluded: [], matchAll: false });
+  });
+
+  it("reports an excluded value and drops it again when the toggle is pressed twice", () => {
+    const { handle, onChange } = mount({ combining: true });
+    open(handle);
+
+    excludeToggles(handle)[0]!.click();
+    expect(onChange).toHaveBeenLastCalledWith({
+      included: [],
+      excluded: ["api"],
+      matchAll: false,
+    });
+
+    excludeToggles(handle)[0]!.click();
+    expect(onChange).toHaveBeenLastCalledWith({ included: [], excluded: [], matchAll: false });
+  });
+
+  it("keeps required and excluded mutually exclusive on one row", () => {
+    const { handle } = mount({ combining: true, selected: ["api"] });
+    open(handle);
+    const checkbox = handle.element.querySelector<HTMLInputElement>("input[type=checkbox]")!;
+
+    excludeToggles(handle)[0]!.click();
+    expect(checkbox.checked).toBe(false);
+    expect(handle.selection()).toEqual({ included: [], excluded: ["api"], matchAll: false });
+
+    checkbox.click();
+    expect(excludeToggles(handle)[0]!.getAttribute("aria-pressed")).toBe("false");
+    expect(handle.selection()).toEqual({ included: ["api"], excluded: [], matchAll: false });
+  });
+
+  it("resolves a value the caller seeded as both required and excluded in favour of required", () => {
+    const { handle } = mount({ combining: true, selected: ["api"], excluded: ["api", "docs"] });
+
+    expect(handle.selection()).toEqual({ included: ["api"], excluded: ["docs"], matchAll: false });
+  });
+
+  it("flips between requiring any ticked value and requiring all of them", () => {
+    const { handle, onChange } = mount({ combining: true, selected: ["api"] });
+    open(handle);
+    const mode = handle.element.querySelector<HTMLButtonElement>(`.${PREFIX}__match-mode`)!;
+
+    expect(mode.textContent).toBe("Any");
+    mode.click();
+
+    expect(mode.textContent).toBe("All");
+    expect(onChange).toHaveBeenLastCalledWith({
+      included: ["api"],
+      excluded: [],
+      matchAll: true,
+    });
+  });
+
+  it("counts both directions on the trigger and spells the condition out in its tooltip", () => {
+    const { handle } = mount({ combining: true, matchAll: true });
+    open(handle);
+    handle.element.querySelector<HTMLInputElement>("input[type=checkbox]")!.click();
+    excludeToggles(handle)[1]!.click();
+
+    const trigger = handle.element.querySelector<HTMLButtonElement>(`.${PREFIX}__trigger`)!;
+    expect(handle.element.querySelector(`.${PREFIX}__count`)?.textContent).toBe("2");
+    expect(trigger.title).toBe("Tags: all of api; none of docs");
+  });
+
+  it("clears both directions but keeps the match mode the reader chose", () => {
+    const { handle } = mount({ combining: true, selected: ["api"], excluded: ["docs"] });
+    open(handle);
+    handle.element.querySelector<HTMLButtonElement>(`.${PREFIX}__match-mode`)!.click();
+
+    handle.element.querySelector<HTMLButtonElement>(`.${PREFIX}__clear`)!.click();
+
+    expect(handle.selection()).toEqual({ included: [], excluded: [], matchAll: true });
   });
 });

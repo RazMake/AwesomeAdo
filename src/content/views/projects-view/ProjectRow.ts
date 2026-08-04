@@ -5,7 +5,6 @@ import type {
   TypeCatalogEntry,
 } from "../../../common/ado/TrackedWorkItem";
 import type { WorkItemWriteQueue } from "../../../common/ado/WorkItemWriteQueue/WorkItemWriteQueue";
-import { buildWorkItemUrl } from "../../../common/ado/fetchAdoTree";
 import {
   orderTrackedItems,
   workItemTypeColor,
@@ -23,7 +22,6 @@ import {
   type EtaBadgeHandle,
 } from "../../../common/view-common/control/EtaBadge/EtaBadge";
 import { renderItemTypeIcon } from "../../../common/view-common/control/ItemTypeIcon/ItemTypeIcon";
-import { renderTagPill } from "../../../common/view-common/control/TagPill/TagPill";
 import { createSvgCanvas } from "../../../common/view-common/control/svgIcon/svgIcon";
 import { writeItemAssignee } from "../item-assignee/writeItemAssignee";
 import { writeItemEta } from "../item-eta/writeItemEta";
@@ -31,8 +29,6 @@ import { writeItemEta } from "../item-eta/writeItemEta";
 /** Everything a row needs, grouped so a deeply nested row never reaches for view-level state. */
 export interface ProjectRowContext {
   doc: Document;
-  /** The ADO page's own URL, the only thing a work item deep link can be derived from. */
-  href: string;
   /** Reached for the identity directory an assignee pick searches, and the clock the ETA counts to. */
   services: EnhancedViewServices;
   /** The board's single serialized write queue, so a row edit cannot race the menu's own writes. */
@@ -41,10 +37,8 @@ export interface ProjectRowContext {
   policy: OrderingPolicy;
   /** Ids the reader has opened; everything else stays closed, including on a repaint. */
   expandedIds: Set<number>;
-  /** The ids the tag filter keeps, or `null` when no tag is selected and every item is kept. */
+  /** The ids the tag filter keeps, or `null` when the filter narrows nothing and every item is kept. */
   keptIds: ReadonlySet<number> | null;
-  /** Lower-cased tags that are the query's own condition, so no row wears them as a pill. */
-  hiddenTags: ReadonlySet<string>;
   /**
    * Makes PROJECT titles draggable, or `null` when the board's order is derived rather than manual.
    *
@@ -54,10 +48,12 @@ export interface ProjectRowContext {
   dragReorder: DragReorderController | null;
   /** Every project in display order, including ones the tag filter hides, for honest ranking. */
   projectSiblingIds: readonly number[];
-  /** The project's own tracking query as an ADO web URL, or null while it has none. */
+  /** The item's own tracking query as an ADO web URL, or null while it has none. */
   queryUrlOf(item: TrackedWorkItem): string | null;
   /** Who the assignee picker offers before anything is typed: everyone assigned across the catalog. */
   assigneeSuggestions(): TrackedUser[];
+  /** The box asking for a new child's title when it belongs under `item`; null otherwise. */
+  newChildRow(item: TrackedWorkItem): HTMLElement | null;
   /** Opens the item's right-click menu at the pointer. */
   onContextMenu(item: TrackedWorkItem, event: MouseEvent): void;
   /** Rebuild the list after an expand/collapse, so open/closed state lives outside the DOM. */
@@ -119,15 +115,20 @@ function renderTwisty(
   return twisty;
 }
 
-/** The item's title as a deep link into Azure DevOps, colored by its work item type. */
+/**
+ * The item's title, colored by its work item type.
+ *
+ * Deliberately inert text rather than a deep link: this catalog is read by scrolling and dragging
+ * across a dense tree, where a click that navigates away is far more often a slip than an intent.
+ * The row's right-click menu still offers **Open in ADO** for the times it is meant.
+ */
 function renderTitle(
   item: TrackedWorkItem,
   context: ProjectRowContext,
   color: string,
 ): HTMLElement {
   const { doc } = context;
-  const url = buildWorkItemUrl(context.href, item.id);
-  const title = doc.createElement(url === null ? "span" : "a");
+  const title = doc.createElement("span");
   title.className = "awesomeado-projects__title";
   title.textContent = item.title;
   title.title = `${item.type} ${item.id}: ${item.title}`;
@@ -139,13 +140,6 @@ function renderTitle(
     "text-overflow:ellipsis",
     "white-space:nowrap",
   ].join(";");
-  if (url !== null) {
-    const link = title as HTMLAnchorElement;
-    link.href = url;
-    // The link is injected into ADO's own page, so the opened tab must not be able to reach back.
-    link.target = "_blank";
-    link.rel = "noopener noreferrer";
-  }
   return title;
 }
 
@@ -188,10 +182,10 @@ function renderLinkGlyph(doc: Document): SVGSVGElement {
 }
 
 /**
- * Opens the project's own tracking query in a new tab.
+ * Opens the item's own tracking query in a new tab.
  *
- * Rendered even when the project has no query yet, and disabled instead of hidden: the control keeps
- * its place on every row, so the column does not shuffle as projects gain queries, and the tooltip
+ * Rendered even when the item has no query yet, and disabled instead of hidden: the control keeps
+ * its place on every row, so the column does not shuffle as items gain queries, and the tooltip
  * says why it cannot be pressed rather than leaving a silent gap.
  */
 function renderQueryLink(item: TrackedWorkItem, context: ProjectRowContext): HTMLElement {
@@ -233,7 +227,7 @@ function renderQueryLink(item: TrackedWorkItem, context: ProjectRowContext): HTM
 }
 
 /**
- * The project's assignee, editable in place.
+ * The item's assignee, editable in place.
  *
  * The crew tag pill is deliberately off: a tag is a fact from the project's own Feature Crew roster,
  * and this catalog spans many projects without reading any of them — so every pill would read "??"
@@ -257,7 +251,7 @@ function renderRowAssignee(item: TrackedWorkItem, context: ProjectRowContext): H
 }
 
 /**
- * The project's ETA, editable only when its type declares which date field means "ETA".
+ * The item's ETA, editable only when its type declares which date field means "ETA".
  *
  * A type with none has nowhere to write, so the badge stays a read-only "No ETA" rather than
  * offering a picker whose every choice would be dropped.
@@ -276,23 +270,9 @@ function renderRowEta(item: TrackedWorkItem, context: ProjectRowContext): HTMLEl
               badge.handle?.setEta(committed),
             ),
   });
-  badge.handle.style.flex = "0 0 auto";
-  badge.handle.style.fontSize = "11px";
+  // Pinned to the row's right edge so every level reports its date in one column down the tree.
+  badge.handle.style.cssText = "flex:0 0 auto;font-size:11px;margin-left:auto";
   return badge.handle;
-}
-
-function renderRowTags(item: TrackedWorkItem, context: ProjectRowContext): HTMLElement {
-  const { doc } = context;
-  const tags = doc.createElement("span");
-  tags.className = "awesomeado-projects__tags";
-  tags.style.cssText =
-    "display:inline-flex;align-items:center;gap:6px;margin-left:auto;flex:0 0 auto";
-  for (const tag of item.tags) {
-    if (!context.hiddenTags.has(tag.trim().toLowerCase())) {
-      tags.append(renderTagPill(doc, { tag }));
-    }
-  }
-  return tags;
 }
 
 /** The single line a row draws on; nested levels read slightly smaller than the projects above them. */
@@ -380,16 +360,15 @@ export function renderProjectRow(
   if (children.length > 0) {
     line.append(renderChildCount(doc, children.length));
   }
-  // The tracking query and the assignee report on a PROJECT, so only the top level carries them:
-  // the work beneath is run from the board that tracks it. The line's own 8px gap spaces the chip
-  // off the count badge and the link.
-  if (depth === 0) {
-    line.append(renderQueryLink(item, context), renderRowAssignee(item, context));
-  }
-  // The tags carry `margin-left:auto`, so everything appended after them is pinned to the row's
-  // right edge — which is where the ETA belongs, in one column down the whole tree. Every level
-  // gets one: a project's own date is only as true as the dates of the work under it.
-  line.append(renderRowTags(item, context), renderRowEta(item, context));
+  // Every level carries its tracking query and its assignee: a phase or a milestone under a project
+  // is run by someone and can be reported on in its own right, so a catalog that only answered
+  // "who owns this?" at the top would send the reader into Azure DevOps for the level below it.
+  // The ETA's own `margin-left:auto` pins the date column to the right edge past all of them.
+  line.append(
+    renderQueryLink(item, context),
+    renderRowAssignee(item, context),
+    renderRowEta(item, context),
+  );
   // Bound on the row rather than the list so the INNERMOST row under the pointer wins; the shared
   // menu stops the event itself, so an ancestor row never also opens.
   line.addEventListener("contextmenu", (event) => context.onContextMenu(item, event));
@@ -403,13 +382,20 @@ export function renderProjectRow(
     registerProjectDrag(item, context, { title, line, wrapper });
   }
 
-  if (expanded) {
+  // A childless project still grows the branch while a title is being typed, so the box the reader
+  // just asked for has somewhere to sit.
+  const newChild = context.newChildRow(item);
+  if (expanded || newChild !== null) {
     const childrenBox = doc.createElement("div");
     childrenBox.className = "awesomeado-projects__children";
     childrenBox.style.cssText =
       "margin-left:8px;padding-left:8px;border-left:1px solid var(--control-border)";
-    for (const child of children) {
-      childrenBox.append(renderProjectRow(child, context, depth + 1));
+    // First inside the branch, so the title being typed sits at the top of the list it joins.
+    if (newChild !== null) childrenBox.append(newChild);
+    if (expanded) {
+      for (const child of children) {
+        childrenBox.append(renderProjectRow(child, context, depth + 1));
+      }
     }
     wrapper.append(childrenBox);
   }

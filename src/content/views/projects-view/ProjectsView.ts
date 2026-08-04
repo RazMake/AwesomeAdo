@@ -5,7 +5,11 @@ import type { TrackedWorkItem, TypeCatalogEntry } from "../../../common/ado/Trac
 import { WorkItemWriteQueue } from "../../../common/ado/WorkItemWriteQueue/WorkItemWriteQueue";
 import { buildQueryFolderUrl, buildWorkItemUrl } from "../../../common/ado/fetchAdoTree";
 import { DEFAULT_QUERY_FOLDER, type ProjectQueryLink } from "../../../common/ado/projectQuery";
-import { flattenWorkItems, orderTrackedItems } from "../../../common/ado/workItemTypes";
+import {
+  flattenWorkItems,
+  orderTrackedItems,
+  workItemTypeColor,
+} from "../../../common/ado/workItemTypes";
 import { parseAdoContext } from "../../../common/navigation/AdoContext";
 import { MANUAL_ORDERING_POLICY, type OrderingPolicy } from "../../../common/ordering/ItemOrdering";
 import type {
@@ -24,11 +28,19 @@ import {
   type ItemContextMenu,
   type ItemContextMenuTarget,
 } from "../../../common/view-common/control/ItemContextMenu/ItemContextMenu";
+import { renderNewItemRow } from "../../../common/view-common/control/NewItemRow/NewItemRow";
+import {
+  createRowEmphasisStyle,
+  modifierHighlightTracker,
+  restripeVisibleRows,
+  type RowEmphasisClasses,
+} from "../../../common/view-common/control/RowEmphasis/RowEmphasis";
 import { renderViewScaffold } from "../../../common/view-common/control/ViewScaffold/ViewScaffold";
 import {
   renderWriteQueueStatus,
   type WriteQueueStatusHandle,
 } from "../../../common/view-common/control/WriteQueueStatus/WriteQueueStatus";
+import { childTypeOf, newChildSummary } from "../project-tracking/item-commands/NewChildCommands";
 
 import { renderNewProjectRow } from "./NewProjectRow";
 import { buildProjectCommands } from "./ProjectCommands";
@@ -36,11 +48,12 @@ import { renderProjectRow, type ProjectRowContext } from "./ProjectRow";
 import { renderProjectsHeader, type ProjectsHeaderHandle } from "./ProjectsHeader";
 import { buildProjectsTitleCommands } from "./ProjectsTitleMenu";
 import {
-  carriesAnyTag,
-  idsKeptByTags,
+  idsKeptByTagCondition,
+  isEmptyTagCondition,
   queryWideTagNames,
   queryWideTags,
   tagsInUse,
+  type TagCondition,
 } from "./projectTags";
 import {
   configuredNewProjectAreaPath,
@@ -55,8 +68,12 @@ import {
 interface ProjectsSession {
   /** Rows the reader opened. Everything starts closed: the view opens as a list of projects. */
   expandedIds: Set<number>;
-  /** The selected tags, lower-cased, so a selection survives a tag's inconsistent casing in ADO. */
-  selectedTags: Set<string>;
+  /**
+   * The tag condition in force, keyed in lower case so it survives a tag's inconsistent casing in
+   * Azure DevOps. Replaced wholesale on every change rather than mutated, so a paint can never read
+   * a half-applied condition.
+   */
+  tags: TagCondition;
   /**
    * The ordering in force. Board-local by design (ADR-039): the binding's policy is what every board
    * opens on, and a pick here lasts only for this one.
@@ -64,6 +81,8 @@ interface ProjectsSession {
   policy: OrderingPolicy;
   /** Whether the "add a project" row is open above the list. */
   addingProject: boolean;
+  /** The project the "add a milestone" box is open under, or null when none is. */
+  addingChildOf: number | null;
   /**
    * The write queue's state, retained across repaints.
    *
@@ -80,18 +99,25 @@ interface LoadedProjects {
   types: Map<string, TypeCatalogEntry>;
   /** Every tag worn anywhere in the tree, offered by the header's tag filter. */
   tags: string[];
-  /** Lower-cased query membership tags, shown nowhere. */
+  /** Lower-cased query membership tags, excluded from the tag filter's vocabulary. */
   hiddenTags: ReadonlySet<string>;
   /** The tags a project must be created with to belong to this catalog, as they are spelled. */
   newProjectTags: string[];
-  /** Which projects already own a tracking query, so the command that creates one can say so. */
+  /** Which items already own a tracking query, so the command that creates one can say so. */
   queryLinks: Map<number, ProjectQueryLink>;
   /**
    * Whether `queryLinks` is the answer Azure DevOps gave, rather than what a failed read left behind.
-   * An empty map means "no project owns a query" only when this is true.
+   * An empty map means "no item owns a query" only when this is true.
    */
   queryLinksKnown: boolean;
 }
+
+/** The catalog's own DOM, named for the shared stripe/hover/emphasis treatment. */
+const ROW_EMPHASIS_CLASSES: RowEmphasisClasses = {
+  wrapper: "awesomeado-projects__item",
+  surface: "awesomeado-projects__row",
+  children: "awesomeado-projects__children",
+};
 
 /** The view's own shell: a full-height, left-aligned surface ADO's stylesheet cannot restyle. */
 function createRoot(doc: Document): HTMLElement {
@@ -169,11 +195,12 @@ async function loadProjects(context: DataDrivenViewContext): Promise<LoadedProje
   const queryTag = configuredTag ?? parseQueryTagFilter(definition.wiql);
   const hiddenTags =
     queryTag === null ? queryWideTags(result.roots) : new Set([queryTag.toLowerCase()]);
-  const queries = await loadQueryLinks(context, result.roots);
+  const items = flattenWorkItems(result.roots);
+  const queries = await loadQueryLinks(context, items);
   return {
     result,
     types: new Map(context.services.getTypes().map((entry) => [entry.name, entry])),
-    tags: tagsInUse(flattenWorkItems(result.roots), hiddenTags),
+    tags: tagsInUse(items, hiddenTags),
     hiddenTags,
     newProjectTags: newProjectTagsFor(context, result.roots, definition.wiql),
     queryLinks: queries.links,
@@ -182,7 +209,11 @@ async function loadProjects(context: DataDrivenViewContext): Promise<LoadedProje
 }
 
 /**
- * Which projects already own a tracking query, and whether that answer came from Azure DevOps.
+ * Which items already own a tracking query, and whether that answer came from Azure DevOps.
+ *
+ * Asked about the WHOLE tree, not just the projects: any item here may be given its own tracking
+ * query, so a read that only covered the top level would leave every row below it claiming to have
+ * none — and offering to create a second one for an item that already has it.
  *
  * A failure here never fails the load: this catalog's whole reason to exist is showing the projects,
  * and losing that because a secondary read was refused would be a far worse answer than a board
@@ -191,14 +222,14 @@ async function loadProjects(context: DataDrivenViewContext): Promise<LoadedProje
  */
 async function loadQueryLinks(
   context: DataDrivenViewContext,
-  roots: readonly TrackedWorkItem[],
+  items: readonly TrackedWorkItem[],
 ): Promise<{ links: Map<number, ProjectQueryLink>; known: boolean }> {
   const { links, error } = await context.services.projectQueries.readLinks(
-    roots.map((root) => root.id),
+    items.map((item) => item.id),
   );
   if (error !== null) {
     context.services.logger.error(
-      `All Projects Catalog View could not read which projects have a tracking query: ${error}`,
+      `All Projects Catalog View could not read which items have a tracking query: ${error}`,
     );
   }
   return { links: new Map(links.map((link) => [link.workItemId, link])), known: error === null };
@@ -228,14 +259,12 @@ function visibleProjects(data: LoadedProjects, rowContext: ProjectRowContext): T
   return orderTrackedItems(roots, (root) => root, rowContext.policy);
 }
 
-/** The ids the current tag selection keeps, or `null` when nothing is selected and all are kept. */
+/** The ids the current tag condition keeps, or `null` when it narrows nothing and all are kept. */
 function keptIdsFor(data: LoadedProjects, session: ProjectsSession): ReadonlySet<number> | null {
-  return session.selectedTags.size === 0
-    ? null
-    : idsKeptByTags(data.result.roots, (item) => carriesAnyTag(item, session.selectedTags));
+  return idsKeptByTagCondition(data.result.roots, session.tags);
 }
 
-/** How many of the query's projects survive the current tag selection. */
+/** How many of the query's projects survive the current tag condition. */
 function visibleProjectCount(data: LoadedProjects, session: ProjectsSession): number {
   const kept = keptIdsFor(data, session);
   return kept === null
@@ -244,21 +273,29 @@ function visibleProjectCount(data: LoadedProjects, session: ProjectsSession): nu
 }
 
 /**
- * Drop selected tags the freshly loaded tree no longer wears, and say so.
+ * Drop condition tags the tree no longer wears, and say so.
  *
- * A refresh can return items that were re-tagged or removed in Azure DevOps. Keeping the stale
- * selection would empty the board while the filter itself — which only ever offers tags that exist —
- * showed nothing selected, so the reader would be looking at a blank list with no visible cause.
+ * The vocabulary moves under the reader: a refresh can return items that were re-tagged in Azure
+ * DevOps, and a right-click command here can clear the last copy of a tag outright. Keeping the
+ * stale condition would narrow the board by a tag the filter itself — which only ever offers tags
+ * that exist — showed nothing selected for, so the reader would be looking at a short list with no
+ * visible cause.
  */
-function pruneSelectedTags(
+function pruneTagCondition(
   context: DataDrivenViewContext,
   session: ProjectsSession,
   available: readonly string[],
 ): void {
   const offered = new Set(available.map((tag) => tag.toLowerCase()));
-  const dropped = [...session.selectedTags].filter((tag) => !offered.has(tag));
+  const stale = (tags: ReadonlySet<string>): string[] =>
+    [...tags].filter((tag) => !offered.has(tag));
+  const dropped = [...stale(session.tags.required), ...stale(session.tags.excluded)];
   if (dropped.length === 0) return;
-  for (const tag of dropped) session.selectedTags.delete(tag);
+  session.tags = {
+    required: new Set([...session.tags.required].filter((tag) => offered.has(tag))),
+    excluded: new Set([...session.tags.excluded].filter((tag) => offered.has(tag))),
+    matchAll: session.tags.matchAll,
+  };
   context.services.logger.info(
     `All Projects Catalog View dropped tag filter(s) no longer present in the query: ${dropped.join(", ")}`,
   );
@@ -280,7 +317,9 @@ function renderProjectsList(
 
   const list = doc.createElement("div");
   list.className = "awesomeado-projects__list";
-  list.style.cssText = "display:flex;flex-direction:column;gap:2px";
+  // No gap between rows: the alternating stripes are what separates one item from the next, and a
+  // gap would let the page show through the zebra as a seam on every row.
+  list.style.cssText = "display:flex;flex-direction:column";
   for (const project of visibleProjects(data, rowContext)) {
     list.append(renderProjectRow(project, rowContext, 0));
   }
@@ -303,17 +342,14 @@ interface Board {
 /** The row context for one paint: the session's live sets plus what the tag filter currently keeps. */
 function createRowContext(board: Board, data: LoadedProjects): ProjectRowContext {
   const { context, session } = board;
-  const href = context.doc.location?.href ?? "";
   return {
     doc: context.doc,
-    href,
     services: context.services,
     queue: board.queue,
     types: data.types,
     policy: session.policy,
     expandedIds: session.expandedIds,
     keptIds: keptIdsFor(data, session),
-    hiddenTags: data.hiddenTags,
     // Only the manual backlog rank can be rearranged by hand; every other policy is derived from the
     // items themselves, so a move made under one of them would be undone by the very next sort.
     dragReorder: session.policy === MANUAL_ORDERING_POLICY ? board.dragReorder : null,
@@ -327,6 +363,8 @@ function createRowContext(board: Board, data: LoadedProjects): ProjectRowContext
     // Walked fresh on each open rather than cached: someone assigned a moment ago is then already
     // offered, with no second copy of "who works here" to drift from the tree.
     assigneeSuggestions: () => collectAssignedDirectoryUsers(data.result.roots),
+    newChildRow: (item) =>
+      session.addingChildOf === item.id ? newChildRowFor(board, data, item) : null,
     onContextMenu: (item, event) =>
       board.contextMenu.openAt(event, projectMenuTarget(board, data, item)),
     repaint: () => board.paint(),
@@ -356,6 +394,14 @@ function projectMenuTarget(
       queryLinkKnown: data.queryLinksKnown,
       queryFolderPath: projectQueryFolderOf(context.properties, queryFolderPathOf(data.result)),
       isProject: data.result.roots.includes(item),
+      addingChild: board.session.addingChildOf === item.id,
+      onAddChild: () => {
+        board.session.addingChildOf = item.id;
+        // A closed project would hide the very box that was just asked for, and the reader has no
+        // way to connect the missing box to the twisty they left shut.
+        board.session.expandedIds.add(item.id);
+        board.paint();
+      },
       onReload: () => board.reload(),
     }),
   };
@@ -402,6 +448,39 @@ async function addProject(board: Board, data: LoadedProjects, title: string): Pr
   board.session.addingProject = false;
   // Re-read rather than splice the new project in: only the query decides what belongs to this
   // catalog, so showing an item it has not been asked about would be a guess.
+  board.reload();
+  return true;
+}
+
+/**
+ * Create the milestone the reader typed a title for under its project, then re-read the catalog.
+ *
+ * The same creation Project Tracking makes from its own title, so a milestone means one thing on
+ * both surfaces: the project type's first configured child type, inheriting the project's area and
+ * iteration until someone deliberately moves it. Re-read for the same reason a new project is: this
+ * catalog shows the tree the query returned, and its answer is the only honest account of where the
+ * new item sits in it.
+ */
+async function addChild(
+  board: Board,
+  parent: TrackedWorkItem,
+  type: string,
+  title: string,
+): Promise<boolean> {
+  const { context } = board;
+  const result = await context.services.createWorkItem.create({
+    type,
+    title,
+    tags: [],
+    areaPath: parent.areaPath,
+    iterationPath: parent.iterationPath,
+    parentId: parent.id,
+  });
+  if (!result.ok) return false;
+  context.services.logger.info(
+    `All Projects Catalog View added ${type} ${result.id ?? "?"} under project ${parent.id}.`,
+  );
+  board.session.addingChildOf = null;
   board.reload();
   return true;
 }
@@ -480,34 +559,53 @@ function createQueueStatus(board: Board): WriteQueueStatusHandle {
   return status;
 }
 
+/** The condition in one log-readable phrase, so a diagnostics reader can reconstruct the board. */
+function describeTagCondition(condition: TagCondition): string {
+  if (isEmptyTagCondition(condition)) return "none";
+  const parts: string[] = [];
+  if (condition.required.size > 0) {
+    parts.push(
+      `${condition.matchAll ? "all of" : "any of"} [${[...condition.required].join(", ")}]`,
+    );
+  }
+  if (condition.excluded.size > 0) {
+    parts.push(`none of [${[...condition.excluded].join(", ")}]`);
+  }
+  return parts.join(" and ");
+}
+
 /** Everything the header's controls do, gathered so one paint hands them over in one object. */
 function headerOptionsFor(params: {
   board: Board;
   loaded: LoadedProjects;
-  rowContext: ProjectRowContext;
   queueStatus: HTMLElement;
   onRefresh: () => void;
 }): Parameters<typeof renderProjectsHeader>[1] {
-  const { board, loaded, rowContext } = params;
+  const { board, loaded } = params;
   const { context, session } = board;
   return {
-    breadcrumbs: queryFolderTrail(loaded.result, rowContext.href),
+    breadcrumbs: queryFolderTrail(loaded.result, context.doc.location?.href ?? ""),
     tags: loaded.tags,
-    selectedTags: session.selectedTags,
+    tagCondition: session.tags,
     policy: session.policy,
     queueStatus: params.queueStatus,
     onOrderingChange: (policy) => {
       session.policy = policy;
       board.paint();
     },
-    onTagsChange: (selected) => {
-      session.selectedTags = new Set(selected.map((tag) => tag.toLowerCase()));
+    onTagsChange: (selection) => {
+      session.tags = {
+        required: new Set(selection.included.map((tag) => tag.toLowerCase())),
+        excluded: new Set(selection.excluded.map((tag) => tag.toLowerCase())),
+        matchAll: selection.matchAll,
+      };
       board.paint();
       // Logged on the change itself, never on a repaint: it is the one input that silently decides
       // how much of the query the reader is looking at, and it cannot flood the bounded log because
-      // it fires only when the selection actually moves.
+      // it fires only when the condition actually moves.
       context.services.logger.info(
-        `All Projects Catalog View tag filter set to [${selected.join(", ") || "none"}]: showing ${visibleProjectCount(loaded, session)} of ${loaded.result.roots.length} project(s)`,
+        `All Projects Catalog View tag filter set to ${describeTagCondition(session.tags)}: ` +
+          `showing ${visibleProjectCount(loaded, session)} of ${loaded.result.roots.length} project(s)`,
       );
     },
     onExpandAll: () => {
@@ -537,6 +635,30 @@ function newProjectRowFor(board: Board, loaded: LoadedProjects): HTMLElement {
     onSubmit: (title) => addProject(board, loaded, title),
     onCancel: () => {
       session.addingProject = false;
+      board.paint();
+    },
+  });
+}
+
+/** The inline box asking for a new milestone's title, at the top of the project's own level. */
+function newChildRowFor(
+  board: Board,
+  loaded: LoadedProjects,
+  parent: TrackedWorkItem,
+): HTMLElement | null {
+  const { context, session } = board;
+  const type = childTypeOf(parent, loaded.types);
+  if (type === null) return null;
+  const entry = loaded.types.get(type);
+  return renderNewItemRow({
+    doc: context.doc,
+    typeName: type,
+    iconUrl: entry?.icon ?? null,
+    color: workItemTypeColor(entry?.color),
+    summary: newChildSummary(parent, type),
+    onSubmit: (title) => addChild(board, parent, type, title),
+    onCancel: () => {
+      session.addingChildOf = null;
       board.paint();
     },
   });
@@ -595,13 +717,43 @@ function trackWriteQueue(board: Board, currentStatus: () => WriteQueueStatusHand
   });
 }
 
+/** Rebuild the whole surface from data already loaded, and hand back the header it mounted. */
+function paintSurface(
+  board: Board,
+  loaded: LoadedProjects,
+  parts: {
+    root: HTMLElement;
+    rowStyle: HTMLStyleElement;
+    queueStatus: HTMLElement;
+    onRefresh: () => void;
+  },
+): ProjectsHeaderHandle {
+  const { context, session } = board;
+  const rowContext = createRowContext(board, loaded);
+  const header = renderProjectsHeader(
+    context,
+    headerOptionsFor({ board, loaded, queueStatus: parts.queueStatus, onRefresh: parts.onRefresh }),
+  );
+  const list = renderProjectsList(context, loaded, rowContext);
+  parts.root.replaceChildren(
+    header.element,
+    parts.rowStyle,
+    ...(session.addingProject ? [newProjectRowFor(board, loaded)] : []),
+    list,
+  );
+  // After the list is in the document, so the stripes follow the rows the reader can actually see.
+  restripeVisibleRows(list, ROW_EMPHASIS_CLASSES);
+  return header;
+}
+
 /** The live board: header, list, and the session state both of them read and write. */
 function startProjectsView(context: DataDrivenViewContext, root: HTMLElement): void {
   const session: ProjectsSession = {
     expandedIds: new Set(),
-    selectedTags: new Set(),
+    tags: { required: new Set(), excluded: new Set(), matchAll: false },
     policy: orderingPolicyOf(context.properties),
     addingProject: false,
+    addingChildOf: null,
     write: { pending: 0, failed: 0 },
   };
   let data: LoadedProjects | null = null;
@@ -609,6 +761,9 @@ function startProjectsView(context: DataDrivenViewContext, root: HTMLElement): v
   let queueStatus: WriteQueueStatusHandle | null = null;
   let loadGeneration = 0;
   let refreshFailed = false;
+  // Built once and re-appended each paint: `replaceChildren` discards it with the rest of the
+  // surface, and re-parsing the same rules on every repaint would be work for nothing.
+  const rowStyle = createRowEmphasisStyle(context.doc, ROW_EMPHASIS_CLASSES);
 
   const board = createBoard(context, root, session, {
     loaded: () => data,
@@ -620,26 +775,21 @@ function startProjectsView(context: DataDrivenViewContext, root: HTMLElement): v
   const paint = (): void => {
     const loaded = data;
     if (loaded === null) return;
+    // Re-derived on every paint rather than only on load: a right-click command adds and clears tags
+    // in place, and a filter still offering the load-time vocabulary would keep narrowing the board
+    // by a tag nothing wears any more — with no way for the reader to see, let alone clear, it.
+    loaded.tags = tagsInUse(flattenWorkItems(loaded.result.roots), loaded.hiddenTags);
+    pruneTagCondition(context, session, loaded.tags);
     // Abandon any drag still in flight: the rows it was resolved against are about to be discarded.
     board.dragReorder.reset();
-    const rowContext = createRowContext(board, loaded);
     queueStatus = createQueueStatus(board);
-    header = renderProjectsHeader(
-      context,
-      headerOptionsFor({
-        board,
-        loaded,
-        rowContext,
-        queueStatus: queueStatus.element,
-        onRefresh: () => refresh(),
-      }),
-    );
+    header = paintSurface(board, loaded, {
+      root,
+      rowStyle,
+      queueStatus: queueStatus.element,
+      onRefresh: () => refresh(),
+    });
     header.refresh.setFailed(refreshFailed);
-    root.replaceChildren(
-      header.element,
-      ...(session.addingProject ? [newProjectRowFor(board, loaded)] : []),
-      renderProjectsList(context, loaded, rowContext),
-    );
   };
 
   const load = (isRefresh: boolean): void => {
@@ -651,7 +801,6 @@ function startProjectsView(context: DataDrivenViewContext, root: HTMLElement): v
         if (generation !== loadGeneration) return;
         refreshFailed = false;
         data = loaded;
-        pruneSelectedTags(context, session, loaded.tags);
         paint();
       })
       .catch((error: unknown) => {
@@ -688,6 +837,7 @@ function startProjectsView(context: DataDrivenViewContext, root: HTMLElement): v
  */
 export const projectsView: EnhancedView = {
   id: projectsViewType.id,
+  dispose: (root) => modifierHighlightTracker(root.ownerDocument).unregister(root),
   render: (context) => {
     if (context.services === undefined) {
       return renderViewScaffold(context.doc, {
@@ -697,6 +847,7 @@ export const projectsView: EnhancedView = {
       });
     }
     const root = createRoot(context.doc);
+    modifierHighlightTracker(context.doc).register(root);
     const dataContext: DataDrivenViewContext = { ...context, services: context.services };
     startProjectsView(dataContext, root);
     return root;

@@ -48,6 +48,10 @@ query (Interface Segregation): an enhanced view that creates a project's trackin
 these two, and handing it the store would also hand it `replaceAll`, which discards every other
 query's binding in one call.
 
+While a team configuration is connected, the implementation to inject is
+`common/settings-transfer`'s `TeamSharedQueryBindingWriter`, not the store itself: a binding written
+only locally is undone by the next team pull.
+
 ### `IQueryBindingStore` (interface) — `IQueryBindingStore.ts`
 
 The abstraction features depend on:

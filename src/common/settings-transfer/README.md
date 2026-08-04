@@ -89,6 +89,11 @@ and `TeamConfigSynchronizer` never applies a source ID found in a remote payload
   Primary Work classification in both directions. Concurrent pulls share one in-flight operation.
 - `TeamSprintAreaPathStore` — pulls before Sprint reads, serializes per-sprint setting writes, and
   publishes the resulting full normalized configuration through the connected work item.
+- `TeamSharedQueryBindingWriter` — an `IQueryBindingWriter` for content-script surfaces that create
+  or delete a query of their own (a project's tracking query). It publishes the proposed full map
+  first and mutates the local store only once the work item accepted it, so a removed binding is not
+  restored — and a new one is not erased — by the next pull. A failed publish leaves local state
+  unchanged and is logged; with no team connected it simply writes locally.
 
 Connected content scripts pull when a saved query opens. Ordinary settings publish through the
 explicit Options action; Sprint Lane selections are the exception and auto-publish after each

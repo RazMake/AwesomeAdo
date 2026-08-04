@@ -10,6 +10,7 @@ import { parseProjectQueryLinks } from "../ado/projectQuery";
 import type { ILogger } from "../logging/ILogger";
 
 import {
+  MAX_LINK_IDS,
   PROJECT_QUERY_MESSAGE,
   type ProjectQueryMessage,
   type ProjectQueryResponse,
@@ -35,18 +36,32 @@ export class MessagingProjectQueryService implements IProjectQueryService {
     private readonly logger: ILogger,
   ) {}
 
+  /**
+   * Read the links in pages the worker will accept.
+   *
+   * The message contract caps one request, and a catalog's whole tree can hold far more items than
+   * that, so the read is paged rather than sent whole — an over-long request is rejected outright,
+   * which would report every item as owning no query. One refused page fails the whole read: a
+   * partial answer here reads as "these items have none", which is the one conclusion that must
+   * never be guessed.
+   */
   async readLinks(workItemIds: readonly number[]): Promise<ProjectQueryLinksResult> {
     if (workItemIds.length === 0) {
       return { links: [], error: null };
     }
-    const response = await this.ask(
-      { type: PROJECT_QUERY_MESSAGE, operation: "read-links", ids: [...workItemIds] },
-      `read the tracking-query links of ${workItemIds.length} project(s)`,
-    );
-    if (!response.ok) {
-      return { links: [], error: response.error ?? "unknown error" };
+    const links: ProjectQueryLinksResult["links"] = [];
+    for (let offset = 0; offset < workItemIds.length; offset += MAX_LINK_IDS) {
+      const page = workItemIds.slice(offset, offset + MAX_LINK_IDS);
+      const response = await this.ask(
+        { type: PROJECT_QUERY_MESSAGE, operation: "read-links", ids: page },
+        `read the tracking-query links of ${page.length} work item(s)`,
+      );
+      if (!response.ok) {
+        return { links: [], error: response.error ?? "unknown error" };
+      }
+      links.push(...parseProjectQueryLinks(response.raw));
     }
-    return { links: parseProjectQueryLinks(response.raw), error: null };
+    return { links, error: null };
   }
 
   async create(request: CreateProjectQueryRequest): Promise<CreateProjectQueryResult> {

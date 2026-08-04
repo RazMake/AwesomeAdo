@@ -344,8 +344,11 @@ Split into component subfolders (each with its own `README.md`):
   generated tracking queries; each row
   carries the shared Copy/Open commands, the shared item-editing commands, and tag commands that
   complete against the tree's own vocabulary while never offering to clear the tag that keeps the
-  project in the query; each PROJECT row also carries the shared project-lifecycle pair (ADR-067,
-  ADR-068). Under the manual ordering a project title is a drag handle that re-ranks it in the team's
+  project in the query; EVERY row carries **Create Project Query** (ADR-067) and each PROJECT row
+  also **Mark completed** (ADR-068). Rows are inert scan targets whose tags live only in the header's
+  condition filter (ADR-072), and they share the `RowEmphasis` stripe/hover/`Ctrl+Shift+Alt`
+  treatment with Project Tracking (ADR-073). Under the manual ordering a project title is a drag
+  handle that re-ranks it in the team's
   backlog and never re-parents anything (ADR-070). Every write rides one serialized
   `WorkItemWriteQueue` whose status sits in the header corner.
 

@@ -194,7 +194,7 @@ The extension is feature-complete for its current scope:
   item's notes toggle — muted closed, bright open. Rows use theme-owned alternating backgrounds in
   visible depth-first order; branch expansion/collapse re-stripes the outline, subtle pointer hover
   highlights one continuous item surface across the row plus its open notes and description panels
-  while excluding child rows, and `Ctrl+Shift` strengthens that same complete surface. Existing
+  while excluding child rows, and `Ctrl+Shift+Alt` strengthens that same complete surface. Existing
   inter-item spacing is balanced toward the bottom of each surface so its final panel has breathing
   room. Opening the icon mounts
   `content/views/project-tracking/notes` (`NotesPanel` + `NoteRow` + `NoteComposer` + `NoteEditor`):
@@ -304,24 +304,35 @@ The extension is feature-complete for its current scope:
   eligible paths from live work.
 - `projects` (All Projects Catalog View) is the many-root sibling of Project Tracking (ADR-066):
   it lists every top-level item a query returns as a collapsed project that opens into its own tree.
-  Rows carry type icon, ADO deep-linked title, the child count beside it, and the item's own tags;
-  child
-  DOM is built only while a row is open, and open/closed state lives outside the DOM. Its sticky
+  Rows carry type icon, an INERT title (deliberately not a deep link — **Open in ADO** is a menu
+  command, so a click on a dense draggable tree cannot navigate away), the child count beside it,
+  then the item's tracking-query link, its assignee chip, and its ETA at the right edge — at EVERY
+  level, not just the projects. Rows wear no tag pills: the vocabulary lives in the header filter.
+  Child
+  DOM is built only while a row is open, and open/closed state lives outside the DOM. Rows use the
+  shared `RowEmphasis` treatment (stripes in visible order, hover, `Ctrl+Shift+Alt` emphasis), the
+  same as Project Tracking. Its sticky
   header composes the query breadcrumbs, a board-local ordering picker in the top-right corner,
   expand-all/collapse-all, refresh, the shared write-queue status, and a tag filter whose
   options are every tag worn anywhere in the tree (with a quick-search). A tag every project carries
-  is the query's own condition and is shown nowhere. Selected tags OR together
-  and keep the match, its ancestors, and its whole subtree; each load prunes selections to the tags
-  the query still offers and logs what it dropped. It is a deferred renderer
+  is the query's own condition and is never offered. The filter is a CONDITION (`TagCondition` in
+  `projectTags`): required tags combined by Any/All, plus excluded tags. Required matches keep the
+  match, its ancestors, and its whole subtree; an excluded tag rules out every item that CONTAINS it
+  anywhere beneath (the exclusion climbs as well as descends) and takes that subtree with it. The
+  vocabulary is re-derived on EVERY paint, not just on load, because the row menu adds and clears
+  tags in place; each paint prunes the condition to the tags still offered and logs what it dropped.
+  It is a deferred renderer
   (`content/projects-view.js`), like Project Tracking.
   It also **authors**: its title menu copies the query URL and adds a project through an inline title
   row (first configured type, `projectTag` defaulted from the query's WIQL,
   `newProjectAreaPath`, and `newProjectIterationPath` defaulted to the project root, in one creation
   patch — ADR-069). `projectQueryFolder` overrides the catalog query's own folder; every row carries the shared Copy/Open and
   item-editing commands plus tag add/clear commands that complete against the tree's vocabulary and
-  never offer the query's own condition tag; each PROJECT row adds the shared **Create Project Query**
-  and **Mark completed** pair (ADR-067, ADR-068), which Project Tracking also shows on its title
-  (without the create half — that board already is a project's query). Under the manual ordering a
+  never offer the query's own condition tag; EVERY row adds the shared **Create Project Query**
+  (ADR-067) and each PROJECT row also **Mark completed** (ADR-068), which Project Tracking shows on
+  its title (without the create half — that board already is a project's query). The tracking-query
+  links are therefore read for the whole flattened tree, paged at `MAX_LINK_IDS` by
+  `MessagingProjectQueryService`. Under the manual ordering a
   project title is a drag handle that re-ranks it in the team's backlog and never re-parents anything
   (ADR-070). Every write is persist-then-reflect through one serialized `WorkItemWriteQueue`.
 - SPA-aware navigation via the background service worker.
@@ -353,7 +364,12 @@ The extension is feature-complete for its current scope:
   trigger + checkbox-popup multi-select. It exchanges opaque values and takes a per-instance
   `classPrefix`, so `AreaPathFilter` and the All Projects Catalog View tag filter share every
   behaviour while
-  keeping their own selectors. Pass `searchPlaceholder` to add a quick-search for an unbounded list.
+  keeping their own selectors. Pass `searchPlaceholder` to add a quick-search for an unbounded list,
+  and `combining: true` to add the per-row `not` toggle plus the `Any`/`All` switch — `onChange` then
+  reports a `CheckboxFilterSelection` (`included` / `excluded` / `matchAll`) rather than a list.
+- `RowEmphasis` (`common/view-common/control/RowEmphasis`) — the one row stripe/hover/`Ctrl+Shift+Alt`
+  emphasis treatment, shared by Project Tracking and the All Projects Catalog. Views hand it their
+  own `{ wrapper, surface, children }` class names; the modifier listener is one per document.
 - `workItemStatusLabel` / `boardColumnOrdinal` (`common/ado/workItemTypes`) — the one mapping from an
   ADO `System.State` to the team's board-column label and to that column's position (which owns the
   status color).

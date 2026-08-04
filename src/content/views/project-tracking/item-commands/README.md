@@ -61,10 +61,13 @@ board-specific destinations:
   notes**. Takes an `ItemCommandTarget` plus `notesSinceIso`; no sprint window and no area paths, so
   a view with neither can still offer the three commands that edit the item itself.
 - `buildProjectLifecycleCommands(options)` (`ProjectLifecycleCommands.ts`) — **Create Project Query**
-  and **Mark completed**, the two commands that govern a project rather than a work item's fields.
-  Used by the All Projects Catalog View on each project row and by this view on its own title.
+  and **Mark completed**, the two commands that govern a catalog entry rather than a work item's
+  fields. Each is offered independently (`offerCreate` / `offerComplete`): the All Projects Catalog
+  View offers **Create Project Query** on every row and **Mark completed** on its projects, while
+  this view offers only **Mark completed** on its own title — the board already IS the query.
 - `buildNewChildCommand(label, options)` (`NewChildCommands.ts`) — the one command that **creates**
-  something: **Add new milestone/phase** on the board's title, **New work identified** on a row whose
+  something: **Add new milestone/phase** on the board's title (and on a project row of the All
+  Projects Catalog View), **New work identified** on a row whose
   children are the team's delivery. Same builder, different label, because both add an item of the
   parent type's first configured child type. The file also exports `childTypeOf`,
   `isImmediateParentOfPrimaryWork` (which rows may offer it), `newChildSummary` (the line stating
@@ -83,6 +86,7 @@ board-specific destinations:
 | `types`         | (lifecycle) The configured type catalog, from which a completed project's final state is read.                                                                                       |
 | `queryLink`     | (lifecycle) The project's tracking query, or `null` when it owns none. Its `managed` flag says whether this extension created it; only a managed query is ever offered for deletion. |     | `queryLinkKnown` | (lifecycle) Whether a `null` link means "owns none" rather than "the read that would have found one failed". |     | `queryFolderPath` | (lifecycle) The folder a new tracking query is created in. |
 | `offerCreate`   | (lifecycle) Whether **Create Project Query** appears at all — false where the board already is one.                                                                                  |
+| `offerComplete` | (lifecycle) Whether **Mark completed** appears at all — false on work beneath a project, which is finished on the board that tracks it.                                              |
 | `onReload`      | (lifecycle) Re-reads the surface after a change the loaded data cannot represent.                                                                                                    |
 
 ## Behaviour

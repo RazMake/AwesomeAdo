@@ -1091,6 +1091,18 @@ Markdown` in one `/rev`-guarded JSON Patch. The PATCH is not retried; a concurre
   color and raw title into the shared hierarchy control. That control searches titles by
   case-insensitive substring while retaining each match's visible ancestor stack, and expands toward
   the viewport margin before truncating labels with a full-text tooltip.
+- Amendment: A planning-context item with no Primary work anywhere beneath it is judged by the
+  filters in its own right instead of waiting for delivery below it to speak for it, and the pass
+  tells the caller which of the two it is judging (`FilterSubject`) so a filter that cannot speak to
+  a milestone can stand down. Project Tracking drops the **sprint** condition for such an item:
+  teams leave a milestone on the project's own iteration, so testing it against the board's sprint
+  would hide every milestone that has not been filled. A planning item with **no children at all** is
+  shown unasked — it has no work, no schedule and no history for any filter to read, and hiding it
+  would put the only row that work can be added to out of reach. Without these a milestone created
+  before its first story vanishes on the next page load. Such an item carries only its ancestors: the
+  planning items under it are judged individually, so an unmatched milestone cannot ride an
+  ancestor's match onto a filtered board. Primary work still carries its implementation detail, and a
+  planning item that does hold Primary work is still spoken for by it.
 
 ## ADR-059: Sprint execution is team-roster-gated and sprint switches replace the session
 
@@ -1451,3 +1463,50 @@ ProjectLifecycleCommands`, shared by the catalog (per project row) and by Projec
 - Decision: the queue plumbing behind both is shared, not copied — `content/views/item-assignee`
   and `content/views/item-eta` hold the persist-then-reflect writers (matching
   `content/views/item-priority`), and Project Tracking now calls the same two functions.
+
+## ADR-072: The catalog row is a scan target, and its tag vocabulary is a condition
+
+- Context: with an assignee, an ETA, a query link, a child count and a tag list on one line, the
+  catalog row had run out of horizontal room, while the one thing a reader does most on it — scan and
+  drag — was the thing most likely to fire the title's deep link by accident.
+- Decision: rows draw no tag pills at all. The tags are still the catalog's primary narrowing tool,
+  but they belong in the header filter, where the reader ACTS on them; repeating them per row spent
+  the width that the assignee and ETA need and told the reader nothing they could use in place.
+- Decision: the row title is inert text, not an anchor. Every other affordance on the row (the query
+  link, the assignee, the ETA, the twisty) is a deliberate control, and **Open in ADO** is already a
+  menu command — so a click that navigates is only ever a slip, and a slip that loses the reader's
+  expanded outline. This supersedes ADR-066's "ADO deep-linked title".
+- Decision: the tag filter expresses a CONDITION rather than a selection: required tags combined by
+  an explicit `Any`/`All` switch, AND-ed with a set of excluded tags. A catalog where every project
+  wears several tags cannot be narrowed by OR alone — "these two, but not that one" is the question
+  actually asked. This supersedes ADR-066's "selected tags OR together"; the OR remains the default.
+- Decision: an excluded tag rules out every item that CONTAINS it anywhere beneath, and takes that
+  whole subtree with it. The reader asked for "the projects that do not use X", so matching only the
+  wearer would answer by showing every one of those projects minus a row in the middle. It is the
+  mirror of the required-tag rule, which keeps a match's ancestors so a project stays reachable.
+- Decision: the tag vocabulary is re-derived on EVERY paint, not only on load, and the condition is
+  pruned to it each time. The row menu adds and clears tags in place, so a load-time vocabulary would
+  leave the board narrowed by a tag nothing wears and no visible way to clear it.
+- Decision: **Create Project Query** (ADR-067) is offered on every row, not only on projects. A
+  milestone or phase is a body of work somebody reports on; requiring it to be promoted to a
+  top-level project first would be a data change made purely to unlock a command. **Mark completed**
+  (ADR-068) stays project-only — work beneath a project is finished on the board that tracks it.
+- Consequence: the tracking-query links are read for the whole flattened tree rather than the roots,
+  so `MessagingProjectQueryService.readLinks` pages at `MAX_LINK_IDS`; the message contract rejects an
+  over-long request outright, and one refused page fails the whole read, because a partial answer
+  here reads as "these items own no query" — the one conclusion that must never be guessed.
+
+## ADR-073: Row stripes, hover and modifier emphasis are one shared control
+
+- Context: ADR-052 gave Project Tracking its visible-order stripes and modifier emphasis. The All
+  Projects Catalog is the same shape of surface (a nested tree of rows in one view root) and wanted
+  the same treatment — and a second copy of the rules, the restripe walk and the document listener
+  would have been three things free to drift.
+- Decision: `common/view-common/control/RowEmphasis` owns the stylesheet, the visible-order restripe,
+  and the per-document modifier tracker. Callers hand it their own `{ wrapper, surface, children }`
+  class names, so the control stays ignorant of what a row contains while each view keeps its own
+  selectors — the same rule `CheckboxFilter`'s `classPrefix` follows.
+- Decision: the emphasis modifier is `Ctrl+Shift+Alt`, not `Ctrl+Shift`. The shorter combination is
+  spoken for by the browser and by Azure DevOps' own page, so a reader reaching for emphasis kept
+  tripping a command they never meant to run. The marker class is view-neutral
+  (`awesomeado--modifier-highlight`) because the gesture belongs to the page, not to one board.

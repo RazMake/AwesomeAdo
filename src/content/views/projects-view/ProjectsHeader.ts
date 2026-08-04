@@ -5,6 +5,7 @@ import {
   type BreadcrumbSegment,
 } from "../../../common/view-common/control/Breadcrumbs/Breadcrumbs";
 import { renderCheckboxFilter } from "../../../common/view-common/control/CheckboxFilter/CheckboxFilter";
+import type { CheckboxFilterSelection } from "../../../common/view-common/control/CheckboxFilter/CheckboxFilter";
 import {
   renderHeaderButton,
   renderRefreshButton,
@@ -16,6 +17,7 @@ import {
   VERSION_MARKER_GAP_PX,
 } from "../../../common/view-common/control/VersionLabel/VersionLabel";
 
+import type { TagCondition } from "./projectTags";
 import { projectsViewType } from "./projectsViewType";
 
 /** What the All Projects Catalog View header shows and what pressing each of its controls means. */
@@ -24,8 +26,8 @@ export interface ProjectsHeaderOptions {
   breadcrumbs: BreadcrumbSegment[];
   /** Every tag worn anywhere in the loaded tree, offered by the tag filter. */
   tags: readonly string[];
-  /** The tags currently selected, lower-cased. */
-  selectedTags: ReadonlySet<string>;
+  /** The tag condition currently narrowing the board, keyed in lower case. */
+  tagCondition: TagCondition;
   /** The ordering the board is showing right now, which the sort glyph names. */
   policy: OrderingPolicy;
   /**
@@ -35,7 +37,7 @@ export interface ProjectsHeaderOptions {
    * whenever the board repaints, and a fresh indicator would forget an in-flight or rejected write.
    */
   queueStatus: HTMLElement;
-  onTagsChange(selected: string[]): void;
+  onTagsChange(selection: CheckboxFilterSelection): void;
   onOrderingChange(policy: OrderingPolicy): void;
   onExpandAll(): void;
   onCollapseAll(): void;
@@ -115,13 +117,21 @@ function renderTopBand(
   return band;
 }
 
-/** The tag multi-select, given a quick-search because a team's tag vocabulary is unbounded. */
+/**
+ * The tag multi-select, given a quick-search because a team's tag vocabulary is unbounded, and the
+ * combining controls because "these two but not that one" is the question a catalog is actually
+ * asked — a plain OR cannot narrow a board where every project wears several tags.
+ */
 function renderTagFilter(doc: Document, options: ProjectsHeaderOptions): HTMLElement {
+  const { required, excluded, matchAll } = options.tagCondition;
   return renderCheckboxFilter(doc, {
     label: "Tags",
     classPrefix: TAG_FILTER_CLASS_PREFIX,
     options: options.tags.map((tag) => ({ value: tag })),
-    selected: options.tags.filter((tag) => options.selectedTags.has(tag.toLowerCase())),
+    selected: options.tags.filter((tag) => required.has(tag.toLowerCase())),
+    excluded: options.tags.filter((tag) => excluded.has(tag.toLowerCase())),
+    matchAll,
+    combining: true,
     searchPlaceholder: "Search tags",
     onChange: options.onTagsChange,
   }).element;

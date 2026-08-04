@@ -118,6 +118,10 @@ bindings ...` / `Pulled team configuration ...`.
 - FIX / RULE: while connected, publish the complete proposed binding map first, then perform the
   local `bind`/`unbind`. Never expose a team-shared binding mutation locally before its authoritative
   work-item snapshot has accepted it. A publication failure leaves local state unchanged.
+- The rule binds every surface, not just Options. The content script's project-lifecycle commands
+  (create/delete a project's tracking query) were local-only, so a deleted query's binding was
+  restored by the next pull and the shared work item grew a permanent dead entry. They now go through
+  `TeamSharedQueryBindingWriter` (`common/settings-transfer`), wired at the content composition root.
 
 ## Sprint must paint before Interrupt acceptance settles
 

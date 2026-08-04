@@ -8,6 +8,7 @@ import {
 import type { ItemContextMenuCommand } from "../../../common/view-common/control/ItemContextMenu/ItemContextMenu";
 import { renderTextEditor } from "../../../common/view-common/control/TextEditor/TextEditor";
 import { buildItemEditingCommands } from "../project-tracking/item-commands/ItemCommands";
+import { buildNewChildCommand } from "../project-tracking/item-commands/NewChildCommands";
 import { buildProjectLifecycleCommands } from "../project-tracking/item-commands/ProjectLifecycleCommands";
 import {
   EDITOR_WIDTH_PX,
@@ -42,11 +43,15 @@ export interface ProjectCommandsOptions extends ItemCommandTarget {
   /**
    * Whether this row IS a project (a top-level result) rather than work beneath one.
    *
-   * Only a project owns a tracking query and only a project can be retired from the catalog, so the
-   * two lifecycle commands are offered on nothing else — a story three levels down has no query to
-   * create, and completing it is something the board that tracks it decides.
+   * Only a project can be retired from the catalog: completing the work under one is something the
+   * board that tracks it decides, alongside the rest of that branch. Giving an item its own tracking
+   * query is offered at every level.
    */
   isProject: boolean;
+  /** Whether the box asking for a new milestone's title is already open under this project. */
+  addingChild: boolean;
+  /** Opens that box. */
+  onAddChild: () => void;
   /** Reloads the catalog from Azure DevOps after a change the loaded tree cannot represent. */
   onReload: () => void;
 }
@@ -61,15 +66,39 @@ export interface ProjectCommandsOptions extends ItemCommandTarget {
  * another there.
  */
 export function buildProjectCommands(options: ProjectCommandsOptions): ItemContextMenuCommand[] {
-  const commands: ItemContextMenuCommand[] = [
+  return [
     ...buildItemEditingCommands({ ...options, notesSinceIso: ALL_NOTES_SINCE }),
     { ...addTagCommand(options), separatorBefore: true },
     clearTagCommand(options),
+    ...newMilestoneCommand(options),
+    ...buildProjectLifecycleCommands({
+      ...options,
+      // Offered on every row, not just the projects: a milestone or a phase beneath a project is a
+      // body of work somebody reports on in its own right, and requiring it to be promoted to a
+      // top-level project first would be a data change made purely to unlock a command.
+      offerCreate: true,
+      offerComplete: options.isProject,
+    }),
   ];
-  if (options.isProject) {
-    commands.push(...buildProjectLifecycleCommands({ ...options, offerCreate: true }));
-  }
-  return commands;
+}
+
+/**
+ * Adds the project's next milestone, the same command Project Tracking offers on its own title.
+ *
+ * Offered on the projects only, not on the work beneath them: the level under a project is what this
+ * catalog reports on, while planning inside a milestone is a decision made on the board that tracks
+ * that project alongside the rest of its branch.
+ */
+function newMilestoneCommand(options: ProjectCommandsOptions): ItemContextMenuCommand[] {
+  if (!options.isProject) return [];
+  return [
+    buildNewChildCommand("Add new milestone/phase", {
+      parent: options.item,
+      types: options.types,
+      adding: options.addingChild,
+      onAdd: options.onAddChild,
+    }),
+  ];
 }
 
 /**

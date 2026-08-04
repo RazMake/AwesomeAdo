@@ -800,7 +800,10 @@ unit test can reach and each operation stands alone:
 
 - `readProjectQueryLinksInPage({ batchUrl, ids })` POSTs `_apis/wit/workitemsbatch` with
   `$expand: "Relations"`, paging past ADO's 200-id cap, and hands the expanded items back unparsed —
-  `common/ado/projectQuery.parseProjectQueryLinks` reads the links out of them.
+  `common/ado/projectQuery.parseProjectQueryLinks` reads the links out of them. `MessagingProjectQueryService`
+  pages a second time on the way in, at `MAX_LINK_IDS`, because the message contract rejects an
+  over-long request outright and a catalog asks about its whole tree; one refused page fails the
+  whole read, since a partial answer here reads as "these items own no query".
 - `createProjectQueryInPage(config)` creates the saved query, then PATCHes a stamped `Hyperlink` onto
   the project under a `test /rev` guard. Both in **one** injection so the second failure can roll the
   first one back: a query nothing points at is invisible litter in a shared folder. `config.names` is

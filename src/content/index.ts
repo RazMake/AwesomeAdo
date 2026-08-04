@@ -6,6 +6,7 @@ import {
   type OpenBindingSettingsMessage,
   type OpenOptionsMessage,
 } from "../common/bindings/BindingRequest";
+import type { IQueryBindingWriter } from "../common/bindings/IQueryBindingWriter";
 import type { ActiveView, QueryBindings } from "../common/bindings/QueryBinding";
 import { createQueryBindingStore } from "../common/bindings/createQueryBindingStore";
 import {
@@ -161,6 +162,7 @@ import { createSettingsStore } from "../common/settings/createSettingsStore";
 import { SharedQueryConfigResolver } from "../common/settings-transfer/SharedQueryConfigResolver";
 import { SharedQueryLinkService } from "../common/settings-transfer/SharedQueryLinkService";
 import { TeamConfigSynchronizer } from "../common/settings-transfer/TeamConfigSynchronizer";
+import { TeamSharedQueryBindingWriter } from "../common/settings-transfer/TeamSharedQueryBindingWriter";
 import { TeamSprintAreaPathStore } from "../common/settings-transfer/TeamSprintAreaPathStore";
 import { createSharedQuerySourceStore } from "../common/settings-transfer/createSharedQuerySourceStore";
 import { createTeamConfigSourceStore } from "../common/settings-transfer/createTeamConfigSourceStore";
@@ -392,6 +394,7 @@ const openExtensionPage = (message: OpenOptionsMessage | OpenBindingSettingsMess
 };
 
 let sprintAreaPathStore: TeamSprintAreaPathStore | null = null;
+let queryBindingWriter: IQueryBindingWriter | null = null;
 
 const trackingServices: EnhancedViewServices = {
   loadTree: (queryId, wiql) => treeLoader.loadTree(queryId, wiql),
@@ -450,9 +453,14 @@ const trackingServices: EnhancedViewServices = {
   projectQueries: projectQueryService,
   // Narrowed to bind/unbind on the way in: a view records the binding for a query it created and
   // removes it again, and must never be able to reach `replaceAll`.
+  //
+  // Sent through the team-shared writer built below, so a binding a view adds — or drops when a
+  // completed project's tracking query is deleted — also reaches the connected work item. A local
+  // mutation alone would be undone by the next pull, leaving the shared configuration to grow an
+  // entry for a query that no longer exists.
   queryBindings: {
-    bind: (queryId, binding) => bindingStore.bind(queryId, binding),
-    unbind: (queryId) => bindingStore.unbind(queryId),
+    bind: (queryId, binding) => (queryBindingWriter ?? bindingStore).bind(queryId, binding),
+    unbind: (queryId) => (queryBindingWriter ?? bindingStore).unbind(queryId),
   },
   // The team's stable id, not its display name: it is the URL segment the backlog-order endpoint is
   // reached through, and a GUID is safe there where a name containing spaces or slashes is not.
@@ -500,10 +508,17 @@ const teamConfig = new TeamConfigSynchronizer(
   bindingStore,
   loggers.forSource("common/settings-transfer"),
 );
+const teamConfigWriter = new MessagingTeamConfigWriter(sendTeamConfigWriteRequest);
 sprintAreaPathStore = new TeamSprintAreaPathStore(
   store,
   teamConfig,
-  new MessagingTeamConfigWriter(sendTeamConfigWriteRequest),
+  teamConfigWriter,
+  loggers.forSource("common/settings-transfer"),
+);
+queryBindingWriter = new TeamSharedQueryBindingWriter(
+  bindingStore,
+  teamConfig,
+  teamConfigWriter,
   loggers.forSource("common/settings-transfer"),
 );
 const pullTeamConfigForQuery = (url: string): void => {

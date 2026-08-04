@@ -147,12 +147,30 @@ async function renderBoard(context: EnhancedViewContext = createContext()): Prom
 const titles = (root: HTMLElement): (string | null)[] =>
   [...root.querySelectorAll(".awesomeado-projects__title")].map((title) => title.textContent);
 
-const clickTagOption = (root: HTMLElement, label: string): void => {
+/** The filter rows now carry an exclusion toggle, so the value is read off the checkbox itself. */
+const tagOptions = (root: HTMLElement): HTMLElement[] => [
+  ...root.querySelectorAll<HTMLElement>(".awesomeado-tag-filter__option"),
+];
+
+const tagOptionValues = (root: HTMLElement): string[] =>
+  tagOptions(root).map((row) => row.querySelector("input")!.value);
+
+const openTagFilter = (root: HTMLElement): void => {
   root.querySelector<HTMLButtonElement>(".awesomeado-tag-filter__trigger")!.click();
-  const rows = [...root.querySelectorAll<HTMLElement>(".awesomeado-tag-filter__option")];
-  rows
-    .find((row) => row.textContent === label)!
-    .querySelector("input")!
+};
+
+const tagOptionRow = (root: HTMLElement, label: string): HTMLElement =>
+  tagOptions(root).find((row) => row.querySelector("input")!.value === label)!;
+
+const clickTagOption = (root: HTMLElement, label: string): void => {
+  openTagFilter(root);
+  tagOptionRow(root, label).querySelector("input")!.click();
+};
+
+const clickTagExclude = (root: HTMLElement, label: string): void => {
+  openTagFilter(root);
+  tagOptionRow(root, label)
+    .querySelector<HTMLButtonElement>(".awesomeado-tag-filter__exclude")!
     .click();
 };
 
@@ -227,14 +245,12 @@ describe("projectsView - project list", () => {
     expect(root.querySelectorAll(".awesomeado-projects__children")).toHaveLength(0);
   });
 
-  it("shows each project's own tags and how many children it has, and nothing else", async () => {
+  it("shows how many children a project has, and no tags, status or nested detail", async () => {
     const root = await renderBoard();
     const payments = root.querySelector<HTMLElement>(".awesomeado-projects__item")!;
 
     expect(payments.querySelector(".awesomeado-projects__child-count")?.textContent).toBe("1");
-    expect(
-      [...payments.querySelectorAll(".awesomeado-projects__tags span")].map((el) => el.textContent),
-    ).toEqual(["Platform"]);
+    expect(payments.querySelector(".awesomeado-tag-pill")).toBeNull();
     expect(root.querySelector(".awesomeado-status__badge")).toBeNull();
     expect(root.textContent).not.toContain("Alice");
   });
@@ -354,38 +370,31 @@ describe("projectsView - expanding", () => {
 describe("projectsView - tag filter", () => {
   it("offers every tag worn anywhere in the tree, not just the projects' own", async () => {
     const root = await renderBoard();
-    root.querySelector<HTMLButtonElement>(".awesomeado-tag-filter__trigger")!.click();
+    openTagFilter(root);
 
-    expect(
-      [...root.querySelectorAll(".awesomeado-tag-filter__option")].map((row) => row.textContent),
-    ).toEqual(["Api", "Docs", "Platform"]);
+    expect(tagOptionValues(root)).toEqual(["Api", "Docs", "Platform"]);
   });
 
-  it("shows the tag every project carries nowhere, because it is the query's own condition", async () => {
+  it("offers the tag every project carries nowhere, because it is the query's own condition", async () => {
     const root = await renderBoard();
 
-    expect(
-      [...root.querySelectorAll(".awesomeado-projects__tags span")].map((el) => el.textContent),
-    ).toEqual(["Platform"]);
+    // The rows themselves wear no tag pills at all; the vocabulary lives only in the filter.
+    expect(root.querySelector(".awesomeado-tag-pill")).toBeNull();
 
-    root.querySelector<HTMLButtonElement>(".awesomeado-tag-filter__trigger")!.click();
-    expect(
-      [...root.querySelectorAll(".awesomeado-tag-filter__option")].map((row) => row.textContent),
-    ).not.toContain("Catalog");
+    openTagFilter(root);
+    expect(tagOptionValues(root)).not.toContain("Catalog");
   });
 
   it("narrows the offered tags as the reader types in the quick search", async () => {
     const root = await renderBoard();
-    root.querySelector<HTMLButtonElement>(".awesomeado-tag-filter__trigger")!.click();
+    openTagFilter(root);
     const search = root.querySelector<HTMLInputElement>(".awesomeado-tag-filter__search")!;
 
     search.value = "plat";
     search.dispatchEvent(new Event("input"));
 
-    const shown = [...root.querySelectorAll<HTMLElement>(".awesomeado-tag-filter__option")].filter(
-      (row) => row.style.display !== "none",
-    );
-    expect(shown.map((row) => row.textContent)).toEqual(["Platform"]);
+    const shown = tagOptions(root).filter((row) => row.style.display !== "none");
+    expect(shown.map((row) => row.querySelector("input")!.value)).toEqual(["Platform"]);
   });
 
   it("keeps a project whose only matching work is buried beneath it", async () => {
@@ -406,7 +415,27 @@ describe("projectsView - tag filter", () => {
     expect(titles(root)).toEqual(["Payments", "Reporting"]);
   });
 
-  it("records which tags are in force and how much of the query they leave", async () => {
+  it("hides a project that contains an excluded tag anywhere beneath it", async () => {
+    const root = await renderBoard();
+
+    // Only "Weekly export" wears Docs, but it is Reporting's work, so Reporting goes with it.
+    clickTagExclude(root, "Docs");
+
+    expect(titles(root)).toEqual(["Payments"]);
+  });
+
+  it("combines required tags with an excluded one", async () => {
+    const root = await renderBoard();
+
+    clickTagOption(root, "Api");
+    clickTagOption(root, "Docs");
+    expect(titles(root)).toEqual(["Payments", "Reporting"]);
+
+    clickTagExclude(root, "Docs");
+    expect(titles(root)).toEqual(["Payments"]);
+  });
+
+  it("records the whole condition in force and how much of the query it leaves", async () => {
     const info = vi.fn();
     const root = await renderBoard(
       createContext({ services: createServices({ logger: { info, error: () => undefined } }) }),
@@ -415,7 +444,7 @@ describe("projectsView - tag filter", () => {
     clickTagOption(root, "Api");
 
     expect(info).toHaveBeenCalledWith(
-      "All Projects Catalog View tag filter set to [Api]: showing 1 of 2 project(s)",
+      "All Projects Catalog View tag filter set to any of [api]: showing 1 of 2 project(s)",
     );
   });
 
@@ -593,7 +622,8 @@ describe("projectsView - catalog menu", () => {
     expect(root.querySelector(".awesomeado-projects__new")?.textContent).toContain(
       "tagged Catalog",
     );
-    expect(root.querySelector(".awesomeado-projects__tags")?.textContent).toBe("Platform");
+    openTagFilter(root);
+    expect(tagOptionValues(root)).toEqual(["Platform"]);
   });
 });
 
@@ -710,18 +740,19 @@ describe("projectsView - project menu", () => {
       "View all notes",
       "Add custom tag",
       "Clear custom tag",
+      "Add new milestone/phase",
       "Create Project Query",
       "Mark completed",
     ]);
   });
 
-  it("leaves the project lifecycle off work that is not a project", async () => {
+  it("offers a tracking query on work beneath a project, but never retires it from here", async () => {
     const root = await renderBoard();
 
     root.querySelector<HTMLButtonElement>(".awesomeado-projects__twisty")!.click();
     const labels = openMenu(projectTitle(root, "Card capture")).map(commandLabel);
 
-    expect(labels).not.toContain("Create Project Query");
+    expect(labels).toContain("Create Project Query");
     expect(labels).not.toContain("Mark completed");
   });
 
@@ -759,7 +790,107 @@ describe("projectsView - project menu", () => {
   });
 });
 
+/** The inline box a milestone's title is typed into, which lives inside its project's branch. */
+const milestoneBox = (root: HTMLElement): HTMLElement | null =>
+  root.querySelector(".awesomeado-projects__children .awesomeado-new-item");
+
+/** Type a title into an open inline box and press its add button. */
+function submitNewItem(box: HTMLElement, title: string): void {
+  const input = box.querySelector<HTMLInputElement>("input")!;
+  input.value = title;
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  box.querySelector<HTMLButtonElement>("button")!.click();
+}
+
+describe("projectsView - adding a milestone", () => {
+  it("offers the command on a project, but never on the work beneath one", async () => {
+    const root = await renderBoard();
+
+    root.querySelector<HTMLButtonElement>(".awesomeado-projects__twisty")!.click();
+
+    expect(openMenu(projectTitle(root, "Payments")).map(commandLabel)).toContain(
+      "Add new milestone/phase",
+    );
+    expect(openMenu(projectTitle(root, "Card capture")).map(commandLabel)).not.toContain(
+      "Add new milestone/phase",
+    );
+  });
+
+  it("opens the box inside the project, stating what the milestone will be born with", async () => {
+    const root = await renderBoard();
+
+    openMenu(projectTitle(root, "Reporting"));
+    menuCommand("Add new milestone/phase").click();
+
+    // The Epic's first configured child type is what a milestone is on this catalog.
+    expect(milestoneBox(root)?.textContent).toContain("Created as a Story under Reporting");
+    // The project was closed: opening it is what lets the reader see the box they asked for.
+    expect(titles(root)).toContain("Weekly export");
+  });
+
+  it("creates it under the project, inheriting where the project sits, then re-reads", async () => {
+    const create = vi.fn(async () => ({ ok: true, id: 900, rev: 1 }));
+    const roots = [
+      item({
+        id: 1,
+        title: "Payments",
+        tags: ["Catalog"],
+        areaPath: "Fabrikam\\Core",
+        iterationPath: "Fabrikam\\Sprint 12",
+      }),
+    ];
+    const loadTree = vi.fn(async () => ({ isTreeQuery: true, roots, error: null }));
+    const root = await renderBoard(
+      createContext({ services: createServices({ loadTree, createWorkItem: { create } }) }),
+    );
+
+    openMenu(projectTitle(root, "Payments"));
+    menuCommand("Add new milestone/phase").click();
+    submitNewItem(milestoneBox(root)!, "Phase 2");
+
+    await vi.waitFor(() =>
+      expect(create).toHaveBeenCalledWith({
+        type: "Story",
+        title: "Phase 2",
+        tags: [],
+        areaPath: "Fabrikam\\Core",
+        iterationPath: "Fabrikam\\Sprint 12",
+        parentId: 1,
+      }),
+    );
+    // The query is what decides the tree this catalog shows, so its answer is what the board takes.
+    await vi.waitFor(() => expect(loadTree).toHaveBeenCalledTimes(2));
+  });
+
+  it("keeps the box open when Azure DevOps refuses the creation", async () => {
+    const create = vi.fn(async () => ({ ok: false, error: "HTTP 403" }));
+    const root = await renderBoard(
+      createContext({ services: createServices({ createWorkItem: { create } }) }),
+    );
+
+    openMenu(projectTitle(root, "Reporting"));
+    menuCommand("Add new milestone/phase").click();
+    submitNewItem(milestoneBox(root)!, "Phase 2");
+
+    await vi.waitFor(() => expect(create).toHaveBeenCalledOnce());
+    expect(milestoneBox(root)).not.toBeNull();
+  });
+
+  it("abandons the box when the reader cancels", async () => {
+    const root = await renderBoard();
+
+    openMenu(projectTitle(root, "Reporting"));
+    menuCommand("Add new milestone/phase").click();
+    [...milestoneBox(root)!.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent === "Cancel")!
+      .click();
+
+    expect(milestoneBox(root)).toBeNull();
+  });
+});
+
 const LINKED_QUERY_ID = "11111111-2222-3333-4444-555555555555";
+
 const LINKED_QUERY_URL = `https://dev.azure.com/contoso/Fabrikam/_queries/query/${LINKED_QUERY_ID}`;
 
 /** A catalog whose first project already owns a tracking query. */
