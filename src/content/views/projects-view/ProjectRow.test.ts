@@ -1,17 +1,20 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { TrackedWorkItem, TypeCatalogEntry } from "../../../common/ado/TrackedWorkItem";
+import { WorkItemWriteQueue } from "../../../common/ado/WorkItemWriteQueue/WorkItemWriteQueue";
+import type { EnhancedViewServices } from "../../../common/view-common/EnhancedView";
 
 import { renderProjectRow, type ProjectRowContext } from "./ProjectRow";
 
 const QUERY_URL = "https://dev.azure.com/contoso/Web/_queries/query/abc-123";
+const NOW = new Date("2026-07-15T00:00:00Z");
 
 const TYPES: TypeCatalogEntry[] = [
   {
     name: "Epic",
     color: "ff6b6b",
     icon: "https://example.invalid/epic.svg",
-    etaField: null,
+    etaField: "Custom.Eta",
     children: ["Story"],
     columns: [{ column: "Active", states: ["Active"] }],
   },
@@ -51,10 +54,35 @@ function item(overrides: Partial<TrackedWorkItem> & { id: number }): TrackedWork
   };
 }
 
+/** Only the services a row reaches for: the picker's directory and the clock the ETA counts to. */
+function services(overrides?: Partial<EnhancedViewServices>): EnhancedViewServices {
+  return {
+    userDirectory: { search: async () => [], resolve: async () => null },
+    now: () => NOW,
+    ...overrides,
+  } as EnhancedViewServices;
+}
+
+function writeQueue(writeField: EnhancedViewServices["writeField"]): WorkItemWriteQueue {
+  return new WorkItemWriteQueue(writeField, { info: () => undefined, error: () => undefined });
+}
+
+/** A popup anchors inside its own control, so a row it opens from has to be in the document. */
+function mounted(row: HTMLElement): HTMLElement {
+  document.body.append(row);
+  return row;
+}
+
+afterEach(() => {
+  document.body.innerHTML = "";
+});
+
 function context(overrides?: Partial<ProjectRowContext>): ProjectRowContext {
   return {
     doc: document,
     href: QUERY_URL,
+    services: services(),
+    queue: writeQueue(async () => ({ ok: true, rev: 2 })),
     types: new Map(TYPES.map((entry) => [entry.name, entry])),
     policy: "importance",
     expandedIds: new Set<number>(),
@@ -63,6 +91,7 @@ function context(overrides?: Partial<ProjectRowContext>): ProjectRowContext {
     dragReorder: null,
     projectSiblingIds: [],
     queryUrlOf: () => null,
+    assigneeSuggestions: () => [],
     onContextMenu: () => undefined,
     repaint: () => undefined,
     ...overrides,
@@ -189,5 +218,150 @@ describe("renderProjectRow - project query link", () => {
     );
 
     expect(row.querySelectorAll(".awesomeado-projects__query-link")).toHaveLength(1);
+  });
+});
+
+describe("renderProjectRow - assignee", () => {
+  it("follows the count badge and the query link, spaced by the row's own gap", () => {
+    const parent = item({ id: 1, children: [item({ id: 2 })] });
+    const row = renderProjectRow(parent, context({ queryUrlOf: () => TRACKING_QUERY_URL }), 0);
+    const link = row.querySelector(".awesomeado-projects__query-link")!;
+    const line = row.querySelector<HTMLElement>(".awesomeado-projects__row")!;
+
+    expect(link.nextElementSibling?.className).toBe("awesomeado-assigned");
+    expect(line.style.gap).toBe("8px");
+  });
+
+  it("names the person the project is assigned to, and says so when it is nobody", () => {
+    const assigned = item({
+      id: 1,
+      assignedTo: { displayName: "Alice", uniqueName: "alice@contoso.com", imageUrl: null },
+    });
+
+    expect(
+      renderProjectRow(assigned, context(), 0).querySelector(".awesomeado-assigned__name")
+        ?.textContent,
+    ).toBe("Alice");
+    expect(
+      renderProjectRow(item({ id: 2 }), context(), 0).querySelector(".awesomeado-assigned__name")
+        ?.textContent,
+    ).toBe("Unassigned");
+  });
+
+  it("wears no crew tag pill, which this catalog reads no roster to fill", () => {
+    const row = renderProjectRow(item({ id: 1 }), context(), 0);
+
+    expect(row.querySelector(".awesomeado-assigned .awesomeado-tag-pill")).toBeNull();
+  });
+
+  it("shows the new name only once Azure DevOps accepted the write", async () => {
+    const writeField = vi.fn(async () => ({ ok: true, rev: 9 }));
+    const project = item({ id: 7 });
+    const row = mounted(
+      renderProjectRow(
+        project,
+        context({
+          queue: writeQueue(writeField),
+          assigneeSuggestions: () => [
+            { displayName: "Bob", uniqueName: "bob@contoso.com", imageUrl: null },
+          ],
+        }),
+        0,
+      ),
+    );
+
+    row.querySelector<HTMLButtonElement>(".awesomeado-assigned__name")!.click();
+    row.querySelector<HTMLButtonElement>(".awesomeado-assigned__result button")!.click();
+
+    await vi.waitFor(() =>
+      expect(writeField).toHaveBeenCalledWith(
+        expect.objectContaining({ field: "System.AssignedTo", value: "bob@contoso.com" }),
+      ),
+    );
+    await vi.waitFor(() => expect(project.assignedTo?.displayName).toBe("Bob"));
+    expect(project.rev).toBe(9);
+    expect(row.querySelector(".awesomeado-assigned__name")?.textContent).toBe("Bob");
+  });
+
+  it("gives the work beneath a project no assignee control of its own", () => {
+    const parent = item({ id: 1, children: [item({ id: 2 })] });
+    const row = renderProjectRow(parent, context({ expandedIds: new Set([1]) }), 0);
+
+    expect(row.querySelectorAll(".awesomeado-assigned")).toHaveLength(1);
+  });
+});
+
+describe("renderProjectRow - ETA", () => {
+  it("sits last on the line, after the tags that push it to the right edge", () => {
+    const row = renderProjectRow(item({ id: 1, tags: ["Platform"] }), context(), 0);
+    const line = row.querySelector<HTMLElement>(".awesomeado-projects__row")!;
+    const tags = row.querySelector<HTMLElement>(".awesomeado-projects__tags")!;
+
+    expect(tags.style.marginLeft).toBe("auto");
+    expect(line.lastElementChild?.className).toBe("awesomeado-eta");
+  });
+
+  it("stays a read-only placeholder for a type that declares no ETA field", () => {
+    const row = renderProjectRow(item({ id: 1, type: "Untyped" }), context(), 0);
+    const badge = row.querySelector<HTMLElement>(".awesomeado-eta")!;
+
+    expect(badge.textContent).toContain("No ETA");
+    expect(badge.style.cursor).not.toBe("pointer");
+  });
+
+  it("writes the picked date to the type's own ETA field and reflects what was committed", async () => {
+    const writeField = vi.fn(async () => ({ ok: true, rev: 4 }));
+    const project = item({ id: 7 });
+    const row = mounted(renderProjectRow(project, context({ queue: writeQueue(writeField) }), 0));
+
+    row.querySelector<HTMLElement>(".awesomeado-eta__label")!.click();
+    const input = row.querySelector<HTMLInputElement>(".awesomeado-eta__date")!;
+    input.value = "2026-08-20";
+    input.dispatchEvent(new Event("change"));
+
+    await vi.waitFor(() =>
+      expect(writeField).toHaveBeenCalledWith(
+        expect.objectContaining({
+          field: "Custom.Eta",
+          value: expect.stringContaining("2026-08-20"),
+        }),
+      ),
+    );
+    await vi.waitFor(() => expect(project.eta).toContain("2026-08-20"));
+    expect(project.rev).toBe(4);
+  });
+
+  it("gives every open child its own ETA, in the same right-hand column", () => {
+    const parent = item({
+      id: 1,
+      children: [item({ id: 2, children: [item({ id: 3 })] })],
+    });
+    const row = renderProjectRow(parent, context({ expandedIds: new Set([1, 2]) }), 0);
+
+    expect(row.querySelectorAll(".awesomeado-eta")).toHaveLength(3);
+    for (const line of row.querySelectorAll(".awesomeado-projects__row")) {
+      expect(line.lastElementChild?.className).toBe("awesomeado-eta");
+    }
+  });
+
+  it("writes a child's date to that child's own type field, not the project's", async () => {
+    const writeField = vi.fn(async () => ({ ok: true, rev: 6 }));
+    const child = item({ id: 2, type: "Untyped" });
+    const row = mounted(
+      renderProjectRow(
+        item({ id: 1, children: [child] }),
+        context({ expandedIds: new Set([1]), queue: writeQueue(writeField) }),
+        0,
+      ),
+    );
+    const badges = row.querySelectorAll<HTMLElement>(".awesomeado-eta");
+
+    // The child's type declares no ETA field, so its badge cannot be edited even though the
+    // project's above it can.
+    expect(badges).toHaveLength(2);
+    expect(badges[1]!.querySelector(".awesomeado-eta__label")).toBeTruthy();
+    badges[1]!.querySelector<HTMLElement>(".awesomeado-eta__label")!.click();
+    expect(row.querySelectorAll(".awesomeado-eta__date")).toHaveLength(0);
+    expect(writeField).not.toHaveBeenCalled();
   });
 });

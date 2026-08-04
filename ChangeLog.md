@@ -11,7 +11,12 @@ builds use the repository's `Major.Minor.Build` release versioning.
   inside one are looked up as you type your way into it.
 - Adds All Projects Catalog View: bind it to a query that returns several top-level items and you get
   one row per project, each opening into its own tree of child items with their tags and child
-  counts. Expand or collapse everything at once, re-sort the whole board from the header, refresh it
+  counts. Every project row also shows who it is assigned to, editable right there from the same
+  searchable people picker the Project Tracking board uses. Every row in the tree — the project and
+  all the work beneath it — ends with its ETA, so a project's date can be read against the dates of
+  the work it depends on; set or clear any of them from the date picker at the end of the row.
+  Expand or collapse everything at
+  once, re-sort the whole board from the header, refresh it
   in place without losing what you had open, and narrow it with a tag filter that lists every tag
   used anywhere in the results and offers a search box for finding one quickly. A tag that every
   project carries is the query's own condition, so it is left out of both the rows and the filter.

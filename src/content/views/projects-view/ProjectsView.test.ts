@@ -108,6 +108,8 @@ function createServices(overrides?: Partial<EnhancedViewServices>): EnhancedView
     getTypes: () => TYPES,
     logger: { info: () => undefined, error: () => undefined },
     openDiagnosticsLog: () => undefined,
+    userDirectory: { search: async () => [], resolve: async () => null },
+    now: () => new Date("2026-07-15T00:00:00Z"),
     // Nothing in the fixtures owns a tracking query, so the default answers "none linked"; the tests
     // that exercise the lifecycle commands override these with recorders.
     projectQueries: {

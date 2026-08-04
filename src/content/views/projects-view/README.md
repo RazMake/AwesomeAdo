@@ -38,8 +38,9 @@ view answers "what is going on across all of them?" for a query that returns **m
 - `ProjectsHeader.ts` → `renderProjectsHeader(context, options)` — the sticky header card. `options`
   carries the mounted write-queue indicator and `onTitleContextMenu`, which the title raises.
 - `ProjectRow.ts` → `renderProjectRow(item, context, depth)` — one row and, when open, its children.
-  The row context supplies `onContextMenu`, the optional `dragReorder` controller, and the full
-  `projectSiblingIds` a drop is ranked against.
+  The row context supplies `onContextMenu`, the optional `dragReorder` controller, the full
+  `projectSiblingIds` a drop is ranked against, and — for the editable assignee and ETA controls —
+  `services`, the board's shared write `queue`, and `assigneeSuggestions`.
 - `ProjectsTitleMenu.ts` → `buildProjectsTitleCommands(options)` — the catalog-wide commands shown
   under "Copy ADO Url".
 - `ProjectCommands.ts` → `buildProjectCommands(options)` — the per-row commands, composed from the
@@ -59,6 +60,13 @@ view answers "what is going on across all of them?" for a query that returns **m
   as a deep link into Azure DevOps (in a new tab), the count of children immediately after it, and
   the item's own tags at the right edge. Editing remains in the row's right-click menu so the list
   stays compact.
+- **Project row controls** (top level only, like the tracking-query link): after the child count and
+  that link comes the **assignee** chip — the same control Project Tracking rows carry, so a project
+  reads the same on both surfaces. It shows no crew tag pill: a tag is a fact from the project's own
+  Feature Crew roster, and this catalog spans many projects without reading any of them.
+- **ETA**: every row carries one, pinned to the right edge — a project's date is only as true as the
+  dates of the work beneath it, so both are read in one column. A row is editable only when its own
+  work item type declares an ETA field; a type with none shows a read-only "No ETA".
 - **Ordering picker**: the sort glyph in the header's top-right corner names the ordering in force
   and offers the same policies the binding form does. A pick re-sorts every level from the items
   already loaded — no ADO read — and lasts for the life of the board only, so the binding's policy

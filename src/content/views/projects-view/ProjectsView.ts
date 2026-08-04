@@ -1,3 +1,4 @@
+import { collectAssignedDirectoryUsers } from "../../../common/ado/FeatureCrew";
 import type { WorkItemTreeResult } from "../../../common/ado/IWorkItemTreeLoader";
 import { parseQueryTagFilter } from "../../../common/ado/QueryDefinition";
 import type { TrackedWorkItem, TypeCatalogEntry } from "../../../common/ado/TrackedWorkItem";
@@ -306,6 +307,8 @@ function createRowContext(board: Board, data: LoadedProjects): ProjectRowContext
   return {
     doc: context.doc,
     href,
+    services: context.services,
+    queue: board.queue,
     types: data.types,
     policy: session.policy,
     expandedIds: session.expandedIds,
@@ -321,6 +324,9 @@ function createRowContext(board: Board, data: LoadedProjects): ProjectRowContext
       (root) => root.id,
     ),
     queryUrlOf: (item) => data.queryLinks.get(item.id)?.url ?? null,
+    // Walked fresh on each open rather than cached: someone assigned a moment ago is then already
+    // offered, with no second copy of "who works here" to drift from the tree.
+    assigneeSuggestions: () => collectAssignedDirectoryUsers(data.result.roots),
     onContextMenu: (item, event) =>
       board.contextMenu.openAt(event, projectMenuTarget(board, data, item)),
     repaint: () => board.paint(),

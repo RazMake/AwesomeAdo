@@ -1427,3 +1427,27 @@ ProjectLifecycleCommands`, shared by the catalog (per project row) and by Projec
   view's field writes use, and the list repaints only from the ranks Azure DevOps reported back —
   every reported rank, not just the moved project's, since placing one item can renumber its level.
   With no configured team the move is refused and logged rather than ranked against a guess.
+
+## ADR-071: The catalog shows a project's assignee and ETA, but no crew tag pill
+
+- Context: a project row already answered "what is this and how big is it?" but not "who owns it and
+  when is it due?" — the two facts a catalog of projects is read for, and the two the Project
+  Tracking board already carries per row.
+- Decision: project rows (depth 0 only, like the tracking-query link) carry the shared
+  `renderAssignedTo` chip after the child count and query link. The work BENEATH a project gets no
+  chip: the catalog reports on who owns a PROJECT, and the work under one is assigned from the board
+  that tracks it.
+- Decision: the shared `renderEtaBadge` is pinned to the right edge of EVERY row, at every depth,
+  behind the tags' `margin-left:auto`. Unlike ownership, a project's date is only as true as the
+  dates of the work beneath it, so the two have to be readable in one column rather than one being
+  taken on trust.
+- Decision: the assignee chip is rendered with `showTag: false`. A pill's tag is a Feature Crew
+  roster fact, and the roster is a per-project work item that `IFeatureCrewWriter.reconcile` both
+  reads AND CREATES. Reconciling one per row would create a roster work item for every project
+  merely by opening the catalog; not reconciling would paint a neutral "??" on every row whatever
+  the truth is. Neither is worth a pill, so the catalog shows the person and stops there.
+- Decision: the ETA is editable only when the row's own work item type declares an `etaField`; a
+  type with none has nowhere to write, so its badge stays a read-only "No ETA".
+- Decision: the queue plumbing behind both is shared, not copied — `content/views/item-assignee`
+  and `content/views/item-eta` hold the persist-then-reflect writers (matching
+  `content/views/item-priority`), and Project Tracking now calls the same two functions.

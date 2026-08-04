@@ -1,4 +1,10 @@
-import type { TrackedWorkItem, TypeCatalogEntry } from "../../../common/ado/TrackedWorkItem";
+import type { DirectoryUser } from "../../../common/ado/IUserDirectory";
+import type {
+  TrackedUser,
+  TrackedWorkItem,
+  TypeCatalogEntry,
+} from "../../../common/ado/TrackedWorkItem";
+import type { WorkItemWriteQueue } from "../../../common/ado/WorkItemWriteQueue/WorkItemWriteQueue";
 import { buildWorkItemUrl } from "../../../common/ado/fetchAdoTree";
 import {
   orderTrackedItems,
@@ -6,16 +12,31 @@ import {
   workItemTypeTextColor,
 } from "../../../common/ado/workItemTypes";
 import type { OrderingPolicy } from "../../../common/ordering/ItemOrdering";
+import type { EnhancedViewServices } from "../../../common/view-common/EnhancedView";
+import {
+  renderAssignedTo,
+  type AssignedToHandle,
+} from "../../../common/view-common/control/AssignedTo/AssignedTo";
 import type { DragReorderController } from "../../../common/view-common/control/DragReorder/DragReorderController";
+import {
+  renderEtaBadge,
+  type EtaBadgeHandle,
+} from "../../../common/view-common/control/EtaBadge/EtaBadge";
 import { renderItemTypeIcon } from "../../../common/view-common/control/ItemTypeIcon/ItemTypeIcon";
 import { renderTagPill } from "../../../common/view-common/control/TagPill/TagPill";
 import { createSvgCanvas } from "../../../common/view-common/control/svgIcon/svgIcon";
+import { writeItemAssignee } from "../item-assignee/writeItemAssignee";
+import { writeItemEta } from "../item-eta/writeItemEta";
 
 /** Everything a row needs, grouped so a deeply nested row never reaches for view-level state. */
 export interface ProjectRowContext {
   doc: Document;
   /** The ADO page's own URL, the only thing a work item deep link can be derived from. */
   href: string;
+  /** Reached for the identity directory an assignee pick searches, and the clock the ETA counts to. */
+  services: EnhancedViewServices;
+  /** The board's single serialized write queue, so a row edit cannot race the menu's own writes. */
+  queue: WorkItemWriteQueue;
   types: ReadonlyMap<string, TypeCatalogEntry>;
   policy: OrderingPolicy;
   /** Ids the reader has opened; everything else stays closed, including on a repaint. */
@@ -35,6 +56,8 @@ export interface ProjectRowContext {
   projectSiblingIds: readonly number[];
   /** The project's own tracking query as an ADO web URL, or null while it has none. */
   queryUrlOf(item: TrackedWorkItem): string | null;
+  /** Who the assignee picker offers before anything is typed: everyone assigned across the catalog. */
+  assigneeSuggestions(): TrackedUser[];
   /** Opens the item's right-click menu at the pointer. */
   onContextMenu(item: TrackedWorkItem, event: MouseEvent): void;
   /** Rebuild the list after an expand/collapse, so open/closed state lives outside the DOM. */
@@ -208,6 +231,56 @@ function renderQueryLink(item: TrackedWorkItem, context: ProjectRowContext): HTM
   control.append(renderLinkGlyph(doc));
   return control;
 }
+
+/**
+ * The project's assignee, editable in place.
+ *
+ * The crew tag pill is deliberately off: a tag is a fact from the project's own Feature Crew roster,
+ * and this catalog spans many projects without reading any of them — so every pill would read "??"
+ * whatever the truth is. Persist-then-reflect like every other control here: the name only changes
+ * once Azure DevOps has accepted the write.
+ */
+function renderRowAssignee(item: TrackedWorkItem, context: ProjectRowContext): HTMLElement {
+  // The onChange closure needs the handle to reflect a committed pick, but the handle only exists
+  // after renderAssignedTo returns; a ref cell breaks that cycle with one const binding.
+  const chip: { handle?: AssignedToHandle } = {};
+  chip.handle = renderAssignedTo(context.doc, {
+    user: item.assignedTo,
+    userDirectory: context.services.userDirectory,
+    suggestions: context.assigneeSuggestions,
+    onChange: (picked: DirectoryUser) =>
+      writeItemAssignee(item, picked, context.queue, (assigned) => chip.handle?.setUser(assigned)),
+  });
+  // The row's own right-click menu is about the work item, not this control.
+  chip.handle.addEventListener("click", (event) => event.stopPropagation());
+  return chip.handle;
+}
+
+/**
+ * The project's ETA, editable only when its type declares which date field means "ETA".
+ *
+ * A type with none has nowhere to write, so the badge stays a read-only "No ETA" rather than
+ * offering a picker whose every choice would be dropped.
+ */
+function renderRowEta(item: TrackedWorkItem, context: ProjectRowContext): HTMLElement {
+  const field = context.types.get(item.type)?.etaField ?? null;
+  const badge: { handle?: EtaBadgeHandle } = {};
+  badge.handle = renderEtaBadge(context.doc, {
+    eta: item.eta,
+    now: context.services.now(),
+    onChange:
+      field === null
+        ? undefined
+        : (eta) =>
+            writeItemEta(item, eta, field, context.queue, (committed) =>
+              badge.handle?.setEta(committed),
+            ),
+  });
+  badge.handle.style.flex = "0 0 auto";
+  badge.handle.style.fontSize = "11px";
+  return badge.handle;
+}
+
 function renderRowTags(item: TrackedWorkItem, context: ProjectRowContext): HTMLElement {
   const { doc } = context;
   const tags = doc.createElement("span");
@@ -307,10 +380,16 @@ export function renderProjectRow(
   if (children.length > 0) {
     line.append(renderChildCount(doc, children.length));
   }
+  // The tracking query and the assignee report on a PROJECT, so only the top level carries them:
+  // the work beneath is run from the board that tracks it. The line's own 8px gap spaces the chip
+  // off the count badge and the link.
   if (depth === 0) {
-    line.append(renderQueryLink(item, context));
+    line.append(renderQueryLink(item, context), renderRowAssignee(item, context));
   }
-  line.append(renderRowTags(item, context));
+  // The tags carry `margin-left:auto`, so everything appended after them is pinned to the row's
+  // right edge — which is where the ETA belongs, in one column down the whole tree. Every level
+  // gets one: a project's own date is only as true as the dates of the work under it.
+  line.append(renderRowTags(item, context), renderRowEta(item, context));
   // Bound on the row rather than the list so the INNERMOST row under the pointer wins; the shared
   // menu stops the event itself, so an ancestor row never also opens.
   line.addEventListener("contextmenu", (event) => context.onContextMenu(item, event));

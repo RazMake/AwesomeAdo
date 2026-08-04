@@ -19,7 +19,6 @@ import type {
 } from "../../../common/ado/TrackedWorkItem";
 import { noteWindowStart } from "../../../common/ado/WorkItemNote";
 import { WorkItemWriteQueue } from "../../../common/ado/WorkItemWriteQueue/WorkItemWriteQueue";
-import { ASSIGNED_TO_FIELD, identityFieldValue } from "../../../common/ado/adoApi";
 import { buildQueryFolderUrl, buildWorkItemUrl } from "../../../common/ado/fetchAdoTree";
 import type { SprintWindow } from "../../../common/ado/sprintWindow";
 import {
@@ -113,6 +112,8 @@ import {
   loadInterruptAcceptanceState,
   type InterruptAcceptanceState,
 } from "../interrupt-acceptance/interruptAcceptanceState";
+import { writeItemAssignee } from "../item-assignee/writeItemAssignee";
+import { writeItemEta } from "../item-eta/writeItemEta";
 import { writeItemPriority } from "../item-priority/writeItemPriority";
 
 import { applyMoveToTree, applyRanksToTree } from "./drag-reorder/applyMoveToTree";
@@ -351,29 +352,10 @@ function createItemAssignee(
     userDirectory: services.userDirectory,
     suggestions: crew,
     onChange: (picked) => {
-      queue
-        .enqueue({
-          id: item.id,
-          currentRev: () => item.rev,
-          field: ASSIGNED_TO_FIELD,
-          value: identityFieldValue(picked),
-        })
-        .then((result) => {
-          if (!result.ok || result.rev === undefined) {
-            return;
-          }
-          // A freshly assigned person has no known crew tag until the roster reconcile answers, so
-          // the chip shows the neutral "??" pill in the meantime rather than the previous person's.
-          item.assignedTo = {
-            displayName: picked.displayName,
-            uniqueName: picked.uniqueName,
-            imageUrl: picked.imageUrl,
-            tag: null,
-          };
-          item.rev = result.rev;
-          chip.handle?.setUser(item.assignedTo);
-          onPicked(picked);
-        });
+      writeItemAssignee(item, picked, queue, (assigned) => {
+        chip.handle?.setUser(assigned);
+        onPicked(picked);
+      });
     },
     showTag,
     assignableTags: tagEditor ? tagEditor.tagsInUse() : undefined,
@@ -1093,15 +1075,7 @@ function createItemEtaBadge(
   const badge: { handle?: EtaBadgeHandle } = {};
   const onChange = etaField
     ? (newEta: string | null): void => {
-        queue
-          .enqueue({ id: item.id, currentRev: () => item.rev, field: etaField, value: newEta })
-          .then((result) => {
-            if (result.ok && result.rev !== undefined) {
-              item.eta = newEta;
-              item.rev = result.rev;
-              badge.handle?.setEta(newEta);
-            }
-          });
+        writeItemEta(item, newEta, etaField, queue, (committed) => badge.handle?.setEta(committed));
       }
     : undefined;
   const completion = isCompleted(item, typeMap, boardColumns)
