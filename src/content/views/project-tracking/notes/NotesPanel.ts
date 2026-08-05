@@ -10,7 +10,12 @@ import type { WorkItemMarkerTags } from "../../../../common/settings/ExtensionSe
 
 import { renderNoteComposer } from "./NoteComposer";
 import { renderNoteRow } from "./NoteRow";
-import { markerCommentPrefixes, startsWithMarkerComment } from "./markerNotes";
+import {
+  markerCommentOf,
+  markerCommentPrefixes,
+  startsWithMarkerComment,
+  withoutMarkerComment,
+} from "./markerNotes";
 
 /** The narrow slice of enhanced-view services used by a notes panel. */
 export interface NotesPanelServices {
@@ -77,8 +82,6 @@ export interface NotesPanelOptions {
    * would not begin with the prefix, and would therefore vanish from the very list it was written in.
    */
   onlyCommentPrefix?: string;
-  /** Hide `onlyCommentPrefix` from each displayed note while retaining it in stored/editable text. */
-  hideOnlyCommentPrefix?: boolean;
 }
 
 /** A mounted notes panel and the one thing the row that owns it changes about it. */
@@ -207,11 +210,16 @@ function renderRows(
   if (visible.length === 0) {
     return [statusLine(doc, "No notes in this window.")];
   }
-  return visible.map((note) =>
-    renderNoteRow(doc, {
+  const markerTags = options.services.markerTags();
+  return visible.map((note) => {
+    const marked = markerCommentOf(note.text, markerTags);
+    return renderNoteRow(doc, {
       note,
-      displayText: displayNoteText(options, note),
-      codePrefixes: markerCommentPrefixes(options.services.markerTags()),
+      displayText: withoutMarkerComment(note.text, marked?.prefix),
+      markerPrefix: marked?.prefix,
+      // Only where marker notes are read alongside ordinary ones is there anything to tell apart;
+      // every other surface has already answered "which marker?" by the way it was opened.
+      marker: options.showAllInWindow === true ? marked?.marker : undefined,
       currentUser: state.currentUser,
       mentionNames: options.services.mentionDirectory.knownNames(),
       mentions: {
@@ -220,15 +228,8 @@ function renderRows(
       },
       onEdit: (text) =>
         submitNote(options, state, note.id, text).then((ok) => finish(ok, rerender)),
-    }),
-  );
-}
-
-function displayNoteText(options: NotesPanelOptions, note: WorkItemNote): string {
-  const prefix = options.onlyCommentPrefix;
-  return options.hideOnlyCommentPrefix === true && prefix !== undefined
-    ? note.text.slice(prefix.length).trimStart()
-    : note.text;
+    });
+  });
 }
 
 /** The notes this surface is allowed to show; the deliberately-full popup bypasses marker filtering. */

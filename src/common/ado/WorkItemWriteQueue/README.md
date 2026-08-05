@@ -79,6 +79,13 @@ to supply a writer it would never call.
   nothing on screen changes when a write is lost — a bare count would tell the user only that
   something went wrong and leave the log as the sole place to find out what. Fires immediately on
   subscribe (`lastError` is undefined until something fails), then again after every failure.
+- **`failedCount: number`** (getter) — how many writes have failed since the queue was created.
+- **`clearFailures(): void`** — forget the failures reported so far and notify listeners so the
+  report clears. For a view about to **re-read** itself: a refresh replaces what is on screen with
+  what Azure DevOps actually holds, so the lost edit the report warned about is no longer there to be
+  mistaken for saved, and leaving the report up would pin a stale alarm to a board that has just told
+  the truth. Only already-failed writes are forgotten — one rejected afterwards raises the report
+  again with the new total.
 - **`pendingCount: number`** (getter) — the number of writes queued but not yet settled (the one
   running plus those still waiting). Use it to drive a "saving…" indicator.
 - **`onPendingChange(listener): () => void`** — subscribe to pending-count changes so a UI control

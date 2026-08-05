@@ -511,6 +511,36 @@ describe("WorkItemWriteQueue - failed count", () => {
   });
 });
 
+describe("WorkItemWriteQueue - clearing the failure report", () => {
+  it("clears it when a view re-reads, and reports the next failure from scratch", async () => {
+    const { logger } = createRecordingLogger();
+    const queue = new WorkItemWriteQueue(rejectsWith("HTTP 400"), logger);
+    const seen = recordFailures(queue);
+
+    await queue.enqueue(req(1, 1, "Active"));
+    queue.clearFailures();
+    await queue.enqueue(req(1, 1, "Closed"));
+
+    expect(seen).toEqual([
+      [0, undefined],
+      [1, "HTTP 400"],
+      [0, undefined],
+      [1, "HTTP 400"],
+    ]);
+    expect(queue.failedCount).toBe(1);
+  });
+
+  it("stays silent when there is no failure to clear", () => {
+    const { logger } = createRecordingLogger();
+    const queue = new WorkItemWriteQueue(acceptsWrite(), logger);
+    const seen = recordFailures(queue);
+
+    queue.clearFailures();
+
+    expect(seen).toEqual([[0, undefined]]);
+  });
+});
+
 describe("WorkItemWriteQueue - reordering", () => {
   it("resolves with the reorder function's result", async () => {
     const { logger } = createRecordingLogger();

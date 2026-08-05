@@ -48,6 +48,8 @@ view answers "what is going on across all of them?" for a query that returns **m
   shared item-editing commands, this view's tag commands, and the shared
   [project-lifecycle commands](../project-tracking/item-commands/README.md) (**Create Project Query**
   on every row, **Mark completed** on projects only).
+- `NewWorkItemPanel.ts` → `renderNewWorkItemPanel(options)` — the **Add work item** form, plus the
+  `NewWorkItemValues` the caller persists.
 - `NewProjectRow.ts` → `renderNewProjectRow(options)` — the inline "add a project" row.
 - `projectTags.ts` → `tagsInUse(items, excluded?)`, `queryWideTags(roots)`, `queryWideTagNames(roots)`,
   `idsKeptByTagCondition(roots, condition)`, `isEmptyTagCondition(condition)`, and the `TagCondition`
@@ -72,9 +74,10 @@ view answers "what is going on across all of them?" for a query that returns **m
   stronger emphasis while **Ctrl+Shift+Alt** is held — the same shared
   [`RowEmphasis`](../../../common/view-common/control/RowEmphasis/README.md) treatment Project
   Tracking uses.
-- **ETA**: every row carries one, pinned to the right edge — a project's date is only as true as the
-  dates of the work beneath it, so both are read in one column. A row is editable only when its own
-  work item type declares an ETA field; a type with none shows a read-only "No ETA".
+- **ETA**: a row carries one only when its own work item type declares an ETA field, and it is
+  editable in place — a type with none shows nothing rather than a dead placeholder. Badges are
+  pinned to the right edge, so a project's date is read in the same column as the dates of the work
+  beneath it.
 - **Ordering picker**: the sort glyph in the header's top-right corner names the ordering in force
   and offers the same policies the binding form does. A pick re-sorts every level from the items
   already loaded — no ADO read — and lasts for the life of the board only, so the binding's policy
@@ -94,7 +97,10 @@ view answers "what is going on across all of them?" for a query that returns **m
   project stays reachable) and its whole subtree (so a match never looks childless) with it. An
   excluded tag removes every project that **contains** it anywhere beneath them, which is what "show
   me the projects not using X" means. The dropdown carries a quick-search because a team's tag
-  vocabulary is unbounded.
+  vocabulary is unbounded. A condition takes several clicks to state, so the dropdown **stays open**
+  while it is built and the board is narrowed only once the dropdown closes — by pressing **Tags**
+  again, clicking the board behind it, or pressing Escape. Reopening **adjusts** the condition in
+  force rather than starting over; the dropdown's own **Clear** is what empties it.
 - **Refresh**: `⟳` re-reads the query in place, keeping the outline the reader opened and their tag
   condition. A failed refresh keeps the older board and reports itself on the button; pressing it in
   that state opens the Diagnostics log on the cause.
@@ -122,6 +128,22 @@ save" indicator sits in the header's top-right corner beside the version marker.
   then re-read, because the query is what decides the tree this catalog shows. The command is not
   offered on the work beneath a project: planning inside a milestone is done on the board that tracks
   that project.
+- **Add work item** (the lowest planning level only — the row whose configured children are the
+  team's delivery): opens a form rather than a title box, because this is the one creation whose
+  values are not all inherited. It opens in the middle of the window, headed by the item the work is
+  raised under (`Parent: …`). It asks for the title and a **Markdown** description — the same box,
+  shortcuts and `@` mentions as every other authored value in the extension — opens the assignee on
+  whoever is signed in, the area path on the parent's own, and the **Sprint** on the team's current
+  one. Both paths use the extension's own themed dropdown rather than a native one, so the open list
+  belongs to the board's theme; the areas offered are the **leaves** the catalog uses, named by the
+  shortest label that tells them apart, with the full path as the tooltip. The **Interrupt** flag is
+  the pill the item will wear: drained of colour while off, and once on, painted raised or accepted
+  exactly as the boards paint it. **Accepted** sits on the same line, and ticking it demands a
+  reason, which is recorded as a discussion comment carrying the team's own acceptance marker — the
+  same token the boards filter accepted interrupts by. Everything lands in ONE creation revision, so
+  the item is never briefly mis-filed, and the board is then re-read. It is offered nowhere else: on
+  an item whose children are more planning it would quietly create structure, and beneath the
+  delivery level it would create implementation detail nobody asked for.
 - **Project lifecycle**: **Create Project Query** is offered on **every** row and disabled once that
   item owns one — a milestone or phase is a body of work somebody reports on, and promoting it to a
   top-level project first would be a data change made purely to unlock a command. **Mark completed**,

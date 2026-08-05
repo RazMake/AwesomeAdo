@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import type { QueryBindings } from "../bindings/QueryBinding";
-import { DEFAULT_SETTINGS, type ExtensionSettings } from "../settings/ExtensionSettings";
+import {
+  DEFAULT_SETTINGS,
+  PERSONAL_SETTING_KEYS,
+  type ExtensionSettings,
+} from "../settings/ExtensionSettings";
 
 import {
   CONFIG_FILE_NAME,
@@ -153,6 +157,19 @@ describe("exportConfig", () => {
     expect(
       JSON.parse(compact).enhancedQueries["11111111-1111-1111-1111-111111111111"],
     ).toHaveProperty("properties.defaultAreaPaths", "Project\\API");
+  });
+
+  it("keeps the personal settings out of the team payload but in a file export", () => {
+    // A file backs up one person's own configuration, so it keeps them; the work item is the team's.
+    const compact = JSON.parse(exportCompactConfig(sampleSettings, sampleBindings));
+    const file = JSON.parse(exportConfig(sampleSettings, sampleBindings)) as AwesomeAdoConfig;
+
+    for (const key of PERSONAL_SETTING_KEYS) {
+      expect(compact.settings).not.toHaveProperty(key);
+      expect(file.settings).toHaveProperty(key);
+    }
+    // The team's own settings still travel, or "excluded" would just mean "nothing published".
+    expect(compact.settings.currentTeam).toEqual(sampleSettings.currentTeam);
   });
 
   it("includes the trusted team configuration work item in a file export", () => {

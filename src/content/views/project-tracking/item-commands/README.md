@@ -70,7 +70,9 @@ board-specific destinations:
   Projects Catalog View), **New work identified** on a row whose
   children are the team's delivery. Same builder, different label, because both add an item of the
   parent type's first configured child type. The file also exports `childTypeOf`,
-  `isImmediateParentOfPrimaryWork` (which rows may offer it), `newChildSummary` (the line stating
+  `isImmediateParentOfPrimaryWork` (which rows may offer it), `primaryChildTypeOf` (the first child
+  type under a row that IS the team's delivery, so a command promising work cannot create planning),
+  `newChildSummary` (the line stating
   what the reader is not being asked to type) and `newChildItem` (the in-memory item the created one
   is shown as, ranked ahead of its level).
 

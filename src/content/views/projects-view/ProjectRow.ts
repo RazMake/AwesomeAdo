@@ -251,27 +251,29 @@ function renderRowAssignee(item: TrackedWorkItem, context: ProjectRowContext): H
 }
 
 /**
- * The item's ETA, editable only when its type declares which date field means "ETA".
+ * The item's ETA, editable in place.
  *
- * A type with none has nowhere to write, so the badge stays a read-only "No ETA" rather than
- * offering a picker whose every choice would be dropped.
+ * A type that declares no ETA date field has nowhere to write one, so its rows carry no badge at
+ * all: a read-only "No ETA" sitting in the same column as the editable ones only invites clicks
+ * that can never do anything.
  */
-function renderRowEta(item: TrackedWorkItem, context: ProjectRowContext): HTMLElement {
+function renderRowEta(item: TrackedWorkItem, context: ProjectRowContext): HTMLElement | null {
   const field = context.types.get(item.type)?.etaField ?? null;
+  if (field === null) return null;
   const badge: { handle?: EtaBadgeHandle } = {};
   badge.handle = renderEtaBadge(context.doc, {
     eta: item.eta,
     now: context.services.now(),
-    onChange:
-      field === null
-        ? undefined
-        : (eta) =>
-            writeItemEta(item, eta, field, context.queue, (committed) =>
-              badge.handle?.setEta(committed),
-            ),
+    onChange: (eta) =>
+      writeItemEta(item, eta, field, context.queue, (committed) => badge.handle?.setEta(committed)),
   });
+  // One property at a time, never `cssText`: assigning that wipes the badge's OWN inline styles,
+  // which is what took away its hand cursor and the `position:relative` its date picker is anchored
+  // to — leaving an ETA that looked and behaved as if it could not be edited.
+  badge.handle.style.flex = "0 0 auto";
+  badge.handle.style.fontSize = "11px";
   // Pinned to the row's right edge so every level reports its date in one column down the tree.
-  badge.handle.style.cssText = "flex:0 0 auto;font-size:11px;margin-left:auto";
+  badge.handle.style.marginLeft = "auto";
   return badge.handle;
 }
 
@@ -364,11 +366,9 @@ export function renderProjectRow(
   // is run by someone and can be reported on in its own right, so a catalog that only answered
   // "who owns this?" at the top would send the reader into Azure DevOps for the level below it.
   // The ETA's own `margin-left:auto` pins the date column to the right edge past all of them.
-  line.append(
-    renderQueryLink(item, context),
-    renderRowAssignee(item, context),
-    renderRowEta(item, context),
-  );
+  line.append(renderQueryLink(item, context), renderRowAssignee(item, context));
+  const eta = renderRowEta(item, context);
+  if (eta !== null) line.append(eta);
   // Bound on the row rather than the list so the INNERMOST row under the pointer wins; the shared
   // menu stops the event itself, so an ancestor row never also opens.
   line.addEventListener("contextmenu", (event) => context.onContextMenu(item, event));

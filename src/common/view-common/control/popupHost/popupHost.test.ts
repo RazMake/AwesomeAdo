@@ -300,9 +300,21 @@ describe("createPopupHost - keeping the popup on screen", () => {
     expect(popup.style.marginBottom).toBe("4px");
   });
 
-  it("keeps a popup below its trigger when it is too tall to fit above", () => {
+  it("slides a popup up when it fits neither below its trigger nor above it", () => {
+    // A tall right-click menu opened from the middle of jsdom's 768px window: 400px tall with only
+    // 380px above it, so it cannot flip, and without the slide its last commands hang off the edge.
+    const popup = openWithBox({ left: 10, top: 380, width: 200, height: 400 });
+
+    // Spilled 20px past the edge once the 8px margin is honoured, so it rises by exactly that.
+    expect(popup.style.marginTop).toBe("-20px");
+    expect(popup.style.bottom).toBe("");
+  });
+
+  it("never slides a popup past the top edge to fix the bottom one", () => {
+    // Taller than the window: any further rise would only trade a hidden bottom for a hidden top.
     const popup = openWithBox({ left: 10, top: 40, width: 200, height: window.innerHeight });
 
+    expect(popup.style.marginTop).toBe("-32px");
     expect(popup.style.bottom).toBe("");
   });
 

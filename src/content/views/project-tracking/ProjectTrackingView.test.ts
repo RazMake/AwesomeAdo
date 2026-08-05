@@ -5482,7 +5482,7 @@ describe("ProjectTrackingView - flagging an item from its menu", () => {
         field: "System.Tags",
         value: "Blocked; Blocked by another team",
         baseValue: "Blocked",
-        comment: "[ACCEPTED] Handed to Platform.",
+        comment: "[BLOCKED!] Handed to Platform.",
       },
     ]);
     // Posting it through the comments API would create its own revision and get this very patch

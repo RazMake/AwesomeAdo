@@ -73,7 +73,6 @@ const REQUIRED_ELEMENT_IDS: readonly string[] = [
   "binding-view-config-card",
   "binding-view-select",
   "binding-properties",
-  "binding-save",
   "binding-shared-notice",
   "binding-status",
   // Diagnostics

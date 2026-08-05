@@ -7,6 +7,7 @@ import type {
 import type { StorageObservation } from "../../common/browser/observeStorageKeys";
 import { DEFAULT_SETTINGS, type ExtensionSettings } from "../../common/settings/ExtensionSettings";
 import type { ISettingsStore } from "../../common/settings/ISettingsStore";
+import type { ITeamPublishingSettingsStore } from "../../common/settings-transfer/ITeamPublishingSettingsStore";
 
 import { AzureDevOpsController, type AzureDevOpsElements } from "./AzureDevOpsController";
 
@@ -19,7 +20,8 @@ async function flush(): Promise<void> {
   await Promise.resolve();
 }
 
-class FakeSettingsStore implements ISettingsStore {
+class FakeSettingsStore implements ITeamPublishingSettingsStore {
+  readonly publishesBeforeWrite = true as const;
   writeCalls: Partial<ExtensionSettings>[] = [];
   private readValue: ExtensionSettings;
   private readError: unknown = null;
@@ -202,6 +204,20 @@ afterEach(() => {
 // ─────────────────────────────────────────────────────────────────────────────
 // Tests
 // ─────────────────────────────────────────────────────────────────────────────
+
+describe("AzureDevOpsController — settings store contract", () => {
+  it("refuses a settings store that does not publish before it writes", () => {
+    const localOnly: ISettingsStore = new FakeSettingsStore();
+    const controller = new AzureDevOpsController(
+      // @ts-expect-error A local-only store loses every edit to the next team pull, so wiring one is
+      // a compile error rather than a defect that only surfaces after the next sync.
+      localOnly,
+      new FakeMetadataReader(null),
+      makeElements(),
+    );
+    controller.dispose();
+  });
+});
 
 describe("AzureDevOpsController — initialization controls & metadata", () => {
   let store: FakeSettingsStore;

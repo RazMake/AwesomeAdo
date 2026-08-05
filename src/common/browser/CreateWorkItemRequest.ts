@@ -30,8 +30,19 @@ const MAX_TAGS = 20;
 const MAX_NAME_LENGTH = 128;
 const MAX_CLASSIFICATION_PATH_LENGTH = 1024;
 
+/** An identity handle (a sign-in address or a display name) the assignee field is resolved from. */
+const MAX_IDENTITY_LENGTH = 256;
+
+/** Author-written prose — a description, or the reason an item was raised. */
+const MAX_PROSE_LENGTH = 32768;
+
 function isBoundedText(value: unknown, max: number): value is string {
   return typeof value === "string" && value.trim().length > 0 && value.length <= max;
+}
+
+/** A field the caller may simply not have: absent, explicitly none, or bounded text. */
+function isOptionalText(value: unknown, max: number): value is string | null | undefined {
+  return value === undefined || value === null || isBoundedText(value, max);
 }
 
 function isTagList(value: unknown): value is string[] {
@@ -55,6 +66,24 @@ function isParentId(value: unknown): value is number | null | undefined {
   );
 }
 
+/** Where the item is filed: its tags and the two classification paths. */
+function hasValidFiling(candidate: Partial<CreateWorkItemMessage>): boolean {
+  return (
+    isTagList(candidate.tags) &&
+    isClassificationPath(candidate.areaPath) &&
+    isClassificationPath(candidate.iterationPath)
+  );
+}
+
+/** What a form may have filled in beyond the item's identity: who owns it, and the words about it. */
+function hasValidDetail(candidate: Partial<CreateWorkItemMessage>): boolean {
+  return (
+    isOptionalText(candidate.assignedTo, MAX_IDENTITY_LENGTH) &&
+    isOptionalText(candidate.description, MAX_PROSE_LENGTH) &&
+    isOptionalText(candidate.comment, MAX_PROSE_LENGTH)
+  );
+}
+
 export function isCreateWorkItemMessage(value: unknown): value is CreateWorkItemMessage {
   if (typeof value !== "object" || value === null) {
     return false;
@@ -64,9 +93,8 @@ export function isCreateWorkItemMessage(value: unknown): value is CreateWorkItem
     candidate.type === CREATE_WORK_ITEM_MESSAGE &&
     isBoundedText(candidate.itemType, MAX_NAME_LENGTH) &&
     isBoundedText(candidate.title, MAX_TITLE_LENGTH) &&
-    isTagList(candidate.tags) &&
-    isClassificationPath(candidate.areaPath) &&
-    isClassificationPath(candidate.iterationPath) &&
+    hasValidFiling(candidate) &&
+    hasValidDetail(candidate) &&
     isParentId(candidate.parentId)
   );
 }

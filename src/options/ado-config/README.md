@@ -48,7 +48,9 @@ This component does not log; it surfaces failures through the options page's sha
   **targeted patch**: the edited control names its own marker (its row) and field (its role), and
   every other marker is carried over from the last accepted state rather than re-read from the DOM,
   so a value can never be stored under a neighbouring marker. A failed write restores the last
-  accepted values so the fields never show a value the store rejected.
+  accepted values so the fields never show a value the store rejected. A non-blank **comment tag**
+  that duplicates another marker's is rejected and the field is restored, since a note is attributed
+  to its marker by that token.
 - **`MarkerTagsElements`** — the container element it fills with the marker rows.
 
 ### `WorkItemTypesController.ts`

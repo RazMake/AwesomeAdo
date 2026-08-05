@@ -48,7 +48,8 @@ Every parallel worker response must contain exactly these four headings in order
 1. **Files changed** — only files assigned to that stream.
 2. **Local validation** — commands run and pass/fail results.
 3. **Memory-bank delta** — completed work, remaining work, and decisions; `None` is valid.
-4. **Changelog bullet** — one proposed bullet or `None` for non-user-visible work.
+4. **Changelog bullet** — one proposed bullet, named with the group it belongs under (`New Features`
+   or `Bug Fixes`), or `None` for non-user-visible work.
 
 Use this exact shape for the third heading:
 
@@ -291,6 +292,15 @@ These are **non-negotiable**.
 - Initial version base: `0.1`.
 - `## Next Version` is the staging section; released section headings use `Major.Minor`, never the
   full `Major.Minor.Build` package version.
+- Every version section groups its bullets under `### New Features` and `### Bug Fixes`. These are
+  **H3**, never H2: the release gate in `scripts/compute-version.mjs` treats every `## ` heading as
+  the start of a new version section, so an H2 group heading would end the section it belongs to.
+- **Omit a group that has no bullets.** A section with only fixes has just `### Bug Fixes`; a
+  section with only features has just `### New Features`. Never leave an empty heading behind.
+- `### New Features` covers new or expanded capability and improved behavior. `### Bug Fixes`
+  covers behavior that was broken, misleading, or lost work, and now behaves correctly.
+- A feature that is not finished yet still goes under `### New Features`, with a `**WIP**` marker in
+  front of the bullet text: `- **WIP** — <outcome>`. Drop the marker when the work is complete.
 - Changelog entries describe **user-visible release outcomes**, not implementation chronology. Use
   one bullet per coherent capability or meaningful fix; consolidate related work and minor UX
   rearrangements into that capability's bullet.
@@ -306,13 +316,16 @@ These are **non-negotiable**.
 - Every completed user-visible task must be represented in `## Next Version` before final verification.
   Merge it into an existing capability bullet when appropriate; do not append implementation
   chronology. Internal-only work returns `None`. Parallel workers return proposed input in their §4.1
-  response, and the serial coordinator writes or merges it at the next wave barrier.
+  response — naming the group the bullet belongs in — and the serial coordinator writes or merges it
+  at the next wave barrier, creating the group heading only if that group does not exist yet.
 - When the developer bumps Major or Minor:
   1. Set `versionBuildOffset` to the latest CI workflow run number visible before the bump.
   2. Rename `## Next Version` to `## X.Y`.
-  3. Add a fresh empty `## Next Version` section.
+  3. Add a fresh empty `## Next Version` section — no group headings until it has a bullet.
   4. CI requires the matching `## X.Y` section before it can create the first official `vX.Y`
      release.
+- No `**WIP**` bullet may remain in the section being released: finish the work or move the bullet
+  to the new `## Next Version`.
 - A base supports at most 65,535 CI runs; bump `versionBuildOffset` before that limit.
 
 ---
@@ -377,6 +390,8 @@ Every parallel worker response must use this exact format:
 - Decisions: <notable decisions or None>
 
 ### Changelog bullet
+
+<group: New Features | Bug Fixes>
 
 <one bullet for ## Next Version, or "None — <reason why non-user-visible>">
 ```

@@ -9,6 +9,7 @@ import {
   MAX_PAST_SPRINTS,
   MIN_FUTURE_SPRINTS,
   MIN_PAST_SPRINTS,
+  PERSONAL_SETTING_KEYS,
   WORK_ITEM_MARKERS,
   isAdoConfigured,
   normalizeAdoName,
@@ -18,8 +19,32 @@ import {
   normalizePastSprintsCount,
   normalizeSettings,
   normalizeWorkItemTypes,
+  withoutPersonalSettings,
   type ExtensionSettings,
 } from "./ExtensionSettings";
+
+describe("withoutPersonalSettings", () => {
+  it("drops the personal settings and keeps every other value", () => {
+    const shared = withoutPersonalSettings(DEFAULT_SETTINGS);
+
+    for (const key of PERSONAL_SETTING_KEYS) {
+      expect(shared).not.toHaveProperty(key);
+    }
+    expect(shared.boardColumns).toEqual(DEFAULT_SETTINGS.boardColumns);
+    expect(shared.markerTags).toEqual(DEFAULT_SETTINGS.markerTags);
+  });
+
+  it("drops them from a partial update and leaves the original alone", () => {
+    const update = { theme: "dark", defaultView: "original", project: "web" } as const;
+
+    expect(withoutPersonalSettings(update)).toEqual({ project: "web" });
+    expect(update.theme).toBe("dark");
+  });
+
+  it("returns an empty update when the change was personal only", () => {
+    expect(withoutPersonalSettings({ theme: "blue" })).toEqual({});
+  });
+});
 
 describe("normalizeSettings", () => {
   it.each([undefined, null, false, 42, "settings"])(

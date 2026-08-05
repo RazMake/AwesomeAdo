@@ -25,6 +25,7 @@ import type { WorkItemTreeResult } from "../ado/IWorkItemTreeLoader";
 import type { QueryDefinitionResult } from "../ado/QueryDefinition";
 import type { TeamMembersResult } from "../ado/TeamMembers";
 import type { TypeCatalogEntry } from "../ado/TrackedWorkItem";
+import type { ICurrentUserReader } from "../ado/currentUser";
 import type { SprintWindow } from "../ado/sprintWindow";
 import type { IQueryBindingWriter } from "../bindings/IQueryBindingWriter";
 import type { ILogger } from "../logging/ILogger";
@@ -112,6 +113,13 @@ export interface EnhancedViewServices {
   noteActivity: INoteActivityReader;
   /** Resolves whether an interrupt was accepted after its current tag was applied. */
   interruptAcceptance: IInterruptAcceptanceReader;
+  /**
+   * The identity Azure DevOps considers signed in, so a view can offer "me" as a starting value.
+   *
+   * Optional like the other services only some surfaces need: a view that never has to answer "who
+   * is doing this?" must not be forced to wire an identity round-trip it would never make.
+   */
+  currentUser?: ICurrentUserReader;
   /**
    * Posts new discussion notes and rewrites existing ones. Separate from `noteLoader` (Interface
    * Segregation): showing notes and authoring them are different capabilities, and only some views

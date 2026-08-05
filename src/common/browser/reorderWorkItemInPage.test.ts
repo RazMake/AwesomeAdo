@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { encodeInjectedConfig } from "./injectedConfig";
 import { reorderWorkItemInPage, type ReorderWorkItemConfig } from "./reorderWorkItemInPage";
 
 const ORDER_URL = "https://ado.example/contoso/web/Web/_apis/work/workitemsorder?api-version=x";
@@ -8,20 +9,23 @@ const ITEM_URL = "https://ado.example/contoso/_apis/wit/workitems/10?api-version
 const PARENT_LINK_URL = "https://ado.example/contoso/_apis/wit/workItems/20";
 const PARENT_LINK_TYPE = "System.LinkTypes.Hierarchy-Reverse";
 
-const config = (overrides: Partial<ReorderWorkItemConfig> = {}): ReorderWorkItemConfig => ({
-  orderUrl: ORDER_URL,
-  relationsUrl: RELATIONS_URL,
-  itemUrl: ITEM_URL,
-  parentLinkUrl: PARENT_LINK_URL,
-  parentLinkType: PARENT_LINK_TYPE,
-  id: 10,
-  rev: 5,
-  parentId: 20,
-  previousId: 3,
-  nextId: 4,
-  reparent: false,
-  ...overrides,
-});
+// Encoded exactly as the worker sends it, so `parentLinkUrl: null` is exercised across the same
+// boundary that drops null-valued `args` properties.
+const config = (overrides: Partial<ReorderWorkItemConfig> = {}): string =>
+  encodeInjectedConfig({
+    orderUrl: ORDER_URL,
+    relationsUrl: RELATIONS_URL,
+    itemUrl: ITEM_URL,
+    parentLinkUrl: PARENT_LINK_URL,
+    parentLinkType: PARENT_LINK_TYPE,
+    id: 10,
+    rev: 5,
+    parentId: 20,
+    previousId: 3,
+    nextId: 4,
+    reparent: false,
+    ...overrides,
+  } satisfies ReorderWorkItemConfig);
 
 /**
  * A minimal `Response` stand-in: only `ok`, `status`, `json()` and `text()` are ever read. `text()`

@@ -96,6 +96,13 @@ Describe the view's config id/label/properties and its renderer, mirroring
   catalog/registry stay in parity.
 - If the view declares properties, cover their defaults/validation.
 
+### 6. Stage the release note — `ChangeLog.md`
+
+A new view is user-visible, so it gets one bullet under `## Next Version` → `### New Features`,
+naming the view the way a user sees it. Add that H3 heading only if the section does not have it
+yet. A view that is still a placeholder is staged the same way, prefixed `- **WIP** — `; drop the
+marker once it does its job. See the changelog-versioning skill for the grouping rules.
+
 ## Verify
 
 Run the focused tests, then the full gate:

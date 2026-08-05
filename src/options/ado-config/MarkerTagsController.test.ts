@@ -102,7 +102,7 @@ describe("MarkerTagsController rendering", () => {
     );
     expect(inputFor(elements, "blocked", "tag").value).toBe("Blocked");
     expect(inputFor(elements, "blocked", "comment").value).toBe("[BLOCKED]");
-    expect(inputFor(elements, "blockedByOtherTeam", "comment").value).toBe("[ACCEPTED]");
+    expect(inputFor(elements, "blockedByOtherTeam", "comment").value).toBe("[BLOCKED!]");
     expect(inputFor(elements, "interrupt", "comment").value).toBe("[ACCEPTED]");
   });
 });
@@ -186,6 +186,43 @@ describe("MarkerTagsController targeted writes", () => {
     await flush();
 
     expect(store.writeCalls).toHaveLength(0);
+  });
+});
+
+describe("MarkerTagsController comment-tag uniqueness", () => {
+  it("rejects a comment tag that duplicates another marker's, restoring the last accepted value", async () => {
+    controller.render(DEFAULT_MARKER_TAGS);
+
+    setValue(inputFor(elements, "blockedByOtherTeam", "comment"), "[BLOCKED]");
+    await flush();
+
+    expect(store.writeCalls).toHaveLength(0);
+    expect(inputFor(elements, "blockedByOtherTeam", "comment").value).toBe("[BLOCKED!]");
+  });
+
+  it("allows a tag field to duplicate another marker's tag, since only comment tags are attributed", async () => {
+    controller.render(DEFAULT_MARKER_TAGS);
+
+    setValue(inputFor(elements, "blockedByOtherTeam", "tag"), "Blocked");
+    await flush();
+
+    expect(store.writeCalls).toHaveLength(1);
+    const written = store.writeCalls[0]?.markerTags as WorkItemMarkerTags;
+    expect(written.blockedByOtherTeam.tag).toBe("Blocked");
+  });
+
+  it("allows two markers to both blank their comment tag", async () => {
+    controller.render(DEFAULT_MARKER_TAGS);
+
+    setValue(inputFor(elements, "blocked", "comment"), "");
+    await flush();
+    setValue(inputFor(elements, "blockedByOtherTeam", "comment"), "");
+    await flush();
+
+    expect(store.writeCalls).toHaveLength(2);
+    const written = store.writeCalls.at(-1)?.markerTags as WorkItemMarkerTags;
+    expect(written.blocked.commentTag).toBe("");
+    expect(written.blockedByOtherTeam.commentTag).toBe("");
   });
 });
 

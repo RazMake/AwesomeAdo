@@ -5,6 +5,7 @@ import type { QueryBindings } from "../../common/bindings/QueryBinding";
 import type { ILogger } from "../../common/logging/ILogger";
 import { DEFAULT_SETTINGS } from "../../common/settings/ExtensionSettings";
 import type { ISettingsStore } from "../../common/settings/ISettingsStore";
+import { localSettingsAccess } from "../../common/settings/LocalSettingsAccess";
 import { exportConfig } from "../../common/settings-transfer/AwesomeAdoConfig";
 import type { TeamConfigSourceStore } from "../../common/settings-transfer/TeamConfigSourceStore";
 import {
@@ -74,7 +75,7 @@ function makeHarness(initialSource: number | null = null) {
   const synchronizer = new TeamConfigSynchronizer(
     sourceStore,
     reader,
-    settingsStore,
+    localSettingsAccess(settingsStore),
     bindingStore,
     logger,
   );

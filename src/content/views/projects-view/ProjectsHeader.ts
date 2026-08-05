@@ -38,6 +38,14 @@ export interface ProjectsHeaderOptions {
    */
   queueStatus: HTMLElement;
   onTagsChange(selection: CheckboxFilterSelection): void;
+  /**
+   * The tag dropdown closed after the reader changed the condition inside it.
+   *
+   * Separate from `onTagsChange` because repainting the board is what DESTROYS this header, and the
+   * dropdown with it: applying on every tick would end the reader's first click and leave a
+   * multi-tag condition impossible to build.
+   */
+  onTagsDismiss(): void;
   onOrderingChange(policy: OrderingPolicy): void;
   onExpandAll(): void;
   onCollapseAll(): void;
@@ -121,9 +129,16 @@ function renderTopBand(
  * The tag multi-select, given a quick-search because a team's tag vocabulary is unbounded, and the
  * combining controls because "these two but not that one" is the question a catalog is actually
  * asked — a plain OR cannot narrow a board where every project wears several tags.
+ *
+ * A condition like that takes several clicks to state, so the board is left alone until the dropdown
+ * closes and only then narrowed. The trigger deliberately does NOT clear a live condition: it is the
+ * way back INTO one to adjust it, and it is also one of the three natural ways out of the dropdown
+ * (press it again, click the board behind it, or press Escape). Emptying the filter is the popup's
+ * own Clear, which cannot be reached by accident mid-composition.
  */
 function renderTagFilter(doc: Document, options: ProjectsHeaderOptions): HTMLElement {
   const { required, excluded, matchAll } = options.tagCondition;
+  let composed = false;
   return renderCheckboxFilter(doc, {
     label: "Tags",
     classPrefix: TAG_FILTER_CLASS_PREFIX,
@@ -133,7 +148,13 @@ function renderTagFilter(doc: Document, options: ProjectsHeaderOptions): HTMLEle
     matchAll,
     combining: true,
     searchPlaceholder: "Search tags",
-    onChange: options.onTagsChange,
+    onChange: (selection) => {
+      composed = true;
+      options.onTagsChange(selection);
+    },
+    onPopupClosed: () => {
+      if (composed) options.onTagsDismiss();
+    },
   }).element;
 }
 

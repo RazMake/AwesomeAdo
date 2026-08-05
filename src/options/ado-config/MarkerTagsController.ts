@@ -105,7 +105,7 @@ export class MarkerTagsController {
    * overwrite it. Every other marker is carried over from the last accepted state, never re-scraped.
    */
   private readonly handleChange = (event: Event): void => {
-    const input = event.target as HTMLElement;
+    const input = event.target as HTMLInputElement;
     const field = FIELD_BY_ROLE[input.getAttribute(ROLE_ATTRIBUTE) ?? ""];
     const marker = input.closest<HTMLElement>(ROW_SELECTOR)?.getAttribute(MARKER_ATTRIBUTE) ?? "";
     // Anything that is not one of this section's own inputs — or an edit that somehow arrives before
@@ -113,8 +113,26 @@ export class MarkerTagsController {
     if (field === undefined || !MARKER_KEYS.has(marker) || this.confirmed === null) {
       return;
     }
-    this.persist(marker as WorkItemMarker, field, (input as HTMLInputElement).value.trim());
+    const value = input.value.trim();
+    // A comment token is how a note is attributed to a marker (see `markerCommentOf`); two markers
+    // sharing one non-blank token would make that attribution ambiguous, so a collision is rejected
+    // and the field is restored rather than silently aliased to whichever marker resolves first.
+    if (field === "commentTag" && this.collidesWithAnotherMarker(marker as WorkItemMarker, value)) {
+      input.value = this.confirmed[marker as WorkItemMarker].commentTag;
+      return;
+    }
+    this.persist(marker as WorkItemMarker, field, value);
   };
+
+  private collidesWithAnotherMarker(marker: WorkItemMarker, commentTag: string): boolean {
+    const confirmed = this.confirmed;
+    if (commentTag === "" || confirmed === null) {
+      return false;
+    }
+    return WORK_ITEM_MARKERS.some(
+      ({ key }) => key !== marker && confirmed[key].commentTag === commentTag,
+    );
+  }
 
   private persist(marker: WorkItemMarker, field: keyof MarkerTags, value: string): void {
     const previous = this.confirmed;

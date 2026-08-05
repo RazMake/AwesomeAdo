@@ -1,7 +1,9 @@
 import type { IQueryBindingStore } from "../bindings/IQueryBindingStore";
 import type { QueryBindings } from "../bindings/QueryBinding";
 import type { ILogger } from "../logging/ILogger";
-import type { ISettingsStore } from "../settings/ISettingsStore";
+import type { ExtensionSettings } from "../settings/ExtensionSettings";
+import { withoutPersonalSettings } from "../settings/ExtensionSettings";
+import type { LocalSettingsAccess } from "../settings/LocalSettingsAccess";
 
 import {
   ConfigImportError,
@@ -39,7 +41,7 @@ export class TeamConfigSynchronizer {
   constructor(
     private readonly sourceStore: TeamConfigSourceStore,
     private readonly reader: TeamConfigReader,
-    private readonly settingsStore: ISettingsStore,
+    private readonly settings: LocalSettingsAccess,
     private readonly bindingStore: IQueryBindingStore,
     private readonly logger: ILogger,
   ) {}
@@ -55,7 +57,7 @@ export class TeamConfigSynchronizer {
   }
 
   async publish(writer: TeamConfigWriter): Promise<TeamConfigSyncResult> {
-    return this.publishSnapshot(writer, this.bindingStore.read());
+    return this.publishSnapshot(writer, this.settings.read(), this.bindingStore.read());
   }
 
   /** Publish proposed bindings before a caller exposes them locally to pull-triggered observers. */
@@ -63,11 +65,20 @@ export class TeamConfigSynchronizer {
     writer: TeamConfigWriter,
     bindings: QueryBindings,
   ): Promise<TeamConfigSyncResult> {
-    return this.publishSnapshot(writer, bindings);
+    return this.publishSnapshot(writer, this.settings.read(), bindings);
+  }
+
+  /** Publish proposed settings before a caller exposes them locally to pull-triggered observers. */
+  async publishSettings(
+    writer: TeamConfigWriter,
+    settings: ExtensionSettings,
+  ): Promise<TeamConfigSyncResult> {
+    return this.publishSnapshot(writer, settings, this.bindingStore.read());
   }
 
   private async publishSnapshot(
     writer: TeamConfigWriter,
+    settings: ExtensionSettings | Promise<ExtensionSettings>,
     bindings: QueryBindings | Promise<QueryBindings>,
   ): Promise<TeamConfigSyncResult> {
     let workItemId: number | null = null;
@@ -76,10 +87,10 @@ export class TeamConfigSynchronizer {
       if (workItemId === null) {
         return { status: "disconnected" };
       }
-      const [settings, resolvedBindings] = await Promise.all([this.settingsStore.read(), bindings]);
+      const [resolvedSettings, resolvedBindings] = await Promise.all([settings, bindings]);
       const result = await writer.write(
         workItemId,
-        exportCompactConfig(settings, resolvedBindings),
+        exportCompactConfig(resolvedSettings, resolvedBindings),
       );
       if (!result.ok) {
         throw new Error(result.error);
@@ -126,10 +137,14 @@ export class TeamConfigSynchronizer {
         ]);
       }
       const [currentSettings, currentBindings] = await Promise.all([
-        this.settingsStore.read(),
+        this.settings.read(),
         this.bindingStore.read(),
       ]);
-      const settingsUpdate = mergeImportedSettings(currentSettings, imported);
+      // A payload published by an older build can still carry theme and default view; they belong to
+      // whoever is reading, so they are dropped rather than applied over their own choice.
+      const settingsUpdate = withoutPersonalSettings(
+        mergeImportedSettings(currentSettings, imported),
+      );
       const nextSettings = { ...currentSettings, ...settingsUpdate };
       const nextText = exportCompactConfig(nextSettings, imported.enhancedQueries);
       const bindingCount = Object.keys(imported.enhancedQueries).length;
@@ -137,7 +152,7 @@ export class TeamConfigSynchronizer {
         return { status: "unchanged", workItemId, bindingCount };
       }
       await Promise.all([
-        this.settingsStore.write(settingsUpdate),
+        this.settings.applyLocally(settingsUpdate),
         this.bindingStore.replaceAll(imported.enhancedQueries),
       ]);
       this.logger.info(

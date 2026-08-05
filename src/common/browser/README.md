@@ -666,14 +666,24 @@ thrown send, a missing/`undefined` reply, or an `ok: false` response is logged a
 Constructed only in the composition root (`src/content/index.ts`); feature code depends on
 `IWorkItemFieldWriter`.
 
-### `updateWorkItemFieldInPage(config)` — `updateWorkItemFieldInPage.ts`
+### `encodeInjectedConfig(config)` — `injectedConfig.ts`
+
+Encodes a page-world config for `chrome.scripting.executeScript`. **Every injected config whose
+`null` means something must go through this.** `executeScript` silently DROPS null-valued `args`
+properties at any depth: `{ value: null }` arrives in the page as `{}`, key and all. The injected
+function then reads `undefined` where the worker sent `null` and takes the "nothing was supplied"
+branch — which is how clearing an ETA became a JSON Patch `add` with no value and Azure DevOps
+answered "Value cannot be null" (HTTP 400). A JSON string crosses the boundary byte for byte, so the
+worker sends `args: [encodeInjectedConfig(config)]` and the injected function parses it back. Values
+**returned** from the page keep their nulls, so only `args` need this.
+
+### `updateWorkItemFieldInPage(encodedConfig)` — `updateWorkItemFieldInPage.ts`
 
 The self-contained function the **background worker** injects into the ADO tab's MAIN world to PATCH
-a work item's fields. Takes ONE `UpdateWorkItemFieldConfig`
-(`{ updateUrl, rev, field, value, additionalFields?, preconditions?, multilineFormat?, comment?, baseValue? }`) rather than an argument
-each, because `executeScript` requires every entry of `args` to be JSON-serializable and `undefined`
-is not — an omitted optional argument is an unserializable hole in that array and Chrome rejects the
-whole injection before it runs (see the note under **Injecting into the page world** below).
+a work item's fields. It takes ONE `UpdateWorkItemFieldConfig`
+(`{ updateUrl, rev, field, value, additionalFields?, preconditions?, multilineFormat?, comment?, baseValue? }`)
+— encoded with `encodeInjectedConfig`, because `value: null` ("clear this field") would otherwise be
+dropped on the way in.
 
 Uses JSON Patch (`application/json-patch+json`) with a test-and-set: the
 rev is tested first (`{ op: "test", path: "/rev", value: rev }`), followed by each bounded field
@@ -820,10 +830,12 @@ unit test can reach and each operation stands alone:
 Every URL in each `config` is built by the worker from the sender's own trusted tab URL, so these stay
 closed operations rather than a create-and-delete-anything proxy.
 
-### `reorderWorkItemInPage(config)` — `reorderWorkItemInPage.ts`
+### `reorderWorkItemInPage(encodedConfig)` — `reorderWorkItemInPage.ts`
 
 The self-contained function the **background worker** injects into the ADO tab's MAIN world to move
-an item. It runs up to two calls, in this order:
+an item. Its `ReorderWorkItemConfig` is encoded with `encodeInjectedConfig` so a `null`
+`parentLinkUrl` ("this item ends up with no parent") survives the hop. It runs up to two calls, in
+this order:
 
 1. **Re-parent and convert type** (skipped when `config.reparent` is false): GET the item with `$expand=relations` to
    find the index of its `System.LinkTypes.Hierarchy-Reverse` link — JSON Patch can only remove a link

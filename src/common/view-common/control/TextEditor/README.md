@@ -77,3 +77,34 @@ const describe = renderTextEditor(document, {
   disabled while the field contains only whitespace and enables as soon as text is entered.
 - **Focus** is taken on the next tick, after the element is in the document.
 - The caller owns the editor's lifetime: `onSubmit` resolving `true` is the signal to unmount it.
+
+## The field on its own — `renderMarkdownField(doc, options)`
+
+Not every authored value is edited in place. A creation form asks for a description alongside half a
+dozen other answers and commits them all with **its own** button, so it needs the field without the
+Save/Cancel pair. `renderMarkdownField` is exactly that field — the same box, the same Markdown
+shortcuts, the same pasted-link handling and the same `@` mentions — and `renderTextEditor` is built
+on it, so the two can never drift apart.
+
+```typescript
+const description = renderMarkdownField(document, {
+  initialText: "",
+  rows: 4,
+  placeholder: "What has to be done? Markdown supported.",
+  mentions: { userDirectory: services.userDirectory, logger: services.logger },
+  onInput: () => refreshCreateButton(),
+});
+
+row.append(description.element);
+// …later, when the form is submitted:
+create({ description: description.storedText() });
+```
+
+`element` is the shell to mount (the box plus its mention layers), `input` is the box itself — for
+focus and for the owner's own key handling — and `storedText()` returns the text **as ADO must store
+it**, with each shown name back in its `@<id>` reference form. `onInput` fires after every keystroke
+so an owner can re-evaluate what the text now allows.
+
+A key the field consumes (picking a mention, applying a Markdown shortcut) is stopped before any
+listener the owner added afterwards can see it, so a form's own Enter or Escape handling never fires
+on the keystroke that picked a name.

@@ -1490,7 +1490,7 @@
         </div>
 
         <!-- Edit mode (second section): the view type for the selected query and its per-query
-             settings, plus Save. -->
+             settings. There is no Save: each change is stored as soon as it is committed. -->
         <div class="card binding" id="binding-view-config-card" hidden>
           <h2 class="card__title">Query Enhancement Configuration</h2>
           <p class="card__hint">Choose and configure the enhanced view for the selected query.</p>
@@ -1505,10 +1505,6 @@
             </div>
 
             <div class="binding__properties" id="binding-properties"></div>
-
-            <div class="binding__actions">
-              <button type="button" class="button" id="binding-save">Save</button>
-            </div>
 
             <span
               class="binding__status"

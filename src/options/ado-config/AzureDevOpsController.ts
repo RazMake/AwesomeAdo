@@ -10,7 +10,7 @@ import {
   type ExtensionSettings,
   type TeamRef,
 } from "../../common/settings/ExtensionSettings";
-import type { ISettingsStore } from "../../common/settings/ISettingsStore";
+import type { ITeamPublishingSettingsStore } from "../../common/settings-transfer/ITeamPublishingSettingsStore";
 
 import { AutocompleteInput } from "./AutocompleteInput";
 import { DetectedValueField, type DetectedValueElements } from "./DetectedValueField";
@@ -80,7 +80,7 @@ export class AzureDevOpsController {
   private readonly markerTags: MarkerTagsController;
 
   constructor(
-    private readonly store: ISettingsStore,
+    private readonly store: ITeamPublishingSettingsStore,
     private readonly metadataReader: IAdoMetadataReader,
     private readonly elements: AzureDevOpsElements,
     private readonly reportError: ReportError = defaultReportError,

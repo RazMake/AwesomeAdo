@@ -77,4 +77,27 @@ describe("isCreateWorkItemMessage", () => {
       "malformed create-work-item request",
     );
   });
+
+  it("accepts an assignee, a description and a reason, absent or filled in", () => {
+    expect(
+      isCreateWorkItemMessage(
+        message({
+          assignedTo: "ada@example.com",
+          description: "Retry fails.",
+          comment: "[Accepted] Escalation.",
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      isCreateWorkItemMessage(message({ assignedTo: null, description: null, comment: null })),
+    ).toBe(true);
+  });
+
+  it("keeps the assignee and the prose bounded, and refuses values that are not text", () => {
+    expect(isCreateWorkItemMessage(message({ assignedTo: "x".repeat(257) }))).toBe(false);
+    expect(isCreateWorkItemMessage(message({ assignedTo: 7 }))).toBe(false);
+    expect(isCreateWorkItemMessage(message({ description: "x".repeat(32769) }))).toBe(false);
+    expect(isCreateWorkItemMessage(message({ comment: "x".repeat(32769) }))).toBe(false);
+    expect(isCreateWorkItemMessage(message({ comment: 7 }))).toBe(false);
+  });
 });

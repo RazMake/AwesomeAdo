@@ -4,6 +4,7 @@ import type { IQueryBindingStore } from "../bindings/IQueryBindingStore";
 import type { ILogger } from "../logging/ILogger";
 import { DEFAULT_SETTINGS } from "../settings/ExtensionSettings";
 import type { ISettingsStore } from "../settings/ISettingsStore";
+import { localSettingsAccess } from "../settings/LocalSettingsAccess";
 
 import type { TeamConfigSourceStore } from "./TeamConfigSourceStore";
 import { TeamConfigSynchronizer, type TeamConfigWriter } from "./TeamConfigSynchronizer";
@@ -27,7 +28,7 @@ function harness() {
   const synchronizer = new TeamConfigSynchronizer(
     source,
     { read: vi.fn(async () => ({ ok: true as const, text: null })) },
-    settingsStore,
+    localSettingsAccess(settingsStore),
     bindings,
     logger,
   );

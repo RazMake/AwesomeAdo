@@ -1,5 +1,9 @@
 import type { QueryBindings } from "../../common/bindings/QueryBinding";
-import { normalizeSettings, type ExtensionSettings } from "../../common/settings/ExtensionSettings";
+import {
+  normalizeSettings,
+  withoutPersonalSettings,
+  type ExtensionSettings,
+} from "../../common/settings/ExtensionSettings";
 
 import type { SharedQueryConfiguration } from "./SharedQueryController";
 
@@ -9,13 +13,16 @@ import type { SharedQueryConfiguration } from "./SharedQueryController";
  *
  * The publisher's values are layered OVER the reader's rather than replacing them wholesale, because
  * a payload only carries the settings it described usably; anything it left out still needs an
- * answer, and the reader's own is the only one available.
+ * answer, and the reader's own is the only one available. Personal settings are never taken from the
+ * publisher: opening someone else's query must not repaint the reader's own page.
  */
 export function overlaySettings(
   local: ExtensionSettings,
   shared: SharedQueryConfiguration | null,
 ): ExtensionSettings {
-  return shared === null ? local : normalizeSettings({ ...local, ...shared.settings });
+  return shared === null
+    ? local
+    : normalizeSettings({ ...local, ...withoutPersonalSettings(shared.settings) });
 }
 
 /**

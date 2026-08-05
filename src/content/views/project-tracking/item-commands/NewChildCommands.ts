@@ -43,8 +43,23 @@ export function isImmediateParentOfPrimaryWork(
   parent: TrackedWorkItem,
   types: ReadonlyMap<string, TypeCatalogEntry>,
 ): boolean {
+  return primaryChildTypeOf(parent, types) !== null;
+}
+
+/**
+ * The first configured child type under `parent` that IS the delivery the team tracks, or null when
+ * this level holds only more planning.
+ *
+ * Taken instead of `childTypeOf` wherever the command being offered is about raising WORK: a type
+ * whose children mix planning with delivery would otherwise create another planning item under a
+ * command that promised the opposite.
+ */
+export function primaryChildTypeOf(
+  parent: TrackedWorkItem,
+  types: ReadonlyMap<string, TypeCatalogEntry>,
+): string | null {
   const primary = primaryWorkTypes([...types.values()]);
-  return types.get(parent.type)?.children?.some((child) => primary.has(child)) === true;
+  return types.get(parent.type)?.children?.find((child) => primary.has(child)) ?? null;
 }
 
 /**

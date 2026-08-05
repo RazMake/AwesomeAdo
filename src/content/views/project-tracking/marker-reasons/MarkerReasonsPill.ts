@@ -1,6 +1,9 @@
 import type { TrackedWorkItem } from "../../../../common/ado/TrackedWorkItem";
 import type { MarkerTags, WorkItemMarker } from "../../../../common/settings/ExtensionSettings";
-import { renderMarkerPill } from "../../../../common/view-common/control/MarkerPill/MarkerPill";
+import {
+  renderMarkerPill,
+  markerLabel,
+} from "../../../../common/view-common/control/MarkerPill/MarkerPill";
 import { createPopupHost } from "../../../../common/view-common/control/popupHost/popupHost";
 import {
   createNotesPanelState,
@@ -40,11 +43,25 @@ export function renderMarkerReasonsPill(options: MarkerReasonsPillOptions): HTML
   shell.className = "awesomeado-marker-reasons";
   shell.style.cssText = ["position:relative", "display:inline-flex", "margin-left:6px"].join(";");
 
-  const renderStatic = (title: string): void => {
+  // An inert pill looks identical to one nobody has clicked yet, so the reason it cannot open is
+  // recorded — and put in its tooltip — rather than left as "nothing happens when I click it".
+  const renderStatic = (title: string, reason: string): void => {
     shell.replaceChildren(renderMarkerPill(doc, { marker, accepted: options.accepted, title }));
+    options.services.logger.info(
+      `Marker "${marker}" pill on item ${options.item.id} cannot open its notes: ${reason} ` +
+        `(commentTag="${tags.commentTag}", itemNoteCount=${options.item.noteCount}).`,
+    );
   };
-  if (tags.commentTag.length === 0 || options.item.noteCount === 0) {
-    renderStatic("No notes");
+  if (tags.commentTag.length === 0) {
+    renderStatic(
+      `No comment tag is configured for ${markerLabel(marker)}, so its notes cannot be found. ` +
+        "Set one under Options → Azure DevOps → Marker tags.",
+      "no comment tag is configured",
+    );
+    return shell;
+  }
+  if (options.item.noteCount === 0) {
+    renderStatic("No notes", "the item has no notes at all");
     return shell;
   }
 
@@ -55,7 +72,6 @@ export function renderMarkerReasonsPill(options: MarkerReasonsPillOptions): HTML
     services: options.services,
     state: notesState(options.item),
     onlyCommentPrefix: tags.commentTag,
-    hideOnlyCommentPrefix: true,
     // A corrected marker note is a new revision of the item, so the row's own controls must be
     // tested against that one rather than the rev the board last read.
     onItemRevision: (rev) => {
@@ -63,7 +79,10 @@ export function renderMarkerReasonsPill(options: MarkerReasonsPillOptions): HTML
     },
     onNoteCountKnown: (count) => {
       if (count === 0) {
-        renderStatic("No notes");
+        renderStatic(
+          `No note in this window starts with "${tags.commentTag}"`,
+          "no note in the Updates window carries its comment tag",
+        );
         return;
       }
       const pill = renderMarkerPill(doc, {
@@ -81,9 +100,10 @@ export function renderMarkerReasonsPill(options: MarkerReasonsPillOptions): HTML
       });
       shell.replaceChildren(pill);
     },
-    onNoteLoadFailed: () => renderStatic("Could not load notes"),
+    onNoteLoadFailed: () =>
+      renderStatic("Could not load notes", "the discussion could not be read"),
   });
-  renderStatic("Loading notes");
+  renderStatic("Loading notes", "its notes are still being read");
   notes.setExpanded(true);
   return shell;
 }

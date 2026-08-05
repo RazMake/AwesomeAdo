@@ -1,5 +1,5 @@
 import type { IQueryBindingStore } from "../../common/bindings/IQueryBindingStore";
-import type { ISettingsStore } from "../../common/settings/ISettingsStore";
+import type { LocalSettingsAccess } from "../../common/settings/LocalSettingsAccess";
 import {
   CONFIG_FILE_NAME,
   CONNECTION_FILE_NAME,
@@ -51,7 +51,7 @@ export class SettingsTransferController {
   private disposed = false;
 
   constructor(
-    private readonly settingsStore: ISettingsStore,
+    private readonly settingsStore: LocalSettingsAccess,
     private readonly bindingStore: IQueryBindingStore,
     private readonly teamConfigSourceStore: TeamConfigSourceStore,
     private readonly elements: SettingsTransferElements,
@@ -142,7 +142,9 @@ export class SettingsTransferController {
       // or got wrong keeps what the user has today; bindings are replaced wholesale so the file is
       // authoritative about which queries are enhanced — except for a connection-only file, which
       // describes no bindings and must therefore leave the user's own set alone.
-      const writes: Promise<void>[] = [this.settingsStore.write(settings)];
+      // The settings write stays local: a file may name a different work item, and publishing first
+      // would push this configuration into the connection the import is moving away from.
+      const writes: Promise<void>[] = [this.settingsStore.applyLocally(settings)];
       if (replacesBindings) {
         writes.push(this.bindingStore.replaceAll(enhancedQueries));
       }

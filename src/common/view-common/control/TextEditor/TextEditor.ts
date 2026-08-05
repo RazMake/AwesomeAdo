@@ -1,10 +1,5 @@
-import { createMentionHighlight, type MentionHighlight } from "./MentionHighlight";
-import {
-  createMentionSuggestions,
-  type MentionSuggestions,
-  type TextEditorMentionOptions,
-} from "./MentionSuggestions";
-import { FIELD_TEXT_STYLE } from "./fieldMetrics";
+import { MULTILINE_HINT, SINGLE_LINE_HINT, renderMarkdownField } from "./MarkdownField";
+import type { TextEditorMentionOptions } from "./MentionSuggestions";
 
 /** What the editor starts with, how it is shaped, and what it does with what the author types. */
 export interface TextEditorOptions {
@@ -43,13 +38,6 @@ export interface TextEditorOptions {
   onCancel(): void;
 }
 
-/** The hints each shape carries, naming the keyboard shortcuts the editor actually honours. */
-const MULTILINE_HINT = "Markdown supported. Ctrl+Enter to save, Esc to cancel.";
-const SINGLE_LINE_HINT = "Enter to save, Esc to cancel.";
-
-/** How tall the Markdown box opens when the caller does not say — enough for a note. */
-const DEFAULT_ROWS = 3;
-
 /**
  * The themed text editor shared by every in-place edit: adding a note, correcting one, renaming an
  * item, rewriting its description.
@@ -67,14 +55,6 @@ export function renderTextEditor(doc: Document, options: TextEditorOptions): HTM
   );
 
   const singleLine = options.singleLine === true;
-  const input = createField(doc, options, singleLine);
-  const fieldShell = doc.createElement("div");
-  fieldShell.style.cssText = "position:relative";
-  fieldShell.append(input);
-  const mentions = createMentionSupport(doc, fieldShell, input, options, singleLine);
-  const mentionSuggestions = mentions?.suggestions ?? null;
-  const mentionHighlight = mentions?.highlight ?? null;
-
   const failure = doc.createElement("span");
   failure.className = "awesomeado-text-editor__error";
   failure.style.cssText = ["display:none", "font-size:11px", "color:var(--error)"].join(";");
@@ -85,27 +65,33 @@ export function renderTextEditor(doc: Document, options: TextEditorOptions): HTM
   buttons.style.cssText = ["display:flex", "gap:6px", "align-items:center"].join(";");
   buttons.append(submit, cancel, failure);
 
-  root.append(fieldShell, buttons);
-
   let saving = false;
   const refreshSubmit = (): void => {
-    const hasRequiredText = options.allowEmpty === true || input.value.trim().length > 0;
+    const hasRequiredText = options.allowEmpty === true || field.input.value.trim().length > 0;
     submit.disabled = saving || !hasRequiredText;
   };
+
+  const field = renderMarkdownField(doc, {
+    initialText: options.initialText,
+    singleLine,
+    maxLength: options.maxLength,
+    rows: options.rows,
+    placeholder: options.placeholder ?? (singleLine ? SINGLE_LINE_HINT : MULTILINE_HINT),
+    mentions: options.mentions,
+    onInput: () => refreshSubmit(),
+  });
+  root.append(field.element, buttons);
   refreshSubmit();
+
   const save = (): void => {
-    const typed = input.value.trim();
-    if (saving || (typed.length === 0 && options.allowEmpty !== true)) {
+    if (saving || (field.input.value.trim().length === 0 && options.allowEmpty !== true)) {
       return;
     }
     saving = true;
     refreshSubmit();
     cancel.disabled = true;
     failure.style.display = "none";
-    // The box shows each mention as the person's NAME; what ADO stores has to be the identity
-    // reference behind it, so the two are swapped back at the moment of saving.
-    const text = mentionSuggestions?.toStoredText(typed) ?? typed;
-    void options.onSubmit(text).then((saved) => {
+    void options.onSubmit(field.storedText().trim()).then((saved) => {
       saving = false;
       if (saved) {
         return;
@@ -114,20 +100,17 @@ export function renderTextEditor(doc: Document, options: TextEditorOptions): HTM
       // author looking at their own unsaved words behind dead buttons.
       refreshSubmit();
       cancel.disabled = false;
-      failure.textContent = "Not saved — see the diagnostics log.";
+      failure.textContent = "Not saved \u2014 see the diagnostics log.";
       failure.style.display = "inline";
     });
   };
 
   wireEditorEvents({
-    input,
+    input: field.input,
     submit,
     cancel,
     singleLine,
-    mentionSuggestions,
-    mentionHighlight,
     save,
-    refreshSubmit,
     onCancel: options.onCancel,
   });
 
@@ -139,18 +122,15 @@ function wireEditorEvents(options: {
   submit: HTMLButtonElement;
   cancel: HTMLButtonElement;
   singleLine: boolean;
-  mentionSuggestions: MentionSuggestions | null;
-  mentionHighlight: MentionHighlight | null;
   save(): void;
-  refreshSubmit(): void;
   onCancel(): void;
 }): void {
   const { input } = options;
   options.submit.addEventListener("click", options.save);
   options.cancel.addEventListener("click", options.onCancel);
+  // Registered after the field's own handler, which stops a key it already spent on a mention pick
+  // or a Markdown shortcut from ever reaching this one.
   (input as HTMLElement).addEventListener("keydown", (event) => {
-    if (options.mentionSuggestions?.handleKeydown(event) === true) return event.stopPropagation();
-    if (!options.singleLine && applyMarkdownShortcut(event, input)) return event.stopPropagation();
     if (event.key === "Enter" && (options.singleLine || event.ctrlKey || event.metaKey)) {
       event.preventDefault();
       options.save();
@@ -160,144 +140,7 @@ function wireEditorEvents(options: {
     }
     event.stopPropagation();
   });
-  if (!options.singleLine) {
-    (input as HTMLTextAreaElement).addEventListener("paste", (event) =>
-      pasteMarkdownLink(event, input),
-    );
-  }
-  input.addEventListener("input", () => {
-    options.mentionSuggestions?.refresh();
-    options.mentionHighlight?.refresh();
-    options.refreshSubmit();
-  });
   setTimeout(() => input.focus(), 0);
-}
-
-/**
- * The mention list and the layer that paints what it inserted, for a field that offers mentions.
- *
- * Null for a one-line field (a title has no mentions) and for a caller that asked for none. The
- * field's text is switched to the DISPLAY form here, before anything else reads it: what an author
- * gets back to edit has to be the people they wrote, not the identity ids stored behind them.
- */
-function createMentionSupport(
-  doc: Document,
-  fieldShell: HTMLElement,
-  input: HTMLInputElement | HTMLTextAreaElement,
-  options: TextEditorOptions,
-  singleLine: boolean,
-): { suggestions: MentionSuggestions; highlight: MentionHighlight } | null {
-  if (singleLine || options.mentions === undefined) {
-    return null;
-  }
-  const field = input as HTMLTextAreaElement;
-  const suggestions = createMentionSuggestions(doc, fieldShell, field, options.mentions);
-  field.value = suggestions.toDisplayText(options.initialText);
-  const highlight = createMentionHighlight({
-    doc,
-    shell: fieldShell,
-    input: field,
-    labels: () => suggestions.labels(),
-  });
-  return { suggestions, highlight };
-}
-
-/** Apply the Markdown shortcut represented by `event`, when it is one this editor owns. */
-function applyMarkdownShortcut(
-  event: KeyboardEvent,
-  input: HTMLInputElement | HTMLTextAreaElement,
-): boolean {
-  if ((!event.ctrlKey && !event.metaKey) || event.altKey) {
-    return false;
-  }
-  const marker =
-    event.key.toLowerCase() === "b" ? "**" : event.key.toLowerCase() === "i" ? "_" : null;
-  if (marker === null) {
-    return false;
-  }
-  event.preventDefault();
-  wrapSelection(input, marker);
-  return true;
-}
-
-/** Wrap the current selection, leaving the selected text selected and an empty caret between markers. */
-function wrapSelection(input: HTMLInputElement | HTMLTextAreaElement, marker: string): void {
-  const start = input.selectionStart ?? input.value.length;
-  const end = input.selectionEnd ?? start;
-  const selected = input.value.slice(start, end);
-  input.setRangeText(`${marker}${selected}${marker}`, start, end);
-  input.setSelectionRange(start + marker.length, start + marker.length + selected.length);
-  input.dispatchEvent(new Event("input", { bubbles: true }));
-}
-
-/** Turn a pasted HTTP(S) URL into an empty Markdown link whose label is ready to type. */
-function pasteMarkdownLink(
-  event: ClipboardEvent,
-  input: HTMLInputElement | HTMLTextAreaElement,
-): void {
-  const link = pastedHttpUrl(event);
-  if (link === null) {
-    return;
-  }
-  event.preventDefault();
-  const start = input.selectionStart ?? input.value.length;
-  const end = input.selectionEnd ?? start;
-  input.setRangeText(`[](${link})`, start, end);
-  input.setSelectionRange(start + 1, start + 1);
-  input.dispatchEvent(new Event("input", { bubbles: true }));
-}
-
-/** The clipboard's URL when it contains only one HTTP(S) link; otherwise leave native paste alone. */
-function pastedHttpUrl(event: ClipboardEvent): string | null {
-  const text = event.clipboardData?.getData("text/plain").trim();
-  if (text === undefined || text.length === 0) {
-    return null;
-  }
-  try {
-    const parsed = new URL(text);
-    return parsed.protocol === "http:" || parsed.protocol === "https:" ? text : null;
-  } catch {
-    return null;
-  }
-}
-
-/** The field itself: a one-line `input` or the multi-line Markdown `textarea`. */
-function createField(
-  doc: Document,
-  options: TextEditorOptions,
-  singleLine: boolean,
-): HTMLInputElement | HTMLTextAreaElement {
-  // Themed field: ADO's own surface and border tokens so the box reads on light, dark and
-  // Follow-ADO alike, with a fixed fallback for the tokens a theme may not define.
-  const styles = [
-    "width:100%",
-    ...FIELD_TEXT_STYLE,
-    "border-color:var(--palette-neutral-20)",
-    "border-radius:3px",
-    "background:var(--callout-background-color)",
-    "color:var(--text-primary-color)",
-  ];
-
-  let input: HTMLInputElement | HTMLTextAreaElement;
-  if (singleLine) {
-    const line = doc.createElement("input");
-    line.type = "text";
-    input = line;
-  } else {
-    const box = doc.createElement("textarea");
-    box.rows = options.rows ?? DEFAULT_ROWS;
-    styles.push("resize:vertical");
-    input = box;
-  }
-
-  input.className = "awesomeado-text-editor__input";
-  input.value = options.initialText;
-  if (options.maxLength !== undefined) {
-    input.maxLength = options.maxLength;
-  }
-  input.placeholder = options.placeholder ?? (singleLine ? SINGLE_LINE_HINT : MULTILINE_HINT);
-  input.style.cssText = styles.join(";");
-  return input;
 }
 
 /** A compact themed button; `primary` marks the confirming one. */

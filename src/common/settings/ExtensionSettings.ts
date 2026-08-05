@@ -171,7 +171,7 @@ export const WORK_ITEM_MARKERS: readonly {
  */
 export const DEFAULT_MARKER_TAGS: WorkItemMarkerTags = {
   blocked: { tag: "Blocked", commentTag: "[BLOCKED]" },
-  blockedByOtherTeam: { tag: "Blocked by another team", commentTag: "[ACCEPTED]" },
+  blockedByOtherTeam: { tag: "Blocked by another team", commentTag: "[BLOCKED!]" },
   interrupt: { tag: "Interrupt", commentTag: "[ACCEPTED]" },
 };
 
@@ -243,6 +243,31 @@ export const DEFAULT_SETTINGS: ExtensionSettings = deepFreeze({
   workItemTypes: [],
   markerTags: normalizeMarkerTags(undefined),
 });
+
+/**
+ * The settings that belong to the person rather than the team.
+ *
+ * They still sync across that user's own devices — "personal" is not "device-local" — but they are
+ * never published to a shared configuration work item and never taken from one, so a teammate cannot
+ * repaint someone else's options page or decide which view their queries open in.
+ */
+export const PERSONAL_SETTING_KEYS = ["theme", "defaultView"] as const;
+
+export type PersonalSettingKey = (typeof PERSONAL_SETTING_KEYS)[number];
+
+/** The settings a team payload is allowed to carry. */
+export type SharedSettings = Omit<ExtensionSettings, PersonalSettingKey>;
+
+/** Drop the personal settings from a snapshot or a partial update. */
+export function withoutPersonalSettings<T extends Partial<ExtensionSettings>>(
+  settings: T,
+): Omit<T, PersonalSettingKey> {
+  const shared: Record<string, unknown> = { ...settings };
+  for (const key of PERSONAL_SETTING_KEYS) {
+    delete shared[key];
+  }
+  return shared as Omit<T, PersonalSettingKey>;
+}
 
 /** Freeze `value` and every plain object/array it owns, returning the same reference. */
 function deepFreeze<T>(value: T): T {

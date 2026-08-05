@@ -3,8 +3,10 @@ import {
   DEFAULT_VIEWS,
   normalizeSettings,
   THEMES,
+  withoutPersonalSettings,
   WORK_ITEM_MARKERS,
   type ExtensionSettings,
+  type SharedSettings,
 } from "../settings/ExtensionSettings";
 
 import { normalizeWorkItemId } from "./TeamConfigSourceStore";
@@ -33,7 +35,8 @@ export const CONNECTION_CONFIG_SCOPE = "connection";
  * A file export carries the user's ENTIRE configuration: every extension setting (theme, default
  * view, organization, project, current team, sprint counts, board columns, work item types, marker
  * tags), every enhanced-query binding, and the optional team configuration work item ID. The compact
- * payload published to that work item deliberately omits its own ID.
+ * payload published to a work item deliberately omits its own ID and the personal settings
+ * (`PERSONAL_SETTING_KEYS`), which belong to the reader rather than the team.
  */
 export interface AwesomeAdoConfig {
   awesomeAdoConfigVersion: number;
@@ -41,6 +44,11 @@ export interface AwesomeAdoConfig {
   enhancedQueries: QueryBindings;
   /** Trusted team configuration source included by file export, never by the shared payload. */
   teamConfigWorkItemId?: number | null;
+}
+
+/** What a serializer writes: the file form, or the team form with personal settings removed. */
+interface SerializedConfig extends Omit<AwesomeAdoConfig, "settings"> {
+  settings: ExtensionSettings | SharedSettings;
 }
 
 /**
@@ -110,7 +118,7 @@ export function exportConfig(
   enhancedQueries: QueryBindings,
   teamConfigWorkItemId?: number | null,
 ): string {
-  return serializeConfig(settings, enhancedQueries, teamConfigWorkItemId, 2);
+  return serializeConfig(normalizeSettings(settings), enhancedQueries, teamConfigWorkItemId, 2);
 }
 
 /** Serialize the full configuration without presentation whitespace for an ADO work item field. */
@@ -118,7 +126,9 @@ export function exportCompactConfig(
   settings: ExtensionSettings,
   enhancedQueries: QueryBindings,
 ): string {
-  return serializeConfig(settings, enhancedQueries);
+  // The team payload carries the team's configuration only: theme and default view belong to the
+  // person, so publishing them would repaint every teammate's page on the next pull.
+  return serializeConfig(withoutPersonalSettings(normalizeSettings(settings)), enhancedQueries);
 }
 
 /**
@@ -142,14 +152,14 @@ export function exportConnectionConfig(
 }
 
 function serializeConfig(
-  settings: ExtensionSettings,
+  settings: ExtensionSettings | SharedSettings,
   enhancedQueries: QueryBindings,
   teamConfigWorkItemId?: number | null,
   space?: number,
 ): string {
-  const config: AwesomeAdoConfig = {
+  const config: SerializedConfig = {
     awesomeAdoConfigVersion: CONFIG_FORMAT_VERSION,
-    settings: normalizeSettings(settings),
+    settings,
     enhancedQueries: normalizeBindings(enhancedQueries),
   };
   if (teamConfigWorkItemId !== undefined) {

@@ -35,6 +35,9 @@ describe("MessagingWorkItemCreator", () => {
       tags: ["Catalog"],
       areaPath: "Fabrikam\\Core",
       iterationPath: "Fabrikam\\Backlog",
+      assignedTo: null,
+      description: null,
+      comment: null,
       parentId: null,
     });
     expect(result).toEqual({ ok: true, id: 42, rev: 1 });
@@ -48,6 +51,25 @@ describe("MessagingWorkItemCreator", () => {
     await new MessagingWorkItemCreator(send, logger()).create({ ...NEW_ITEM, parentId: 7 });
 
     expect(send).toHaveBeenCalledWith(expect.objectContaining({ parentId: 7 }));
+  });
+
+  it("carries the assignee, description and reason a form filled in", async () => {
+    const send = vi.fn(async () => ({ ok: true, id: 42, rev: 1 })) as SendCreateWorkItemRequest;
+
+    await new MessagingWorkItemCreator(send, logger()).create({
+      ...NEW_ITEM,
+      assignedTo: "ada@example.com",
+      description: "Card capture fails on retry.",
+      comment: "[Accepted] Customer escalation.",
+    });
+
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        assignedTo: "ada@example.com",
+        description: "Card capture fails on retry.",
+        comment: "[Accepted] Customer escalation.",
+      }),
+    );
   });
 
   it("reports and records a worker that never answered", async () => {

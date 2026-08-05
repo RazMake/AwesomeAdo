@@ -1,6 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { updateWorkItemFieldInPage } from "./updateWorkItemFieldInPage";
+import type { UpdateWorkItemFieldConfig } from "./WorkItemFieldRequest";
+import { encodeInjectedConfig } from "./injectedConfig";
+import { updateWorkItemFieldInPage as injectUpdate } from "./updateWorkItemFieldInPage";
+
+// Every case goes through the encoded-config boundary the worker uses, so a `null` that MEANS
+// "clear this field" is exercised across the hop that drops null-valued `args` properties.
+const updateWorkItemFieldInPage = (config: UpdateWorkItemFieldConfig) =>
+  injectUpdate(encodeInjectedConfig(config));
 
 const UPDATE_URL = "https://ado.example/_apis/wit/workitems/123";
 
@@ -298,27 +305,6 @@ describe("updateWorkItemFieldInPage - a comment riding in the same patch", () =>
 
     const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(parsePatchBody(init)).toHaveLength(2);
-  });
-
-  it("carries no unserializable hole: every optional left out is simply absent", () => {
-    // The regression this guards: an omitted optional passed POSITIONALLY is `undefined`, which
-    // `chrome.scripting.executeScript` refuses to serialize — it rejects the whole injection, so
-    // nothing reaches ADO and the board reports a bare "exception" that looks like a failed write.
-    const config = {
-      updateUrl: UPDATE_URL,
-      rev: 2,
-      field: "System.State",
-      value: "Active",
-      multilineFormat: undefined,
-      comment: undefined,
-    };
-
-    expect(JSON.parse(JSON.stringify(config))).toEqual({
-      updateUrl: UPDATE_URL,
-      rev: 2,
-      field: "System.State",
-      value: "Active",
-    });
   });
 });
 

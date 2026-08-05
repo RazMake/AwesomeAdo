@@ -148,14 +148,13 @@ function makeElements(): QueryBindingsElements {
   const deleteButton = create<HTMLButtonElement>("button");
   editCard.append(querySelect, deleteButton);
 
-  // View-configuration card: the view type, its settings, and Save.
+  // View-configuration card: the view type and its settings. There is no Save button.
   const viewConfigCard = create<HTMLElement>("div");
   const viewSelect = create<HTMLSelectElement>("select");
   const properties = create<HTMLElement>("div");
-  const saveButton = create<HTMLButtonElement>("button");
   const sharedNotice = create<HTMLElement>("p");
   const status = create<HTMLElement>("span");
-  viewConfigCard.append(viewSelect, properties, saveButton, sharedNotice, status);
+  viewConfigCard.append(viewSelect, properties, sharedNotice, status);
 
   const root = create<HTMLElement>("div");
   root.append(emptyState, addCard, editCard, viewConfigCard);
@@ -172,7 +171,6 @@ function makeElements(): QueryBindingsElements {
     viewConfigCard,
     viewSelect,
     properties,
-    saveButton,
     sharedNotice,
     status,
   };
@@ -237,6 +235,12 @@ const fillProp = (key: string, value: string): void => {
   input.dispatchEvent(new Event("input"));
 };
 
+/** Types a value AND commits it (blur/Enter), which is what stores it now that Save is gone. */
+const commitProp = (key: string, value: string): void => {
+  fillProp(key, value);
+  propInput(key)?.dispatchEvent(new Event("change"));
+};
+
 // Selects the CONFIG_VIEWS "config" view; shared by the split property-kind describes.
 const selectConfig = (): void => {
   elements.viewSelect.value = "config";
@@ -279,7 +283,7 @@ describe("add mode (opened from an unbound query's button)", () => {
       properties: {},
       name: "Sprint 42",
     });
-    expect(elements.status.textContent).toBe("Saved.");
+    expect(elements.status.textContent).toBe("");
     // The tab switches to the edit layout with the just-added query selected.
     expect(elements.addCard.hidden).toBe(true);
     expect(elements.editCard.hidden).toBe(false);
@@ -361,17 +365,16 @@ describe("edit mode (opened from an already-bound query's button)", () => {
     expect(label).toBe(`Sprint 42 (${GUID_A})`);
   });
 
-  it("keeps Save disabled until every required property has a value", async () => {
+  it("stores nothing until every required property has a value, and says what is missing", async () => {
     const store = makeStore({ [GUID_A]: { view: "sprint", properties: {}, name: "Sprint 42" } });
     await controllerFor(store).init(GUID_A, "Sprint 42");
 
     setView("tracking");
-    expect(elements.saveButton.disabled).toBe(true);
+    await settle();
+    expect(store.bind).not.toHaveBeenCalled();
+    expect(elements.status.textContent).toBe("Enter Team to save these settings.");
 
-    fillProp("team", "Blue");
-    expect(elements.saveButton.disabled).toBe(false);
-
-    elements.saveButton.click();
+    commitProp("team", "Blue");
     await settle();
 
     expect(store.bind).toHaveBeenCalledWith(GUID_A, {
@@ -379,6 +382,8 @@ describe("edit mode (opened from an already-bound query's button)", () => {
       properties: { team: "Blue", note: "" },
       name: "Sprint 42",
     });
+    // The notice clears once the setting lands; nothing is announced for a save that just worked.
+    expect(elements.status.textContent).toBe("");
   });
 
   it("deletes the only binding and shows the empty state", async () => {
@@ -395,19 +400,18 @@ describe("edit mode (opened from an already-bound query's button)", () => {
     expect(elements.status.textContent).toBe("Deleted.");
   });
 
-  it("reports a save failure and re-enables Save", async () => {
+  it("reports a save failure without pretending the change was kept", async () => {
     const store = makeStore({ [GUID_A]: { view: "sprint", properties: {}, name: "Alpha" } });
     store.bind.mockRejectedValueOnce(new Error("nope"));
     await controllerFor(store).init(GUID_A, "Alpha");
 
-    elements.saveButton.click();
+    setView("sprint");
     await settle();
 
     expect(reportError).toHaveBeenCalled();
     expect(elements.status.textContent).toBe("Could not save the query enhancement.");
     expect(elements.status.classList.contains("binding__status--error")).toBe(true);
     expect(elements.status.closest("div")).toBe(elements.viewConfigCard);
-    expect(elements.saveButton.disabled).toBe(false);
   });
 
   it("reports a delete failure and re-enables Delete", async () => {
@@ -516,7 +520,7 @@ describe("edit mode (options menu) — save & delete", () => {
     const store = makeStore({ [GUID_A]: { view: "sprint", properties: {}, name: "Alpha" } });
     await controllerFor(store).init(null, null);
 
-    elements.saveButton.click();
+    setView("sprint");
     await settle();
 
     expect(store.bind).toHaveBeenCalledWith(GUID_A, {
@@ -531,8 +535,7 @@ describe("edit mode (options menu) — save & delete", () => {
     await controllerFor(store).init(null, null);
 
     setView("tracking");
-    fillProp("team", "Blue");
-    elements.saveButton.click();
+    commitProp("team", "Blue");
     await settle();
 
     const label = [...elements.querySelect.options].find((o) => o.value === GUID_A)?.textContent;
@@ -771,7 +774,6 @@ describe("view property kinds — area-path lists", () => {
     elements.properties
       .querySelector<HTMLButtonElement>(".area-path-list-editor__add button")!
       .click();
-    elements.saveButton.click();
     await settle();
 
     expect(store.bind).toHaveBeenCalledWith(GUID_A, {
@@ -832,6 +834,13 @@ describe("properties derived from the bound query", () => {
 
     expect(propInput("projectTag")?.value).toBe("FromQuery");
     expect(propInput("projectQueryFolder")?.value).toBe("Shared Queries/Team A");
+    // Stored, not merely shown: with no Save button, an unwritten seed is a setting the user
+    // believes they have and the view never sees.
+    expect(store.bind).toHaveBeenCalledWith(GUID_A, {
+      view: "catalog",
+      properties: { projectTag: "FromQuery", projectQueryFolder: "Shared Queries/Team A" },
+      name: "Catalog",
+    });
   });
 
   it("never overwrites a value the user already stored", async () => {
@@ -840,6 +849,7 @@ describe("properties derived from the bound query", () => {
 
     expect(propInput("projectTag")?.value).toBe("Chosen");
     expect(propInput("projectQueryFolder")?.value).toBe("Shared Queries/Mine");
+    expect(store.bind).not.toHaveBeenCalled();
   });
 
   it("reads one query at most once, however often its properties are re-rendered", async () => {
@@ -863,7 +873,6 @@ describe("properties derived from the bound query", () => {
 
     expect(reportError).toHaveBeenCalled();
     expect(propInput("projectTag")?.value).toBe("");
-    expect(elements.saveButton.disabled).toBe(false);
   });
 });
 
@@ -1010,7 +1019,6 @@ describe("saved-query folders expanded as the user types", () => {
 
     expect(reportError).toHaveBeenCalled();
     expect(propInput("projectQueryFolder")?.value).toBe("Shared Queries/Team A/Reports");
-    expect(elements.saveButton.disabled).toBe(false);
   });
 });
 
@@ -1037,8 +1045,6 @@ describe("view property kinds — area-path publication failure", () => {
     elements.properties
       .querySelector<HTMLButtonElement>(".area-path-list-editor__add button")!
       .click();
-
-    elements.saveButton.click();
     await settle();
 
     expect(store.bind).not.toHaveBeenCalled();
@@ -1107,8 +1113,6 @@ describe("view property kinds — clamping & selects", () => {
     }
     weeks.value = "0";
     weeks.dispatchEvent(new Event("change"));
-
-    elements.saveButton.click();
     await settle();
 
     expect(store.bind).toHaveBeenCalledWith(GUID_A, {
@@ -1149,8 +1153,6 @@ describe("view property kinds — clamping & selects", () => {
     }
     ordering.value = "title";
     ordering.dispatchEvent(new Event("change"));
-
-    elements.saveButton.click();
     await settle();
 
     expect(store.bind).toHaveBeenCalledWith(
@@ -1259,7 +1261,6 @@ describe("QueryBindingsController shared query configuration card", () => {
 
     expect(elements.viewSelect.value).toBe("config");
     expect(elements.viewSelect.disabled).toBe(true);
-    expect(elements.saveButton.hidden).toBe(true);
     expect(elements.properties.querySelectorAll("input, select")).toHaveLength(0);
     expect(readOnlyValues()).toEqual(["Custom.Rank", "6", "By title"]);
     expect(elements.sharedNotice.hidden).toBe(false);
@@ -1298,7 +1299,6 @@ describe("QueryBindingsController shared query configuration card", () => {
     elements.querySelect.dispatchEvent(new Event("change"));
 
     expect(elements.viewSelect.disabled).toBe(false);
-    expect(elements.saveButton.hidden).toBe(false);
     expect(elements.deleteButton.textContent).toBe("Delete");
     expect(elements.sharedNotice.hidden).toBe(true);
     expect(propInput("orderField")).not.toBeNull();

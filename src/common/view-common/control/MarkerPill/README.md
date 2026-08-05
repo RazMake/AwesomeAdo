@@ -38,9 +38,26 @@ row.append(
 | `accepted`    | Interrupt only: solid accepted paint; false uses the muted raised paint.               |
 | `counts`      | Optional tag total and Interrupt accepted-in-sprint count, using shared pill geometry. |
 | `onToggle`    | When interactive, called on click; the caller flips its own selection and re-renders.  |
+| `onActivate`  | Makes the pill a `<button>` that opens what stands behind it, adding only the pointer. |
+
+A raised Interrupt and an accepted one are meant to look different. **The same variant must not.**
+`onActivate` therefore contributes nothing but `cursor:pointer`: the pill states the font, margin,
+box model and border a `<button>` would otherwise supply itself, so an opener on a board card and
+the static pill in a context menu are the same size, shape and colour.
+
+Neither `onActivate` nor `interactive` may hand styles back to be appended — that is how an opener
+once erased the raised Interrupt's edge. `MarkerPill.test.ts` holds the invariant: every variant has
+the same shape and differs only in colour, an opener's declarations equal the static pill's, and a
+raised Interrupt stays visibly apart from an accepted one. A surface that shows the pill must show
+it unaltered; `MarkerReasonsPill.test.ts` pins the board card against this control's own output.
 
 `markerLabel(marker)` returns the same wording the options page labels the marker's row with, for
 callers that need the text alone (a tooltip, a log line).
+
+`markerAccentColor(marker)` returns the theme role the pill is filled with, for a surface that flags
+something **about** a marker rather than showing the marker itself — the coloured dot a marker note
+wears in an item's complete discussion. Reading it from the pill's own paint is what stops the two
+from drifting to different colours, which is the only thing tying them together.
 
 `markerPresence.ts` exports the shared `itemHasMarker`, `collectMarkersInUse`, and
 `createMarkerFilter` predicates so every view applies the same configured-tag semantics:

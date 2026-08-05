@@ -8,7 +8,10 @@ import {
 import type { ItemContextMenuCommand } from "../../../common/view-common/control/ItemContextMenu/ItemContextMenu";
 import { renderTextEditor } from "../../../common/view-common/control/TextEditor/TextEditor";
 import { buildItemEditingCommands } from "../project-tracking/item-commands/ItemCommands";
-import { buildNewChildCommand } from "../project-tracking/item-commands/NewChildCommands";
+import {
+  buildNewChildCommand,
+  primaryChildTypeOf,
+} from "../project-tracking/item-commands/NewChildCommands";
 import { buildProjectLifecycleCommands } from "../project-tracking/item-commands/ProjectLifecycleCommands";
 import {
   EDITOR_WIDTH_PX,
@@ -52,6 +55,14 @@ export interface ProjectCommandsOptions extends ItemCommandTarget {
   addingChild: boolean;
   /** Opens that box. */
   onAddChild: () => void;
+  /**
+   * Builds the "Add work item" form for this row, created as `typeName`.
+   *
+   * Supplied by the view rather than built here because everything the form opens on — which areas
+   * the catalog uses, who is offered as an assignee, what creating it then does to the board — is a
+   * fact about the loaded catalog, not about the menu.
+   */
+  newWorkItemPanel: (typeName: string, close: () => void) => HTMLElement;
   /** Reloads the catalog from Azure DevOps after a change the loaded tree cannot represent. */
   onReload: () => void;
 }
@@ -71,6 +82,7 @@ export function buildProjectCommands(options: ProjectCommandsOptions): ItemConte
     { ...addTagCommand(options), separatorBefore: true },
     clearTagCommand(options),
     ...newMilestoneCommand(options),
+    ...newWorkItemCommand(options),
     ...buildProjectLifecycleCommands({
       ...options,
       // Offered on every row, not just the projects: a milestone or a phase beneath a project is a
@@ -98,6 +110,30 @@ function newMilestoneCommand(options: ProjectCommandsOptions): ItemContextMenuCo
       adding: options.addingChild,
       onAdd: options.onAddChild,
     }),
+  ];
+}
+
+/**
+ * Raises a new piece of work under the LOWEST planning level — the row whose configured children are
+ * the delivery the team tracks.
+ *
+ * Offered only there because that is the only level where "new work" means work: on an item whose
+ * children are more planning it would quietly create structure, and beneath the delivery level it
+ * would create implementation detail nobody asked for.
+ */
+function newWorkItemCommand(options: ProjectCommandsOptions): ItemContextMenuCommand[] {
+  const type = primaryChildTypeOf(options.item, options.types);
+  if (type === null) return [];
+  return [
+    {
+      label: "Add work item",
+      separatorBefore: true,
+      // Centred rather than left where the reader right-clicked: this is the one panel here that
+      // asks half a dozen questions, and anchored to the pointer it lands somewhere different for
+      // every row — shoved around by the corrections that keep it on screen.
+      centerPanel: true,
+      panel: (close) => options.newWorkItemPanel(type, close),
+    },
   ];
 }
 

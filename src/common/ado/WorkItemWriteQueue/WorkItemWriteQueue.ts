@@ -169,6 +169,24 @@ export class WorkItemWriteQueue {
   }
 
   /**
+   * Forget the failures reported so far, notifying listeners so the report clears.
+   *
+   * For a board that is about to re-read itself: a refresh replaces what is on screen with what
+   * Azure DevOps actually holds, so the lost edit the report warned about is no longer on screen to
+   * be mistaken for saved. Leaving the report up would then attach a stale alarm to a board that has
+   * just told the truth. It clears only what has ALREADY failed — a write rejected after this raises
+   * the report again, with the new total.
+   */
+  clearFailures(): void {
+    if (this.failed === 0) {
+      return;
+    }
+    this.failed = 0;
+    this.lastFailure = undefined;
+    this.notifyFailure();
+  }
+
+  /**
    * Resolves once every queued write has settled (immediately when nothing is queued).
    *
    * Exists for the re-read side, not the UI: a board that refetches while a write is still in flight

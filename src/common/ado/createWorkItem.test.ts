@@ -109,6 +109,45 @@ describe("buildCreateWorkItemPatch", () => {
   });
 });
 
+describe("buildCreateWorkItemPatch - what a form filled in", () => {
+  it("writes the assignee, the description and the reason in the SAME document", () => {
+    const patch = buildCreateWorkItemPatch({
+      type: "Story",
+      title: "Card capture",
+      tags: [],
+      areaPath: null,
+      iterationPath: null,
+      assignedTo: "ada@example.com",
+      description: "Retry **fails**.",
+      comment: "[Accepted] Customer escalation.",
+    });
+
+    expect(patch).toEqual([
+      { op: "add", path: "/fields/System.Title", value: "Card capture" },
+      { op: "add", path: "/fields/System.AssignedTo", value: "ada@example.com" },
+      { op: "add", path: "/fields/System.Description", value: "Retry **fails**." },
+      { op: "add", path: "/multilineFieldsFormat/System.Description", value: "Markdown" },
+      { op: "add", path: "/fields/System.History", value: "[Accepted] Customer escalation." },
+      { op: "add", path: "/multilineFieldsFormat/System.History", value: "Markdown" },
+    ]);
+  });
+
+  it("omits prose nobody wrote rather than storing an empty field in Markdown", () => {
+    const patch = buildCreateWorkItemPatch({
+      type: "Story",
+      title: "Card capture",
+      tags: [],
+      areaPath: null,
+      iterationPath: null,
+      assignedTo: null,
+      description: "   ",
+      comment: null,
+    });
+
+    expect(patch).toEqual([{ op: "add", path: "/fields/System.Title", value: "Card capture" }]);
+  });
+});
+
 describe("parseCreatedWorkItem", () => {
   it("reads the id and revision Azure DevOps assigned", () => {
     expect(parseCreatedWorkItem({ id: 42, rev: 3 })).toEqual({ id: 42, rev: 3, fields: {} });

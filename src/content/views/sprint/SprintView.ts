@@ -429,17 +429,48 @@ function normalizeProjectSelection(
   }
 }
 
-function areaPathsOf(items: readonly DisplayItem[]): string[] {
-  const paths = [
+/** Every area path a loaded item actually sits in, deduped and ordered. */
+function distinctAreaPaths(items: readonly DisplayItem[]): string[] {
+  return [
     ...new Set(
       items
         .map(({ item }) => item.areaPath)
         .filter((path): path is string => path !== null && path.length > 0),
     ),
-  ];
-  return paths
-    .filter((path) => !paths.some((other) => other.startsWith(`${path}\\`)))
-    .sort((left, right) => left.localeCompare(right));
+  ].sort((left, right) => left.localeCompare(right));
+}
+
+function areaPathsOf(items: readonly DisplayItem[]): string[] {
+  const paths = distinctAreaPaths(items);
+  // The Lane filter matches a path exactly, so an ancestor that has represented descendants would
+  // offer a lane showing nothing.
+  return paths.filter((path) => !paths.some((other) => other.startsWith(`${path}\\`)));
+}
+
+/**
+ * Where "Change area path" may move an item: every configured default, whether or not this sprint
+ * loaded anything in it, plus every path the loaded Primary work sits in.
+ *
+ * Primary work only, like every other choice this board derives — an implementation detail sitting
+ * off on its own path does not make that path somewhere the team places work. Represented ancestors
+ * are kept, unlike the Lane filter: moving an item into one is a real destination even when a
+ * descendant is also in use. Defaults are reconciled against the represented paths first, so a
+ * default still stored in the classification `Project\Area\...` form does not appear beside the same
+ * lane's work-item form.
+ */
+function areaPathsForAssignment(
+  items: readonly DisplayItem[],
+  defaults: readonly string[],
+): string[] {
+  const represented = distinctAreaPaths(items);
+  const byKey = new Map<string, string>();
+  for (const path of [...availableAreaPaths(represented, defaults), ...represented]) {
+    const key = path.toLocaleLowerCase();
+    if (path.length > 0 && !byKey.has(key)) {
+      byKey.set(key, path);
+    }
+  }
+  return [...byKey.values()].sort((left, right) => left.localeCompare(right));
 }
 
 function availableAreaPaths(
@@ -728,6 +759,7 @@ function renderBoardHeader(options: SprintHeaderRenderOptions): {
   let laneSelectionChanged = false;
   const laneFilter = renderAreaPathFilter(context.doc, {
     label: "Lanes",
+    fixedTitle: "Filter by Area Path",
     areaPaths: options.areaPaths,
     selectedAreaPaths: [...session.selectedAreaPaths],
     onChange: (paths) => {
@@ -794,7 +826,7 @@ function sprintItemMenuTarget(params: {
   item: TrackedWorkItem;
   writes: WorkItemWriteQueue;
   data: LoadedSprintData;
-  areaPaths: readonly string[];
+  assignableAreaPaths: readonly string[];
   repaint: () => void;
 }): ItemContextMenuTarget {
   const target = {
@@ -811,7 +843,7 @@ function sprintItemMenuTarget(params: {
       ...buildItemCommands({
         ...target,
         sprintWindow: params.data.sprintWindow,
-        areaPaths: params.areaPaths,
+        areaPaths: params.assignableAreaPaths,
         notesSinceIso: ALL_NOTES_SINCE,
       }),
       ...buildMarkerCommands(target, params.data.interruptAcceptance),
@@ -894,6 +926,7 @@ function createSprintContextMenu(params: {
   types: ReadonlyMap<string, TypeCatalogEntry>;
   writes: WorkItemWriteQueue;
   areaPaths: readonly string[];
+  assignableAreaPaths: readonly string[];
   repaint: () => void;
   session: SprintSession;
   visibleItems: readonly DisplayItem[];
@@ -1025,6 +1058,10 @@ function sprintBoardCollections(context: DataDrivenViewContext, data: LoadedSpri
     allItems,
     filterItems,
     areaPaths: areaPathsOf(filterItems),
+    assignableAreaPaths: areaPathsForAssignment(
+      filterItems,
+      sprintDefaultAreaPaths(context.properties),
+    ),
     types,
   };
 }
@@ -1039,7 +1076,10 @@ function sprintBoardSelection(
   data: LoadedSprintData,
   session: SprintSession,
 ) {
-  const { allItems, filterItems, areaPaths, types } = sprintBoardCollections(context, data);
+  const { allItems, filterItems, areaPaths, assignableAreaPaths, types } = sprintBoardCollections(
+    context,
+    data,
+  );
   pruneSelectedAreaPaths(areaPaths, session);
   const shownWithoutProject = filteredQueue(
     selectedSprintItems(areaScope(filterItems, session), session),
@@ -1053,6 +1093,7 @@ function sprintBoardSelection(
     allItems,
     filterItems,
     areaPaths,
+    assignableAreaPaths,
     types,
     projectOptions,
     base,
@@ -1071,18 +1112,17 @@ function renderBoard(
   writeState: SprintWriteState,
   bulkMove: SprintBulkMoveController,
 ): { element: DocumentFragment; handle: SprintBoardHandle } {
-  const { allItems, filterItems, areaPaths, types, projectOptions, base, visibleItems } =
-    sprintBoardSelection(context, data, session);
-  scheduleNotesRepaint(filterItems, session, repaint);
+  const selection = sprintBoardSelection(context, data, session);
+  scheduleNotesRepaint(selection.filterItems, session, repaint);
   let openTitleMenu: (event: MouseEvent) => void = () => {};
   const controls = renderBoardHeader({
     context,
     data,
     session,
-    areaPaths,
-    projectOptions,
-    baseItems: base,
-    types,
+    areaPaths: selection.areaPaths,
+    projectOptions: selection.projectOptions,
+    baseItems: selection.base,
+    types: selection.types,
     repaint,
     onRefresh,
     onSprintChange,
@@ -1095,13 +1135,14 @@ function renderBoard(
     context,
     header: controls.header,
     data,
-    allItems,
-    types,
+    allItems: selection.allItems,
+    types: selection.types,
     writes,
-    areaPaths,
+    areaPaths: selection.areaPaths,
+    assignableAreaPaths: selection.assignableAreaPaths,
     repaint,
     session,
-    visibleItems,
+    visibleItems: selection.visibleItems,
     onBulkMove: (destination, items) => {
       const request = createBulkMoveRequest(context, data, session, destination, items, onRefresh);
       if (request !== null) bulkMove.open(request);
@@ -1114,8 +1155,8 @@ function renderBoard(
     controls.header,
     renderFilterPanel(
       context,
-      boardScope(filterItems, session),
-      base,
+      boardScope(selection.filterItems, session),
+      selection.base,
       data.interruptAcceptance,
       session,
       repaint,
@@ -1124,9 +1165,9 @@ function renderBoard(
       context,
       data,
       session,
-      filterItems,
-      visibleItems,
-      types,
+      filterItems: selection.filterItems,
+      visibleItems: selection.visibleItems,
+      types: selection.types,
       writes,
       menus,
       repaint,
@@ -1300,6 +1341,9 @@ function startSprintView(context: DataDrivenViewContext, root: HTMLElement): voi
       return;
     }
     if (resetSession) session = createSession(context);
+    // What the board is about to show comes from Azure DevOps, so a report about an edit that never
+    // landed has nothing left to warn about.
+    writes.clearFailures();
     session.sprintName = sprintName;
     const previousData = data;
     refreshing = true;
@@ -1336,13 +1380,11 @@ function startSprintView(context: DataDrivenViewContext, root: HTMLElement): voi
   };
 
   function requestRefresh(): void {
-    if (bulkMove.isActive) return;
-    load(session.sprintName, false);
+    if (!bulkMove.isActive) load(session.sprintName, false);
   }
 
   function switchSprint(name: string): void {
-    if (bulkMove.isActive) return;
-    load(name, true);
+    if (!bulkMove.isActive) load(name, true);
   }
 
   load(null, true);

@@ -9,6 +9,37 @@ we hit, why they happened, and the exact fix so nobody re-derives them.
 agent-tool-local memory (it does not clone or transfer between machines/agents). Record new findings
 here so every agent, teammate, and clone sees them.
 
+## `chrome.scripting.executeScript` DROPS null-valued `args` properties (clearing a field → HTTP 400)
+
+- SYMPTOM: clearing an ETA from the All Projects Catalog View logged
+  `Work item <id> field write failed: HTTP 400` / `Field write for item <id> →
+"Microsoft.VSTS.Scheduling.TargetDate" failed (base rev 9)`. Setting a date worked. Same code path
+  on every view, so it was never catalog-specific.
+- DO NOT re-diagnose this as a rev/412 conflict, an ADO op-support question, or a stale `dist`. All
+  three were checked and are wrong.
+- ROOT CAUSE: `chrome.scripting.executeScript` serializes `args` and **removes every property whose
+  value is `null`, at any depth** — the KEY disappears, not just the value. `{ value: null }` arrives
+  in the page as `{}`. `updateWorkItemFieldInPage` then read `config.value === null` as false, took
+  the "set a value" branch, and emitted `{ op: "add", path: "/fields/…" }` with no `value` at all.
+  Azure DevOps answers that with `HTTP 400 — "Value cannot be null."`
+- Values RETURNED from the page keep their nulls. Only `args` are affected.
+- FIX / RULE: any injected config whose `null` MEANS something travels through
+  `encodeInjectedConfig` (`common/browser/injectedConfig`) — `args: [encodeInjectedConfig(config)]` —
+  and the injected function parses it back. A JSON string crosses intact. This also silently broke
+  `baseValue: null` (rebase quietly disabled), nested `additionalFields`/`preconditions` values, and
+  `reorderWorkItemInPage`'s `parentLinkUrl: null` ("move to top level" would have re-linked to
+  nowhere).
+- Verified live in the signed-in tab: `[{test /rev},{op:"remove",path:"/fields/<date field>"}]`,
+  `add`/`replace` with `""` all return 200 under `?validateOnly=true`; `add`/`replace` with `null`
+  return 400 with exactly that message. So the OP was never the problem.
+- RECIPE that settled it without writing anything: monkey-patch `window.fetch` in the ADO tab's MAIN
+  world to capture-and-block `PATCH …/_apis/wit/workitems/…`, then drive the extension's own control
+  programmatically (`.awesomeado-eta__label` click → `.awesomeado-eta__clear` click) and read the
+  captured body. Reach the tab over CDP (`--remote-debugging-port=9222`, `Runtime.evaluate` with
+  `awaitPromise`). For extension-context checks, open
+  `chrome-extension://<id>/options/options.html` via `PUT /json/new?<url>` and evaluate there; the id
+  can be scraped from any `chrome-extension://…` URL in the ADO page.
+
 ## The options page must not require an ADO _Query_ tab
 
 - SYMPTOM: with no query tab open, the Azure DevOps options tab behaved as if it knew nothing about
@@ -122,6 +153,17 @@ bindings ...` / `Pulled team configuration ...`.
   (create/delete a project's tracking query) were local-only, so a deleted query's binding was
   restored by the next pull and the shared work item grew a permanent dead entry. They now go through
   `TeamSharedQueryBindingWriter` (`common/settings-transfer`), wired at the content composition root.
+- The same race applies to Azure DevOps settings: changing a team, sprint count, work-item mapping,
+  hierarchy, or marker tag notifies the open view before an explicit Publish can run. The options
+  controller now writes those fields through `TeamSharedSettingsStore`, which publishes the proposed
+  full settings snapshot first and only then exposes the partial local write. Rapid edits are
+  serialized so each proposal includes the preceding accepted edit.
+- RULE for the next surface: do not rely on remembering this. The two stores are structurally
+  identical, so the wrong one type-checks and the mistake lives in a coverage-excluded composition
+  root. A control that edits settings declares `ITeamPublishingSettingsStore`; the pull and import
+  paths declare `LocalSettingsAccess`; `createTeamSharedSettings` takes the plain store inline so it
+  is never in scope to be mis-wired (ADR-074). Appearance had the identical defect and was found only
+  once the stores were separated by type.
 
 ## Sprint must paint before Interrupt acceptance settles
 
@@ -1331,6 +1373,25 @@ id(s); … (guid, guid)` with the unresolved ids. If the id IS listed as "did no
 - Fixed escapes overflow ONLY because no ancestor has transform/filter/will-change/contain (same
   caveat as `AutocompleteInput.enableFloating`). Verify before adding any such style to the overlay.
 
+## popupHost — a right-click menu opened at the POINTER ran off the bottom of the window
+
+- SYMPTOM (Sprint View cards): right-clicking a card opened `ItemContextMenu` with its lower commands
+  cut off — and only for SOME click positions inside the card, which made it look random.
+- ROOT CAUSE: `keepPopupInView` had exactly two vertical answers — leave it below the trigger, or flip
+  it above — and `flipAboveTrigger` silently did NOTHING when the popup fitted in neither. That is
+  never reachable for a badge popup (short popup, trigger near an edge) but is routine for a menu
+  anchored at the POINTER: the sprint card menu is ~460px tall, so for every click y in roughly
+  `(boundsBottom - 8 - height, height + boundsTop + 8)` it neither fits below nor above.
+- FIX: `keepBottomEdgeInView` flips when there is room above and otherwise `liftInsideBounds` slides
+  the popup up by the spill, capped at the headroom so it can never be pushed off the TOP edge (the
+  vertical mirror of `shiftInsideBounds`).
+- The lift is written as a negative `margin-top`, NOT as `top`: the popup arrives anchored either as a
+  percentage against its trigger (`top:100%`) or as a pixel offset against the viewport
+  (`anchorToViewport`), and only a margin means the same thing in both. `getComputedStyle().marginTop`
+  is always px; `getComputedStyle().top` on a `top:100%` popup is not usable in jsdom.
+- Deliberately NOT capping `max-height` + `overflow-y:auto` for a popup taller than the whole visible
+  area: `overflow-y` on `ItemContextMenu` would also clip its `left:100%` submenu flyouts.
+
 ## A WRAPPING popup must set `width:max-content` — shrink-to-fit resolves against its ~30px anchor
 
 - SYMPTOM: the ChildItemsBadge rollup popup rendered ~240px wide with every title broken ONE
@@ -1679,3 +1740,42 @@ fetch(
       .map((x) => [x.url, x.attributes && x.attributes.comment]),
   );
 ```
+
+## A shared control went dead because its host assigned `style.cssText`
+
+- SYMPTOM: no ETA on the All Projects catalog could be clicked to edit. No hand cursor, and a click
+  that did land opened the date picker somewhere nobody could see — it read exactly like "something
+  is covering it".
+- CAUSE: `ProjectRow.renderRowEta` sized the badge with
+  `badge.handle.style.cssText = "flex:0 0 auto;font-size:11px;margin-left:auto"`. Assigning
+  `cssText` REPLACES the whole inline declaration block, so it deleted the styles `renderEtaBadge`
+  had just written on its own root: `cursor:pointer` (the only affordance saying it is editable),
+  `position:relative` (the containing block its `position:absolute` popup is anchored to),
+  `display:inline-flex`, and the severity `color`/`font-weight` `applyState` had set. The click
+  handler survived, so nothing threw and no test caught it — the control was merely invisible and
+  unadvertised.
+- RULE: a host NEVER assigns `style.cssText` to an element a shared control returned. Set individual
+  properties (`el.style.flex = …`), which is what `ProjectTrackingView` already did. The same trap
+  applies to any control that styles its own root: EtaBadge, AssignedTo, StatusBadge, the popup
+  hosts.
+- Related: a type that declares no `etaField` now renders NO badge on the catalog instead of a
+  read-only "No ETA" — a placeholder sitting in the editable column only invites clicks that can
+  never do anything.
+
+## A pill variant repainted itself and stopped matching the SAME variant elsewhere
+
+- SYMPTOM: an unaccepted Interrupt on a Sprint View / Project Tracking card had no violet outline and
+  sat at a different height than the visually identical Interrupt pill inside the right-click menu.
+- CAUSE: `MarkerPill.renderMarkerPill` builds the base styles, then the opener variant APPENDED its
+  own to the same `cssText`. Those trailing declarations won: `border:none` erased the
+  `1px solid var(--marker-interrupt-background)` edge that is the only thing distinguishing a raised
+  Interrupt from an accepted one, and `font:inherit` (a shorthand) reset the base `line-height:1.6`.
+  A `<button>` also brings its own `font-family`, `margin` and `box-sizing`, none of which the base
+  stated, so the button and the `<span>` were never the same pill.
+- RULE: a behaviour variant (opener, toggle) may add BEHAVIOUR and a cursor, never paint or geometry.
+  A control rendered as `<button>` in some places and `<span>` in others must state every property a
+  UA button default would otherwise supply — `font-family`, `margin`, `box-sizing`, and a border that
+  is drawn `transparent` when the variant has no edge. Never use the `font` shorthand to do it; it
+  silently resets `line-height`.
+- Different variants (accepted vs. raised Interrupt, filter toggle vs. label) SHOULD look different.
+  The invariant is that one variant renders identically on every surface.

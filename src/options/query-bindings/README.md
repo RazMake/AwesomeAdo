@@ -12,10 +12,18 @@ tab has two mutually exclusive layouts, chosen from what is in context:
   picker, and Save. Saving persists the binding with the chosen view's default settings (so navigating
   away keeps them) and switches the tab to edit mode for that query.
 - **Edit mode** — an "Edit enhanced query" card (a picker over every bound query, each labelled
-  `{name} ({id})`, plus Delete) alongside a "Query View Configuration" card (the view picker,
-  its per-view settings, and Save). Selecting a query loads its binding into the configuration card.
+  `{name} ({id})`, plus Delete) alongside a "Query View Configuration" card (the view picker and
+  its per-view settings). Selecting a query loads its binding into the configuration card.
   Delete removes the current binding and auto-selects the next one; deleting the last binding returns
   the tab to its empty state.
+
+The configuration card has **no Save button**: like every other settings page, each change is stored
+the moment it is committed — on `change` for a text field (blur or Enter), immediately for a picker,
+number, or area-path edit. A binding is only written once its required properties are answered,
+because an incomplete view is one the content script cannot render; until then the status line names
+what is still missing and the last valid binding stands. Nothing is announced for a save that worked
+— a confirmation after every keystroke would be noise — so the line carries only what needs acting
+on: a setting still blank, a refused write, or the outcome of a delete.
 
 It supports two entry paths: a fixed query deep-linked from a query's top-bar button, and free
 selection from the options page itself.
@@ -23,10 +31,10 @@ selection from the options page itself.
 ### Shared (read-only) queries
 
 A query opened from someone else's shared link, when the user is **not** on that publisher's team,
-is listed here alongside their own bindings but is **read-only**: the view picker is disabled, Save
-is hidden, and each property is shown as its published value rather than as an input. Editing is
+is listed here alongside their own bindings but is **read-only**: the view picker is disabled and
+each property is shown as its published value rather than as an input. Editing is
 removed rather than merely discouraged — those values live in a work item this user cannot write to,
-so an enabled Save could only ever produce a local copy that silently diverges from the query
+so an edit could only ever produce a local copy that silently diverges from the query
 everyone else is looking at.
 
 A notice names the work item the configuration comes from, and Delete becomes **Remove link**, which
@@ -44,10 +52,11 @@ This component does not log; it surfaces failures through the options page's sha
   view, renders one control per property of the selected view — text, a select, a range-bounded
   whole-number field, an autocomplete over live Azure DevOps values, or the area-path list editor —
   seeded from the binding or the property's
-  default with numbers forced back into range as you leave the field, and saves or deletes the binding. Its in-memory
+  default with numbers forced back into range as you leave the field, storing each committed change
+  at once. Its in-memory
   binding map is the form's working copy and is what a save writes back, so **`reload()`** re-reads
   the store and re-populates the form; call it when the bindings are replaced from outside the tab
-  (a configuration file import). Save/delete outcomes and caught errors render inside the Query
+  (a configuration file import). Delete outcomes and caught errors render inside the Query
   Enhancement Configuration card; the injected error callback records detail without creating a
   second page-level message. When team sharing is connected, the controller's `publishBindings`
   collaborator publishes the proposed full map before `bind`/`unbind` exposes it locally. This keeps
@@ -56,6 +65,7 @@ This component does not log; it surfaces failures through the options page's sha
   bound query itself says (its tag filter, the folder it is filed in), supplied by the injected
   `resolveDerivedValues` collaborator and read at most once per query. A seed only: a field the user
   has already filled is never overwritten, and a read that fails leaves the field empty and editable.
+  A seed that does land is stored, so nothing sits on screen that the view will not see.
 - **Suggestions** — the autocomplete vocabularies come from one broad credentialed Azure DevOps read,
   so the form deliberately does **not** wait for it: it opens with empty lists and every rendered
   control is refreshed when the values land. Waiting was what made this tab look like it never
@@ -67,7 +77,7 @@ This component does not log; it surfaces failures through the options page's sha
   stays perfectly valid.
 - **`QueryBindingsElements`** — the tab's elements the controller drives (the empty state, the add
   card's read-only query line, view picker and Save; the edit card's query picker and Delete; the view
-  config card's view picker, property container and Save; and the shared status line), passed in so it
+  config card's view picker and property container; and the shared status line), passed in so it
   stays testable without a real DOM.
 - **`CurrentQueryIdResolver`** — an injected `() => Promise<string | null>` the controller uses to
   preselect the query the active ADO tab is on.

@@ -3,9 +3,10 @@ import type { ReorderStage, ReorderWorkItemResponse } from "./WorkItemReorderReq
 /**
  * Everything the in-page reorder needs, bundled into one serializable object.
  *
- * Passed as a single argument because `chrome.scripting.executeScript` sends `args` as structured
- * clones: a bundle keeps the call site readable and makes it impossible to transpose two of the many
- * same-typed ids by getting the positional order wrong.
+ * Bundled rather than passed as many positional arguments because it makes it impossible to
+ * transpose two of the many same-typed ids by getting the order wrong. It reaches the page ENCODED
+ * (see `encodeInjectedConfig`) because `executeScript` drops null-valued `args` properties, and
+ * `parentLinkUrl: null` — "this item ends up with no parent" — must survive.
  */
 export interface ReorderWorkItemConfig {
   /** The team-scoped `_apis/work/workitemsorder` endpoint that owns backlog rank arithmetic. */
@@ -50,9 +51,8 @@ export interface ReorderWorkItemConfig {
  * silently overwritten, and only then is the item ranked among its new siblings. Doing it in that
  * order also means a rejected re-parent leaves BOTH the tree and the rank untouched.
  */
-export function reorderWorkItemInPage(
-  config: ReorderWorkItemConfig,
-): Promise<ReorderWorkItemResponse> {
+export function reorderWorkItemInPage(encodedConfig: string): Promise<ReorderWorkItemResponse> {
+  const config = JSON.parse(encodedConfig) as ReorderWorkItemConfig;
   const { id, parentId, previousId, nextId, parentLinkType, parentLinkUrl } = config;
 
   // Whether the hierarchy link was actually rewritten. Reported with every outcome, success or not:

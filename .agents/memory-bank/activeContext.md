@@ -30,7 +30,10 @@ The extension is feature-complete for its current scope:
   descriptions and notes — rendered as allowlist-rebuilt DOM, with attachment images and
   `@`-mentions; ADR-044), plus `TextEditor` (the one themed in-place editor — one-line or multi-line
   Markdown — behind every note, title and description edit; multi-line editors own bold/italic/link
-  shortcuts and typed `@<localId>` identity suggestions, ADR-051), `AreaPathFilter` (the compact
+  shortcuts and typed `@<localId>` identity suggestions, ADR-051; its `renderMarkdownField` is that
+  same field without the Save/Cancel pair, for a FORM that commits several answers with its own
+  button), `SelectField` (the one themed single-select, because a native `<select>`'s open list is
+  painted by the platform and therefore follows no AwesomeADO theme), `AreaPathFilter` (the compact
   themed full-path multi-select with shortest unique suffix labels, ADR-053), `MarkerPill` (the theme-owned
   semantic pill for a recognized condition — blocked / blocked-by-another-team / interrupt — shared by
   the tagging commands and the board's filter row) and `ItemContextMenu` (the shared
@@ -292,7 +295,9 @@ The extension is feature-complete for its current scope:
   board mappings, marker tags, and
   hierarchy Primary work classification with a context-only root), Query Bindings manager (including
   per-query Sprint default Lane paths edited as individually removable, live-project-autocomplete
-  rows with adjacent actions and in-card status/error feedback), Diagnostics. The organization and
+  rows with adjacent actions and in-card status/error feedback; the configuration card has no Save —
+  every change stores on commit and the status line names any required setting still blank, ADR-078),
+  Diagnostics. The organization and
   project are stored settings (`DetectedValueField`, `src/options/ado-config`): seeded once from the
   open ADO query tab, thereafter only _offered_ as a one-click proposal when the tab disagrees, so
   the tab works with no ADO tab open and the scope travels with file and team configuration.
@@ -302,8 +307,14 @@ The extension is feature-complete for its current scope:
   type, Connect/Pull/Publish — are disabled while everything stored stays editable.
   Sprint binding defaults and dated per-sprint
   selections round-trip in file and team configuration; connected binding saves publish the proposed
-  map before local mutation so an automatic pull cannot erase them. Project Tracking continues deriving its
-  eligible paths from live work.
+  map before local mutation so an automatic pull cannot erase them. Every **team** settings edit on the
+  options page goes through `TeamSharedSettingsStore`, which serializes rapid edits and publishes each
+  proposed snapshot before its local partial write; the pull and file-import paths take the
+  segregated `LocalSettingsAccess` so neither can publish (ADR-074). Theme and default view are
+  personal (`PERSONAL_SETTING_KEYS`): Appearance writes them through `IPersonalSettingsStore`, and
+  they are stripped from the published payload, from a pull, and from a shared query's overlay, while
+  still syncing across the user's own devices and travelling in a file export (ADR-075). Project
+  Tracking continues deriving its eligible paths from live work.
 - `projects` (All Projects Catalog View) is the many-root sibling of Project Tracking (ADR-066):
   it lists every top-level item a query returns as a collapsed project that opens into its own tree.
   Rows carry type icon, an INERT title (deliberately not a deep link — **Open in ADO** is a menu
@@ -323,6 +334,9 @@ The extension is feature-complete for its current scope:
   anywhere beneath (the exclusion climbs as well as descends) and takes that subtree with it. The
   vocabulary is re-derived on EVERY paint, not just on load, because the row menu adds and clears
   tags in place; each paint prunes the condition to the tags still offered and logs what it dropped.
+  The Tags trigger itself CLEARS the whole condition while anything is chosen
+  (`CheckboxFilter.clearOnTriggerWhenActive`, opt-in), which also drops the popup's own Clear; the
+  cost is that an existing condition cannot be amended, only rebuilt.
   It is a deferred renderer
   (`content/projects-view.js`), like Project Tracking.
   It also **authors**: its title menu copies the query URL and adds a project through an inline title
@@ -332,7 +346,25 @@ The extension is feature-complete for its current scope:
   item-editing commands plus tag add/clear commands that complete against the tree's vocabulary and
   never offer the query's own condition tag; EVERY row adds the shared **Create Project Query**
   (ADR-067) and each PROJECT row also **Mark completed** (ADR-068), which Project Tracking shows on
-  its title (without the create half — that board already is a project's query). The tracking-query
+  its title (without the create half — that board already is a project's query). The row whose
+  configured children ARE the team's delivery (`primaryChildTypeOf`) also carries
+  **Add work item**: `NewWorkItemPanel`, a form rather than the inline title row, because this is the
+  one creation whose values are not all inherited — title, a Markdown description (the shared
+  `renderMarkdownField`), assignee (defaulted to the signed-in identity through the optional
+  `services.currentUser`, kept at its natural width), area path and Sprint (both themed
+  `SelectField`s, never a native `<select>`). The areas offered are the LEAVES of what the catalog
+  uses, named by `shortestUniqueAreaPathLabels` with the full path as the tooltip; the parent's own
+  area is kept whatever shape it has, so the form never opens on a value it does not offer. The
+  Sprint opens on the current entry of `loadSprintWindow`, read on open because this catalog has no
+  sprint of its own. The Interrupt flag is the shared `MarkerPill` itself inside a bare toggle button
+  — grayscaled while off, and once on painted raised or accepted from the same control the boards use
+  — with **Accepted** on the same line, whose in-sprint acceptance demands a Markdown reason recorded
+  under `markerTags().interrupt.commentTag`. The panel is `centerPanel` and its heading names the
+  item as `Parent: <title>` (`PanelShape.titlePrefix`), because a centred creation form otherwise
+  looks exactly like the panel that EDITS that item. All of it lands in ONE
+  creation revision: `NewWorkItem` / `CreateWorkItemMessage` now carry `assignedTo`, `description`
+  and `comment`, the last two with their `/multilineFieldsFormat/<field>` = `Markdown` op.
+  The tracking-query
   links are therefore read for the whole flattened tree, paged at `MAX_LINK_IDS` by
   `MessagingProjectQueryService`. Under the manual ordering a
   project title is a drag handle that re-ranks it in the team's backlog and never re-parents anything

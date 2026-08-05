@@ -5,7 +5,7 @@ import type {
   ExtensionSettings,
   Theme,
 } from "../../common/settings/ExtensionSettings";
-import type { ISettingsStore } from "../../common/settings/ISettingsStore";
+import type { IPersonalSettingsStore } from "../../common/settings-transfer/IPersonalSettingsStore";
 import { THEME_COLOR_VARIABLES } from "../../common/view-common/themes/ThemeDefinition";
 import { CONCRETE_THEMES, resolveTheme } from "../../common/view-common/themes/themes";
 
@@ -25,6 +25,9 @@ const defaultReportError: ReportError = (error) =>
 /**
  * Binds the Appearance panel (theme + default-view selects) to the settings store, in both
  * directions, and resolves the "auto" theme from the active ADO tab's rendered theme.
+ *
+ * Both settings are the reader's own, so this panel writes to the personal store: a theme is never
+ * published to a teammate, and a teammate's theme never arrives on a pull.
  */
 export class OptionsController {
   private disposed = false;
@@ -34,7 +37,7 @@ export class OptionsController {
   private readonly defaultViewBinding: SettingBinding<DefaultView>;
 
   constructor(
-    private readonly store: ISettingsStore,
+    private readonly store: IPersonalSettingsStore,
     private readonly adoTabReader: IAdoTabReader,
     private readonly elements: OptionsElements,
     private readonly reportError: ReportError = defaultReportError,

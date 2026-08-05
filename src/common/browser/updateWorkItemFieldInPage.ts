@@ -16,13 +16,10 @@ import type {
  * helper — only its parameters and page globals (`fetch`, `Promise`, `JSON`). Promise chaining (not
  * async/await) avoids any transpiler helper being hoisted out of the function body.
  *
- * WHY ONE CONFIG OBJECT rather than an argument each: `executeScript` requires every entry of `args`
- * to be JSON-serializable, and `undefined` is not — so an omitted optional argument leaves an
- * unserializable HOLE in that array and Chrome rejects the whole injection before it runs. That
- * surfaces as a bare `"exception"` with no request ever reaching ADO, which reads exactly like a
- * write failure and is nothing of the kind. Optional *properties* of an object simply disappear when
- * it is serialized, so the config can keep growing safely — the same reason `FeatureCrewApplyConfig`
- * is shaped this way.
+ * WHY THE CONFIG ARRIVES ENCODED rather than as an object: `executeScript` silently DROPS every
+ * null-valued property from `args`, at any depth, so `value: null` ("clear this field") reached the
+ * page as `undefined` and this built an `add` op carrying no value — which Azure DevOps rejects with
+ * "Value cannot be null" (HTTP 400). A JSON string survives intact; see `encodeInjectedConfig`.
  *
  * A `null` value clears the field (JSON Patch `remove`); any other value sets it (`add`).
  *
@@ -52,8 +49,10 @@ import type {
  * silently overwritten, and that is exactly the case this still refuses.
  */
 export function updateWorkItemFieldInPage(
-  config: UpdateWorkItemFieldConfig,
+  encodedConfig: string,
 ): Promise<UpdateWorkItemFieldResponse> {
+  const config = JSON.parse(encodedConfig) as UpdateWorkItemFieldConfig;
+
   // `add` APPENDS to a multi-value field: Azure DevOps answers a shortened `System.Tags` list with
   // HTTP 200 and keeps every tag, so a removal is silently lost. `replace` sets a field that already
   // holds a value; a field with no value yet has nothing to replace, so it still takes `add`.
@@ -71,12 +70,10 @@ export function updateWorkItemFieldInPage(
         value: condition.value,
       })),
       fieldOperation(config.field, config.value, config.baseValue ? "replace" : "add"),
-    ];
-    operations.push(
       ...(config.additionalFields ?? []).map((change) =>
         fieldOperation(change.field, change.value, "add"),
       ),
-    );
+    ];
     if (config.multilineFormat) {
       operations.push({
         op: "add",

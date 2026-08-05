@@ -30,6 +30,13 @@ export const EDITOR_WIDTH_PX = 420;
 export interface PanelShape {
   /** Whether the item's title is shown under its number — false where the panel EDITS the title. */
   withTitle: boolean;
+  /**
+   * Names the RELATIONSHIP the heading's item has to the panel (`Parent`), rather than leaving the
+   * title to be read as the thing being edited. A panel that creates something under an item shows
+   * that item's title exactly as one that rewrites it does, so without this the two are
+   * indistinguishable at a glance.
+   */
+  titlePrefix?: string;
   widthPx?: number;
   width?: string;
   height?: string;
@@ -57,12 +64,12 @@ export function panelFor(
   if (shape.height) {
     panel.style.height = shape.height;
   }
-  panel.append(renderPanelHeading(doc, item, shape.withTitle), ...contents);
+  panel.append(renderPanelHeading(doc, item, shape), ...contents);
   return panel;
 }
 
 /** The heading itself: `#{id}` as a link into ADO, and optionally the item's title beneath it. */
-function renderPanelHeading(doc: Document, item: TrackedWorkItem, withTitle: boolean): HTMLElement {
+function renderPanelHeading(doc: Document, item: TrackedWorkItem, shape: PanelShape): HTMLElement {
   const heading = doc.createElement("div");
   heading.className = "awesomeado-item-command__heading";
   heading.style.cssText = [
@@ -74,10 +81,11 @@ function renderPanelHeading(doc: Document, item: TrackedWorkItem, withTitle: boo
   ].join(";");
   heading.append(renderIdLink(doc, item.id));
 
-  if (withTitle) {
+  if (shape.withTitle) {
     const title = doc.createElement("div");
     title.className = "awesomeado-item-command__title";
-    title.textContent = item.title;
+    title.textContent =
+      shape.titlePrefix === undefined ? item.title : `${shape.titlePrefix}: ${item.title}`;
     title.style.cssText = [
       "font-size:12px",
       "font-weight:600",

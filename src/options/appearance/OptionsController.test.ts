@@ -4,6 +4,7 @@ import type { IAdoTabReader } from "../../common/browser/IAdoTabReader";
 import type { AdoTabContext } from "../../common/navigation/AdoContext";
 import { DEFAULT_SETTINGS, type ExtensionSettings } from "../../common/settings/ExtensionSettings";
 import type { ISettingsStore } from "../../common/settings/ISettingsStore";
+import type { IPersonalSettingsStore } from "../../common/settings-transfer/IPersonalSettingsStore";
 
 import { OptionsController, type OptionsElements } from "./OptionsController";
 
@@ -39,7 +40,8 @@ async function flush(): Promise<void> {
 type ObserveCallback = (settings: ExtensionSettings) => void;
 type ObserveResult = ReturnType<ISettingsStore["observe"]>;
 
-class FakeSettingsStore implements ISettingsStore {
+class FakeSettingsStore implements IPersonalSettingsStore {
+  readonly publishesBeforeWrite = false as const;
   private callbacks: ObserveCallback[] = [];
   private readyDeferred = deferred<void>();
   private writeDeferred: DeferredPromise<void> | null = null;

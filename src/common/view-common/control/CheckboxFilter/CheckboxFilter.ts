@@ -31,6 +31,15 @@ export interface CheckboxFilterSelection {
 export interface CheckboxFilterOptions {
   /** Visible noun used by the trigger and the popup heading (e.g. `Area`, `Tags`). */
   label: string;
+  /**
+   * A fixed tooltip for the trigger, used whatever is selected.
+   *
+   * For a button wearing a view's own shorthand (`Lanes`) rather than the name of the field it
+   * narrows: the tooltip is the one place that can say which field that is, so it should not become
+   * a condition summary the moment something is picked. Without it the tooltip follows the
+   * condition and reads `Filter by <label>` while nothing is chosen.
+   */
+  fixedTitle?: string;
   /** The values offered, in the order they are listed. */
   options: readonly CheckboxFilterOption[];
   /** Values selected initially. Values absent from `options` are ignored. */
@@ -47,6 +56,14 @@ export interface CheckboxFilterOptions {
    * parent) has nothing to combine — every extra control there is one more thing to dismiss.
    */
   combining?: boolean;
+  /**
+   * Makes the trigger clear the condition instead of opening the popup while anything is chosen.
+   *
+   * Opt-in, because it costs the reader the ability to ADJUST a live condition without rebuilding
+   * it: worth it for a lit-up filter a reader mostly wants to be rid of, wrong for one they narrow
+   * down step by step.
+   */
+  clearOnTriggerWhenActive?: boolean;
   /**
    * The class-name stem every element of this instance is marked with (e.g. `awesomeado-tag-filter`).
    *
@@ -107,7 +124,7 @@ function renderFilterIcon(doc: Document): SVGSVGElement {
   return svg;
 }
 
-/** What the trigger's tooltip says the filter is doing right now. */
+/** What the trigger's accessible name says the filter is doing right now. */
 function filterSummary(label: string, selection: CheckboxFilterSelection): string {
   const parts: string[] = [];
   if (selection.included.length > 0) {
@@ -127,12 +144,16 @@ function paintTrigger(
   count: HTMLElement,
   selection: CheckboxFilterSelection,
   label: string,
+  fixedTitle: string | undefined,
 ): void {
   const selectedCount = selection.included.length + selection.excluded.length;
   const active = selectedCount > 0;
+  const summary = filterSummary(label, selection);
   trigger.setAttribute("aria-pressed", String(active));
-  trigger.title = filterSummary(label, selection);
-  trigger.setAttribute("aria-label", trigger.title);
+  trigger.title = fixedTitle ?? summary;
+  // The accessible name keeps naming the current condition even when the tooltip is fixed, because
+  // the count badge beside it cannot tell a required value from an excluded one.
+  trigger.setAttribute("aria-label", summary);
   trigger.style.background = active ? "var(--communication-background)" : "transparent";
   trigger.style.color = active
     ? "var(--text-on-communication-background)"
@@ -286,6 +307,8 @@ interface PopupParams {
   classPrefix: string;
   searchPlaceholder: string | undefined;
   combining: boolean;
+  /** Whether the heading carries its own Clear, or the trigger is the only way to empty it. */
+  clearInPopup: boolean;
   /** Records the state the reader put one value in and reports the new condition. */
   set(value: string, state: OptionState): void;
   /** Flips between requiring any ticked value and requiring all of them. */
@@ -329,12 +352,16 @@ function renderMatchModeToggle(params: PopupParams): HTMLButtonElement {
 }
 
 /** The popup's heading band: the noun on the left, the Clear shortcut on the right. */
-function renderHeading(params: PopupParams): [HTMLElement, HTMLButtonElement] {
+function renderHeading(params: PopupParams): [HTMLElement, HTMLButtonElement | null] {
   const { doc, classPrefix } = params;
   const heading = doc.createElement("div");
   heading.style.cssText = "display:flex;align-items:center;gap:12px;padding:0 4px 6px";
   const title = doc.createElement("strong");
   title.textContent = params.label;
+  heading.append(title);
+  if (params.combining) heading.append(renderMatchModeToggle(params));
+  if (!params.clearInPopup) return [heading, null];
+
   const clear = doc.createElement("button");
   clear.type = "button";
   clear.className = `${classPrefix}__clear`;
@@ -350,8 +377,6 @@ function renderHeading(params: PopupParams): [HTMLElement, HTMLButtonElement] {
     "padding:2px 4px",
   ].join(";");
   clear.addEventListener("click", params.clear);
-  heading.append(title);
-  if (params.combining) heading.append(renderMatchModeToggle(params));
   heading.append(clear);
   return [heading, clear];
 }
@@ -399,7 +424,7 @@ function renderPopup(params: PopupParams): HTMLElement {
       state: stateOf(params.state, option.value),
       onChange: (next) => {
         params.set(option.value, next);
-        clear.disabled = conditionSize(params.state) === 0;
+        if (clear !== null) clear.disabled = conditionSize(params.state) === 0;
       },
     });
     list.append(row);
@@ -480,6 +505,25 @@ function renderTrigger(
   return { root, trigger, count };
 }
 
+/** The live condition a caller's seed values resolve to. */
+function initialState(
+  options: CheckboxFilterOptions,
+  combining: boolean,
+  known: ReadonlyMap<string, CheckboxFilterOption>,
+): FilterState {
+  const offered = (candidates: readonly string[] | undefined): Set<string> =>
+    new Set(uniqueValues(candidates ?? []).filter((value) => known.has(value)));
+  const state: FilterState = {
+    included: offered(options.selected),
+    excluded: combining ? offered(options.excluded) : new Set(),
+    matchAll: combining && options.matchAll === true,
+  };
+  // A value can be required or excluded, never both, so a caller seeding it twice is resolved once
+  // here rather than leaving the popup and the condition disagreeing about that row.
+  for (const value of state.included) state.excluded.delete(value);
+  return state;
+}
+
 /**
  * Render a button-sized filter that opens a themed multi-select of checkboxes.
  *
@@ -497,16 +541,7 @@ export function renderCheckboxFilter(
   const combining = options.combining === true;
   const known = new Map(options.options.map((option) => [option.value, option] as const));
   const values = [...known.keys()];
-  const offered = (candidates: readonly string[] | undefined): Set<string> =>
-    new Set(uniqueValues(candidates ?? []).filter((value) => known.has(value)));
-  const state: FilterState = {
-    included: offered(options.selected),
-    excluded: combining ? offered(options.excluded) : new Set(),
-    matchAll: combining && options.matchAll === true,
-  };
-  // A value can be required or excluded, never both, so a caller seeding it twice is resolved once
-  // here rather than leaving the popup and the condition disagreeing about that row.
-  for (const value of state.included) state.excluded.delete(value);
+  const state = initialState(options, combining, known);
   const { root, trigger, count } = renderTrigger(doc, classPrefix, values.length === 0, label);
 
   const selection = (): CheckboxFilterSelection => ({
@@ -514,17 +549,25 @@ export function renderCheckboxFilter(
     excluded: values.filter((value) => state.excluded.has(value)),
     matchAll: state.matchAll,
   });
+  const repaint = (): void => paintTrigger(trigger, count, selection(), label, options.fixedTitle);
   const changed = (): void => {
-    paintTrigger(trigger, count, selection(), label);
+    repaint();
     options.onChange?.(selection());
   };
-  paintTrigger(trigger, count, selection(), label);
+  repaint();
+
+  const clearCondition = (): void => {
+    state.included.clear();
+    state.excluded.clear();
+    changed();
+  };
 
   const popupHost = createPopupHost({
     doc,
     trigger,
+    // The trigger is wired below instead, so an active condition can answer the press itself.
+    interactive: false,
     mountInto: root,
-    interactive: values.length > 0,
     onClosed: options.onPopupClosed,
     buildPopup: () =>
       renderPopup({
@@ -534,6 +577,9 @@ export function renderCheckboxFilter(
         label,
         classPrefix,
         combining,
+        // The trigger already empties the condition in one press, so repeating it here would be a
+        // second control for one gesture.
+        clearInPopup: options.clearOnTriggerWhenActive !== true,
         searchPlaceholder: options.searchPlaceholder,
         set: (value, next) => {
           state.included.delete(value);
@@ -547,22 +593,26 @@ export function renderCheckboxFilter(
           changed();
         },
         clear: () => {
-          state.included.clear();
-          state.excluded.clear();
-          changed();
+          clearCondition();
           popupHost.close();
         },
       }),
   });
 
+  if (values.length > 0) {
+    const clears = (): boolean =>
+      options.clearOnTriggerWhenActive === true && !popupHost.isOpen && conditionSize(state) > 0;
+    trigger.addEventListener("click", () => (clears() ? clearCondition() : popupHost.toggle()));
+  }
+
   return {
     element: root,
     selection,
     setSelectedValues: (next) => {
-      state.included = offered(next);
+      state.included = new Set(uniqueValues(next).filter((value) => known.has(value)));
       for (const value of state.included) state.excluded.delete(value);
       popupHost.close();
-      paintTrigger(trigger, count, selection(), label);
+      repaint();
     },
   };
 }

@@ -1069,6 +1069,40 @@ describe("Sprint View title context menu", () => {
 });
 
 describe("Sprint View item context menus", () => {
+  it("offers every configured default lane and every Primary-work path as an area-path destination", async () => {
+    const roots = [
+      item(1, "Platform item", {
+        areaPath: "Project\\Platform",
+        children: [item(3, "Detail", { type: "Task", areaPath: "Project\\Detail" })],
+      }),
+      item(2, "Nested item", { areaPath: "Project\\Platform\\API" }),
+    ];
+    const root = await render(
+      {
+        loadTree: async () => ({ isTreeQuery: true, roots, error: null }),
+        getTypes: () => [
+          { ...services().getTypes()[0]!, children: ["Task"] },
+          { ...services().getTypes()[0]!, name: "Task", isPrimaryWork: false, children: [] },
+        ],
+      },
+      { defaultAreaPaths: "Project\\Apps\nProject\\Platform" },
+    );
+
+    const rows = openContextMenu(root.querySelector('[data-item-id="1"]')!);
+    rows.find((row) => row.textContent?.startsWith("Change area path"))!.click();
+    const destinations = [
+      ...document.querySelectorAll<HTMLButtonElement>(".awesomeado-item-menu__submenu button"),
+    ].map((row) => row.title);
+
+    // "Project\Apps" holds nothing this sprint but is configured, and the represented ancestor stays
+    // even though a descendant is also in use; the item's own path is the one that drops out.
+    expect(destinations).toContain("Project\\Apps");
+    expect(destinations).toContain("Project\\Platform\\API");
+    expect(destinations).not.toContain("Project\\Platform");
+    // An implementation detail off on its own path does not make that path a destination.
+    expect(destinations).not.toContain("Project\\Detail");
+  });
+
   it("offers the same item commands on cards and direct child rows", async () => {
     const parent = item(1, "Parent", { children: [item(2, "Child", { type: "Task" })] });
     const root = await render({
@@ -1108,57 +1142,111 @@ describe("Sprint View item context menus", () => {
   });
 });
 
+/** One stored note, with the fixture author and date every marker case shares. */
+function markerNote(id: number, text: string) {
+  return {
+    id,
+    workItemId: 1,
+    text,
+    renderedHtml: null,
+    createdDate: "2026-07-31T10:00:00Z",
+    author: { id: "author", displayName: "Ada", uniqueName: "ada@example.com" },
+  };
+}
+
+/** A board holding one card with the given tags, over a discussion of `notes`. */
+async function renderCardWithNotes(
+  tags: string[],
+  notes: ReturnType<typeof markerNote>[],
+  overrides: Partial<EnhancedViewServices> = {},
+): Promise<HTMLElement> {
+  return render({
+    loadTree: async () => ({
+      isTreeQuery: false,
+      roots: [item(1, "Queued", { tags, noteCount: notes.length })],
+      error: null,
+    }),
+    noteLoader: { loadNotes: async () => ({ notes, currentUser: null, error: null }) },
+    ...overrides,
+  });
+}
+
+/** Marker tags whose three comment tokens are all distinct, so a pill can only match its own. */
+function distinctMarkerTags(interruptCommentTag: string) {
+  return normalizeMarkerTags({
+    blocked: { tag: "Blocked", commentTag: "[BLOCKED]" },
+    blockedByOtherTeam: { tag: "Blocked by another team", commentTag: "[EXTERNAL]" },
+    interrupt: { tag: "Interrupt", commentTag: interruptCommentTag },
+  });
+}
+
+/** The card's ready (clickable) pill for one marker, or null while it is still a plain label. */
+function markerPill(root: HTMLElement, marker: string): HTMLButtonElement | null {
+  return root.querySelector<HTMLButtonElement>(
+    `[data-item-id="1"] .awesomeado-sprint-card__markers button[data-marker="${marker}"]`,
+  );
+}
+
+/** Click a marker pill once it is ready and return what its popup reads. */
+async function openReasons(root: HTMLElement, marker: string): Promise<string> {
+  await vi.waitFor(() => expect(markerPill(root, marker)).not.toBeNull());
+  markerPill(root, marker)!.click();
+  await vi.waitFor(() =>
+    expect(root.querySelector(".awesomeado-marker-reasons__popup")).not.toBeNull(),
+  );
+  return root.querySelector(".awesomeado-marker-reasons__popup")?.textContent ?? "";
+}
+
 describe("Sprint View item marker notes", () => {
   it("opens a card marker pill on only the notes carrying that marker token", async () => {
-    const loadNotes = vi.fn(() =>
-      Promise.resolve({
-        notes: [
-          {
-            id: 1,
-            workItemId: 1,
-            text: "[BLOCKED] Waiting on the API team.",
-            renderedHtml: null,
-            createdDate: "2026-07-31T10:00:00Z",
-            author: { id: "author", displayName: "Ada", uniqueName: "ada@example.com" },
-          },
-          {
-            id: 2,
-            workItemId: 1,
-            text: "An unrelated note.",
-            renderedHtml: null,
-            createdDate: "2026-07-31T11:00:00Z",
-            author: { id: "author", displayName: "Ada", uniqueName: "ada@example.com" },
-          },
-        ],
-        currentUser: null,
-        error: null,
-      }),
-    );
-    const root = await render({
-      loadTree: async () => ({
-        isTreeQuery: false,
-        roots: [item(1, "Queued", { tags: ["Blocked"], noteCount: 2 })],
-        error: null,
-      }),
-      noteLoader: { loadNotes },
-    });
-    const selector =
-      '[data-item-id="1"] .awesomeado-sprint-card__markers button[data-marker="blocked"]';
-    await vi.waitFor(() => expect(root.querySelector(selector)).not.toBeNull());
-    const pill = root.querySelector<HTMLButtonElement>(selector)!;
-
-    expect(pill.title).toBe("");
-    pill.click();
-    await vi.waitFor(() =>
-      expect(root.querySelector(".awesomeado-marker-reasons__popup")?.textContent).toContain(
-        "Waiting on the API team.",
-      ),
+    const root = await renderCardWithNotes(
+      ["Blocked"],
+      [markerNote(1, "[BLOCKED] Waiting on the API team."), markerNote(2, "An unrelated note.")],
     );
 
-    expect(loadNotes).toHaveBeenCalledTimes(1);
-    expect(root.querySelector(".awesomeado-marker-reasons__popup")?.textContent).not.toContain(
-      "An unrelated note.",
+    const popup = await openReasons(root, "blocked");
+
+    expect(markerPill(root, "blocked")!.title).toBe("");
+    expect(popup).toContain("Waiting on the API team.");
+    expect(popup).not.toContain("An unrelated note.");
+    expect(popup).not.toContain("[BLOCKED]");
+  });
+
+  it("opens the Interrupt pill on its acceptance notes", async () => {
+    const root = await renderCardWithNotes(
+      ["Interrupt"],
+      [markerNote(1, "[ACCEPTED] The sprint owner took it in.")],
     );
+
+    expect(await openReasons(root, "interrupt")).toContain("The sprint owner took it in.");
+  });
+
+  it("opens each pill on a card wearing two markers", async () => {
+    const root = await renderCardWithNotes(
+      ["Blocked by another team", "Interrupt"],
+      [markerNote(1, "[EXTERNAL] Platform owns it."), markerNote(2, "[ACCEPTED] Taken in.")],
+      { markerTags: () => distinctMarkerTags("[ACCEPTED]") },
+    );
+
+    await vi.waitFor(() => expect(markerPill(root, "blockedByOtherTeam")).not.toBeNull());
+
+    expect(await openReasons(root, "interrupt")).toContain("Taken in.");
+  });
+});
+
+describe("Sprint View marker pills that cannot open", () => {
+  it("says an unconfigured comment tag is why the Interrupt pill is inert", async () => {
+    const root = await renderCardWithNotes(
+      ["Interrupt"],
+      [markerNote(1, "[ACCEPTED] The sprint owner took it in.")],
+      { markerTags: () => distinctMarkerTags("") },
+    );
+
+    const pill = root.querySelector(
+      '[data-item-id="1"] .awesomeado-sprint-card__markers [data-marker="interrupt"]',
+    );
+    expect(pill?.tagName).toBe("SPAN");
+    expect(pill?.getAttribute("title")).toContain("No comment tag is configured for Interrupt");
   });
 });
 

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { IQueryBindingStore } from "../../common/bindings/IQueryBindingStore";
 import type { QueryBindings } from "../../common/bindings/QueryBinding";
 import { DEFAULT_SETTINGS, type ExtensionSettings } from "../../common/settings/ExtensionSettings";
-import type { ISettingsStore } from "../../common/settings/ISettingsStore";
+import type { LocalSettingsAccess } from "../../common/settings/LocalSettingsAccess";
 import {
   exportConfig,
   exportConnectionConfig,
@@ -15,14 +15,13 @@ import {
   type SettingsTransferElements,
 } from "./SettingsTransferController";
 
-class FakeSettingsStore implements ISettingsStore {
+class FakeSettingsStore implements LocalSettingsAccess {
   written: Partial<ExtensionSettings> | null = null;
   constructor(private current: ExtensionSettings) {}
   read = vi.fn(async () => this.current);
-  write = vi.fn(async (update: Partial<ExtensionSettings>) => {
+  applyLocally = vi.fn(async (update: Partial<ExtensionSettings>) => {
     this.written = update;
   });
-  observe = vi.fn(() => ({ ready: Promise.resolve(), unsubscribe: vi.fn() }));
 }
 
 class FakeBindingStore implements IQueryBindingStore {
@@ -231,7 +230,7 @@ describe("SettingsTransferController import", () => {
     chooseFile(h.elements.fileInput, text);
     await flush();
 
-    expect(h.settingsStore.write).toHaveBeenCalledTimes(1);
+    expect(h.settingsStore.applyLocally).toHaveBeenCalledTimes(1);
     expect(h.settingsStore.written?.theme).toBe("blue");
     expect(h.bindingStore.replaceAll).toHaveBeenCalledTimes(1);
     expect(h.bindingStore.replaced).toEqual({ q: { view: "sprint", properties: {} } });
@@ -251,7 +250,7 @@ describe("SettingsTransferController import", () => {
     await flush();
 
     // The rest of the file still has to land, or "preserved" would just mean "nothing happened".
-    expect(h.settingsStore.write).toHaveBeenCalledTimes(1);
+    expect(h.settingsStore.applyLocally).toHaveBeenCalledTimes(1);
     expect(h.bindingStore.replaceAll).toHaveBeenCalledTimes(1);
     expect(h.elements.status.textContent).toContain("Imported");
     // An absent ID means "this file predates the connection", never "disconnect me".
@@ -308,7 +307,7 @@ describe("SettingsTransferController import — partial and invalid files", () =
     h.elements.fileInput.dispatchEvent(new Event("change"));
     await flush();
 
-    expect(h.settingsStore.write).not.toHaveBeenCalled();
+    expect(h.settingsStore.applyLocally).not.toHaveBeenCalled();
     expect(h.bindingStore.replaceAll).not.toHaveBeenCalled();
   });
 
@@ -318,7 +317,7 @@ describe("SettingsTransferController import — partial and invalid files", () =
     chooseFile(h.elements.fileInput, "not a config");
     await flush();
 
-    expect(h.settingsStore.write).not.toHaveBeenCalled();
+    expect(h.settingsStore.applyLocally).not.toHaveBeenCalled();
     expect(h.bindingStore.replaceAll).not.toHaveBeenCalled();
     expect(h.errors).toHaveLength(1);
     expect(h.elements.status.textContent).toContain("Could not import");

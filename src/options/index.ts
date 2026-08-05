@@ -17,9 +17,9 @@ import { ChromeTeamConfigClient } from "../common/browser/ChromeTeamConfigClient
 import { createLogging } from "../common/logging/createLogger";
 import { createSettingsStore } from "../common/settings/createSettingsStore";
 import { SharedQueryConfigResolver } from "../common/settings-transfer/SharedQueryConfigResolver";
-import { TeamConfigSynchronizer } from "../common/settings-transfer/TeamConfigSynchronizer";
 import { createSharedQuerySourceStore } from "../common/settings-transfer/createSharedQuerySourceStore";
 import { createTeamConfigSourceStore } from "../common/settings-transfer/createTeamConfigSourceStore";
+import { createTeamSharedSettings } from "../common/settings-transfer/createTeamSharedSettings";
 
 import {
   AzureDevOpsController,
@@ -113,8 +113,6 @@ chrome.runtime.onMessage.addListener((message: unknown) => {
 });
 
 // One settings store shared by the controllers that read/write synced settings.
-const settingsStore = createSettingsStore(loggers.forSource("common/settings"));
-
 // One binding store shared by the query-binding form and the configuration banner, so both react to
 // the same synced list without competing subscriptions.
 const bindingStore = createQueryBindingStore(loggers.forSource("common/bindings"));
@@ -123,13 +121,17 @@ const teamConfigSourceStore = createTeamConfigSourceStore(
   loggers.forSource("common/settings-transfer"),
 );
 const teamConfigClient = new ChromeTeamConfigClient();
-const teamConfigSynchronizer = new TeamConfigSynchronizer(
-  teamConfigSourceStore,
-  teamConfigClient,
-  settingsStore,
-  bindingStore,
-  loggers.forSource("common/settings-transfer"),
-);
+// The plain store is handed straight to the factory and never bound here, so the only settings store
+// this page can wire into a control is the one that publishes before it writes.
+const teamSettings = createTeamSharedSettings({
+  settings: createSettingsStore(loggers.forSource("common/settings")),
+  bindings: bindingStore,
+  source: teamConfigSourceStore,
+  client: teamConfigClient,
+  logger: loggers.forSource("common/settings-transfer"),
+});
+const settingsStore = teamSettings.settings;
+const teamConfigSynchronizer = teamSettings.synchronizer;
 
 // Queries shared read-only from someone else's configuration work item. The resolver memoizes per
 // work item, so listing several queries shared from one item costs a single credentialed read.
@@ -189,7 +191,7 @@ if (themeSelect && defaultViewSelect) {
     themeSelect,
     defaultViewSelect,
   };
-  const controller = new OptionsController(settingsStore, adoTabReader, elements, report);
+  const controller = new OptionsController(teamSettings.personal, adoTabReader, elements, report);
   void controller.init().catch((error: unknown) => {
     controller.dispose();
     report(error);
@@ -223,7 +225,7 @@ if (
     status: settingsTransferStatus,
   };
   const transfer = new SettingsTransferController(
-    settingsStore,
+    teamSettings.local,
     bindingStore,
     teamConfigSourceStore,
     transferElements,
@@ -396,7 +398,6 @@ const bindingDelete = document.querySelector<HTMLButtonElement>("#binding-delete
 const bindingViewConfigCard = document.querySelector<HTMLElement>("#binding-view-config-card");
 const bindingViewSelect = document.querySelector<HTMLSelectElement>("#binding-view-select");
 const bindingProperties = document.querySelector<HTMLElement>("#binding-properties");
-const bindingSave = document.querySelector<HTMLButtonElement>("#binding-save");
 const bindingSharedNotice = document.querySelector<HTMLElement>("#binding-shared-notice");
 const bindingStatus = document.querySelector<HTMLElement>("#binding-status");
 
@@ -412,7 +413,6 @@ if (
   bindingViewConfigCard &&
   bindingViewSelect &&
   bindingProperties &&
-  bindingSave &&
   bindingSharedNotice &&
   bindingStatus
 ) {
@@ -428,7 +428,6 @@ if (
     viewConfigCard: bindingViewConfigCard,
     viewSelect: bindingViewSelect,
     properties: bindingProperties,
-    saveButton: bindingSave,
     sharedNotice: bindingSharedNotice,
     status: bindingStatus,
   };

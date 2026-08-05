@@ -159,6 +159,7 @@ import {
 } from "../common/browser/TeamConfigRequest";
 import {
   isUpdateWorkItemFieldMessage,
+  type UpdateWorkItemFieldConfig,
   type UpdateWorkItemFieldMessage,
   type UpdateWorkItemFieldResponse,
 } from "../common/browser/WorkItemFieldRequest";
@@ -210,6 +211,7 @@ import { fetchNoteActivityInPage } from "../common/browser/fetchNoteActivityInPa
 import { fetchTeamConfigInPage } from "../common/browser/fetchTeamConfigInPage";
 import { fetchWorkItemNotesInPage } from "../common/browser/fetchWorkItemNotesInPage";
 import { findFeatureCrewInPage } from "../common/browser/findFeatureCrewInPage";
+import { encodeInjectedConfig } from "../common/browser/injectedConfig";
 import { readInterruptAcceptance as readInterruptAcceptancePages } from "../common/browser/readInterruptAcceptance";
 import { readProjectQueryLinksInPage } from "../common/browser/readProjectQueryLinksInPage";
 import { readWorkItemRanksInPage } from "../common/browser/readWorkItemRanksInPage";
@@ -980,25 +982,24 @@ const updateWorkItemField = async (
     return { ok: false, error: "not a supported ADO URL" };
   }
   try {
+    const config: UpdateWorkItemFieldConfig = {
+      updateUrl,
+      rev: message.rev,
+      field: message.field,
+      value: message.value,
+      additionalFields: message.additionalFields,
+      preconditions: message.preconditions,
+      multilineFormat: message.multilineFormat,
+      comment: message.comment,
+      baseValue: message.baseValue,
+    };
     const results = await chrome.scripting.executeScript({
       target: { tabId },
       world: "MAIN",
       func: updateWorkItemFieldInPage,
-      // One config object, never an argument each: an absent optional argument would be `undefined`,
-      // which is not JSON-serializable, and Chrome rejects the entire injection over it.
-      args: [
-        {
-          updateUrl,
-          rev: message.rev,
-          field: message.field,
-          value: message.value,
-          additionalFields: message.additionalFields,
-          preconditions: message.preconditions,
-          multilineFormat: message.multilineFormat,
-          comment: message.comment,
-          baseValue: message.baseValue,
-        },
-      ],
+      // Encoded, never the object itself: `executeScript` drops null-valued `args` properties, and
+      // `value: null` is what asks for the field to be CLEARED.
+      args: [encodeInjectedConfig(config)],
     });
     const result = (results[0]?.result as UpdateWorkItemFieldResponse | undefined) ?? null;
     if (result === null) {
@@ -1075,7 +1076,7 @@ const reorderWorkItem = async (
       target: { tabId },
       world: "MAIN",
       func: reorderWorkItemInPage,
-      args: [preparedConfig],
+      args: [encodeInjectedConfig(preparedConfig)],
     });
     const rawResult = (results[0]?.result as ReorderWorkItemResponse | undefined) ?? null;
     const result = withPreparedState(rawResult ?? { ok: false, error: "no result" }, preparation);
@@ -1683,6 +1684,9 @@ const createWorkItem = async (
               tags: message.tags,
               areaPath: message.areaPath,
               iterationPath: message.iterationPath,
+              assignedTo: message.assignedTo,
+              description: message.description,
+              comment: message.comment,
             },
             parentUrl,
           ),

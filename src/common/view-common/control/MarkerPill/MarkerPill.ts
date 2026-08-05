@@ -43,6 +43,17 @@ export function markerLabel(marker: WorkItemMarker): string {
   return WORK_ITEM_MARKERS.find((entry) => entry.key === marker)?.label ?? marker;
 }
 
+/**
+ * The colour one marker is recognized by, for a surface that flags something ABOUT a marker rather
+ * than showing the marker itself (a note's dot in the complete discussion).
+ *
+ * Read from the pill's own paint so a dot and the pill it refers to can never end up different
+ * colours — the colour is the only thing tying the two together.
+ */
+export function markerAccentColor(marker: WorkItemMarker): string {
+  return MARKER_PILL_PAINT[marker].background;
+}
+
 /** Options for rendering a marker pill. */
 export interface MarkerPillOptions {
   /** Which recognized condition the pill stands for; decides both its wording and its color. */
@@ -127,22 +138,26 @@ function markerPillStyles(
     if (paint.edge !== undefined) styles.push(`box-shadow:inset 0 0 0 1px ${paint.edge}`);
     return styles;
   }
-  const styles = [
+  // A pill that opens its reasons is a <button>, which arrives with its own font, margin, box model
+  // and border. Every one of those is stated here — and the edge is always drawn, transparent when
+  // the paint has none — so one variant can never render one size in a menu and another on a card.
+  return [
+    "box-sizing:border-box",
     "display:inline-flex",
     "align-items:center",
     "vertical-align:middle",
     "border-radius:9px",
+    "margin:0",
     "padding:1px 8px",
+    "font-family:inherit",
     "font-size:9px",
     "font-weight:600",
     "line-height:1.6",
     "white-space:nowrap",
     `color:${paint.color}`,
     `background:${paint.background}`,
+    `border:1px solid ${paint.edge ?? "transparent"}`,
   ];
-  if (paint.edge !== undefined) styles.push(`border:1px solid ${paint.edge}`);
-  else if (paint === MARKER_PILL_PAINT.interrupt) styles.push("border:1px solid transparent");
-  return styles;
 }
 
 function wireMarkerPill(
@@ -152,8 +167,11 @@ function wireMarkerPill(
   activates: boolean,
   selected: boolean,
 ): void {
+  // Both helpers return void deliberately. A variant that could hand back styles to append to
+  // `cssText` is exactly how the opener once erased the raised Interrupt's edge: paint and geometry
+  // are decided once, above, and nothing downstream is given the chance to overrule them.
   if (interactive) asFilterToggle(pill, selected, options.onToggle);
-  else if (activates) pill.style.cssText += `;${asOpener(pill, options.onActivate).join(";")}`;
+  else if (activates) asOpener(pill, options.onActivate);
 }
 
 function appendMarkerCounts(
@@ -190,7 +208,7 @@ function markerCount(
   });
 }
 
-/** Turn the pill into the board's filter toggle, and return the styles that say whether it is on. */
+/** Turn the pill into the board's filter toggle, saying whether it is currently on. */
 function asFilterToggle(
   pill: HTMLElement,
   selected: boolean,
@@ -204,14 +222,19 @@ function asFilterToggle(
   pill.addEventListener("click", () => onToggle?.());
 }
 
-/** Turn the pill into a button that opens what stands behind it, at full strength. */
-function asOpener(pill: HTMLElement, onActivate: (() => void) | undefined): string[] {
+/**
+ * Turn the pill into a button that opens what stands behind it.
+ *
+ * Adds nothing but the pointer: opening a pill's reasons says nothing about the condition it states,
+ * so it must not repaint or resize the pill the reader is comparing against the one in a menu.
+ */
+function asOpener(pill: HTMLElement, onActivate: (() => void) | undefined): void {
   (pill as HTMLButtonElement).type = "button";
   pill.setAttribute("aria-haspopup", "dialog");
+  pill.style.cursor = "pointer";
   pill.addEventListener("click", (event) => {
     // The row underneath opens the item's own notes; this pill answers a narrower question.
     event.stopPropagation();
     onActivate?.();
   });
-  return ["cursor:pointer", "border:none", "font:inherit", "font-size:9px", "font-weight:600"];
 }

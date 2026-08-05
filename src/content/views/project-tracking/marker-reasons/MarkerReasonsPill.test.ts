@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { WorkItemNote } from "../../../../common/ado/WorkItemNote";
 import { normalizeMarkerTags } from "../../../../common/settings/ExtensionSettings";
+import { renderMarkerPill } from "../../../../common/view-common/control/MarkerPill/MarkerPill";
 
 import { renderMarkerReasonsPill } from "./MarkerReasonsPill";
 
@@ -20,7 +21,12 @@ function createNote(id: number, text: string): WorkItemNote {
 
 /** A pill over a discussion holding one note per marker plus an ordinary one. */
 function mountPill(
-  overrides: { commentTag?: string; marker?: "blocked" | "interrupt"; notes?: WorkItemNote[] } = {},
+  overrides: {
+    commentTag?: string;
+    marker?: "blocked" | "interrupt";
+    accepted?: boolean;
+    notes?: WorkItemNote[];
+  } = {},
 ) {
   const notes = overrides.notes ?? [
     createNote(1, "[BLOCKED] Waiting on the API team."),
@@ -46,6 +52,7 @@ function mountPill(
     item: { id: 7, tags: [tags.tag], noteCount: notes.length } as never,
     marker,
     tags,
+    accepted: overrides.accepted,
     notesSinceIso: SINCE,
     services: {
       noteLoader: { loadNotes },
@@ -123,8 +130,19 @@ describe("renderMarkerReasonsPill", () => {
 
     expect(element.querySelector("button")).toBeNull();
     expect(element.querySelector(".awesomeado-marker-pill")?.tagName).toBe("SPAN");
+    // The tooltip names the token nothing matched, so an inert pill is not a mystery.
     expect(element.querySelector(".awesomeado-marker-pill")?.getAttribute("title")).toBe(
-      "No notes",
+      'No note in this window starts with "[BLOCKED]"',
+    );
+    element.remove();
+  });
+
+  it("says an unconfigured comment tag is why the pill cannot open", async () => {
+    const { element } = mountPill({ commentTag: "" });
+    for (let tick = 0; tick < 6; tick += 1) await Promise.resolve();
+
+    expect(element.querySelector(".awesomeado-marker-pill")?.getAttribute("title")).toContain(
+      "No comment tag is configured for Blocked (internal)",
     );
     element.remove();
   });
@@ -140,6 +158,44 @@ describe("renderMarkerReasonsPill", () => {
     const text = element.querySelector(".awesomeado-note__text")?.textContent ?? "";
     expect(text).toContain("Platform owns this now.");
     expect(text).not.toContain("[ACCEPTED]");
+    element.remove();
+  });
+});
+
+/**
+ * A board card must show the SAME pill a right-click menu previews. The card is the surface where a
+ * raised Interrupt once lost its outline, so it is pinned to the shared control's own output here
+ * rather than to a copy of the values, which would drift with it.
+ */
+describe("the pill a card wears", () => {
+  const shownPill = (element: HTMLElement): HTMLElement => {
+    const pill = element.querySelector<HTMLElement>(".awesomeado-marker-pill")!;
+    // The pointer is the one thing opening its notes is allowed to add.
+    pill.style.removeProperty("cursor");
+    return pill;
+  };
+
+  it.each([false, true])("is the shared Interrupt pill when accepted is %s", async (accepted) => {
+    const { element } = mountPill({ marker: "interrupt", accepted });
+    for (let tick = 0; tick < 6; tick += 1) await Promise.resolve();
+
+    const pill = shownPill(element);
+    expect(pill.tagName).toBe("BUTTON");
+    expect(pill.getAttribute("style")).toBe(
+      renderMarkerPill(document, { marker: "interrupt", accepted }).getAttribute("style"),
+    );
+    element.remove();
+  });
+
+  it("is still that pill when it has no notes to open", async () => {
+    const { element } = mountPill({ marker: "interrupt", commentTag: "" });
+    for (let tick = 0; tick < 6; tick += 1) await Promise.resolve();
+
+    const pill = shownPill(element);
+    expect(pill.tagName).toBe("SPAN");
+    expect(pill.getAttribute("style")).toBe(
+      renderMarkerPill(document, { marker: "interrupt" }).getAttribute("style"),
+    );
     element.remove();
   });
 });

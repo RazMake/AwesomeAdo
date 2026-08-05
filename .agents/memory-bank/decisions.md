@@ -998,6 +998,14 @@ nodeMatchesChange`). Copied here, that makes an activity pill drag in items belo
   cut. Every task is classified as user-visible or internal at the start; before final verification,
   the serial coordinator merges each completed user-visible outcome into `## Next Version` at the
   capability level and leaves internal work out.
+- Amendment: every version section groups its bullets under `### New Features` (new or expanded
+  capability, improved behavior) and `### Bug Fixes` (behavior that was broken, misleading, or lost
+  work). A group with no bullets is omitted entirely rather than left as an empty heading, and an
+  unfinished capability is still staged under `### New Features` prefixed `- **WIP** — `, resolved
+  before the section it sits in is released. The group headings are **H3**: `requireChangelogSection`
+  in `scripts/compute-version.mjs` treats every `## ` line as the start of a new version section, so
+  an H2 group heading would truncate the section the release gate validates and fail the release on a
+  section that plainly has bullets.
 
 ## ADR-055: Defer heavy view code and retain server reads at board-session scope
 
@@ -1281,9 +1289,10 @@ Markdown` in one `/rev`-guarded JSON Patch. The PATCH is not retried; a concurre
 - Decision: a work item that cannot be read leaves the link in place and renders nothing. Dropping
   the link on a transient failure would silently un-enhance the query permanently.
 - Decision: the Options Query Bindings tab lists a shared query with the publisher's values rendered
-  as read-only text rather than as disabled inputs, hides Save, and turns Delete into Remove link.
-  Those values live in a work item this user cannot write to, so an enabled Save could only ever
-  produce a local copy that diverges from what everyone else sees.
+  as read-only text rather than as disabled inputs, and turns Delete into Remove link.
+  Those values live in a work item this user cannot write to, so an editable card could only ever
+  produce a local copy that diverges from what everyone else sees. (Under ADR-078 there is no Save
+  button left to hide; the card simply renders no editable control.)
 - Rationale: sharing an enhanced query with someone outside the team is the common case (a partner
   team, a manager, an on-call reader). Connecting them to the whole configuration would silently
   replace their own; giving them nothing would make the link useless. A narrow read-only connection
@@ -1510,3 +1519,135 @@ ProjectLifecycleCommands`, shared by the catalog (per project row) and by Projec
   spoken for by the browser and by Azure DevOps' own page, so a reader reaching for emphasis kept
   tripping a command they never meant to run. The marker class is view-neutral
   (`awesomeado--modifier-highlight`) because the gesture belongs to the page, not to one board.
+
+## ADR-074: The settings store options hands out publishes; the local-only path is a separate type
+
+- Context: a settings edit written straight to synced storage while a team configuration is connected
+  is undone by the very next pull — the open view reacts to the storage change, pulls the older
+  work-item payload, and writes it back over the edit. The rule "publish before the local write" was
+  already recorded for query bindings, but only bindings obeyed it; the Azure DevOps configuration
+  panel, and the Appearance panel with it, still wrote locally and lost every edit. Nothing caught it,
+  because `TeamSharedSettingsStore` and `BrowserSyncSettingsStore` are structurally identical: the
+  defect was one argument in a composition root, which is excluded from coverage and type-correct
+  either way.
+- Decision: the distinction is made one the compiler can see. `ITeamPublishingSettingsStore` is
+  `ISettingsStore` plus a `publishesBeforeWrite` marker; every options control that edits settings
+  declares that type, so handing it a plain store fails to compile. A `@ts-expect-error` guard in
+  `AzureDevOpsController.test.ts` fails to compile if the marker is ever removed.
+- Decision: the pull and file-import paths take `LocalSettingsAccess` (`read` + `applyLocally`)
+  instead of an `ISettingsStore`. A pull must not publish the snapshot it just read, and an import
+  must not publish the outgoing configuration into the connection it is moving away from — and
+  because the shape differs, neither can be wired to a publishing store by mistake.
+- Decision: `createTeamSharedSettings` assembles the stack and is handed the plain store **inline**,
+  so no name in `src/options/index.ts` binds it. Removing the alternative is what actually prevents
+  recurrence; the marker and the segregated contract make the remaining choices explicit.
+- Consequence: Appearance edits (theme, default view) now publish too. They were losing edits the same
+  way, and with one store exposed they are fixed by construction rather than by remembering to.
+
+## ADR-075: Theme and default view belong to the person, not the team
+
+- Context: ADR-074 routed every options settings edit through the publishing store, which swept theme
+  and default view into the team payload. That is wrong in both directions: publishing repaints every
+  teammate's page on their next pull, and pulling replaces the reader's own choice with whoever
+  published last. The same leak reached shared queries, where a publisher's theme was layered over the
+  reader's own settings for that page.
+- Decision: `PERSONAL_SETTING_KEYS` (`common/settings`) names them. They are excluded on every path
+  that touches a team work item — `exportCompactConfig` omits them, `TeamConfigSynchronizer` strips
+  them from a pull, and `overlaySettings` strips them from a shared query. The pull and overlay strips
+  are not redundant with the export: payloads published by earlier builds still carry these values,
+  and a client must not apply them.
+- Decision: personal is **not** device-local. They stay in `chrome.storage.sync`, so a user's theme
+  still follows them across their own machines, and a **file** export still carries them, because a
+  file backs up one person's configuration rather than a team's.
+- Decision: `IPersonalSettingsStore` (`publishesBeforeWrite: false`) is the counterpart to ADR-074's
+  team marker. The two literal types are disjoint, so a control declares which kind of setting it
+  edits and cannot be handed the other; Appearance takes the personal store.
+
+## ADR-076: A form field is the shared control, not a private lookalike
+
+- Context: the catalog's Add work item form (ADR-066 family) was the one surface built out of raw
+  HTML controls: a `<textarea>` whose placeholder claimed "Markdown supported" while none of the
+  extension's Markdown behaviour was wired to it, and two native `<select>`s. Both were wrong in the
+  same way — they looked like the shared controls without being them.
+- Decision: a native `<select>` is not usable on an enhanced view. Its collapsed box takes the
+  theme's colors, but the OPEN list is painted by the platform, so on a dark board the choices appear
+  in a white system list belonging to no theme the extension ships (ADR-034). `SelectField` is the
+  themed single-select: values exchanged whole, labels display-only, per-instance `classPrefix`, and
+  optional per-choice `declarations` so a sprint's past/current/future emphasis reaches it unchanged.
+- Decision: Markdown authoring is not re-implemented for a form. `TextEditor`'s field is extracted as
+  `renderMarkdownField` — the box, the bold/italic/link caret transforms and the `@` suggestion flow
+  without the Save/Cancel pair — and `renderTextEditor` is rebuilt on it (ADR-051 stands). A key the
+  field consumes is stopped with `stopImmediatePropagation`, so the owner's own Enter/Escape handling
+  cannot fire on the keystroke that picked a mention.
+- Decision: a choice that APPLIES a marker is the marker's own pill, not a checkbox beside one. The
+  Interrupt flag is `MarkerPill` inside a bare toggle button: grayscaled while off, and once on
+  painted raised or accepted by the same control the boards paint it with, so the preview and the
+  outcome cannot drift. `Accepted` sits on that line and reveals the mandatory reason.
+- Decision: the areas a creation form offers are the **leaves** of what the catalog uses, labelled by
+  ADR-053's shortest unique suffix with the full path as the tooltip. An ancestor node is a grouping
+  rather than a place work is done. The parent's own area is kept whatever shape it has, so the form
+  can never open on a value it does not offer.
+- Consequence: `PanelShape` gains `titlePrefix`, because a centred creation form headed by the
+  parent's title otherwise looks exactly like the panel that EDITS that item.
+
+## ADR-077: A meaningful `null` crosses into the page world encoded, never as an object property
+
+- Context: clearing an ETA from an enhanced view was rejected by Azure DevOps with `HTTP 400 — "Value
+cannot be null."` The patch that reached ADO was `{ op: "add", path: "/fields/<date field>" }` with
+  no `value`, even though the worker sent `value: null` and the code branches on `value === null` to
+  emit a JSON Patch `remove`.
+- Root cause (verified live in Edge, not inferred): `chrome.scripting.executeScript` serializes
+  `args` and DROPS every null-valued property, at any depth — the key itself disappears. The injected
+  function therefore reads `undefined` where the worker sent `null` and takes the "nothing was
+  supplied" branch. Values returned FROM the page keep their nulls; only `args` are affected.
+- Decision: a config whose `null` carries meaning is handed to `executeScript` as a JSON string via
+  `encodeInjectedConfig` (`common/browser/injectedConfig`), and the injected function parses it back.
+  A string crosses the boundary byte for byte. This is the boundary's rule, not one function's
+  workaround: `updateWorkItemFieldInPage` (`value`, `baseValue`, and the nested
+  `additionalFields`/`preconditions` values) and `reorderWorkItemInPage` (`parentLinkUrl: null` =
+  "ends up with no parent") both take it.
+- Rejected: encoding "clear" as `""` instead. It happens to work for date, identity and text fields,
+  but it is a second dialect of the same intent and says nothing about a numeric field; and it would
+  not have saved `baseValue: null`, whose loss silently disabled the ADR-030 rebase whenever the
+  field being written was previously empty.
+- Consequence: the injected function's parameter is the encoded string, so its tests call it the same
+  way the worker does and the hop is exercised rather than assumed.
+
+## ADR-078: Per-query view settings save on change, like every other setting
+
+- Context: the Query Bindings tab was the only place in the options page that held edits behind a
+  Save button. Every other section — appearance, the ADO scope fields, marker tags, work item types —
+  stores a change the moment it is committed, so the one card that did not read as if it had simply
+  failed to save.
+- Decision: the Query View Configuration card has no Save. Each control persists on commit: `change`
+  for a text or autocomplete field (blur or Enter, so a half-typed area path is never written),
+  immediately for a picker, a clamped number, or an area-path row edit. Changing the view type is
+  itself a change and is stored with that view's own defaults.
+- Decision: a binding is written only once its required properties are answered — an incomplete view
+  is one the content script cannot render. With no button left to disable, the status line carries
+  that state instead ("Enter <label> to save these settings.") and the last valid binding stands.
+- Decision: a save that succeeded says nothing. Under a button, "Saved." confirmed a discrete act;
+  under commit-on-change it would fire after every field and become noise, so the line is reserved
+  for what the user must act on. It also stops the confirmation overwriting the notice naming a
+  required setting the newly chosen view still needs.
+- Decision: a query-derived seed (ADR-era `derivedFrom` pre-fill) is now STORED, not merely shown.
+  Under a Save button an unsaved seed was visibly pending; without one it would be a setting the user
+  believes they have and the view never sees.
+- Consequence: the Add card keeps its Save. It CREATES a binding rather than changing one, and
+  auto-binding a query the moment its card opened would enhance a query nobody asked to enhance.
+
+## ADR-079: A refresh dismisses the failed-write report
+
+- Context: a rejected write is invisible on a persist-then-reflect board, so the write-queue chip is
+  the only evidence an edit was lost. Its count was monotonic for the life of the view, which meant a
+  board the reader had since refreshed still carried an alarm about an edit that was no longer on
+  screen in any form.
+- Decision: `WorkItemWriteQueue.clearFailures()` forgets the failures reported so far and notifies,
+  and every view calls it when it actually RE-READS (not when the refresh button is instead being
+  pressed to open the diagnostics log for a failed refresh). A refresh replaces the board with what
+  Azure DevOps holds, so the lost edit can no longer be mistaken for saved.
+- Only already-failed writes are forgotten: one rejected after the refresh raises the chip again with
+  the new total, so this can never suppress a live failure.
+- Consequence: Project Tracking needs no call — it rebuilds its board, and therefore its queue and
+  chip, on every refresh. Sprint View and the All Projects Catalog View keep one queue across
+  refreshes and clear it explicitly.

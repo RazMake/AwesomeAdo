@@ -58,6 +58,10 @@ the host measures the mounted popup and corrects that anchoring so the whole pop
   far enough to push it off the left edge, so a popup wider than that area is left as-is.
 - It flips the popup **above** the trigger (`top:auto; bottom:100%`) when it spills past the bottom
   edge and actually fits above.
+- It slides the popup **up** (a negative `margin-top`) when it spills past the bottom edge and is too
+  tall to flip — never far enough to push it off the top edge. This is what a popup opened at the
+  **pointer** needs: a tall right-click menu opened from the middle of a card fits neither below the
+  pointer nor above it.
 - A popup that cannot be measured (zero-sized, e.g. a detached or hidden host) is left untouched.
 
 The visible area is the window's client box narrowed by every ancestor that clips or scrolls its

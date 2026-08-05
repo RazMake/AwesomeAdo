@@ -88,3 +88,94 @@ describe("renderMarkerPill", () => {
     expect(pill.style.border).toContain("transparent");
   });
 });
+
+/** Every declaration but the pointer, which is the only thing an opener is allowed to add. */
+function paintOf(pill: HTMLElement): Record<string, string> {
+  const declarations: Record<string, string> = {};
+  for (let index = 0; index < pill.style.length; index += 1) {
+    const property = pill.style.item(index);
+    if (property !== "cursor") declarations[property] = pill.style.getPropertyValue(property);
+  }
+  return declarations;
+}
+
+/** What a pill is allowed to vary between variants: its colours. Everything else is its shape. */
+const PAINT_PROPERTY = /color|background|border/;
+
+function shapeOf(pill: HTMLElement): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(paintOf(pill)).filter(([property]) => !PAINT_PROPERTY.test(property)),
+  );
+}
+
+/** The border carries a colour, so only the width and style it contributes count as shape. */
+function borderShapeOf(pill: HTMLElement): string {
+  const [width, style] = pill.style.border.split(" ");
+  return `${width} ${style}`;
+}
+
+const VARIANTS = [
+  ["a raised Interrupt", { marker: "interrupt" } as const],
+  ["an accepted Interrupt", { marker: "interrupt", accepted: true } as const],
+  ["Blocked (internal)", { marker: "blocked" } as const],
+  ["Blocked by another team", { marker: "blockedByOtherTeam" } as const],
+] as const;
+
+describe("a marker pill that opens its reasons", () => {
+  it.each(VARIANTS)(
+    "paints %s exactly as the static pill of the same variant",
+    (_name, variant) => {
+      const opener = renderMarkerPill(document, { ...variant, onActivate: vi.fn() });
+
+      expect(opener.tagName).toBe("BUTTON");
+      expect(paintOf(opener)).toEqual(paintOf(renderMarkerPill(document, variant)));
+      expect(opener.style.cursor).toBe("pointer");
+    },
+  );
+
+  it("states the button defaults that would otherwise redraw it", () => {
+    const pill = renderMarkerPill(document, { marker: "interrupt", onActivate: vi.fn() });
+
+    expect(pill.style.border).toBe("1px solid var(--marker-interrupt-background)");
+    expect(pill.style.lineHeight).toBe("1.6");
+    expect(pill.style.fontFamily).toBe("inherit");
+    expect(pill.style.margin).toBe("0px");
+    expect(pill.style.boxSizing).toBe("border-box");
+  });
+
+  it("opens without letting the row beneath it react", () => {
+    const onActivate = vi.fn();
+    const onRow = vi.fn();
+    const row = document.createElement("div");
+    row.addEventListener("click", onRow);
+    row.append(renderMarkerPill(document, { marker: "interrupt", onActivate }));
+
+    row.querySelector("button")?.click();
+
+    expect(onActivate).toHaveBeenCalledTimes(1);
+    expect(onRow).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The invariant behind the whole control: variants differ by COLOUR and by nothing else, so a pill
+ * can never take up more room on one surface than the same pill does on another. A change that
+ * legitimately alters the pill's shape has to alter it here for every variant at once.
+ */
+describe("marker pill shape", () => {
+  it.each(VARIANTS)("gives %s the same shape as every other variant", (_name, variant) => {
+    const pill = renderMarkerPill(document, variant);
+    const reference = renderMarkerPill(document, { marker: "blocked" });
+
+    expect(shapeOf(pill)).toEqual(shapeOf(reference));
+    expect(borderShapeOf(pill)).toBe(borderShapeOf(reference));
+  });
+
+  it("keeps a raised Interrupt visibly apart from an accepted one", () => {
+    const raised = renderMarkerPill(document, { marker: "interrupt" });
+    const accepted = renderMarkerPill(document, { marker: "interrupt", accepted: true });
+
+    expect(raised.style.background).not.toBe(accepted.style.background);
+    expect(raised.style.border).not.toBe(accepted.style.border);
+  });
+});

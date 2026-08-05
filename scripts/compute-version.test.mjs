@@ -22,6 +22,7 @@ const changelogWithNext = `# Changelog\n\n## Next Version\n\n- Coming soon.\n\n#
 const changelogNoSection = `# Changelog\n\n## Next Version\n\n- Coming soon.\n`;
 const changelogNoBullet = `# Changelog\n\n## 0.1\n\n## 0.0\n\n- Old.\n`;
 const changelogDuplicate = `# Changelog\n\n## 0.1\n\n- First.\n\n## 0.1\n\n- Duplicate.\n`;
+const changelogGrouped = `# Changelog\n\n## 0.1\n\n### New Features\n\n- **WIP** — A capability.\n\n### Bug Fixes\n\n- A fix.\n`;
 
 describe("computeVersion — tag absent", () => {
   it("returns is_new_official=true when tag does not exist", () => {
@@ -135,6 +136,16 @@ describe("computeVersion — changelog parsing", () => {
     const result = computeVersion({
       packageMetadata: basePkg,
       changelogText: changelogWithNext,
+      tagExists: () => ({ exists: false }),
+    });
+    assert.equal(result.base, "0.1");
+  });
+
+  // Group headings must stay H3: an H2 group would end the version section it belongs to.
+  it("accepts bullets under New Features / Bug Fixes group headings", () => {
+    const result = computeVersion({
+      packageMetadata: basePkg,
+      changelogText: changelogGrouped,
       tagExists: () => ({ exists: false }),
     });
     assert.equal(result.base, "0.1");

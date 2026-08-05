@@ -18,6 +18,14 @@ const TYPES: TypeCatalogEntry[] = [
     columns: [{ column: "Active", states: ["Active"] }],
   },
   {
+    name: "Story",
+    color: "4fc3f7",
+    icon: "",
+    etaField: "Custom.StoryEta",
+    children: [],
+    columns: [],
+  },
+  {
     name: "Untyped",
     color: "",
     icon: "",
@@ -287,14 +295,52 @@ describe("renderProjectRow - ETA", () => {
     expect(line.lastElementChild?.className).toBe("awesomeado-eta");
   });
 
-  it("stays a read-only placeholder for a type that declares no ETA field", () => {
-    const row = renderProjectRow(item({ id: 1, type: "Untyped" }), context(), 0);
+  it("invites the click that edits it, and anchors its own picker", () => {
+    const row = renderProjectRow(item({ id: 1 }), context(), 0);
     const badge = row.querySelector<HTMLElement>(".awesomeado-eta")!;
 
-    expect(badge.textContent).toContain("No ETA");
-    expect(badge.style.cursor).not.toBe("pointer");
+    // The row sizes the badge without erasing the styles the control gave itself.
+    expect(badge.style.cursor).toBe("pointer");
+    expect(badge.style.position).toBe("relative");
+    expect(badge.style.fontSize).toBe("11px");
   });
 
+  it("shows nothing at all for a type that declares no ETA field", () => {
+    const row = renderProjectRow(item({ id: 1, type: "Untyped" }), context(), 0);
+
+    expect(row.querySelector(".awesomeado-eta")).toBeNull();
+  });
+
+  it("gives every open child its own ETA, in the same right-hand column", () => {
+    const parent = item({
+      id: 1,
+      children: [item({ id: 2, children: [item({ id: 3 })] })],
+    });
+    const row = renderProjectRow(parent, context({ expandedIds: new Set([1, 2]) }), 0);
+
+    expect(row.querySelectorAll(".awesomeado-eta")).toHaveLength(3);
+    for (const line of row.querySelectorAll(".awesomeado-projects__row")) {
+      expect(line.lastElementChild?.className).toBe("awesomeado-eta");
+    }
+  });
+
+  it("leaves the date column empty for a child whose type declares no ETA field", () => {
+    const child = item({ id: 2, type: "Untyped" });
+    const row = mounted(
+      renderProjectRow(
+        item({ id: 1, children: [child] }),
+        context({ expandedIds: new Set([1]) }),
+        0,
+      ),
+    );
+
+    // The project above it still carries one, so the column is not missing — this row simply has
+    // nowhere to write a date.
+    expect(row.querySelectorAll(".awesomeado-eta")).toHaveLength(1);
+  });
+});
+
+describe("renderProjectRow - ETA writes", () => {
   it("writes the picked date to the type's own ETA field and reflects what was committed", async () => {
     const writeField = vi.fn(async () => ({ ok: true, rev: 4 }));
     const project = item({ id: 7 });
@@ -317,22 +363,9 @@ describe("renderProjectRow - ETA", () => {
     expect(project.rev).toBe(4);
   });
 
-  it("gives every open child its own ETA, in the same right-hand column", () => {
-    const parent = item({
-      id: 1,
-      children: [item({ id: 2, children: [item({ id: 3 })] })],
-    });
-    const row = renderProjectRow(parent, context({ expandedIds: new Set([1, 2]) }), 0);
-
-    expect(row.querySelectorAll(".awesomeado-eta")).toHaveLength(3);
-    for (const line of row.querySelectorAll(".awesomeado-projects__row")) {
-      expect(line.lastElementChild?.className).toBe("awesomeado-eta");
-    }
-  });
-
   it("writes a child's date to that child's own type field, not the project's", async () => {
     const writeField = vi.fn(async () => ({ ok: true, rev: 6 }));
-    const child = item({ id: 2, type: "Untyped" });
+    const child = item({ id: 2, type: "Story" });
     const row = mounted(
       renderProjectRow(
         item({ id: 1, children: [child] }),
@@ -342,12 +375,15 @@ describe("renderProjectRow - ETA", () => {
     );
     const badges = row.querySelectorAll<HTMLElement>(".awesomeado-eta");
 
-    // The child's type declares no ETA field, so its badge cannot be edited even though the
-    // project's above it can.
-    expect(badges).toHaveLength(2);
-    expect(badges[1]!.querySelector(".awesomeado-eta__label")).toBeTruthy();
     badges[1]!.querySelector<HTMLElement>(".awesomeado-eta__label")!.click();
-    expect(row.querySelectorAll(".awesomeado-eta__date")).toHaveLength(0);
-    expect(writeField).not.toHaveBeenCalled();
+    const input = row.querySelector<HTMLInputElement>(".awesomeado-eta__date")!;
+    input.value = "2026-09-01";
+    input.dispatchEvent(new Event("change"));
+
+    await vi.waitFor(() =>
+      expect(writeField).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 2, field: "Custom.StoryEta" }),
+      ),
+    );
   });
 });

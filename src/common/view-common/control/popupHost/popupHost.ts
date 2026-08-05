@@ -187,20 +187,11 @@ function shiftInsideBounds(
 }
 
 /**
- * Flip the popup above its trigger when it spills below the visible area and actually fits above.
- * `triggerRect` is non-null only for a viewport-anchored popup, which has to be told where "above
- * the trigger" is in pixels — `bottom:100%` would resolve against the viewport, not the trigger.
+ * Move the popup above its trigger. `triggerRect` is non-null only for a viewport-anchored popup,
+ * which has to be told where "above the trigger" is in pixels — `bottom:100%` would resolve against
+ * the viewport, not the trigger.
  */
-function flipAboveTrigger(
-  popup: HTMLElement,
-  box: PopupBox,
-  bounds: VisibleBounds,
-  triggerRect: DOMRect | null,
-): void {
-  const spillBottom = box.top + box.height - (bounds.bottom - VIEWPORT_MARGIN);
-  if (spillBottom <= 0 || box.top - box.height < bounds.top + VIEWPORT_MARGIN) {
-    return;
-  }
+function flipAboveTrigger(popup: HTMLElement, box: PopupBox, triggerRect: DOMRect | null): void {
   if (triggerRect) {
     popup.style.top = `${triggerRect.top - box.height - TRIGGER_GAP}px`;
     return;
@@ -210,6 +201,57 @@ function flipAboveTrigger(
   popup.style.bottom = "100%";
   popup.style.marginTop = "0";
   popup.style.marginBottom = `${TRIGGER_GAP}px`;
+}
+
+/**
+ * Slide the popup up by exactly what spills past the bottom edge — never past the opposite edge, so
+ * fixing one side cannot break the other.
+ *
+ * Corrected with a margin rather than by writing `top`: the popup arrives anchored either as a
+ * percentage against its trigger (`top:100%`) or as a pixel offset against the viewport, and a margin
+ * is the one adjustment that means the same thing in both cases.
+ */
+function liftInsideBounds(
+  popup: HTMLElement,
+  box: PopupBox,
+  bounds: VisibleBounds,
+  spillBottom: number,
+  view: Window,
+): void {
+  const lift = Math.min(spillBottom, Math.max(box.top - (bounds.top + VIEWPORT_MARGIN), 0));
+  if (lift <= 0) {
+    return;
+  }
+  const anchoredMargin = Number.parseFloat(view.getComputedStyle(popup).marginTop);
+  popup.style.marginTop = `${(Number.isFinite(anchoredMargin) ? anchoredMargin : 0) - lift}px`;
+}
+
+/**
+ * Keep the popup's bottom edge inside the visible area, flipping it above its trigger when there is
+ * room and otherwise sliding it up.
+ *
+ * Flipping alone is not enough for a popup opened at the POINTER rather than under a short badge: a
+ * tall right-click menu opened from the middle of a card fits neither below the pointer nor above it,
+ * and with only the flip available it was left hanging off the bottom of the window with its last
+ * commands unreachable. Sliding it up is what a menu in that position needs, and it is safe for the
+ * badge popups too because it never moves anything that already fits.
+ */
+function keepBottomEdgeInView(
+  popup: HTMLElement,
+  box: PopupBox,
+  bounds: VisibleBounds,
+  triggerRect: DOMRect | null,
+  view: Window,
+): void {
+  const spillBottom = box.top + box.height - (bounds.bottom - VIEWPORT_MARGIN);
+  if (spillBottom <= 0) {
+    return;
+  }
+  if (box.top - box.height >= bounds.top + VIEWPORT_MARGIN) {
+    flipAboveTrigger(popup, box, triggerRect);
+    return;
+  }
+  liftInsideBounds(popup, box, bounds, spillBottom, view);
 }
 
 /**
@@ -240,7 +282,7 @@ function keepPopupInView(popup: HTMLElement, trigger: HTMLElement, view: Window)
   }
 
   shiftInsideBounds(popup, box, bounds, view);
-  flipAboveTrigger(popup, box, bounds, triggerRect);
+  keepBottomEdgeInView(popup, box, bounds, triggerRect, view);
   return triggerRect !== null;
 }
 

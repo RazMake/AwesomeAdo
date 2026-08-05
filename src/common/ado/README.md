@@ -445,11 +445,14 @@ is guarded by that item's revision, while creation has neither.
 - `buildParentLinkUrl(href, parentId)` — the organization-scoped `_apis/wit/workItems/${id}` address
   a `System.LinkTypes.Hierarchy-Reverse` relation points at. Organization-scoped because that is what
   ADO stores in a relation; `null` for a URL that names no organization.
-- `buildCreateWorkItemPatch(item, parentUrl?)` — title, tags, area path, iteration path **and the
-  parent link** in **one** JSON Patch. They must not be separate writes: the query or tree that is
-  about to show the item selects on exactly those values, so an item created first and tagged (or
-  parented) second exists for a moment as something nothing returns — and permanently so if the
-  second write fails. Empty optional values are omitted rather than written blank.
+- `buildCreateWorkItemPatch(item, parentUrl?)` — title, tags, area path, iteration path, assignee,
+  description, the reason it was raised **and the parent link** in **one** JSON Patch. They must not
+  be separate writes: the query or tree that is about to show the item selects on exactly those
+  values, so an item created first and tagged (or parented) second exists for a moment as something
+  nothing returns — and permanently so if the second write fails. The description and the reason ride
+  with their `/multilineFieldsFormat/<field>` = `Markdown` op, so what an author typed is stored as
+  what they typed rather than HTML-encoded. Empty optional values are omitted rather than written
+  blank.
 - `parseCreatedWorkItem(raw)` — `{ id, rev }`, or `null` when ADO reported no usable id.
 - `IWorkItemCreator` / `WorkItemCreateResult` — the contract views depend on.
 

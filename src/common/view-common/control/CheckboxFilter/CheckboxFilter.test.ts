@@ -225,3 +225,59 @@ describe("renderCheckboxFilter - combining", () => {
     expect(handle.selection()).toEqual({ included: [], excluded: [], matchAll: true });
   });
 });
+
+describe("renderCheckboxFilter - clearing from the trigger", () => {
+  it("opens the popup rather than clearing unless the caller asked for it", () => {
+    const { handle, onChange } = mount({ combining: true, selected: ["api"] });
+
+    open(handle);
+
+    expect(handle.element.querySelector(`.${PREFIX}__popup`)).not.toBeNull();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("empties an active condition and reports it, leaving the popup shut", () => {
+    const { handle, onChange } = mount({
+      combining: true,
+      clearOnTriggerWhenActive: true,
+      selected: ["api"],
+      excluded: ["docs"],
+      matchAll: true,
+    });
+
+    open(handle);
+
+    expect(handle.selection()).toEqual({ included: [], excluded: [], matchAll: true });
+    expect(onChange).toHaveBeenCalledWith({ included: [], excluded: [], matchAll: true });
+    expect(handle.element.querySelector(`.${PREFIX}__popup`)).toBeNull();
+  });
+
+  it("opens the popup once nothing is chosen any more", () => {
+    const { handle } = mount({ clearOnTriggerWhenActive: true, selected: ["api"] });
+
+    open(handle);
+    open(handle);
+
+    expect(handle.element.querySelector(`.${PREFIX}__popup`)).not.toBeNull();
+  });
+
+  it("still closes an open popup instead of clearing what was picked in it", () => {
+    const { handle } = mount({ clearOnTriggerWhenActive: true });
+    open(handle);
+
+    handle.element.querySelector<HTMLInputElement>("input[type=checkbox]")!.click();
+    open(handle);
+
+    expect(handle.element.querySelector(`.${PREFIX}__popup`)).toBeNull();
+    expect(handle.selection().included).toEqual(["api"]);
+  });
+
+  it("drops the popup's own Clear, so one gesture owns emptying the condition", () => {
+    const { handle } = mount({ clearOnTriggerWhenActive: true });
+
+    open(handle);
+
+    expect(handle.element.querySelector(`.${PREFIX}__popup`)).not.toBeNull();
+    expect(handle.element.querySelector(`.${PREFIX}__clear`)).toBeNull();
+  });
+});

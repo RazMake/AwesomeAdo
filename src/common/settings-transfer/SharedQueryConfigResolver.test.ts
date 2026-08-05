@@ -36,7 +36,9 @@ describe("SharedQueryConfigResolver", () => {
     const config = await resolver.resolve(42);
 
     expect(config?.workItemId).toBe(42);
-    expect(config?.settings.theme).toBe("dark");
+    expect(config?.settings.currentTeam).toEqual({ id: "team-guid", name: "Crew" });
+    // The publisher's theme is theirs; opening their query must not repaint the reader's page.
+    expect(config?.settings.theme).toBeUndefined();
     expect(config?.teamId).toBe("team-guid");
     expect(config?.bindings[QUERY_ID]).toEqual({
       view: "sprint",

@@ -4,6 +4,8 @@ import { renderCheckboxFilter } from "../CheckboxFilter/CheckboxFilter";
 export interface AreaPathFilterOptions {
   /** Visible noun used by the trigger and popup. Defaults to `Area`. */
   label?: string;
+  /** A fixed tooltip for the trigger. Without it the tooltip follows the current condition. */
+  fixedTitle?: string;
   /** Full Azure DevOps area paths offered by the control. */
   areaPaths: readonly string[];
   /** Full paths selected initially. Paths absent from `areaPaths` are ignored. */
@@ -112,6 +114,7 @@ export function renderAreaPathFilter(
   const labels = shortestUniqueAreaPathLabels(paths);
   const filter = renderCheckboxFilter(doc, {
     label: options.label?.trim() || "Area",
+    fixedTitle: options.fixedTitle,
     classPrefix: CLASS_PREFIX,
     options: paths.map((path) => ({ value: path, label: labels.get(path) ?? path, title: path })),
     selected: options.selectedAreaPaths,

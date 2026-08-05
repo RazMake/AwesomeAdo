@@ -159,12 +159,19 @@ const openTagFilter = (root: HTMLElement): void => {
   root.querySelector<HTMLButtonElement>(".awesomeado-tag-filter__trigger")!.click();
 };
 
+/** Dismiss an open dropdown the way a reader does: a pointer press on the board behind it. */
+const dismissPopup = (): void => {
+  document.body.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+};
+
 const tagOptionRow = (root: HTMLElement, label: string): HTMLElement =>
   tagOptions(root).find((row) => row.querySelector("input")!.value === label)!;
 
+/** Tick one tag and leave the dropdown, which is what puts the composed condition on the board. */
 const clickTagOption = (root: HTMLElement, label: string): void => {
   openTagFilter(root);
   tagOptionRow(root, label).querySelector("input")!.click();
+  dismissPopup();
 };
 
 const clickTagExclude = (root: HTMLElement, label: string): void => {
@@ -172,6 +179,7 @@ const clickTagExclude = (root: HTMLElement, label: string): void => {
   tagOptionRow(root, label)
     .querySelector<HTMLButtonElement>(".awesomeado-tag-filter__exclude")!
     .click();
+  dismissPopup();
 };
 
 afterEach(() => {
@@ -397,6 +405,29 @@ describe("projectsView - tag filter", () => {
     expect(shown.map((row) => row.querySelector("input")!.value)).toEqual(["Platform"]);
   });
 
+  it("offers Clear inside the dropdown, the one gesture that empties a composed condition", async () => {
+    const root = await renderBoard();
+
+    openTagFilter(root);
+
+    expect(root.querySelector(".awesomeado-tag-filter__popup")).not.toBeNull();
+    expect(root.querySelector(".awesomeado-tag-filter__clear")).not.toBeNull();
+  });
+
+  it("stays open while several tags are ticked, and leaves the board alone until it closes", async () => {
+    const root = await renderBoard();
+    openTagFilter(root);
+
+    tagOptionRow(root, "Api").querySelector("input")!.click();
+    tagOptionRow(root, "Docs").querySelector("input")!.click();
+
+    expect(root.querySelector(".awesomeado-tag-filter__popup")).not.toBeNull();
+    expect(tagOptionRow(root, "Api").querySelector("input")!.checked).toBe(true);
+    expect(titles(root)).toEqual(["Payments", "Reporting"]);
+  });
+});
+
+describe("projectsView - what the tag condition narrows", () => {
   it("keeps a project whose only matching work is buried beneath it", async () => {
     const root = await renderBoard();
 
@@ -405,14 +436,43 @@ describe("projectsView - tag filter", () => {
     expect(titles(root)).toEqual(["Payments"]);
   });
 
-  it("widens the board when a second tag is selected", async () => {
+  it("widens the board when a second tag joins the condition already in force", async () => {
     const root = await renderBoard();
 
     clickTagOption(root, "Api");
     expect(titles(root)).toEqual(["Payments"]);
 
-    clickTagOption(root, "Docs");
+    // Reopening ADJUSTS what is there rather than starting over, so the first tag is still ticked.
+    openTagFilter(root);
+    expect(tagOptionRow(root, "Api").querySelector("input")!.checked).toBe(true);
+    tagOptionRow(root, "Docs").querySelector("input")!.click();
+    dismissPopup();
+
     expect(titles(root)).toEqual(["Payments", "Reporting"]);
+  });
+
+  it("narrows the board from the Tags button itself, which is also the way out of the dropdown", async () => {
+    const root = await renderBoard();
+    openTagFilter(root);
+    tagOptionRow(root, "Api").querySelector("input")!.click();
+
+    openTagFilter(root);
+
+    expect(root.querySelector(".awesomeado-tag-filter__popup")).toBeNull();
+    expect(titles(root)).toEqual(["Payments"]);
+  });
+
+  it("puts the whole catalog back from the dropdown's Clear, and closes it", async () => {
+    const root = await renderBoard();
+
+    clickTagOption(root, "Api");
+    expect(titles(root)).toEqual(["Payments"]);
+
+    openTagFilter(root);
+    root.querySelector<HTMLButtonElement>(".awesomeado-tag-filter__clear")!.click();
+
+    expect(titles(root)).toEqual(["Payments", "Reporting"]);
+    expect(root.querySelector(".awesomeado-tag-filter__popup")).toBeNull();
   });
 
   it("hides a project that contains an excluded tag anywhere beneath it", async () => {
@@ -421,17 +481,6 @@ describe("projectsView - tag filter", () => {
     // Only "Weekly export" wears Docs, but it is Reporting's work, so Reporting goes with it.
     clickTagExclude(root, "Docs");
 
-    expect(titles(root)).toEqual(["Payments"]);
-  });
-
-  it("combines required tags with an excluded one", async () => {
-    const root = await renderBoard();
-
-    clickTagOption(root, "Api");
-    clickTagOption(root, "Docs");
-    expect(titles(root)).toEqual(["Payments", "Reporting"]);
-
-    clickTagExclude(root, "Docs");
     expect(titles(root)).toEqual(["Payments"]);
   });
 
@@ -515,6 +564,26 @@ describe("projectsView - refresh", () => {
     root.querySelector<HTMLButtonElement>(".awesomeado-projects__refresh")!.click();
     expect(openDiagnosticsLog).toHaveBeenCalledOnce();
     expect(loadTree).toHaveBeenCalledTimes(2);
+  });
+
+  it("dismisses the failed-write report, because the re-read replaces what it warned about", async () => {
+    const writeField = vi.fn(async () => ({ ok: false, error: "HTTP 400" }));
+    const root = await renderBoard(createContext({ services: createServices({ writeField }) }));
+
+    openMenu(projectTitle(root, "Reporting"));
+    openSubmenu("Add custom tag");
+    clickSubmenuCommand("Add custom tag", "Docs");
+    await vi.waitFor(() =>
+      expect(root.querySelector(".awesomeado-write-queue-status")!.textContent).toContain(
+        "Couldn't save",
+      ),
+    );
+
+    root.querySelector<HTMLButtonElement>(".awesomeado-projects__refresh")!.click();
+
+    await vi.waitFor(() =>
+      expect(root.querySelector(".awesomeado-write-queue-status")!.textContent).toBe(""),
+    );
   });
 });
 
@@ -886,6 +955,138 @@ describe("projectsView - adding a milestone", () => {
       .click();
 
     expect(milestoneBox(root)).toBeNull();
+  });
+});
+
+/** The same catalog, but with Story declared as the delivery the team tracks. */
+const DELIVERY_TYPES: TypeCatalogEntry[] = TYPES.map((type) =>
+  type.name === "Story" ? { ...type, isPrimaryWork: true } : type,
+);
+
+/** The form the "Add work item" command opens, wherever the menu put it. */
+const workItemForm = (): HTMLElement | null => document.querySelector(".awesomeado-new-work-item");
+
+async function renderDeliveryBoard(overrides: Partial<EnhancedViewServices> = {}) {
+  return renderBoard(
+    createContext({
+      services: createServices({
+        getTypes: () => DELIVERY_TYPES,
+        markerTags: () => ({
+          blocked: { tag: "Blocked", commentTag: "[BLOCKED]" },
+          blockedByOtherTeam: { tag: "Blocked by another team", commentTag: "[ACCEPTED]" },
+          interrupt: { tag: "Interrupt", commentTag: "[ACCEPTED]" },
+        }),
+        loadSprintWindow: async () => ({
+          entries: [
+            {
+              path: "Fabrikam\\Sprint 5",
+              name: "Sprint 5",
+              label: "Current - Sprint 5",
+              relation: "current" as const,
+            },
+          ],
+          currentName: "Sprint 5",
+        }),
+        currentUser: { readCurrentUser: async () => null },
+        ...overrides,
+      }),
+    }),
+  );
+}
+
+describe("projectsView - adding work", () => {
+  it("offers the command on the lowest planning level, never on the work beneath it", async () => {
+    const root = await renderDeliveryBoard();
+
+    root.querySelector<HTMLButtonElement>(".awesomeado-projects__twisty")!.click();
+
+    expect(openMenu(projectTitle(root, "Payments")).map(commandLabel)).toContain("Add work item");
+    expect(openMenu(projectTitle(root, "Card capture")).map(commandLabel)).not.toContain(
+      "Add work item",
+    );
+  });
+
+  it("never offers it while no type is configured as the delivery the team tracks", async () => {
+    const root = await renderBoard();
+
+    expect(openMenu(projectTitle(root, "Payments")).map(commandLabel)).not.toContain(
+      "Add work item",
+    );
+  });
+
+  it("opens in the middle of the window, saying which item the work is raised under", async () => {
+    const root = await renderDeliveryBoard();
+
+    openMenu(projectTitle(root, "Payments"));
+    menuCommand("Add work item").click();
+
+    expect(document.querySelector(".awesomeado-item-command__title")!.textContent).toBe(
+      "Parent: Payments",
+    );
+    const menu = workItemForm()!.closest<HTMLElement>(".awesomeado-item-menu")!;
+    expect(menu.style.transform).toBe("translate(-50%, -50%)");
+  });
+});
+
+describe("projectsView - creating the described work", () => {
+  it("creates the described item in one revision, then re-reads the catalog", async () => {
+    const create = vi.fn(async () => ({ ok: true, id: 900, rev: 1 }));
+    const loadTree = vi.fn(async () => ({
+      isTreeQuery: true,
+      roots: [item({ id: 1, title: "Payments", tags: ["Catalog"], areaPath: "Fabrikam\\Core" })],
+      error: null,
+    }));
+    const root = await renderDeliveryBoard({ createWorkItem: { create }, loadTree });
+
+    openMenu(projectTitle(root, "Payments"));
+    menuCommand("Add work item").click();
+    const form = workItemForm()!;
+    await vi.waitFor(() =>
+      expect(
+        form.querySelector<HTMLButtonElement>(".awesomeado-new-work-item__iteration__trigger")!
+          .disabled,
+      ).toBe(false),
+    );
+    const title = form.querySelector<HTMLInputElement>(".awesomeado-new-work-item__title")!;
+    title.value = "Retry on decline";
+    title.dispatchEvent(new Event("input"));
+    form.querySelector<HTMLInputElement>(".awesomeado-new-work-item__interrupt")!.click();
+    form.querySelector<HTMLButtonElement>(".awesomeado-new-work-item__create")!.click();
+
+    await vi.waitFor(() =>
+      expect(create).toHaveBeenCalledWith({
+        type: "Story",
+        title: "Retry on decline",
+        tags: ["Interrupt"],
+        areaPath: "Fabrikam\\Core",
+        iterationPath: "Fabrikam\\Sprint 5",
+        assignedTo: null,
+        description: "",
+        comment: null,
+        parentId: 1,
+      }),
+    );
+    await vi.waitFor(() => expect(loadTree).toHaveBeenCalledTimes(2));
+  });
+
+  it("names nothing an exported diagnostics log should not carry", async () => {
+    const info = vi.fn();
+    const root = await renderDeliveryBoard({ logger: { info, error: () => undefined } });
+
+    openMenu(projectTitle(root, "Payments"));
+    menuCommand("Add work item").click();
+    const form = workItemForm()!;
+    const title = form.querySelector<HTMLInputElement>(".awesomeado-new-work-item__title")!;
+    title.value = "Retry on decline";
+    title.dispatchEvent(new Event("input"));
+    form.querySelector<HTMLButtonElement>(".awesomeado-new-work-item__create")!.click();
+
+    await vi.waitFor(() =>
+      expect(info.mock.calls.flat().join("\n")).toContain(
+        "All Projects Catalog View added Story 900",
+      ),
+    );
+    expect(info.mock.calls.flat().join("\n")).not.toContain("Retry on decline");
   });
 });
 

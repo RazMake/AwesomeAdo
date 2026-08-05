@@ -158,6 +158,7 @@ import {
   isAdoConfigured,
   normalizeMarkerTags,
 } from "../common/settings/ExtensionSettings";
+import { localSettingsAccess } from "../common/settings/LocalSettingsAccess";
 import { createSettingsStore } from "../common/settings/createSettingsStore";
 import { SharedQueryConfigResolver } from "../common/settings-transfer/SharedQueryConfigResolver";
 import { SharedQueryLinkService } from "../common/settings-transfer/SharedQueryLinkService";
@@ -396,6 +397,16 @@ const openExtensionPage = (message: OpenOptionsMessage | OpenBindingSettingsMess
 let sprintAreaPathStore: TeamSprintAreaPathStore | null = null;
 let queryBindingWriter: IQueryBindingWriter | null = null;
 
+const sendCurrentUserRequest: SendCurrentUserRequest = (message) =>
+  chrome.runtime.sendMessage<ReadCurrentUserMessage, ReadCurrentUserResponse | undefined>(message);
+
+// Its own reader rather than the one the shared-query membership check uses: they log under
+// different sources, and a view's identity read must not be recorded as settings-transfer work.
+const viewCurrentUserReader = new MessagingCurrentUserReader(
+  sendCurrentUserRequest,
+  loggers.forSource("content/views"),
+);
+
 const trackingServices: EnhancedViewServices = {
   loadTree: (queryId, wiql) => treeLoader.loadTree(queryId, wiql),
   loadQueryDefinition: (queryId) => queryDefinitionLoader.load(queryId),
@@ -406,6 +417,7 @@ const trackingServices: EnhancedViewServices = {
   noteWriter,
   userDirectory,
   mentionDirectory,
+  currentUser: viewCurrentUserReader,
   getTypes: () =>
     (latestSettings?.workItemTypes ?? []).map((t) => ({
       name: t.name,
@@ -504,7 +516,7 @@ const sendTeamConfigWriteRequest: SendTeamConfigWriteRequest = (message) =>
 const teamConfig = new TeamConfigSynchronizer(
   teamConfigSourceStore,
   new MessagingTeamConfigReader(sendTeamConfigRequest),
-  store,
+  localSettingsAccess(store),
   bindingStore,
   loggers.forSource("common/settings-transfer"),
 );
@@ -537,8 +549,6 @@ const sharedConfigResolver = new SharedQueryConfigResolver(
   new MessagingTeamConfigReader(sendTeamConfigRequest),
   loggers.forSource("common/settings-transfer"),
 );
-const sendCurrentUserRequest: SendCurrentUserRequest = (message) =>
-  chrome.runtime.sendMessage<ReadCurrentUserMessage, ReadCurrentUserResponse | undefined>(message);
 const sharedQueryLinkService = new SharedQueryLinkService(
   sharedConfigResolver,
   teamConfigSourceStore,

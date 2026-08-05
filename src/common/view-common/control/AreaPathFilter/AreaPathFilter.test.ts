@@ -65,6 +65,24 @@ describe("renderAreaPathFilter - popup", () => {
     expect(handle.element.querySelector("strong")?.textContent).toBe("Lane");
   });
 
+  it("keeps a fixed tooltip whatever is selected, while the accessible name follows the condition", () => {
+    const handle = renderAreaPathFilter(document, {
+      label: "Lanes",
+      fixedTitle: "Filter by Area Path",
+      areaPaths: ["Project\\Platform", "Project\\Apps"],
+    });
+    document.body.append(handle.element);
+    const trigger = handle.element.querySelector<HTMLButtonElement>("button")!;
+
+    expect(trigger.title).toBe("Filter by Area Path");
+
+    handle.setSelectedAreaPaths(["Project\\Apps"]);
+
+    // The button wears the view's shorthand, so the tooltip is the only place naming the field.
+    expect(trigger.title).toBe("Filter by Area Path");
+    expect(trigger.getAttribute("aria-label")).toContain("Apps");
+  });
+
   it("shows one checkbox per distinct full path with shortest distinct labels", () => {
     const { handle } = openFilter();
     const rows = handle.element.querySelectorAll<HTMLElement>(".awesomeado-area-filter__option");

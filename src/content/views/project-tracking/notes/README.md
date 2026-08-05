@@ -51,18 +51,27 @@ notes.setExpanded(true); // triggers the first fetch
   mention reads as the person's name rather than a placeholder. ADO's own `renderedText` already
   carries names; this is what covers the notes it did not render — including a note **you just
   wrote**, which ADO hands back without any rendering at all.
-- A note that opens with a configured marker `commentTag` shows that prefix as **inline code**, so
-  the token reads as the marker it is rather than as the first words of the note. Display only —
-  opening the note for correction still shows the source exactly as Azure DevOps stores it.
+- A note that opens with a configured marker `commentTag` **never shows that token** — not when it is
+  read, and not when it is opened for correction. The token is bookkeeping, not something its author
+  chose to say. It is put back on whatever is saved, so fixing a typo can never un-mark a note (and
+  cannot silently turn an accepted Interrupt back into an unaccepted one). The editor's length budget
+  is reduced by the restored token, so a note that fits when typed still fits when stored.
+- `showAllInWindow` is the only surface where marker notes and ordinary ones are read together, so
+  there each marker note carries a small **dot in its marker's colour** between the timestamp and the
+  text, labelled with the marker's name. Every other surface has already answered "which marker?" by
+  the way it was opened, so no dot is drawn there.
+- The options UI rejects a comment token that duplicates another marker's, but a value imported or
+  synced from an older build may still hold two markers with the **same** token; when that happens a
+  note is attributed to the first one in presentation order — so every surface at least agrees.
 
 ## Files
 
-| File                                                                                              | Role                                                                             |
-| ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| `NotesPanel.ts`                                                                                   | The panel: fetch-on-expand, list rendering, write handling.                      |
-| `NoteRow.ts`                                                                                      | One note, and the edit affordance on the author's name.                          |
-| `NoteComposer.ts`                                                                                 | The "+ Add note" link and the editor it swaps in.                                |
-| `markerNotes.ts`                                                                                  | Configured marker-comment prefixes, their exact match, and their code rendering. |
+| File                                                                                              | Role                                                                                                    |
+| ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `NotesPanel.ts`                                                                                   | The panel: fetch-on-expand, list rendering, write handling.                                             |
+| `NoteRow.ts`                                                                                      | One note, and the edit affordance on the author's name.                                                 |
+| `NoteComposer.ts`                                                                                 | The "+ Add note" link and the editor it swaps in.                                                       |
+| `markerNotes.ts`                                                                                  | Configured marker-comment prefixes, which marker a note belongs to, and stripping/restoring that token. |
 | Adding and correcting a note both use the shared                                                  |
 | [`TextEditor`](../../../../common/view-common/control/TextEditor/README.md) control, so a note is |
 | authored with the same field, shortcuts and failure reporting as every other in-place edit.       |

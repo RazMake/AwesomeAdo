@@ -79,6 +79,30 @@ interface ISettingsStore {
   the first normalized snapshot is emitted; it rejects if the initial read fails. Call
   `unsubscribe()` to stop receiving updates.
 
+### Personal settings — `ExtensionSettings.ts`
+
+`PERSONAL_SETTING_KEYS` names the settings that belong to the person rather than the team (`theme`,
+`defaultView`), with `SharedSettings` for the rest and `withoutPersonalSettings(settings)` to drop
+them from a snapshot or a partial update. They still sync across the user's own devices — "personal"
+is not "device-local" — but they never travel to or from a shared configuration work item. See
+ADR-075.
+
+### `LocalSettingsAccess` (interface) — `LocalSettingsAccess.ts`
+
+The narrow settings access for the two flows that must reach storage **without** publishing to a
+connected team work item: applying a pulled configuration, and applying a file the user imported.
+
+```typescript
+interface LocalSettingsAccess {
+  read(): Promise<ExtensionSettings>;
+  applyLocally(update: Partial<ExtensionSettings>): Promise<void>;
+}
+```
+
+Deliberately **not** an `ISettingsStore`, so it cannot be handed to a control that must publish and a
+publishing store cannot be handed to the pull. `localSettingsAccess(store)` adapts a plain store to
+it. See ADR-074.
+
 ### `createSettingsStore()` — `createSettingsStore.ts`
 
 The composition root factory. Call this in `src/**/index.ts` entry files:

@@ -14,6 +14,22 @@ export type SendCreateWorkItemRequest = (
   message: CreateWorkItemMessage,
 ) => Promise<CreateWorkItemResponse | undefined>;
 
+/** The new item as the worker takes it: every optional value stated, so none is silently dropped. */
+function requestFor(item: NewWorkItem): CreateWorkItemMessage {
+  return {
+    type: CREATE_WORK_ITEM_MESSAGE,
+    itemType: item.type,
+    title: item.title,
+    tags: [...item.tags],
+    areaPath: item.areaPath,
+    iterationPath: item.iterationPath,
+    assignedTo: item.assignedTo ?? null,
+    description: item.description ?? null,
+    comment: item.comment ?? null,
+    parentId: item.parentId ?? null,
+  };
+}
+
 /**
  * Creates work items by messaging the background service worker.
  *
@@ -29,17 +45,8 @@ export class MessagingWorkItemCreator implements IWorkItemCreator {
   ) {}
 
   async create(item: NewWorkItem): Promise<WorkItemCreateResult> {
-    const message: CreateWorkItemMessage = {
-      type: CREATE_WORK_ITEM_MESSAGE,
-      itemType: item.type,
-      title: item.title,
-      tags: [...item.tags],
-      areaPath: item.areaPath,
-      iterationPath: item.iterationPath,
-      parentId: item.parentId ?? null,
-    };
     try {
-      const response = await this.send(message);
+      const response = await this.send(requestFor(item));
       if (response === undefined || response === null) {
         this.logger.error(`Could not create a ${item.type}: ${workerReplyProblem(response)}.`);
         return { ok: false, error: workerReplyProblem(response) };

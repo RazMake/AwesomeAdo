@@ -1,19 +1,29 @@
 import type { NoteAuthor, WorkItemNote } from "../../../../common/ado/WorkItemNote";
 import { MAX_NOTE_LENGTH, isOwnNote } from "../../../../common/ado/WorkItemNote";
+import type { WorkItemMarker } from "../../../../common/settings/ExtensionSettings";
 import { renderDateLabel } from "../../../../common/view-common/control/DateLabel/DateLabel";
 import { renderMarkdownText } from "../../../../common/view-common/control/MarkdownText/MarkdownText";
+import {
+  markerAccentColor,
+  markerLabel,
+} from "../../../../common/view-common/control/MarkerPill/MarkerPill";
 import type { TextEditorMentionOptions } from "../../../../common/view-common/control/TextEditor/MentionSuggestions";
 import { renderTextEditor } from "../../../../common/view-common/control/TextEditor/TextEditor";
 
-import { withMarkerCommentAsCode } from "./markerNotes";
+import { withMarkerComment } from "./markerNotes";
 
 /** What one note row shows, and what it may do about it. */
 export interface NoteRowOptions {
   note: WorkItemNote;
-  /** Alternate display source; editing still opens the complete stored note. */
+  /** What the note reads as — and opens for correction as. Defaults to the stored text. */
   displayText?: string;
-  /** Marker comment prefixes to show as inline code when this note opens with one. */
-  codePrefixes?: readonly string[];
+  /**
+   * The marker token this note is stored with. Never shown, and put back on whatever the author
+   * saves, so correcting a note cannot un-mark it.
+   */
+  markerPrefix?: string;
+  /** Flags the note with this marker's colour. For a surface that mixes marker and ordinary notes. */
+  marker?: WorkItemMarker;
   /** Identity search used when this note opens for editing. */
   mentions: TextEditorMentionOptions;
   /** The signed-in reader; only their own notes offer the edit affordance. */
@@ -52,6 +62,35 @@ const NOTE_TEXT_COLOR = "color-mix(in srgb, var(--text-primary-color) 72%, var(-
  * a panel by.
  */
 const NOTE_WRAP_INDENT_PX = 12;
+
+/** Diameter of the dot standing in for a marker beside a note, in pixels. */
+const MARKER_DOT_PX = 8;
+
+/**
+ * The dot that says a note explains one of the team's marked conditions.
+ *
+ * A dot rather than the token it replaces: the complete discussion is the one surface where marker
+ * notes and ordinary ones are read together, so what matters is telling them apart at a glance —
+ * and the colour already means that condition everywhere else on the board.
+ */
+function renderMarkerDot(doc: Document, marker: WorkItemMarker): HTMLElement {
+  const dot = doc.createElement("span");
+  dot.className = "awesomeado-note__marker";
+  dot.dataset.marker = marker;
+  dot.title = markerLabel(marker);
+  // The colour carries the whole message, so it is spelled out for a reader who cannot see it.
+  dot.setAttribute("role", "img");
+  dot.setAttribute("aria-label", markerLabel(marker));
+  dot.style.cssText = [
+    "display:inline-block",
+    "flex:none",
+    `width:${MARKER_DOT_PX}px`,
+    `height:${MARKER_DOT_PX}px`,
+    "border-radius:50%",
+    `background:${markerAccentColor(marker)}`,
+  ].join(";");
+  return dot;
+}
 
 /**
  * One note, read as "{author} {date} {text}" — all on ONE line, with wrapped lines hanging slightly
@@ -94,6 +133,9 @@ export function renderNoteRow(doc: Document, options: NoteRowOptions): HTMLEleme
   const date = renderDateLabel(doc, note.createdDate);
   date.style.opacity = "0.65";
   header.append(date);
+  if (options.marker !== undefined) {
+    header.append(renderMarkerDot(doc, options.marker));
+  }
 
   const body = doc.createElement("div");
   body.className = "awesomeado-note__text";
@@ -101,15 +143,12 @@ export function renderNoteRow(doc: Document, options: NoteRowOptions): HTMLEleme
   // read as a continuation of the name they sit under. The first line is pushed past the floated
   // header instead, which is what puts the note on the author's own line.
   body.style.paddingLeft = `${NOTE_WRAP_INDENT_PX}px`;
-  const source = withMarkerCommentAsCode(
-    options.displayText ?? note.text,
-    options.codePrefixes ?? [],
-  );
+  const source = options.displayText ?? note.text;
   body.append(
     renderMarkdownText(doc, {
       text: source,
-      // Azure DevOps' own rendering carries the prefix as prose, so a note whose source was marked up
-      // here has to be rendered FROM that source or the markers would simply not show.
+      // Azure DevOps' own rendering still carries the marker token as prose, so a note the token was
+      // taken off has to be rendered FROM its source or the token would come straight back.
       html: source === note.text ? note.renderedHtml : null,
       mentionNames: options.mentionNames,
     }),
@@ -176,12 +215,15 @@ function openEditor(doc: Document, trigger: HTMLElement, options: NoteRowOptions
   const close = (): void => {
     row.replaceChildren(...restored);
   };
+  const prefix = options.markerPrefix;
   const editor = renderTextEditor(doc, {
-    initialText: options.note.text,
+    initialText: options.displayText ?? options.note.text,
     submitLabel: "Save",
-    maxLength: MAX_NOTE_LENGTH,
+    // The restored token counts against Azure DevOps' limit even though nobody typed it, so the
+    // budget the author is held to is the one their own words actually have.
+    maxLength: MAX_NOTE_LENGTH - withMarkerComment("", prefix).length,
     mentions: { ...options.mentions, mentionNames: options.mentionNames },
-    onSubmit: (text) => options.onEdit(text),
+    onSubmit: (text) => options.onEdit(withMarkerComment(text, prefix)),
     onCancel: close,
   });
   row.replaceChildren(editor);

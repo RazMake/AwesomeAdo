@@ -36,12 +36,11 @@ export interface QueryBindingsElements {
   querySelect: HTMLSelectElement;
   deleteButton: HTMLButtonElement;
 
-  /** "Query View Configuration" card — the view picker, its settings, and Save (edit mode only). */
+  /** "Query View Configuration" card — the view picker and its settings (edit mode only). */
   viewConfigCard: HTMLElement;
   viewSelect: HTMLSelectElement;
   /** Container the controller fills with one input per property of the selected view. */
   properties: HTMLElement;
-  saveButton: HTMLButtonElement;
   /** Explains, for a shared query, that its configuration is owned by someone else's work item. */
   sharedNotice: HTMLElement;
 
@@ -121,8 +120,15 @@ export type CurrentQueryIdResolver = () => Promise<string | null>;
  * default settings so the choice survives navigating away, then switches the tab to edit mode. Reaching it
  * for a query that is already bound, or from the options menu with at least one binding, shows the
  * **Edit enhanced query** card (a picker over every bound query plus Delete) alongside the **Query
- * View Configuration** card (the view type and its per-query settings plus Save). Delete removes the
+ * View Configuration** card (the view type and its per-query settings). Delete removes the
  * binding and moves selection to the next one, collapsing to guidance when the last one is removed.
+ *
+ * The configuration card has no Save: every change is persisted the moment the user commits it, the
+ * way the rest of the options page behaves. A binding is only written once its required properties
+ * are answered — an incomplete view would be one the content script cannot render — so until then
+ * the status line names what is still missing and the last valid binding stands. It confirms nothing
+ * otherwise: a line that appeared after every keystroke would be noise, so it carries only what the
+ * user has to act on — a setting still blank, or a write that was refused.
  *
  * The view catalog and the current-query resolver are injected (Dependency Inversion) so tests can
  * exercise the flow with fakes and without a browser.
@@ -179,7 +185,6 @@ export class QueryBindingsController {
     this.elements.viewSelect.addEventListener("change", this.handleViewChange);
     this.elements.querySelect.addEventListener("change", this.handleQueryChange);
     this.elements.addSaveButton.addEventListener("click", this.handleAddSave);
-    this.elements.saveButton.addEventListener("click", this.handleSave);
     this.elements.deleteButton.addEventListener("click", this.handleDelete);
 
     [this.bindings, this.shared] = await Promise.all([
@@ -237,7 +242,6 @@ export class QueryBindingsController {
     this.elements.viewSelect.removeEventListener("change", this.handleViewChange);
     this.elements.querySelect.removeEventListener("change", this.handleQueryChange);
     this.elements.addSaveButton.removeEventListener("click", this.handleAddSave);
-    this.elements.saveButton.removeEventListener("click", this.handleSave);
     this.elements.deleteButton.removeEventListener("click", this.handleDelete);
     this.removePropertyInputs();
   }
@@ -478,9 +482,10 @@ export class QueryBindingsController {
     this.elements.querySelect.value = queryId;
     this.elements.viewSelect.value = this.viewToShow();
     this.applySharedLink(link);
+    // Cleared before the properties are drawn, so the "still missing" notice they may raise stands.
+    this.setStatus("");
     this.renderProperties();
     this.elements.deleteButton.disabled = this.editing === undefined && link === undefined;
-    this.setStatus("");
   }
 
   /**
@@ -499,12 +504,11 @@ export class QueryBindingsController {
    * Present a shared query as what it is: someone else's configuration, shown but not editable.
    *
    * Editing is removed rather than merely discouraged — the values on screen live in a work item
-   * this user cannot write to, so an enabled Save could only ever produce a local copy that silently
+   * this user cannot write to, so any edit could only ever produce a local copy that silently
    * diverges from the query everyone else is looking at.
    */
   private applySharedLink(link: SharedQueryLink | undefined): void {
     this.elements.viewSelect.disabled = link !== undefined;
-    this.elements.saveButton.hidden = link !== undefined;
     this.elements.deleteButton.textContent = link === undefined ? "Delete" : "Remove link";
     this.elements.sharedNotice.hidden = link === undefined;
     if (link === undefined) {
@@ -533,7 +537,7 @@ export class QueryBindingsController {
     this.removePropertyInputs();
     const view = this.selectedView();
     if (view === undefined) {
-      this.updateSaveEnabled();
+      this.reportMissingRequired();
       return;
     }
     // Prefill from the existing binding only when it targets the currently selected view, so
@@ -548,7 +552,7 @@ export class QueryBindingsController {
           : this.createPropertyField(doc, property, prefill?.[property.key]),
       );
     }
-    this.updateSaveEnabled();
+    this.reportMissingRequired();
     void this.applyDerivedSeeds(view);
   }
 
@@ -569,20 +573,30 @@ export class QueryBindingsController {
     if (this.selectedQueryId !== queryId || this.selectedView()?.id !== view.id) {
       return;
     }
-    for (const property of derived) {
-      this.seedProperty(property.key, values[property.derivedFrom]);
+    // Seeded values are stored, not merely displayed: with no Save button, anything left on screen
+    // but unwritten would be a setting the user believes they have and the view never sees.
+    const seeded = derived.filter((property) =>
+      this.seedProperty(property.key, values[property.derivedFrom]),
+    );
+    if (seeded.length > 0) {
+      this.commit();
+      return;
     }
-    this.updateSaveEnabled();
+    this.reportMissingRequired();
   }
 
-  /** Write a query-derived value into a property the user has left empty; leave any other alone. */
-  private seedProperty(key: string, value: string | null | undefined): void {
+  /**
+   * Write a query-derived value into a property the user has left empty; leave any other alone.
+   * Reports whether anything was actually seeded.
+   */
+  private seedProperty(key: string, value: string | null | undefined): boolean {
     const seed = (value ?? "").trim();
     const control = this.propertyInputs.get(key);
     if (seed === "" || control?.write === undefined || control.read().trim() !== "") {
-      return;
+      return false;
     }
     control.write(seed);
+    return true;
   }
 
   /** What the query itself says, read at most once per query for the life of the tab. */
@@ -655,7 +669,7 @@ export class QueryBindingsController {
         value,
         this.suggestionsFor("area-paths"),
         propertyDescription(property),
-        () => this.updateSaveEnabled(),
+        () => this.commit(),
       );
       return {
         element: editor.root,
@@ -671,7 +685,7 @@ export class QueryBindingsController {
     input.type = "text";
     input.dataset.propertyKey = property.key;
     input.value = value;
-    return this.domControl(input, "input", this.handleInput);
+    return this.editableControl(input);
   }
 
   private createSelectControl(
@@ -688,7 +702,15 @@ export class QueryBindingsController {
       select.append(element);
     }
     select.value = value;
-    return this.domControl(select, "change", this.handleInput);
+    select.addEventListener("change", this.handleCommit);
+    return {
+      element: select,
+      read: () => select.value,
+      write: (next) => {
+        select.value = next;
+      },
+      dispose: () => select.removeEventListener("change", this.handleCommit),
+    };
   }
 
   private createNumberControl(
@@ -722,19 +744,26 @@ export class QueryBindingsController {
     };
   }
 
-  private domControl(
-    element: HTMLInputElement | HTMLSelectElement,
-    event: "input" | "change",
-    listener: EventListener,
-  ): PropertyControl {
-    element.addEventListener(event, listener);
+  /**
+   * A text box that reports validity as it is typed and persists once the edit is committed.
+   *
+   * `change` rather than `input` is what "committed" means for a text field — blur or Enter — so a
+   * half-typed area path is never written, while `input` keeps the "still missing" notice honest
+   * from the first keystroke.
+   */
+  private editableControl(input: HTMLInputElement): PropertyControl {
+    input.addEventListener("input", this.handleInput);
+    input.addEventListener("change", this.handleCommit);
     return {
-      element,
-      read: () => element.value,
+      element: input,
+      read: () => input.value,
       write: (value) => {
-        element.value = value;
+        input.value = value;
       },
-      dispose: () => element.removeEventListener(event, listener),
+      dispose: () => {
+        input.removeEventListener("input", this.handleInput);
+        input.removeEventListener("change", this.handleCommit);
+      },
     };
   }
 
@@ -752,6 +781,7 @@ export class QueryBindingsController {
     const autocomplete = new AutocompleteInput(input);
     autocomplete.setOptions(this.suggestionsFor(property.suggestions));
     input.addEventListener("input", this.handleInput);
+    input.addEventListener("change", this.handleCommit);
     // A saved-query folder is the one vocabulary Azure DevOps cannot hand over in full, so the
     // folders inside the one being typed are fetched as the user reaches for them.
     const expand =
@@ -771,6 +801,7 @@ export class QueryBindingsController {
       refreshSuggestions: () => autocomplete.setOptions(this.suggestionsFor(property.suggestions)),
       dispose: () => {
         input.removeEventListener("input", this.handleInput);
+        input.removeEventListener("change", this.handleCommit);
         if (expand !== null) {
           input.removeEventListener("input", expand);
         }
@@ -810,21 +841,60 @@ export class QueryBindingsController {
   }
 
   private hasAllRequiredProperties(): boolean {
-    const view = this.selectedView();
-    if (view === undefined) {
-      return false;
-    }
-    return view.properties.every(
+    return this.missingRequiredProperty() === undefined;
+  }
+
+  /** The first required property the user has left blank, or undefined when the form is complete. */
+  private missingRequiredProperty(): ViewTypeProperty | undefined {
+    return this.selectedView()?.properties.find(
       (property) =>
-        !property.required || (this.propertyInputs.get(property.key)?.read().trim() ?? "") !== "",
+        property.required && (this.propertyInputs.get(property.key)?.read().trim() ?? "") === "",
     );
   }
 
-  private updateSaveEnabled(): void {
-    this.elements.saveButton.disabled =
-      this.selectedQueryId === null ||
-      this.shared.has(this.selectedQueryId) ||
-      !this.hasAllRequiredProperties();
+  /**
+   * Say what still stands between the form and a stored binding, or clear the line when nothing does.
+   *
+   * With no Save button to disable, this notice IS the feedback that an edit has not been kept: a
+   * view missing a required setting cannot be rendered, so it is not written at all.
+   */
+  private reportMissingRequired(): void {
+    const missing = this.missingRequiredProperty();
+    this.setStatus(missing === undefined ? "" : `Enter ${missing.label} to save these settings.`);
+  }
+
+  /**
+   * Persist the form as it now stands.
+   *
+   * Every control calls this the moment its edit is committed, so the page behaves like the rest of
+   * the options: what is on screen is what is stored. A shared query is skipped because its values
+   * belong to someone else's work item.
+   */
+  private commit(): void {
+    const view = this.selectedView();
+    const queryId = this.selectedQueryId;
+    if (queryId === null || view === undefined || this.shared.has(queryId)) {
+      return;
+    }
+    if (!this.hasAllRequiredProperties()) {
+      this.reportMissingRequired();
+      return;
+    }
+    const binding: QueryBinding = { view: view.id, properties: this.collectProperties() };
+    const name = this.queryNames.get(queryId) ?? null;
+    if (name !== null) {
+      binding.name = name;
+    }
+    void this.persistBinding(queryId, binding)
+      .then(() => {
+        this.editing = binding;
+        this.elements.deleteButton.disabled = false;
+        // The line is reserved for what needs the user; a save that just worked does not.
+        this.setStatus("");
+      })
+      .catch((error: unknown) => {
+        this.reportFailure("Could not save the query enhancement.", error);
+      });
   }
 
   private setStatus(message: string, failed = false): void {
@@ -849,13 +919,19 @@ export class QueryBindingsController {
 
   private readonly handleViewChange = (): void => {
     this.renderProperties();
+    // A different view is itself a change to keep; its own properties start from their defaults.
+    this.commit();
   };
 
   private readonly handleInput = (): void => {
-    this.updateSaveEnabled();
+    this.reportMissingRequired();
   };
 
-  /** Force a number property into its declared range once the user leaves the field. */
+  private readonly handleCommit = (): void => {
+    this.commit();
+  };
+
+  /** Force a number property into its declared range once the user leaves the field, then store it. */
   private readonly handleNumberChange = (event: Event): void => {
     const input = event.target as HTMLInputElement;
     const property = this.selectedView()?.properties.find(
@@ -864,7 +940,7 @@ export class QueryBindingsController {
     if (property !== undefined) {
       input.value = resolveViewTypePropertyValue(property, input.value);
     }
-    this.updateSaveEnabled();
+    this.commit();
   };
 
   private readonly handleAddSave = (): void => {
@@ -886,37 +962,13 @@ export class QueryBindingsController {
     void this.persistBinding(queryId, binding)
       .then(() => {
         // The query is now bound, so hand off to edit mode where it can be reconfigured or removed.
+        // The layout change is the confirmation; a "Saved." line here would only overwrite the
+        // notice naming a required setting the new view still needs.
         this.enterEdit(queryId);
-        this.setStatus("Saved.");
       })
       .catch((error: unknown) => {
         this.reportFailure("Could not save the query enhancement.", error);
         this.elements.addSaveButton.disabled = false;
-      });
-  };
-
-  private readonly handleSave = (): void => {
-    const view = this.selectedView();
-    const queryId = this.selectedQueryId;
-    if (queryId === null || view === undefined || !this.hasAllRequiredProperties()) {
-      return;
-    }
-    const binding: QueryBinding = { view: view.id, properties: this.collectProperties() };
-    const name = this.queryNames.get(queryId) ?? null;
-    if (name !== null) {
-      binding.name = name;
-    }
-    this.elements.saveButton.disabled = true;
-    void this.persistBinding(queryId, binding)
-      .then(() => {
-        this.editing = binding;
-        this.elements.deleteButton.disabled = false;
-        // The picker label is just name and id, so a view/property change leaves it correct as-is.
-        this.setStatus("Saved.");
-      })
-      .catch((error: unknown) => {
-        this.reportFailure("Could not save the query enhancement.", error);
-        this.updateSaveEnabled();
       });
   };
 

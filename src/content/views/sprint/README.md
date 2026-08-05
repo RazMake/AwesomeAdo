@@ -77,7 +77,12 @@ The **Project** filter offers only items whose configured types are parents of P
 recursively through their planning ancestors, and whose branches contain work surviving the
 selected sprint and other active filters. Primary-work and implementation-detail items are omitted.
 The **Lane** filter derives its choices only from represented Primary-work area paths and offers only
-leaves, omitting any root path that is an ancestor of another choice.
+leaves, omitting any root path that is an ancestor of another choice. The item menu's **Change area
+path** works from a wider list, because a destination need not already hold work: every configured
+default path, whether or not this sprint loaded anything in it, plus every path the loaded Primary
+work sits in — represented ancestors included, minus the item's own. Like every other choice this
+board derives, it ignores implementation details, so a child sitting off on its own path does not
+turn that path into a destination.
 Each Sprint View query binding can define full area paths initially selected when a sprint has no
 team-shared Lane choice. Options edits them one at a time with autocomplete from the live project
 area hierarchy and a remove button per path. A saved sprint selection, including an explicitly empty

@@ -69,7 +69,10 @@ it. Four groups live here:
    `findFeatureCrewInPage`, `applyFeatureCrewInPage`, `updateWorkItemFieldInPage`,
    `createWorkItemInPage`, `readProjectQueryLinksInPage`, `createProjectQueryInPage`,
    `removeProjectQueryInPage`. Each is
-   serialized by `chrome.scripting.executeScript` and must therefore stay import-free.
+   serialized by `chrome.scripting.executeScript` and must therefore stay import-free. A config whose
+   `null` MEANS something crosses that boundary through `encodeInjectedConfig` (ADR-077):
+   `executeScript` drops null-valued `args` properties at any depth, so such a function's parameter
+   is the encoded string it parses itself.
 4. **Messaging adapters** implementing `common/ado` contracts — `MessagingWorkItemTreeLoader`,
    `MessagingWorkItemNoteLoader`, `MessagingWorkItemNoteWriter`,
    `MessagingTeamIterationsLoader`, `MessagingFeatureCrewWriter`, `MessagingWorkItemFieldWriter`,
@@ -131,9 +134,20 @@ makes passing ADO's raw rich-text HTML through safe. See ADR-044.
 
 `control/TextEditor` is the single multi-line Markdown authoring surface. It owns bold/italic/link
 caret transforms and the optional directory-backed `@` suggestion flow, inserting ADO's local
-identity reference rather than display text. Project Tracking's inline note glance and New notes
-activity index omit source text beginning with configured marker `commentTag` prefixes; View all
-notes remains complete. See ADR-051.
+identity reference rather than display text. `renderMarkdownField` is that field WITHOUT the
+Save/Cancel pair, for a form that commits several answers with its own button (the catalog's Add
+work item form); `renderTextEditor` is built on it, so the in-place editor and a form field cannot
+drift apart. A key the field consumes is stopped with `stopImmediatePropagation` before any listener
+the owner registered afterwards runs. Project Tracking's inline note glance and New notes activity
+index omit source text beginning with configured marker `commentTag` prefixes; View all notes remains
+complete. See ADR-051.
+
+`control/SelectField` is the single themed single-select. A native `<select>` cannot be used on these
+surfaces: its collapsed box takes the theme's colors, but the OPEN list is painted by the platform,
+so the one part a reader looks at while choosing belongs to no theme the extension ships. Callers
+exchange whole values while labels stay display-only, and each choice may carry `declarations` (how a
+sprint's past/current/future emphasis reaches it) and a `title` (the full value behind a shortened
+label). Per-instance `classPrefix`, like `CheckboxFilter`.
 
 `control/ItemDetails` owns the shared `?` button paint plus Created / Last Modified / sanitized
 description content. Project Tracking places that content inline; Sprint cards place it in a popup,
@@ -162,6 +176,16 @@ blank, descriptions sit directly below it, and row actions remain adjacent to th
 When team sharing is connected, query-binding mutations publish their proposed full map before the
 local store write; otherwise the local observer redraws Sprint, its mandatory pull sees the older
 team payload, and `replaceAll` erases the mutation before export can read it.
+Azure DevOps configuration edits follow the same publish-before-local rule through
+`TeamSharedSettingsStore`; its serialized proposals prevent rapid edits from publishing sibling
+snapshots derived from the same stale settings value. That rule is enforced by the type system rather
+by memory (ADR-074): `ITeamPublishingSettingsStore` carries a marker a plain store lacks, the pull and
+file-import paths take the segregated `LocalSettingsAccess` instead, and `createTeamSharedSettings`
+is handed the plain store inline so no options-page name binds it.
+Theme and default view are the exception: `PERSONAL_SETTING_KEYS` marks them as the reader's own, so
+`IPersonalSettingsStore` (the disjoint `publishesBeforeWrite: false` counterpart) backs Appearance and
+they are stripped from the published payload, from a pull, and from a shared query's overlay. They
+still sync across the user's own devices and still travel in a file export (ADR-075).
 `TeamSprintAreaPathStore` pulls before each Sprint load/refresh/switch and
 serializes save-plus-publish through the connected configuration work item. Checkbox changes remain
 open for multi-selection; Sprint persists each change and repaints once the popup closes by trigger,

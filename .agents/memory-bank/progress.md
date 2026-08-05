@@ -42,7 +42,17 @@ This is a flattened snapshot of what exists now, not a build log.
   condition: required tags combined Any/All, plus excluded tags that rule out every project
   containing them anywhere beneath. Required matches keep their ancestors and subtree. The
   vocabulary is re-derived on every paint and the condition pruned (and logged) when a tag leaves the
-  tree. **Create Project Query** is offered on every row; **Mark completed** on projects only.
+  tree; pressing the lit Tags trigger clears the whole condition, and the popup carries no Clear.
+  **Create Project Query** is offered on every row; **Mark completed** on projects only.
+  **Add work item** (`projects-view/NewWorkItemPanel`) is offered only on the LOWEST planning level
+  (`primaryChildTypeOf`): a centred form headed `Parent: <title>`, asking for a title, a Markdown
+  description (`renderMarkdownField`), an assignee (defaulted to `services.currentUser`, kept at its
+  natural width), an area path and a Sprint (themed `SelectField`s; the areas are the LEAVES the
+  catalog uses, labelled by shortest unique suffix, the Sprint from `loadSprintWindow`), and the
+  Interrupt flag — the `MarkerPill` itself as a toggle, grayscaled while off and painted raised or
+  accepted once on — with **Accepted** on the same line, whose acceptance demands a Markdown reason
+  written under the team's `markerTags().interrupt.commentTag`. Everything lands in ONE
+  creation revision (`NewWorkItem` now carries `assignedTo`, `description`, `comment`).
   Per-query settings define the catalog tag,
   new-project area and iteration paths, and generated-query folder; tag, iteration, and folder default
   from the saved query, Azure DevOps project root, and catalog query folder. New projects receive all
@@ -113,6 +123,11 @@ This is a flattened snapshot of what exists now, not a build log.
 - **Markdown authoring** (`common/view-common/control/TextEditor`): shared bold/italic/link shortcuts
   and keyboard-driven ADO `@`-mention insertion across note/comment and description editors; inline
   notes and New notes activity omit configured marker-comment prefixes while View all stays complete.
+  `renderMarkdownField` is the same field without the Save/Cancel pair, for a form that commits
+  several answers with its own button.
+- **Themed single-select** (`common/view-common/control/SelectField`): the extension's own dropdown,
+  used wherever a native `<select>` would otherwise open a platform-painted list that follows no
+  AwesomeADO theme.
 - **Settings transfer** (`src/common/settings-transfer` + `src/options/settings-transfer`):
   `AwesomeADO.config` export/import, the narrow `AwesomeADO.connection.config` export that carries
   only the connected work item (ADR-065), and Azure DevOps work-item sharing of the whole

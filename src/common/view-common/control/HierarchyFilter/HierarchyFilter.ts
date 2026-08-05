@@ -36,7 +36,7 @@ function paintTrigger(
 ): void {
   const active = selected !== undefined;
   trigger.setAttribute("aria-pressed", String(active));
-  trigger.title = active ? `Project filter: ${selected.label}` : "Filter by project parent";
+  trigger.title = active ? `Project filter: ${selected.label}` : "Filter by planning items";
   trigger.style.background = active ? "var(--communication-background)" : "transparent";
   trigger.style.color = active
     ? "var(--text-on-communication-background)"

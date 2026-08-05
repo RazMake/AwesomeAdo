@@ -24,6 +24,10 @@ header.append(filter.element);
 `selectedAreaPaths()` reads the current full-path selection. `setSelectedAreaPaths(paths)` replaces
 it without firing `onChange`. Blank, duplicate, and unavailable paths are ignored.
 
+`label` renames the trigger (Sprint View calls it `Lanes`); `fixedTitle` pins the tooltip so a
+renamed button always names the field it narrows, whatever is selected. The accessible name still
+follows the current condition.
+
 Checkbox changes keep the popup open so several paths can be selected in one visit. Clicking outside,
 pressing Escape, or toggling the trigger closes it; `onPopupClosed` lets a caller defer expensive
 repainting until that dismissal while `onChange` still reports each selection immediately.

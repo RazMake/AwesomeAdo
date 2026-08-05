@@ -58,6 +58,7 @@ function mountPanel(
     editResult?: { ok: boolean; note?: WorkItemNote; rev?: number };
     mentionNames?: Map<string, string>;
     showAllInWindow?: boolean;
+    onlyCommentPrefix?: string;
     state?: NotesPanelState;
   } = {},
 ) {
@@ -92,6 +93,7 @@ function mountPanel(
     },
     state: overrides.state,
     showAllInWindow: overrides.showAllInWindow,
+    onlyCommentPrefix: overrides.onlyCommentPrefix,
     onItemRevision,
   });
   return { handle, loadNotes, addNote, editNote, resolveNames, onItemRevision, info, error };
@@ -250,18 +252,36 @@ describe("renderNotesPanel — what an open panel shows", () => {
     await expand(handle);
 
     expect(rowsOf(handle)).toHaveLength(2);
-    expect(handle.element.textContent).toContain("[BLOCKED] Waiting for review.");
+    expect(handle.element.textContent).toContain("Waiting for review.");
+    expect(handle.element.textContent).not.toContain("[BLOCKED]");
   });
 
-  it("sets the marker prefix apart as code, so it reads as a token rather than as words", async () => {
+  it("flags a marker note with its marker's dot instead of showing the token", async () => {
     const { handle } = mountPanel({
-      notes: [createNote({ id: 1, text: "[BLOCKED] Waiting for review." })],
+      notes: [
+        createNote({ id: 1, text: "[BLOCKED] Waiting for review." }),
+        createNote({ id: 2, text: "A normal project note." }),
+      ],
       showAllInWindow: true,
     });
 
     await expand(handle);
 
-    expect(handle.element.querySelector("code")?.textContent).toBe("[BLOCKED]");
+    const dots = [...handle.element.querySelectorAll(".awesomeado-note__marker")];
+    expect(dots.map((dot) => dot.getAttribute("data-marker"))).toEqual(["blocked"]);
+    expect(dots[0]?.getAttribute("aria-label")).toBe("Blocked (internal)");
+  });
+
+  it("leaves the marker dot off the surfaces that already answer which marker", async () => {
+    const { handle } = mountPanel({
+      notes: [createNote({ id: 1, text: "[BLOCKED] Waiting for review." })],
+      onlyCommentPrefix: "[BLOCKED]",
+    });
+
+    await expand(handle);
+
+    expect(handle.element.querySelector(".awesomeado-note__marker")).toBeNull();
+    expect(handle.element.textContent).not.toContain("[BLOCKED]");
   });
 });
 
@@ -457,5 +477,32 @@ describe("renderNotesPanel — correcting a note", () => {
     await expand(handle);
 
     expect(rowsOf(handle)[0]?.querySelector(".awesomeado-note__author")?.tagName).toBe("SPAN");
+  });
+
+  it("corrects a marker note without ever showing its token, and stores the token back", async () => {
+    const note = createNote({ id: 6, text: "[BLOCKED] Waiting for review." });
+    const { handle, editNote } = mountPanel({
+      notes: [note],
+      currentUser: READER,
+      showAllInWindow: true,
+      editResult: { ok: true, note: { ...note, text: "[BLOCKED] Waiting on Platform." } },
+    });
+    await expand(handle);
+
+    const row = rowsOf(handle)[0]!;
+    buttonLabelled(row, READER.displayName).click();
+    const field = row.querySelector<HTMLTextAreaElement>(".awesomeado-text-editor__input")!;
+    expect(field.value).toBe("Waiting for review.");
+    field.value = "Waiting on Platform.";
+    buttonLabelled(row, "Save").click();
+    await flush();
+
+    expect(editNote).toHaveBeenCalledWith({
+      workItemId: WORK_ITEM_ID,
+      noteId: 6,
+      text: "[BLOCKED] Waiting on Platform.",
+    });
+    expect(rowsOf(handle)[0]?.textContent).not.toContain("[BLOCKED]");
+    expect(rowsOf(handle)[0]?.querySelector(".awesomeado-note__marker")).not.toBeNull();
   });
 });

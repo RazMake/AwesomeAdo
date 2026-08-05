@@ -106,7 +106,9 @@ Sort keys come from the work item. Adding one is a four-step change:
 
 - `src/common/ordering/README.md` — the policy list, and the adapter guidance for callers.
 - The owning view's `README.md` — what each policy means on that board.
-- `ChangeLog.md` — one user-facing bullet under `## Next Version` (a new sort order is visible).
+- `ChangeLog.md` — one user-facing bullet under `## Next Version` → `### New Features` (a new sort
+  order is visible). Add that H3 heading only if the section does not have it yet; see the
+  changelog-versioning skill for the grouping rules.
 
 ## Tests
 

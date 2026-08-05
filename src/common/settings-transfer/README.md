@@ -83,10 +83,12 @@ and `TeamConfigSynchronizer` never applies a source ID found in a remote payload
 - `TeamConfigSynchronizer` — pulls through `importConfig`, refuses partial/invalid remote files,
   reports an empty Description as connected but not yet published without changing local settings,
   replaces settings and bindings only when the normalized snapshot changed, and publishes the current
-  full `exportCompactConfig` snapshot. `publishBindings(writer, proposed)` publishes a caller's
-  proposed binding map without rereading stale local bindings, so options can publish before making
-  a mutation observable to pull-triggered content views. Work-item type settings include their
-  Primary Work classification in both directions. Concurrent pulls share one in-flight operation.
+  full `exportCompactConfig` snapshot. It takes a `LocalSettingsAccess`, not an `ISettingsStore`, so a
+  pull cannot publish what it just read. `publishBindings(writer, proposed)` publishes a caller's
+  proposed binding map without rereading stale local bindings; `publishSettings(writer, proposed)`
+  does the same for settings. Both let options publish before making a mutation observable to
+  pull-triggered content views. Work-item type settings include their Primary Work classification in
+  both directions. Concurrent pulls share one in-flight operation.
 - `TeamSprintAreaPathStore` — pulls before Sprint reads, serializes per-sprint setting writes, and
   publishes the resulting full normalized configuration through the connected work item.
 - `TeamSharedQueryBindingWriter` — an `IQueryBindingWriter` for content-script surfaces that create
@@ -94,11 +96,40 @@ and `TeamConfigSynchronizer` never applies a source ID found in a remote payload
   first and mutates the local store only once the work item accepted it, so a removed binding is not
   restored — and a new one is not erased — by the next pull. A failed publish leaves local state
   unchanged and is logged; with no team connected it simply writes locally.
+- `TeamSharedSettingsStore` — the `ITeamPublishingSettingsStore` used by every options control that
+  edits settings. It serializes edits, publishes each proposed full settings snapshot first, and
+  writes the accepted partial update locally second. A failed publish rejects the edit without
+  changing local storage; with no team connected it delegates to the local store.
+- `ITeamPublishingSettingsStore` — `ISettingsStore` plus a `publishesBeforeWrite: true` marker. The
+  marker is what makes the distinction visible to the compiler: the stores are otherwise structurally
+  identical, so a control that must publish would silently accept one that does not. See ADR-074.
+- `IPersonalSettingsStore` / `personalSettingsStore(store)` — the counterpart, marked
+  `publishesBeforeWrite: false`, for the settings that stay the reader's own. The two markers are
+  mutually exclusive, so a control says which kind of setting it edits and cannot be handed the other.
+- `createTeamSharedSettings({ settings, bindings, source, client, logger })` — assembles the stack and
+  returns `{ settings, personal, synchronizer, local }`. Callers pass the plain store **inline** and
+  never bind it, so every store in scope on the options page says what it is.
 
-Connected content scripts pull when a saved query opens. Ordinary settings publish through the
-explicit Options action; Sprint Lane selections are the exception and auto-publish after each
-change because the work-item payload is their team-shared source of truth. The source work item and shared queries
-must be in the same Azure DevOps organization, and every viewer needs read access to that item.
+## Personal settings
+
+`PERSONAL_SETTING_KEYS` (`common/settings`) lists the settings that belong to the person rather than
+the team — today `theme` and `defaultView`. They still sync across that user's own devices, and a
+file export still carries them, because a file backs up one person's configuration. They are excluded
+in three places, so a teammate can neither receive nor impose them:
+
+- `exportCompactConfig` omits them, so publishing never sends them.
+- `TeamConfigSynchronizer` strips them from a pull, so a payload published by an older build cannot
+  still apply them.
+- `overlaySettings` (`content/shared-query`) strips them, so opening someone else's shared query never
+  repaints the reader's page.
+
+Connected content scripts pull when a saved query opens. Every **team** settings edit made on the
+options page publishes automatically, because the work-item payload is the team-shared source of
+truth. Two flows deliberately do **not** publish and use `LocalSettingsAccess` instead: applying a
+pull (it would echo the snapshot just read) and importing a file (it would push the outgoing
+configuration into the connection the import is moving away from). The source work item and shared
+queries must be in the same Azure DevOps organization, and every viewer needs read access to that
+item.
 
 ## Shared queries (read-only, one query at a time)
 

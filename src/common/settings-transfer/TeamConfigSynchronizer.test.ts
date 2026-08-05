@@ -3,8 +3,9 @@ import { describe, expect, it, vi } from "vitest";
 import type { IQueryBindingStore } from "../bindings/IQueryBindingStore";
 import type { QueryBindings } from "../bindings/QueryBinding";
 import type { ILogger } from "../logging/ILogger";
-import { DEFAULT_SETTINGS, type ExtensionSettings } from "../settings/ExtensionSettings";
-import type { ISettingsStore } from "../settings/ISettingsStore";
+import { DEFAULT_SETTINGS, withoutPersonalSettings } from "../settings/ExtensionSettings";
+import type { ExtensionSettings } from "../settings/ExtensionSettings";
+import type { LocalSettingsAccess } from "../settings/LocalSettingsAccess";
 
 import { exportConfig, exportConnectionConfig } from "./AwesomeAdoConfig";
 import type { TeamConfigSourceStore } from "./TeamConfigSourceStore";
@@ -38,10 +39,9 @@ function makeHarness(
     read: vi.fn(async () => sourceId),
     write: vi.fn(async () => {}),
   };
-  const settingsStore: ISettingsStore = {
+  const settingsStore: LocalSettingsAccess = {
     read: vi.fn(async () => currentSettings),
-    write: vi.fn(async () => {}),
-    observe: vi.fn(() => ({ ready: Promise.resolve(), unsubscribe: vi.fn() })),
+    applyLocally: vi.fn(async () => {}),
   };
   const bindingStore: IQueryBindingStore = {
     read: vi.fn(async () => currentBindings),
@@ -85,7 +85,9 @@ describe("TeamConfigSynchronizer pull", () => {
       workItemId: 42,
       bindingCount: 1,
     });
-    expect(harness.settingsStore.write).toHaveBeenCalledWith(DEFAULT_SETTINGS);
+    expect(harness.settingsStore.applyLocally).toHaveBeenCalledWith(
+      withoutPersonalSettings(DEFAULT_SETTINGS),
+    );
     expect(harness.bindingStore.replaceAll).toHaveBeenCalledWith(bindings);
   });
 
@@ -103,7 +105,7 @@ describe("TeamConfigSynchronizer pull", () => {
     const result = await harness.synchronizer.pull();
 
     expect(result.status).toBe("failed");
-    expect(harness.settingsStore.write).not.toHaveBeenCalled();
+    expect(harness.settingsStore.applyLocally).not.toHaveBeenCalled();
     expect(harness.bindingStore.replaceAll).not.toHaveBeenCalled();
     expect(harness.logger.error).toHaveBeenCalledOnce();
   });
@@ -116,7 +118,7 @@ describe("TeamConfigSynchronizer pull", () => {
       status: "empty",
       workItemId: 42,
     });
-    expect(harness.settingsStore.write).not.toHaveBeenCalled();
+    expect(harness.settingsStore.applyLocally).not.toHaveBeenCalled();
     expect(harness.bindingStore.replaceAll).not.toHaveBeenCalled();
     expect(harness.logger.error).not.toHaveBeenCalled();
   });
@@ -142,7 +144,7 @@ describe("TeamConfigSynchronizer pull", () => {
       workItemId: 42,
       bindingCount: 1,
     });
-    expect(harness.settingsStore.write).not.toHaveBeenCalled();
+    expect(harness.settingsStore.applyLocally).not.toHaveBeenCalled();
     expect(harness.bindingStore.replaceAll).not.toHaveBeenCalled();
     expect(harness.logger.info).not.toHaveBeenCalled();
   });
@@ -172,7 +174,7 @@ describe("TeamConfigSynchronizer pull rejections", () => {
     const result = await harness.synchronizer.pull();
 
     expect(result.status).toBe("failed");
-    expect(harness.settingsStore.write).not.toHaveBeenCalled();
+    expect(harness.settingsStore.applyLocally).not.toHaveBeenCalled();
     expect(harness.bindingStore.replaceAll).not.toHaveBeenCalled();
   });
 });
@@ -184,14 +186,30 @@ describe("TeamConfigSynchronizer legacy pull", () => {
       ok: true,
       text: JSON.stringify({
         awesomeAdoConfigVersion: 1,
-        settings: { theme: "blue", areaPaths: [{ path: "Web\\Api", label: "Api" }] },
+        settings: { organization: "contoso", areaPaths: [{ path: "Web\\Api", label: "Api" }] },
         enhancedQueries: bindings,
       }),
     });
 
     await harness.synchronizer.pull();
 
-    expect(harness.settingsStore.write).toHaveBeenCalledWith({ theme: "blue" });
+    expect(harness.settingsStore.applyLocally).toHaveBeenCalledWith({ organization: "contoso" });
+  });
+
+  it("never applies a personal setting a payload from an older build still carries", async () => {
+    const harness = makeHarness();
+    vi.mocked(harness.reader.read).mockResolvedValue({
+      ok: true,
+      text: JSON.stringify({
+        awesomeAdoConfigVersion: 1,
+        settings: { theme: "blue", defaultView: "original", organization: "contoso" },
+        enhancedQueries: bindings,
+      }),
+    });
+
+    await harness.synchronizer.pull();
+
+    expect(harness.settingsStore.applyLocally).toHaveBeenCalledWith({ organization: "contoso" });
   });
 });
 
@@ -212,7 +230,7 @@ describe("TeamConfigSynchronizer Primary Work pull", () => {
 
     await harness.synchronizer.pull();
 
-    expect(harness.settingsStore.write).toHaveBeenCalledWith(
+    expect(harness.settingsStore.applyLocally).toHaveBeenCalledWith(
       expect.objectContaining({
         workItemTypes: [
           expect.objectContaining({ name: "Epic" }),
@@ -242,7 +260,7 @@ describe("TeamConfigSynchronizer Primary Work pull", () => {
 
     await harness.synchronizer.pull();
 
-    expect(harness.settingsStore.write).toHaveBeenCalledWith(
+    expect(harness.settingsStore.applyLocally).toHaveBeenCalledWith(
       expect.objectContaining({
         workItemTypes: [
           expect.objectContaining({ name: "Epic" }),
@@ -272,9 +290,12 @@ describe("TeamConfigSynchronizer publish", () => {
     expect(published).not.toContain("\n");
     expect(published).toBe(JSON.stringify(JSON.parse(published)));
     expect(JSON.parse(published)).toMatchObject({
-      settings: DEFAULT_SETTINGS,
+      settings: withoutPersonalSettings(DEFAULT_SETTINGS),
       enhancedQueries: bindings,
     });
+    // Theme and default view are the publisher's own, so the team payload must not carry them.
+    expect(JSON.parse(published).settings).not.toHaveProperty("theme");
+    expect(JSON.parse(published).settings).not.toHaveProperty("defaultView");
     expect(JSON.parse(published).settings).not.toHaveProperty("areaPaths");
   });
 
@@ -324,5 +345,19 @@ describe("TeamConfigSynchronizer publish", () => {
       "Project\\API\nProject\\Web",
     );
     expect(harness.bindingStore.read).not.toHaveBeenCalled();
+  });
+
+  it("publishes proposed settings without rereading stale local settings", async () => {
+    const harness = makeHarness(42, bindings);
+    const proposed: ExtensionSettings = { ...DEFAULT_SETTINGS, futureSprintsCount: 6 };
+    const writer: TeamConfigWriter = { write: vi.fn(async () => ({ ok: true as const })) };
+
+    await expect(harness.synchronizer.publishSettings(writer, proposed)).resolves.toMatchObject({
+      status: "published",
+    });
+
+    const published = vi.mocked(writer.write).mock.calls[0]?.[1] ?? "";
+    expect(JSON.parse(published).settings.futureSprintsCount).toBe(6);
+    expect(harness.settingsStore.read).not.toHaveBeenCalled();
   });
 });

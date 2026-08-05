@@ -41,8 +41,10 @@ import {
   type WriteQueueStatusHandle,
 } from "../../../common/view-common/control/WriteQueueStatus/WriteQueueStatus";
 import { childTypeOf, newChildSummary } from "../project-tracking/item-commands/NewChildCommands";
+import { panelFor } from "../project-tracking/item-commands/itemCommandCore";
 
 import { renderNewProjectRow } from "./NewProjectRow";
+import { renderNewWorkItemPanel, type NewWorkItemValues } from "./NewWorkItemPanel";
 import { buildProjectCommands } from "./ProjectCommands";
 import { renderProjectRow, type ProjectRowContext } from "./ProjectRow";
 import { renderProjectsHeader, type ProjectsHeaderHandle } from "./ProjectsHeader";
@@ -118,6 +120,9 @@ const ROW_EMPHASIS_CLASSES: RowEmphasisClasses = {
   surface: "awesomeado-projects__row",
   children: "awesomeado-projects__children",
 };
+
+/** How wide the "Add work item" form opens: enough for a full area path to read without wrapping. */
+const NEW_WORK_ITEM_WIDTH_PX = 460;
 
 /** The view's own shell: a full-height, left-aligned surface ADO's stylesheet cannot restyle. */
 function createRoot(doc: Document): HTMLElement {
@@ -395,6 +400,8 @@ function projectMenuTarget(
       queryFolderPath: projectQueryFolderOf(context.properties, queryFolderPathOf(data.result)),
       isProject: data.result.roots.includes(item),
       addingChild: board.session.addingChildOf === item.id,
+      newWorkItemPanel: (typeName, close) =>
+        newWorkItemPanelFor(board, data, item, typeName, close),
       onAddChild: () => {
         board.session.addingChildOf = item.id;
         // A closed project would hide the very box that was just asked for, and the reader has no
@@ -481,6 +488,79 @@ async function addChild(
     `All Projects Catalog View added ${type} ${result.id ?? "?"} under project ${parent.id}.`,
   );
   board.session.addingChildOf = null;
+  board.reload();
+  return true;
+}
+
+/** Every area path the catalog's work sits in, offered when new work is raised under a row. */
+function areaPathsInUse(roots: readonly TrackedWorkItem[]): string[] {
+  const paths = flattenWorkItems(roots)
+    .map((item) => item.areaPath)
+    .filter((path): path is string => path !== null && path.trim().length > 0);
+  return [...new Set(paths)].sort((left, right) => left.localeCompare(right));
+}
+
+/** The "Add work item" form for one row, wired to this catalog's data and its creation. */
+function newWorkItemPanelFor(
+  board: Board,
+  data: LoadedProjects,
+  parent: TrackedWorkItem,
+  typeName: string,
+  close: () => void,
+): HTMLElement {
+  const { context } = board;
+  return panelFor(
+    context.doc,
+    parent,
+    { withTitle: true, titlePrefix: "Parent", widthPx: NEW_WORK_ITEM_WIDTH_PX },
+    [
+      renderNewWorkItemPanel({
+        doc: context.doc,
+        parent,
+        typeName,
+        services: context.services,
+        areaPaths: areaPathsInUse(data.result.roots),
+        assigneeSuggestions: () => collectAssignedDirectoryUsers(data.result.roots),
+        onCreate: (values) => addWorkItem(board, parent, typeName, values),
+        onCancel: close,
+      }),
+    ],
+  );
+}
+
+/**
+ * Create the work the reader described under its planning item, then re-read the catalog.
+ *
+ * Re-read rather than spliced in for the same reason every other creation here is: the query decides
+ * what this catalog shows, and its answer is the only honest account of where the new item landed.
+ */
+async function addWorkItem(
+  board: Board,
+  parent: TrackedWorkItem,
+  type: string,
+  values: NewWorkItemValues,
+): Promise<boolean> {
+  const { context } = board;
+  const result = await context.services.createWorkItem.create({
+    type,
+    title: values.title,
+    tags: values.tags,
+    areaPath: values.areaPath,
+    iterationPath: values.iterationPath,
+    assignedTo: values.assignedTo,
+    description: values.description,
+    comment: values.comment,
+    parentId: parent.id,
+  });
+  if (!result.ok) return false;
+  // The title, the description and the acceptance reason are deliberately absent: the diagnostics
+  // log is exported with bug reports, and all three routinely name a customer (AGENTS.md §9).
+  context.services.logger.info(
+    `All Projects Catalog View added ${type} ${result.id ?? "?"} under ${parent.id} ` +
+      `in area "${values.areaPath ?? "(default)"}", iteration "${values.iterationPath ?? "(default)"}", ` +
+      `with ${values.tags.length} tag(s), ${values.assignedTo === null ? "unassigned" : "assigned"}` +
+      `${values.comment === null ? "" : ", accepted with a stated reason"}.`,
+  );
   board.reload();
   return true;
 }
@@ -599,7 +679,9 @@ function headerOptionsFor(params: {
         excluded: new Set(selection.excluded.map((tag) => tag.toLowerCase())),
         matchAll: selection.matchAll,
       };
-      board.paint();
+      // Recorded but NOT painted: a paint rebuilds the header, taking the open dropdown with it, and
+      // a condition worth stating takes more than one click to state.
+      //
       // Logged on the change itself, never on a repaint: it is the one input that silently decides
       // how much of the query the reader is looking at, and it cannot flood the bounded log because
       // it fires only when the condition actually moves.
@@ -608,6 +690,7 @@ function headerOptionsFor(params: {
           `showing ${visibleProjectCount(loaded, session)} of ${loaded.result.roots.length} project(s)`,
       );
     },
+    onTagsDismiss: () => board.paint(),
     onExpandAll: () => {
       for (const id of allItemIds(loaded.result.roots)) session.expandedIds.add(id);
       board.paint();
@@ -794,6 +877,9 @@ function startProjectsView(context: DataDrivenViewContext, root: HTMLElement): v
 
   const load = (isRefresh: boolean): void => {
     const generation = ++loadGeneration;
+    // What the board is about to show comes from Azure DevOps, so a report about an edit that never
+    // landed has nothing left to warn about.
+    board.queue.clearFailures();
     if (!isRefresh) showMessage(context, root, "Loading projects…");
     header?.refresh.setBusy(true);
     void loadProjects(context)

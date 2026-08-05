@@ -39,14 +39,15 @@ row.append(
 - A marker with a positive discussion count reads its filtered notes before deciding whether it is
   interactive. Clicking a ready pill opens the item's notes **filtered to that marker's comment token** — the
   `[BLOCKED]` notes under a Blocked pill, and nothing else.
-- A marker with no matching notes stays a plain pill with the tooltip **No notes**. A clickable pill
-  carries no tooltip.
+- A marker that cannot open says **why** in its tooltip — no comment tag configured, the item has no
+  notes, nothing in the Updates window carries the token, or the discussion could not be read — and
+  records the same conclusion, with its inputs, in the diagnostics log. An inert pill is otherwise
+  indistinguishable from one nobody has clicked yet. A clickable pill carries no tooltip.
 - Every focused marker note omits its configured token (`[BLOCKED]`, `[ACCEPTED]`, and so on) and
-  shows only the reader-authored explanation; the stored/editable source remains complete.
+  shows only the reader-authored explanation. Correcting a note also never shows the token, and the
+  token is restored behind the scenes when the correction is saved.
 - The popup carries **no composer**. A note typed there would not begin with the token, so it would
   vanish from the very list it was written in — which reads as a lost note.
-- A marker whose team configured **no comment token** stays a plain `No notes` label because no note
-  can be identified as belonging to that marker.
 - The click is kept off the row underneath, which opens the item's own notes panel.
 
 ## Files

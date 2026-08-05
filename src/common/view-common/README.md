@@ -55,8 +55,8 @@ renderer.
 - `EnhancedViewServices` — the cross-view data/service singletons injected at the composition root:
   `loadTree`, `loadQueryDefinition`, `featureCrew`, `writeField`, `reorderItem`, `createWorkItem`,
   `projectQueries`, `queryBindings`, `currentTeam`, `userDirectory`, `mentionDirectory`, `getTypes`,
-  `getBoardColumns`, `markerTags`, `loadSprintWindow`, `loadTeamMembers`, `now`, `logger`,
-  `openDiagnosticsLog`. `writeField` persists
+  `getBoardColumns`, `markerTags`, `loadSprintWindow`, `loadTeamMembers`, `currentUser`, `now`,
+  `logger`, `openDiagnosticsLog`. `writeField` persists
   a single work item
   field change (e.g.
   `System.State` or a type's ETA date field) back to Azure DevOps, using the item's last-known rev as
@@ -64,6 +64,8 @@ renderer.
   `createWorkItem` creates one, which is deliberately not a `writeField` call: every other write here
   changes an item that already exists and is guarded by that item's revision, while creation has
   neither.
+  `currentUser` (optional) reads the identity Azure DevOps considers signed in, so a surface that
+  asks "who is doing this?" can open on the reader instead of an empty field.
   `projectQueries` is the lifecycle of a project's own saved tracking query — which projects already
   have one, creating and linking one, and unlinking plus deleting it again.
   `queryBindings` records or removes the AwesomeADO binding for ONE query, narrowed to `bind`/`unbind`
