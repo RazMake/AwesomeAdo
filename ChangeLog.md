@@ -5,6 +5,8 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ## Next Version
 
+## 0.5
+
 ### New Features
 
 - The Project Tracking board can now be bound to a query rooted at any of your planning levels, not
