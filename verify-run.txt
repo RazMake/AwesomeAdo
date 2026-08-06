@@ -1,9 +1,0 @@
-
-> awesome-ado@0.5.0 verify C:\Users\razvanp\My-Code\AwesomeADO
-> pnpm format:check && pnpm lint && pnpm typecheck && pnpm duplication && pnpm test:scripts && pnpm test:coverage && pnpm validate:workflows
-
-
-> awesome-ado@0.5.0 format:check C:\Users\razvanp\My-Code\AwesomeADO
-> prettier --check .
-
-Checking formatting...

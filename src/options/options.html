@@ -195,15 +195,17 @@
       /* The folder vocabulary loads one folder at a time, so its progress sits INSIDE the field's
         trailing edge: the suggestion list covers everything below the input, and a folder is being
         fetched exactly while that list is open. The room for it is reserved permanently so showing
-        the spinner never shifts the text under it. */
+        the spinner never shifts the text under it, and the input is a block so the wrapper's box is
+        exactly the input's box for the spinner to centre against. */
       .combobox--with-spinner input {
+        display: block;
         padding-right: 28px;
       }
       .combobox__loading {
         position: absolute;
         top: 0;
+        bottom: 0;
         right: 10px;
-        height: 100%;
         display: flex;
         align-items: center;
         pointer-events: none;
