@@ -39,6 +39,9 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ### Bug Fixes
 
+- Project Tracking filters no longer leave unrelated childless planning items pinned at the top of
+  the board. They now obey every active filter except Sprint, showing only matching work and the
+  planning chain that leads to it.
 - Publishing team configuration no longer fails when an unrelated edit advances the connected work
   item's revision at the same moment. A competing configuration publish is still reported as a
   conflict instead of being overwritten.

@@ -232,20 +232,19 @@ const startedMilestone = (id: number, title: string): TrackedWorkItem =>
 const matchingTitles = (candidate: TrackedWorkItem): boolean => candidate.title === "matching";
 
 describe("workItemIdsVisibleUnderPrimaryFilter — planning nothing can speak for", () => {
-  it("shows a childless planning item without asking the filters at all", () => {
-    const asked: number[] = [];
+  it("lets the caller decide which filters can speak to a childless planning item", () => {
+    const asked: string[] = [];
     const visible = workItemIdsVisibleUnderPrimaryFilter(
       [milestoneTree(item({ id: 2, type: "Feature" }))],
       CATALOG,
-      (candidate) => {
-        asked.push(candidate.id);
-        return false;
+      (candidate, subject) => {
+        asked.push(`${candidate.id}:${subject}`);
+        return subject === "empty-planning";
       },
     );
 
-    // Nothing about a milestone nobody has filled can answer a filter, so it is shown unasked.
     expect([...visible].sort(ascending)).toEqual([1, 2]);
-    expect(asked).not.toContain(2);
+    expect(asked).toContain("2:empty-planning");
   });
 
   it("still judges a planning item that holds something, rather than pinning it on screen", () => {

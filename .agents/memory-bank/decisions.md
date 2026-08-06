@@ -1106,9 +1106,10 @@ Markdown` in one `/rev`-guarded JSON Patch. A 412 causes one reread and one retr
   a milestone can stand down. Project Tracking drops the **sprint** condition for such an item:
   teams leave a milestone on the project's own iteration, so testing it against the board's sprint
   would hide every milestone that has not been filled. A planning item with **no children at all** is
-  shown unasked — it has no work, no schedule and no history for any filter to read, and hiding it
-  would put the only row that work can be added to out of reach. Without these a milestone created
-  before its first story vanishes on the next page load. Such an item carries only its ancestors: the
+  reported as `empty-planning`, so Project Tracking can ignore the sprint condition while applying
+  every other active filter. Without that distinction,
+  either a milestone created before its first story vanishes or an unrelated empty milestone stays
+  pinned under every person filter. Such an item carries only its ancestors: the
   planning items under it are judged individually, so an unmatched milestone cannot ride an
   ancestor's match onto a filtered board. Primary work still carries its implementation detail, and a
   planning item that does hold Primary work is still spoken for by it.

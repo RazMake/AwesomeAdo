@@ -9,6 +9,16 @@ we hit, why they happened, and the exact fix so nobody re-derives them.
 agent-tool-local memory (it does not clone or transfer between machines/agents). Record new findings
 here so every agent, teammate, and clone sees them.
 
+## Empty planning rows must not bypass filters for fields they own
+
+- SYMPTOM: Project Tracking's Assigned To filter always left the first childless Feature visible,
+  even when neither it nor anything beneath it was assigned to the selected person.
+- ROOT CAUSE: `workItemIdsVisibleUnderPrimaryFilter` auto-included childless planning items without
+  invoking the view's filter callback. That protected empty milestones from the sprint filter, but
+  also bypassed every other active filter.
+- FIX / RULE: report childless planning items as the distinct `empty-planning` filter subject. A view
+  can then define the exception explicitly; Project Tracking applies every filter except sprint.
+
 ## Team configuration can safely rebase over an unrelated revision, never a changed Description
 
 - SYMPTOM: Publish reported `HTTP 412` even though nobody else had published team configuration.

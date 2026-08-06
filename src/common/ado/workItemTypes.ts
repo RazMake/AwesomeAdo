@@ -246,7 +246,7 @@ function unspokenForPlanning(
  * so a board narrowed by those things has to decide what a milestone means to each filter rather
  * than testing it as if it were work in flight.
  */
-export type FilterSubject = "primary-work" | "planning-without-work";
+export type FilterSubject = "primary-work" | "planning-without-work" | "empty-planning";
 
 /** What each item is to a filter pass, or null for the ones no filter may judge on their own. */
 function filterSubjects(
@@ -266,10 +266,10 @@ function filterSubjects(
  * A matching Primary-work item carries its planning ancestors and implementation descendants with
  * it. Another Primary-work node still has to match for itself, so nested delivery does not bypass
  * the filter merely because its parent matched. A planning item with no Primary work anywhere
- * beneath it is judged on its own — nothing below it can answer for it — and one with no children at
- * all is shown unasked, since it has no work, no schedule and no history for any filter to read.
- * Catalogs without classification preserve the legacy rule where every item can match and matching
- * descendants retain their ancestor chain.
+ * beneath it is judged on its own — nothing below it can answer for it. A childless planning item is
+ * reported as `empty-planning`: the caller can ignore filters with no evidence to read while still
+ * applying fields the item owns, such as its assignee. Catalogs without classification preserve the
+ * legacy rule where every item can match and matching descendants retain their ancestor chain.
  */
 export function workItemIdsVisibleUnderPrimaryFilter(
   roots: readonly TrackedWorkItem[],
@@ -283,9 +283,13 @@ export function workItemIdsVisibleUnderPrimaryFilter(
   for (const item of items) {
     const subject = subjectOf(item);
     if (subject === null) continue;
-    // Hiding an empty milestone would put the only row work can be added to out of reach.
-    const unjudgeable = subject === "planning-without-work" && item.children.length === 0;
-    if (!unjudgeable && !matches(item, subject)) continue;
+    // The caller decides which filters can speak to an empty milestone. Project Tracking exempts
+    // only sprint; bypassing the callback made the row survive every other filter too.
+    const resolvedSubject =
+      subject === "planning-without-work" && item.children.length === 0
+        ? "empty-planning"
+        : subject;
+    if (!matches(item, resolvedSubject)) continue;
     addAncestorIds(item.id, parentIds, visible);
     // Only Primary work brings its subtree along: every planning item below is judged in its own
     // right, so pulling them down here would put an unmatched milestone back on a filtered board.

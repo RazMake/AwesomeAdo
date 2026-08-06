@@ -85,11 +85,10 @@ boards that disagree about the same query.
   descendants with it, while nested primary work still has to match for itself. A planning item with
   no primary work anywhere beneath it is judged on its own — nothing below can answer for it — and it
   brings only its ancestors, never the planning items under it, which are judged in their own right.
-  One with **no children at all** is shown without `matches` being asked: it has no work, no schedule
-  and no history to read, and hiding it would make a milestone unreachable before its first story
-  exists. `matches` receives a `FilterSubject` (`"primary-work"` / `"planning-without-work"`) so a
-  caller can drop the conditions that cannot speak to a milestone. An unclassified catalog keeps the
-  legacy "every item can match, and a match keeps its ancestors" rule.
+  One with **no children at all** is passed as `"empty-planning"`, so a caller can define its exact
+  policy instead of having the shared hierarchy helper bypass every filter. `matches` receives that `FilterSubject` alongside
+  `"primary-work"` and `"planning-without-work"`. An unclassified catalog keeps the legacy "every
+  item can match, and a match keeps its ancestors" rule.
 - `orderTrackedItems(entries, itemOf, policy)` — the one adapter between a tracked item and
   `common/ordering`. That module stays free of any ADO shape, so this is where an item's ISO ETA
   becomes the epoch milliseconds the policy compares. `itemOf` lets a caller order its own wrappers

@@ -130,8 +130,8 @@ halves of the view — its configuration and its renderer.
     matching Primary work remain visible, and every non-primary descendant below matching work stays
     in its rollup. A planning item holding no Primary work at all — a milestone added before its first
     story exists — is judged in its own right and is never narrowed by the **sprint**, which nobody
-    scheduled it into; one with no children at all is shown outright, so the row work has to be added
-    to stays reachable. Pressing the lit-up trigger clears the selection in one gesture, so the popup
+    scheduled it into. A childless item still answers every other active filter: Area Path, Assigned
+    To, Feature Crew tag, activity, marker, and resolved age. Pressing the lit-up trigger clears the selection in one gesture, so the popup
     offers no Clear of its own. The selection survives an in-place Refresh. Every item's right-click menu also has
     **Change area path**; unlike the filter, this edit command offers eligible paths represented by
     the complete hierarchy, omitting only that item's current path and showing each full destination
@@ -143,7 +143,8 @@ halves of the view — its configuration and its renderer.
     Crew tag; several can be picked at once and OR together, and the selection ANDs with every other
     filter. A row survives when it or anything beneath it is assigned to a selected person, so a
     person who only ever appears on the tasks under someone else's story is not a name that empties
-    the board. Like the area filter, pressing the lit-up trigger clears the selection in one gesture;
+    the board. An empty planning row survives only when its own assignee matches; it cannot remain
+    pinned merely because it has no children. Like the area filter, pressing the lit-up trigger clears the selection in one gesture;
     a name a refresh no longer offers is dropped rather than left narrowing the board invisibly.
     The selection is session-scoped, like every other reading position here.
   - **Tree rows**: the tree renders every configured **Primary work** type plus the planning-context

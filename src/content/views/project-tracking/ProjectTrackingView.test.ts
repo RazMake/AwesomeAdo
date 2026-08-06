@@ -3341,32 +3341,143 @@ describe("ProjectTrackingView — an emptied board", () => {
 
 const hidEveryRow = (line: string): boolean => line.includes("Project Tracking tree hid every row");
 
+const milestonesOnly = (overrides?: Partial<TrackedWorkItem>): TrackedWorkItem =>
+  createItem({
+    id: 1,
+    type: "Epic",
+    title: "Test Project",
+    children: [
+      createItem({ id: 2, type: "Feature", title: "Phase 1", ...overrides }),
+      createItem({ id: 3, type: "Feature", title: "Phase 2", ...overrides }),
+    ],
+  });
+
+const milestoneBoardOf = async (root: TrackedWorkItem): Promise<HTMLElement> =>
+  renderDeepBoard({ loadTree: async () => ({ isTreeQuery: true, roots: [root], error: null }) });
+
 describe("ProjectTrackingView — milestones with no work under them yet", () => {
-  const milestonesOnly = (overrides?: Partial<TrackedWorkItem>): TrackedWorkItem =>
-    createItem({
-      id: 1,
-      type: "Epic",
-      title: "Test Project",
-      children: [
-        createItem({ id: 2, type: "Feature", title: "Phase 1", ...overrides }),
-        createItem({ id: 3, type: "Feature", title: "Phase 2", ...overrides }),
-      ],
-    });
-
-  const boardOf = async (root: TrackedWorkItem): Promise<HTMLElement> =>
-    renderDeepBoard({ loadTree: async () => ({ isTreeQuery: true, roots: [root], error: null }) });
-
   it("shows them, so the work they were created to hold can still be added later", async () => {
-    expect(renderedRowTitles(await boardOf(milestonesOnly()))).toEqual(["Phase 1", "Phase 2"]);
+    expect(renderedRowTitles(await milestoneBoardOf(milestonesOnly()))).toEqual([
+      "Phase 1",
+      "Phase 2",
+    ]);
   });
 
   it("shows them whatever sprint the board is on, since nobody scheduled them into one", async () => {
     // Teams leave a milestone on the project's own iteration, so the board's sprint can never match.
-    const root = await boardOf(milestonesOnly({ iterationPath: "Project", sprintName: null }));
+    const root = await milestoneBoardOf(
+      milestonesOnly({ iterationPath: "Project", sprintName: null }),
+    );
 
     expect(renderedRowTitles(root)).toEqual(["Phase 1", "Phase 2"]);
   });
+});
 
+describe("ProjectTrackingView — childless milestones under active filters", () => {
+  it("hides an unrelated childless milestone under an Assigned To filter", async () => {
+    const david = createUser("David");
+    const tree = milestonesOnly();
+    tree.children[1]!.children.push(
+      createItem({ id: 4, type: "Story", title: "David's story", assignedTo: david }),
+    );
+    const root = await milestoneBoardOf(tree);
+
+    const trigger = root.querySelector<HTMLButtonElement>(".awesomeado-assignee-filter__trigger")!;
+    trigger.click();
+    const davidOption = [
+      ...root.querySelectorAll<HTMLElement>(".awesomeado-assignee-filter__option"),
+    ].find((option) => option.textContent === "David")!;
+    const checkbox = davidOption.querySelector<HTMLInputElement>("input[type=checkbox]")!;
+    checkbox.checked = true;
+    checkbox.dispatchEvent(new Event("change", { bubbles: true }));
+
+    expect(trigger.getAttribute("aria-pressed")).toBe("true");
+    expect(renderedRowTitles(root)).toEqual(["Phase 2", "David's story"]);
+  });
+
+  it("hides an unrelated childless milestone under an activity filter", async () => {
+    const tree = milestonesOnly();
+    tree.children[1]!.children.push(
+      createItem({
+        id: 4,
+        type: "Story",
+        title: "Fresh story",
+        createdDate: "2026-07-24T11:00:00Z",
+      }),
+    );
+    const root = await milestoneBoardOf(tree);
+
+    activityPillOf(root, "created").click();
+
+    expect(renderedRowTitles(root)).toEqual(["Phase 2", "Fresh story"]);
+  });
+
+  it("hides an unrelated childless milestone under a marker filter", async () => {
+    const tree = milestonesOnly();
+    tree.children[1]!.children.push(
+      createItem({ id: 4, type: "Story", title: "Blocked story", tags: ["Blocked"] }),
+    );
+    const root = await milestoneBoardOf(tree);
+
+    filterMarkerPills(root)[0]!.click();
+
+    expect(renderedRowTitles(root)).toEqual(["Phase 2", "Blocked story"]);
+  });
+
+  it("hides an unrelated childless milestone under a crew-tag filter", async () => {
+    const alice = createUser("Alice Smith");
+    const david = createUser("David Jones");
+    const tree = milestonesOnly({ assignedTo: alice });
+    tree.children[1]!.children.push(
+      createItem({ id: 4, type: "Story", title: "Platform story", assignedTo: david }),
+    );
+    const root = await renderDeepBoard({
+      loadTree: async () => ({ isTreeQuery: true, roots: [tree], error: null }),
+      featureCrew: {
+        reconcile: async () => ({
+          ok: true,
+          changed: false,
+          members: [
+            { alias: "alice.smith", fullName: "Alice Smith", tag: "Core" },
+            { alias: "david.jones", fullName: "David Jones", tag: "Platform" },
+          ],
+        }),
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await Promise.resolve();
+
+    tagFilterPillOf(root, "Platform")!.click();
+
+    expect(renderedRowTitles(root)).toEqual(["Phase 2", "Platform story"]);
+  });
+});
+
+describe("ProjectTrackingView — childless milestone resolved window", () => {
+  it("hides a childless milestone outside the resolved-age window", async () => {
+    const tree = milestonesOnly({ state: "Closed", stateChangeDate: "2026-07-01T00:00:00Z" });
+    const root = await renderDeepBoard({
+      loadTree: async () => ({ isTreeQuery: true, roots: [tree], error: null }),
+      getTypes: () =>
+        DEEP_TYPES.map((type) =>
+          type.name === "Feature"
+            ? {
+                ...type,
+                columns: [
+                  { column: "Active", states: ["Active"] },
+                  { column: "Done", states: ["Closed"] },
+                  { column: "Removed", states: ["Removed"] },
+                ],
+              }
+            : type,
+        ),
+    });
+
+    expect(renderedRowTitles(root)).toEqual([]);
+  });
+});
+
+describe("ProjectTrackingView — milestones holding work", () => {
   it("still hides a milestone whose own work sits outside the board's sprint", async () => {
     const filled = milestonesOnly();
     filled.children[0]!.children.push(
@@ -3378,7 +3489,7 @@ describe("ProjectTrackingView — milestones with no work under them yet", () =>
         sprintName: "Sprint 2",
       }),
     );
-    const root = await boardOf(filled);
+    const root = await milestoneBoardOf(filled);
 
     // Phase 2 holds nothing, so it stays; Phase 1 is spoken for by its Story, which is elsewhere.
     expect(renderedRowTitles(root)).toEqual(["Phase 2"]);
