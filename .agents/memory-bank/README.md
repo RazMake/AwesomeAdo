@@ -4,13 +4,14 @@ This directory is the shared coordination memory for all agents working on the A
 
 ## Protocol
 
-- **All agents read this directory before starting any task.** Do not begin work without first
-  reviewing every file here so your changes stay coherent with what others have done.
+- **All agents read `README.md`, `projectbrief.md`, and `activeContext.md` before starting a task.**
+  Use this index and targeted search to load only the other sections relevant to the task. Never
+  eagerly read the complete ADR or debugging history.
 - **Parallel workers NEVER edit shared memory files.** Return a concise `Memory-bank delta`
   section in your §4.1 response instead (see AGENTS.md for the exact format).
-- **The serial coordinator applies deltas at each wave barrier.** After all parallel workers in a
-  wave finish, one coordinator merges their deltas into `activeContext.md`, `progress.md`, and
-  `decisions.md` before starting the next wave.
+- **The serial coordinator applies deltas once at the final barrier.** After all implementation
+  waves stabilize, one coordinator merges their deltas into `activeContext.md`, `progress.md`, and
+  `decisions.md` immediately before final verification.
 - Wave 0A is the only bootstrap exception: it creates this memory bank before later agents can read
   it.
 
@@ -24,8 +25,8 @@ This directory is the shared coordination memory for all agents working on the A
 | `systemPatterns.md` | Layer map, composition roots, single-source-of-truth rules, SOLID mapping, and performance posture. |
 | `activeContext.md`  | Flattened snapshot of the current state and the shared abstractions to build on.                    |
 | `progress.md`       | Flattened snapshot of what is implemented and what remains (developer/org-owned).                   |
-| `decisions.md`      | Architecture Decision Records (ADRs) capturing fixed decisions and their rationale.                 |
-| `debuggingNotes.md` | Running lab notebook: root-cause findings, non-obvious gotchas, and live-debugging recipes.         |
+| `decisions.md`      | Searchable ADR history; load only the decisions relevant to the current task.                       |
+| `debuggingNotes.md` | Searchable lab notebook; load only matching root causes, gotchas, or recipes.                       |
 
 ## Where durable knowledge lives
 

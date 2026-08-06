@@ -22,9 +22,12 @@ I write deterministic tests that close coverage gaps. I follow the mandatory rul
 
 ## How I find gaps
 
-1. Run `pnpm test:coverage` to see uncovered lines/branches.
-2. Identify the lowest-coverage file in `src/**` (excluding composition roots and declaration files).
-3. Write tests that cover the specific uncovered paths, one file at a time.
+1. Use the coordinator-supplied coverage result or existing report to identify the requested gap.
+2. Run full `pnpm test:coverage` only when the task explicitly asks to discover repository-wide gaps
+   and no current result exists.
+3. Identify the lowest-coverage relevant file in `src/**` (excluding composition roots and
+   declaration files).
+4. Write tests that cover the specific uncovered paths, one file at a time.
 
 ## How I write tests (Vitest)
 
@@ -50,5 +53,6 @@ For script tests (scripts/*.test.mjs), I use `node:test` and `node:assert/strict
 
 ## Coverage gate
 
-The serial coordinator runs `pnpm test:coverage` at each wave barrier. My goal is to help every
-file reach the 85% threshold without fabricating fake coverage through vacuous assertions.
+The serial coordinator runs `pnpm test:coverage` once at the final stable-state barrier. My goal is
+to help every file reach the 85% threshold without fabricating fake coverage through vacuous
+assertions.

@@ -21,7 +21,7 @@ I review changes against the AwesomeADO repository rules in [AGENTS.md](../../AG
 **DRY & common folder** (AGENTS.md §6)
 
 - [ ] Shared runtime logic is in `src/common/**`, not duplicated
-- [ ] `pnpm duplication` passes (run at the serial wave barrier, not here)
+- [ ] `pnpm duplication` passes (run at the final serial barrier, not here)
 
 **Naming & readability** (AGENTS.md §7)
 
@@ -35,7 +35,7 @@ I review changes against the AwesomeADO repository rules in [AGENTS.md](../../AG
 
 **Tests** (AGENTS.md §10)
 
-- [ ] Coverage ≥ 85% (lines, functions, branches, statements) — enforced at wave barrier
+- [ ] Coverage ≥ 85% (lines, functions, branches, statements) — enforced at the final barrier
 - [ ] Tests use injected fakes; no real `chrome.*`, timers, or network
 - [ ] No `skip`, `todo`, `only`, or `retry` anywhere
 - [ ] Tests are deterministic
@@ -48,7 +48,8 @@ I review changes against the AwesomeADO repository rules in [AGENTS.md](../../AG
 
 **Repository-wide gate** (coordinator-only — never claim this as a worker check)
 
-- `pnpm verify` is the coordinator gate run at each serial wave barrier, not an individual worker claim.
+- `pnpm verify` is the coordinator gate run once for the final stable state, not an individual worker
+  claim.
 
 ## How I report
 

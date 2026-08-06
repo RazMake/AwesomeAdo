@@ -16,6 +16,8 @@
     "resolveJsonModule": true,
     "allowJs": true,
     "checkJs": true,
+    "incremental": true,
+    "tsBuildInfoFile": "./node_modules/.cache/typescript/awesomeado.tsbuildinfo",
     "noEmit": true,
     "outDir": "dist"
   },

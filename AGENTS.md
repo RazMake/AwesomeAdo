@@ -26,20 +26,20 @@ Remote repository: `github.com/RazMake/AwesomeAdo`
 
 ## 2. How to Work in This Repo
 
-### Read the memory bank first
+### Read current and relevant memory first
 
-Before starting **any** task, read all files under `.agents/memory-bank/`:
+Before starting **any** task, read only the always-current entry set:
 
 ```
-.agents/memory-bank/README.md         — protocol
-.agents/memory-bank/projectbrief.md   — north star + scope
-.agents/memory-bank/productContext.md — problem + UX
-.agents/memory-bank/techContext.md    — stack + environment
-.agents/memory-bank/systemPatterns.md — architecture + SOLID mapping
-.agents/memory-bank/activeContext.md  — current wave status
-.agents/memory-bank/progress.md       — checklist
-.agents/memory-bank/decisions.md      — ADRs
+.agents/memory-bank/README.md       — protocol + index
+.agents/memory-bank/projectbrief.md — north star + scope
+.agents/memory-bank/activeContext.md — current state and live constraints
 ```
+
+Then use the README index and targeted search to load only task-relevant sections from
+`productContext.md`, `techContext.md`, `systemPatterns.md`, `progress.md`, `decisions.md`, and
+`debuggingNotes.md`. Never eagerly load the complete ADR or debugging history. Do not re-read a file
+already present in the current conversation context.
 
 ### Worker contract (§4.1)
 
@@ -62,16 +62,18 @@ Use this exact shape for the third heading:
 ```
 
 Worker acceptance criteria are intentionally local. Repository-wide `pnpm verify`, packaging,
-release, authenticated browser behavior, and final memory updates belong to serial barriers.
+release, authenticated browser behavior, and final memory updates belong to the one final serial
+barrier after all implementation waves are stable.
 
 ---
 
 ## 3. Memory Bank / Coordinator Protocol
 
-- **Read** `.agents/memory-bank/` at the start of every task.
+- **Read the entry set**, then search and read only relevant memory-bank sections, as defined in §2.
 - **Parallel workers never edit** `activeContext.md`, `progress.md`, or `decisions.md` directly.
   Return a `Memory-bank delta` in the §4.1 response instead.
-- **The serial coordinator** applies those deltas at each wave barrier, then runs `pnpm verify`.
+- **The serial coordinator** collects deltas throughout the task and applies them once immediately
+  before the final verification barrier.
 - Wave 0A is the only bootstrap exception: it creates the memory bank before later agents can read
   it.
 - The memory bank is for **internal architecture and rationale**. Component `README.md` files
@@ -90,17 +92,23 @@ release, authenticated browser behavior, and final memory updates belong to seri
 
 > **No change is complete until `pnpm verify` passes.**
 
-`pnpm verify` runs the following checks in order:
+`pnpm verify` runs one parallel static wave (`format:check`, `lint`, `typecheck`, `duplication`,
+`test:scripts`, and `validate:workflows`), followed by `test:coverage` with the ≥ 85% thresholds.
+Prettier, ESLint, and TypeScript keep local caches under ignored `node_modules/.cache/`.
 
-1. `format:check` — Prettier format check
-2. `lint` — ESLint check (`--max-warnings 0`: **zero tolerance for warnings**)
-3. `typecheck` — TypeScript type-check (no emit)
-4. `duplication` — jscpd duplicate detection
-5. `test:scripts` — node:test for `scripts/*.test.mjs`
-6. `test:coverage` — Vitest with coverage (must reach ≥ 85% thresholds)
-7. `validate:workflows` — validate CI/CD YAML schemas
+Run the full gate **once for each stable repository state**, immediately before final handoff. During
+implementation and user-feedback iterations, run only the cheapest focused test, lint, typecheck, or
+build that can falsify the current change. Do not run full coverage or `pnpm verify` at intermediate
+wave boundaries. An ongoing visual-feedback iteration is provisional, not a final handoff.
 
-This gate is enforced locally by the `pre-push` git hook and remotely by CI on every push.
+The pre-push hook runs `pnpm verify:reuse`: it reuses a successful local gate only when a SHA-256
+fingerprint proves the repository contents and Node runtime are identical. Otherwise it runs the full
+gate. CI always runs a fresh `pnpm verify` on every push.
+
+For repeated browser UI adjustments, keep the existing build watcher and CDP browser session alive;
+reload the extension/page in place instead of rebuilding browser state. In a long feedback session,
+compact or start a fresh chat with a concise handoff after roughly eight substantive turns when the
+client supports it.
 
 ### Zero tolerance for lint warnings
 
@@ -317,7 +325,7 @@ These are **non-negotiable**.
   Merge it into an existing capability bullet when appropriate; do not append implementation
   chronology. Internal-only work returns `None`. Parallel workers return proposed input in their §4.1
   response — naming the group the bullet belongs in — and the serial coordinator writes or merges it
-  at the next wave barrier, creating the group heading only if that group does not exist yet.
+  once before final verification, creating the group heading only if that group does not exist yet.
 - When the developer bumps Major or Minor:
   1. Set `versionBuildOffset` to the latest CI workflow run number visible before the bump.
   2. Rename `## Next Version` to `## X.Y`.
@@ -349,23 +357,24 @@ workflow detail without copying its rule bodies.
 
 ## 14. `package.json` Command Reference
 
-| Command                   | What it does                                                                                                          |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `pnpm build`              | One-shot build to `dist/`                                                                                             |
-| `pnpm build:watch`        | Watch rebuild                                                                                                         |
-| `pnpm typecheck`          | TypeScript type-check (no emit)                                                                                       |
-| `pnpm lint`               | ESLint check                                                                                                          |
-| `pnpm lint:fix`           | ESLint auto-fix                                                                                                       |
-| `pnpm format`             | Prettier write                                                                                                        |
-| `pnpm format:check`       | Prettier check                                                                                                        |
-| `pnpm duplication`        | jscpd duplicate detection                                                                                             |
-| `pnpm test`               | Vitest run (src tests)                                                                                                |
-| `pnpm test:scripts`       | node:test for `scripts/*.test.mjs`                                                                                    |
-| `pnpm test:watch`         | Vitest watch                                                                                                          |
-| `pnpm test:coverage`      | Vitest with coverage                                                                                                  |
-| `pnpm package`            | Build + create store ZIPs                                                                                             |
-| `pnpm validate:workflows` | Validate CI/CD YAML schemas                                                                                           |
-| `pnpm verify`             | Full quality gate (format:check → lint → typecheck → duplication → test:scripts → test:coverage → validate:workflows) |
+| Command                   | What it does                                               |
+| ------------------------- | ---------------------------------------------------------- |
+| `pnpm build`              | One-shot build to `dist/`                                  |
+| `pnpm build:watch`        | Watch rebuild                                              |
+| `pnpm typecheck`          | TypeScript type-check (no emit)                            |
+| `pnpm lint`               | ESLint check                                               |
+| `pnpm lint:fix`           | ESLint auto-fix                                            |
+| `pnpm format`             | Prettier write                                             |
+| `pnpm format:check`       | Prettier check                                             |
+| `pnpm duplication`        | jscpd duplicate detection                                  |
+| `pnpm test`               | Vitest run (src tests)                                     |
+| `pnpm test:scripts`       | node:test for `scripts/*.test.mjs`                         |
+| `pnpm test:watch`         | Vitest watch                                               |
+| `pnpm test:coverage`      | Vitest with coverage                                       |
+| `pnpm package`            | Build + create store ZIPs                                  |
+| `pnpm validate:workflows` | Validate CI/CD YAML schemas                                |
+| `pnpm verify`             | Fresh full gate: parallel static checks, then coverage     |
+| `pnpm verify:reuse`       | Reuse an exact-content successful gate, or run a fresh one |
 
 ---
 
@@ -397,5 +406,5 @@ Every parallel worker response must use this exact format:
 ```
 
 Workers run **only their listed local checks**. Repository-wide `pnpm verify`, packaging, release,
-authenticated browser behavior, and final memory updates belong to the serial barriers named in the
-wave map.
+authenticated browser behavior, and final memory updates belong to one final serial barrier after
+the wave map is complete.

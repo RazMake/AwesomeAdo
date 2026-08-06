@@ -52,7 +52,7 @@ pnpm run build:watch  # watch mode (see static-file limitation below)
 ## Test
 
 ```sh
-pnpm test           # Vitest unit tests (jsdom)
+pnpm test           # Vitest unit tests (Node for pure tests, jsdom for DOM tests)
 pnpm test:coverage  # Vitest with V8 coverage (≥ 85% required)
 pnpm test:scripts   # node:test for automation scripts
 ```
@@ -63,8 +63,11 @@ The full quality gate must pass before any change merges:
 
 ```sh
 pnpm verify
-# Runs: format:check → lint → typecheck → duplication → test:scripts → test:coverage → validate:workflows
+# Runs static checks in parallel, then the complete coverage suite
 ```
+
+The pre-push hook uses `pnpm verify:reuse`, which skips an identical repository state already proven
+by a successful local gate. CI always runs a fresh gate.
 
 All thresholds are hard-coded: jscpd clone threshold 0, coverage ≥ 85% on all four metrics.
 No `--max-warnings` bypass is available for ESLint errors.

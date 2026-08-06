@@ -1682,3 +1682,22 @@ cannot be null."` The patch that reached ADO was `{ op: "add", path: "/fields/<d
 - Consequence: Project Tracking needs no call — it rebuilds its board, and therefore its queue and
   chip, on every refresh. Sprint View and the All Projects Catalog View keep one queue across
   refreshes and clear it explicitly.
+
+## ADR-080: Development uses focused iterations and one content-addressed final gate
+
+- Context: the full local gate took about two minutes, dominated by 217 Vitest files all paying for
+  jsdom. Agent sessions repeatedly ran that gate after focused checks, at intermediate wave barriers,
+  and again in `pre-push`; every task also eagerly loaded roughly 395 KB of memory-bank history.
+- Decision: pure tests run in a Node Vitest project and DOM suites run in a jsdom project. The gate
+  runs independent static checks concurrently, then coverage once. Prettier, ESLint, and TypeScript
+  keep ignored local caches.
+- Decision: workers use focused checks while implementation or user feedback is active. The
+  coordinator merges memory/changelog deltas once and runs one fresh `pnpm verify` for the stable
+  final state. `pre-push` may reuse that result only when a SHA-256 fingerprint covers identical
+  repository contents and the same Node/pnpm runtime; CI always starts fresh.
+- Decision: task startup reads only the memory-bank README, project brief, and active context, then
+  searches the indexed ADR/debugging history for relevant sections. Long histories remain durable
+  and searchable without occupying every task's context.
+- Consequence: the complete test run measured about 52 seconds after the environment split, down
+  from about 81 seconds. A changed file or runtime invalidates pre-push reuse automatically, while
+  ignored build, coverage, and analysis caches do not.

@@ -787,8 +787,9 @@ knowing, and the FIRST one is the trap that costs the most time.
   arguments are dropped, and the missing `sinceMs` becomes `undefined`, so `newestNoteAt >= undefined`
   is **always false** and no item can ever match.
 - `pnpm build` is esbuild: it strips types and **never type-checks**. `pnpm typecheck` reported all
-  four errors instantly. **After changing any signature, run `pnpm verify` BEFORE loading `dist/` — a
-  green build proves nothing about call-site agreement.**
+  four errors instantly. **After changing any signature, run focused tests plus `pnpm typecheck`
+  BEFORE loading `dist/` — a green build proves nothing about call-site agreement. Run the full gate
+  once at final handoff.**
 - LESSON: when a filter shows nothing, suspect the predicate's INPUTS before its logic.
   `x >= undefined`, `x > null` and `Set.has(undefined)` all turn a narrowing predicate into "hide
   everything" without throwing.
@@ -1589,13 +1590,11 @@ id(s); … (guid, guid)` with the unresolved ids. If the id IS listed as "did no
   command fully succeeded. Root cause is a cmd AutoRun pointing at a missing path (fires for every
   cmd/.CMD shim like `pnpm.cmd`); it does NOT reflect the tool's real result. This is a machine-local
   quirk, recorded here so agents on this developer's machines don't waste time chasing it.
-- JUDGE SUCCESS BY THE STAGE OUTPUT, not the trailing exit code. `pnpm verify` chains stages with
-  `&&` (format:check → lint → typecheck → duplication → test:scripts → test:coverage →
-  validate:workflows), so if the LAST stage printed "validate-workflows: all workflow checks passed"
-  then every prior stage passed. Do not re-run verify to hunt a phantom failure.
-- Invoke as `pnpm.cmd` (bare `pnpm` may fail to resolve in that shell). lint has pre-existing WARNINGS
-  (complexity/max-lines-per-function on big test describe arrows + scripts) — 0 errors = pass; do
-  NOT "fix" those warnings.
+- JUDGE SUCCESS BY THE verifier's final `Verification passed.` line, not a trailing wrapper exit
+  report. The static stages run concurrently and coverage follows only when all of them pass; a
+  failure names the failed stage. Do not rerun verify to hunt a phantom failure.
+- Invoke as `pnpm.cmd` if bare `pnpm` fails to resolve in that shell. Lint has zero warning tolerance;
+  any warning is a real gate failure.
 
 ## Source-aware logging (src/common/logging)
 

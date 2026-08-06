@@ -26,7 +26,7 @@ pnpm format
 pnpm lint:fix
 ```
 
-Full gate (run only at a serial wave barrier, never while sibling workers edit):
+Full gate (run once at the final stable-state barrier, never while sibling workers edit):
 
 ```powershell
 pnpm verify

@@ -10,7 +10,7 @@
 | Runtime              | Node 24                                                                                 |
 | Package manager      | pnpm 10.34.5                                                                            |
 | Bundler              | esbuild via `scripts/build.mjs`                                                         |
-| Test runner          | Vitest + `@vitest/coverage-v8` + jsdom                                                  |
+| Test runner          | Vitest + `@vitest/coverage-v8`; Node for pure tests, jsdom for DOM tests                |
 | Lint / format        | ESLint 10 (flat config) + Prettier + jscpd                                              |
 | ESLint import plugin | `eslint-plugin-import-x` (maintained replacement; original incompatible with ESLint 10) |
 | Git hooks            | husky + lint-staged                                                                     |

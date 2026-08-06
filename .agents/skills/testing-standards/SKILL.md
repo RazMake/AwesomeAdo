@@ -32,11 +32,14 @@ $env:Path = "C:\Program Files\nodejs;$env:APPDATA\npm;$env:Path"
 pnpm exec vitest run src/common/browser/ChromeSyncStorage.test.ts
 ```
 
-Run coverage for the full src tree only at the serial wave barrier:
+Run coverage for the full src tree only once at the final stable-state barrier:
 
 ```powershell
 pnpm test:coverage
 ```
+
+During implementation, run the owned test file or `vitest related` for the changed source files.
+Do not rerun full coverage after each correction or intermediate worker wave.
 
 Script tests (scripts/*.test.mjs) use node:test, not Vitest:
 

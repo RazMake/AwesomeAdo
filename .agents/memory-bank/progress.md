@@ -165,8 +165,9 @@ This is a flattened snapshot of what exists now, not a build log.
 - **Icons**: toolbar/action icons, options header icon, and the SVG button icon.
 - **Quality gate**: `pnpm verify` green — Prettier, ESLint, TypeScript, jscpd, `scripts/*` tests,
   Vitest with ≥ 85% coverage on `src/**`, and workflow schema validation.
-- **Tooling**: VS Code tasks/launch, husky `pre-commit`/`pre-push`, esbuild build, packaging, and a
-  GitHub Actions CI/release pipeline with changelog-validated versioning.
+- **Tooling**: VS Code tasks/launch, husky `pre-commit`/content-addressed `pre-push`, cached parallel
+  static verification, split Node/jsdom Vitest projects, esbuild build, packaging, and a GitHub
+  Actions CI/release pipeline with changelog-validated versioning.
 - **Marketplace source material**: public privacy policy; Chrome/Edge listing, disclosure,
   permission-justification, and certification text; and a validated 128x128 listing icon.
 
