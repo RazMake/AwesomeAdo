@@ -9,6 +9,34 @@ we hit, why they happened, and the exact fix so nobody re-derives them.
 agent-tool-local memory (it does not clone or transfer between machines/agents). Record new findings
 here so every agent, teammate, and clone sees them.
 
+## Every view that persists a reorder writes ONE shared order — rank against a LEVEL, never a screen
+
+- THE TRAP: Project Tracking, the catalog and (formerly) Sprint all persist a drag through the same
+  `enqueueReorder` → `_apis/work/workitemsorder`, falling back to writing `IMPORTANCE_FIELD`
+  directly (ADR-042). That field is per work item, and every view sorts `MANUAL_ORDERING_POLICY` on
+  it. There is no "Sprint order" and "Project Tracking order" — there is one order.
+- Sharing the field is fine. What is NOT fine is disagreeing about what a level is. Sprint passed the
+  lane/column CELL as `siblingIds`: filtered by sprint, roster, lane, project, marker and activity,
+  partitioned by area path and board column, and mixing parents.
+- WHY THAT BREAKS THE OTHER BOARD, and it is not the obvious reason: a tree board only cares about the
+  RELATIVE rank of true siblings. Two siblings land in different Sprint cells whenever they differ in
+  state or area path — the normal case — so renumbering one cell moved one past the other while the
+  user never saw them together. Nothing errors; both boards just show an order nobody chose.
+- Cross-parent neighbours also make `workitemsorder` answer `TF400486` ("outside of its immediate
+  parent") EVERY time, so the common gesture never reached ADO's arithmetic at all — it fell straight
+  into the hand-written renumber, which stamps contiguous ranks over the whole `siblingIds` run.
+- RULE for any view that DOES reorder: `siblingIds` is the moved item's own level — its parent's
+  children, or the root level — in post-drop order, and it must NOT be narrowed by any interactive
+  filter (ADR-041). Derive the neighbours from the level, not from whatever row is adjacent on screen.
+- **Sprint's answer was to stop reordering entirely.** Scoping each move to the card's real level was
+  built and worked, but the rule it forced on the user — a card may only be dropped among the run its
+  own parent occupies — stayed incomprehensible even with the reason printed on the dragged card. A
+  Sprint drag now only moves a card to another cell (state, area path, or both in one patch), and its
+  write queue is constructed with no reorder writer so the capability cannot come back by accident.
+- WATCH FOR: any new view that persists a reorder. Ask what its `siblingIds` are a level OF. If the
+  answer mentions the query, a filter, a column or a lane, it is wrong — and if the view cannot show
+  a real level, it should not offer the gesture.
+
 ## A team roster can contain groups, and the Core API never expands them
 
 - SYMPTOM: Sprint View showed two member pills for `SFDA-ClientSDKs`, although the team was populated

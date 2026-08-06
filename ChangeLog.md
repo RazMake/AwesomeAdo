@@ -5,8 +5,19 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ## Next Version
 
+### New Features
+
+- Sprint View cards can now be dragged between rows as well as columns: dropping a card in another
+  row moves it to that row's area path, and a diagonal drop changes its state and area path together.
+  The destination row and column are both highlighted while you drag.
+
 ### Bug Fixes
 
+- Sprint View no longer reorders cards. Dragging a card within a column used to save a backlog
+  position derived from what the board happened to be showing, which could quietly change the order
+  of items on the Project Tracking board that were never on screen together. Card order now comes
+  from the ordering picker in the header, and arranging work by hand belongs on the Project Tracking
+  board.
 - Sprint View now expands groups added to an Azure DevOps team, so the people inside those groups
   appear as team-member pills and their work stays visible on the sprint board.
 

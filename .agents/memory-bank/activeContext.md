@@ -85,7 +85,9 @@ The extension is feature-complete for its current scope:
   drags bubble without the card controller canceling them. Lane names
   are emphasized while their item counts remain visually secondary. Tall cards add clickable recognized marker tags that open only their configured-token Discussion notes, plus a clickable immediate-parent type
   icon/title whose popup lists the type-colored ancestor chain from root to immediate parent with ETA
-  controls, read-only when the owning card is Done. Card dragging stays within its lane and uses a
+  controls, read-only when the owning card is Done. Sprint persists no backlog rank anywhere: a card
+  drag only moves it to another cell, writing the destination column's state, the destination row's
+  area path, or both in one patch, and its write queue is built with no reorder writer. Card dragging uses a
   custom fixed 90%-opaque cursor clone that retains the source card's resolved background across
   columns; the source card remains 90%-opaque. Every destination frames its sticky
   column title with that title's semantic color on a border layer painted above the sticky backdrop;

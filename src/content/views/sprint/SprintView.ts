@@ -14,7 +14,7 @@ import {
   primaryWorkAncestors,
   workItemTypeTextColor,
 } from "../../../common/ado/workItemTypes";
-import { MANUAL_ORDERING_POLICY, type OrderingPolicy } from "../../../common/ordering/ItemOrdering";
+import type { OrderingPolicy } from "../../../common/ordering/ItemOrdering";
 import { WORK_ITEM_MARKERS, type WorkItemMarker } from "../../../common/settings/ExtensionSettings";
 import {
   selectedAreaPathsForSprint,
@@ -782,14 +782,6 @@ function renderBoardHeader(options: SprintHeaderRenderOptions): {
   const currentOrderingPolicy = session.orderingPolicy ?? sprintOrderingPolicy(context.properties);
   const orderingPicker = renderOrderingPicker(context.doc, {
     policy: currentOrderingPolicy,
-    dragReorderUnavailable: (policy) => {
-      if (context.services.currentTeam() === null) {
-        return "drag to reorder needs a team (set one in AwesomeADO options)";
-      }
-      return policy === MANUAL_ORDERING_POLICY
-        ? null
-        : "drag to reorder is only available when ordering by importance";
-    },
     onChange: (policy) => {
       context.services.logger.info(
         `Sprint View ordering changed for this session: from=${currentOrderingPolicy}, ` +
@@ -1244,11 +1236,9 @@ function observeWriteState(
 }
 
 function createWriteQueue(context: DataDrivenViewContext): WorkItemWriteQueue {
-  return new WorkItemWriteQueue(
-    context.services.writeField,
-    context.services.logger,
-    context.services.reorderItem,
-  );
+  // No reorder writer on purpose: a sprint is a slice of many backlogs, so nothing on this board is
+  // a level a rank could be written against.
+  return new WorkItemWriteQueue(context.services.writeField, context.services.logger);
 }
 
 function createBulkMoveController(

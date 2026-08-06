@@ -1,4 +1,3 @@
-import type { WorkItemReorderResult } from "../../../common/ado/IWorkItemReorderWriter";
 import type {
   TrackedUser,
   TrackedWorkItem,
@@ -8,7 +7,7 @@ import type { WorkItemWriteQueue } from "../../../common/ado/WorkItemWriteQueue/
 import { ASSIGNED_TO_FIELD, identityFieldValue } from "../../../common/ado/adoApi";
 import { buildWorkItemUrl } from "../../../common/ado/fetchAdoTree";
 import { orderTrackedItems, workItemTypeTextColor } from "../../../common/ado/workItemTypes";
-import { MANUAL_ORDERING_POLICY, type OrderingPolicy } from "../../../common/ordering/ItemOrdering";
+import type { OrderingPolicy } from "../../../common/ordering/ItemOrdering";
 import { WORK_ITEM_MARKERS } from "../../../common/settings/ExtensionSettings";
 import type { DataDrivenViewContext } from "../../../common/view-common/EnhancedView";
 import {
@@ -20,10 +19,6 @@ import {
   type ChildItemsBadgeHandle as ChildItemsBadgeControlHandle,
 } from "../../../common/view-common/control/ChildItemsBadge/ChildItemsBadge";
 import { collectRolledUpDescendants } from "../../../common/view-common/control/ChildItemsBadge/rolledUpDescendants";
-import {
-  DragReorderController,
-  type PlannedMove,
-} from "../../../common/view-common/control/DragReorder/DragReorderController";
 import { renderEmptyState } from "../../../common/view-common/control/EmptyState/EmptyState";
 import {
   renderEtaBadge,
@@ -48,7 +43,7 @@ import type { InterruptAcceptanceState } from "../interrupt-acceptance/interrupt
 import { writeItemPriority } from "../item-priority/writeItemPriority";
 import { renderMarkerReasonsPill } from "../project-tracking/marker-reasons/MarkerReasonsPill";
 
-import { SprintCardDragController, type SprintCardMove } from "./SprintCardDragController";
+import { SprintCardDragController } from "./SprintCardDragController";
 
 const VISIBLE_COLUMN_COUNT = 4;
 const BOARD_LAYOUT_COLUMNS = "minmax(130px,170px) minmax(0,1fr)";
@@ -115,7 +110,6 @@ interface SprintBoardOptions {
    */
   onCardsShown: (count: number) => void;
   cardDrag?: SprintCardDragController;
-  dragReorder?: DragReorderController;
 }
 
 interface Lane {
@@ -271,7 +265,7 @@ function renderChildrenBadge(
   const parentDone = stateOrdinal(item, options.types.get(item.type)) === 3;
   const controls: ChildRowControls[] = [];
   const badge: { handle?: ChildItemsBadgeControlHandle } = {};
-  const children = childEntries.map(({ item: child, parent, siblingIds, depth }) => {
+  const children = childEntries.map(({ item: child, depth }) => {
     const childType = options.types.get(child.type);
     const assignee = renderItemAssignee(context, child, options, !parentDone);
     const eta = renderItemEta(context, child, options, !parentDone);
@@ -292,29 +286,6 @@ function renderChildrenBadge(
       url: buildWorkItemUrl(context.doc.location?.href ?? "", child.id),
       onContextMenu: (event: MouseEvent) =>
         options.contextMenu.openAt(event, options.menuTarget(child)),
-      onRowReady:
-        // Only the first popup level is reorderable: a deeper row's level is not the one the badge's
-        // drop targets describe, so letting it drag would rank it against the wrong siblings.
-        options.dragReorder === undefined || parentDone || depth > 0
-          ? undefined
-          : (
-              row: HTMLElement,
-              title: HTMLElement,
-              dragContext: { surface: HTMLElement; close: () => void },
-            ) =>
-              options.dragReorder?.register({
-                id: child.id,
-                depth: 1,
-                hasChildren: child.children.length > 0,
-                parentId: parent.id,
-                destinationType: null,
-                siblingIds,
-                handle: title,
-                row,
-                wrapper: row,
-                dragSurface: dragContext.surface,
-                onLeaveSurface: dragContext.close,
-              }),
     };
   });
   const element = renderChildItemsBadge(context.doc, {
@@ -683,15 +654,12 @@ function registerCardDrag(
   entry: SprintBoardItem,
   ordinal: number,
   lane: Lane,
-  siblingIds: readonly number[],
-  controller: SprintCardDragController | undefined,
+  options: SprintBoardOptions,
 ): void {
-  controller?.registerCard({
+  options.cardDrag?.registerCard({
     id: entry.item.id,
     lane: lane.areaPath ?? "",
     ordinal,
-    parentId: entry.parent?.id ?? 0,
-    siblingIds,
     element: card,
   });
 }
@@ -727,7 +695,6 @@ function renderCard(
   entry: SprintBoardItem,
   ordinal: number,
   lane: Lane,
-  siblingIds: readonly number[],
   options: SprintBoardOptions,
 ): HTMLElement {
   const { item } = entry;
@@ -796,7 +763,7 @@ function renderCard(
       toggle();
     });
   }
-  registerCardDrag(card, entry, ordinal, lane, siblingIds, options.cardDrag);
+  registerCardDrag(card, entry, ordinal, lane, options);
   return card;
 }
 
@@ -904,11 +871,14 @@ function renderCell(
     "border-right:1px solid var(--control-border)",
     "border-bottom:1px solid var(--control-border)",
   ].join(";");
-  const siblingIds = items.map(({ item }) => item.id);
   for (const entry of items) {
-    cell.append(renderCard(context, entry, ordinal, lane, siblingIds, options));
+    cell.append(renderCard(context, entry, ordinal, lane, options));
   }
-  options.cardDrag?.registerCell(cell, lane.areaPath ?? "", ordinal);
+  options.cardDrag?.registerCell(cell, {
+    lane: lane.areaPath ?? "",
+    ordinal,
+    areaPath: lane.areaPath,
+  });
   return cell;
 }
 
@@ -1078,137 +1048,6 @@ function renderColumnHeader(
   return { element: header, grid, titles };
 }
 
-function findItem(items: readonly TrackedWorkItem[], id: number): TrackedWorkItem | null {
-  for (const item of items) {
-    if (item.id === id) return item;
-    const child = findItem(item.children, id);
-    if (child !== null) return child;
-  }
-  return null;
-}
-
-function applyReportedRanks(
-  items: readonly TrackedWorkItem[],
-  ranks: readonly { id: number; rank: number; rev?: number }[],
-): void {
-  for (const { id, rank, rev } of ranks) {
-    const item = findItem(items, id);
-    if (item === null) continue;
-    item.importance = rank;
-    // A rank write is a revision too, so an item renumbered here keeps a usable rev; without this
-    // the next edit to any sibling the renumber touched is refused as a conflict.
-    if (rev !== undefined) item.rev = rev;
-  }
-}
-
-interface RankMove {
-  id: number;
-  parentId: number;
-  currentParentId: number;
-  previousId: number;
-  nextId: number;
-  siblingIds: readonly number[];
-  stateName?: string;
-  stateBaseName?: string;
-}
-
-function persistRankMove(
-  move: RankMove,
-  roots: readonly TrackedWorkItem[],
-  options: SprintBoardOptions,
-  afterSuccess?: () => void,
-  onResult?: (result: WorkItemReorderResult) => void,
-): void {
-  if (options.team === null) return;
-  const moved = findItem(roots, move.id);
-  if (moved === null) return;
-  void options.writes
-    .enqueueReorder({
-      id: move.id,
-      currentRev: () => moved.rev,
-      parentId: move.parentId,
-      currentParentId: move.currentParentId,
-      previousId: move.previousId,
-      nextId: move.nextId,
-      siblingIds: move.siblingIds,
-      team: options.team,
-      stateName: move.stateName,
-      stateBaseName: move.stateBaseName,
-    })
-    .then((result) =>
-      reconcileRankMove(result, moved, move, roots, options, afterSuccess, onResult),
-    );
-}
-
-function reconcileRankMove(
-  result: WorkItemReorderResult,
-  moved: TrackedWorkItem,
-  move: RankMove,
-  roots: readonly TrackedWorkItem[],
-  options: SprintBoardOptions,
-  afterSuccess?: () => void,
-  onResult?: (result: WorkItemReorderResult) => void,
-): void {
-  if (result.rev !== undefined) moved.rev = result.rev;
-  if (result.ranks !== undefined) applyReportedRanks(roots, result.ranks);
-  if (result.order !== undefined) moved.importance = result.order;
-  onResult?.(result);
-  if (!result.ok) {
-    if (reorderPartlyApplied(result)) options.onItemChanged();
-    return;
-  }
-  if (result.ranks === undefined && result.order === undefined) {
-    applyReportedRanks(
-      roots,
-      move.siblingIds.map((id, rank) => ({ id, rank })),
-    );
-  }
-  afterSuccess?.();
-  options.onItemChanged();
-}
-
-function reorderPartlyApplied(result: WorkItemReorderResult): boolean {
-  return result.reparented === true || result.stateChanged === true;
-}
-
-function persistChildMove(
-  move: PlannedMove,
-  roots: readonly TrackedWorkItem[],
-  options: SprintBoardOptions,
-): void {
-  persistRankMove(move, roots, options, () => options.openChildPopupIds.add(move.parentId));
-}
-
-function persistCardMove(
-  context: DataDrivenViewContext,
-  move: SprintCardMove,
-  cards: readonly SprintBoardItem[],
-  roots: readonly TrackedWorkItem[],
-  options: SprintBoardOptions,
-): void {
-  const source = cards.find(({ item }) => item.id === move.id);
-  if (source === undefined) return;
-  const nextState = primaryState(source.item, move.destinationOrdinal, options);
-  const changesState =
-    nextState !== null &&
-    stateOrdinal(source.item, options.types.get(source.item.type)) !== move.destinationOrdinal;
-  persistRankMove(
-    {
-      ...move,
-      stateName: changesState ? nextState : undefined,
-      stateBaseName: changesState ? source.item.state : undefined,
-    },
-    roots,
-    options,
-    undefined,
-    (result) => {
-      if (!changesState || (!result.ok && result.stateChanged !== true)) return;
-      source.item.state = nextState;
-      source.item.stateChangeDate = context.services.now().toISOString();
-    },
-  );
-}
-
 function renderLane(
   context: DataDrivenViewContext,
   lane: Lane,
@@ -1310,26 +1149,11 @@ export function renderSprintBoard(
     return section;
   }
   section.style.cssText = "border:1px solid var(--control-border);border-radius:4px";
-  const rootItems = cardItems.map(({ item }) => item);
-  const cardDrag = new SprintCardDragController(
-    context.doc,
-    options.team !== null && options.orderingPolicy === MANUAL_ORDERING_POLICY,
-    (id, ordinal) => {
-      const source = cardItems.find(({ item }) => item.id === id);
-      if (source !== undefined) applyDrop(context, source, ordinal, source.item.areaPath, options);
-    },
-    (move) => persistCardMove(context, move, cardItems, rootItems, options),
-    context.services.logger,
-  );
-  const dragReorder =
-    options.team === null || options.orderingPolicy !== MANUAL_ORDERING_POLICY
-      ? undefined
-      : new DragReorderController(
-          context.doc,
-          (move) => persistChildMove(move, rootItems, options),
-          context.services.logger,
-        );
-  const renderOptions = { ...options, cardDrag, dragReorder };
+  const cardDrag = new SprintCardDragController((id, target) => {
+    const source = cardItems.find(({ item }) => item.id === id);
+    if (source !== undefined) applyDrop(context, source, target.ordinal, target.areaPath, options);
+  }, context.services.logger);
+  const renderOptions = { ...options, cardDrag };
   const header = renderColumnHeader(context.doc, options.boardColumns, columnCounts);
   header.titles.forEach((title, ordinal) => cardDrag.registerColumnTitle(ordinal, title));
   const laneGrids: HTMLElement[] = [];

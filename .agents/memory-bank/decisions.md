@@ -1186,6 +1186,27 @@ Markdown` in one `/rev`-guarded JSON Patch. The PATCH is not retried; a concurre
   only ordering policy a manual drop can persist without the next render undoing it, while state
   changes remain meaningful under every display order. Done work and its context remain inspectable
   without exposing controls that should no longer mutate its plan.
+- Amendment (Sprint does not reorder, and a drop may change the row): **Sprint View persists no
+  backlog rank at all** — not between cards, not between the direct children in a card's popup. A
+  card drag moves it to another cell and nothing else: another column writes `System.State`, another
+  row writes that lane's full `System.AreaPath`, and a diagonal drop writes both in ONE patch. The
+  destination cell is framed alongside the column title so the row and column are both visible, and a
+  drop back into the source cell does nothing. Sprint's `WorkItemWriteQueue` is constructed WITHOUT a
+  reorder writer, so this is structural rather than a convention. This supersedes the amendment
+  above: cards no longer stay inside their lane, and no drop persists a rank.
+- Rationale: Sprint and Project Tracking write the SAME storage — the team backlog rank
+  (`IMPORTANCE_FIELD`), which both sort `MANUAL_ORDERING_POLICY` on — so there is one order, not one
+  per view. A cell is not a level: it is filtered by sprint, roster, lane, project, marker and
+  activity, partitioned by area path and board column, and it mixes parents. Ranking against it meant
+  the ADR-042 fallback renumbered a set whose members are not siblings, which silently reordered true
+  siblings that sit in different cells (different state or area path — the normal case) and that no
+  user ever saw together. Scoping each move to the card's real level was implemented and worked, but
+  the resulting rule — a card may only be dropped among the run its own parent occupies — could not
+  be made legible even with the reason printed on the dragged card, so the capability was withdrawn
+  rather than shipped as a gesture that mostly refuses. Ordering work by hand belongs on Project
+  Tracking, whose rows ARE a parent's children.
+- Consequence: the ordering picker still orders Sprint cards; it simply no longer gates a drag, so
+  every ordering policy now offers the same drag behaviour.
 
 ## ADR-061: Interrupt acceptance belongs to the current tagged lifetime
 

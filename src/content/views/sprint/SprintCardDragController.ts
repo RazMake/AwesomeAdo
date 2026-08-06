@@ -1,26 +1,21 @@
 import type { ILogger } from "../../../common/logging/ILogger";
-import { DropIndicator } from "../../../common/view-common/control/DragReorder/DropIndicator";
-import {
-  placementOf,
-  type DropSide,
-  type ResolvedMove,
-} from "../../../common/view-common/control/DragReorder/movePlacement";
 
 const SOURCE_CARD_OPACITY = "0.9";
 const DRAG_IMAGE_OPACITY = "0.9";
 
-export interface SprintCardMove extends ResolvedMove {
-  id: number;
-  currentParentId: number;
-  destinationOrdinal: number;
+/** One board cell: the row (area path) and column (application state) a drop moves a card to. */
+export interface SprintDropTarget {
+  /** The lane's key, compared with a card's own to spot a drop back into the cell it came from. */
+  lane: string;
+  ordinal: number;
+  /** The full area path the lane stands for, which a move into it writes. */
+  areaPath: string | null;
 }
 
 export interface SprintDraggableCard {
   id: number;
   lane: string;
   ordinal: number;
-  parentId: number;
-  siblingIds: readonly number[];
   element: HTMLElement;
 }
 
@@ -28,47 +23,26 @@ interface DragSession {
   source: SprintDraggableCard;
 }
 
-interface CellDropPlan {
-  move: SprintCardMove;
-  changesColumn: boolean;
-  target: SprintDraggableCard | null;
-  side: DropSide;
-  before: HTMLElement | null;
-}
-
 /** Controls Sprint card gestures and previews without owning ADO persistence. */
 export class SprintCardDragController {
-  private readonly indicator: DropIndicator;
-
   private session: DragSession | null = null;
-
-  private shadow: HTMLElement | null = null;
 
   private dragImage: HTMLElement | null = null;
 
   private dragOffset = { x: 0, y: 0 };
 
-  private readonly cardsByCell = new Map<string, SprintDraggableCard[]>();
-
   private readonly columnTitles = new Map<number, HTMLElement>();
 
   private highlightedTitle: HTMLElement | null = null;
 
+  private highlightedCell: HTMLElement | null = null;
+
   constructor(
-    doc: Document,
-    private readonly manualReorder: boolean,
-    private readonly onStateMove: (id: number, ordinal: number) => void,
-    private readonly onReorder: (move: SprintCardMove) => void,
+    private readonly onMove: (id: number, target: SprintDropTarget) => void,
     private readonly logger: ILogger,
-  ) {
-    this.indicator = new DropIndicator(doc);
-  }
+  ) {}
 
   registerCard(card: SprintDraggableCard): void {
-    const key = cellKey(card.lane, card.ordinal);
-    const cards = this.cardsByCell.get(key) ?? [];
-    cards.push(card);
-    this.cardsByCell.set(key, cards);
     card.element.draggable = true;
     card.element.style.cursor = "grab";
     let mayStart = true;
@@ -89,10 +63,9 @@ export class SprintCardDragController {
     card.element.addEventListener("dragend", () => this.end());
   }
 
-  registerCell(cell: HTMLElement, lane: string, ordinal: number): void {
+  registerCell(cell: HTMLElement, target: SprintDropTarget): void {
     cell.addEventListener("dragover", (event) => {
-      const plan = this.planCellDrop(event, lane, ordinal);
-      if (plan === null) {
+      if (!this.accepts(target)) {
         this.clearPreview();
         return;
       }
@@ -100,29 +73,30 @@ export class SprintCardDragController {
       event.stopPropagation();
       if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
       this.moveDragImage(event);
-      this.previewCellDrop(cell, plan);
+      this.highlightColumn(target.ordinal);
+      this.highlightCell(cell);
     });
     cell.addEventListener("drop", (event) => {
-      const plan = this.planCellDrop(event, lane, ordinal);
-      if (plan === null) return;
+      if (!this.accepts(target)) return;
       event.preventDefault();
       event.stopPropagation();
       const source = this.session!.source;
       this.end();
-      if (plan.changesColumn && !this.manualReorder) {
-        this.logger.info(
-          `Sprint card drag: item ${source.id} moved within lane from column ` +
-            `${source.ordinal} to ${ordinal}.`,
-        );
-        this.onStateMove(source.id, ordinal);
-        return;
-      }
+      // The lane itself is org structure rather than a signal worth spelling out; whether it changed
+      // is what explains the write that follows.
       this.logger.info(
-        `Sprint card reorder: item ${source.id} moved to column ${ordinal}, ` +
-          `between ${plan.move.previousId} and ${plan.move.nextId}.`,
+        `Sprint card drag: item ${source.id} moved from column ${source.ordinal} to ` +
+          `${target.ordinal}${source.lane === target.lane ? "" : ", into another row"}.`,
       );
-      this.onReorder(plan.move);
+      this.onMove(source.id, target);
     });
+  }
+
+  /** A drop is offered by any cell other than the one the card already sits in. */
+  private accepts(target: SprintDropTarget): boolean {
+    const source = this.session?.source;
+    if (source === undefined) return false;
+    return source.lane !== target.lane || source.ordinal !== target.ordinal;
   }
 
   registerColumnTitle(ordinal: number, title: HTMLElement): void {
@@ -137,58 +111,6 @@ export class SprintCardDragController {
     this.showDragImage(event, source.element);
     event.dataTransfer?.setData("text/plain", String(source.id));
     if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
-  }
-
-  private planCellDrop(event: DragEvent, lane: string, ordinal: number): CellDropPlan | null {
-    const source = this.session?.source;
-    if (!allowsCellDrop(source, lane, ordinal, this.manualReorder)) return null;
-    const cards = (this.cardsByCell.get(cellKey(lane, ordinal)) ?? []).filter(
-      ({ id }) => id !== source!.id,
-    );
-    return cellDropPlan(event.clientY, source!, cards, ordinal);
-  }
-
-  private previewCellDrop(cell: HTMLElement, plan: CellDropPlan): void {
-    this.highlightColumn(plan.move.destinationOrdinal);
-    if (plan.changesColumn) {
-      this.indicator.clear();
-      if (plan.target === null || !this.manualReorder) {
-        this.clearShadow();
-      } else {
-        this.showShadow(cell, this.session!.source.element, plan.before);
-      }
-      return;
-    }
-    this.clearShadow();
-    if (plan.target !== null) {
-      this.indicator.show(plan.target.element, plan.side, {
-        reparenting: false,
-        parentContainer: null,
-      });
-    }
-  }
-
-  private showShadow(cell: HTMLElement, source: HTMLElement, before: HTMLElement | null): void {
-    if (this.shadow === null) {
-      const shadow = source.cloneNode(true) as HTMLElement;
-      shadow.className += " awesomeado-sprint-card__drop-shadow";
-      shadow.removeAttribute("data-item-id");
-      shadow.removeAttribute("data-dragging");
-      shadow.setAttribute("aria-hidden", "true");
-      shadow.draggable = false;
-      shadow.style.cursor = "default";
-      shadow.style.opacity = "0.34";
-      shadow.style.pointerEvents = "none";
-      shadow.style.boxShadow = "inset 0 0 0 2px var(--communication-background)";
-      for (const popup of shadow.querySelectorAll("[role=dialog], [role=menu]")) popup.remove();
-      this.shadow = shadow;
-    }
-    cell.insertBefore(this.shadow, before);
-  }
-
-  private clearShadow(): void {
-    this.shadow?.remove();
-    this.shadow = null;
   }
 
   private showDragImage(event: DragEvent, source: HTMLElement): void {
@@ -234,6 +156,23 @@ export class SprintCardDragController {
     this.dragImage = null;
   }
 
+  /** Frame the destination cell, which is what names the ROW a drop would move the card into. */
+  private highlightCell(cell: HTMLElement): void {
+    if (cell === this.highlightedCell) return;
+    this.clearCellHighlight();
+    cell.dataset.dropTarget = "true";
+    cell.style.boxShadow = "inset 0 0 0 2px var(--communication-background)";
+    this.highlightedCell = cell;
+  }
+
+  private clearCellHighlight(): void {
+    if (this.highlightedCell !== null) {
+      delete this.highlightedCell.dataset.dropTarget;
+      this.highlightedCell.style.removeProperty("box-shadow");
+    }
+    this.highlightedCell = null;
+  }
+
   private highlightColumn(ordinal: number): void {
     const title = this.columnTitles.get(ordinal) ?? null;
     if (title === this.highlightedTitle) return;
@@ -254,9 +193,8 @@ export class SprintCardDragController {
   }
 
   private clearPreview(): void {
-    this.indicator.clear();
-    this.clearShadow();
     this.clearColumnHighlight();
+    this.clearCellHighlight();
   }
 
   private end(): void {
@@ -287,80 +225,6 @@ function isTransparent(color: string): boolean {
 
 function columnHighlightOf(title: HTMLElement): HTMLElement | null {
   return title.querySelector<HTMLElement>(".awesomeado-sprint__column-title-highlight");
-}
-
-function cellKey(lane: string, ordinal: number): string {
-  return `${lane}\u0000${ordinal}`;
-}
-
-function insertionIndex(pointerY: number, cards: readonly SprintDraggableCard[]): number {
-  for (let index = 0; index < cards.length; index += 1) {
-    const bounds = cards[index]!.element.getBoundingClientRect();
-    if (bounds.height <= 0 || pointerY < bounds.top + bounds.height / 2) return index;
-  }
-  return cards.length;
-}
-
-function allowsCellDrop(
-  source: SprintDraggableCard | undefined,
-  lane: string,
-  ordinal: number,
-  manualReorder: boolean,
-): source is SprintDraggableCard {
-  if (source === undefined || source.lane !== lane) return false;
-  return source.ordinal !== ordinal || manualReorder;
-}
-
-function cellDropPlan(
-  pointerY: number,
-  source: SprintDraggableCard,
-  cards: readonly SprintDraggableCard[],
-  destinationOrdinal: number,
-): CellDropPlan | null {
-  const insertAt = insertionIndex(pointerY, cards);
-  const siblingIds = cards.map(({ id }) => id);
-  siblingIds.splice(insertAt, 0, source.id);
-  const previous = cards[insertAt - 1];
-  const next = cards[insertAt];
-  const move: SprintCardMove = {
-    id: source.id,
-    currentParentId: source.parentId,
-    parentId: source.parentId,
-    previousId: previous === undefined ? 0 : previous.id,
-    nextId: next === undefined ? 0 : next.id,
-    siblingIds,
-    destinationOrdinal,
-  };
-  const changesColumn = source.ordinal !== destinationOrdinal;
-  if (keepsCurrentPlacement(source, move, changesColumn)) return null;
-  return {
-    move,
-    changesColumn,
-    target: next ?? cards.at(-1) ?? null,
-    side: next === undefined ? "after" : "before",
-    before: next?.element ?? null,
-  };
-}
-
-function keepsCurrentPlacement(
-  source: SprintDraggableCard,
-  move: SprintCardMove,
-  changesColumn: boolean,
-): boolean {
-  if (changesColumn) return false;
-  const current = placementOf(source.id, source.siblingIds, source.parentId);
-  return current !== null && samePlacement(current, move);
-}
-
-function samePlacement(
-  left: { parentId: number; previousId: number; nextId: number },
-  right: { parentId: number; previousId: number; nextId: number },
-): boolean {
-  return (
-    left.parentId === right.parentId &&
-    left.previousId === right.previousId &&
-    left.nextId === right.nextId
-  );
 }
 
 function isInteractiveTarget(target: EventTarget | null): boolean {

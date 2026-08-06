@@ -1504,14 +1504,8 @@ async function verifyChildFieldEditing(): Promise<void> {
   });
 }
 
-async function verifyChildDragReorder(): Promise<void> {
-  const reorderItem = vi.fn<EnhancedViewServices["reorderItem"]>().mockResolvedValue({
-    ok: true,
-    ranks: [
-      { id: 12, rank: 0 },
-      { id: 11, rank: 1 },
-    ],
-  });
+async function verifyChildDragIsNotOffered(): Promise<void> {
+  const reorderItem = vi.fn<EnhancedViewServices["reorderItem"]>().mockResolvedValue({ ok: true });
   const parent = item(10, "Parent", {
     children: [
       item(11, "Earlier child", { type: "Task", importance: 10 }),
@@ -1527,28 +1521,17 @@ async function verifyChildDragReorder(): Promise<void> {
   card.querySelector<HTMLButtonElement>(".awesomeado-child-items__badge")!.click();
   const titles = [...card.querySelectorAll<HTMLElement>(".awesomeado-child-items__title")];
   const rows = [...card.querySelectorAll<HTMLElement>(".awesomeado-child-items__row")];
-  const { dataTransfer, event } = startDrag(titles[1]!);
-  expect(event.defaultPrevented).toBe(false);
+  expect(titles.length).toBeGreaterThan(1);
+  expect(titles.every((title) => !title.draggable)).toBe(true);
+
+  const { dataTransfer } = startDrag(titles[1]!);
   dispatchDrag(rows[0]!, "dragover", dataTransfer);
   dispatchDrag(rows[0]!, "drop", dataTransfer);
-  await vi.waitFor(() => expect(reorderItem).toHaveBeenCalledOnce());
-  expect(reorderItem).toHaveBeenCalledWith({
-    id: 12,
-    rev: 1,
-    parentId: 10,
-    currentParentId: 10,
-    previousId: 0,
-    nextId: 11,
-    siblingIds: [12, 11],
-    team: "team-id",
-  });
-  await vi.waitFor(() =>
-    expect(
-      [...root.querySelectorAll(".awesomeado-child-items__title-text")].map(
-        (title) => title.textContent,
-      ),
-    ).toEqual(["Later child", "Earlier child"]),
-  );
+
+  // Sprint ranks nothing: the board shows one sprint's slice of many backlogs, which is not a level
+  // any rank can be written against.
+  expect(reorderItem).not.toHaveBeenCalled();
+  expect(root.querySelector(".awesomeado-tracking__drop-line")).toBeNull();
 }
 
 async function verifyChildPopupCardDragLifecycle(): Promise<void> {
@@ -1646,29 +1629,105 @@ describe("Sprint View child panel", () => {
       expect(root.querySelector(".awesomeado-child-items__popup")).not.toBeNull(),
     );
   });
-  it("persists child title drag order by rank", verifyChildDragReorder);
+  it("never offers child title dragging", verifyChildDragIsNotOffered);
   it("suspends card dragging and follows compact editability", verifyChildPopupCardDragLifecycle);
 });
 
+/** One card in Platform and one in Apps, so a drop can change row, column, or both. */
+async function renderLaneDrag() {
+  const writeField = vi.fn<EnhancedViewServices["writeField"]>().mockResolvedValue({
+    ok: true,
+    rev: 2,
+  });
+  const roots = [item(1, "Move me"), item(2, "Apps", { areaPath: "Project\\Apps" })];
+  const root = await render({
+    loadTree: async () => ({ isTreeQuery: false, roots, error: null }),
+    writeField,
+  });
+  return { root, source: root.querySelector<HTMLElement>('[data-item-id="1"]')!, writeField };
+}
+
+function cellAt(root: HTMLElement, areaPath: string, ordinal: string): HTMLElement {
+  return [...root.querySelectorAll<HTMLElement>(".awesomeado-sprint__cell")].find(
+    (cell) => cell.dataset.areaPath === areaPath && cell.dataset.columnOrdinal === ordinal,
+  )!;
+}
+
 describe("Sprint View board drag and drop", () => {
-  it("rejects cross-lane drops", async () => {
-    const writeField = vi.fn<EnhancedViewServices["writeField"]>().mockResolvedValue({
-      ok: true,
-      rev: 2,
-    });
-    const roots = [item(1, "Move me"), item(2, "Apps", { areaPath: "Project\\Apps" })];
+  it("writes the destination row's area path when a card changes lane", async () => {
+    const { root, source, writeField } = await renderLaneDrag();
+    const target = cellAt(root, "Project\\Apps", "0");
+
+    const dataTransfer = beginDrag(source);
+    dispatchDrag(target, "dragover", dataTransfer);
+    // The cell is framed as well as the column title, because a drop now names a row too.
+    expect(target.dataset.dropTarget).toBe("true");
+    dispatchDrag(target, "drop", dataTransfer);
+
+    await vi.waitFor(() => expect(writeField).toHaveBeenCalledOnce());
+    await settleQueuedWrites();
+    expect(writeField.mock.calls).toEqual([
+      [
+        {
+          id: 1,
+          rev: 1,
+          field: "System.AreaPath",
+          value: "Project\\Apps",
+          baseValue: "Project\\Platform",
+          additionalFields: undefined,
+        },
+      ],
+    ]);
+    expect(target.dataset.dropTarget).toBeUndefined();
+  });
+
+  it("carries state and area path in one patch when a drop changes both", async () => {
+    const { root, source, writeField } = await renderLaneDrag();
+
+    drag(source, cellAt(root, "Project\\Apps", "1"));
+
+    await vi.waitFor(() => expect(writeField).toHaveBeenCalledOnce());
+    await settleQueuedWrites();
+    // Two writes would race on the revision the first one creates, so a diagonal drop has to be one
+    // patch or half of it can land.
+    expect(writeField.mock.calls).toEqual([
+      [
+        {
+          id: 1,
+          rev: 1,
+          field: "System.State",
+          value: "Active",
+          baseValue: undefined,
+          additionalFields: [{ field: "System.AreaPath", value: "Project\\Apps" }],
+        },
+      ],
+    ]);
+  });
+
+  it("does nothing when a card is dropped back into its own cell", async () => {
+    const writeField = vi.fn<EnhancedViewServices["writeField"]>().mockResolvedValue({ ok: true });
+    const reorderItem = vi
+      .fn<EnhancedViewServices["reorderItem"]>()
+      .mockResolvedValue({ ok: true });
     const root = await render({
-      loadTree: async () => ({ isTreeQuery: false, roots, error: null }),
+      loadTree: async () => ({
+        isTreeQuery: false,
+        roots: [item(1, "First", { importance: 10 }), item(2, "Second", { importance: 20 })],
+        error: null,
+      }),
       writeField,
+      reorderItem,
     });
-    const source = root.querySelector<HTMLElement>('[data-item-id="1"]')!;
-    const target = [...root.querySelectorAll<HTMLElement>(".awesomeado-sprint__cell")].find(
-      (cell) => cell.dataset.areaPath === "Project\\Apps" && cell.dataset.columnOrdinal === "1",
-    )!;
+    const source = root.querySelector<HTMLElement>('[data-item-id="2"]')!;
+    const target = root.querySelector<HTMLElement>('[data-item-id="1"]')!;
 
     drag(source, target);
+
+    // Cards keep the order the header's picker gives them, so dropping one onto another says nothing
+    // the board could save.
+    expect(reorderItem).not.toHaveBeenCalled();
     expect(writeField).not.toHaveBeenCalled();
-    expect(root.querySelector(".awesomeado-sprint-card__drop-shadow")).toBeNull();
+    expect(root.querySelector(".awesomeado-tracking__drop-line")).toBeNull();
   });
 });
 
@@ -1707,7 +1766,6 @@ describe("Sprint View column drag and drop", () => {
     expect(source.style.opacity).toBe("0.9");
     expect(dragImage.style.background).toBe(originalDragBackground);
     expectOriginalDragBackground(dragImage, target);
-    expect(target.querySelector(".awesomeado-sprint-card__drop-shadow")).toBeNull();
     expect(columnTitle.dataset.dropTarget).toBe("true");
     const highlight = columnTitle.querySelector<HTMLElement>(
       ".awesomeado-sprint__column-title-highlight",
@@ -1751,198 +1809,6 @@ describe("Sprint View column drag and drop", () => {
     expect(columnTitle.dataset.dropTarget).toBeUndefined();
     expect(highlight.style.borderColor).toBe("transparent");
     expect(root.ownerDocument.querySelector(".awesomeado-sprint-card__drag-image")).toBeNull();
-    expect(root.querySelector(".awesomeado-sprint-card__drop-shadow")).toBeNull();
-  });
-});
-
-async function renderCrossColumnPlacement() {
-  const writeField = vi.fn<EnhancedViewServices["writeField"]>().mockResolvedValue({ ok: true });
-  const reorderItem = vi.fn<EnhancedViewServices["reorderItem"]>().mockResolvedValue({
-    ok: true,
-    order: 5,
-    rev: 2,
-    stateChanged: true,
-  });
-  const root = await render({
-    loadTree: async () => ({
-      isTreeQuery: false,
-      roots: [
-        item(1, "Move me", { importance: 30 }),
-        item(2, "First active", { state: "Active", importance: 10 }),
-        item(3, "Second active", { state: "Active", importance: 20 }),
-      ],
-      error: null,
-    }),
-    writeField,
-    reorderItem,
-  });
-  const source = root.querySelector<HTMLElement>('[data-item-id="1"]')!;
-  const first = root.querySelector<HTMLElement>('[data-item-id="2"]')!;
-  const second = root.querySelector<HTMLElement>('[data-item-id="3"]')!;
-  const cell = first.closest<HTMLElement>(".awesomeado-sprint__cell")!;
-  first.getBoundingClientRect = () => ({ top: 100, height: 80 }) as DOMRect;
-  second.getBoundingClientRect = () => ({ top: 188, height: 80 }) as DOMRect;
-  return { root, source, first, second, cell, writeField, reorderItem };
-}
-
-describe("Sprint View cross-column positioned card placement", () => {
-  it("keeps a shadow target visible while dragging upward through card gaps", async () => {
-    const { root, source, second, cell, writeField, reorderItem } =
-      await renderCrossColumnPlacement();
-
-    const dataTransfer = beginDrag(source);
-    dispatchDrag(cell, "dragover", dataTransfer, 250);
-    let shadow = cell.querySelector<HTMLElement>(".awesomeado-sprint-card__drop-shadow")!;
-    expect(shadow.previousElementSibling).toBe(second);
-
-    dispatchDrag(cell, "dragover", dataTransfer, 90);
-    shadow = cell.querySelector<HTMLElement>(".awesomeado-sprint-card__drop-shadow")!;
-    expect(cell.firstElementChild).toBe(shadow);
-    expect(
-      root.querySelector<HTMLElement>(".awesomeado-sprint__column-title:nth-child(2)")!.dataset
-        .dropTarget,
-    ).toBe("true");
-
-    dispatchDrag(cell, "drop", dataTransfer, 90);
-    await vi.waitFor(() => expect(reorderItem).toHaveBeenCalledOnce());
-    expect(writeField).not.toHaveBeenCalled();
-    expect(reorderItem).toHaveBeenCalledWith({
-      id: 1,
-      rev: 1,
-      parentId: 0,
-      currentParentId: 0,
-      previousId: 0,
-      nextId: 2,
-      siblingIds: [1, 2, 3],
-      team: "team-id",
-      stateName: "Active",
-      stateBaseName: "New",
-    });
-    await vi.waitFor(() => {
-      const moved = root.querySelector<HTMLElement>('[data-item-id="1"]')!;
-      expect(moved.closest<HTMLElement>(".awesomeado-sprint__cell")?.dataset.columnOrdinal).toBe(
-        "1",
-      );
-    });
-    expect(root.querySelector(".awesomeado-sprint-card__drop-shadow")).toBeNull();
-  });
-});
-
-describe("Sprint View cross-column empty placement", () => {
-  it("places a drop last when the destination has no visible cards", async () => {
-    const reorderItem = vi
-      .fn<EnhancedViewServices["reorderItem"]>()
-      .mockResolvedValue({ ok: true, stateChanged: true });
-    const root = await render({
-      loadTree: async () => ({
-        isTreeQuery: false,
-        roots: [item(1, "Move me")],
-        error: null,
-      }),
-      reorderItem,
-    });
-    const source = root.querySelector<HTMLElement>('[data-item-id="1"]')!;
-    const cell = [...root.querySelectorAll<HTMLElement>(".awesomeado-sprint__cell")].find(
-      (candidate) => candidate.dataset.columnOrdinal === "1",
-    )!;
-
-    const dataTransfer = beginDrag(source);
-    dispatchDrag(cell, "dragover", dataTransfer, 100);
-    expect(cell.querySelector(".awesomeado-sprint-card__drop-shadow")).toBeNull();
-    expect(
-      root.querySelector<HTMLElement>(".awesomeado-sprint__column-title:nth-child(2)")!.dataset
-        .dropTarget,
-    ).toBe("true");
-    dispatchDrag(cell, "drop", dataTransfer, 100);
-
-    await vi.waitFor(() => expect(reorderItem).toHaveBeenCalledOnce());
-    // The id/rev name WHICH card the board moved; without them a move of another card reads the same.
-    expect(reorderItem).toHaveBeenCalledWith({
-      id: 1,
-      rev: 1,
-      parentId: 0,
-      currentParentId: 0,
-      previousId: 0,
-      nextId: 0,
-      siblingIds: [1],
-      team: "team-id",
-      stateName: "Active",
-      stateBaseName: "New",
-    });
-  });
-});
-
-describe("Sprint View same-column card reordering", () => {
-  it("shows an insertion line and persists same-cell backlog rank", async () => {
-    const reorderItem = vi.fn<EnhancedViewServices["reorderItem"]>().mockResolvedValue({
-      ok: true,
-      ranks: [
-        { id: 2, rank: 0 },
-        { id: 1, rank: 1 },
-      ],
-    });
-    const root = await render({
-      loadTree: async () => ({
-        isTreeQuery: false,
-        roots: [item(1, "First", { importance: 10 }), item(2, "Second", { importance: 20 })],
-        error: null,
-      }),
-      reorderItem,
-    });
-    const source = root.querySelector<HTMLElement>('[data-item-id="2"]')!;
-    const target = root.querySelector<HTMLElement>('[data-item-id="1"]')!;
-    const dataTransfer = beginDrag(source);
-    dispatchDrag(target, "dragover", dataTransfer);
-    // The line's only job is to say WHERE the card lands, so it has to sit exactly where the
-    // asserted previousId/nextId puts it: nothing before it, the target row right after it.
-    const line = root.querySelector<HTMLElement>(".awesomeado-tracking__drop-line")!;
-    expect(line.parentElement).toBe(target.parentElement);
-    expect(line.previousElementSibling).toBeNull();
-    expect(line.nextElementSibling).toBe(target);
-    expect(line.dataset.dropKind).toBe("reorder");
-    dispatchDrag(target, "drop", dataTransfer);
-    await vi.waitFor(() => expect(reorderItem).toHaveBeenCalledOnce());
-    expect(reorderItem).toHaveBeenCalledWith({
-      id: 2,
-      rev: 1,
-      parentId: 0,
-      currentParentId: 0,
-      previousId: 0,
-      nextId: 1,
-      siblingIds: [2, 1],
-      team: "team-id",
-    });
-    expect(root.querySelector(".awesomeado-tracking__drop-line")).toBeNull();
-  });
-
-  it("disables card and child reordering outside backlog-rank mode", async () => {
-    const reorderItem = vi
-      .fn<EnhancedViewServices["reorderItem"]>()
-      .mockResolvedValue({ ok: true });
-    const parent = item(1, "Parent", {
-      children: [item(11, "One", { type: "Task" }), item(12, "Two", { type: "Task" })],
-    });
-    const root = await render({
-      loadTree: async () => ({
-        isTreeQuery: true,
-        roots: [parent, item(2, "Second")],
-        error: null,
-      }),
-      getTypes: workCardTypes,
-      reorderItem,
-    });
-    root.querySelector<HTMLButtonElement>(".awesomeado-ordering__trigger")!.click();
-    root.querySelector<HTMLButtonElement>('[data-policy="title"]')!.click();
-    const cards = [...root.querySelectorAll<HTMLElement>(".awesomeado-sprint__item")];
-    drag(cards[1]!, cards[0]!);
-    expect(reorderItem).not.toHaveBeenCalled();
-    expect(root.querySelector(".awesomeado-tracking__drop-line")).toBeNull();
-    root.querySelector<HTMLButtonElement>(".awesomeado-child-items__badge")!.click();
-    expect(
-      [...root.querySelectorAll<HTMLElement>(".awesomeado-child-items__title")].every(
-        (title) => !title.draggable,
-      ),
-    ).toBe(true);
   });
 });
 
@@ -1968,7 +1834,6 @@ describe("Sprint View card drag initiation", () => {
     dispatchDrag(target, "drop", dataTransfer);
 
     expect(writeField).not.toHaveBeenCalled();
-    expect(root.querySelector(".awesomeado-sprint-card__drop-shadow")).toBeNull();
     expect(card.dataset.dragging).toBeUndefined();
   });
 });

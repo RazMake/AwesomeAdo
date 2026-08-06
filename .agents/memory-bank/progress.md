@@ -83,7 +83,9 @@ This is a flattened snapshot of what exists now, not a build log.
   their counts are muted. Tall cards show
   clickable recognized tags that open their configured-token Discussion notes and a clickable immediate-parent type icon/title whose popup lists the
   type-colored ancestor chain from root to immediate parent with ETA controls, read-only for a Done
-  card. Cards move only between state columns in their current lane using a custom 90%-opaque
+  card. Sprint persists no backlog rank: a card drag moves it to another cell only, writing the
+  destination column's state, the destination row's area path, or both in one patch, and neither
+  cards nor child popup rows can be reordered. Cards move between cells using a custom 90%-opaque
   cursor clone that retains the source card's original resolved background; the source card remains
   90%-opaque. A border matching the title's semantic color and painted
   above the sticky backdrop frames the destination title; backlog-rank mode shows an in-place shadow at the

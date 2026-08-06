@@ -147,20 +147,25 @@ Every card is draggable from its non-interactive surface. Parent hierarchy contr
 controls never initiate the owning card's drag. The cursor-following card is a custom 90%-opaque
 clone that keeps the source card's original resolved background while moving across columns, making
 the transparency visible without the browser's stronger native fade. The source card also remains at
-90% opacity to mark its origin. A same-lane destination frames its
-always-visible sticky column title with a border that uses the title's semantic color and is painted
-above the sticky backdrop. Under backlog-rank ordering, the destination cell resolves every
-pointer position, including gaps while reversing direction: a visible destination card gets an
-in-place shadow showing the exact insertion slot, while an empty destination means append-last and
-shows only the column highlight. Dropping can change state and backlog position together; the guarded
-state patch runs first and its returned revision feeds the rank request inside one serialized queue
-operation. Cross-lane drops remain rejected. Within the current column, backlog-rank mode previews an
-insertion line and persists the card's manual rank. Title and ETA modes disable card and child
-reordering while continuing to allow same-lane state changes. Direct children in non-Done cards can
-be completed or reopened from their checkbox and dragged by title to persist their sibling rank
-through the same serialized write queue. Completion in either direction repaints with the popup still
-open. While a child popup is open, the owning card stops being a drag source and resumes only after
-the popup closes; bubbled title drags never arm or get canceled by the card controller.
+90% opacity to mark its origin.
+
+A drop moves a card to another cell and nothing more. Landing in another column writes the
+destination's application state; landing in another row writes that lane's full area path; a diagonal
+drop writes both in one revision. The destination cell is framed and its sticky column title takes a
+border in the title's own semantic color, painted above the sticky backdrop, so the row and column a
+release would move the card to are both visible. Dropping a card back into the cell it came from
+does nothing.
+
+**Sprint View never reorders.** Card order comes from the header's ordering picker alone, and no
+drag persists a backlog rank — not between cards and not between the direct children in a card's
+popup. A sprint is one sprint's slice of many backlogs, partitioned again by row and column, so no
+group of cards on this board is a level a rank could be written against; ordering work by hand
+belongs on the Project Tracking board, whose rows are a real parent's children. The board's write
+queue is built without a reorder writer, so this is structural rather than a convention.
+
+Direct children in non-Done cards can be completed or reopened from their checkbox. Completion in
+either direction repaints with the popup still open. While a child popup is open, the owning card
+stops being a drag source and resumes only after the popup closes.
 
 Both are registered centrally: the config in `../viewCatalog.ts`, the renderer in
 `../enhancedViewRegistry.ts`.
