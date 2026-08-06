@@ -5,6 +5,8 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ## Next Version
 
+## 0.6
+
 ### New Features
 
 - Sprint View cards can now be dragged between rows as well as columns: dropping a card in another
