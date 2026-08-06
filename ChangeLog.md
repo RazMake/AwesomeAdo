@@ -5,6 +5,11 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ## Next Version
 
+### Bug Fixes
+
+- Sprint View now expands groups added to an Azure DevOps team, so the people inside those groups
+  appear as team-member pills and their work stays visible on the sprint board.
+
 ## 0.5
 
 ### New Features

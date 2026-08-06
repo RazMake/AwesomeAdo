@@ -6,7 +6,7 @@ import {
 } from "../common/ado/FeatureCrew";
 import { buildAdoQueryDefinitionUrl } from "../common/ado/QueryDefinition";
 import { buildAdoIterationsUrl } from "../common/ado/TeamIteration";
-import { buildAdoTeamMembersUrl } from "../common/ado/TeamMembers";
+import { buildAdoTeamMembersRequest, expandTeamMembers } from "../common/ado/TeamMembers";
 import { IMPORTANCE_FIELD } from "../common/ado/adoApi";
 import {
   buildCreateWorkItemPatch,
@@ -93,6 +93,7 @@ import {
   type LoadQueryDefinitionMessage,
   type LoadQueryDefinitionResponse,
 } from "../common/browser/AdoQueryDefinitionRequest";
+import { AdoTeamGroupMembersLoader } from "../common/browser/AdoTeamGroupMembersLoader";
 import {
   isLoadTeamMembersMessage,
   LOAD_TEAM_MEMBERS_MESSAGE,
@@ -478,6 +479,20 @@ const readInPage = async (tabId: number, url: string): Promise<AdoPageRequestOut
   );
 };
 
+const lookupTeamGroupInPage = async (
+  tabId: number,
+  identityPickerUrl: string,
+  body: string,
+): Promise<AdoIdentitySearchOutcome | undefined> => {
+  const results = await chrome.scripting.executeScript({
+    target: { tabId },
+    world: "MAIN",
+    func: fetchAdoIdentitiesInPage,
+    args: [identityPickerUrl, body],
+  });
+  return firstScriptResult(results) as AdoIdentitySearchOutcome | undefined;
+};
+
 const loadQueryDefinition = async (
   message: LoadQueryDefinitionMessage,
   tabId: number,
@@ -573,6 +588,23 @@ chrome.runtime.onMessage.addListener(
   }),
 );
 
+type FailedTeamMembersResponse = LoadTeamMembersResponse & { raw: null; error: string };
+
+const teamMembersReadFailure = (
+  outcome: AdoPageRequestOutcome | undefined,
+): FailedTeamMembersResponse | null => {
+  if (outcome === undefined) {
+    return { raw: null, status: 0, error: "MAIN-world injection returned no result" };
+  }
+  const value = (outcome.raw as { value?: unknown } | null)?.value;
+  if (outcome.raw !== null && Array.isArray(value)) return null;
+  return {
+    ...outcome,
+    raw: null,
+    error: outcome.error ?? `HTTP ${outcome.status}`,
+  };
+};
+
 // Team membership is project/team-scoped. The content side supplies only the team identifier while
 // this worker derives the endpoint from the trusted sender tab.
 const loadTeamMembers = async (
@@ -580,8 +612,8 @@ const loadTeamMembers = async (
   tabId: number,
   tabUrl: string,
 ): Promise<LoadTeamMembersResponse> => {
-  const teamMembersUrl = buildAdoTeamMembersUrl(tabUrl, message.team);
-  if (teamMembersUrl === null) {
+  const request = buildAdoTeamMembersRequest(tabUrl, message.team);
+  if (request === null) {
     logger.error(
       `Team-members read cannot start for team ${message.team}: unsupported sender tab location.`,
     );
@@ -592,24 +624,32 @@ const loadTeamMembers = async (
       target: { tabId },
       world: "MAIN",
       func: executeAdoRequestInPage,
-      args: [{ operation: "readTeamMembers", url: teamMembersUrl }],
+      args: [{ operation: "readTeamMembers", url: request.teamMembersUrl }],
     });
     const outcome = firstScriptResult(results) as AdoPageRequestOutcome | undefined;
-    if (outcome === undefined) {
-      const error = "MAIN-world injection returned no result";
-      logger.error(`Team-members read failed for team ${message.team}: ${error}.`);
-      return { raw: null, status: 0, error };
+    const readFailure = teamMembersReadFailure(outcome);
+    if (readFailure !== null) {
+      logger.error(`Team-members read failed for team ${message.team}: ${readFailure.error}.`);
+      return readFailure;
     }
-    const value = (outcome.raw as { value?: unknown } | null)?.value;
-    if (outcome.raw === null || !Array.isArray(value)) {
-      const error = outcome.error ?? `HTTP ${outcome.status}`;
-      logger.error(`Team-members read failed for team ${message.team}: ${error}.`);
-      return { ...outcome, raw: null, error };
-    }
-    logger.info(
-      `Team-members read completed for team ${message.team}: members=${value.length}, HTTP ${outcome.status}.`,
+    const groupLoader = new AdoTeamGroupMembersLoader(
+      request.identityPickerUrl,
+      (identityPickerUrl, body) => lookupTeamGroupInPage(tabId, identityPickerUrl, body),
+      (url) => readInPage(tabId, url),
     );
-    return outcome;
+    const expanded = await expandTeamMembers(outcome!.raw, (descriptor) =>
+      groupLoader.load(descriptor),
+    );
+    if (expanded.raw === null) {
+      const error = expanded.error ?? `HTTP ${expanded.status}`;
+      logger.error(`Team-members group expansion failed for team ${message.team}: ${error}.`);
+      return { ...expanded, error };
+    }
+    const expandedValue = expanded.raw.value;
+    logger.info(
+      `Team-members read completed for team ${message.team}: members=${expandedValue.length}, HTTP ${expanded.status}.`,
+    );
+    return expanded;
   } catch (caught) {
     const detail = caught instanceof Error ? `${caught.name}: ${caught.message}` : String(caught);
     logger.error(`Team-members injection failed for team ${message.team}: ${detail}.`, caught);

@@ -58,7 +58,8 @@ This is a flattened snapshot of what exists now, not a build log.
   from the saved query, Azure DevOps project root, and catalog query folder. New projects receive all
   initial fields in one patch. Ships as its own on-demand ESM renderer.
 - **Sprint View** (`content/views/sprint`): accepts flat or tree queries; loads the selected
-  team's complete paged member roster before executing an offset-adjusted copy of the original WIQL;
+  team's complete paged member roster, recursively expanding direct and nested groups, before
+  executing an offset-adjusted copy of the original WIQL;
   retains only team members' or unassigned work plus parent chains; and renders clickable query-folder breadcrumbs plus an always-active Sprint
   selector, Lane, Project, refresh, write-queue, team, marker, and recent-activity controls; and
   filters a lane-by-state card table. It uses configured labels with high-contrast theme-owned colors

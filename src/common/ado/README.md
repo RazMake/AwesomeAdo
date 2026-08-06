@@ -128,8 +128,13 @@ boards that disagree about the same query.
 - `TeamMembersResult` - a roster plus an explicit error, preserving the difference between an empty
   team and a failed read.
 - `TeamMembersLoader` - loads every member of one configured team.
-- `buildAdoTeamMembersUrl(href, team)` - builds the paged project/team members URL.
-- `parseTeamMembers(body)` - validates and deduplicates ADO team-member identities by id.
+- `buildAdoTeamMembersRequest(href, team)` - builds the paged project/team members URL plus the
+  same-origin Identity Picker URL used to expand group containers.
+- `expandTeamMembers(body, loadGroup)` - recursively replaces direct and nested groups with their
+  users, rejects partial expansion, guards cycles/excessive group counts, and deduplicates people by
+  Azure DevOps local id.
+- `parseTeamMembers(body)` - validates and deduplicates user identities by id; group containers are
+  never normalized as people.
 
 ### `currentUser.ts`
 

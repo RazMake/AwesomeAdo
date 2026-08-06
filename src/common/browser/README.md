@@ -436,10 +436,15 @@ boundary as iterations.
 - `MessagingTeamMembersLoader` logs access, sends the request, parses identities through
   `parseTeamMembers`, and logs HTTP, transport, stale-worker, pagination, and rejected-request
   details without recording member names.
+- `AdoTeamGroupMembersLoader` resolves a direct group descriptor through Azure DevOps' same-origin
+  Identity Picker, then reads that entity's direct `successors`. The pure `expandTeamMembers`
+  traversal repeats that operation for nested groups and deduplicates users.
 - `executeAdoRequestInPage` pages the credentialed GET by the count actually returned, stops on an
   empty or short page, and caps reads at 100 pages. Each GET receives up to three attempts for
   transient network, 408, 429, and 5xx failures. The URL is built from the trusted sender tab plus
-  the typed team identifier; callers cannot supply an arbitrary URL.
+  the typed team identifier; callers cannot supply an arbitrary URL. A group-connections GET uses
+  that same retrying reader. Any failed or malformed group expansion fails the whole roster instead
+  of presenting an incomplete team as authoritative.
 
 ## Reading the signed-in identity
 

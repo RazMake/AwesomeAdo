@@ -110,7 +110,8 @@ The extension is feature-complete for its current scope:
   gap in both views. The
   sprint picker omits its filter toggle because Sprint View is always constrained to the selected
   iteration. Initial load and refresh start the original-WIQL read while resolving the sprint,
-  page the configured team's complete roster before executing the offset-adjusted query, and retain
+  page the configured team's complete roster, recursively expanding direct and nested groups,
+  before executing the offset-adjusted query, and retain
   only team-assigned or unassigned work plus parent chains. Lane and Project choices are derived only
   from that retained tree. Sprint changes replace the DOM/session, reset every filter, and reload
   team members, WIQL, work, Lane choices, and Project choices. Its Project dropdown contains only eligible query ancestors

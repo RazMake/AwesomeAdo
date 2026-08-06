@@ -1130,6 +1130,14 @@ Markdown` in one `/rev`-guarded JSON Patch. The PATCH is not retried; a concurre
   the saved WIQL immutable prevents offsets accumulating across repeated sprint changes. Replacing
   session state avoids stale filters and derived options silently narrowing a different sprint, while
   manual refresh may still preserve the reader's filters because it does not change sprint context.
+- Amendment: a Core team-members response is only the DIRECT roster and can contain group
+  containers. Sprint resolves each container descriptor through the same-origin Identity Picker and
+  reads its direct `successors`, recursively traversing nested groups with cycle and group-count
+  guards. Users are deduplicated by their Azure DevOps local id. The documented Graph/IMS endpoints
+  live on `vssps` and their credentialed cross-origin requests are browser-blocked, while the Core
+  endpoint has no expansion flag; the Identity Picker route is the one Azure DevOps Team settings
+  itself uses. A failed or malformed group read fails the roster rather than authorizing a partial
+  membership answer.
 
 ## ADR-060: Sprint cards move through an area-by-state table atomically
 

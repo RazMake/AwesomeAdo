@@ -9,6 +9,27 @@ we hit, why they happened, and the exact fix so nobody re-derives them.
 agent-tool-local memory (it does not clone or transfer between machines/agents). Record new findings
 here so every agent, teammate, and clone sees them.
 
+## A team roster can contain groups, and the Core API never expands them
+
+- SYMPTOM: Sprint View showed two member pills for `SFDA-ClientSDKs`, although the team was populated
+  through a larger Microsoft Entra group. Work assigned to people inside that group was filtered out.
+- LIVE ROOT CAUSE (2026-08-05):
+  `.../_apis/projects/{project}/teams/{team}/members` returned two DIRECT entries: one
+  `identity.isContainer: true` group and one user. `parseTeamMembers` treated both as people, while no
+  code followed the group's descriptor.
+- The Core endpoint has no expansion parameter (`$expandIdentity=true` was accepted and ignored).
+  The documented Graph membership and legacy IMS `queryMembership=ExpandedDown` endpoints are on
+  `vssps`; credentialed MAIN-world fetches to both fail CORS, and the collection-host IMS path is 404.
+- Azure DevOps Team settings supplies the working same-origin contract: POST the group's subject
+  descriptor to `/_apis/IdentityPicker/Identities` with `queryTypeHint: "uid"`, then GET
+  `/_apis/IdentityPicker/Identities/{entityId}/connections` with `connectionTypes=successors` and
+  `depth=1`. The response is `{ successors: [...] }`; users carry `localId`, while nested groups
+  carry another `subjectDescriptor`.
+- FIX / RULE: page direct members first, recursively traverse those direct-successor groups with a
+  visited-descriptor set and bounded group count, deduplicate users by `localId`, and drop the group
+  containers themselves. If any lookup or connections read fails or is malformed, fail the whole
+  roster; a partial membership boundary must never be presented as authoritative.
+
 ## `chrome.scripting.executeScript` DROPS null-valued `args` properties (clearing a field → HTTP 400)
 
 - SYMPTOM: clearing an ETA from the All Projects Catalog View logged

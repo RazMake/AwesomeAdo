@@ -309,7 +309,8 @@ Split into component subfolders (each with its own `README.md`):
   and deferred renderers by id. Sprint is eager; Project Tracking is a separately built,
   web-accessible ESM module cached after first use. `shared/` holds per-view building blocks (today
   `renderViewScaffold`, `VersionLabel`). Sprint is a data-driven lane-by-state card table over flat or tree queries and loads the
-  configured team's complete paged roster before executing its tree on every refresh. The original
+  configured team's complete paged and recursively group-expanded roster before executing its tree
+  on every refresh. The original
   saved WIQL loads independently and is rewritten with the selected sprint's current-iteration
   offset; results retain team-assigned or unassigned work plus their parent chains. Its first four
   configured application-state columns use quiet theme-owned neutral/blue/amber/green fills with
