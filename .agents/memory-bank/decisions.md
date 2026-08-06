@@ -1035,9 +1035,10 @@ nodeMatchesChange`). Copied here, that makes an activity pill drag in items belo
   unchanged snapshot is a no-op; a malformed or partially valid snapshot is rejected wholesale.
 - Decision: publishing is explicit, never triggered by an ordinary local edit. It reads the current
   work item revision and sends Description plus `/multilineFieldsFormat/System.Description =
-Markdown` in one `/rev`-guarded JSON Patch. The PATCH is not retried; a concurrent publisher gets
-  a visible conflict and must pull before deliberately trying again. Idempotent GETs receive at most
-  three attempts with bounded backoff.
+Markdown` in one `/rev`-guarded JSON Patch. A 412 causes one reread and one retry only when
+  Description is byte-for-byte unchanged, which rebases over an unrelated work-item edit without
+  overwriting another publisher. A changed Description remains a visible conflict. Idempotent GETs
+  receive at most three attempts with bounded backoff.
 - Rationale: browser sync is user-scoped and file import cannot propagate additions or deletions.
   An ADO work item is already permissioned, versioned, and readable through the session every query
   viewer uses, including another team with access. Keeping the locator outside the payload preserves

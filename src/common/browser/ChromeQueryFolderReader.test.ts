@@ -26,12 +26,14 @@ describe("ChromeQueryFolderReader", () => {
           raw: {
             path: "Shared Queries/Team A",
             isFolder: true,
+            hasChildren: true,
             children: [
-              { path: "Shared Queries/Team A/Reports", isFolder: true },
+              { path: "Shared Queries/Team A/Reports", isFolder: true, hasChildren: true },
               { path: "Shared Queries/Team A/Open bugs", isFolder: false },
               {
                 path: "Shared Queries/Team A/Reports/Weekly",
                 isFolder: true,
+                hasChildren: false,
               },
             ],
           },
@@ -41,11 +43,12 @@ describe("ChromeQueryFolderReader", () => {
     ]);
 
     // The folder itself is included: it is a folder the user can pick, and re-offering it costs
-    // nothing because the caller merges case-insensitively.
+    // nothing because the caller merges case-insensitively. `Reports` came back at the depth
+    // boundary, so it is the one still worth another read.
     expect(await reader.readChildFolders("Shared Queries/Team A")).toEqual([
-      "Shared Queries/Team A",
-      "Shared Queries/Team A/Reports",
-      "Shared Queries/Team A/Reports/Weekly",
+      { path: "Shared Queries/Team A", hasUnreadChildren: false },
+      { path: "Shared Queries/Team A/Reports", hasUnreadChildren: true },
+      { path: "Shared Queries/Team A/Reports/Weekly", hasUnreadChildren: false },
     ]);
     expect(executeScript).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -54,7 +57,7 @@ describe("ChromeQueryFolderReader", () => {
         args: [
           {
             operation: "read",
-            url: "https://dev.azure.com/Contoso/Web/_apis/wit/queries/Shared%20Queries/Team%20A?$depth=5&api-version=7.1",
+            url: "https://dev.azure.com/Contoso/Web/_apis/wit/queries/Shared%20Queries/Team%20A?$depth=2&api-version=7.1",
           },
         ],
       }),

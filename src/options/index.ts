@@ -37,7 +37,10 @@ import {
   QueryBindingsController,
   type QueryBindingsElements,
 } from "./query-bindings/QueryBindingsController";
-import { suggestionsFromMetadata } from "./query-bindings/suggestionSources";
+import {
+  queryFoldersFromMetadata,
+  suggestionsFromMetadata,
+} from "./query-bindings/suggestionSources";
 import {
   BootstrapLinkController,
   type BootstrapLinkElements,
@@ -151,8 +154,8 @@ const adoTabReader = new ChromeAdoTabReader();
 // binding opens with those already filled in rather than asking the user to retype them.
 const queryFactsReader = new ChromeQueryFactsReader();
 
-// Azure DevOps will not list a large project's saved-query folders in one read, so the ones inside a
-// folder are fetched only once the user reaches into it.
+// The metadata read preloads three depth-2 folder rounds. Anything deeper remains reachable once the
+// user types into a known boundary folder.
 const queryFolderReader = new ChromeQueryFolderReader();
 
 // The saved scope lets the metadata read address the configured project even from an ADO tab that
@@ -446,6 +449,7 @@ if (
       resolveCurrentQueryId: () => adoTabReader.readCurrentQueryId(),
       resolveSuggestions: async (source) =>
         suggestionsFromMetadata((await readAdoMetadata()) ?? null, source),
+      resolveRootFolders: async () => queryFoldersFromMetadata((await readAdoMetadata()) ?? null),
       resolveFolderChildren: (folderPath) => queryFolderReader.readChildFolders(folderPath),
       resolveDerivedValues: async (id) => {
         const facts = await queryFactsReader.read(id);

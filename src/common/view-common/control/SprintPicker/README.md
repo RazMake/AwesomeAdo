@@ -75,3 +75,22 @@ Renders a sprint dropdown with an optional **icon filter toggle button** in fron
 - **Theme-aware:** Both the button and select use roles from the complete palette pinned by the resolved AwesomeADO theme.
 - **Time-direction styling:** Options carrying a `relation` are tinted by where their sprint sits in time — past amber, future in the theme accent, current bold and explicitly neutral. The closed `<select>` preserves the selected option's relation styling.
 - **Empty sprints handling:** When `sprints` is empty, both controls are disabled, and `selectedSprint()` returns `null`.
+
+## `SprintSelectField.ts`
+
+### `renderSprintSelectField(doc, options): SelectFieldHandle`
+
+The sprint asked for by a **form** rather than filtered by a board: the shared
+[`SelectField`](../SelectField/README.md) populated from the team's sprint window and opened on the
+current sprint. Used by the All Projects Catalog View's "add a project" row and its "Add work item"
+form, so one answer cannot read two ways across the same surface.
+
+- **`classPrefix`** — the class-name stem this instance's elements are marked with.
+- **`fallbackPath`** — the iteration shown until the window lands and whenever the team has no sprints
+  at all; usually where the item would go anyway (the parent's iteration, or the project's own root).
+  An empty string reads as `(the project's default)`.
+- **`loadSprintWindow()`** — reads the window. Called once, when the field is built: a form that asks
+  for a sprint is opened rarely and closed again, so nothing around it would keep the answer warm.
+
+The field is inert until that read settles, then re-enabled **either way**, so it never reads as
+still loading. Options carry the same past/current/future styling the picker above uses.

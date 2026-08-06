@@ -87,7 +87,6 @@ describe("VIEW_TYPES per-view properties", () => {
       "orderingPolicy",
       "projectTag",
       "newProjectAreaPath",
-      "newProjectIterationPath",
       "projectQueryFolder",
     ]);
     expect(projects?.properties[0]).toEqual(

@@ -79,7 +79,9 @@ and `TeamConfigSynchronizer` never applies a source ID found in a remote payload
   returning both contracts.
 - `TeamConfigReader` / `TeamConfigWriter` — focused transport contracts for Description reads and
   revision-guarded publishes. A successful publish can carry the canonical work item web URL for the
-  options status link.
+  options status link. If an unrelated work-item edit advances the revision between read and patch,
+  publishing rereads and retries once only while Description is unchanged; a competing configuration
+  publish remains a conflict.
 - `TeamConfigSynchronizer` — pulls through `importConfig`, refuses partial/invalid remote files,
   reports an empty Description as connected but not yet published without changing local settings,
   replaces settings and bindings only when the normalized snapshot changed, and publishes the current

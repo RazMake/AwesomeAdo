@@ -32,6 +32,13 @@ Checkbox changes keep the popup open so several paths can be selected in one vis
 pressing Escape, or toggling the trigger closes it; `onPopupClosed` lets a caller defer expensive
 repainting until that dismissal while `onChange` still reports each selection immediately.
 
+`clearOnTriggerWhenActive` makes the trigger empty the selection instead of reopening the popup while
+anything is chosen — the one-press way out of a filter the reader mostly wants to be rid of. Project
+Tracking sets it, because its selection is a transient reading position; leave it off where the
+selection is team configuration the reader narrows down step by step (Sprint's Lanes), since it costs
+them the ability to adjust a live selection without rebuilding it. With it on, the popup drops its own
+Clear so one gesture is not offered twice.
+
 An active selection uses the same filled communication background and contrasting foreground as the
 Project filter, plus a visible count badge. The trigger is disabled only when the caller offers no
 area paths. The popup, checkbox accent, and hover state use shared control roles, so Dark, Light,

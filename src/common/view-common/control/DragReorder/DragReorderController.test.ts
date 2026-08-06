@@ -51,6 +51,15 @@ interface Board {
 }
 
 /**
+ * Every controller a test built, so `afterEach` can end a drag left in flight.
+ *
+ * A real board always ends a session (`dragend`, or the next render pass calling `reset`); a test
+ * that only drags partway does not, and the controller would keep answering drag events on the
+ * document long after its own rows were thrown away.
+ */
+const controllers: DragReorderController[] = [];
+
+/**
  * A board of two levels of the same depth — parent 10 holding rows 1-3, parent 20 holding rows 4-5
  * — plus one deeper row (6, a child of row 1) so a cross-level drop can be rejected.
  *
@@ -62,6 +71,7 @@ function buildBoard(): Board {
   const infos: string[] = [];
   const logger: ILogger = { info: (message) => infos.push(message), error: () => undefined };
   const controller = new DragReorderController(document, (move) => moves.push(move), logger);
+  controllers.push(controller);
 
   const containerA = document.createElement("div");
   const containerB = document.createElement("div");
@@ -153,6 +163,9 @@ const isWashed = (container: HTMLElement): boolean =>
   container.style.getPropertyValue("outline").length > 0;
 
 afterEach(() => {
+  for (const controller of controllers.splice(0)) {
+    controller.reset();
+  }
   document.body.innerHTML = "";
 });
 
@@ -515,6 +528,82 @@ describe("DragReorderController - ending a session", () => {
     drop(board, 3, 55);
 
     expect(anyLine()).toBeNull();
+    expect(board.moves).toEqual([]);
+  });
+});
+
+describe("DragReorderController - honouring the landing it showed", () => {
+  /** A release over a pixel no registered row owns, as the indentation beside a branch is. */
+  const dropOnContainer = (clientY: number): Event =>
+    fire(document.body, "drop", { clientY, dataTransfer: fakeTransfer() });
+
+  it("keeps accepting the release anywhere while an insertion line is showing", () => {
+    const board = buildBoard();
+    startDrag(board, 1);
+    dragOver(board, 3, 55);
+
+    const event = fire(document.body, "dragover", { clientY: 55, dataTransfer: fakeTransfer() });
+
+    // Without this the browser refuses the release and the gesture ends with nothing moved.
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it("commits the shown landing when the release lands on no row at all", () => {
+    const board = buildBoard();
+    startDrag(board, 1);
+    dragOver(board, 3, 55);
+
+    dropOnContainer(55);
+
+    expect(board.moves).toEqual([
+      { id: 1, currentParentId: 10, parentId: 10, previousId: 3, nextId: 0, siblingIds: [2, 3, 1] },
+    ]);
+    expect(anyLine()).toBeNull();
+  });
+
+  it("refuses a release that no insertion line was promising", () => {
+    const board = buildBoard();
+    startDrag(board, 1);
+
+    const event = fire(document.body, "dragover", { clientY: 55, dataTransfer: fakeTransfer() });
+    dropOnContainer(55);
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(board.moves).toEqual([]);
+  });
+
+  it("commits only once when a row answers the release itself", () => {
+    const board = buildBoard();
+    startDrag(board, 1);
+    dragOver(board, 3, 55);
+
+    drop(board, 3, 55);
+
+    expect(board.moves).toHaveLength(1);
+  });
+
+  it("still lands where the line promised when the release resolves to nothing", () => {
+    const board = buildBoard();
+    startDrag(board, 1);
+    dragOver(board, 3, 55);
+
+    // Row 1 is the dragged row itself, so this release resolves to no landing of its own.
+    drop(board, 1, 15);
+
+    expect(board.moves).toEqual([
+      { id: 1, currentParentId: 10, parentId: 10, previousId: 3, nextId: 0, siblingIds: [2, 3, 1] },
+    ]);
+  });
+
+  it("forgets the landing once the pointer leaves every legal target", () => {
+    const board = buildBoard();
+    startDrag(board, 1);
+    dragOver(board, 3, 55);
+
+    // Back over its own slot: the line is withdrawn, so there is no longer a landing to commit.
+    dragOver(board, 2, 25);
+    dropOnContainer(25);
+
     expect(board.moves).toEqual([]);
   });
 });

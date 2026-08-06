@@ -78,20 +78,19 @@ export function renderSprintHeader(doc: Document, options: SprintHeaderOptions):
   title.textContent = "Sprint View";
   title.style.cssText = "margin:0 8px 0 0;font-size:17px;font-weight:700;cursor:context-menu";
   title.addEventListener("contextmenu", options.onTitleContextMenu);
-  controls.append(
-    title,
-    options.sprintPicker,
-    options.laneFilter,
-    options.projectFilter,
-    options.refresh.element,
-  );
+  controls.append(title, options.sprintPicker);
 
   const statusSlot = doc.createElement("span");
   statusSlot.className = "awesomeado-sprint__queue-status";
   statusSlot.style.cssText =
     "display:inline-flex;align-items:center;margin-left:auto;min-height:24px";
   statusSlot.append(options.bulkMoveStatus, options.queueStatus);
-  controls.append(statusSlot);
+
+  const actions = doc.createElement("div");
+  actions.className = "awesomeado-sprint__header-actions";
+  actions.style.cssText = "display:flex;align-items:center;gap:8px";
+  actions.append(options.laneFilter, options.projectFilter, options.refresh.element);
+  controls.append(statusSlot, actions);
 
   const divider = doc.createElement("hr");
   divider.style.cssText = "width:100%;margin:0;border:0;border-top:1px solid var(--control-border)";

@@ -55,8 +55,10 @@ This is a flattened snapshot of what exists now, not a build log.
   creation revision (`NewWorkItem` now carries `assignedTo`, `description`, `comment`).
   Per-query settings define the catalog tag,
   new-project area and iteration paths, and generated-query folder; tag, iteration, and folder default
-  from the saved query, Azure DevOps project root, and catalog query folder. New projects receive all
-  initial fields in one patch. Ships as its own on-demand ESM renderer.
+  from the saved query, Azure DevOps project root, and catalog query folder. The generated-query
+  folder field indicates while its three-round autocomplete vocabulary is loading and exposes
+  clipped full paths on hover. New projects receive all initial fields in one patch. Ships as its
+  own on-demand ESM renderer.
 - **Sprint View** (`content/views/sprint`): accepts flat or tree queries; loads the selected
   team's complete paged member roster, recursively expanding direct and nested groups, before
   executing an offset-adjusted copy of the original WIQL;
@@ -110,7 +112,8 @@ This is a flattened snapshot of what exists now, not a build log.
   raised item pills use muted purple with a 1px bright edge while accepted pills use solid purple.
   Both card sizes expose Priority (compact Done read-only)
   and the shared `?` popup, which wraps long content and scrolls vertically only. Project Tracking uses the same
-  latest-tag-lifetime acceptance state without exposing Interrupt mutation commands.
+  latest-tag-lifetime acceptance state, sourced from Discussion even when update history omits the
+  note, without exposing Interrupt mutation commands.
 - **Area-path filtering** (`common/view-common/control/AreaPathFilter` + both views): the live
   tree hydrates `System.AreaPath`; a compact themed header popup selects full paths using shortest
   unique display suffixes. Active selections match the Project filter's filled communication style
@@ -138,7 +141,9 @@ This is a flattened snapshot of what exists now, not a build log.
 - **Team configuration sharing** (`common/settings-transfer`, `common/browser`, and Options): one
   same-organization ADO work item Description is the permissioned full-config source; clients
   automatically pull it on saved-query entry and editors explicitly publish with revision conflict
-  protection. The connected read-only work item ID links directly to that item in ADO.
+  protection. Publishing conditionally retries once across unrelated item revisions without
+  overwriting a changed Description. The connected read-only work item ID links directly to that item
+  in ADO.
 - **Shared queries** (`common/navigation/SharedQueryLink`, `common/settings-transfer`,
   `common/ado/TeamMembership`, `src/content/shared-query`, `src/options/query-bindings`): a
   saved-query URL carrying `?awesomeAdoConfig={workItemId}` connects a team member outright and gives

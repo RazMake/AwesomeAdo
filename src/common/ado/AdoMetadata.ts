@@ -40,6 +40,18 @@ export interface AdoWorkItemType {
   dateFields: AdoWorkItemField[];
 }
 
+/** One saved-query folder offered where a binding names one. */
+export interface AdoQueryFolder {
+  /** The folder's full path, e.g. `Shared Queries/Team A`. */
+  path: string;
+  /**
+   * Azure DevOps said this folder holds more folders but did not include them, because it expands
+   * the saved-query hierarchy only two levels per request. One read of this path reveals them, and
+   * a folder without the flag is worth no request at all.
+   */
+  hasUnreadChildren: boolean;
+}
+
 /** Everything the Azure DevOps options tab lists for the detected organization/project. */
 export interface AdoMetadata {
   teams: AdoTeam[];
@@ -47,8 +59,8 @@ export interface AdoMetadata {
   areaPaths: string[];
   /** Every full iteration path configured for the project, offered by binding editors. */
   iterationPaths: string[];
-  /** Every saved-query folder the project holds, offered where a binding names one. */
-  queryFolders: string[];
+  /** The saved-query folders one read reaches; the deeper ones are read on demand. */
+  queryFolders: AdoQueryFolder[];
   /** The project's work item types with their states, for the work-item-types picker. */
   workItemTypes: AdoWorkItemType[];
 }

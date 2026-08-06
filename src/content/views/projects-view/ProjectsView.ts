@@ -60,7 +60,6 @@ import {
 import {
   configuredNewProjectAreaPath,
   configuredNewProjectTags,
-  newProjectIterationPathOf,
   orderingPolicyOf,
   projectQueryFolderOf,
   projectsViewType,
@@ -340,6 +339,13 @@ interface Board {
   dragReorder: DragReorderController;
   /** Rebuild the surface from the data already loaded. */
   paint(): void;
+  /**
+   * Rebuild ONLY the list of projects from the data already loaded.
+   *
+   * The header is what a live filter is being operated from, and a full repaint would rebuild it —
+   * taking the open dropdown, and the condition half-stated inside it, with it.
+   */
+  paintList(): void;
   /** Re-read the query, for a change only Azure DevOps can describe (a new or retired project). */
   reload(): void;
 }
@@ -433,12 +439,16 @@ function titleMenuTarget(board: Board): ItemContextMenuTarget {
 }
 
 /** Create the project the reader typed a title for, then re-read the catalog so it appears. */
-async function addProject(board: Board, data: LoadedProjects, title: string): Promise<boolean> {
+async function addProject(
+  board: Board,
+  data: LoadedProjects,
+  title: string,
+  iterationPath: string | null,
+): Promise<boolean> {
   const { context } = board;
   const type = context.services.getTypes()[0]?.name ?? null;
   if (type === null) return false;
   const areaPath = configuredNewProjectAreaPath(context.properties);
-  const iterationPath = newProjectIterationPathOf(context.properties, projectPathOf(context));
   const result = await context.services.createWorkItem.create({
     type,
     title,
@@ -679,8 +689,8 @@ function headerOptionsFor(params: {
         excluded: new Set(selection.excluded.map((tag) => tag.toLowerCase())),
         matchAll: selection.matchAll,
       };
-      // Recorded but NOT painted: a paint rebuilds the header, taking the open dropdown with it, and
-      // a condition worth stating takes more than one click to state.
+      // The LIST only: the reader is watching what each tick leaves behind, and a full repaint would
+      // rebuild the header and close the dropdown they are still composing in.
       //
       // Logged on the change itself, never on a repaint: it is the one input that silently decides
       // how much of the query the reader is looking at, and it cannot flood the bounded log because
@@ -689,8 +699,8 @@ function headerOptionsFor(params: {
         `All Projects Catalog View tag filter set to ${describeTagCondition(session.tags)}: ` +
           `showing ${visibleProjectCount(loaded, session)} of ${loaded.result.roots.length} project(s)`,
       );
+      board.paintList();
     },
-    onTagsDismiss: () => board.paint(),
     onExpandAll: () => {
       for (const id of allItemIds(loaded.result.roots)) session.expandedIds.add(id);
       board.paint();
@@ -704,7 +714,7 @@ function headerOptionsFor(params: {
   };
 }
 
-/** The inline row that asks for the new project's title, wired to this board's configuration. */
+/** The inline row that asks for the new project's title and sprint, wired to this catalog. */
 function newProjectRowFor(board: Board, loaded: LoadedProjects): HTMLElement {
   const { context, session } = board;
   const type = context.services.getTypes()[0]?.name ?? "";
@@ -714,8 +724,11 @@ function newProjectRowFor(board: Board, loaded: LoadedProjects): HTMLElement {
     typeEntry: loaded.types.get(type),
     tags: loaded.newProjectTags,
     areaPath: configuredNewProjectAreaPath(context.properties),
-    iterationPath: newProjectIterationPathOf(context.properties, projectPathOf(context)),
-    onSubmit: (title) => addProject(board, loaded, title),
+    services: context.services,
+    // Azure DevOps' own default for a new work item, used until the sprint list lands and whenever
+    // the team has no sprints to choose from.
+    defaultIterationPath: projectPathOf(context),
+    onSubmit: (title, iterationPath) => addProject(board, loaded, title, iterationPath),
     onCancel: () => {
       session.addingProject = false;
       board.paint();
@@ -752,7 +765,12 @@ function createBoard(
   context: DataDrivenViewContext,
   root: HTMLElement,
   session: ProjectsSession,
-  hooks: { loaded: () => LoadedProjects | null; paint: () => void; reload: () => void },
+  hooks: {
+    loaded: () => LoadedProjects | null;
+    paint: () => void;
+    paintList: () => void;
+    reload: () => void;
+  },
 ): Board {
   const board: Board = {
     context,
@@ -776,6 +794,7 @@ function createBoard(
       context.services.logger,
     ),
     paint: hooks.paint,
+    paintList: hooks.paintList,
     reload: hooks.reload,
   };
   return board;
@@ -800,7 +819,7 @@ function trackWriteQueue(board: Board, currentStatus: () => WriteQueueStatusHand
   });
 }
 
-/** Rebuild the whole surface from data already loaded, and hand back the header it mounted. */
+/** Rebuild the whole surface from data already loaded, and hand back the parts a repaint reuses. */
 function paintSurface(
   board: Board,
   loaded: LoadedProjects,
@@ -810,23 +829,33 @@ function paintSurface(
     queueStatus: HTMLElement;
     onRefresh: () => void;
   },
-): ProjectsHeaderHandle {
+): { header: ProjectsHeaderHandle; listHost: HTMLElement } {
   const { context, session } = board;
-  const rowContext = createRowContext(board, loaded);
   const header = renderProjectsHeader(
     context,
     headerOptionsFor({ board, loaded, queueStatus: parts.queueStatus, onRefresh: parts.onRefresh }),
   );
-  const list = renderProjectsList(context, loaded, rowContext);
+  // The list lives in a host of its own so a filter can replace it without touching the header it is
+  // being operated from.
+  const listHost = context.doc.createElement("div");
+  listHost.className = "awesomeado-projects__list-host";
   parts.root.replaceChildren(
     header.element,
     parts.rowStyle,
     ...(session.addingProject ? [newProjectRowFor(board, loaded)] : []),
-    list,
+    listHost,
   );
-  // After the list is in the document, so the stripes follow the rows the reader can actually see.
+  paintList(board, loaded, listHost);
+  return { header, listHost };
+}
+
+/** Fill (or refill) the list host, restriping once the rows are in the document. */
+function paintList(board: Board, loaded: LoadedProjects, listHost: HTMLElement): void {
+  // Every row the previous pass registered is about to be discarded, drag included.
+  board.dragReorder.reset();
+  const list = renderProjectsList(board.context, loaded, createRowContext(board, loaded));
+  listHost.replaceChildren(list);
   restripeVisibleRows(list, ROW_EMPHASIS_CLASSES);
-  return header;
 }
 
 /** The live board: header, list, and the session state both of them read and write. */
@@ -841,6 +870,7 @@ function startProjectsView(context: DataDrivenViewContext, root: HTMLElement): v
   };
   let data: LoadedProjects | null = null;
   let header: ProjectsHeaderHandle | null = null;
+  let listHost: HTMLElement | null = null;
   let queueStatus: WriteQueueStatusHandle | null = null;
   let loadGeneration = 0;
   let refreshFailed = false;
@@ -851,6 +881,7 @@ function startProjectsView(context: DataDrivenViewContext, root: HTMLElement): v
   const board = createBoard(context, root, session, {
     loaded: () => data,
     paint: () => paint(),
+    paintList: () => repaintList(),
     reload: () => load(true),
   });
   trackWriteQueue(board, () => queueStatus);
@@ -866,13 +897,19 @@ function startProjectsView(context: DataDrivenViewContext, root: HTMLElement): v
     // Abandon any drag still in flight: the rows it was resolved against are about to be discarded.
     board.dragReorder.reset();
     queueStatus = createQueueStatus(board);
-    header = paintSurface(board, loaded, {
+    const painted = paintSurface(board, loaded, {
       root,
       rowStyle,
       queueStatus: queueStatus.element,
       onRefresh: () => refresh(),
     });
+    header = painted.header;
+    listHost = painted.listHost;
     header.refresh.setFailed(refreshFailed);
+  };
+
+  const repaintList = (): void => {
+    if (data !== null && listHost !== null) paintList(board, data, listHost);
   };
 
   const load = (isRefresh: boolean): void => {

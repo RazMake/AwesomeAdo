@@ -3937,16 +3937,30 @@ describe("ProjectTrackingView — rollup popup rows", () => {
     await turnSprintFilterOff(root);
 
     rollupBadgeOf(root).click();
-    const firstRow = root.querySelector(".awesomeado-child-items__row")!;
-    (firstRow.querySelector(".awesomeado-eta__label") as HTMLElement).click();
-    const input = firstRow.querySelector<HTMLInputElement>(".awesomeado-eta__date")!;
+    // Task 5 ("Style the form") is still Active, so its ETA is a forecast the reader may still move.
+    const activeRow = [...root.querySelectorAll(".awesomeado-child-items__row")][1]!;
+    (activeRow.querySelector(".awesomeado-eta__label") as HTMLElement).click();
+    const input = activeRow.querySelector<HTMLInputElement>(".awesomeado-eta__date")!;
     input.value = "2026-10-05";
     input.dispatchEvent(new Event("change"));
     await Promise.resolve();
 
     expect(writes).toEqual([
-      { id: 4, rev: 1, field: "Custom.TaskETA", value: "2026-10-05T12:00:00Z" },
+      { id: 5, rev: 1, field: "Custom.TaskETA", value: "2026-10-05T12:00:00Z" },
     ]);
+  });
+
+  it("stops offering the picker once a rolled-up child is done", async () => {
+    const root = await renderDeepBoard();
+    await turnSprintFilterOff(root);
+
+    rollupBadgeOf(root).click();
+    // Task 4 is Closed → Done: its ETA has stopped being a forecast and become the record of what
+    // was promised, so there is nothing left here to edit.
+    const doneRow = root.querySelector(".awesomeado-child-items__row")!;
+    (doneRow.querySelector(".awesomeado-eta__label") as HTMLElement).click();
+
+    expect(doneRow.querySelector(".awesomeado-eta__date")).toBeNull();
   });
 
   it("ticks the checkbox of each rolled-up child already in the completed column", async () => {

@@ -20,7 +20,8 @@ Lane selection.
   [`EmptyState`](../../../common/view-common/control/EmptyState/README.md) panel instead of an empty
   lane table, so a fully filtered board never reads as a failed load.
 - `SprintHeader.ts` -> `renderSprintHeader` - assembles the sticky, theme-aware control card with
-  the query's clickable parent-folder breadcrumb trail at the top.
+  the query's clickable parent-folder breadcrumb trail at the top. Sprint selection stays beside the
+  title; Lane, Project, and Refresh form the rightmost action group.
 - `SprintBulkMoveDialog.ts` -> `buildSprintBulkMovePlan` / `renderSprintBulkMoveDialog` - snapshots
   eligible visible cards and confirms their Lane/assignee summary before any write begins.
 - `SprintBulkMoveController.ts` -> `SprintBulkMoveController` - owns confirmation, progress,
@@ -130,9 +131,11 @@ Created, Last Modified, and the sanitized description in either size. The popup 
 280px wide, wraps long prose/code/table content without a horizontal scrollbar, and scrolls
 vertically when its height exceeds 320px. A shared Priority chip sits on the same top row in both
 sizes; it is read-only while a Done card is compact and editable after expansion. The row below places the shared ETA
-control on the left and the child-items badge on the right. Assigned To and ETA remain visually
-unchanged but read-only while a Done card is compact; expanding it restores editing for the card
-itself. A Done card's child Assigned To and ETA controls, child title drag handles, and ancestor ETA
+control on the left and the child-items badge on the right. Assigned To remains visually unchanged but
+read-only while a Done card is compact; expanding it restores editing for the card itself. A Done
+card's ETA is read-only in both sizes and stays so after expansion: the work has landed, so its ETA
+has stopped being a forecast and become the record of what was promised. A Done card's child Assigned
+To and ETA controls, child title drag handles, and ancestor ETA
 controls remain read-only in both sizes and use the default cursor. Tall cards additionally show the
 immediate parent's type icon and title as a clickable, contrast-safe type-colored control. Its popup
 lists ancestors from the root down to that immediate parent, each with its own type color and shared ETA control.

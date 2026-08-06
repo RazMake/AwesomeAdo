@@ -1,5 +1,13 @@
-import type { AdoMetadata } from "../../common/ado/AdoMetadata";
+import type { AdoMetadata, AdoQueryFolder } from "../../common/ado/AdoMetadata";
 import type { ViewTypeSuggestionSource } from "../../common/view-common/ViewType";
+
+/**
+ * The vocabularies one metadata read answers in full.
+ *
+ * Saved-query folders are excluded on purpose: Azure DevOps will not enumerate them, so they are
+ * grown a folder at a time (see `queryFoldersFromMetadata` and `QueryFolderVocabulary`).
+ */
+export type MetadataSuggestionSource = Exclude<ViewTypeSuggestionSource, "query-folders">;
 
 /**
  * The project vocabulary one autocomplete property draws its suggestions from.
@@ -10,7 +18,7 @@ import type { ViewTypeSuggestionSource } from "../../common/view-common/ViewType
  */
 export function suggestionsFromMetadata(
   metadata: AdoMetadata | null,
-  source: ViewTypeSuggestionSource,
+  source: MetadataSuggestionSource,
 ): readonly string[] {
   if (metadata === null) {
     return [];
@@ -20,7 +28,10 @@ export function suggestionsFromMetadata(
       return metadata.areaPaths;
     case "iteration-paths":
       return metadata.iterationPaths;
-    case "query-folders":
-      return metadata.queryFolders;
   }
+}
+
+/** The saved-query folders the folder picker starts from, before anyone reaches deeper. */
+export function queryFoldersFromMetadata(metadata: AdoMetadata | null): readonly AdoQueryFolder[] {
+  return metadata?.queryFolders ?? [];
 }

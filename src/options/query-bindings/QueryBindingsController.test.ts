@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { AdoQueryFolder } from "../../common/ado/AdoMetadata";
 import type { IQueryBindingStore } from "../../common/bindings/IQueryBindingStore";
 import type { QueryBinding, QueryBindings } from "../../common/bindings/QueryBinding";
 import { DEFAULT_SETTINGS } from "../../common/settings/ExtensionSettings";
@@ -881,12 +882,15 @@ describe("suggestions that arrive after the form is on screen", () => {
   const openWith = (
     views: readonly ViewType[],
     resolveSuggestions: (source: ViewTypeSuggestionSource) => Promise<readonly string[]>,
+    resolveRootFolders?: () => Promise<readonly AdoQueryFolder[]>,
   ) =>
-    controllerFor(
-      makeStore({ [GUID_A]: { view: views[0]!.id, properties: {}, name: "Alpha" } }),
-      views,
-      undefined,
-      resolveSuggestions,
+    new QueryBindingsController(
+      makeStore({
+        [GUID_A]: { view: views[0]!.id, properties: {}, name: "Alpha" },
+      }) as unknown as IQueryBindingStore,
+      elements,
+      reportError as unknown as (error: unknown) => void,
+      { viewTypes: views, resolveSuggestions, resolveRootFolders },
     ).init(GUID_A, "Alpha");
 
   const optionsOf = (input: HTMLInputElement): string[] => {
@@ -902,19 +906,33 @@ describe("suggestions that arrive after the form is on screen", () => {
       release = resolve;
     });
 
-    await openWith(DERIVED_VIEWS, async () => {
-      await pending;
-      return ["Shared Queries/Team A"];
-    });
+    await openWith(
+      DERIVED_VIEWS,
+      async () => [],
+      async () => {
+        await pending;
+        return [{ path: "Shared Queries/Team A", hasUnreadChildren: false }];
+      },
+    );
 
     // The property is on screen with an empty list rather than the whole tab waiting on the read.
     const folder = propInput("projectQueryFolder")!;
     expect(optionsOf(folder)).toEqual([]);
+    expect(folder.getAttribute("aria-busy")).toBe("true");
+    // The spinner rides inside the field, where the open suggestion list cannot cover it.
+    expect(folder.parentElement?.classList.contains("combobox--with-spinner")).toBe(true);
+    expect(folder.parentElement?.querySelector<HTMLElement>(".combobox__loading")?.hidden).toBe(
+      false,
+    );
 
     release();
     await settle();
 
     expect(optionsOf(folder)).toEqual(["Shared Queries/Team A"]);
+    expect(folder.getAttribute("aria-busy")).toBe("false");
+    expect(folder.parentElement?.querySelector<HTMLElement>(".combobox__loading")?.hidden).toBe(
+      true,
+    );
   });
 
   it("fills the area-path editor's rows once its vocabulary lands", async () => {
@@ -938,44 +956,54 @@ describe("suggestions that arrive after the form is on screen", () => {
 });
 
 // Azure DevOps answers the saved-query hierarchy two levels deep and caps a node's children, so a
-// large project's deeper folders exist only once someone asks for them.
-describe("saved-query folders expanded as the user types", () => {
-  const SHALLOW = ["Shared Queries", "Shared Queries/Team A"];
+// large project's deeper folders exist only once someone asks for them. Shared by the two sibling
+// groups below so neither has to repeat the arrange.
+// Only `Team A` came back at the depth boundary, so it is the only one worth another request.
+const FOLDER_ROOT: readonly AdoQueryFolder[] = [
+  { path: "Shared Queries", hasUnreadChildren: false },
+  { path: "Shared Queries/Archive", hasUnreadChildren: false },
+  { path: "Shared Queries/Team A", hasUnreadChildren: true },
+];
 
-  let resolveFolderChildren: ReturnType<typeof vi.fn<(folderPath: string) => Promise<string[]>>>;
+let resolveFolderChildren: ReturnType<
+  typeof vi.fn<(folderPath: string) => Promise<readonly AdoQueryFolder[]>>
+>;
 
-  const openFolderForm = () =>
-    new QueryBindingsController(
-      makeStore({
-        [GUID_A]: { view: "catalog", properties: {}, name: "Alpha" },
-      }) as unknown as IQueryBindingStore,
-      elements,
-      reportError as unknown as (error: unknown) => void,
-      {
-        viewTypes: DERIVED_VIEWS,
-        resolveSuggestions: async () => SHALLOW,
-        resolveFolderChildren,
-      },
-    ).init(GUID_A, "Alpha");
+beforeEach(() => {
+  resolveFolderChildren = vi.fn(async (path: string) =>
+    path === "Shared Queries/Team A"
+      ? [{ path: "Shared Queries/Team A/Reports", hasUnreadChildren: false }]
+      : [],
+  );
+});
 
-  const folderOptions = (): string[] => {
-    const input = propInput("projectQueryFolder")!;
-    input.dispatchEvent(new FocusEvent("focus"));
-    return [...(input.parentElement?.querySelectorAll<HTMLElement>(".combobox__option") ?? [])].map(
-      (option) => option.textContent ?? "",
-    );
-  };
+const openFolderForm = () =>
+  new QueryBindingsController(
+    makeStore({
+      [GUID_A]: { view: "catalog", properties: {}, name: "Alpha" },
+    }) as unknown as IQueryBindingStore,
+    elements,
+    reportError as unknown as (error: unknown) => void,
+    {
+      viewTypes: DERIVED_VIEWS,
+      resolveRootFolders: async () => FOLDER_ROOT,
+      resolveFolderChildren,
+    },
+  ).init(GUID_A, "Alpha");
 
-  beforeEach(() => {
-    resolveFolderChildren = vi.fn(async (path: string) =>
-      path === "Shared Queries/Team A" ? ["Shared Queries/Team A/Reports"] : [],
-    );
-  });
+const folderOptions = (): string[] => {
+  const input = propInput("projectQueryFolder")!;
+  input.dispatchEvent(new FocusEvent("focus"));
+  return [...(input.parentElement?.querySelectorAll<HTMLElement>(".combobox__option") ?? [])].map(
+    (option) => option.textContent ?? "",
+  );
+};
 
+describe("saved-query folders read as the user reaches into them", () => {
   it("offers the folders inside the one being typed into", async () => {
     await openFolderForm();
     await settle();
-    expect(folderOptions()).toEqual(SHALLOW);
+    expect(folderOptions()).toEqual(FOLDER_ROOT.map((folder) => folder.path));
 
     fillProp("projectQueryFolder", "Shared Queries/Team A/");
     await settle();
@@ -1005,6 +1033,74 @@ describe("saved-query folders expanded as the user types", () => {
     await settle();
 
     expect(resolveFolderChildren).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("saved-query folders — requests skipped, and reads that fail", () => {
+  it("shows the field as busy only while a folder is being read", async () => {
+    let release = (): void => {};
+    resolveFolderChildren = vi.fn(
+      async () =>
+        new Promise<readonly AdoQueryFolder[]>((resolve) => {
+          release = () => resolve([]);
+        }),
+    );
+    await openFolderForm();
+    await settle();
+    const folder = propInput("projectQueryFolder")!;
+    expect(folder.getAttribute("aria-busy")).toBe("false");
+
+    fillProp("projectQueryFolder", "Shared Queries/Team A");
+    // Busy from the moment the read starts, so an open suggestion list shows it is still filling.
+    expect(folder.getAttribute("aria-busy")).toBe("true");
+
+    release();
+    await settle();
+
+    expect(folder.getAttribute("aria-busy")).toBe("false");
+  });
+
+  it("never asks about a folder Azure DevOps said holds nothing more", async () => {
+    await openFolderForm();
+    await settle();
+
+    fillProp("projectQueryFolder", "Shared Queries/Archive");
+    await settle();
+
+    expect(resolveFolderChildren).not.toHaveBeenCalled();
+  });
+
+  it("asks about nothing while the field is empty", async () => {
+    await openFolderForm();
+    await settle();
+
+    fillProp("projectQueryFolder", "   ");
+    await settle();
+
+    expect(resolveFolderChildren).not.toHaveBeenCalled();
+  });
+
+  it("records a refused first read and leaves the field editable", async () => {
+    await new QueryBindingsController(
+      makeStore({
+        [GUID_A]: { view: "catalog", properties: {}, name: "Alpha" },
+      }) as unknown as IQueryBindingStore,
+      elements,
+      reportError as unknown as (error: unknown) => void,
+      {
+        viewTypes: DERIVED_VIEWS,
+        resolveRootFolders: async () => {
+          throw new Error("no ADO tab");
+        },
+      },
+    ).init(GUID_A, "Alpha");
+    await settle();
+
+    expect(reportError).toHaveBeenCalled();
+    const folder = propInput("projectQueryFolder")!;
+    // The spinner must stop even when nothing arrived, or the field looks permanently stuck.
+    expect(folder.getAttribute("aria-busy")).toBe("false");
+    expect(folderOptions()).toEqual([]);
   });
 
   it("leaves a typed path usable when the folder cannot be read", async () => {

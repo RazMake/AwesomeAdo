@@ -15,6 +15,12 @@ import { VIEW_TYPES } from "../../content/views/viewCatalog";
 import { AutocompleteInput } from "../ado-config/AutocompleteInput";
 
 import { AreaPathListEditor } from "./AreaPathListEditor";
+import {
+  QueryFolderVocabulary,
+  type ReadFolderChildren,
+  type ReadRootFolders,
+} from "./QueryFolderVocabulary";
+import type { MetadataSuggestionSource } from "./suggestionSources";
 
 /** The Query Bindings tab's elements. Passed in so the controller stays DOM-agnostic and testable. */
 export interface QueryBindingsElements {
@@ -70,9 +76,11 @@ export interface QueryBindingsOptions {
   /** Resolves the query id of the ADO tab the user is on. Defaults to "none". */
   resolveCurrentQueryId?: CurrentQueryIdResolver;
   /** Loads the Azure DevOps vocabulary one autocomplete source suggests from. */
-  resolveSuggestions?: (source: ViewTypeSuggestionSource) => Promise<readonly string[]>;
+  resolveSuggestions?: (source: MetadataSuggestionSource) => Promise<readonly string[]>;
+  /** Loads the saved-query folders the folder picker starts from, in one read. */
+  resolveRootFolders?: ReadRootFolders;
   /** Lists the folders nested inside one saved-query folder, read only when the user asks for it. */
-  resolveFolderChildren?: (folderPath: string) => Promise<readonly string[]>;
+  resolveFolderChildren?: ReadFolderChildren;
   /** Reads what a saved query itself says, used to pre-fill the properties derived from it. */
   resolveDerivedValues?: (queryId: string) => Promise<ViewTypeDerivedValues>;
   /** Publishes the proposed full binding map before local observers can trigger a stale pull. */
@@ -82,17 +90,14 @@ export interface QueryBindingsOptions {
 }
 
 /**
- * Every vocabulary the form can suggest from, all answered from ONE memoized metadata read.
+ * Every vocabulary one memoized metadata read answers, all from that single read.
  *
- * That read is broad and credentialed (it walks the project's whole area, iteration, and saved-query
- * hierarchies), so the form never waits for it: it opens with empty lists and each live control is
- * refreshed when the values land.
+ * That read is broad and credentialed (it walks the project's whole area and iteration hierarchies),
+ * so the form never waits for it: it opens with empty lists and each live control is refreshed when
+ * the values land. Saved-query folders are not here — they load a folder at a time
+ * (`QueryFolderVocabulary`).
  */
-const SUGGESTION_SOURCES: readonly ViewTypeSuggestionSource[] = [
-  "area-paths",
-  "iteration-paths",
-  "query-folders",
-];
+const SUGGESTION_SOURCES: readonly MetadataSuggestionSource[] = ["area-paths", "iteration-paths"];
 
 interface PropertyControl {
   element: HTMLElement;
@@ -145,15 +150,15 @@ export class QueryBindingsController {
   private readonly viewTypes: readonly ViewType[];
   private readonly resolveCurrentQueryId: CurrentQueryIdResolver;
   private readonly resolveSuggestions: (
-    source: ViewTypeSuggestionSource,
+    source: MetadataSuggestionSource,
   ) => Promise<readonly string[]>;
-  private readonly resolveFolderChildren: (folderPath: string) => Promise<readonly string[]>;
   private readonly resolveDerivedValues: (queryId: string) => Promise<ViewTypeDerivedValues>;
   private readonly publishBindings: (bindings: QueryBindings) => Promise<void>;
   private readonly sharedQueries: SharedQueryAccess | undefined;
-  private suggestions = new Map<ViewTypeSuggestionSource, readonly string[]>();
-  /** Folders already asked about, so re-typing inside one costs nothing. */
-  private readonly expandedFolders = new Set<string>();
+  private suggestions = new Map<MetadataSuggestionSource, readonly string[]>();
+  private suggestionsLoading = true;
+  /** The saved-query folders, which Azure DevOps only hands over a folder at a time. */
+  private readonly folders: QueryFolderVocabulary;
   /** Each query's own answers, read at most once: the saved query is not going to change here. */
   private readonly derivedValues = new Map<string, ViewTypeDerivedValues>();
 
@@ -169,10 +174,15 @@ export class QueryBindingsController {
     this.viewTypes = options.viewTypes ?? VIEW_TYPES;
     this.resolveCurrentQueryId = options.resolveCurrentQueryId ?? (async () => null);
     this.resolveSuggestions = options.resolveSuggestions ?? (async () => []);
-    this.resolveFolderChildren = options.resolveFolderChildren ?? (async () => []);
     this.resolveDerivedValues = options.resolveDerivedValues ?? (async () => ({}));
     this.publishBindings = options.publishBindings ?? (async () => {});
     this.sharedQueries = options.sharedQueries;
+    this.folders = new QueryFolderVocabulary({
+      readRoot: options.resolveRootFolders ?? (async () => []),
+      readChildren: options.resolveFolderChildren ?? (async () => []),
+      onChange: () => this.refreshPropertyControls(),
+      onError: (error) => this.recordError(error),
+    });
   }
 
   /**
@@ -196,11 +206,18 @@ export class QueryBindingsController {
     // Deliberately not awaited: the vocabularies come from a broad Azure DevOps read, and holding the
     // whole tab blank until it lands is what made this page feel like it never opened.
     void this.loadSuggestions();
+    void this.folders.loadRoot();
   }
 
   /** Fill every rendered suggestion list once the project's vocabularies have been read. */
   private async loadSuggestions(): Promise<void> {
     this.suggestions = await this.readSuggestions();
+    this.suggestionsLoading = false;
+    this.refreshPropertyControls();
+  }
+
+  /** Re-read every live control's vocabulary and busy state, after either lands or changes. */
+  private refreshPropertyControls(): void {
     for (const control of this.propertyInputs.values()) {
       control.refreshSuggestions?.();
     }
@@ -255,7 +272,7 @@ export class QueryBindingsController {
     }
   }
 
-  private async readSuggestions(): Promise<Map<ViewTypeSuggestionSource, readonly string[]>> {
+  private async readSuggestions(): Promise<Map<MetadataSuggestionSource, readonly string[]>> {
     const entries = await Promise.all(
       SUGGESTION_SOURCES.map(async (source) => {
         try {
@@ -272,58 +289,10 @@ export class QueryBindingsController {
 
   /** The values one autocomplete property offers, empty when its source answered nothing. */
   private suggestionsFor(source: ViewTypeSuggestionSource | undefined): readonly string[] {
+    if (source === "query-folders") {
+      return this.folders.paths;
+    }
     return source === undefined ? [] : (this.suggestions.get(source) ?? []);
-  }
-
-  /**
-   * Add the folders inside the one the user is typing in, once per folder.
-   *
-   * Azure DevOps will not enumerate a large project's saved-query hierarchy — it answers two levels
-   * deep and caps a node's children — so the offered folders start shallow and grow as the user
-   * reaches further in. "Reaching in" is either naming a known folder outright or typing a path
-   * beneath it; the deepest such folder is the one worth opening.
-   */
-  private async expandTypedFolder(typed: string): Promise<void> {
-    const folder = this.folderToExpand(typed);
-    if (folder === null) {
-      return;
-    }
-    this.expandedFolders.add(folder.toLocaleLowerCase());
-    try {
-      const children = await this.resolveFolderChildren(folder);
-      if (children.length === 0) {
-        return;
-      }
-      this.suggestions.set(
-        "query-folders",
-        mergeSorted(this.suggestionsFor("query-folders"), children),
-      );
-      for (const control of this.propertyInputs.values()) {
-        control.refreshSuggestions?.();
-      }
-    } catch (error: unknown) {
-      // Suggestions are a convenience; a refused read must leave the typed path perfectly usable.
-      this.recordError(error);
-    }
-  }
-
-  /** The deepest already-offered folder the typed text names or sits inside, if it is still closed. */
-  private folderToExpand(typed: string): string | null {
-    const text = typed.trim().toLocaleLowerCase();
-    if (text === "") {
-      return null;
-    }
-    let deepest: string | null = null;
-    for (const folder of this.suggestionsFor("query-folders")) {
-      const candidate = folder.toLocaleLowerCase();
-      if (text !== candidate && !text.startsWith(`${candidate}/`)) continue;
-      if (deepest === null || folder.length > deepest.length) {
-        deepest = folder;
-      }
-    }
-    return deepest !== null && !this.expandedFolders.has(deepest.toLocaleLowerCase())
-      ? deepest
-      : null;
   }
 
   /**
@@ -779,15 +748,26 @@ export class QueryBindingsController {
     input.setAttribute("aria-label", property.label);
     input.value = value;
     const autocomplete = new AutocompleteInput(input);
-    autocomplete.setOptions(this.suggestionsFor(property.suggestions));
+    const isFolderField = property.suggestions === "query-folders";
+    const spinner = isFolderField ? createFolderSpinner(doc) : null;
+    if (spinner !== null) {
+      autocomplete.enableOverflowTitles();
+      autocomplete.root.classList.add("combobox--with-spinner");
+      autocomplete.root.append(spinner);
+    }
+    const refreshSuggestions = (): void => {
+      autocomplete.setOptions(this.suggestionsFor(property.suggestions));
+      if (spinner !== null) {
+        spinner.hidden = !this.folders.loading;
+        input.setAttribute("aria-busy", String(this.folders.loading));
+      }
+    };
+    refreshSuggestions();
     input.addEventListener("input", this.handleInput);
     input.addEventListener("change", this.handleCommit);
     // A saved-query folder is the one vocabulary Azure DevOps cannot hand over in full, so the
-    // folders inside the one being typed are fetched as the user reaches for them.
-    const expand =
-      property.suggestions === "query-folders"
-        ? () => void this.expandTypedFolder(input.value)
-        : null;
+    // folders inside the one being named are fetched as the user types or picks it.
+    const expand = isFolderField ? () => this.folders.expand(input.value) : null;
     if (expand !== null) {
       input.addEventListener("input", expand);
     }
@@ -798,7 +778,7 @@ export class QueryBindingsController {
       write: (value) => {
         input.value = value;
       },
-      refreshSuggestions: () => autocomplete.setOptions(this.suggestionsFor(property.suggestions)),
+      refreshSuggestions,
       dispose: () => {
         input.removeEventListener("input", this.handleInput);
         input.removeEventListener("change", this.handleCommit);
@@ -1071,16 +1051,17 @@ function isDerivedProperty(
   return property.derivedFrom !== undefined;
 }
 
-/** One sorted list of both inputs, matched case-insensitively so ADO's own casing survives. */
-function mergeSorted(current: readonly string[], added: readonly string[]): string[] {
-  const merged = new Map(current.map((value) => [value.toLocaleLowerCase(), value]));
-  for (const value of added) {
-    const key = value.toLocaleLowerCase();
-    if (!merged.has(key)) {
-      merged.set(key, value);
-    }
-  }
-  return [...merged.values()].sort((left, right) => left.localeCompare(right));
+/**
+ * The folder picker's busy indicator, which sits INSIDE the field's trailing edge: the suggestion
+ * list covers everything below the input, and a folder is fetched exactly while that list is open.
+ * Purely visual — the input's `aria-busy` is what carries the state to assistive technology.
+ */
+function createFolderSpinner(doc: Document): HTMLElement {
+  const spinner = doc.createElement("span");
+  spinner.className = "combobox__loading";
+  spinner.title = "Loading folders";
+  spinner.setAttribute("aria-hidden", "true");
+  return spinner;
 }
 
 /** One label plus the published value, for a query whose configuration the user cannot change. */

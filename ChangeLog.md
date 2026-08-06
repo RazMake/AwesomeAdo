@@ -10,9 +10,36 @@ builds use the repository's `Major.Minor.Build` release versioning.
 - Sprint View cards can now be dragged between rows as well as columns: dropping a card in another
   row moves it to that row's area path, and a diagonal drop changes its state and area path together.
   The destination row and column are both highlighted while you drag.
+- The Project Tracking board has a new **Assigned To** filter beside the area filter. It offers only
+  the people doing the delivery work — not the owners of the planning levels above it — and shows each
+  person's Feature Crew tag, so you can narrow the board to one person or to several at once. A row
+  stays when the person is on it or on anything beneath it, so picking someone who only ever appears
+  on tasks still shows the work those tasks belong to.
+- The Project Tracking area filter now clears in one press: click it while it is lit and the filter
+  is gone, the same way every other filter on that header behaves. It is also set further from the
+  sprint picker, so the sprint's own filter toggle no longer looks like it belongs to the button on
+  its left.
+- The All Projects Catalog View's tag filter now narrows the board as you build the condition,
+  instead of waiting until you close the dropdown, so you can see what each tag leaves behind while
+  you pick the next one. Once filters are active, pressing Tags clears them in one step; the dropdown
+  no longer carries a separate Clear button.
+- Adding a project from the All Projects Catalog View now asks which sprint it starts in, opening on
+  your team's current one. The per-query "Iteration path" setting is gone: a sprint moves every two
+  weeks, so a saved answer was stale far more often than it was right.
+- Enhanced-view header actions are now arranged around how they are used: the All Projects Catalog
+  keeps Tags beside a rightmost Refresh; Project Tracking starts with Sprint, then expand/collapse,
+  and ends with its filters plus Refresh; Sprint View keeps Lane, Project, and Refresh at the right.
+- The **Project query folder** box in Query Bindings now fills almost immediately instead of stalling
+  on a long scan of every saved-query folder in the project. It offers the top of the folder tree
+  right away and fetches what is inside a folder only when you type or pick it — and only when that
+  folder actually holds more. A small spinner now sits at the end of the box, so you can see it
+  filling even while the suggestion list is open.
 
 ### Bug Fixes
 
+- Publishing team configuration no longer fails when an unrelated edit advances the connected work
+  item's revision at the same moment. A competing configuration publish is still reported as a
+  conflict instead of being overwritten.
 - Sprint View no longer reorders cards. Dragging a card within a column used to save a backlog
   position derived from what the board happened to be showing, which could quietly change the order
   of items on the Project Tracking board that were never on screen together. Card order now comes
@@ -20,6 +47,20 @@ builds use the repository's `Major.Minor.Build` release versioning.
   board.
 - Sprint View now expands groups added to an Azure DevOps team, so the people inside those groups
   appear as team-member pills and their work stays visible on the sprint board.
+- Dragging a row on the Project Tracking board no longer loses drops. Releasing over a spot no row
+  owns — the indentation beside an open branch, most often — used to end the gesture with the
+  insertion line still on screen and nothing moved. The drop now lands wherever that line was
+  showing.
+- The "Project query folder" setting now suggests folders several levels deep while keeping every
+  Azure DevOps request within its supported limit. All folders found across three rounds participate
+  in autocomplete, a loading indicator makes it clear when that list is not ready yet, and any path
+  cut off by the textbox shows its complete value on hover.
+- The ETA on finished work is now read-only on the Project Tracking and Sprint boards. It had stopped
+  being a forecast and become the record of what was promised, so an accidental edit there quietly
+  rewrote whether the item landed on time.
+- Sprint View now recognizes an accepted Interrupt from its Discussion comment even when Azure
+  DevOps omits that comment from the item's update history, so a valid current-lifetime acceptance
+  marker paints the solid accepted pill instead of the outlined unaccepted one.
 
 ## 0.5
 

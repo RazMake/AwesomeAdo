@@ -38,6 +38,8 @@ export class AutocompleteInput {
   // When set, the list is positioned with `position: fixed` from the input's box so it escapes a
   // scroll-clipping ancestor (e.g. the work-item table's overflow box) and floats above the page.
   private floating = false;
+  // Long path vocabularies opt in so a clipped option exposes its complete value on hover.
+  private overflowTitles = false;
 
   constructor(private readonly input: HTMLInputElement) {
     const doc = input.ownerDocument;
@@ -96,6 +98,14 @@ export class AutocompleteInput {
    */
   enableFloating(): void {
     this.floating = true;
+  }
+
+  /** Show the complete option as a tooltip only when its rendered text is clipped. */
+  enableOverflowTitles(): void {
+    this.overflowTitles = true;
+    if (this.open) {
+      this.updateOverflowTitles();
+    }
   }
 
   /**
@@ -239,6 +249,9 @@ export class AutocompleteInput {
       }
       this.listbox.append(item);
     });
+    if (this.open) {
+      this.updateOverflowTitles();
+    }
   }
 
   private openList(): void {
@@ -247,8 +260,9 @@ export class AutocompleteInput {
     this.input.setAttribute("aria-expanded", "true");
     if (this.floating) {
       this.position();
-      this.attachRepositionListeners();
     }
+    this.updateOverflowTitles();
+    if (this.floating || this.overflowTitles) this.attachRepositionListeners();
   }
 
   private close(): void {
@@ -260,7 +274,7 @@ export class AutocompleteInput {
     this.listbox.hidden = true;
     this.input.setAttribute("aria-expanded", "false");
     this.input.removeAttribute("aria-activedescendant");
-    if (this.floating) {
+    if (this.floating || this.overflowTitles) {
       this.detachRepositionListeners();
     }
   }
@@ -268,14 +282,17 @@ export class AutocompleteInput {
   // Keep the fixed list glued to the input while the user scrolls (any ancestor) or resizes.
   private readonly reposition = (): void => {
     if (this.open) {
-      this.position();
+      if (this.floating) this.position();
+      this.updateOverflowTitles();
     }
   };
 
   private attachRepositionListeners(): void {
     // A capturing document listener catches scrolls from descendant scroll boxes (they do not
     // bubble), so the list tracks the input even when the table itself is the thing scrolling.
-    this.input.ownerDocument.addEventListener("scroll", this.reposition, true);
+    if (this.floating) {
+      this.input.ownerDocument.addEventListener("scroll", this.reposition, true);
+    }
     this.input.ownerDocument.defaultView?.addEventListener("resize", this.reposition);
   }
 
@@ -305,6 +322,15 @@ export class AutocompleteInput {
     } else {
       style.top = `${rect.bottom + 2}px`;
     }
+  }
+
+  private updateOverflowTitles(): void {
+    if (!this.overflowTitles) return;
+    const items = this.listbox.querySelectorAll<HTMLLIElement>(".combobox__option");
+    items.forEach((item, index) => {
+      const value = this.matches[index];
+      item.title = value !== undefined && item.scrollWidth > item.clientWidth ? value : "";
+    });
   }
 
   private optionId(index: number): string {

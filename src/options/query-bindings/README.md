@@ -66,15 +66,14 @@ This component does not log; it surfaces failures through the options page's sha
   `resolveDerivedValues` collaborator and read at most once per query. A seed only: a field the user
   has already filled is never overwritten, and a read that fails leaves the field empty and editable.
   A seed that does land is stored, so nothing sits on screen that the view will not see.
-- **Suggestions** — the autocomplete vocabularies come from one broad credentialed Azure DevOps read,
-  so the form deliberately does **not** wait for it: it opens with empty lists and every rendered
-  control is refreshed when the values land. Waiting was what made this tab look like it never
-  loaded.
-- **Saved-query folders grow as you type** — ADO answers its query hierarchy two levels deep and caps
-  a node at 1000 children, so the folder list starts shallow. Naming a folder, or typing a path
-  beneath one, asks `resolveFolderChildren` for what is inside it and merges the answer in; the
-  deepest matching folder wins and each is asked about once. A typed path that no suggestion matches
-  stays perfectly valid.
+- **Suggestions** — the area-path and iteration-path vocabularies come from one broad credentialed
+  Azure DevOps read, so the form deliberately does **not** wait for it: it opens with empty lists and
+  every rendered control is refreshed when the values land. Waiting was what made this tab look like
+  it never loaded.
+- **Saved-query folders load a folder at a time** — see `QueryFolderVocabulary.ts` below. The folder
+  control shows a spinner inside its own trailing edge, and exposes `aria-busy`, whenever a folder is
+  being read; it stays editable throughout, and a suggestion clipped to the textbox width exposes its
+  complete path as a hover tooltip.
 - **`QueryBindingsElements`** — the tab's elements the controller drives (the empty state, the add
   card's read-only query line, view picker and Save; the edit card's query picker and Delete; the view
   config card's view picker and property container; and the shared status line), passed in so it
@@ -85,6 +84,22 @@ This component does not log; it surfaces failures through the options page's sha
   reader for the work items they point at. Optional; omitting it means this build shows no shared
   queries. The resolver memoizes per work item, so a team that shares five queries from one item is
   read once, and `reload()` invalidates it before re-resolving.
+
+### `QueryFolderVocabulary.ts`
+
+- **`QueryFolderVocabulary`** — the saved-query folders the folder field offers, grown one folder at
+  a time. `loadRoot()` reads the folders the picker starts from (one Azure DevOps request), `paths`
+  is what to suggest right now, and `loading` is true while any read is outstanding. `expand(typed)`
+  opens the folder the typed or picked text names or sits inside — the **deepest** matching one, at
+  most once each, and **only** when Azure DevOps said that folder still holds folders it did not hand
+  over. That check is what keeps a leaf folder free. Nothing here is awaited by the form: the field
+  stays typable throughout, a path no suggestion matches is still perfectly valid, and a refused read
+  costs suggestions and nothing else.
+
+  **Why not just list the project's folders:** Azure DevOps expands the hierarchy two levels per
+  request and caps a node at 1000 children, so a large project cannot be enumerated — and crawling
+  towards the deeper folders up front is hundreds of dependent requests, which is what made this
+  field take minutes to fill.
 
 ### `AreaPathListEditor.ts`
 
@@ -100,5 +115,6 @@ This component does not log; it surfaces failures through the options page's sha
 
 Construct `QueryBindingsController` at the options composition root with the shared binding store, the
 elements, a binding-scoped diagnostics callback, a query-id resolver backed by the ADO tab reader,
-a suggestion resolver and a derived-value resolver backed by the shared ADO metadata and query reads
-(see `src/options/index.ts`).
+a suggestion resolver, the two saved-query folder readers (`resolveRootFolders` from the shared
+metadata read, `resolveFolderChildren` from `ChromeQueryFolderReader`), and a derived-value resolver
+backed by the shared ADO query read (see `src/options/index.ts`).

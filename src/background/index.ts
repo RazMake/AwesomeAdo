@@ -24,6 +24,7 @@ import {
 import {
   buildInterruptAcceptanceUrls,
   INTERRUPT_UPDATES_PAGE_SIZE,
+  MAX_INTERRUPT_COMMENT_PAGES,
   MAX_INTERRUPT_UPDATE_PAGES,
 } from "../common/ado/fetchInterruptAcceptance";
 import { buildNewestNoteUrl, MAX_NOTE_ACTIVITY_PAGES } from "../common/ado/fetchNoteActivity";
@@ -1466,6 +1467,7 @@ const readInterruptAcceptance = async (
         concurrency: INTERRUPT_ACCEPTANCE_CONCURRENCY,
         updatePageSize: INTERRUPT_UPDATES_PAGE_SIZE,
         maxUpdatePages: MAX_INTERRUPT_UPDATE_PAGES,
+        maxCommentPages: MAX_INTERRUPT_COMMENT_PAGES,
       },
       (url) => readInPage(tabId, url),
     );

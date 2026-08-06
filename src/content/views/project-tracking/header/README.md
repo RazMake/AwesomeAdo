@@ -26,10 +26,11 @@ Renders a single subtle-filled tile with these bands:
    a control that changes the board do not read as one thing. The band is rendered even when there
    are no breadcrumbs, and its height is reserved so a save starting or finishing cannot resize the
    sticky header.
-2. **Title + controls** — the project title (`options.title`, colored by `options.titleColor`) with
-   the expand-all (`+`), collapse-all (`−`) and refresh (`⟳`) buttons beside it. The compact area-path
-   filter (`options.areaPathFilter`) and sprint picker (`options.sprintPicker`) form one filter group
-   pinned to the right edge of the same band.
+2. **Title + controls** — the project title (`options.title`, colored by `options.titleColor`), then
+   the sprint picker (`options.sprintPicker`) as the first control, followed by expand-all (`+`) and
+   collapse-all (`−`). The narrowing filters — Assigned To (`options.assignedToFilter`) and the
+   compact area-path filter (`options.areaPathFilter`) — sit together at the right edge, immediately
+   before refresh (`⟳`), which is the band's final action.
 3. **Tech Lead + ETA** — the caller-supplied Tech Lead control (`options.techLead`) followed by the
    caller-supplied ETA badge (`options.eta`, built with the shared
    [`renderEtaBadge`](../../../../common/view-common/control/EtaBadge/README.md) so the view owns its
@@ -39,12 +40,11 @@ The version marker shows the extension's **Major.Minor** release only and links 
 (see [`VersionLabel`](../../../../common/view-common/control/VersionLabel/README.md); the build
 segment is CI's run counter and names no published version).
 
-The `+`/`−` buttons are vertically centered against the two-line title/tech-lead block. `+` opens all
+The sprint picker and `+`/`−` buttons are vertically centered against the two-line title/tech-lead block. `+` opens all
 parent rows first; when every parent is already open, its next click opens every visible item's notes.
 `−` closes any open notes and descriptions first; only a click made after all row details are closed
-collapses the parent rows. Refresh shares that band and styling but carries a wider left margin:
-`+`/`−` only rearrange what is already on screen, while refresh discards the board's data and re-reads
-it, so sitting them flush would read as one three-button group and invite the mis-click.
+collapses the parent rows. Refresh is separated to the far right because it discards the board's data
+and re-reads it, while the controls on the left only change the current view.
 
 ### Options
 
@@ -57,8 +57,9 @@ it, so sitting them flush would read as one three-button group and invite the mi
 | `onTitleContextMenu` | Called when the title is right-clicked, so the view can offer the root item's own menu (omitted leaves the browser's menu alone). |
 | `techLead`           | The Tech Lead control element, or `null` when view services are unavailable.                                                      |
 | `eta`                | The root item's ETA badge element (pre-built by the view), or `null` when view services are unavailable.                          |
-| `areaPathFilter`     | The compact area-path multi-select, grouped with the sprint picker at the right edge.                                             |
-| `sprintPicker`       | The sprint picker element, pinned to the right of the controls band.                                                              |
+| `areaPathFilter`     | The compact area-path multi-select, grouped with the other narrowing filters immediately before refresh.                          |
+| `assignedToFilter`   | The compact Assigned To multi-select, grouped with the other narrowing filters immediately before refresh.                        |
+| `sprintPicker`       | The sprint picker element, rendered as the first control before expand and collapse.                                              |
 | `writeQueueStatus`   | The write-queue status indicator, in the tile's top-right corner group (`null`/omitted omits it).                                 |
 | `extensionVersion`   | Built extension version, shown in the top-right corner group just left of the ordering picker.                                    |
 

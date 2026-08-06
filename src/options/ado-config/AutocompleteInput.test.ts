@@ -279,6 +279,27 @@ describe("AutocompleteInput — custom option renderer", () => {
     expect(items.map((li) => li.textContent)).toEqual(["★Bug", "★Task"]);
   });
 
+  it("titles only options whose full value is clipped", () => {
+    const input = makeInput("folder");
+    const combobox = new AutocompleteInput(input);
+    combobox.enableOverflowTitles();
+    combobox.setOptions(
+      ["Shared Queries/Short", "Shared Queries/A very long folder path"],
+      (value, element) => {
+        element.textContent = value;
+        Object.defineProperties(element, {
+          clientWidth: { configurable: true, value: 120 },
+          scrollWidth: { configurable: true, value: value.includes("very long") ? 260 : 100 },
+        });
+      },
+    );
+
+    fire(input, "focus");
+
+    const items = [...listbox(input).querySelectorAll<HTMLLIElement>("li")];
+    expect(items.map((item) => item.title)).toEqual(["", "Shared Queries/A very long folder path"]);
+  });
+
   it("keeps a previously set renderer when setOptions omits one", () => {
     const input = makeInput("type");
     const combobox = new AutocompleteInput(input);

@@ -8,7 +8,7 @@ const URLS = {
   fieldsUrl: "fields-url",
   areaPathsUrl: "areas-url",
   iterationPathsUrl: "iterations-url",
-  queryFoldersUrl: "folders-url",
+  queryFoldersUrl: "https://dev.azure.com/contoso/web/_apis/wit/queries?$depth=2&api-version=7.1",
 };
 
 function jsonResponse(body: unknown, ok = true, status = ok ? 200 : 400): Response {
@@ -44,6 +44,9 @@ describe("fetchAdoRawInPage - metadata", () => {
       if (url === "fields-url") {
         return Promise.resolve(jsonResponse({ value: [{ referenceName: "System.CreatedDate" }] }));
       }
+      if (url === URLS.queryFoldersUrl) {
+        return Promise.resolve(jsonResponse({ value: [{ path: "Shared Queries" }] }));
+      }
       return Promise.resolve(jsonResponse({ name: "Web" }));
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -60,8 +63,10 @@ describe("fetchAdoRawInPage - metadata", () => {
       fields: { value: [{ referenceName: "System.CreatedDate" }] },
       areaPaths: { name: "Web" },
       iterationPaths: { name: "Web" },
-      queryFolders: { name: "Web" },
+      queryFolders: { value: [{ path: "Shared Queries" }] },
     });
+    // Exactly one saved-query request: following every truncated folder is what made this read crawl.
+    expect(fetchMock.mock.calls.filter(([url]) => url === URLS.queryFoldersUrl)).toHaveLength(1);
     // Credentials must be included so ADO's SameSite session cookies ride along on the page-world call.
     expect(fetchMock).toHaveBeenCalledWith("teams-url&$skip=0", {
       credentials: "include",

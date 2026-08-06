@@ -9,6 +9,55 @@ we hit, why they happened, and the exact fix so nobody re-derives them.
 agent-tool-local memory (it does not clone or transfer between machines/agents). Record new findings
 here so every agent, teammate, and clone sees them.
 
+## Team configuration can safely rebase over an unrelated revision, never a changed Description
+
+- SYMPTOM: Publish reported `HTTP 412` even though nobody else had published team configuration.
+- ROOT CAUSE: the connected work item can gain a revision between the publish GET and PATCH from an
+  unrelated field edit. The `/rev` test cannot distinguish that from a competing Description write.
+- FIX / RULE: after a 412, reread once. Retry once with the new revision only when
+  `System.Description` is byte-for-byte unchanged from the first read. A changed Description is a
+  real configuration conflict and must remain visible rather than being overwritten.
+
+## ADO caps the saved-query hierarchy at `$depth=2` — asking for more returns NOTHING, not less
+
+- SYMPTOM: the binding form's "Project query folder" autocomplete suggested nothing at all, while the
+  area-path and iteration-path fields beside it (same control, same metadata read) worked.
+- ROOT CAUSE: `buildAdoMetadataUrls` requested `_apis/wit/queries?$depth=5`. That is not clamped —
+  it is REFUSED: `HTTP 400 — "A query parameter specified in the request URI is outside the
+permissible range: Parameter Name: depth, Acceptable Range: 0 to 2"`. `getWithRetry` does not retry
+  a 400, so `queryFolders` parsed `null` into `[]` on every read. The code's own comment already said
+  the cap was two; only the constant disagreed.
+- The REST docs do not state the bound. Verified live in the signed-in tab: `$depth=2` → 200,
+  `$depth=5` → 400 with that message. `buildQueryFolderChildrenUrl` shares the constant, so the
+  per-folder expansion was failing the same way.
+- RULE: `QUERY_FOLDER_DEPTH` is 2 and cannot be raised. The metadata reader follows three bounded
+  breadth rounds; anything deeper is reached one folder at a time.
+- RECIPE (the general one, worth reusing): reach the ADO tab over CDP
+  (`--remote-debugging-port=9222`), `Runtime.evaluate` with `awaitPromise` a `fetch(..., {credentials:
+"include"})` in that tab's page world, and read the status plus the first 300 characters of the body.
+  A credentialed same-origin probe like this settles "does ADO accept this parameter?" in one shot,
+  with no writes and no repro.
+
+## A drop that no row owns must still land where the insertion line promised
+
+- SYMPTOM: on Project Tracking, some drags ended with the insertion line visible and the item not
+  moved — no error, no log line. Reproducible by releasing over the indentation beside an open branch.
+- ROOT CAUSE: two of them. (1) `childrenContainer` carries `margin-left:10px; padding-left:2px`, so a
+  ~12px vertical strip down every nested branch belongs to NO registered `dropZone`; `dragover` there
+  never calls `preventDefault`, so the browser fires no `drop` at all. (2) `completeDrop` called
+  `endSession()` BEFORE checking its plan, so an inner zone that could not answer the drop destroyed
+  the session an outer zone still needed to plan from.
+- FIX / RULE: the controller records the plan the indicator is SHOWING (`session.preview`). On
+  `dragstart` it also listens on the smallest element containing every registered row, keeping the
+  drop accepted while a line is on screen and committing that plan on release; `completeDrop` falls
+  back to the same plan and no longer ends the session on a plan it could not resolve.
+- Do NOT commit on `dragend` instead: Escape-cancel and release-outside are indistinguishable there
+  (both report `dropEffect: "none"`), so that would move items the reader deliberately let go of.
+- The container is re-derived on `reset()` (each render pass). A test that only drags partway leaves a
+  live session with document-level listeners, so `DragReorderController.test.ts` resets every
+  controller it built in `afterEach` — without that, one test's preview answers the next test's
+  `dragover`.
+
 ## Every view that persists a reorder writes ONE shared order — rank against a LEVEL, never a screen
 
 - THE TRAP: Project Tracking, the catalog and (formerly) Sprint all persist a drag through the same
@@ -127,14 +176,20 @@ here so every agent, teammate, and clone sees them.
 - Unassigned, missing, Done, reassigned, or re-laned cards are skipped and reported. The dialog's
   Lane/assignee counts remain the operation contract from confirmation through completion.
 
-## An old acceptance note must not survive an Interrupt re-tag
+## Interrupt acceptance needs BOTH the update timeline and Discussion comments
 
 - SYMPTOM: an item tagged Interrupt, accepted, untagged, and later tagged again still painted as
   accepted because the reader looked for any `[ACCEPTED]` note in its history.
-- FIX / RULE: acceptance is scoped to the latest tag-add revision. Page the work-item updates stream
-  by the count actually returned; find the latest `System.Tags` transition from absent to present;
-  then accept only a configured `System.History` token at or after that update's
-  `System.ChangedDate`. Do not use the item's current `ChangedDate`, which moves for unrelated edits.
+- SECOND SYMPTOM (verified live 2026-08-05): two Sprint cards had `[ACCEPTED]` Discussion comments
+  1–2 seconds after the Interrupt tag addition but painted as unaccepted. Their update timelines had
+  no `System.History` delta at all; a third correctly painted card happened to have the same comment
+  in both places.
+- FIX / RULE: acceptance is scoped to the latest tag-add revision, but Discussion is the canonical
+  note source. Page the work-item updates stream by the count actually returned to find the latest
+  `System.Tags` transition from absent to present; then page newest-first Discussion comments until
+  the configured token is found or a comment older than that transition proves the current lifetime
+  is exhausted. Do not use the item's current `ChangedDate`, which moves for unrelated edits, and do
+  not require Azure DevOps to echo a Discussion comment as `System.History`.
 - Transport reuses `executeAdoRequestInPage`, so each idempotent page GET gets three bounded retries.
   Keep failed item IDs separate from unaccepted IDs; inability to read evidence is not evidence of
   rejection.
@@ -164,15 +219,15 @@ here so every agent, teammate, and clone sees them.
   reconciles it to a represented `Project\\...` lane. Reset persists the reconciled paths so existing
   bindings repair themselves without misreading a real, exact lane named `Area`.
 
-## The saved-query hierarchy CANNOT be enumerated — measured limits on `_apis/wit/queries`
+## The saved-query hierarchy is read ONCE, then a folder at a time — measured limits on `_apis/wit/queries`
 
 - SYMPTOM: the binding form's **Project query folder** suggestions were missing folders, twice. The
   first attempt (walk every folder ADO reported as `hasChildren` with no `children`) was ALSO the
-  cause of a "the page takes forever to load" report.
-- MEASURED on `o365exchange/O365 Core` by probing the signed-in tab (10416 nodes, 1275 folders at
-  `$depth=5`):
-  - `$depth` is capped at **5**. A folder at the boundary comes back with `hasChildren: true` and
-    **no `children` key at all** — never an empty array (`emptyChildArrayFolders: 0`).
+  cause of a "the page takes forever to load" report — and so was the three-round fix that replaced
+  it, for the same reason at a smaller scale.
+- MEASURED on `o365exchange/O365 Core` by probing the signed-in tab:
+  - A folder at the depth boundary comes back with `hasChildren: true` and **no `children` key at
+    all** — never an empty array (`emptyChildArrayFolders: 0`). That omission is the expansion signal.
   - A node's `children` is capped at **1000**. `Shared Queries` returned exactly 1000 direct children
     (444 of them folders), and **`$top` is ignored** (`$top=5` still returned 1000). There is no
     `$skip` on this endpoint, so the children past 1000 are simply unreachable.
@@ -182,11 +237,14 @@ here so every agent, teammate, and clone sees them.
   - `$filter` DOES search the whole hierarchy at any depth and returns full paths, but it matches
     **query names only** — every probe returned `folders: 0`. A folder is only discoverable through a
     child query whose name happens to match, so it cannot enumerate folders either.
-- RULE: **never try to load all query folders.** The bulk metadata read stays ONE `$depth=5` request.
-  Anything deeper is read on demand, one folder at a time, by `ChromeQueryFolderReader`
-  (`buildQueryFolderChildrenUrl`), triggered when the user names a folder or types a path beneath one
-  (`QueryBindingsController.expandTypedFolder`). A typed path always stays valid, so an unreachable
-  folder is never a dead end.
+- RULE: **never issue a depth above 2 or attempt an unbounded crawl.** Nor a bounded one: three
+  breadth rounds still cost ~800 dependent requests at round 2 alone, and the "Project query folder"
+  box took minutes to fill because of it. The metadata read performs **exactly one** `$depth=2`
+  request, which is where the folder autocomplete starts. Anything deeper is read on demand, one
+  folder at a time, by `ChromeQueryFolderReader` (`buildQueryFolderChildrenUrl`), triggered when the
+  user names or picks a folder (`QueryFolderVocabulary.expand`) — and only when that folder's
+  `hasUnreadChildren` says ADO held something back, so a leaf folder costs no request at all. A typed
+  path always stays valid, so an unreachable folder is never a dead end.
 
 ## A binding Save was immediately undone by Sprint's team pull
 

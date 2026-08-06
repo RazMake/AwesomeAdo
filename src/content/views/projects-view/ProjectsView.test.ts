@@ -119,6 +119,9 @@ function createServices(overrides?: Partial<EnhancedViewServices>): EnhancedView
     },
     createWorkItem: { create: async () => ({ ok: true, id: 900, rev: 1 }) },
     queryBindings: { bind: async () => undefined, unbind: async () => undefined },
+    // No sprints by default: only the tests that exercise the add-a-project row care, and an empty
+    // window is what leaves a new project on the Azure DevOps project's own iteration.
+    loadSprintWindow: async () => ({ entries: [], currentName: null }),
     writeField: async () => ({ ok: true, rev: 2 }),
     reorderItem: async () => ({ ok: true }),
     currentTeam: () => "team-guid",
@@ -321,6 +324,20 @@ describe("projectsView - ordering picker", () => {
     );
   });
 
+  it("keeps Tags immediately left of Refresh at the far right of the title band", async () => {
+    const root = await renderUnsortedBoard();
+    const titleBand = root.querySelector(".awesomeado-projects__header-title")!;
+    const actions = titleBand.querySelector<HTMLElement>(".awesomeado-projects__filters")!;
+    const tags = actions.querySelector(".awesomeado-tag-filter");
+    const refresh = actions.querySelector(".awesomeado-projects__refresh");
+
+    expect(titleBand.lastElementChild).toBe(actions);
+    expect([...actions.children]).toEqual(expect.arrayContaining([tags, refresh]));
+    expect(actions.firstElementChild).toBe(tags);
+    expect(actions.lastElementChild).toBe(refresh);
+    expect(actions.style.marginLeft).toBe("auto");
+  });
+
   it("re-orders the board from the items already loaded when another policy is picked", async () => {
     const root = await renderUnsortedBoard();
     expect(titles(root)).toEqual(["Zebra", "Apple"]);
@@ -405,13 +422,13 @@ describe("projectsView - tag filter", () => {
     expect(shown.map((row) => row.querySelector("input")!.value)).toEqual(["Platform"]);
   });
 
-  it("offers Clear inside the dropdown, the one gesture that empties a composed condition", async () => {
+  it("omits Clear from the dropdown because the active Tags button clears the condition", async () => {
     const root = await renderBoard();
 
     openTagFilter(root);
 
     expect(root.querySelector(".awesomeado-tag-filter__popup")).not.toBeNull();
-    expect(root.querySelector(".awesomeado-tag-filter__clear")).not.toBeNull();
+    expect(root.querySelector(".awesomeado-tag-filter__clear")).toBeNull();
   });
 
   it("stays open while several tags are ticked, and leaves the board alone until it closes", async () => {
@@ -436,43 +453,31 @@ describe("projectsView - what the tag condition narrows", () => {
     expect(titles(root)).toEqual(["Payments"]);
   });
 
-  it("widens the board when a second tag joins the condition already in force", async () => {
+  it("builds a fresh condition after the active Tags button clears the previous one", async () => {
     const root = await renderBoard();
 
     clickTagOption(root, "Api");
     expect(titles(root)).toEqual(["Payments"]);
 
-    // Reopening ADJUSTS what is there rather than starting over, so the first tag is still ticked.
     openTagFilter(root);
-    expect(tagOptionRow(root, "Api").querySelector("input")!.checked).toBe(true);
+    expect(titles(root)).toEqual(["Payments", "Reporting"]);
+
+    openTagFilter(root);
     tagOptionRow(root, "Docs").querySelector("input")!.click();
     dismissPopup();
 
-    expect(titles(root)).toEqual(["Payments", "Reporting"]);
+    expect(titles(root)).toEqual(["Reporting"]);
   });
 
-  it("narrows the board from the Tags button itself, which is also the way out of the dropdown", async () => {
+  it("clears an active condition when the Tags button is pressed", async () => {
     const root = await renderBoard();
-    openTagFilter(root);
-    tagOptionRow(root, "Api").querySelector("input")!.click();
-
-    openTagFilter(root);
-
-    expect(root.querySelector(".awesomeado-tag-filter__popup")).toBeNull();
-    expect(titles(root)).toEqual(["Payments"]);
-  });
-
-  it("puts the whole catalog back from the dropdown's Clear, and closes it", async () => {
-    const root = await renderBoard();
-
     clickTagOption(root, "Api");
     expect(titles(root)).toEqual(["Payments"]);
 
     openTagFilter(root);
-    root.querySelector<HTMLButtonElement>(".awesomeado-tag-filter__clear")!.click();
 
-    expect(titles(root)).toEqual(["Payments", "Reporting"]);
     expect(root.querySelector(".awesomeado-tag-filter__popup")).toBeNull();
+    expect(titles(root)).toEqual(["Payments", "Reporting"]);
   });
 
   it("hides a project that contains an excluded tag anywhere beneath it", async () => {
@@ -697,7 +702,7 @@ describe("projectsView - catalog menu", () => {
 });
 
 describe("projectsView - adding a project", () => {
-  it("creates the project with the catalog's tag and the binding's area path", async () => {
+  it("creates the project with the catalog's tag, the binding's area, and the current sprint", async () => {
     const create = vi.fn(async () => ({ ok: true, id: 900, rev: 1 }));
     const loadTree = vi.fn(async () => ({
       isTreeQuery: true,
@@ -706,16 +711,34 @@ describe("projectsView - adding a project", () => {
     }));
     const root = await renderBoard(
       createContext({
-        properties: {
-          newProjectAreaPath: "Fabrikam\\Core",
-          newProjectIterationPath: "Fabrikam",
-        },
-        services: createServices({ loadTree, createWorkItem: { create } }),
+        properties: { newProjectAreaPath: "Fabrikam\\Core" },
+        services: createServices({
+          loadTree,
+          createWorkItem: { create },
+          loadSprintWindow: async () => ({
+            entries: [
+              {
+                path: "Fabrikam\\Sprint 12",
+                name: "Sprint 12",
+                label: "Sprint 12",
+                relation: "current",
+              },
+            ],
+            currentName: "Sprint 12",
+          }),
+        }),
       }),
     );
 
     openMenu(root.querySelector(".awesomeado-view__title")!);
     menuCommand("Add new project").click();
+    // The sprint list is read when the row opens, so the answer is only settled once it lands.
+    await vi.waitFor(() =>
+      expect(
+        root.querySelector<HTMLButtonElement>(".awesomeado-projects__new-sprint__trigger")!
+          .disabled,
+      ).toBe(false),
+    );
     const box = root.querySelector<HTMLInputElement>(".awesomeado-projects__new input")!;
     box.value = "Search";
     box.dispatchEvent(new Event("input", { bubbles: true }));
@@ -727,7 +750,7 @@ describe("projectsView - adding a project", () => {
         title: "Search",
         tags: ["Catalog"],
         areaPath: "Fabrikam\\Core",
-        iterationPath: "Fabrikam",
+        iterationPath: "Fabrikam\\Sprint 12",
       }),
     );
     // Only the query decides what belongs to this catalog, so the board is re-read rather than

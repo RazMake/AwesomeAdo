@@ -436,9 +436,13 @@ function renderItemEta(
   editable = true,
 ): EtaBadgeHandle {
   const etaField = options.types.get(item.type)?.etaField ?? null;
+  const completed = stateOrdinal(item, options.types.get(item.type)) === 3;
   const badge: { handle?: EtaBadgeHandle } = {};
+  // Completed work is deliberately read-only: its ETA has stopped being a forecast and become the
+  // record of what was promised, so editing it here would quietly rewrite whether the card landed
+  // on time.
   const onChange =
-    etaField && editable
+    etaField && editable && !completed
       ? (eta: string | null): void => {
           void options.writes
             .enqueue({ id: item.id, currentRev: () => item.rev, field: etaField, value: eta })
@@ -450,7 +454,6 @@ function renderItemEta(
             });
         }
       : undefined;
-  const completed = stateOrdinal(item, options.types.get(item.type)) === 3;
   badge.handle = renderEtaBadge(context.doc, {
     eta: item.eta,
     now: context.services.now(),

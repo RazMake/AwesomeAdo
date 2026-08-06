@@ -27,8 +27,8 @@ export interface AdoMetadataFetchUrls {
 }
 
 /**
- * Fetch the raw ADO teams, work-item-types, field-list, classification, and saved-query JSON from
- * inside the ADO page.
+ * Fetch the raw ADO teams, work-item-types, field-list, classification, and saved-query-folder JSON
+ * from inside the ADO page.
  *
  * WHY this exists / why it must stay self-contained: In Manifest V3 the extension's content script
  * runs in an isolated world whose origin is `chrome-extension://…`, so its cross-origin fetch to ADO
@@ -90,6 +90,9 @@ export function fetchAdoRawInPage(urls: AdoMetadataFetchUrls): Promise<AdoRawMet
     get(urls.fieldsUrl),
     getWithRetry(urls.areaPathsUrl),
     getWithRetry(urls.iterationPathsUrl),
+    // Deliberately ONE request: ADO answers two levels at a time, and following every truncated
+    // folder is hundreds of dependent requests that made the binding form take minutes to fill.
+    // The folders below this first body are read one at a time, when the user reaches into one.
     getWithRetry(urls.queryFoldersUrl),
   ]).then((bodies) => ({
     teams: bodies[0],

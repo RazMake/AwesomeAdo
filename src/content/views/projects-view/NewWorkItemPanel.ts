@@ -1,5 +1,4 @@
 import type { TrackedUser, TrackedWorkItem } from "../../../common/ado/TrackedWorkItem";
-import type { SprintWindowEntry } from "../../../common/ado/sprintWindow";
 import { withWorkItemTag } from "../../../common/ado/workItemTags";
 import type { EnhancedViewServices } from "../../../common/view-common/EnhancedView";
 import { shortestUniqueAreaPathLabels } from "../../../common/view-common/control/AreaPathFilter/AreaPathFilter";
@@ -10,7 +9,7 @@ import {
   type SelectFieldChoice,
   type SelectFieldHandle,
 } from "../../../common/view-common/control/SelectField/SelectField";
-import { sprintRelationDeclarations } from "../../../common/view-common/control/SprintPicker/SprintPicker";
+import { renderSprintSelectField } from "../../../common/view-common/control/SprintPicker/SprintSelectField";
 import {
   renderMarkdownField,
   type MarkdownFieldHandle,
@@ -347,43 +346,13 @@ function leafPaths(paths: readonly string[]): string[] {
   );
 }
 
-/**
- * The sprint, opening on the team's current one.
- *
- * The sprint window is read when the form opens rather than held by the board: this catalog spans
- * many projects and has no sprint of its own, so nothing else on the surface would ever need it.
- * Until it lands the field offers the parent's iteration, which is where the item would go anyway.
- */
+/** The sprint, opening on the team's current one and standing on the parent's until it lands. */
 function renderIterationField(options: NewWorkItemPanelOptions): SelectFieldHandle {
-  const inherited = options.parent.iterationPath ?? "";
-  const field = renderSelectField(options.doc, {
+  return renderSprintSelectField(options.doc, {
     classPrefix: "awesomeado-new-work-item__iteration",
-    label: "Sprint",
-    choices: [
-      { value: inherited, label: inherited.length === 0 ? "(the project's default)" : inherited },
-    ],
-    selected: inherited,
-    disabled: true,
+    fallbackPath: options.parent.iterationPath ?? "",
+    loadSprintWindow: () => options.services.loadSprintWindow(),
   });
-  void options.services.loadSprintWindow().then((window) => {
-    if (window.entries.length > 0) {
-      const current = window.entries.find((entry) => entry.relation === "current");
-      field.setChoices(window.entries.map(sprintChoice), (current ?? window.entries[0])!.path);
-    }
-    field.setDisabled(false);
-  });
-  return field;
-}
-
-function sprintChoice(entry: SprintWindowEntry): SelectFieldChoice {
-  return {
-    value: entry.path,
-    label: entry.label,
-    title: entry.path,
-    // The same declarations the sprint dropdown paints its options with, so past and future read
-    // the same here as everywhere else.
-    declarations: sprintRelationDeclarations(entry.relation),
-  };
 }
 
 /** The interrupt controls plus what they contribute to the creation. */

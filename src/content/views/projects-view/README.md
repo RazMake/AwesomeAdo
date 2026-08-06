@@ -11,7 +11,7 @@ view answers "what is going on across all of them?" for a query that returns **m
 ## Public API
 
 - `projectsViewType.ts` → the view's config. `projectsViewType: ViewType` has id `"projects"`, label
-  `"All Projects Catalog View"`, and five per-query properties:
+  `"All Projects Catalog View"`, and four per-query properties:
   - `orderingPolicy` (select) — how projects and their children are ordered; the choices, the
     default, and the raw sort key all come from [`common/ordering`](../../../common/ordering).
   - `projectTag` (text, optional) — the tag that makes a work item part of this catalog. The binding
@@ -20,12 +20,13 @@ view answers "what is going on across all of them?" for a query that returns **m
     returned project for legacy queries.
   - `newProjectAreaPath` (autocomplete over the project's area paths, optional) — the full area path
     a new project is created under. Left empty, Azure DevOps applies the project's default area.
-  - `newProjectIterationPath` (autocomplete over the project's iteration paths, optional) — the full
-    iteration path a new project starts in. Left empty, the current Azure DevOps project's root path
-    is used.
   - `projectQueryFolder` (autocomplete over the project's query folders, optional) — where **Create
     Project Query** saves tracking queries. The binding form pre-fills it with the folder holding the
     catalog's own query; left empty, that same folder is used at runtime.
+
+  There is deliberately **no** iteration-path setting: a sprint moves every two weeks, so a stored
+  answer would be stale far more often than it was right. The add-a-project row asks instead, opening
+  on the team's current sprint.
 
   `orderingPolicyOf(properties)` turns a binding's stored string into the typed policy the renderer
   sorts by. The other exported value helpers resolve the configured creation and query-folder
@@ -35,7 +36,8 @@ view answers "what is going on across all of them?" for a query that returns **m
   is emitted as its own web-accessible bundle (`content/projects-view.js`) and resolved on first use,
   so it is not parsed on every ADO page.
 
-- `ProjectsHeader.ts` → `renderProjectsHeader(context, options)` — the sticky header card. `options`
+- `ProjectsHeader.ts` → `renderProjectsHeader(context, options)` — the sticky header card, with Tags
+  immediately left of Refresh in the rightmost title-band group. `options`
   carries the mounted write-queue indicator and `onTitleContextMenu`, which the title raises.
 - `ProjectRow.ts` → `renderProjectRow(item, context, depth)` — one row and, when open, its children.
   The row context supplies `onContextMenu`, `newChildRow` (the inline "add a milestone" box when it
@@ -50,7 +52,8 @@ view answers "what is going on across all of them?" for a query that returns **m
   on every row, **Mark completed** on projects only).
 - `NewWorkItemPanel.ts` → `renderNewWorkItemPanel(options)` — the **Add work item** form, plus the
   `NewWorkItemValues` the caller persists.
-- `NewProjectRow.ts` → `renderNewProjectRow(options)` — the inline "add a project" row.
+- `NewProjectRow.ts` → `renderNewProjectRow(options)` — the inline "add a project" row, including the
+  sprint field it opens on the team's current iteration.
 - `projectTags.ts` → `tagsInUse(items, excluded?)`, `queryWideTags(roots)`, `queryWideTagNames(roots)`,
   `idsKeptByTagCondition(roots, condition)`, `isEmptyTagCondition(condition)`, and the `TagCondition`
   type — the tag vocabulary, the tags that are the query's own condition (lower-cased for comparison,
@@ -97,10 +100,13 @@ view answers "what is going on across all of them?" for a query that returns **m
   project stays reachable) and its whole subtree (so a match never looks childless) with it. An
   excluded tag removes every project that **contains** it anywhere beneath them, which is what "show
   me the projects not using X" means. The dropdown carries a quick-search because a team's tag
-  vocabulary is unbounded. A condition takes several clicks to state, so the dropdown **stays open**
-  while it is built and the board is narrowed only once the dropdown closes — by pressing **Tags**
-  again, clicking the board behind it, or pressing Escape. Reopening **adjusts** the condition in
-  force rather than starting over; the dropdown's own **Clear** is what empties it.
+  vocabulary is unbounded. Every tick narrows the board immediately, because the reader is building
+  the condition by watching what it leaves behind — waiting for the dropdown to close would make them
+  state the whole thing blind. That is only possible because a filter change repaints the **list**
+  rather than the whole surface; a full repaint would rebuild the header and take the open dropdown
+  with it. The dropdown **stays open** while the condition is built and closes by pressing **Tags**
+  again, clicking the board behind it, or pressing Escape. Once the dropdown is closed, pressing the
+  lit **Tags** button clears the whole condition in one step; the dropdown has no separate Clear.
 - **Refresh**: `⟳` re-reads the query in place, keeping the outline the reader opened and their tag
   condition. A failed refresh keeps the older board and reports itself on the button; pressing it in
   that state opens the Diagnostics log on the cause.
@@ -115,8 +121,11 @@ save" indicator sits in the header's top-right corner beside the version marker.
 
 - **Title menu** (right-click the view's name): copies the query's URL, and adds a project. The new
   project is created as the FIRST configured work item type, tagged so the bound query returns it,
-  and under the binding's area and iteration paths. The title is typed into an inline row above the
-  list; the board is then re-read, because only the query decides what belongs to this catalog.
+  and under the binding's area path. The title is typed into an inline row above the list, which also
+  carries a **Sprint** field opening on the team's current iteration — the one value here that cannot
+  honestly be decided in advance. Until that list lands, and when the team has no sprints at all, the
+  field stands on the Azure DevOps project's own default. The board is then re-read, because only the
+  query decides what belongs to this catalog.
 - **Row menu** (right-click any row): the shared Copy ID / Copy URL / Open in ADO commands, the
   shared Update title / Update description / View all notes commands, plus **Add custom tag**
   (completing against the tags already in use, or a new one typed in) and **Clear custom tag** (the

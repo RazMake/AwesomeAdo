@@ -59,6 +59,10 @@ import {
   type AssignedToHandle,
 } from "../../../common/view-common/control/AssignedTo/AssignedTo";
 import {
+  renderCheckboxFilter,
+  type CheckboxFilterHandle,
+} from "../../../common/view-common/control/CheckboxFilter/CheckboxFilter";
+import {
   renderChildItemsBadge,
   type ChildItemDescriptor,
 } from "../../../common/view-common/control/ChildItemsBadge/ChildItemsBadge";
@@ -123,6 +127,11 @@ import { writeItemAssignee } from "../item-assignee/writeItemAssignee";
 import { writeItemEta } from "../item-eta/writeItemEta";
 import { writeItemPriority } from "../item-priority/writeItemPriority";
 
+import {
+  assigneesInPrimaryWork,
+  matchesAssigneeFilter,
+  type AssigneeOption,
+} from "./assignee-filter/assigneeFilter";
 import { applyMoveToTree, applyRanksToTree } from "./drag-reorder/applyMoveToTree";
 import {
   renderProjectTrackingHeader,
@@ -180,6 +189,8 @@ interface TreeFilter {
   sprint: string | null;
   /** Full Azure DevOps area paths selected in the header (empty = every area). */
   areaPaths: ReadonlySet<string>;
+  /** The people selected in the header's Assigned To filter (empty = everyone). */
+  assignees: ReadonlySet<string>;
   /** The active Feature Crew tag filter (empty = nobody selected); `null` is the untagged "??" bucket. */
   tags: Set<string | null>;
   /** True once an item has sat in the resolved column longer than the binding's window allows. */
@@ -232,6 +243,7 @@ function matchesTreeFilter(item: TrackedWorkItem, filter: TreeFilter): boolean {
   return (
     matchesSprint &&
     matchesAreaPath &&
+    matchesAssigneeFilter(item, filter.assignees) &&
     matchesLitPills(item, filter) &&
     !filter.isResolvedPastWindow(item)
   );
@@ -995,10 +1007,13 @@ function isLeafSprint(item: TrackedWorkItem): boolean {
  * Builds an item's ETA badge, wired to persist edits when the item's type has an ETA field
  * configured. Shared by the tree rows and the header (root) so ETA read/write lives in one place.
  *
- * The badge is editable ONLY when the type declares an ETA field to write to; without one it is a
- * read-only "No ETA". Picking a date or clearing enqueues a serialized field write against that
- * type's configured field and reflects the committed value on success — so a failed write never
- * leaves a misleading date on screen (persist-then-reflect, matching the status badge).
+ * The badge is editable ONLY when the type declares an ETA field to write to AND the item is still
+ * in flight; without a field there is nowhere to write, and once the work is done its ETA has
+ * stopped being a forecast and become the record of what was promised — editing it there would
+ * quietly rewrite whether the item landed on time. Picking a date or clearing enqueues a serialized
+ * field write against that type's configured field and reflects the committed value on success — so
+ * a failed write never leaves a misleading date on screen (persist-then-reflect, matching the status
+ * badge).
  */
 function createItemEtaBadge(
   doc: Document,
@@ -1009,18 +1024,20 @@ function createItemEtaBadge(
   now: Date,
 ): EtaBadgeHandle {
   const etaField = typeMap.get(item.type)?.etaField ?? null;
+  const completed = isCompleted(item, typeMap, boardColumns);
   // The onChange closure needs the badge handle to reflect a committed change, but the handle only
   // exists after renderEtaBadge returns. A ref cell breaks that cycle with a single const binding:
   // the closure runs only on a later user pick, by which point `badge.handle` is set.
   const badge: { handle?: EtaBadgeHandle } = {};
-  const onChange = etaField
-    ? (newEta: string | null): void => {
-        writeItemEta(item, newEta, etaField, queue, (committed) => badge.handle?.setEta(committed));
-      }
-    : undefined;
-  const completion = isCompleted(item, typeMap, boardColumns)
-    ? { completedAt: item.stateChangeDate || null }
-    : {};
+  const onChange =
+    etaField && !completed
+      ? (newEta: string | null): void => {
+          writeItemEta(item, newEta, etaField, queue, (committed) =>
+            badge.handle?.setEta(committed),
+          );
+        }
+      : undefined;
+  const completion = completed ? { completedAt: item.stateChangeDate || null } : {};
   badge.handle = renderEtaBadge(doc, { eta: item.eta, now, onChange, ...completion });
   return badge.handle;
 }
@@ -1896,6 +1913,8 @@ interface BoardSession {
   selectedTags: Set<string | null>;
   /** Full area paths selected in the header (OR across entries; empty = every area). */
   selectedAreaPaths: Set<string>;
+  /** The people selected in the header's Assigned To filter (OR across them; empty = everyone). */
+  selectedAssignees: Set<string>;
   /** The recent-activity pills the reader lit (OR across them; empty = no activity filter). */
   selectedActivity: Set<RecentActivityKind>;
   /** The marker pills the reader lit (OR across them; empty = no marker filter). */
@@ -1939,6 +1958,7 @@ function createBoardSession(services: EnhancedViewServices): BoardSession {
     ),
     selectedTags: new Set<string | null>(),
     selectedAreaPaths: new Set<string>(),
+    selectedAssignees: new Set<string>(),
     selectedActivity: new Set<RecentActivityKind>(),
     selectedMarkers: new Set<WorkItemMarker>(),
     boardWasEmpty: null,
@@ -2050,11 +2070,49 @@ function renderAreaPathControls(
   return renderAreaPathFilter(context.doc, {
     areaPaths,
     selectedAreaPaths: [...session.selectedAreaPaths],
+    // A reading position rather than configuration, so the lit-up trigger is the way OUT of it —
+    // the same one press every other filter on this header answers to.
+    clearOnTriggerWhenActive: true,
     onChange: (selected) => {
       session.selectedAreaPaths.clear();
       for (const path of selected) session.selectedAreaPaths.add(path);
       context.services.logger.info(
         `Project Tracking area-path filter: selectedCount=${selected.length}.`,
+      );
+      onChange();
+    },
+  });
+}
+
+/**
+ * Build the Assigned To selector over the people who actually do the delivery, dropping a selection
+ * a refresh no longer offers so the board cannot be narrowed by a name with no way to unpick it.
+ */
+function renderAssigneeControls(
+  context: DataDrivenViewContext,
+  assignees: readonly AssigneeOption[],
+  session: BoardSession,
+  onChange: () => void,
+): CheckboxFilterHandle {
+  const offered = new Set(assignees.map((assignee) => assignee.key));
+  for (const selected of [...session.selectedAssignees]) {
+    if (!offered.has(selected)) session.selectedAssignees.delete(selected);
+  }
+  return renderCheckboxFilter(context.doc, {
+    label: "Assigned To",
+    classPrefix: "awesomeado-assignee-filter",
+    options: assignees.map((assignee) => ({ value: assignee.key, label: assignee.label })),
+    selected: [...session.selectedAssignees],
+    searchPlaceholder: "Search people",
+    // A person's work is narrowed to by picking more names, never by ruling one out, so the trigger
+    // is free to be the one-press way back to the whole board.
+    clearOnTriggerWhenActive: true,
+    onChange: (selection) => {
+      session.selectedAssignees.clear();
+      for (const key of selection.included) session.selectedAssignees.add(key);
+      context.services.logger.info(
+        `Project Tracking Assigned To filter: selectedCount=${selection.included.length} ` +
+          `of ${assignees.length} offered.`,
       );
       onChange();
     },
@@ -2111,8 +2169,8 @@ interface HeaderBoardControls {
   writeQueueStatus: HTMLElement;
   /** The discrete ordering indicator/picker, pinned to the tile's top-right corner. */
   orderingPicker: HTMLElement;
-  /** Re-narrow the tree after the header's area-path selection changes. */
-  onAreaPathChange: () => void;
+  /** Re-narrow the tree after one of the header's own filters changes. */
+  onHeaderFilterChange: () => void;
   /**
    * The board's right-click menu for the ROOT item, opened from the project title — the one work
    * item the board never renders as a row, and which would otherwise be the only item on screen with
@@ -2124,10 +2182,19 @@ interface HeaderBoardControls {
   onTitleContextMenu: (event: MouseEvent) => void;
 }
 
+/** The vocabularies the header's own filters offer, derived from the loaded tree. */
+interface HeaderFilterChoices {
+  /** The full area paths the Lanes filter offers. */
+  areaPaths: readonly string[];
+  /** The people the Assigned To filter offers. */
+  assignees: readonly AssigneeOption[];
+}
+
 /**
  * Renders the header tile by delegating layout to the view's own header control, feeding it the
  * pieces the control does not build itself (the Tech Lead picker, the sprint picker, the ordering
- * picker, and the write-queue status indicator) plus the root's title, type color, and ETA.
+ * picker, the narrowing filters, and the write-queue status indicator) plus the root's title, type
+ * color, and ETA.
  */
 function renderHeader(
   doc: Document,
@@ -2136,7 +2203,7 @@ function renderHeader(
   typeMap: Map<string, TypeCatalogEntry>,
   boardColumns: string[],
   sprintWindow: SprintWindow,
-  areaPaths: readonly string[],
+  choices: HeaderFilterChoices,
   session: BoardSession,
   chipContext: AssigneeChipContext,
   boardControls: HeaderBoardControls,
@@ -2155,9 +2222,15 @@ function renderHeader(
   const sprintPickerHandle = renderSprintControls(doc, sprintWindow, session);
   const areaPathFilter = renderAreaPathControls(
     context,
-    areaPaths,
+    choices.areaPaths,
     session,
-    boardControls.onAreaPathChange,
+    boardControls.onHeaderFilterChange,
+  );
+  const assignedToFilter = renderAssigneeControls(
+    context,
+    choices.assignees,
+    session,
+    boardControls.onHeaderFilterChange,
   );
   const techLead = createTechLeadGroup(root, chipContext);
 
@@ -2185,6 +2258,7 @@ function renderHeader(
     techLead,
     eta: createItemEtaBadge(doc, root, typeMap, boardColumns, queue, context.services.now()),
     areaPathFilter: areaPathFilter.element,
+    assignedToFilter: assignedToFilter.element,
     sprintPicker: sprintPickerHandle.element,
     orderingPicker: boardControls.orderingPicker,
     writeQueueStatus: boardControls.writeQueueStatus,
@@ -2422,6 +2496,7 @@ function createTreeFilter(params: BoardTreeRendererParams, sprint: string | null
   return {
     sprint,
     areaPaths: params.session.selectedAreaPaths,
+    assignees: params.session.selectedAssignees,
     tags: params.session.selectedTags,
     isResolvedPastWindow: createResolvedWindowFilter(
       params.typeMap,
@@ -2615,6 +2690,7 @@ function logBoardEmptinessFlip(
   context.services.logger.info(
     `Project Tracking tree ${empty ? "hid every row" : "is showing rows"}: rows=${rowCount}, ` +
       `sprint=${filter.sprint ?? "any"}, areaPaths=${filter.areaPaths.size}, ` +
+      `assignees=${filter.assignees.size}, ` +
       `tags=${filter.tags.size}, activity=[${[...session.selectedActivity].join(", ")}], ` +
       `markers=[${[...session.selectedMarkers].join(", ")}].`,
   );
@@ -3250,7 +3326,7 @@ function mountBoardHeader(params: {
   folderPath: QueryFolderCrumb[];
   contextMenu: ItemContextMenu;
   onRootChanged: () => void;
-  onAreaPathChange: () => void;
+  onHeaderFilterChange: () => void;
 }): ReturnType<typeof renderHeader> {
   const { doc, root, context, typeMap, sprintWindow, session, core } = params;
   return renderHeader(
@@ -3260,13 +3336,18 @@ function mountBoardHeader(params: {
     typeMap,
     core.metrics.boardColumns,
     sprintWindow,
-    params.areaPaths,
+    // Derived here rather than by the board: these are what the HEADER's own filters offer, and
+    // nothing else on the surface asks for them.
+    {
+      areaPaths: params.areaPaths,
+      assignees: assigneesInPrimaryWork([root], context.services.getTypes()),
+    },
     session,
     core.chipContext,
     {
       writeQueueStatus: core.writeStatus.element,
       orderingPicker: core.ordering.element,
-      onAreaPathChange: params.onAreaPathChange,
+      onHeaderFilterChange: params.onHeaderFilterChange,
       onTitleContextMenu: (event) =>
         params.contextMenu.openAt(event, rootMenuTarget(params, root, context, sprintWindow)),
     },
@@ -3385,7 +3466,7 @@ function renderBoard(params: RenderBoardParams): BoardHandle {
   let onRootChanged: () => void = () => {};
   // The header is assembled before the tree renderer. Synchronous setup replaces this before the
   // first user event can arrive, mirroring the root-command callback directly above.
-  let onAreaPathChange: () => void = () => {};
+  let onHeaderFilterChange: () => void = () => {};
 
   const { header, setHeaderTitle, sprintPickerHandle, expandAll, collapseAll, refresh, techLead } =
     mountBoardHeader({
@@ -3401,7 +3482,7 @@ function renderBoard(params: RenderBoardParams): BoardHandle {
       folderPath,
       contextMenu,
       onRootChanged: () => onRootChanged(),
-      onAreaPathChange: () => onAreaPathChange(),
+      onHeaderFilterChange: () => onHeaderFilterChange(),
     });
   refresh.element.onclick = () => params.onRefresh();
   board.append(header);
@@ -3425,7 +3506,7 @@ function renderBoard(params: RenderBoardParams): BoardHandle {
 
   renderTreeContent();
   core.setRepaint(renderTreeContent);
-  onAreaPathChange = renderTreeContent;
+  onHeaderFilterChange = renderTreeContent;
   // The header is painted once and is not part of a tree pass, so the root's own title has to be
   // re-labelled here; the tree still repaints because the root's sprint reaches its children's rows,
   // and the filter row because the root can be flagged from this menu like any other item.

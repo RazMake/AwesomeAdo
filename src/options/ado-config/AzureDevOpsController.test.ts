@@ -152,7 +152,7 @@ const CONTEXT: AdoMetadataContext = {
   project: "web",
   areaPaths: ["web", "web\\Platform"],
   iterationPaths: ["web", "web\\Sprint 1"],
-  queryFolders: ["Shared Queries"],
+  queryFolders: [{ path: "Shared Queries", hasUnreadChildren: false }],
   teams: [
     { id: "1", name: "Alpha" },
     { id: "2", name: "Beta" },

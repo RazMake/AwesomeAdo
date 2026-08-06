@@ -133,8 +133,9 @@ The extension is feature-complete for its current scope:
   purple. Both card sizes expose Priority on the
   top row (compact Done is read-only) and the shared `?` lifecycle/description popup, whose long
   content wraps with vertical-only scrolling. Sprint and Project Tracking derive accepted Interrupt
-  state only from a configured acceptance note at or after the latest tag-add revision (ADR-061), so
-  an untag/re-tag cycle cannot reuse old acceptance. `project-tracking` is a **data-driven tree board**. Adding a
+  state only from a configured Discussion note at or after the latest tag-add revision (ADR-061), so
+  an untag/re-tag cycle cannot reuse old acceptance even when ADO omits the note from `System.History`.
+  `project-tracking` is a **data-driven tree board**. Adding a
   view is a folder plus two registrations — see the `add-enhanced-view` skill.
 - Data-driven views depend on an injected `EnhancedViewServices` (optional field on
   `EnhancedViewContext`): `loadTree`, `userDirectory`, `getTypes`, `getBoardColumns`, `markerTags`,
@@ -280,7 +281,9 @@ The extension is feature-complete for its current scope:
   Description is the authoritative full configuration. Saved-query navigation automatically pulls
   it; Pull Now and explicit conflict-aware Publish controls are available in Appearance. The trusted
   item id syncs separately and becomes a direct ADO link while connected; unchanged pulls do not
-  rewrite storage, and Disconnect leaves the last pulled local snapshot intact.
+  rewrite storage, and Disconnect leaves the last pulled local snapshot intact. Publish retries once
+  across an unrelated work-item revision only while Description is unchanged; another configuration
+  publish remains a visible conflict.
 - Shared queries (ADR-064): a saved-query URL may carry `?awesomeAdoConfig={workItemId}`. On a member
   of that item's ADO team it simply connects them to the item; on anyone else (or when membership
   cannot be determined) it creates a read-only link for that ONE query in the synced

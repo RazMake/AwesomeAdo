@@ -59,12 +59,20 @@ list, not the filtered one — ranking against only the visible rows would place
 whatever the view's filters happened to leave on screen, so clearing a filter afterwards would reveal
 it somewhere the user never dropped it.
 
-**Leave no band between two rows unclaimed.** A drop that reaches no registered row is discarded in
-silence — no error, no log line, nothing moved — which reads as a broken gesture rather than a
-refused one. Two things guarantee it cannot happen: the insertion line takes **no layout space**
-(negative margins cancel its height), so showing it never slides the target row out from under the
-pointer; and a row's `dropZone` covers every pixel the row owns, so the space between two rows
-belongs to one of them.
+**Leave no band between two rows unclaimed.** A drop that reaches no registered row used to be
+discarded in silence — no error, no log line, nothing moved — which reads as a broken gesture rather
+than a refused one. Three things guarantee it cannot happen now: the insertion line takes **no layout
+space** (negative margins cancel its height), so showing it never slides the target row out from under
+the pointer; a row's `dropZone` covers every pixel the row owns, so the space between two rows belongs
+to one of them; and **the release commits whatever the insertion line was showing**, wherever it
+happens.
+
+That last rule is what makes the gesture honest, because a board cannot cover every pixel a reader can
+release over — the indentation beside a nested branch belongs to no row at all. While a line is on
+screen the controller keeps accepting the drop across the whole subtree its registered rows live in,
+and a release there lands where the line promised. A release that no line was promising still does
+nothing, and abandoning the drag (Escape) fires no drop at all, so neither can move an item by
+accident.
 
 Hierarchy changes move one level at a time. Dropping a child between rows one level above promotes it
 under their parent; dropping a leaf among rows one level below demotes it under their parent at the

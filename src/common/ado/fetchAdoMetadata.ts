@@ -1,6 +1,6 @@
 import { parseAdoContext } from "../navigation/AdoContext";
 
-import type { AdoTeam, AdoWorkItemField, AdoWorkItemType } from "./AdoMetadata";
+import type { AdoQueryFolder, AdoTeam, AdoWorkItemField, AdoWorkItemType } from "./AdoMetadata";
 import { ADO_API_VERSION } from "./adoApi";
 
 const API_VERSION = ADO_API_VERSION;
@@ -9,8 +9,15 @@ const API_VERSION = ADO_API_VERSION;
 // round-trips as possible, then let it page $skip to the end (see fetchAdoRawInPage).
 const TEAMS_PAGE_SIZE = 1000;
 
-/** Azure DevOps expands the saved-query hierarchy at most two levels per request. */
-const QUERY_FOLDER_DEPTH = 5;
+/**
+ * Azure DevOps expands the saved-query hierarchy at most two levels per request.
+ *
+ * This is a hard server-side bound, not a preference: asking for more is answered with
+ * `HTTP 400 — "Parameter Name: depth, Acceptable Range: 0 to 2"`, which left the whole folder
+ * vocabulary empty and the folder pickers with nothing to suggest. Every request — the first one and
+ * each `buildQueryFolderChildrenUrl` expansion — therefore stops at this depth.
+ */
+const QUERY_FOLDER_DEPTH = 2;
 
 /** The ADO REST endpoints the options page reads for a project: teams, types, and fields. */
 export interface AdoMetadataUrls {
@@ -130,8 +137,9 @@ export function buildAdoMetadataUrls(href: string): AdoMetadataUrls | null {
     fieldsUrl: `${base}/${project}/_apis/wit/fields?api-version=${API_VERSION}`,
     areaPathsUrl: `${base}/${project}/_apis/wit/classificationnodes/areas?$depth=100&api-version=${API_VERSION}`,
     iterationPathsUrl: `${base}/${project}/_apis/wit/classificationnodes/iterations?$depth=100&api-version=${API_VERSION}`,
-    // Azure DevOps caps the query hierarchy at two levels of expansion per request, so anything
-    // deeper is reached one folder at a time — see `buildQueryFolderChildrenUrl`.
+    // Azure DevOps caps each query-hierarchy request at two levels, and a large project has far too
+    // many folders to crawl. Exactly this one read starts the picker off; `buildQueryFolderChildrenUrl`
+    // reaches anything deeper, one folder at a time, when the user asks for it.
     queryFoldersUrl: `${base}/${project}/_apis/wit/queries?$depth=${QUERY_FOLDER_DEPTH}&api-version=${API_VERSION}`,
   };
 }
@@ -180,27 +188,41 @@ function parseClassificationPaths(body: unknown, structure: string): string[] {
   return paths.sort((left, right) => left.localeCompare(right));
 }
 
-/** Parse the saved-query hierarchy into the folder paths a new query can be created in. */
-export function parseQueryFolders(body: unknown): string[] {
-  const folders: string[] = [];
+/**
+ * Parse the saved-query hierarchy into the folder paths a new query can be created in.
+ *
+ * A folder Azure DevOps truncated is recognizable because it claims children but carries no
+ * `children` property at all — never an empty array — so that omission is what marks it as worth one
+ * more read.
+ */
+export function parseQueryFolders(body: unknown): AdoQueryFolder[] {
+  const folders: AdoQueryFolder[] = [];
   const seen = new Set<string>();
   collectQueryFolders((body as { value?: unknown } | null)?.value ?? body, folders, seen);
-  return folders.sort((left, right) => left.localeCompare(right));
+  return folders.sort((left, right) => left.path.localeCompare(right.path));
 }
 
-function collectQueryFolders(value: unknown, folders: string[], seen: Set<string>): void {
+function collectQueryFolders(value: unknown, folders: AdoQueryFolder[], seen: Set<string>): void {
   if (Array.isArray(value)) {
     for (const entry of value) collectQueryFolders(entry, folders, seen);
     return;
   }
   if (typeof value !== "object" || value === null) return;
-  const raw = value as { path?: unknown; isFolder?: unknown; children?: unknown };
+  const raw = value as {
+    path?: unknown;
+    isFolder?: unknown;
+    hasChildren?: unknown;
+    children?: unknown;
+  };
   const path = typeof raw.path === "string" ? raw.path.trim().replace(/^\/+/, "") : "";
   const key = path.toLocaleLowerCase();
   // Only a folder can hold a new query; a saved query's own path would be refused by ADO.
   if (raw.isFolder === true && path !== "" && !seen.has(key)) {
     seen.add(key);
-    folders.push(path);
+    folders.push({
+      path,
+      hasUnreadChildren: raw.hasChildren === true && !Array.isArray(raw.children),
+    });
   }
   collectQueryFolders(raw.children, folders, seen);
 }

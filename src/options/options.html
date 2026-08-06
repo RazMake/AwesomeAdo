@@ -192,6 +192,44 @@
       .combobox input {
         width: 100%;
       }
+      /* The folder vocabulary loads one folder at a time, so its progress sits INSIDE the field's
+        trailing edge: the suggestion list covers everything below the input, and a folder is being
+        fetched exactly while that list is open. The room for it is reserved permanently so showing
+        the spinner never shifts the text under it. */
+      .combobox--with-spinner input {
+        padding-right: 28px;
+      }
+      .combobox__loading {
+        position: absolute;
+        top: 0;
+        right: 10px;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        pointer-events: none;
+      }
+      .combobox__loading[hidden] {
+        display: none;
+      }
+      .combobox__loading::before {
+        content: "";
+        width: 10px;
+        height: 10px;
+        border: 2px solid var(--border);
+        border-top-color: var(--accent);
+        border-radius: 50%;
+        animation: combobox-loading-spin 0.8s linear infinite;
+      }
+      @keyframes combobox-loading-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .combobox__loading::before {
+          animation: none;
+        }
+      }
       /* Shared floating-surface chrome for the two popovers (combobox list + multiselect panel);
          kept in one rule so the surface look stays identical and jscpd sees no duplicate block. */
       .combobox__list,

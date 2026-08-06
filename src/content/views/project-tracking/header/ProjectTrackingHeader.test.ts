@@ -24,6 +24,9 @@ function baseOptions(
   const areaPathFilter = document.createElement("div");
   areaPathFilter.className = "awesomeado-area-filter";
 
+  const assignedToFilter = document.createElement("div");
+  assignedToFilter.className = "awesomeado-assignee-filter";
+
   const orderingPicker = document.createElement("span");
   orderingPicker.className = "awesomeado-ordering";
 
@@ -34,6 +37,7 @@ function baseOptions(
     techLead,
     eta: renderEtaBadge(document, { eta: null, now }),
     areaPathFilter,
+    assignedToFilter,
     sprintPicker,
     orderingPicker,
     ...overrides,
@@ -55,15 +59,27 @@ function readBreadcrumbNav(element: Element): {
 }
 
 describe("renderProjectTrackingHeader - title & controls", () => {
-  it("renders the title and groups both narrowing controls at the right edge", () => {
+  it("puts Sprint first, followed by expand and collapse", () => {
     const { element } = renderProjectTrackingHeader(document, baseOptions());
 
     expect(element.className).toBe("awesomeado-tracking__header");
     const title = element.querySelector(".awesomeado-tracking__title");
     expect(title?.textContent).toBe("Platform Modernization");
+    const sprint = element.querySelector(".awesomeado-sprint-picker");
+    const expand = element.querySelector(".awesomeado-tracking__expand-all");
+    const collapse = element.querySelector(".awesomeado-tracking__collapse-all");
+    expect(sprint?.nextElementSibling).toBe(expand);
+    expect(expand?.nextElementSibling).toBe(collapse);
+  });
+
+  it("groups the narrowing filters immediately left of Refresh at the right edge", () => {
+    const { element } = renderProjectTrackingHeader(document, baseOptions());
+
     const filters = element.querySelector<HTMLElement>(".awesomeado-tracking__header-filters");
+    expect(filters?.querySelector(".awesomeado-assignee-filter")).toBeTruthy();
     expect(filters?.querySelector(".awesomeado-area-filter")).toBeTruthy();
-    expect(filters?.querySelector(".awesomeado-sprint-picker")).toBeTruthy();
+    expect(filters?.querySelector(".awesomeado-sprint-picker")).toBeNull();
+    expect(filters?.lastElementChild).toBe(element.querySelector(".awesomeado-tracking__refresh"));
     expect(filters?.style.marginLeft).toBe("auto");
   });
 
@@ -311,17 +327,18 @@ describe("renderProjectTrackingHeader - top band layout", () => {
 });
 
 describe("renderProjectTrackingHeader - refresh button", () => {
-  it("puts refresh on the same band as the expand/collapse pair, but spaced apart from them", () => {
+  it("puts refresh last at the right edge, after the narrowing filters", () => {
     const { element, expandAllButton, collapseAllButton, refreshButton } =
       renderProjectTrackingHeader(document, baseOptions());
 
     expect(refreshButton.element.className).toBe("awesomeado-tracking__refresh");
-    // Same parent = same line as `+`/`−`; a wide left margin (vs. the container's 8px gap) is what
-    // says "this one does something else entirely".
-    expect(refreshButton.element.parentElement).toBe(expandAllButton.parentElement);
-    expect(refreshButton.element.parentElement).toBe(collapseAllButton.parentElement);
-    expect(refreshButton.element.previousElementSibling).toBe(collapseAllButton);
-    expect(refreshButton.element.style.marginLeft).toBe("24px");
+    expect(refreshButton.element.parentElement?.className).toBe(
+      "awesomeado-tracking__header-filters",
+    );
+    expect(refreshButton.element.parentElement?.lastElementChild).toBe(refreshButton.element);
+    expect(refreshButton.element.parentElement).not.toBe(expandAllButton.parentElement);
+    expect(expandAllButton.nextElementSibling).toBe(collapseAllButton);
+    expect(refreshButton.element.style.marginLeft).toBe("0px");
     expect(element.querySelector(".awesomeado-tracking__refresh")).toBe(refreshButton.element);
   });
 

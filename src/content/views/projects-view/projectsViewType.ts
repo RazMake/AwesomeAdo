@@ -12,9 +12,6 @@ export const NEW_PROJECT_AREA_PATH_KEY = "newProjectAreaPath";
 /** The binding key holding the tag that makes a work item part of this catalog. */
 export const PROJECT_TAG_KEY = "projectTag";
 
-/** The binding key holding the iteration path a project created from this catalog starts in. */
-export const NEW_PROJECT_ITERATION_PATH_KEY = "newProjectIterationPath";
-
 /** The binding key holding the folder where this catalog creates project tracking queries. */
 export const PROJECT_QUERY_FOLDER_KEY = "projectQueryFolder";
 
@@ -29,6 +26,10 @@ export const PROJECT_QUERY_FOLDER_KEY = "projectQueryFolder";
  * The creation properties exist because the catalog can ADD a project and create its tracking query.
  * They are per-query for the same reason the ordering policy is: two catalogs in one project can
  * select on different tags, start work in different paths, and organize their queries separately.
+ *
+ * The sprint a new project starts in is deliberately NOT one of them: it moves every two weeks,
+ * so a stored answer would be stale far more often than it was right. The add-a-project row opens on
+ * the team's current sprint and lets the reader pick another there.
  */
 export const projectsViewType: ViewType = {
   id: "projects",
@@ -50,14 +51,6 @@ export const projectsViewType: ViewType = {
       kind: "autocomplete",
       suggestions: "area-paths",
       hint: "Full area path a new project is created under. Leave empty to use the project's default area.",
-    },
-    {
-      key: NEW_PROJECT_ITERATION_PATH_KEY,
-      label: "Iteration path",
-      required: false,
-      kind: "autocomplete",
-      suggestions: "iteration-paths",
-      hint: "Full iteration path a new project starts in. Leave empty to use the Azure DevOps project root.",
     },
     {
       key: PROJECT_QUERY_FOLDER_KEY,
@@ -85,15 +78,6 @@ export function configuredNewProjectTags(properties: Record<string, string>): st
 export function configuredNewProjectAreaPath(properties: Record<string, string>): string | null {
   const value = (properties[NEW_PROJECT_AREA_PATH_KEY] ?? "").trim();
   return value.length > 0 ? value : null;
-}
-
-/** The configured iteration path, or the current Azure DevOps project's root path. */
-export function newProjectIterationPathOf(
-  properties: Record<string, string>,
-  project: string | null,
-): string | null {
-  const value = (properties[NEW_PROJECT_ITERATION_PATH_KEY] ?? "").trim();
-  return value.length > 0 ? value : project;
 }
 
 /** The configured tracking-query folder, or the catalog query's own folder. */

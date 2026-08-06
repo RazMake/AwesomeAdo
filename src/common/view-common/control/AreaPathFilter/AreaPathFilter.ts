@@ -10,6 +10,13 @@ export interface AreaPathFilterOptions {
   areaPaths: readonly string[];
   /** Full paths selected initially. Paths absent from `areaPaths` are ignored. */
   selectedAreaPaths?: readonly string[];
+  /**
+   * Makes the trigger empty the selection instead of reopening the popup while anything is chosen.
+   *
+   * For a reading-position filter the reader mostly wants to be rid of in one press; leave it off
+   * where the selection is configuration they narrow down step by step.
+   */
+  clearOnTriggerWhenActive?: boolean;
   /** Called after a checkbox or Clear changes the selected full paths. */
   onChange?(selectedAreaPaths: string[]): void;
   /** Called after an open popup closes by trigger, outside pointer, Escape, or Clear. */
@@ -118,6 +125,7 @@ export function renderAreaPathFilter(
     classPrefix: CLASS_PREFIX,
     options: paths.map((path) => ({ value: path, label: labels.get(path) ?? path, title: path })),
     selected: options.selectedAreaPaths,
+    clearOnTriggerWhenActive: options.clearOnTriggerWhenActive,
     // An item lives at exactly one area path, so the condition can only ever be "one of these":
     // excluding a path or AND-ing two of them would describe a work item that cannot exist.
     onChange: (selection) => options.onChange?.(selection.included),

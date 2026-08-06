@@ -157,18 +157,50 @@ describe("writeTeamConfigInPage", () => {
     ]);
   });
 
-  it("reports a concurrent publish conflict", async () => {
+  it("retries once when an unrelated edit advances the work item revision", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ rev: 7, fields: { "System.Description": "old" } }),
+      })
+      .mockResolvedValueOnce({ ok: false, status: 412 })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ rev: 8, fields: { "System.Description": "old" } }),
+      })
+      .mockResolvedValueOnce({ ok: true, status: 200 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(writeTeamConfigInPage({ url: "item-url", text: "new" })).resolves.toEqual({
+      ok: true,
+    });
+    expect(JSON.parse(String((fetchMock.mock.calls[3]?.[1] as RequestInit).body))).toEqual([
+      { op: "test", path: "/rev", value: 8 },
+      { op: "replace", path: "/fields/System.Description", value: "new" },
+      { op: "add", path: "/multilineFieldsFormat/System.Description", value: "Markdown" },
+    ]);
+  });
+
+  it("reports a conflict when another publish changed the Description", async () => {
     vi.stubGlobal(
       "fetch",
       vi
         .fn()
-        .mockResolvedValueOnce({ ok: true, json: async () => ({ rev: 7, fields: {} }) })
-        .mockResolvedValueOnce({ ok: false, status: 412 }),
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ rev: 7, fields: { "System.Description": "old" } }),
+        })
+        .mockResolvedValueOnce({ ok: false, status: 412 })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ rev: 8, fields: { "System.Description": "other" } }),
+        }),
     );
 
     await expect(writeTeamConfigInPage({ url: "item-url", text: "new" })).resolves.toEqual({
       ok: false,
-      error: "HTTP 412",
+      error: "HTTP 412 — team configuration changed since it was read",
     });
   });
 });

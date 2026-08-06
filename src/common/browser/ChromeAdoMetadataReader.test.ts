@@ -29,7 +29,7 @@ const AREA_PATHS_URL =
 const ITERATION_PATHS_URL =
   "https://dev.azure.com/O365Exchange/O365%20Core/_apis/wit/classificationnodes/iterations?$depth=100&api-version=7.1";
 const QUERY_FOLDERS_URL =
-  "https://dev.azure.com/O365Exchange/O365%20Core/_apis/wit/queries?$depth=5&api-version=7.1";
+  "https://dev.azure.com/O365Exchange/O365%20Core/_apis/wit/queries?$depth=2&api-version=7.1";
 
 /** Every list a reader reports when nothing could be fetched. */
 const NO_METADATA = {
@@ -85,8 +85,12 @@ const INJECTED_METADATA = {
       {
         path: "Shared Queries",
         isFolder: true,
+        hasChildren: true,
         children: [
-          { path: "Shared Queries/Team A", isFolder: true },
+          // ADO omits `children` entirely at the depth boundary; that is what marks a folder as
+          // holding more than this read returned.
+          { path: "Shared Queries/Team A", isFolder: true, hasChildren: true },
+          { path: "Shared Queries/Archive", isFolder: true, hasChildren: false },
           { path: "Shared Queries/Open bugs" },
         ],
       },
@@ -105,7 +109,11 @@ const PARSED_METADATA = {
   areaPaths: ["O365 Core", "O365 Core\\Platform"],
   iterationPaths: ["O365 Core", "O365 Core\\Sprint 1"],
   // Only folders: a saved query's own path would be refused as a place to create one.
-  queryFolders: ["Shared Queries", "Shared Queries/Team A"],
+  queryFolders: [
+    { path: "Shared Queries", hasUnreadChildren: false },
+    { path: "Shared Queries/Archive", hasUnreadChildren: false },
+    { path: "Shared Queries/Team A", hasUnreadChildren: true },
+  ],
   workItemTypes: [
     {
       name: "Bug",
@@ -266,6 +274,8 @@ describe("ChromeAdoMetadataReader - injection parsing", () => {
     chromeMock.executeScript.mockResolvedValue([{ result: INJECTED_METADATA }]);
 
     expect(await reader.read()).toEqual(PARSED_METADATA);
+    // One injection covers every endpoint, saved-query folders included.
+    expect(chromeMock.executeScript).toHaveBeenCalledTimes(1);
     expect(chromeMock.executeScript).toHaveBeenCalledWith({
       target: { tabId: ADO_TAB.id },
       world: "MAIN",

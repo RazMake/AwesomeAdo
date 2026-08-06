@@ -233,9 +233,13 @@ former as a decision.
 - `buildQueryFolderChildrenUrl(href, folderPath)` — the endpoint listing ONE folder's contents, or
   `null` when the href is not project-scoped or no folder is named. Each segment is encoded while the
   separators stay literal, and either separator is accepted. **Why it exists:** Azure DevOps answers
-  the query hierarchy at most two levels deep and caps a node at 1000 children, so a large project's
-  folders cannot be enumerated — walking the tree is both very slow and still incomplete. The folders
-  below that boundary are read one folder at a time, when someone actually asks about that folder.
+  the query hierarchy at most two levels deep and caps a node at 1000 children. Exactly one read
+  starts the folder picker off; folders below that boundary are read one at a time when someone asks
+  about that folder.
+- `parseQueryFolders(body)` — the saved-query hierarchy as `AdoQueryFolder[]` (`path` plus
+  `hasUnreadChildren`), sorted, folders only; **best-effort**. `hasUnreadChildren` is true when ADO
+  claimed the folder has contents but omitted its `children` property, which is the only signal that
+  one more read of that path would reveal something.
 - `parseTeams(body)` — turns the raw teams REST body into a sorted `AdoTeam[]`; **best-effort** (a
   missing/malformed body yields `[]`).
 - `parseAreaPaths(body)` — flattens the project classification tree into deduplicated, sorted full
@@ -607,11 +611,11 @@ timestamp each.
 ### `IInterruptAcceptanceReader.ts` + `interruptAcceptance.ts`
 
 Resolves whether each currently Interrupt-tagged item was accepted during its **current** tagged
-lifetime. `isInterruptAccepted` requires a configured acceptance token in `System.History` at or
-after the latest update that added the configured Interrupt tag; equality is valid because tagging
-as accepted writes both in one revision. Failed items are returned separately and never treated as
+lifetime. `isInterruptAccepted` requires a configured acceptance token in Discussion at or after the
+latest update that added the configured Interrupt tag; equality is valid because tagging as accepted
+may write both in one revision. Failed items are returned separately and never treated as
 unaccepted. `fetchInterruptAcceptance.ts` builds the sender-project-scoped, `$skip`-paged work-item
-updates URL and owns request/page/marker length guards.
+updates URL plus the newest-first Discussion URL and owns request/page/marker length guards.
 
 ## Usage guidance
 

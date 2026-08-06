@@ -315,24 +315,23 @@ returns the raw `{ teams, workItemTypes, fields, areaPaths, iterationPaths, quer
 (each `null` on failure) for the reader to parse with `parseTeams` / `parseWorkItemTypes` (the
 `fields` body resolves which of a type's fields are date-typed via `parseDateFieldReferenceNames`).
 
-Two of the reads are more than a single request, because ADO will not answer them in one:
+**Teams** are the one read that is more than a single request, because ADO will not answer them in
+one: `$skip` advances by the count actually returned until a page comes back empty, so a large org's
+teams are not silently truncated at the server's page cap.
 
-- **Teams** are paged: `$skip` advances by the count actually returned until a page comes back empty,
-  so a large org's teams are not silently truncated at the server's page cap.
-- **Saved-query folders** are **not** walked here. ADO answers the hierarchy two levels deep and caps
-  a node at 1000 children, so one read can only ever see the top of a large project's tree; the rest
-  is read on demand by `ChromeQueryFolderReader`.
+**Saved-query folders** are deliberately ONE request. ADO expands the hierarchy two levels at a time,
+and following every truncated folder is hundreds of dependent requests — which is what made the
+binding form take minutes to fill. What that one body returns is where the folder picker starts;
+anything deeper is read on demand through `ChromeQueryFolderReader`.
 
 ### `ChromeQueryFolderReader` (class) — `ChromeQueryFolderReader.ts`
 
-`readChildFolders(folderPath)` lists the folders nested inside one saved-query folder, through the
-same MAIN-world route. Feature code depends on `IQueryFolderReader`.
+`readChildFolders(folderPath)` lists the folders nested inside one saved-query folder as
+`AdoQueryFolder[]`, through the same MAIN-world route. Feature code depends on `IQueryFolderReader`.
 
-This exists because a project's query folders **cannot** be enumerated up front: ADO expands two
-levels per request and caps a node at 1000 children, so an O365-sized project keeps thousands of
-folders below that boundary. Fetching them all would be enormously slow and still incomplete, so the
-binding form asks about a folder only once the user reaches into it. Every failure answers an empty
-list — this only adds suggestions to a field the user can type by hand.
+The binding form asks about a folder only once the user reaches into it, and only when that folder's
+`hasUnreadChildren` says ADO held something back. Every failure answers an empty list — this only
+adds suggestions to a field the user can type by hand.
 
 ### `ChromeQueryFactsReader` (class) — `ChromeQueryFactsReader.ts`
 
@@ -1007,7 +1006,10 @@ session is not reported once per item.
 `InterruptAcceptanceRequest` is the bounded content-to-background contract carrying item IDs plus
 the configured Interrupt and acceptance tokens; the worker still builds every URL from the sender
 tab. `readInterruptAcceptance` pages each work-item updates stream by the count actually returned,
-uses a bounded worker pool, and derives tag additions plus `System.History` notes from one revision
-timeline. Each page runs through the existing retrying `executeAdoRequestInPage` MAIN-world read.
+uses a bounded worker pool, and derives the latest tag addition from that revision timeline. If the
+token is not present there, it follows newest-first Discussion continuation pages until it finds the
+token or crosses into an older tagged lifetime; Azure DevOps does not always echo a Discussion
+comment as a `System.History` field delta. Each page runs through the existing retrying
+`executeAdoRequestInPage` MAIN-world read.
 `MessagingInterruptAcceptanceReader` applies the shared timestamp predicate, preserves partial
 results, and logs counts only.

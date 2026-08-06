@@ -322,6 +322,21 @@ describe("Sprint View breadcrumbs", () => {
 });
 
 describe("Sprint View header", () => {
+  it("keeps Lane, Project, and Refresh together at the far right", async () => {
+    const root = await render();
+    const controls = root.querySelector(".awesomeado-sprint__header-controls")!;
+    const actions = controls.querySelector(".awesomeado-sprint__header-actions")!;
+    const lane = actions.querySelector(".awesomeado-area-filter");
+    const project = actions.querySelector(".awesomeado-hierarchy-filter");
+    const refresh = actions.querySelector(".awesomeado-sprint__refresh");
+
+    expect(controls.lastElementChild).toBe(actions);
+    expect([...actions.children]).toEqual(expect.arrayContaining([lane, project, refresh]));
+    expect(actions.firstElementChild).toBe(lane);
+    expect(lane?.nextElementSibling).toBe(project);
+    expect(actions.lastElementChild).toBe(refresh);
+  });
+
   it("renders team members, Unassigned, and queue/active counts", async () => {
     const root = await render();
     const alice = root.querySelector('[data-person="alice@example.com"]')!;

@@ -9,15 +9,12 @@
  * Layout (a single subtle-filled tile so it reads as a card):
  *
  *   Folder / Folder / …                                     Saving N changes…  ⇅
- *   Title                         + −    ⟳                          Sprint Picker
+ *   Title            Sprint Picker  + −              Assigned To  Area  ⟳
  *   TechLead  ETA
  *
- * The `+`/`−` expansion buttons are vertically centred against the two-line title/tech-lead block;
- * the view opens parents before notes and closes row details before parents. The sprint picker sits
- * on that same band but pinned to the right edge. The
- * refresh button shares that band and that styling but is separated by a wider gap, because it is a
- * different KIND of action: `+`/`−` only rearrange what is already on screen, while refresh throws
- * the board's data away and re-reads it from Azure DevOps. The
+ * The sprint picker is the first control, followed by the `+`/`−` expansion buttons; the view opens
+ * parents before notes and closes row details before parents. The narrowing filters and refresh sit
+ * at the right edge, with refresh last because it acts on the whole board. The
  * ordering indicator is deliberately parked in the top-right corner, away from those controls: it is
  * a quiet "this is how the items are sorted" readout that only occasionally gets clicked, and the
  * write-queue status shares that corner with it.
@@ -73,8 +70,10 @@ export interface ProjectTrackingHeaderOptions {
   eta: HTMLElement | null;
   /** The sprint picker control element, pinned to the right of the controls band. */
   sprintPicker: HTMLElement;
-  /** The compact area-path filter, grouped with the sprint picker on the right. */
+  /** The compact area-path filter, grouped with the other narrowing controls. */
   areaPathFilter: HTMLElement;
+  /** The compact Assigned To filter, grouped with the other narrowing controls. */
+  assignedToFilter: HTMLElement;
   /**
    * The write-queue status indicator, mounted in the tile's top-right corner beside the ordering
    * indicator so it reports in-flight saves without disturbing the title band. Null/omitted simply
@@ -124,15 +123,6 @@ export interface ProjectTrackingHeaderHandle {
 const TOP_ROW_MIN_HEIGHT_PX = 24;
 
 /**
- * The gap that separates the refresh button from the `+`/`−` pair, in pixels.
- *
- * Deliberately much wider than the 8px that groups `+` and `−` together: those two only rearrange
- * what is already on screen, while refresh discards the board's data and re-reads it. Sitting them
- * flush would read as one three-button group and invite the mis-click.
- */
-const REFRESH_BUTTON_GAP_PX = 24;
-
-/**
  * The outer box every band button occupies, in pixels (border included).
  *
  * Pinned to a square rather than left to shrink-wrap each glyph: the three buttons carry glyphs of
@@ -176,7 +166,11 @@ function renderInfoColumn(
   return { element: info, title: titleEl };
 }
 
-function renderHeaderFilters(doc: Document, options: ProjectTrackingHeaderOptions): HTMLElement {
+function renderHeaderActions(
+  doc: Document,
+  options: ProjectTrackingHeaderOptions,
+  refresh: HTMLElement,
+): HTMLElement {
   const filters = doc.createElement("div");
   filters.className = "awesomeado-tracking__header-filters";
   filters.style.cssText = [
@@ -185,7 +179,13 @@ function renderHeaderFilters(doc: Document, options: ProjectTrackingHeaderOption
     "gap:8px",
     "margin-left:auto",
   ].join(";");
-  filters.append(options.areaPathFilter, options.sprintPicker);
+
+  const narrowing = doc.createElement("div");
+  narrowing.className = "awesomeado-tracking__header-narrowing";
+  narrowing.style.cssText = ["display:flex", "align-items:center", "gap:8px"].join(";");
+  narrowing.append(options.assignedToFilter, options.areaPathFilter);
+
+  filters.append(narrowing, refresh);
   return filters;
 }
 
@@ -286,21 +286,15 @@ export function renderProjectTrackingHeader(
 
   const expandAllButton = renderHeaderButton(doc, "awesomeado-tracking__expand-all", "\uFF0B");
   const collapseAllButton = renderHeaderButton(doc, "awesomeado-tracking__collapse-all", "\uFF0D");
-  const refreshButton = renderRefreshButton(
-    doc,
-    "awesomeado-tracking__refresh",
-    REFRESH_BUTTON_GAP_PX,
-  );
+  const refreshButton = renderRefreshButton(doc, "awesomeado-tracking__refresh");
   const bandButtons = doc.createElement("div");
   bandButtons.style.cssText = ["display:flex", "align-items:center", "gap:8px"].join(";");
-  // Refresh rides in the same container so it shares the band's vertical centring, but carries its
-  // own wider left margin (not the container's 8px gap) to sit apart from the `+`/`−` pair.
-  bandButtons.append(expandAllButton, collapseAllButton, refreshButton.element);
+  bandButtons.append(options.sprintPicker, expandAllButton, collapseAllButton);
   mainRow.append(bandButtons);
 
-  // Keep the two narrowing controls together at the right edge. The area selector stays compact
-  // while the sprint picker grows with its current label, so the group remains easy to scan.
-  mainRow.append(renderHeaderFilters(doc, options));
+  // Refresh is the final action on the right: the filters immediately before it describe the scope
+  // the reader is refreshing, while the sprint picker remains the first control on the left.
+  mainRow.append(renderHeaderActions(doc, options, refreshButton.element));
 
   header.append(mainRow);
 

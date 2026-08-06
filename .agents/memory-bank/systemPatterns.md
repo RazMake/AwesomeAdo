@@ -166,6 +166,17 @@ filter group without turning a transient reading position into synced configurat
 item's current path, exposes each full path as a tooltip, and persists `System.AreaPath` through the
 board's shared write queue. See ADR-053.
 
+That difference in what a selection MEANS also decides the trigger. `clearOnTriggerWhenActive` makes a
+lit-up trigger empty the selection in one press and drops the popup's own Clear; Project Tracking sets
+it because its selection is a reading position, while Sprint's Lanes leave it off because team
+configuration is narrowed down step by step and must stay adjustable without being rebuilt.
+`content/project-tracking/assignee-filter` is the same idea over PEOPLE: the header's Assigned To
+filter offers only those assigned to `primaryWorkWithDescendants` types (everyone, while Primary work
+is unconfigured), keyed by alias so two people sharing a display name are never merged, labelled with
+their Feature Crew tag. A row survives when it or anything beneath it carries a selected person, which
+is what keeps a name that only ever appears on tasks from emptying the board. Both selections live in
+`BoardSession` and repaint only the tree.
+
 Sprint uses the same control over represented leaf paths, but its selection is team configuration,
 not reading position. Its query binding supplies default full paths only when the sprint has no saved
 record; an existing record, including an empty selection, takes priority. `settings/SprintAreaPaths`
@@ -199,7 +210,9 @@ render, differing only in which markers they offer and whether they can count th
 pills and Project Tracking's row sprint pills use the compact Feature Crew
 tag geometry; count bubbles fit inside that scale. Sprint marker tags show one total except
 Interrupt, which distinguishes unaccepted work from work accepted during its current tagged
-lifetime and collapses to one total when none are waiting. Every filter pill stays at full opacity, and
+lifetime and collapses to one total when none are waiting. The updates timeline determines when that
+lifetime began; newest-first Discussion comments supply the acceptance token because ADO does not
+always echo a comment as a `System.History` delta. Every filter pill stays at full opacity, and
 `renderFilterPillFamilies` separates non-activity from recent-activity pills with `6px` inside each
 wrapping family and `16px` between families. Selected pills use their themed border. Both views
 import these shared modules directly, preserving the eager Sprint / deferred Project Tracking bundle
@@ -275,7 +288,8 @@ A successful item read with an empty Description is a neutral connected/unpublis
 it neither logs an error nor changes local configuration. Content pulls on saved-query entry through
 the background/MAIN-world bridge; Options pulls
 or explicitly publishes through the current ADO query tab. Publish reads the current revision and
-writes Description plus its Markdown format in one `/rev`-guarded JSON Patch (ADR-056).
+writes Description plus its Markdown format in one `/rev`-guarded JSON Patch. A 412 rebases once only
+when Description is unchanged; another configuration publish remains a conflict (ADR-056).
 
 ### `src/common/navigation`
 
@@ -331,8 +345,10 @@ Split into component subfolders (each with its own `README.md`):
   Tracking commands and add Sprint-only Interrupt Tag/Accept/Clear actions; a themed inline checkbox
   previews proposed versus accepted, and acceptance opens the shared titled Markdown/mention editor.
   The Accept action stays disabled until a reason exists. ETA and child progress share
-  the row below the title, aligned left and right. Assigned To and ETA are read-only while a Done card
-  is compact and become editable when it expands. The shared top-right ordering picker defaults cards
+  the row below the title, aligned left and right. Assigned To is read-only while a Done card
+  is compact and becomes editable when it expands; a Done card's ETA stays read-only in both sizes,
+  because a finished item's ETA has stopped being a forecast and become the record of what was
+  promised (Project Tracking applies the same rule to every completed row). The shared top-right ordering picker defaults cards
   and descendant rows to backlog rank and applies title/ETA sorting to both. Child rows use shared
   completion, Assigned To and ETA controls, and title-handle sibling reorder under backlog-rank mode;
   a Done parent keeps all four read-only after expansion, and opening the popup suspends the owning card's drag
@@ -364,8 +380,13 @@ Split into component subfolders (each with its own `README.md`):
   `views/projects-view` is the many-root **All Projects Catalog View** (ADR-066). Beyond listing and
   filtering, it authors: its title menu copies the query URL and opens an inline row that creates a
   project as the FIRST configured type, tagged with `projectTag` (defaulted from the query's WIQL),
-  under `newProjectAreaPath`, and in `newProjectIterationPath` (defaulted to the project root), all in
-  one creation patch (ADR-069). `projectQueryFolder` overrides the catalog query's own folder for
+  under `newProjectAreaPath`, and in the sprint that row ASKS for, all in one creation patch
+  (ADR-069). There is no iteration-path binding property: a sprint moves every two weeks, so the row
+  offers `control/SprintPicker/SprintSelectField` — the shared form-side sprint select, also used by
+  the Add work item panel — opened on the team's current sprint and standing on the project root
+  until the window lands. The shared `NewItemRow` grew an optional `fields` slot for exactly that
+  case: a value the surface cannot honestly decide for the reader.
+  `projectQueryFolder` overrides the catalog query's own folder for
   generated tracking queries; each row
   carries the shared Copy/Open commands, the shared item-editing commands, and tag commands that
   complete against the tree's own vocabulary while never offering to clear the tag that keeps the
@@ -375,7 +396,10 @@ Split into component subfolders (each with its own `README.md`):
   treatment with Project Tracking (ADR-073). Under the manual ordering a project title is a drag
   handle that re-ranks it in the team's
   backlog and never re-parents anything (ADR-070). Every write rides one serialized
-  `WorkItemWriteQueue` whose status sits in the header corner.
+  `WorkItemWriteQueue` whose status sits in the header corner. Its header is painted ONCE per full
+  paint while the project list has a host of its own, so the tag condition applies as it is built:
+  a full repaint would rebuild the header and take the open dropdown with it. Project Tracking already
+  worked that way — its header is outside every tree pass — which is why its filters were always live.
 
 ### `src/options`
 
@@ -387,7 +411,9 @@ Split into component subfolders (each with its own `README.md`):
   setting and a single writer keeps them in sync; the hierarchy also classifies non-root types as
   Primary work) + the reusable `AutocompleteInput` and
   `createTypeLabel`.
-- `query-bindings/` — `QueryBindingsController` (bind/edit/delete query mappings).
+- `query-bindings/` — `QueryBindingsController` (bind/edit/delete query mappings). Its catalog
+  query-folder autocomplete remains editable during the three-round metadata read, shows an inline
+  loading status with `aria-busy`, and clears that status when suggestions settle.
 - `settings-transfer/` — `SettingsTransferController` and `TeamConfigController` (the Appearance
   tab's unified Configuration Sharing card: file import/export plus Azure DevOps work-item sharing
   of the whole configuration, spanning both stores).

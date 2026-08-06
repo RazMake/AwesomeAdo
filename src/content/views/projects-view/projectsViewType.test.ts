@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  configuredNewProjectTags,
-  newProjectIterationPathOf,
-  projectQueryFolderOf,
-} from "./projectsViewType";
+import { configuredNewProjectTags, projectQueryFolderOf } from "./projectsViewType";
 
 describe("All Projects Catalog binding values", () => {
   it("uses the configured catalog tag as the new project's only membership tag", () => {
@@ -16,13 +12,6 @@ describe("All Projects Catalog binding values", () => {
       "Catalog",
       "FY26",
     ]);
-  });
-
-  it("defaults the iteration path to the Azure DevOps project root", () => {
-    expect(newProjectIterationPathOf({}, "Fabrikam")).toBe("Fabrikam");
-    expect(
-      newProjectIterationPathOf({ newProjectIterationPath: "Fabrikam\\Backlog" }, "Fabrikam"),
-    ).toBe("Fabrikam\\Backlog");
   });
 
   it("defaults generated queries to the catalog query's folder", () => {
