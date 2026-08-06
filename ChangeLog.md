@@ -3,7 +3,7 @@
 All notable user-visible changes are recorded here. The package baseline is `0.1.0`; official
 builds use the repository's `Major.Minor.Build` release versioning.
 
-## Next Version
+## 0.7
 
 ### Bug Fixes
 
