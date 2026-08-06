@@ -9,6 +9,27 @@ we hit, why they happened, and the exact fix so nobody re-derives them.
 agent-tool-local memory (it does not clone or transfer between machines/agents). Record new findings
 here so every agent, teammate, and clone sees them.
 
+## Bulk hierarchy controls must stage by rendered depth, not one board-wide row state
+
+- SYMPTOM: Project Tracking's `+` or `−` changed every planning and Primary-work branch at once on a
+  deep configured hierarchy, so the promised staged control had only a rows step and a notes step.
+- ROOT CAUSE: expandable rows retained only item id and twisty. The handler could ask only whether
+  any row was open or closed, then applied that answer to every row.
+- FIX / RULE: retain each rendered row's depth. Expand the shallowest still-closed depth per press;
+  collapse details first, then the deepest still-open depth per press. Record every changed item id
+  in `BoardSession` so repaint preserves the staged result.
+
+## Marker comment-tag uniqueness belongs at the normalized import boundary
+
+- SYMPTOM: the options form refused duplicate marker comment tags, but a hand-edited configuration
+  file could import and save the same ambiguous values.
+- ROOT CAUSE: import validated each marker entry's shape independently and never enforced the
+  cross-marker invariant before stores were written.
+- FIX / RULE: compare non-blank comment tags after normalization, which catches whitespace aliases
+  and collisions with defaults filled for omitted marker entries. A collision blocks the whole
+  import before settings, bindings, or the connection source is written and names the values the
+  user must change.
+
 ## Empty planning rows must not bypass filters for fields they own
 
 - SYMPTOM: Project Tracking's Assigned To filter always left the first childless Feature visible,

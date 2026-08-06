@@ -326,6 +326,32 @@ describe("SettingsTransferController import — partial and invalid files", () =
     expect(h.imported()).toBe(0);
   });
 
+  it("does not save any configuration when imported marker comment tags collide", async () => {
+    const h = setup();
+
+    chooseFile(
+      h.elements.fileInput,
+      JSON.stringify({
+        awesomeAdoConfigVersion: 2,
+        settings: {
+          markerTags: {
+            blocked: { tag: "Blocked", commentTag: "[SAME]" },
+            blockedByOtherTeam: { tag: "External", commentTag: "[SAME]" },
+          },
+        },
+        enhancedQueries: { q: { view: "sprint", properties: {} } },
+      }),
+    );
+    await flush();
+
+    expect(h.settingsStore.applyLocally).not.toHaveBeenCalled();
+    expect(h.bindingStore.replaceAll).not.toHaveBeenCalled();
+    expect(h.teamConfigSourceStore.write).not.toHaveBeenCalled();
+    expect(h.elements.status.textContent).toContain("Change one of these values before importing");
+    expect(h.elements.status.classList.contains("card__hint--error")).toBe(true);
+    expect(h.imported()).toBe(0);
+  });
+
   it("clears the error styling once a later transfer succeeds", async () => {
     const h = setup();
 

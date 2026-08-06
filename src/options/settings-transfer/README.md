@@ -35,7 +35,8 @@ usably — settings as a partial (so a value the file omitted or got wrong keeps
 today) and bindings via **`replaceAll`**, so the file is authoritative about which queries are
 enhanced. A connection file is the exception: it describes no bindings, so it adopts the connection
 and leaves the user's enhanced queries alone. A file that yields nothing usable is reported and never
-touches either store.
+touches either store. Duplicate non-blank marker comment tags also block the complete import: the
+status line names the collision and asks the user to change one before selecting the file again.
 
 The `status` line reports the outcome and carries `card__hint--error` when that outcome is a
 failure. A file that imported only **partly** counts as one: the skipped values are recorded through

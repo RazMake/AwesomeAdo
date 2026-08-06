@@ -3233,6 +3233,43 @@ async function renderDeepBoard(overrides?: Partial<EnhancedViewServices>): Promi
   return root;
 }
 
+describe("ProjectTrackingView — staged deep hierarchy expansion", () => {
+  it("opens and closes one planning or Primary-work level per click before notes", async () => {
+    const root = await renderDeepBoard({
+      getTypes: () =>
+        DEEP_TYPES.map((type) => (type.name === "Task" ? { ...type, isPrimaryWork: true } : type)),
+    });
+    await turnSprintFilterOff(root);
+
+    const twisties = [...root.querySelectorAll<HTMLButtonElement>(".awesomeado-tracking__twisty")];
+    expect(twisties).toHaveLength(2);
+    const [planningTwisty, primaryTwisty] = twisties;
+    const collapseAll = root.querySelector<HTMLButtonElement>(
+      ".awesomeado-tracking__collapse-all",
+    )!;
+    const expandAll = root.querySelector<HTMLButtonElement>(".awesomeado-tracking__expand-all")!;
+
+    collapseAll.click();
+    expect(planningTwisty?.getAttribute("aria-expanded")).toBe("true");
+    expect(primaryTwisty?.getAttribute("aria-expanded")).toBe("false");
+
+    collapseAll.click();
+    expect(planningTwisty?.getAttribute("aria-expanded")).toBe("false");
+
+    expandAll.click();
+    expect(planningTwisty?.getAttribute("aria-expanded")).toBe("true");
+    expect(primaryTwisty?.getAttribute("aria-expanded")).toBe("false");
+
+    expandAll.click();
+    expect(primaryTwisty?.getAttribute("aria-expanded")).toBe("true");
+
+    expandAll.click();
+    root
+      .querySelectorAll<HTMLButtonElement>(".awesomeado-tracking__notes-toggle")
+      .forEach((toggle) => expect(toggle.getAttribute("aria-expanded")).toBe("true"));
+  });
+});
+
 /** Turns the sprint filter off (it defaults ON, on the current sprint) and waits for the re-render. */
 async function turnSprintFilterOff(root: HTMLElement): Promise<void> {
   (root.querySelector(".awesomeado-sprint-picker__button") as HTMLButtonElement).click();

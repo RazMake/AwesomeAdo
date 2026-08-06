@@ -508,6 +508,7 @@ interface TreeRenderOptions {
  */
 interface ExpandableRow {
   id: number;
+  depth: number;
   twisty: HTMLButtonElement;
 }
 
@@ -1863,7 +1864,7 @@ function renderTree(
       options,
       depth,
     );
-    if (twisty) options.expandableRows.push({ id: item.id, twisty });
+    if (twisty) options.expandableRows.push({ id: item.id, depth, twisty });
 
     options.dragReorder?.register({
       id: item.id,
@@ -2280,8 +2281,9 @@ function wireExpandCollapseButtons(
   descriptionExpansions: ExpansionControl[],
   restripeRows: () => void,
 ): void {
-  const setAllRowsExpanded = (expanded: boolean): void => {
-    for (const { id, twisty } of rows) {
+  const setRowsExpanded = (targetDepth: number, expanded: boolean): void => {
+    for (const { id, depth, twisty } of rows) {
+      if (depth !== targetDepth) continue;
       // Recorded as well as applied: a repaint right after the click would otherwise undo it.
       rememberExpanded(collapsedIds, id, expanded);
       setTwistyExpanded(twisty, childrenContainerOf(twisty), expanded);
@@ -2290,8 +2292,11 @@ function wireExpandCollapseButtons(
   };
 
   expandAll.onclick = () => {
-    if (rows.some(({ twisty }) => twisty.getAttribute("aria-expanded") !== "true")) {
-      setAllRowsExpanded(true);
+    const collapsedDepths = rows
+      .filter(({ twisty }) => twisty.getAttribute("aria-expanded") !== "true")
+      .map(({ depth }) => depth);
+    if (collapsedDepths.length > 0) {
+      setRowsExpanded(Math.min(...collapsedDepths), true);
       return;
     }
     for (const expansion of noteExpansions) expansion.setExpanded(true);
@@ -2303,7 +2308,12 @@ function wireExpandCollapseButtons(
       for (const expansion of details) expansion.setExpanded(false);
       return;
     }
-    setAllRowsExpanded(false);
+    const expandedDepths = rows
+      .filter(({ twisty }) => twisty.getAttribute("aria-expanded") === "true")
+      .map(({ depth }) => depth);
+    if (expandedDepths.length > 0) {
+      setRowsExpanded(Math.max(...expandedDepths), false);
+    }
   };
 }
 

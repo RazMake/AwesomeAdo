@@ -251,12 +251,14 @@ An import is **salvaging, not all-or-nothing**: `importConfig` returns
 `{ settings: Partial<ExtensionSettings>, enhancedQueries, problems }`, applying every value the file
 supplies usably and describing each one it does not in `problems`. The partial is the point — a
 setting the file omits (older export) or gets wrong keeps the user's current value instead of being
-reset to a default the file never asked for. `ConfigImportError` is thrown only when the file yields
-nothing at all (unparseable / missing a whole section), because an import replaces both stores
-wholesale. A non-empty `problems` list is treated by the caller as a **failure**: logged and shown in
-red, never a footnote under a success message. This is the one place normalization is deliberately
-NOT silent — the normalizers repair storage so a running extension is never stopped by a stale
-value, but an import is the user's own file, which they can fix.
+reset to a default the file never asked for. `ConfigImportError` is thrown when the file yields
+nothing at all (unparseable / missing a whole section), or when normalized non-blank marker comment
+tags collide. That cross-field fault blocks the whole import before any settings, bindings, or
+connection value is saved, because one note token cannot identify two markers. A non-empty
+`problems` list is treated by the caller as a **failure**: logged and shown in red, never a footnote
+under a success message. This is the one place normalization is deliberately NOT silent — the
+normalizers repair storage so a running extension is never stopped by a stale value, but an import
+is the user's own file, which they can fix.
 
 Team sharing reuses that exact full-config schema as compact JSON through one Azure DevOps work
 item's Description. ADO may return that multiline field with HTML entities even when authored as

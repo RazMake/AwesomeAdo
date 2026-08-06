@@ -27,6 +27,8 @@ it to buttons and the two stores lives in `src/options/settings-transfer`.
 - `AwesomeAdoConnectionConfig` — the connection-only file shape:
   `{ awesomeAdoConfigVersion, configScope, settings: { organization, project }, teamConfigWorkItemId }`.
 - `ConfigImportError` — an `Error` carrying `problems: readonly string[]`, every fault in one throw.
+  Duplicate non-blank marker comment tags are a blocking fault because they make note attribution
+  ambiguous; the user must change one before any imported value is saved.
 - `ImportedConfig` — what an import yields:
   `{ settings, hasPrimaryWorkClassification, enhancedQueries, replacesBindings, problems }`, where
   `settings` is a **`Partial<ExtensionSettings>`** holding only the settings the file supplied
@@ -45,9 +47,9 @@ it to buttons and the two stores lives in `src/options/settings-transfer`.
   setting and binding the file describes usably is returned (normalized, so nothing malformed can be
   persisted); each one it got wrong is left out and described in `problems` instead — a single bad
   value costs the user that one value, not the whole import, and a setting the file omits or gets
-  wrong keeps whatever the user has configured today. Throws `ConfigImportError` only when the file
-  yields nothing at all (not JSON, not an object, or missing a whole section), so importing an
-  unrelated file cannot wipe settings to defaults.
+  wrong keeps whatever the user has configured today. Throws `ConfigImportError` when the file
+  yields nothing at all (not JSON, not an object, or missing a whole section), or when normalized
+  marker comment tags collide and the configuration must be corrected before it can be saved.
   A connection-only file (`configScope: "connection"`) needs no `enhancedQueries` section and comes
   back with `replacesBindings: false`, so adopting a connection never deletes the enhanced queries it
   never described. It reports a problem when it names no work item id, because that is the only thing

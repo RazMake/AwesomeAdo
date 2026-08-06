@@ -28,6 +28,8 @@ This is a flattened snapshot of what exists now, not a build log.
   the bottom of each item, and they are re-striped in visible tree order after outline changes.
   Options imports only `content/views/viewCatalog` (scoped §6
   exception, ADR-027, lint-enforced).
+  Header expansion advances one rendered hierarchy depth per press: shallow-to-deep before notes on
+  expand, and details-first then deep-to-shallow on collapse.
 - **All Projects Catalog View** (`content/views/projects-view`): the many-root sibling of
   Project
   Tracking (ADR-066). Lists every top-level item a query returns as a collapsed project that opens
@@ -137,7 +139,8 @@ This is a flattened snapshot of what exists now, not a build log.
 - **Settings transfer** (`src/common/settings-transfer` + `src/options/settings-transfer`):
   `AwesomeADO.config` export/import, the narrow `AwesomeADO.connection.config` export that carries
   only the connected work item (ADR-065), and Azure DevOps work-item sharing of the whole
-  configuration, grouped in the Appearance tab's Configuration Sharing card.
+  configuration, grouped in the Appearance tab's Configuration Sharing card. Duplicate normalized
+  marker comment tags block an import before any configuration is saved.
 - **Team configuration sharing** (`common/settings-transfer`, `common/browser`, and Options): one
   same-organization ADO work item Description is the permissioned full-config source; clients
   automatically pull it on saved-query entry and editors explicitly publish with revision conflict

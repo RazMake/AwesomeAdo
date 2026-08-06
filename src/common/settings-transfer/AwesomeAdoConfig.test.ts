@@ -322,6 +322,25 @@ describe("importConfig - salvaging what a file does offer", () => {
   });
 });
 
+describe("importConfig - marker validation", () => {
+  it("rejects duplicate normalized marker comment tags before returning a configuration", () => {
+    expect(() =>
+      importConfig(
+        JSON.stringify({
+          awesomeAdoConfigVersion: CONFIG_FORMAT_VERSION,
+          settings: {
+            markerTags: {
+              blocked: { tag: "Blocked", commentTag: " [SAME] " },
+              blockedByOtherTeam: { tag: "External", commentTag: "[SAME]" },
+            },
+          },
+          enhancedQueries: {},
+        }),
+      ),
+    ).toThrow(/Change one of these values before importing/);
+  });
+});
+
 describe("importConfig - judging the format stamp", () => {
   it("reports a file that is not stamped by AwesomeADO but still imports what it holds", () => {
     const imported = importConfig(

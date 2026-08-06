@@ -5,6 +5,14 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ## Next Version
 
+### Bug Fixes
+
+- Project Tracking's expand and collapse controls now move through one hierarchy level per click,
+  including boards with several planning or Primary-work levels. Expand reaches notes only after
+  every row level is open; collapse closes notes and descriptions first, then row levels in reverse.
+- Configuration import now refuses marker comment tags that duplicate another well-known marker and
+  asks which value must change before saving anything, so marker notes cannot become ambiguous.
+
 ## 0.6
 
 ### New Features

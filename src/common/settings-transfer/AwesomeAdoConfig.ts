@@ -91,9 +91,10 @@ export interface ImportedConfig {
 }
 
 /**
- * Thrown when a selected file yields nothing at all — it is not JSON, or not an AwesomeADO
- * configuration. Also used to carry the problems of a file that imported only partially, so both
- * outcomes reach the diagnostics log through the same shape.
+ * Thrown when a selected file cannot be applied — it is not an AwesomeADO configuration, or it
+ * violates a cross-setting invariant that must be corrected before anything is saved. Also used to
+ * carry the problems of a file that imported only partially, so both outcomes reach the diagnostics
+ * log through the same shape.
  *
  * It carries EVERY problem found rather than only the first, because the user repairs the file
  * outside the extension: reporting one fault per attempt would turn fixing a hand-edited file into a
@@ -203,6 +204,7 @@ export function importConfig(text: string): ImportedConfig {
           "settings and an enhancedQueries section.",
     ]);
   }
+  assertUniqueMarkerCommentTags(raw.settings.markerTags);
   const settings = importSettings(raw.settings);
   const teamConfigSource = importTeamConfigWorkItemId(raw.teamConfigWorkItemId);
   const enhancedQueries = isRecord(raw.enhancedQueries) ? raw.enhancedQueries : {};
@@ -224,6 +226,37 @@ export function importConfig(text: string): ImportedConfig {
       ...teamConfigSource.problems,
     ],
   };
+}
+
+/** Stop before any caller can persist a configuration with ambiguous marker-note attribution. */
+function assertUniqueMarkerCommentTags(value: unknown): void {
+  const problems = collectMarkerCommentTagProblems(value);
+  if (problems.length > 0) {
+    throw new ConfigImportError(problems);
+  }
+}
+
+/** Duplicate comment tokens make a marker note ambiguous, so the whole import waits for a fix. */
+function collectMarkerCommentTagProblems(value: unknown): string[] {
+  if (!isMarkerTagMap(value)) {
+    return [];
+  }
+  const markerTags = normalizeSettings({ markerTags: value }).markerTags;
+  const labelsByToken = new Map<string, string[]>();
+  for (const { key, label } of WORK_ITEM_MARKERS) {
+    const token = markerTags[key].commentTag;
+    if (token === "") continue;
+    const labels = labelsByToken.get(token) ?? [];
+    labels.push(label);
+    labelsByToken.set(token, labels);
+  }
+  return [...labelsByToken]
+    .filter(([, labels]) => labels.length > 1)
+    .map(
+      ([token, labels]) =>
+        `The marker comment tag "${token}" is used by ${labels.join(" and ")}. ` +
+        "Change one of these values before importing the configuration.",
+    );
 }
 
 /** A connection file that names no work item bootstraps nothing, so say so instead of applying it. */

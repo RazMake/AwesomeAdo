@@ -153,7 +153,8 @@ The extension is feature-complete for its current scope:
   on/off filter toggle (pills when off; clicking one offers the other current/future sprints with the
   dropdown's relation styling and moves the item through the shared write queue), per-item expand/collapse,
   and staged header expansion controls:
-  `+` opens parent rows before notes, while `−` closes notes/descriptions before parent rows. An editable `PriorityBadge`
+  `+` opens one hierarchy depth per press before notes, while `−` closes notes/descriptions first
+  and then one hierarchy depth per press in reverse. An editable `PriorityBadge`
   immediately after Status (all priorities share one gray background, with a darker solid fill/edge
   on dark themes; P0/P1 use theme-owned, unmixed red/orange text, later priorities
   split at P2: P2 uses medium-weight, restrained scheme-aware gray while P3+ uses muted secondary text at normal weight;
@@ -272,6 +273,8 @@ The extension is feature-complete for its current scope:
 - Configuration import/export: `src/common/settings-transfer` serializes the whole configuration
   (all settings + every binding) to/from an `AwesomeADO.config` file; `src/options/settings-transfer`
   wires file transfer and team sharing into the Appearance tab's unified Configuration Sharing card.
+  Import blocks before every store write when normalized non-blank marker comment tags collide and
+  tells the user which markers need different values.
   Import replaces bindings wholesale via `IQueryBindingStore.replaceAll`. **Export Connection**
   writes the narrow `AwesomeADO.connection.config` instead (the connected work item id plus the
   organization and project needed to reach it, marked `configScope: "connection"`); importing one
