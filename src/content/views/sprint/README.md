@@ -28,6 +28,25 @@ Lane selection.
   cancellation, interaction/unload guards, and the final refresh.
 - `SprintBulkMove.ts` -> `runSprintBulkMove` - revalidates only confirmed IDs and executes their
   bounded, retrying, atomically guarded iteration writes.
+- `sprintUrlPreferences.ts` -> `readSprintUrlPreferences` / `sprintSearchWith` / `resolveSprintName`
+  / `matchRequestedPeople` / `urlAliasesFor` - the two-way page-URL contract for the `sprint` and
+  `assignedTo` parameters, resolved against the loaded sprint window and team roster.
+
+## The page URL is the board's shareable state
+
+A link can name the sprint and the people the board opens on:
+`.../_queries/query/{query-id}?sprint=Sprint%2042&assignedTo=jdoe`. `sprint` accepts either the
+sprint name or its full iteration path, in any casing; `assignedTo` accepts a comma-separated list
+(or repeated parameters) of aliases, sign-in addresses, display names, and the literal `unassigned`
+for that bucket. An unmatched sprint falls back to the current one and unmatched people leave the
+filter open, each recorded in Diagnostics; the aliases themselves are never logged, because they
+identify people.
+
+The board writes the same two parameters back as the reader works, so the address bar is always a
+shareable link to what is on screen. Selecting or clearing a person rewrites `assignedTo`; changing
+sprint rewrites `sprint` and drops `assignedTo`, because a sprint change resets every filter. Writes
+replace the history entry rather than pushing one, so Back never walks through filter clicks, and
+every parameter ADO put in the URL is left untouched.
 
 Right-clicking the **Sprint View** title always offers **Copy ADO Url** and **Reset lanes to
 default**. Reset replaces the selected sprint's saved team-shared Lane paths with the query binding's

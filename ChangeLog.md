@@ -3,6 +3,21 @@
 All notable user-visible changes are recorded here. The package baseline is `0.1.0`; official
 builds use the repository's `Major.Minor.Build` release versioning.
 
+## Next Version
+
+### New Features
+
+- Sprint View is now shareable straight from the address bar. The URL carries the sprint you are on
+  and the people you filtered to — e.g.
+  `https://dev.azure.com/org/project/_queries/query/{query-id}?sprint=Sprint%2042&assignedTo=jdoe` —
+  and it keeps itself up to date as you pick a sprint or select people, so copying the address always
+  hands someone the board you are looking at. Opening such a link starts on that sprint with those
+  people already selected. `sprint` takes a sprint name or a full iteration path; `assignedTo` takes
+  a comma-separated list of aliases, sign-in addresses, or display names, plus `unassigned` for
+  unassigned work. A sprint your team's window does not hold falls back to the current sprint, and
+  anyone not on the team leaves the filter open; everything stays yours to change from the moment the
+  board appears.
+
 ## 0.7
 
 ### Bug Fixes

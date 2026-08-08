@@ -6,6 +6,7 @@ import { normalizeMarkerTags } from "../../../common/settings/ExtensionSettings"
 import type { EnhancedViewServices } from "../../../common/view-common/EnhancedView";
 
 import { sprintView } from "./SprintView";
+import { readSprintUrlPreferences } from "./sprintUrlPreferences";
 import { sprintDefaultAreaPaths, sprintOrderingPolicy, sprintViewType } from "./sprintViewType";
 
 function user(displayName: string): TrackedUser {
@@ -266,7 +267,12 @@ function expectOriginalDragBackground(dragImage: HTMLElement, target: HTMLElemen
   expect(dragImage.style.background).not.toContain(target.style.background);
 }
 
-afterEach(() => document.body.replaceChildren());
+// The board keeps the page URL in sync with its sprint and person selection, so the URL is shared
+// test state and has to be reset alongside the DOM.
+afterEach(() => {
+  document.body.replaceChildren();
+  window.history.replaceState({}, "", "/");
+});
 
 describe("Sprint View ordering configuration", () => {
   it("defaults to backlog rank and safely resolves stored policies", () => {
@@ -2130,6 +2136,101 @@ describe("Sprint View filters", () => {
     expect(
       [...root.querySelectorAll(".awesomeado-sprint__lane-name")].map((lane) => lane.textContent),
     ).toEqual(["Apps"]);
+  });
+});
+
+function selectedSprint(root: HTMLElement): string | undefined {
+  return root.querySelector<HTMLSelectElement>(".awesomeado-sprint-picker__select")?.value;
+}
+
+function pressedPeople(root: HTMLElement): string[] {
+  const pills = root.querySelectorAll<HTMLElement>(
+    '.awesomeado-sprint__person-pill[aria-pressed="true"]',
+  );
+  return [...pills].map((pill) => pill.dataset.person ?? "");
+}
+
+function cardTitles(root: HTMLElement): string[] {
+  return [...root.querySelectorAll(".awesomeado-sprint-card__title")].map(
+    (title) => title.textContent ?? "",
+  );
+}
+
+describe("Sprint View URL preferences", () => {
+  it("opens the sprint the URL names and preselects the alias it carries", async () => {
+    window.history.replaceState({}, "", "/?sprint=Project%5CSprint%202&assignedTo=bob");
+
+    const root = await render();
+
+    expect(selectedSprint(root)).toBe("Sprint 2");
+    expect(pressedPeople(root)).toEqual(["bob@example.com"]);
+    expect(cardTitles(root)).toEqual(["Next sprint"]);
+  });
+
+  it("leaves the alias cleared once the reader deselects it and refreshes", async () => {
+    window.history.replaceState({}, "", "/?assignedTo=alice");
+    const loadTree = vi.fn(async () => ({
+      isTreeQuery: false,
+      roots: defaultTree(),
+      error: null,
+    }));
+    const root = await render({ loadTree });
+    expect(pressedPeople(root)).toEqual(["alice@example.com"]);
+
+    root.querySelector<HTMLButtonElement>('[data-person="alice@example.com"]')!.click();
+    root.querySelector<HTMLButtonElement>(".awesomeado-sprint__refresh")!.click();
+
+    await vi.waitFor(() => {
+      expect(loadTree).toHaveBeenCalledTimes(2);
+      expect(root.querySelector(".awesomeado-sprint__header")).not.toBeNull();
+    });
+    expect(pressedPeople(root)).toEqual([]);
+  });
+
+  it("falls back to the current sprint and an open filter when neither request matches", async () => {
+    window.history.replaceState({}, "", "/?sprint=Sprint%209&assignedTo=carol");
+    const logger = { info: vi.fn(), error: vi.fn() };
+
+    const root = await render({ logger });
+
+    expect(selectedSprint(root)).toBe("Sprint 1");
+    expect(pressedPeople(root)).toEqual([]);
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.stringContaining('requested sprint "Sprint 9"'),
+    );
+    expect(logger.info).toHaveBeenCalledWith(expect.stringContaining("matched=0"));
+  });
+});
+
+describe("Sprint View URL write-back", () => {
+  it("names everyone the reader selects, Unassigned included, without adding history steps", async () => {
+    const root = await render();
+    const steps = window.history.length;
+
+    root.querySelector<HTMLButtonElement>('[data-person="alice@example.com"]')!.click();
+    root.querySelector<HTMLButtonElement>('[data-person="__unassigned__"]')!.click();
+
+    expect(readSprintUrlPreferences(window.location.search)).toEqual({
+      sprint: "Sprint 1",
+      assignedTo: ["alice", "unassigned"],
+    });
+    expect(window.history.length).toBe(steps);
+  });
+
+  it("drops the people it just reset when the reader changes sprint", async () => {
+    window.history.replaceState({}, "", "/?assignedTo=alice");
+    const root = await render();
+
+    const picker = root.querySelector<HTMLSelectElement>(".awesomeado-sprint-picker__select")!;
+    picker.value = "Sprint 2";
+    picker.dispatchEvent(new Event("change"));
+
+    await vi.waitFor(() => expect(selectedSprint(root)).toBe("Sprint 2"));
+    expect(readSprintUrlPreferences(window.location.search)).toEqual({
+      sprint: "Sprint 2",
+      assignedTo: [],
+    });
+    expect(pressedPeople(root)).toEqual([]);
   });
 });
 

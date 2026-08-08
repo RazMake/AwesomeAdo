@@ -77,6 +77,14 @@ import { renderSprintBoard, type SprintBoardItem } from "./SprintBoard";
 import { SprintBulkMoveController, type SprintBulkMoveRequest } from "./SprintBulkMoveController";
 import { renderSprintHeader } from "./SprintHeader";
 import {
+  matchRequestedPeople,
+  readSprintUrlPreferences,
+  resolveSprintName,
+  sprintSearchWith,
+  urlAliasesFor,
+  type SprintUrlPreferences,
+} from "./sprintUrlPreferences";
+import {
   sprintDefaultAreaPaths,
   sprintOrderingPolicy,
   sprintRecentChangesHours,
@@ -90,6 +98,8 @@ interface SprintSession {
   selectedAreaPaths: Set<string>;
   selectedParentId: number | null;
   selectedPeople: Set<string>;
+  /** The URL's requested people, held until the roster that resolves them arrives; applied once. */
+  pendingAssignedTo: string[];
   selectedMarkers: Set<WorkItemMarker>;
   selectedActivity: Set<RecentActivityKind>;
   recentNotes: RecentNotesIndex;
@@ -241,12 +251,34 @@ function markerPrefixes(context: DataDrivenViewContext): string[] {
   );
 }
 
+/** What this page's URL currently asks the board to show. Read live, because the board keeps it current. */
+function urlPreferences(context: DataDrivenViewContext): SprintUrlPreferences {
+  return readSprintUrlPreferences(context.doc.location?.search ?? "");
+}
+
+/**
+ * Keep the page URL naming what the board shows, so the address bar is always a shareable link to
+ * this exact sprint and person selection.
+ *
+ * The entry is replaced rather than pushed: a filter toggle changes the view, not the place, and a
+ * Back button that walked backwards through pill clicks would be worse than no history at all.
+ */
+function writeSprintUrl(context: DataDrivenViewContext, preferences: SprintUrlPreferences): void {
+  const view = context.doc.defaultView;
+  if (view === null) return;
+  const { pathname, search, hash } = view.location;
+  const next = sprintSearchWith(search, preferences);
+  if (next === search) return;
+  view.history.replaceState(view.history.state, "", `${pathname}${next}${hash}`);
+}
+
 function createSession(context: DataDrivenViewContext): SprintSession {
   return {
     sprintName: null,
     selectedAreaPaths: new Set<string>(),
     selectedParentId: null,
     selectedPeople: new Set<string>(),
+    pendingAssignedTo: urlPreferences(context).assignedTo,
     selectedMarkers: new Set<WorkItemMarker>(),
     selectedActivity: new Set<RecentActivityKind>(),
     recentNotes: new RecentNotesIndex(
@@ -316,10 +348,59 @@ function selectedSprintEntry(
   return window.entries.find((entry) => entry.name === session.sprintName);
 }
 
-function normalizeSprintSelection(window: SprintWindow, session: SprintSession): void {
-  if (!window.entries.some((entry) => entry.name === session.sprintName)) {
-    session.sprintName = window.currentName ?? window.entries[0]?.name ?? null;
-  }
+/**
+ * Settle the pending sprint request against the loaded window, falling back to the current sprint.
+ *
+ * A request that resolves to a different value than it was written as — a link naming an iteration
+ * path or a sprint that no longer exists — is reported, because a board silently showing a sprint
+ * nobody asked for is indistinguishable from one that ignored the link. A request the window matches
+ * verbatim (every picker selection) is left unlogged so refreshes cannot flood the ring buffer.
+ */
+function normalizeSprintSelection(
+  context: DataDrivenViewContext,
+  window: SprintWindow,
+  session: SprintSession,
+): void {
+  const requested = session.sprintName;
+  const resolved = resolveSprintName(window, requested);
+  session.sprintName = resolved ?? window.currentName ?? window.entries[0]?.name ?? null;
+  if (requested === null || requested === resolved) return;
+  context.services.logger.info(
+    `Sprint View resolved requested sprint "${requested}" against the team's ` +
+      `${window.entries.length}-sprint window: showing "${session.sprintName ?? "none"}".`,
+  );
+}
+
+/**
+ * Apply the URL's requested people once the roster that can resolve them has loaded.
+ *
+ * The request is consumed rather than re-read on every load, so a refresh keeps whatever the reader
+ * has since chosen. The aliases themselves are never logged, because they identify people.
+ */
+function applyRequestedAssignee(
+  context: DataDrivenViewContext,
+  session: SprintSession,
+  members: readonly TeamMember[],
+): void {
+  const requested = session.pendingAssignedTo;
+  if (requested.length === 0) return;
+  session.pendingAssignedTo = [];
+  const matched = matchRequestedPeople(members, requested);
+  const keys = matched.members.map(personKey);
+  if (matched.includesUnassigned) keys.push(UNASSIGNED_KEY);
+  session.selectedPeople = new Set(keys);
+  context.services.logger.info(
+    `Sprint View applied the URL's assignedTo request: requested=${requested.length}, ` +
+      `matched=${keys.length}, roster=${members.length} members.`,
+  );
+}
+
+/** The aliases naming this session's person selection, in the roster's own order. */
+function selectedAliases(session: SprintSession, members: readonly TeamMember[]): string[] {
+  return urlAliasesFor(
+    members.filter((member) => session.selectedPeople.has(personKey(member))),
+    session.selectedPeople.has(UNASSIGNED_KEY),
+  );
 }
 
 function selectedSprintOffset(
@@ -348,7 +429,7 @@ async function loadSprintData(
     context.services.loadSprintWindow(),
     loadSprintAreaPathConfiguration(context),
   ]);
-  normalizeSprintSelection(sprintWindow, session);
+  normalizeSprintSelection(context, sprintWindow, session);
   const selectedSprint = selectedSprintEntry(sprintWindow, session) ?? null;
   session.selectedAreaPaths = new Set(
     selectedAreaPathsForSprint(
@@ -359,6 +440,7 @@ async function loadSprintData(
   const offset = selectedSprintOffset(sprintWindow, selectedSprint ?? undefined);
   const [teamMembers, definition] = await Promise.all([teamMembersPromise, definitionPromise]);
   if (teamMembers.error !== null) throw new Error(teamMembers.error);
+  applyRequestedAssignee(context, session, teamMembers.members);
   if (definition.error !== null || definition.wiql === null) {
     throw new Error(definition.error ?? "The saved query has no WIQL body.");
   }
@@ -733,14 +815,15 @@ function renderHeaderStatuses(options: SprintHeaderRenderOptions): {
 }
 
 function renderHeaderTeamPills(options: SprintHeaderRenderOptions): HTMLElement[] {
-  return renderTeamPills(
-    options.context.doc,
-    options.data.teamMembers.members,
-    options.baseItems,
-    options.types,
-    options.session,
-    options.repaint,
-  );
+  const { context, session } = options;
+  const members = options.data.teamMembers.members;
+  return renderTeamPills(context.doc, members, options.baseItems, options.types, session, () => {
+    writeSprintUrl(context, {
+      sprint: session.sprintName,
+      assignedTo: selectedAliases(session, members),
+    });
+    options.repaint();
+  });
 }
 
 function renderBoardHeader(options: SprintHeaderRenderOptions): {
@@ -1293,6 +1376,21 @@ function createSprintRuntime(
   return bulkMove;
 }
 
+/**
+ * Open another sprint, naming it in the page URL first.
+ *
+ * The link names only the sprint because a sprint change resets every other filter, and it is
+ * written before the reload because rebuilding the session reads this URL back.
+ */
+function openSprint(
+  context: DataDrivenViewContext,
+  name: string,
+  load: (sprintName: string, resetSession: boolean) => void,
+): void {
+  writeSprintUrl(context, { sprint: name, assignedTo: [] });
+  load(name, true);
+}
+
 function startSprintView(context: DataDrivenViewContext, root: HTMLElement): void {
   let session = createSession(context);
   let data: LoadedSprintData | null = null;
@@ -1374,10 +1472,10 @@ function startSprintView(context: DataDrivenViewContext, root: HTMLElement): voi
   }
 
   function switchSprint(name: string): void {
-    if (!bulkMove.isActive) load(name, true);
+    if (!bulkMove.isActive) openSprint(context, name, load);
   }
 
-  load(null, true);
+  load(urlPreferences(context).sprint, true);
 }
 
 /**
