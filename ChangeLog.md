@@ -5,6 +5,8 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ## Next Version
 
+## 0.8
+
 ### New Features
 
 - Sprint View is now shareable straight from the address bar. The URL carries the sprint you are on
