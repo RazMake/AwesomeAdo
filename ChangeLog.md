@@ -5,6 +5,8 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ## Next Version
 
+## 0.9
+
 ### Bug Fixes
 
 - Sprint View's team pills now report where a person's work actually sits on the board for the
