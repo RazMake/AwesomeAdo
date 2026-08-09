@@ -126,6 +126,21 @@ function stateOrdinal(item: TrackedWorkItem, type: TypeCatalogEntry | undefined)
   );
 }
 
+/**
+ * The board column an item is drawn in, or `null` when the board draws no card for it at all.
+ *
+ * Exported because everything that reports a number about this board has to agree with the cards
+ * under it: a state routed to no visible column (`Removed`, `Cut`) is work the reader can never see
+ * here, so counting it turns every such item into a number nobody can account for.
+ */
+export function visibleBoardColumn(
+  item: TrackedWorkItem,
+  type: TypeCatalogEntry | undefined,
+): number | null {
+  const ordinal = stateOrdinal(item, type);
+  return ordinal >= 0 && ordinal < VISIBLE_COLUMN_COUNT ? ordinal : null;
+}
+
 function lanesOf(items: readonly SprintBoardItem[]): Lane[] {
   const paths = new Set(items.map(({ item }) => item.areaPath));
   return [...paths]
@@ -892,8 +907,8 @@ function countPrimaryWorkPerColumn(
 ): number[] {
   const counts = Array.from({ length: VISIBLE_COLUMN_COUNT }, () => 0);
   for (const { item } of items) {
-    const ordinal = stateOrdinal(item, options.types.get(item.type));
-    if (ordinal >= 0 && ordinal < VISIBLE_COLUMN_COUNT) {
+    const ordinal = visibleBoardColumn(item, options.types.get(item.type));
+    if (ordinal !== null) {
       counts[ordinal] = (counts[ordinal] ?? 0) + 1;
     }
   }

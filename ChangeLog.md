@@ -5,6 +5,18 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ## Next Version
 
+### Bug Fixes
+
+- Sprint View's team pills now report where a person's work actually sits on the board for the
+  selected sprint under the current Lane and Project filters. The grey counter is the person's cards
+  in the **Queue** column and the blue one their cards in **Active**, so a finished sprint reads as
+  zeros instead of a running total, and work in a state the board has no column for — Removed or
+  Cut, say — no longer inflates anyone. The Unassigned pill appears only when unassigned cards are on
+  the board.
+- Sprint View no longer shows a card for work assigned to someone outside the configured team. Such
+  an item is kept only to reach a team member's work beneath it, so it now stays as that card's
+  parent context and is left out of the lane totals, column counts, and Lane and Project choices.
+
 ## 0.8
 
 ### New Features

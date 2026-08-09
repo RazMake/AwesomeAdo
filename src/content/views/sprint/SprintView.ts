@@ -73,7 +73,7 @@ import {
 import { buildItemCommands } from "../project-tracking/item-commands/ItemCommands";
 import { buildMarkerCommands } from "../project-tracking/item-commands/MarkerCommands";
 
-import { renderSprintBoard, type SprintBoardItem } from "./SprintBoard";
+import { renderSprintBoard, visibleBoardColumn, type SprintBoardItem } from "./SprintBoard";
 import { SprintBulkMoveController, type SprintBulkMoveRequest } from "./SprintBulkMoveController";
 import { renderSprintHeader } from "./SprintHeader";
 import {
@@ -319,25 +319,18 @@ function personKey(user: TrackedUser | TeamMember | null): string {
   return (user.uniqueName ?? user.displayName).trim().toLocaleLowerCase();
 }
 
-function isActiveItem(
-  item: TrackedWorkItem,
-  types: ReadonlyMap<string, TypeCatalogEntry>,
-): boolean {
-  const type = types.get(item.type);
-  return (
-    type?.columns[1]?.states.some(
-      (state) => state.toLocaleLowerCase() === item.state.toLocaleLowerCase(),
-    ) === true
-  );
-}
+/** The board columns the person pills report occupancy of. */
+const QUEUE_COLUMN_ORDINAL = 0;
+const ACTIVE_COLUMN_ORDINAL = 1;
 
 function metricsFor(
   items: readonly DisplayItem[],
   types: ReadonlyMap<string, TypeCatalogEntry>,
 ): FilterPillCounts {
+  const columns = items.map(({ item }) => visibleBoardColumn(item, types.get(item.type)));
   return {
-    total: items.length,
-    active: items.filter(({ item }) => isActiveItem(item, types)).length,
+    queue: columns.filter((column) => column === QUEUE_COLUMN_ORDINAL).length,
+    active: columns.filter((column) => column === ACTIVE_COLUMN_ORDINAL).length,
   };
 }
 
@@ -671,15 +664,18 @@ function renderTeamPills(
   onChange: () => void,
 ): HTMLElement[] {
   const pills: HTMLElement[] = [];
+  // A pill has to be able to account for every card under it, so a state the board routes to no
+  // column (Removed, Cut) does not on its own earn anyone a filter.
+  const drawn = items.filter(({ item }) => visibleBoardColumn(item, types.get(item.type)) !== null);
   const validKeys = new Set(members.map(personKey));
-  const unassigned = items.filter(({ item }) => item.assignedTo === null);
+  const unassigned = drawn.filter(({ item }) => item.assignedTo === null);
   if (unassigned.length > 0) validKeys.add(UNASSIGNED_KEY);
   for (const selected of [...session.selectedPeople]) {
     if (!validKeys.has(selected)) session.selectedPeople.delete(selected);
   }
   for (const member of members) {
     const key = personKey(member);
-    const assigned = items.filter(({ item }) => personKey(item.assignedTo) === key);
+    const assigned = drawn.filter(({ item }) => personKey(item.assignedTo) === key);
     pills.push(
       renderPersonPill(
         doc,
@@ -1128,7 +1124,12 @@ function sprintBoardCollections(context: DataDrivenViewContext, data: LoadedSpri
   // Narrowed off the already-flattened board rather than off the roots, so classifying the items
   // does not cost a second walk of a tree this pass has just finished walking.
   const isFilterable = primaryFilterEligibility([...types.values()]);
-  const filterItems = allItems.filter(({ item }) => isFilterable(item));
+  // An off-roster assignee's item only survived the load because a team member's work hangs beneath
+  // it. It is planning context here, not a card any pill on this board could ever account for.
+  const boardKeys = new Set([...data.teamMembers.members.map(personKey), UNASSIGNED_KEY]);
+  const filterItems = allItems.filter(
+    ({ item }) => isFilterable(item) && boardKeys.has(personKey(item.assignedTo)),
+  );
   return {
     allItems,
     filterItems,

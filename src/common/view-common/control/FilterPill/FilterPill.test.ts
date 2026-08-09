@@ -55,7 +55,7 @@ describe("appendFilterPillCounts", () => {
   it("appends the queue total before the active count, each with its own label", () => {
     const pill = document.createElement("span");
 
-    appendFilterPillCounts(document, pill, { total: 7, active: 2 });
+    appendFilterPillCounts(document, pill, { queue: 7, active: 2 });
 
     const counts = [...pill.querySelectorAll<HTMLElement>(".awesomeado-filter-pill__count")];
     expect(counts.map((count) => count.dataset.count)).toEqual(["queue", "active"]);

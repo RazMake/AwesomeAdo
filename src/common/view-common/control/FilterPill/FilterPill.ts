@@ -1,6 +1,6 @@
-/** The two queue metrics displayed at the end of a person filter pill. */
+/** The two board-column occupancies displayed at the end of a person filter pill. */
 export interface FilterPillCounts {
-  total: number;
+  queue: number;
   active: number;
 }
 
@@ -81,7 +81,7 @@ export function appendFilterPillCounts(
 ): void {
   pill.append(
     renderFilterPillCount(doc, {
-      value: counts.total,
+      value: counts.queue,
       kind: "queue",
       label: "Queue",
       background: "var(--palette-neutral-20)",

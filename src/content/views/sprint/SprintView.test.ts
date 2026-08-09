@@ -357,7 +357,7 @@ describe("Sprint View header", () => {
     expect(root.querySelector(".awesomeado-sprint-picker__button")).toBeNull();
     expect(sprintSelect?.disabled).toBe(false);
     expect(root.querySelector(".awesomeado-sprint__team")?.textContent).not.toContain("Team:");
-    expect(metric(alice, "queue")).toBe("2");
+    expect(metric(alice, "queue")).toBe("1");
     expect(metric(alice, "active")).toBe("1");
     expect(metric(bob, "queue")).toBe("0");
     expect(metric(unassigned, "queue")).toBe("1");
@@ -1889,10 +1889,65 @@ describe("Sprint View team counts", () => {
     const alice = root.querySelector('[data-person="alice@example.com"]')!;
     const unassigned = root.querySelector('[data-person="__unassigned__"]')!;
 
-    expect(metric(alice, "queue")).toBe("1");
+    expect(metric(alice, "queue")).toBe("0");
     expect(metric(alice, "active")).toBe("1");
     expect(metric(unassigned, "queue")).toBe("1");
     expect(metric(unassigned, "active")).toBe("0");
+  });
+
+  it("reports each pill's Queue and Active board columns, not its whole queue", async () => {
+    const roots = [
+      item(1, "Alice queued"),
+      item(2, "Alice active", { state: "Active" }),
+      item(3, "Alice done", { state: "Done" }),
+      item(4, "Alice waiting", { state: "Waiting" }),
+    ];
+    const root = await render({
+      loadTree: async () => ({ isTreeQuery: false, roots, error: null }),
+    });
+    const alice = root.querySelector('[data-person="alice@example.com"]')!;
+
+    expect(metric(alice, "queue")).toBe("1");
+    expect(metric(alice, "active")).toBe("1");
+    expect(root.querySelectorAll(".awesomeado-sprint__item")).toHaveLength(4);
+  });
+});
+
+describe("Sprint View team pill scope", () => {
+  it("offers no Unassigned pill when the board draws no unassigned card", async () => {
+    const roots = [
+      item(1, "Alice queued"),
+      item(2, "Unassigned removed", { state: "Removed", assignedTo: null }),
+    ];
+    const root = await render({
+      loadTree: async () => ({ isTreeQuery: false, roots, error: null }),
+    });
+
+    expect(metric(root.querySelector('[data-person="alice@example.com"]')!, "queue")).toBe("1");
+    expect(root.querySelector('[data-person="__unassigned__"]')).toBeNull();
+    expect(root.querySelectorAll(".awesomeado-sprint__item")).toHaveLength(1);
+  });
+
+  it("draws and counts no card for work assigned outside the team roster", async () => {
+    const roots = [
+      item(1, "Off-roster parent", {
+        assignedTo: user("Carol"),
+        children: [item(2, "Alice child", { state: "Active" })],
+      }),
+    ];
+    const root = await render({
+      loadTree: async () => ({ isTreeQuery: true, roots, error: null }),
+    });
+    const cards = [...root.querySelectorAll<HTMLElement>(".awesomeado-sprint__item")];
+
+    expect(cards.map((card) => card.dataset.itemId)).toEqual(["2"]);
+    expect(root.querySelector('[data-person="carol@example.com"]')).toBeNull();
+    expect(metric(root.querySelector('[data-person="alice@example.com"]')!, "active")).toBe("1");
+    expect(
+      [...root.querySelectorAll(".awesomeado-sprint__column-count")].map(
+        (chip) => chip.textContent,
+      ),
+    ).toEqual(["0", "1", "0", "0"]);
   });
 });
 
@@ -2684,14 +2739,12 @@ describe("Sprint View sprint loading lifecycle", () => {
       }),
     });
 
-    const titles = [...root.querySelectorAll(".awesomeado-sprint__item")].map(
-      (row) => row.textContent,
-    );
-    expect(titles).toEqual([
-      expect.stringContaining("Parent outside roster"),
-      expect.stringContaining("Alice child"),
-      expect.stringContaining("Unassigned"),
-    ]);
+    const cards = [...root.querySelectorAll<HTMLElement>(".awesomeado-sprint__item")];
+
+    // The off-roster parent is kept only to reach the roster child under it, so it stays as that
+    // card's parent context rather than becoming a card nobody's pill could account for.
+    expect(cards.map((card) => card.dataset.itemId)).toEqual(["2", "4"]);
+    expect(cards[0]?.textContent).toContain("Parent outside roster");
   });
 });
 

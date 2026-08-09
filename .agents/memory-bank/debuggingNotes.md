@@ -9,6 +9,31 @@ we hit, why they happened, and the exact fix so nobody re-derives them.
 agent-tool-local memory (it does not clone or transfer between machines/agents). Record new findings
 here so every agent, teammate, and clone sees them.
 
+## Every Sprint View counter must agree with the cards the board paints
+
+- SYMPTOM: on a past sprint whose work was all Done, person pills reported queue totals nobody could
+  account for (60 counted vs 57 cards drawn); two people with no cards at all still showed 1.
+- ROOT CAUSE: `metricsFor` counted every Primary-work item in scope, while the board draws only the
+  first four configured columns. A `Removed`/`Cut` state routes to a fifth column or to none, so it
+  is scoped-in but never painted. The pills' "active" also re-derived `columns[1]` membership
+  independently of the board's own routing.
+- FIX / RULE: `SprintBoard.visibleBoardColumn(item, type)` is the single answer to "does the board
+  draw this, and where". The person pills' two counters are board-column occupancies read off it —
+  grey = Queue (ordinal 0), blue = Active (ordinal 1) — not a running total. Any new Sprint View
+  counter must go through it, or it will disagree with the cards.
+- RELATED RULE: `filterTreeForSprintRoster` keeps an off-roster assignee's item when roster work
+  hangs beneath it, so `sprintBoardCollections` narrows `filterItems` to unassigned-or-roster work.
+  Otherwise the board paints cards that no pill can account for (observed: 5 on a current sprint).
+  Those items remain visible as parent context on the card that needed them.
+- LIVE-DEBUG RECIPE (settled this in minutes after static reading went in circles): launch the debug
+  browser (`Run: Extension (Edge, no debugger)`, CDP 9222), then drive it from Node with no
+  dependencies — `fetch http://127.0.0.1:9222/json/list`, pick the `_queries/query` page target,
+  open its `webSocketDebuggerUrl` with the built-in `WebSocket`, and send `Runtime.evaluate`
+  (`returnByValue`, `awaitPromise`). Reading `.awesomeado-sprint__person-pill` against
+  `.awesomeado-sprint__item` proved the divergence; a same-origin WIQL `fetch` from the page then
+  named the exact offending items. Reload after a rebuild by evaluating `chrome.runtime.reload()` on
+  the extension's service-worker target — a page reload alone keeps the cached extension.
+
 ## Bulk hierarchy controls must stage by rendered depth, not one board-wide row state
 
 - SYMPTOM: Project Tracking's `+` or `−` changed every planning and Primary-work branch at once on a

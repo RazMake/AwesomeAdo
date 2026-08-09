@@ -82,10 +82,16 @@ Project Tracking deliberately does not expose those Interrupt mutation commands.
 
 Team pills come from the configured team's complete paged roster, in server order, followed by
 **Unassigned** when the loaded queue contains unassigned work. Query results retain only items
-assigned to those members or unassigned, plus the parent chains needed to reach them. Every Lane and
+assigned to those members or unassigned, plus the parent chains needed to reach them. An item on one
+of those chains that is itself assigned outside the roster stays as parent context only — it is
+never drawn as a card and never enters a lane, column, or pill count. Every Lane and
 Project choice is derived after that pruning, so out-of-team branches cannot contribute filter
-options. Team pill queue and active counts include only configured Primary work; planning-context
-ancestors and implementation descendants do not inflate either member or Unassigned totals. Counter
+options. Team pill counts include only configured Primary work; planning-context
+ancestors and implementation descendants do not inflate either member or Unassigned totals. The two
+counters report board-column occupancy for the selected sprint under the current filters: the grey
+one counts the person's cards in the **Queue** column and the blue one their cards in **Active**.
+Work routed to no drawn column (Removed, Cut) is in neither, and **Unassigned** appears only when the
+board draws unassigned cards. Counter
 tooltips explain each displayed metric. Marker-tag pills
 report one selected-sprint total, except **Interrupt**: it reports not-yet-accepted work followed by
 accepted work in the current tagged lifetime, and collapses to one total when no interrupts are
