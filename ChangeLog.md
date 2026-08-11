@@ -5,6 +5,11 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ## Next Version
 
+### Bug Fixes
+
+- Work-item type colors now stand out more clearly against Dark theme backgrounds in every enhanced
+  view, while keeping Azure DevOps' original hues on Light and Blue themes.
+
 ## 0.9
 
 ### Bug Fixes

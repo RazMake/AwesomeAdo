@@ -63,7 +63,9 @@ boards that disagree about the same query.
 - `workItemTypeColor(color)` — the type's hex color with its `#`, or `null` when the type carries
   none. Settings store the color without the `#`, and an unset color must become an explicit "no
   color" rather than a bare `#` that silently invalidates the CSS it lands in.
-- `workItemTypeTextColor(color)` — the same color where it paints TEXT, falling back to
+- `workItemTypeDisplayColor(color)` — the type's theme-aware CSS color: unchanged on light surfaces,
+  modestly lifted toward the active foreground on dark surfaces, and `null` when unset.
+- `workItemTypeTextColor(color)` — the display color where it paints TEXT, falling back to
   `var(--text-primary-color)` so an uncolored type stays readable.
 - `primaryWorkTypes(types)` — the types the team marked as independently trackable delivery.
 - `primaryWorkWithDescendants(types)` — primary work plus everything configured beneath it: the work

@@ -8,7 +8,7 @@ import { DEFAULT_QUERY_FOLDER, type ProjectQueryLink } from "../../../common/ado
 import {
   flattenWorkItems,
   orderTrackedItems,
-  workItemTypeColor,
+  workItemTypeDisplayColor,
 } from "../../../common/ado/workItemTypes";
 import { parseAdoContext } from "../../../common/navigation/AdoContext";
 import { MANUAL_ORDERING_POLICY, type OrderingPolicy } from "../../../common/ordering/ItemOrdering";
@@ -750,7 +750,7 @@ function newChildRowFor(
     doc: context.doc,
     typeName: type,
     iconUrl: entry?.icon ?? null,
-    color: workItemTypeColor(entry?.color),
+    color: workItemTypeDisplayColor(entry?.color),
     summary: newChildSummary(parent, type),
     onSubmit: (title) => addChild(board, parent, type, title),
     onCancel: () => {

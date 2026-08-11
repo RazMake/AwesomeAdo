@@ -31,6 +31,7 @@ import {
   workItemsEligibleForPrimaryFilter,
   workItemStatusLabel,
   workItemTypeColor,
+  workItemTypeDisplayColor,
 } from "../../../common/ado/workItemTypes";
 import { resolveMentionsIn } from "../../../common/browser/MessagingMentionDirectory";
 import { isoEpoch } from "../../../common/datetime/isoEpoch";
@@ -159,13 +160,21 @@ import {
 } from "./projectTrackingViewType";
 import { renderTagFilterPills } from "./tag-filter/TagFilterPanel";
 
-/** The hex color of a work item type, or null when the type is unknown or carries no color. */
+/** The raw color of a work item type, or null when the type is unknown or carries no color. */
 function typeColorOf(typeName: string, typeMap: Map<string, TypeCatalogEntry>): string | null {
   return workItemTypeColor(typeMap.get(typeName)?.color);
 }
 
+/** The theme-aware color used where a work item type paints CSS directly. */
+function displayTypeColorOf(
+  typeName: string,
+  typeMap: Map<string, TypeCatalogEntry>,
+): string | null {
+  return workItemTypeDisplayColor(typeMap.get(typeName)?.color);
+}
+
 /**
- * The hex color of the LAST configured work item type — the bottom of the hierarchy — or null when
+ * The raw color of the LAST configured work item type — the bottom of the hierarchy — or null when
  * no type is configured or that type carries no color. Kept apart from `typeColorOf` because the
  * rollup badge is keyed off the hierarchy's position, not off any particular item's own type.
  */
@@ -842,8 +851,9 @@ function createTitleControls(
   // ? disc, the type icon and the assignee, which are all atomic inline boxes centred on the text.
   titleSpan.style.cssText = "font-weight:500;overflow-wrap:anywhere;vertical-align:middle";
   const itemColor = typeColorOf(item.type, typeMap);
-  if (itemColor) {
-    titleSpan.style.color = itemColor;
+  const displayColor = displayTypeColorOf(item.type, typeMap);
+  if (displayColor) {
+    titleSpan.style.color = displayColor;
   }
 
   const {
@@ -892,7 +902,7 @@ function createItemNotes(
 
   const icon = renderItemTypeIcon(doc, {
     iconUrl: typeMap.get(item.type)?.icon ?? null,
-    color: typeColorOf(item.type, typeMap),
+    color: displayTypeColorOf(item.type, typeMap),
     typeName: item.type,
     // The toggle below owns the tooltip: the icon IS the notes affordance here, so hovering it must
     // say what clicking does, not repeat the work item type.
@@ -1173,7 +1183,7 @@ function newChildRow(parent: TrackedWorkItem, ctx: NewChildContext): HTMLElement
     doc: ctx.doc,
     typeName: type,
     iconUrl: entry?.icon ?? null,
-    color: workItemTypeColor(entry?.color),
+    color: workItemTypeDisplayColor(entry?.color),
     summary: newChildSummary(parent, type),
     onSubmit: (title) => addChildItem(parent, type, title, ctx),
     onCancel: () => {
@@ -1376,7 +1386,7 @@ function describeMinorChild(
         return completed;
       }),
     title: child.title,
-    titleColor: typeColorOf(child.type, typeMap),
+    titleColor: displayTypeColorOf(child.type, typeMap),
     eta,
     url,
     // A rolled-up child is a work item like any other, so it answers the right-click with the same
@@ -2254,7 +2264,7 @@ function renderHeader(
       return url === null ? { label: folder.label } : { label: folder.label, url };
     }),
     title: root.title,
-    titleColor: typeColorOf(root.type, typeMap),
+    titleColor: displayTypeColorOf(root.type, typeMap),
     onTitleContextMenu: boardControls.onTitleContextMenu,
     techLead,
     eta: createItemEtaBadge(doc, root, typeMap, boardColumns, queue, context.services.now()),

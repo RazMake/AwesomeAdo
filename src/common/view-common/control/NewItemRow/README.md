@@ -12,7 +12,7 @@ const row = renderNewItemRow({
   doc,
   typeName: "Feature",
   iconUrl: typeEntry?.icon ?? null,
-  color: workItemTypeColor(typeEntry?.color),
+  color: workItemTypeDisplayColor(typeEntry?.color),
   summary: 'Created as a Feature under "Payments", in area Fabrikam\\Core.',
   onSubmit: (title) => addItem(title), // false keeps the box open with the title still in it
   onCancel: () => closeTheRow(),

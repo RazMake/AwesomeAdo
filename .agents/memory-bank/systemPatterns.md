@@ -221,8 +221,10 @@ split.
 Item-level marker pills in both views use `marker-reasons` to pre-check Discussion notes beginning
 with that marker's configured comment token. A matching result becomes a tooltip-free opener; no
 match remains inert with `No notes`. Every focused row hides its configured marker token from
-display while retaining the complete source. Sprint's Project hierarchy labels keep each work
-item type hue while blending toward the active theme's primary foreground for readable contrast.
+display while retaining the complete source. `workItemTypeColor` normalizes raw ADO hex for controls
+that derive their own tints; `workItemTypeDisplayColor` preserves that hue on light schemes and lifts
+it toward the active foreground on dark schemes for direct CSS use across every enhanced view.
+Sprint's Project hierarchy labels apply their stronger readability blend to the raw color.
 
 `control/DragReorder` owns the DOM controller, themed insertion indicator, and pure neighbour-based
 placement math shared by Project Tracking rows and Sprint direct-child popups. Views register only

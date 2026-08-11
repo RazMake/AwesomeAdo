@@ -12,7 +12,7 @@ import type { SprintWindow, SprintWindowEntry } from "../../../common/ado/sprint
 import {
   primaryFilterEligibility,
   primaryWorkAncestors,
-  workItemTypeTextColor,
+  workItemTypeColor,
 } from "../../../common/ado/workItemTypes";
 import type { OrderingPolicy } from "../../../common/ordering/ItemOrdering";
 import { WORK_ITEM_MARKERS, type WorkItemMarker } from "../../../common/settings/ExtensionSettings";
@@ -489,7 +489,7 @@ function hierarchyOptions(
         title: item.title,
         typeName: item.type,
         iconUrl: type?.icon ?? null,
-        color: workItemTypeTextColor(type?.color),
+        color: workItemTypeColor(type?.color) ?? "var(--text-primary-color)",
         depth,
       };
     });

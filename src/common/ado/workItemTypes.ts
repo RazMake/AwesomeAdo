@@ -26,14 +26,21 @@ export function workItemTypeColor(color: string | null | undefined): string | nu
   return color.startsWith("#") ? color : `#${color}`;
 }
 
+/** The type's display color, lifted toward the active foreground only on dark surfaces. */
+export function workItemTypeDisplayColor(color: string | null | undefined): string | null {
+  const typeColor = workItemTypeColor(color);
+  if (typeColor === null) return null;
+  return `light-dark(${typeColor}, color-mix(in srgb, ${typeColor} 75%, var(--text-primary-color)))`;
+}
+
 /**
- * The type's hex color, falling back to the theme's primary text color.
+ * The type's display color, falling back to the theme's primary text color.
  *
  * For the places the color paints TEXT: an uncolored type must still be readable, so it inherits the
  * theme's foreground instead of disappearing.
  */
 export function workItemTypeTextColor(color: string | null | undefined): string {
-  return workItemTypeColor(color) ?? "var(--text-primary-color)";
+  return workItemTypeDisplayColor(color) ?? "var(--text-primary-color)";
 }
 
 /**

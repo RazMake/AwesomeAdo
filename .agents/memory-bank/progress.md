@@ -97,8 +97,10 @@ This is a flattened snapshot of what exists now, not a build log.
   destination with title highlight only. One serialized action coordinates state and rank; same-cell
   moves use an insertion line, while cross-lane drops are rejected. Lane choices include only represented leaf area paths. Project
   choices are limited to planning-parent types above Primary work on ancestor chains of currently
-  eligible sprint work, prefixed by type icons, colored by type with stronger themed contrast, and searchable by title without dropping matching parents;
-  long labels use available viewport width before truncating. Team and
+  eligible sprint work, prefixed by type icons, colored by type with stronger themed contrast, and searchable by title without dropping matching parents.
+  Across Sprint, Project Tracking, and All Projects Catalog, direct work-item type colors keep ADO's
+  hue on light schemes and lift toward the active foreground on dark schemes; long labels use
+  available viewport width before truncating. Team and
   marker pills use compact counters with hover explanations. Member and Unassigned totals count only
   Primary work. Marker pills show one total except Interrupt's waiting /
   accepted-current-lifetime split; every pill matches Project Tracking's Feature Crew tag scale, Unassigned is

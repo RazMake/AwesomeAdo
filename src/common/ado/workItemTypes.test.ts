@@ -11,6 +11,7 @@ import {
   workItemIdsVisibleUnderPrimaryFilter,
   workItemsEligibleForPrimaryFilter,
   workItemTypeColor,
+  workItemTypeDisplayColor,
   workItemTypeTextColor,
 } from "./workItemTypes";
 
@@ -74,10 +75,24 @@ describe("workItemTypeColor", () => {
   });
 });
 
+describe("workItemTypeDisplayColor", () => {
+  it("preserves the ADO color on light surfaces and lifts it on dark surfaces", () => {
+    expect(workItemTypeDisplayColor("0078d4")).toBe(
+      "light-dark(#0078d4, color-mix(in srgb, #0078d4 75%, var(--text-primary-color)))",
+    );
+  });
+
+  it("keeps an absent color absent", () => {
+    expect(workItemTypeDisplayColor("")).toBeNull();
+  });
+});
+
 describe("workItemTypeTextColor", () => {
   it("keeps an uncolored type readable by falling back to the theme foreground", () => {
     expect(workItemTypeTextColor("")).toBe("var(--text-primary-color)");
-    expect(workItemTypeTextColor("cc293d")).toBe("#cc293d");
+    expect(workItemTypeTextColor("cc293d")).toBe(
+      "light-dark(#cc293d, color-mix(in srgb, #cc293d 75%, var(--text-primary-color)))",
+    );
   });
 });
 

@@ -6,7 +6,11 @@ import type {
 import type { WorkItemWriteQueue } from "../../../common/ado/WorkItemWriteQueue/WorkItemWriteQueue";
 import { ASSIGNED_TO_FIELD, identityFieldValue } from "../../../common/ado/adoApi";
 import { buildWorkItemUrl } from "../../../common/ado/fetchAdoTree";
-import { orderTrackedItems, workItemTypeTextColor } from "../../../common/ado/workItemTypes";
+import {
+  orderTrackedItems,
+  workItemTypeColor,
+  workItemTypeTextColor,
+} from "../../../common/ado/workItemTypes";
 import type { OrderingPolicy } from "../../../common/ordering/ItemOrdering";
 import { WORK_ITEM_MARKERS } from "../../../common/settings/ExtensionSettings";
 import type { DataDrivenViewContext } from "../../../common/view-common/EnhancedView";
@@ -363,7 +367,7 @@ function renderCardMeta(
   id.textContent = `#${item.id}`;
   const details = renderItemDetailsButton(context.doc, {
     hasDescription: item.description.trim().length > 0,
-    typeColor: workItemTypeTextColor(options.types.get(item.type)?.color),
+    typeColor: workItemTypeColor(options.types.get(item.type)?.color),
     className: "awesomeado-sprint-card__describe",
   });
   createPopupHost({
@@ -440,8 +444,9 @@ function renderCardDetailsPopup(
 }
 
 function parentForeground(color: string | undefined): string {
-  if (!color) return "var(--text-primary-color)";
-  return `color-mix(in srgb, ${workItemTypeTextColor(color)} 62%, var(--text-primary-color))`;
+  const typeColor = workItemTypeColor(color);
+  if (typeColor === null) return "var(--text-primary-color)";
+  return `color-mix(in srgb, ${typeColor} 62%, var(--text-primary-color))`;
 }
 
 function renderItemEta(

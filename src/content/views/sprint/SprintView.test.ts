@@ -9,6 +9,9 @@ import { sprintView } from "./SprintView";
 import { readSprintUrlPreferences } from "./sprintUrlPreferences";
 import { sprintDefaultAreaPaths, sprintOrderingPolicy, sprintViewType } from "./sprintViewType";
 
+const STORY_DISPLAY_COLOR =
+  "light-dark(#0078d4, color-mix(in srgb, #0078d4 75%, var(--text-primary-color)))";
+
 function user(displayName: string): TrackedUser {
   return {
     displayName,
@@ -651,7 +654,7 @@ function expectWorkCards(root: HTMLElement): void {
   expect(footer.lastElementChild?.textContent).toBe("0 / 2");
   expect(footer.lastElementChild?.getAttribute("style")).toContain("margin-left: auto");
   expectParentHierarchyPopup(queued);
-  expect(queued.style.getPropertyValue("--sprint-item-type-color")).toBe("#0078d4");
+  expect(queued.style.getPropertyValue("--sprint-item-type-color")).toBe(STORY_DISPLAY_COLOR);
   expect(root.querySelectorAll(".awesomeado-sprint__item")).toHaveLength(2);
   for (const id of [0, 1, 4, 5]) {
     expect(root.querySelector(`.awesomeado-sprint__item[data-item-id="${id}"]`)).toBeNull();

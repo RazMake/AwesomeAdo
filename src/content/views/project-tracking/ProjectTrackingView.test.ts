@@ -4039,8 +4039,10 @@ describe("ProjectTrackingView — rollup popup rows", () => {
     expect(styleTheForm.querySelector(".awesomeado-assigned__name")?.textContent).toBe("Bob Jones");
     const title = styleTheForm.querySelector<HTMLElement>(".awesomeado-child-items__title")!;
     expect(title.textContent).toBe("Style the form");
-    // Task's configured color (F2CB1D) tints the title, matching the tree's type coloring.
-    expect(title.style.color).toBe("rgb(242, 203, 29)");
+    // Light keeps Task's configured color; dark surfaces lift it toward the active foreground.
+    expect(title.style.color).toBe(
+      "light-dark(#F2CB1D, color-mix(in srgb, #F2CB1D 75%, var(--text-primary-color)))",
+    );
     expect(styleTheForm.querySelector(".awesomeado-child-items__eta")?.textContent).toContain(
       "ETA ",
     );

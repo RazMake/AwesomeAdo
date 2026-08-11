@@ -15,6 +15,8 @@ AwesomeADO is feature-complete for its current scope:
   background-to-MAIN-world bridges for credentialed Azure DevOps operations.
 - Shared view controls, normalized ADO models, ordering, settings, bindings, navigation, logging, and
   browser adapters live under their owning `src/common/**` components.
+- Shared work-item type display colors preserve ADO hues on light schemes and lift them toward the
+  active foreground on dark schemes across every enhanced view.
 - Enhanced views use injected services and one serialized work-item write queue. Every item-changing
   operation must leave the model's `System.Rev` current; see `systemPatterns.md` and ADR-030.
 - Options manages appearance, Azure DevOps configuration, query bindings, file transfer, team

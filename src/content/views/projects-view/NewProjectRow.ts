@@ -1,5 +1,5 @@
 import type { TypeCatalogEntry } from "../../../common/ado/TrackedWorkItem";
-import { workItemTypeColor } from "../../../common/ado/workItemTypes";
+import { workItemTypeDisplayColor } from "../../../common/ado/workItemTypes";
 import type { EnhancedViewServices } from "../../../common/view-common/EnhancedView";
 import { renderNewItemRow } from "../../../common/view-common/control/NewItemRow/NewItemRow";
 import { renderSprintSelectField } from "../../../common/view-common/control/SprintPicker/SprintSelectField";
@@ -48,7 +48,7 @@ export function renderNewProjectRow(options: NewProjectRowOptions): HTMLElement 
     doc: options.doc,
     typeName: options.typeName,
     iconUrl: options.typeEntry?.icon ?? null,
-    color: workItemTypeColor(options.typeEntry?.color),
+    color: workItemTypeDisplayColor(options.typeEntry?.color),
     summary: creationSummary(options),
     fields: sprint.element,
     onSubmit: (title) => options.onSubmit(title, sprint.value() || null),

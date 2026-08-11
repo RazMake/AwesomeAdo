@@ -7,7 +7,7 @@ import type {
 import type { WorkItemWriteQueue } from "../../../common/ado/WorkItemWriteQueue/WorkItemWriteQueue";
 import {
   orderTrackedItems,
-  workItemTypeColor,
+  workItemTypeDisplayColor,
   workItemTypeTextColor,
 } from "../../../common/ado/workItemTypes";
 import type { OrderingPolicy } from "../../../common/ordering/ItemOrdering";
@@ -327,7 +327,7 @@ function renderTypeIcon(item: TrackedWorkItem, context: ProjectRowContext): HTML
   const entry = context.types.get(item.type);
   return renderItemTypeIcon(context.doc, {
     iconUrl: entry?.icon ?? null,
-    color: workItemTypeColor(entry?.color),
+    color: workItemTypeDisplayColor(entry?.color),
     typeName: item.type,
   }).element;
 }
