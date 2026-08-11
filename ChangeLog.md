@@ -5,6 +5,8 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ## Next Version
 
+## 0.10
+
 ### Bug Fixes
 
 - Work-item type colors now stand out more clearly against Dark theme backgrounds in every enhanced
