@@ -91,7 +91,9 @@ ancestors and implementation descendants do not inflate either member or Unassig
 counters report board-column occupancy for the selected sprint under the current filters: the grey
 one counts the person's cards in the **Queue** column and the blue one their cards in **Active**.
 Work routed to no drawn column (Removed, Cut) is in neither, and **Unassigned** appears only when the
-board draws unassigned cards. Counter
+board draws unassigned cards. Left-clicking **Unassigned** keeps only unassigned work; right-clicking
+it filters unassigned work out and draws a bottom-left-to-top-right diagonal in the selected outline
+color. **Clear all filters** in the pills row resets Lane, Project, person, marker, and activity filters together. Counter
 tooltips explain each displayed metric. Marker-tag pills
 report one selected-sprint total, except **Interrupt**: it reports not-yet-accepted work followed by
 accepted work in the current tagged lifetime, and collapses to one total when no interrupts are

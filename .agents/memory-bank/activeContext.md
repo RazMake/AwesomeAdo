@@ -25,6 +25,9 @@ AwesomeADO is feature-complete for its current scope:
   configured completed column through the shared ADO-state mapping, including work outside the
   normal resolved-age window, while preserving planning ancestors and composing with every other
   active filter.
+- Sprint View clears Lane, Project, person, marker, and activity filters from one pills-row command;
+  right-clicking its Unassigned person pill instead excludes unassigned work and draws a
+  bottom-left-to-top-right diagonal in the selected outline color.
 - Options manages appearance, Azure DevOps configuration, query bindings, file transfer, team
   configuration sharing, shared queries, and device-local diagnostics.
 - User-visible decisions and failures are source-tagged in the bounded diagnostics log; every caught

@@ -72,7 +72,9 @@ This is a flattened snapshot of what exists now, not a build log.
   executing an offset-adjusted copy of the original WIQL;
   retains only team members' or unassigned work plus parent chains; and renders clickable query-folder breadcrumbs plus an always-active Sprint
   selector, Lane, Project, refresh, write-queue, team, marker, and recent-activity controls; and
-  filters a lane-by-state card table. It uses configured labels with high-contrast theme-owned colors
+  filters a lane-by-state card table. Its pills row clears every active Lane, Project, person,
+  marker, and activity filter in one action; right-clicking Unassigned instead excludes unassigned
+  cards with a bottom-left-to-top-right diagonal in the active outline color. It uses configured labels with high-contrast theme-owned colors
   for Queue, Active, Waiting, and Done over quieter fills; the synchronized column titles stay
   lightly tinted at rest and gain 90%-opaque backdrops while cards scroll beneath them at half the
   header card's resting gap below
