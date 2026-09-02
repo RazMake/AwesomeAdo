@@ -284,16 +284,12 @@ describe("applyRankFallback", () => {
       reseeded: false,
     });
   });
+});
 
+describe("applyRankFallback - reseeding", () => {
   it("reseeds a mixed-type level when an immediate neighbour has no backlog rank", async () => {
     const io = fakeIo({
-      bodies: [
-        batchBody([
-          { id: 1 },
-          { id: 2, value: 4000 },
-          { id: 3, value: 5000 },
-        ]),
-      ],
+      bodies: [batchBody([{ id: 1 }, { id: 2, value: 4000 }, { id: 3, value: 5000 }])],
       written: {
         ok: true,
         revs: [

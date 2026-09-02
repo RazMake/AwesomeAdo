@@ -177,6 +177,15 @@ their Feature Crew tag. A row survives when it or anything beneath it carries a 
 is what keeps a name that only ever appears on tasks from emptying the board. Both selections live in
 `BoardSession` and repaint only the tree.
 
+Project Tracking's adjacent Done toggle is another `BoardSession` reading position. It identifies
+completion by calling `common/ado/workItemTypes.workItemBoardColumnOrdinal`, which maps every ADO
+state configured for the item's type to the extension board-column ordinal immediately before
+Removed. Its visible text is `Show only {name}`, where `name` is that fourth configured extension
+column. While active it bypasses the normal resolved-age cutoff so every mapped Done state remains
+available, but still ANDs with every other tree filter; the shared hierarchy projection retains
+non-matching planning ancestors that lead to matching completed work. Its transparent frame and
+communication-blue active fill match the neighboring header filters.
+
 Sprint uses the same control over represented leaf paths, but its selection is team configuration,
 not reading position. Its query binding supplies default full paths only when the sprint has no saved
 record; an existing record, including an empty selection, takes priority. `settings/SprintAreaPaths`

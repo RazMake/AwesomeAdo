@@ -5,6 +5,13 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ## Next Version
 
+### New Features
+
+- Project Tracking now has a **Show only Done** button immediately before **Assigned To**, using
+  your configured name for the fourth board state. Turn it on to show all work in any Azure DevOps
+  state mapped there, including older completed work hidden from the normal view, with the planning
+  context above it; turn it off to return to the normal view.
+
 ### Bug Fixes
 
 - Project Tracking now reliably keeps a dragged item where it was dropped when its siblings mix work

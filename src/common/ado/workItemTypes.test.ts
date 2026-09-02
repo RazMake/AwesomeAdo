@@ -9,6 +9,7 @@ import {
   primaryWorkWithAncestors,
   primaryWorkWithDescendants,
   workItemIdsVisibleUnderPrimaryFilter,
+  workItemBoardColumnOrdinal,
   workItemsEligibleForPrimaryFilter,
   workItemTypeColor,
   workItemTypeDisplayColor,
@@ -93,6 +94,28 @@ describe("workItemTypeTextColor", () => {
     expect(workItemTypeTextColor("cc293d")).toBe(
       "light-dark(#cc293d, color-mix(in srgb, #cc293d 75%, var(--text-primary-color)))",
     );
+  });
+});
+
+describe("workItemBoardColumnOrdinal", () => {
+  const entry = {
+    ...type("Story", []),
+    columns: [
+      { column: "Active", states: ["New", "Committed"] },
+      { column: "Done", states: ["Resolved", "Closed", "Completed"] },
+    ],
+  };
+  const boardColumns = ["Queue", "Active", "Waiting", "Done", "Removed"];
+
+  it.each(["Resolved", "Closed", "Completed", " completed "])(
+    "maps the ADO state %s through its configured extension column",
+    (state) => {
+      expect(workItemBoardColumnOrdinal(item({ state }), entry, boardColumns)).toBe(3);
+    },
+  );
+
+  it("returns -1 when the ADO state has no extension-column mapping", () => {
+    expect(workItemBoardColumnOrdinal(item({ state: "Proposed" }), entry, boardColumns)).toBe(-1);
   });
 });
 

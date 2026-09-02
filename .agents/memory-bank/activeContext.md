@@ -21,6 +21,10 @@ AwesomeADO is feature-complete for its current scope:
   operation must leave the model's `System.Rev` current; see `systemPatterns.md` and ADR-030.
 - Project Tracking verifies accepted backlog reorders against the requested sibling interval and
   directly corrects mixed-type or unranked levels when ADO's team endpoint did not place the item.
+- Project Tracking's session-scoped `Show only {fourth state}` toggle narrows the tree to the
+  configured completed column through the shared ADO-state mapping, including work outside the
+  normal resolved-age window, while preserving planning ancestors and composing with every other
+  active filter.
 - Options manages appearance, Azure DevOps configuration, query bindings, file transfer, team
   configuration sharing, shared queries, and device-local diagnostics.
 - User-visible decisions and failures are source-tagged in the bounded diagnostics log; every caught

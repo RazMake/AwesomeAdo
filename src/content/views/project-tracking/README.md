@@ -149,6 +149,14 @@ halves of the view — its configuration and its renderer.
     pinned merely because it has no children. Like the area filter, pressing the lit-up trigger clears the selection in one gesture;
     a name a refresh no longer offers is dropped rather than left narrowing the board invisibly.
     The selection is session-scoped, like every other reading position here.
+  - **Done filter**: the compact button immediately before Assigned To reads **Show only {completed
+    state}**, using the fourth configured extension state name (for example, **Show only Done** or
+    **Show only Completed**). It shows the normal frame while the full board is visible and fills
+    with the communication blue while active. Pressing it keeps every ADO state mapped to that
+    completed column, together with the planning ancestors needed to locate that work; unlike the
+    normal view, it includes completed work older than the resolved-item window. Pressing it again
+    restores the normal view. It ANDs with the other filters and remains active across an in-place
+    Refresh for the current session.
   - **Tree rows**: the tree renders every configured **Primary work** type plus the planning-context
     types above it. Marking the leaf type as Primary work therefore shows leaf items as rows; leaving
     it unchecked keeps those implementation details in the child-items badge. Configurations saved

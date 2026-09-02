@@ -266,7 +266,10 @@ export async function applyRankFallback(options: {
 }): Promise<RankFallbackResult> {
   const { siblingIds, movedId } = options;
   const field = await readAllRanks(siblingIds, options.readRanks);
-  if (options.acceptCurrentPlacement === true && rankSatisfiesPlacement(siblingIds, field, movedId)) {
+  if (
+    options.acceptCurrentPlacement === true &&
+    rankSatisfiesPlacement(siblingIds, field, movedId)
+  ) {
     return { ok: true, order: field.get(movedId), ranks: [], reseeded: false };
   }
   const plan = planRankWrites(siblingIds, field, movedId);

@@ -9,7 +9,7 @@
  * Layout (a single subtle-filled tile so it reads as a card):
  *
  *   Folder / Folder / …                                     Saving N changes…  ⇅
- *   Title            Sprint Picker  + −              Assigned To  Area  ⟳
+ *   Title            Sprint Picker  + −         Done  Assigned To  Area  ⟳
  *   TechLead  ETA
  *
  * The sprint picker is the first control, followed by the `+`/`−` expansion buttons; the view opens
@@ -70,6 +70,8 @@ export interface ProjectTrackingHeaderOptions {
   eta: HTMLElement | null;
   /** The sprint picker control element, pinned to the right of the controls band. */
   sprintPicker: HTMLElement;
+  /** The Done-only toggle, immediately before the multi-select narrowing controls. */
+  resolvedOnlyToggle: HTMLElement;
   /** The compact area-path filter, grouped with the other narrowing controls. */
   areaPathFilter: HTMLElement;
   /** The compact Assigned To filter, grouped with the other narrowing controls. */
@@ -183,7 +185,7 @@ function renderHeaderActions(
   const narrowing = doc.createElement("div");
   narrowing.className = "awesomeado-tracking__header-narrowing";
   narrowing.style.cssText = ["display:flex", "align-items:center", "gap:8px"].join(";");
-  narrowing.append(options.assignedToFilter, options.areaPathFilter);
+  narrowing.append(options.resolvedOnlyToggle, options.assignedToFilter, options.areaPathFilter);
 
   filters.append(narrowing, refresh);
   return filters;

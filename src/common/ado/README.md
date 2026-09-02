@@ -67,6 +67,9 @@ boards that disagree about the same query.
   modestly lifted toward the active foreground on dark surfaces, and `null` when unset.
 - `workItemTypeTextColor(color)` — the display color where it paints TEXT, falling back to
   `var(--text-primary-color)` so an uncolored type stays readable.
+- `workItemBoardColumnOrdinal(item, type, boardColumns)` — maps the item's ADO state through every
+  state configured for its work-item type and returns the matching extension board-column position,
+  or `-1` when no mapping exists.
 - `primaryWorkTypes(types)` — the types the team marked as independently trackable delivery.
 - `primaryWorkWithDescendants(types)` — primary work plus everything configured beneath it: the work
   that counts toward a person's load. A story's tasks are the same commitment seen closer up, so

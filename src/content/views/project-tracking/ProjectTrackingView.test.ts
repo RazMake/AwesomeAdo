@@ -4466,6 +4466,83 @@ describe("ProjectTrackingView — completed ETA", () => {
   });
 });
 
+describe("ProjectTrackingView — Done-only filter", () => {
+  it("shows completed work with its planning context and toggles back to the normal view", async () => {
+    const root = await renderBoardForTree(
+      epicOver([
+        createItem({
+          id: 2,
+          type: "Feature",
+          title: "Planning context",
+          children: [resolvedFeature(3, "Finished story", YESTERDAY, { type: "Story" })],
+        }),
+        createItem({ id: 4, type: "Feature", title: "Still active" }),
+      ]),
+    );
+    const toggle = root.querySelector<HTMLButtonElement>(".awesomeado-resolved-filter")!;
+
+    expect(toggle.textContent).toBe("Show only Done");
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+    expect(toggle.style.background).toBe("transparent");
+    expect(renderedRowTitles(root)).toEqual(["Planning context", "Finished story", "Still active"]);
+
+    toggle.click();
+
+    expect(toggle.getAttribute("aria-pressed")).toBe("true");
+    expect(toggle.style.background).toBe("var(--communication-background)");
+    expect(renderedRowTitles(root)).toEqual(["Planning context", "Finished story"]);
+
+    toggle.click();
+
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+    expect(renderedRowTitles(root)).toEqual(["Planning context", "Finished story", "Still active"]);
+  });
+
+  it("names the button after the fourth configured extension state", async () => {
+    const root = await renderBoardForTree(
+      epicOver([]),
+      {},
+      {
+        getBoardColumns: () => ["Backlog", "Doing", "Waiting", "Completed", "Removed"],
+      },
+    );
+
+    expect(root.querySelector(".awesomeado-resolved-filter")?.textContent).toBe(
+      "Show only Completed",
+    );
+  });
+
+  it("shows every ADO state mapped to Done regardless of the normal resolved-age window", async () => {
+    const featureTypes = FIXTURE_TYPES.map((type) =>
+      type.name === "Feature"
+        ? {
+            ...type,
+            columns: [
+              { column: "Active", states: ["Active"] },
+              { column: "Done", states: ["Resolved", "Closed", "Completed"] },
+            ],
+          }
+        : type,
+    );
+    const root = await renderBoardForTree(
+      epicOver([
+        resolvedFeature(2, "Resolved item", LONG_AGO, { state: "Resolved" }),
+        resolvedFeature(3, "Closed item", LONG_AGO),
+        resolvedFeature(4, "Completed item", LONG_AGO, { state: "Completed" }),
+        createItem({ id: 5, type: "Feature", title: "Active item" }),
+      ]),
+      {},
+      { getTypes: () => featureTypes },
+    );
+
+    expect(renderedRowTitles(root)).toEqual(["Active item"]);
+
+    root.querySelector<HTMLButtonElement>(".awesomeado-resolved-filter")!.click();
+
+    expect(renderedRowTitles(root)).toEqual(["Resolved item", "Closed item", "Completed item"]);
+  });
+});
+
 describe("ProjectTrackingView — resolved item window", () => {
   it("hides an item resolved longer ago than the configured window", async () => {
     const root = await renderBoardForTree(

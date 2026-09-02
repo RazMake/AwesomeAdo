@@ -24,7 +24,10 @@ This is a flattened snapshot of what exists now, not a build log.
   view redraws immediately when settings-backed configuration changes. Accepted drag reorders are
   checked against their requested sibling interval; mixed work-item types and unranked neighbours
   are corrected through the direct-rank fallback when ADO's team backlog endpoint leaves them out of
-  place. Project
+  place. A framed Done toggle immediately before Assigned To fills blue while active, keeps every
+  ADO state the shared type mapping routes to the completed column plus its planning ancestors,
+  includes work outside the normal resolved-age window, composes with the other filters, and
+  restores the normal view on its next press. Project
   Tracking rows use theme-owned alternating
   backgrounds, with subtle hover and stronger `Ctrl+Shift+Alt` emphasis filling each row and its open details as one
   continuous surface while excluding child rows (shared `common/view-common/control/RowEmphasis`). Their unchanged total spacing is balanced toward

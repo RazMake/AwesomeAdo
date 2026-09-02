@@ -927,6 +927,10 @@ authorizedUser.id`. `isOwnNote` is correct as written — do not "fix" it.
   `length - 2`, i.e. the column before the abandoned bucket (Removed). Reject a negative ordinal —
   `boardColumnOrdinal` also answers `-1` for an unmapped status, so a short board would otherwise
   read every unmapped item as finished.
+- The Done-only header filter is the explicit way to inspect ALL completed work, so it bypasses the
+  normal hide-after-N-days cutoff. It still identifies completion through
+  `workItemBoardColumnOrdinal`, which follows every ADO state in the type's completed-column mapping;
+  never compare `System.State` with one hard-coded state name in a view.
 - The hide-after-N-days age is measured from `stateChangeDate`, NOT `changedDate`: a comment or a
   re-tag must not put finished work back on the board. An item with no state-change date is never
   aged out, and an ancestor survives while any descendant is still visible (`isVisibleUnderFilter`
