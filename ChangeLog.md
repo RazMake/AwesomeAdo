@@ -5,10 +5,12 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ## Next Version
 
+## 0.11
+
 ### New Features
 
 - Sprint View now has a **Clear all filters** button in its pills row. Right-click **Unassigned** to
-  filter unassigned work out; a bottom-left-to-top-right diagonal crosses the outlined pill while
+  filter unassigned work OUT; a bottom-left-to-top-right diagonal crosses the outlined pill while
   that opposite filter is active.
 - Project Tracking now has a **Show only Done** button immediately before **Assigned To**, using
   your configured name for the fourth board state. Turn it on to show all work in any Azure DevOps
