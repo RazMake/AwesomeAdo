@@ -5,6 +5,11 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ## Next Version
 
+### Bug Fixes
+
+- Project Tracking now reliably keeps a dragged item where it was dropped when its siblings mix work
+  item types such as Bugs and User Stories, including items that Azure DevOps has not ranked yet.
+
 ## 0.10
 
 ### Bug Fixes

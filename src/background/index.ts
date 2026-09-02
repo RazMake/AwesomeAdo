@@ -1156,11 +1156,62 @@ async function finishReorder(
     `Work item ${original.id} reordered under parent ${original.parentId} ` +
       `(was ${original.currentParentId}), order=${orderDescription(result.order)}.`,
   );
-  return result;
+  return reconcileAcceptedRank(prepared, tabId, tabUrl, result);
 }
 
 function orderDescription(order: number | undefined): number | string {
   return order === undefined ? "unchanged" : order;
+}
+
+/**
+ * Verify that ADO's team backlog endpoint actually placed the item among the requested siblings.
+ * Different backlog types can occupy independent order spaces, so the endpoint may answer success
+ * while leaving a Bug outside the User Stories it was dropped between (or vice versa).
+ */
+async function reconcileAcceptedRank(
+  message: ReorderWorkItemMessage,
+  tabId: number,
+  tabUrl: string,
+  accepted: ReorderWorkItemResponse,
+): Promise<ReorderWorkItemResponse> {
+  const batchUrl = buildWorkItemsBatchUrl(tabUrl);
+  if (batchUrl === null) {
+    return accepted;
+  }
+  try {
+    const reconciled = await applyRankFallback({
+      siblingIds: message.siblingIds,
+      movedId: message.id,
+      acceptCurrentPlacement: true,
+      readRanks: (ids) => readRanksInTab(tabId, batchUrl, ids),
+      writeRanks: (writes) => writeRanksInTab(tabId, tabUrl, writes),
+    });
+    if (!reconciled.ok) {
+      logger.error(
+        `Work item ${message.id} accepted reorder could not be verified: ` +
+          `${reconciled.error ?? "unknown error"}.`,
+      );
+      return accepted;
+    }
+    const corrected = reconciled.ranks?.length ?? 0;
+    if (corrected > 0) {
+      const correction =
+        reconciled.reseeded === true ? "reseeded destination level" : "rewrote moved rank";
+      logger.info(
+        `Work item ${message.id} accepted reorder needed correction between ` +
+          `${message.previousId} and ${message.nextId}: ${correction}, ` +
+          `${corrected} rank(s) written directly.`,
+      );
+    }
+    return {
+      ...accepted,
+      order: reconciled.order ?? accepted.order,
+      ranks: reconciled.ranks,
+    };
+  } catch (error) {
+    logger.error(`Could not verify accepted reorder for work item ${message.id}`, error);
+    return accepted;
+  }
 }
 
 /**

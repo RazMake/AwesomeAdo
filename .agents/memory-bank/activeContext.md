@@ -19,6 +19,8 @@ AwesomeADO is feature-complete for its current scope:
   active foreground on dark schemes across every enhanced view.
 - Enhanced views use injected services and one serialized work-item write queue. Every item-changing
   operation must leave the model's `System.Rev` current; see `systemPatterns.md` and ADR-030.
+- Project Tracking verifies accepted backlog reorders against the requested sibling interval and
+  directly corrects mixed-type or unranked levels when ADO's team endpoint did not place the item.
 - Options manages appearance, Azure DevOps configuration, query bindings, file transfer, team
   configuration sharing, shared queries, and device-local diagnostics.
 - User-visible decisions and failures are source-tagged in the bounded diagnostics log; every caught

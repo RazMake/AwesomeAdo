@@ -92,7 +92,9 @@ halves of the view — its configuration and its renderer.
     (which owns the rank arithmetic) and, when the parent changed, its `System.Parent` link is
     re-pointed under a `/rev` test. The item is converted to the destination parent's configured
     default child type in that same JSON Patch, so the parent and type either both land or neither
-    does.
+    does. The accepted rank is then checked against the requested neighbours; if ADO ranked a Bug
+    and User Story in separate backlog spaces, or a neighbour has no rank, the destination level is
+    corrected directly so the visible mixed-type order still matches the drop.
     See [`drag-reorder`](./drag-reorder/README.md).
     - A row may stay at its level or move one level: dragging a child between its parent's peers
       promotes it under their parent, while dragging a leaf among another item's children demotes it

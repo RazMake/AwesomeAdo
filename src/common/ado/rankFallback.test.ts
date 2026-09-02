@@ -199,9 +199,20 @@ describe("planRankWrites - renumbering the level", () => {
 });
 
 /** Records what the fallback read and wrote, so a test can assert on the calls as well as the result. */
-function fakeIo(options: { bodies: unknown[]; written?: { ok: boolean; error?: string } }): {
+function fakeIo(options: {
+  bodies: unknown[];
+  written?: {
+    ok: boolean;
+    error?: string;
+    revs?: readonly { id: number; rev: number }[];
+  };
+}): {
   readRanks: (ids: readonly number[]) => Promise<unknown>;
-  writeRanks: (writes: readonly RankWrite[]) => Promise<{ ok: boolean; error?: string }>;
+  writeRanks: (writes: readonly RankWrite[]) => Promise<{
+    ok: boolean;
+    error?: string;
+    revs?: readonly { id: number; rev: number }[];
+  }>;
   reads: number[][];
   writes: RankWrite[][];
 } {
@@ -223,6 +234,105 @@ function fakeIo(options: { bodies: unknown[]; written?: { ok: boolean; error?: s
 }
 
 describe("applyRankFallback", () => {
+  it("accepts a server rank that already places a mixed-type item between its neighbours", async () => {
+    const io = fakeIo({
+      bodies: [
+        batchBody([
+          { id: 1, value: 1000 },
+          { id: 2, value: 1750 },
+          { id: 3, value: 3000 },
+        ]),
+      ],
+    });
+
+    const result = await applyRankFallback({
+      siblingIds: [1, 2, 3],
+      movedId: 2,
+      acceptCurrentPlacement: true,
+      readRanks: io.readRanks,
+      writeRanks: io.writeRanks,
+    });
+
+    expect(io.writes).toEqual([]);
+    expect(result).toEqual({ ok: true, order: 1750, ranks: [], reseeded: false });
+  });
+
+  it("corrects a server rank that left a mixed-type item outside its requested neighbours", async () => {
+    const io = fakeIo({
+      bodies: [
+        batchBody([
+          { id: 1, value: 1000 },
+          { id: 2, value: 4000 },
+          { id: 3, value: 3000 },
+        ]),
+      ],
+    });
+
+    const result = await applyRankFallback({
+      siblingIds: [1, 2, 3],
+      movedId: 2,
+      acceptCurrentPlacement: true,
+      readRanks: io.readRanks,
+      writeRanks: io.writeRanks,
+    });
+
+    expect(io.writes).toEqual([[{ id: 2, rank: 2000 }]]);
+    expect(result).toEqual({
+      ok: true,
+      order: 2000,
+      ranks: [{ id: 2, rank: 2000 }],
+      reseeded: false,
+    });
+  });
+
+  it("reseeds a mixed-type level when an immediate neighbour has no backlog rank", async () => {
+    const io = fakeIo({
+      bodies: [
+        batchBody([
+          { id: 1 },
+          { id: 2, value: 4000 },
+          { id: 3, value: 5000 },
+        ]),
+      ],
+      written: {
+        ok: true,
+        revs: [
+          { id: 1, rev: 11 },
+          { id: 2, rev: 12 },
+          { id: 3, rev: 13 },
+        ],
+      },
+    });
+
+    const result = await applyRankFallback({
+      siblingIds: [1, 2, 3],
+      movedId: 2,
+      acceptCurrentPlacement: true,
+      readRanks: io.readRanks,
+      writeRanks: io.writeRanks,
+    });
+
+    expect(io.writes).toEqual([
+      [
+        { id: 1, rank: 4000 },
+        { id: 2, rank: 104000 },
+        { id: 3, rank: 204000 },
+      ],
+    ]);
+    expect(result).toEqual({
+      ok: true,
+      order: 104000,
+      ranks: [
+        { id: 1, rank: 4000, rev: 11 },
+        { id: 2, rank: 104000, rev: 12 },
+        { id: 3, rank: 204000, rev: 13 },
+      ],
+      reseeded: true,
+    });
+  });
+});
+
+describe("applyRankFallback - an order endpoint refusal", () => {
   it("reads the level, writes the placement, and reports the moved item's new rank", async () => {
     const io = fakeIo({
       bodies: [

@@ -142,6 +142,19 @@ permissible range: Parameter Name: depth, Acceptable Range: 0 to 2"`. `getWithRe
   answer mentions the query, a filter, a column or a lane, it is wrong — and if the view cannot show
   a real level, it should not offer the gesture.
 
+## A successful ADO reorder can leave mixed work-item types unmoved
+
+- SYMPTOM: Project Tracking accepted a drag but the item sometimes stayed where it started, most
+  often in a sibling level mixing Bugs and User Stories.
+- ROOT CAUSE: ADO can answer the team backlog-order request successfully while assigning a rank in
+  the moved type's own backlog space, outside the visible neighbours' ranks. The direct-rank fallback
+  also treated an existing neighbour with no `StackRank` like an absent start/end boundary, so it
+  could rank only the moved item while the unranked neighbour still sorted last.
+- FIX / RULE: after every accepted order response, read the full destination level and verify that
+  the moved rank is strictly between its requested neighbours. Keep any valid server rank; directly
+  correct an out-of-interval rank. If either immediate neighbour exists but is unranked, renumber the
+  full level so every requested adjacency can be represented.
+
 ## A team roster can contain groups, and the Core API never expands them
 
 - SYMPTOM: Sprint View showed two member pills for `SFDA-ClientSDKs`, although the team was populated

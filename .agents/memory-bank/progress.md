@@ -21,7 +21,10 @@ This is a flattened snapshot of what exists now, not a build log.
   discreetly in its lower-right corner. Project Tracking ships as an on-demand ESM renderer; store
   builds minify it and the always-loaded runtime. Its hierarchy renders Primary work and planning
   ancestors as rows while rolling implementation-detail children into compact badges, and an open
-  view redraws immediately when settings-backed configuration changes. Project
+  view redraws immediately when settings-backed configuration changes. Accepted drag reorders are
+  checked against their requested sibling interval; mixed work-item types and unranked neighbours
+  are corrected through the direct-rank fallback when ADO's team backlog endpoint leaves them out of
+  place. Project
   Tracking rows use theme-owned alternating
   backgrounds, with subtle hover and stronger `Ctrl+Shift+Alt` emphasis filling each row and its open details as one
   continuous surface while excluding child rows (shared `common/view-common/control/RowEmphasis`). Their unchanged total spacing is balanced toward
