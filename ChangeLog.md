@@ -5,6 +5,8 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ## Next Version
 
+## 0.12
+
 ### Bug Fixes
 
 - Sprint View and Project Tracking now agree that an Interrupt is accepted only when its current
