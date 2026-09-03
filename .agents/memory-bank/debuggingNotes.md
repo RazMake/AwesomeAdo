@@ -254,11 +254,22 @@ permissible range: Parameter Name: depth, Acceptable Range: 0 to 2"`. `getWithRe
   no `System.History` delta at all; a third correctly painted card happened to have the same comment
   in both places.
 - FIX / RULE: acceptance is scoped to the latest tag-add revision, but Discussion is the canonical
-  note source. Page the work-item updates stream by the count actually returned to find the latest
-  `System.Tags` transition from absent to present; then page newest-first Discussion comments until
-  the configured token is found or a comment older than that transition proves the current lifetime
-  is exhausted. Do not use the item's current `ChangedDate`, which moves for unrelated edits, and do
-  not require Azure DevOps to echo a Discussion comment as `System.History`.
+  note source. A qualifying note must begin with the configured token, matching the marker-reason
+  lookup; merely mentioning it later in prose does not accept the Interrupt. Page the work-item
+  updates stream by the count actually returned to find the latest `System.Tags` transition from
+  absent to present; then page newest-first Discussion comments until the configured token is found
+  or a comment older than that transition proves the current lifetime is exhausted. Do not use the
+  item's current `ChangedDate`, which moves for unrelated edits, and do not require Azure DevOps to
+  echo a Discussion comment as `System.History`.
+- Project Tracking's normal notes panels remain bounded by the binding's Updates window, but an
+  accepted Interrupt's reason lookup must read the complete discussion. Sprint already does this;
+  otherwise Project Tracking can correctly paint acceptance while hiding the older note that proves
+  and explains it. Marker-note state is cached by item AND cutoff: Project Tracking paints before
+  acceptance settles, so a bounded empty read must never satisfy the all-history request after the
+  accepted state repaints the same item object.
+- **View all notes** means the complete Discussion history in every enhanced view. The binding's
+  Updates window limits inline Project Tracking panels only; it is not an input to the shared item
+  command.
 - Transport reuses `executeAdoRequestInPage`, so each idempotent page GET gets three bounded retries.
   Keep failed item IDs separate from unaccepted IDs; inability to read evidence is not evidence of
   rejection.

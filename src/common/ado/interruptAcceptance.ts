@@ -28,6 +28,6 @@ export function isInterruptAccepted(
 
   return evidence.notes.some((note) => {
     const notedAt = isoEpoch(note.createdDate);
-    return notedAt !== null && notedAt >= taggedAt && note.text.includes(token);
+    return notedAt !== null && notedAt >= taggedAt && note.text.startsWith(token);
   });
 }

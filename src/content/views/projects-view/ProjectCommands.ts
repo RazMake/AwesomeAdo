@@ -23,9 +23,6 @@ import {
 /** The Azure DevOps field holding an item's tags, as one semicolon-separated string. */
 const TAGS_FIELD = "System.Tags";
 
-/** How far back "View all notes" reaches on this catalog: the item's whole discussion. */
-const ALL_NOTES_SINCE = new Date(0).toISOString();
-
 /** Everything the per-project commands need beyond the item itself. */
 export interface ProjectCommandsOptions extends ItemCommandTarget {
   /** The catalog's type entries, so completion can resolve the project type's own final state. */
@@ -78,7 +75,7 @@ export interface ProjectCommandsOptions extends ItemCommandTarget {
  */
 export function buildProjectCommands(options: ProjectCommandsOptions): ItemContextMenuCommand[] {
   return [
-    ...buildItemEditingCommands({ ...options, notesSinceIso: ALL_NOTES_SINCE }),
+    ...buildItemEditingCommands(options),
     { ...addTagCommand(options), separatorBefore: true },
     clearTagCommand(options),
     ...newMilestoneCommand(options),

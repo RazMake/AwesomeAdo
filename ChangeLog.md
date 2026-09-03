@@ -5,6 +5,14 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ## Next Version
 
+### Bug Fixes
+
+- Sprint View and Project Tracking now agree that an Interrupt is accepted only when its current
+  lifetime has a note starting with the configured acceptance tag. Project Tracking now shows that
+  reason even when acceptance finishes loading after the board or predates the view's Updates
+  window; acceptance reasons no longer show an extra colon after the tag. **View all notes** now
+  loads the complete discussion consistently in every enhanced view.
+
 ## 0.11
 
 ### New Features

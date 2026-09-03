@@ -98,9 +98,9 @@ tooltips explain each displayed metric. Marker-tag pills
 report one selected-sprint total, except **Interrupt**: it reports not-yet-accepted work followed by
 accepted work in the current tagged lifetime, and collapses to one total when no interrupts are
 waiting for acceptance.
-Acceptance requires the configured acceptance token in a Discussion revision at or after the most
-recent revision that added the Interrupt tag. Both views share this rule, so an old note cannot
-survive an untag/re-tag cycle.
+Acceptance requires a Discussion note beginning with the configured acceptance token at or after
+the most recent revision that added the Interrupt tag. Both views share this rule, so an old note
+cannot survive an untag/re-tag cycle.
 The **Project** filter offers only items whose configured types are parents of Primary-work types,
 recursively through their planning ancestors, and whose branches contain work surviving the
 selected sprint and other active filters. Primary-work and implementation-detail items are omitted.

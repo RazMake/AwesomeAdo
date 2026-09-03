@@ -9,7 +9,7 @@ beneath the three every item menu carries (Copy Item ID / Copy ADO Url / Open in
 | **Update description**     | Opens a Markdown editor on `System.Description`, and saves the field as Markdown     |
 | **Move to another sprint** | A submenu of the current sprint and every future one, writing `System.IterationPath` |
 | **Change area path**       | A submenu of the board's other area paths, writing `System.AreaPath`                 |
-| **View all notes**         | The item's whole discussion inside the Updates window — read, correct, add           |
+| **View all notes**         | The item's complete discussion — read, correct, add                                  |
 
 Under a **second** rule, the marker flags (`buildMarkerCommands`):
 
@@ -42,7 +42,6 @@ contextMenu.openAt(event, {
       ...target,
       sprintWindow,
       areaPaths,
-      notesSinceIso: noteWindowStart(services.now(), updatesWindowWeeks(properties)),
     }),
     // Opt-in: a view with no notion of "stuck work" simply never asks for these.
     ...buildMarkerCommands(target),
@@ -58,8 +57,8 @@ Two further entry points exist so other views can reuse parts of this menu witho
 board-specific destinations:
 
 - `buildItemEditingCommands(options)` — just **Update title**, **Update description** and **View all
-  notes**. Takes an `ItemCommandTarget` plus `notesSinceIso`; no sprint window and no area paths, so
-  a view with neither can still offer the three commands that edit the item itself.
+  notes**. Takes an `ItemCommandTarget`; no sprint window and no area paths, so a view with neither
+  can still offer the three commands that edit the item itself.
 - `buildProjectLifecycleCommands(options)` (`ProjectLifecycleCommands.ts`) — **Create Project Query**
   and **Mark completed**, the two commands that govern a catalog entry rather than a work item's
   fields. Each is offered independently (`offerCreate` / `offerComplete`): the All Projects Catalog
@@ -84,7 +83,6 @@ board-specific destinations:
 | `onChanged`     | Repaints the board, so a changed title, sprint or flag shows without a re-read.                                                                                                      |
 | `sprintWindow`  | (editing commands) The team's sprint window; the move submenu is built from its current and future entries.                                                                          |
 | `areaPaths`     | (editing commands) The same eligible full paths offered by the board's area-path filter.                                                                                             |
-| `notesSinceIso` | (editing commands) Start of the binding's **Updates window (weeks)** — how far back **View all notes** reaches.                                                                      |
 | `types`         | (lifecycle) The configured type catalog, from which a completed project's final state is read.                                                                                       |
 | `queryLink`     | (lifecycle) The project's tracking query, or `null` when it owns none. Its `managed` flag says whether this extension created it; only a managed query is ever offered for deletion. |     | `queryLinkKnown` | (lifecycle) Whether a `null` link means "owns none" rather than "the read that would have found one failed". |     | `queryFolderPath` | (lifecycle) The folder a new tracking query is created in. |
 | `offerCreate`   | (lifecycle) Whether **Create Project Query** appears at all — false where the board already is one.                                                                                  |
@@ -115,7 +113,7 @@ board-specific destinations:
   replaces.
 - **A title is required, a description is not**, so the description editor accepts an empty box and
   the title editor does not.
-- **View all notes** shows every note the window holds, unlike the panel under a row, which shows the
+- **View all notes** shows the item's complete discussion, unlike the panel under a row, which shows the
   two most recent days with notes because dozens of those are on screen at once. It opens **centred**
   at ~70% of the window, because the pointer's position stops being a useful place to put a surface
   that size, and what it holds has no natural size — it is however much discussion an item has. Its

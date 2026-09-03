@@ -56,7 +56,7 @@ export function markerCommentOf(
 export function withoutMarkerComment(text: string, prefix: string | undefined): string {
   return prefix === undefined || !text.startsWith(prefix)
     ? text
-    : text.slice(prefix.length).trimStart();
+    : text.slice(prefix.length).replace(/^\s*:?\s*/, "");
 }
 
 /**

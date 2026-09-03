@@ -619,11 +619,12 @@ timestamp each.
 ### `IInterruptAcceptanceReader.ts` + `interruptAcceptance.ts`
 
 Resolves whether each currently Interrupt-tagged item was accepted during its **current** tagged
-lifetime. `isInterruptAccepted` requires a configured acceptance token in Discussion at or after the
-latest update that added the configured Interrupt tag; equality is valid because tagging as accepted
-may write both in one revision. Failed items are returned separately and never treated as
-unaccepted. `fetchInterruptAcceptance.ts` builds the sender-project-scoped, `$skip`-paged work-item
-updates URL plus the newest-first Discussion URL and owns request/page/marker length guards.
+lifetime. `isInterruptAccepted` requires a Discussion note beginning with the configured acceptance
+token at or after the latest update that added the configured Interrupt tag; equality is valid
+because tagging as accepted may write both in one revision. Failed items are returned separately and
+never treated as unaccepted. `fetchInterruptAcceptance.ts` builds the sender-project-scoped,
+`$skip`-paged work-item updates URL plus the newest-first Discussion URL and owns
+request/page/marker length guards.
 
 ## Usage guidance
 

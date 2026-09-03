@@ -35,7 +35,7 @@ describe("isInterruptAccepted", () => {
     ).toBe(false);
   });
 
-  it("finds the token anywhere in a later note", () => {
+  it("does not accept a later note that mentions the token away from its start", () => {
     expect(
       isInterruptAccepted(
         evidence([
@@ -46,7 +46,7 @@ describe("isInterruptAccepted", () => {
         ]),
         "[ACCEPTED]",
       ),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it.each([

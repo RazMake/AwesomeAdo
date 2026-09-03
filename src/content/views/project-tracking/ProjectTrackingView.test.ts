@@ -3905,18 +3905,22 @@ describe("ProjectTrackingView — moving an item", () => {
 });
 
 describe("ProjectTrackingView — reading an item's discussion", () => {
-  it("shows every note in the window, not the two days a row's panel is limited to", async () => {
+  it("loads the complete discussion, not the board's Updates window", async () => {
+    const requests: { workItemId: number; sinceIso: string }[] = [];
     const root = await renderDeepBoard({
       noteLoader: {
-        loadNotes: async () => ({
-          notes: [
-            fixtureNote(1, "2026-07-23T09:00:00Z"),
-            fixtureNote(2, "2026-07-22T09:00:00Z"),
-            fixtureNote(3, "2026-07-21T09:00:00Z"),
-          ],
-          currentUser: null,
-          error: null,
-        }),
+        loadNotes: async (request) => {
+          requests.push(request);
+          return {
+            notes: [
+              fixtureNote(1, "2026-07-23T09:00:00Z"),
+              fixtureNote(2, "2026-07-22T09:00:00Z"),
+              fixtureNote(3, "2026-07-21T09:00:00Z"),
+            ],
+            currentUser: null,
+            error: null,
+          };
+        },
       },
     });
     await turnSprintFilterOff(root);
@@ -3926,6 +3930,7 @@ describe("ProjectTrackingView — reading an item's discussion", () => {
     await settleWrites();
 
     const panel = root.querySelector(".awesomeado-item-menu__panel")!;
+    expect(requests[0]).toEqual({ workItemId: 2, sinceIso: new Date(0).toISOString() });
     expect(panel.querySelectorAll(".awesomeado-note")).toHaveLength(3);
     // The composer comes with the panel, so a discussion can be added to from here too.
     expect(panel.querySelector(".awesomeado-note-composer__trigger")).not.toBeNull();

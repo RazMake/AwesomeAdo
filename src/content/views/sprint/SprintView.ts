@@ -1,3 +1,4 @@
+import { ALL_WORK_ITEM_NOTES_SINCE } from "../../../common/ado/IWorkItemNoteLoader";
 import type { WorkItemTreeResult } from "../../../common/ado/IWorkItemTreeLoader";
 import type { TeamMember, TeamMembersResult } from "../../../common/ado/TeamMembers";
 import type {
@@ -942,8 +943,6 @@ function renderBoardHeader(options: SprintHeaderRenderOptions): {
   };
 }
 
-const ALL_NOTES_SINCE = new Date(0).toISOString();
-
 function sprintItemMenuTarget(params: {
   context: DataDrivenViewContext;
   item: TrackedWorkItem;
@@ -967,7 +966,6 @@ function sprintItemMenuTarget(params: {
         ...target,
         sprintWindow: params.data.sprintWindow,
         areaPaths: params.assignableAreaPaths,
-        notesSinceIso: ALL_NOTES_SINCE,
       }),
       ...buildMarkerCommands(target, params.data.interruptAcceptance),
     ],
@@ -1143,7 +1141,7 @@ function renderSprintQueue(params: {
       })),
     orderingPolicy: session.orderingPolicy ?? sprintOrderingPolicy(context.properties),
     interruptAcceptance: data.interruptAcceptance,
-    notesSinceIso: ALL_NOTES_SINCE,
+    notesSinceIso: ALL_WORK_ITEM_NOTES_SINCE,
     contextMenu: params.menus.menu,
     menuTarget: params.menus.target,
     onItemChanged: params.repaint,

@@ -1214,7 +1214,7 @@ Markdown` in one `/rev`-guarded JSON Patch. A 412 causes one reread and one retr
 
 ## ADR-061: Interrupt acceptance belongs to the current tagged lifetime
 
-- Decision: an Interrupt is accepted only when a Discussion revision containing the configured
+- Decision: an Interrupt is accepted only when a Discussion revision beginning with the configured
   Interrupt comment token occurs at or after the most recent revision that added the configured
   Interrupt tag. The reader pages the work-item updates stream by actual returned count and derives
   `System.Tags`, `System.History`, and `System.ChangedDate` from that one revision timeline. Failed

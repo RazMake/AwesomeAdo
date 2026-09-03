@@ -31,7 +31,7 @@ row.append(
 | `item`          | The work item the pill belongs to; its discussion is what the popup reads.                     |
 | `marker`        | Which recognized condition the pill stands for — decides its wording and its color.            |
 | `tags`          | That marker's configured Azure DevOps **tag** and **comment token**.                           |
-| `notesSinceIso` | Start of the binding's **Updates window (weeks)**; nothing older is fetched.                   |
+| `notesSinceIso` | Start of the binding's **Updates window (weeks)**; accepted Interrupt reasons bypass it.       |
 | `services`      | The narrow notes slice of `EnhancedViewServices` (read/write, mentions, marker tags, logging). |
 
 ## Behaviour
@@ -39,13 +39,16 @@ row.append(
 - A marker with a positive discussion count reads its filtered notes before deciding whether it is
   interactive. Clicking a ready pill opens the item's notes **filtered to that marker's comment token** — the
   `[BLOCKED]` notes under a Blocked pill, and nothing else.
+- An accepted Interrupt searches the complete discussion for its reason. Acceptance is scoped to
+  the current tagged lifetime rather than the Project Tracking Updates window, so clipping the
+  reason to that display window would show an accepted pill that cannot explain itself.
 - A marker that cannot open says **why** in its tooltip — no comment tag configured, the item has no
   notes, nothing in the Updates window carries the token, or the discussion could not be read — and
   records the same conclusion, with its inputs, in the diagnostics log. An inert pill is otherwise
   indistinguishable from one nobody has clicked yet. A clickable pill carries no tooltip.
 - Every focused marker note omits its configured token (`[BLOCKED]`, `[ACCEPTED]`, and so on) and
-  shows only the reader-authored explanation. Correcting a note also never shows the token, and the
-  token is restored behind the scenes when the correction is saved.
+  an optional colon separator, showing only the reader-authored explanation. Correcting a note also
+  never shows the token, and the token is restored behind the scenes when the correction is saved.
 - The popup carries **no composer**. A note typed there would not begin with the token, so it would
   vanish from the very list it was written in — which reads as a lost note.
 - The click is kept off the row underneath, which opens the item's own notes panel.

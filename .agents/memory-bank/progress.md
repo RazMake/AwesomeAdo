@@ -124,8 +124,11 @@ This is a flattened snapshot of what exists now, not a build log.
   raised item pills use muted purple with a 1px bright edge while accepted pills use solid purple.
   Both card sizes expose Priority (compact Done read-only)
   and the shared `?` popup, which wraps long content and scrolls vertically only. Project Tracking uses the same
-  latest-tag-lifetime acceptance state, sourced from Discussion even when update history omits the
-  note, without exposing Interrupt mutation commands.
+  latest-tag-lifetime acceptance state, sourced from Discussion notes beginning with the configured
+  token even when update history omits the note. Accepted reason pills search the complete
+  discussion with cutoff-aware caching rather than reusing a bounded pre-acceptance read, without
+  exposing Interrupt mutation commands. **View all notes** reads the complete Discussion history in
+  every enhanced view; the Updates window remains an inline-panel display bound only.
 - **Area-path filtering** (`common/view-common/control/AreaPathFilter` + both views): the live
   tree hydrates `System.AreaPath`; a compact themed header popup selects full paths using shortest
   unique display suffixes. Active selections match the Project filter's filled communication style

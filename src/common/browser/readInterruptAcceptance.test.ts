@@ -68,7 +68,7 @@ describe("readInterruptAcceptance", () => {
           value: [
             {
               revisedDate: "2026-08-01T10:01:00Z",
-              fields: { "System.History": { newValue: "later [ACCEPTED]" } },
+              fields: { "System.History": { newValue: "[ACCEPTED] later" } },
             },
           ],
         },

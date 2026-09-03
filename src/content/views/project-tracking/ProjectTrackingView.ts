@@ -1329,7 +1329,6 @@ function menuTargetFor(params: {
         ...target,
         sprintWindow: params.sprintWindow,
         areaPaths: params.areaPaths,
-        notesSinceIso: boardNotesSince(context),
       }),
       // Asked for explicitly, under their own rule: this board is where a team tracks what is stuck,
       // so it is the board that turns the shared menu's flagging commands on. A view with no such
