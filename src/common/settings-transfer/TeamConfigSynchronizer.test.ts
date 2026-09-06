@@ -202,7 +202,12 @@ describe("TeamConfigSynchronizer legacy pull", () => {
       ok: true,
       text: JSON.stringify({
         awesomeAdoConfigVersion: 1,
-        settings: { theme: "blue", defaultView: "original", organization: "contoso" },
+        settings: {
+          theme: "blue",
+          defaultView: "original",
+          organization: "contoso",
+          queryFavoritesPaths: { catalog: "Someone else's destination" },
+        },
         enhancedQueries: bindings,
       }),
     });

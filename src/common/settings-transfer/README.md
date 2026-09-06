@@ -38,7 +38,9 @@ it to buttons and the two stores lives in `src/options/settings-transfer`.
   JSON text written to the file. Values pass through the same normalizers used on storage reads, so
   an export is always a clean snapshot. The optional trusted source ID is included in file exports.
 - `exportCompactConfig(settings, enhancedQueries)` — serialize the same normalized shape without
-  indentation or presentation whitespace for the team configuration work item Description.
+  indentation or presentation whitespace for the team configuration work item Description. Personal
+  settings, including per-query Favorites paths, are omitted; full file exports retain them. Shared
+  pulls and overlays likewise ignore personal values even if a work item contains them.
 - `exportConnectionConfig(settings, teamConfigWorkItemId)` — serialize only the connection: the
   trusted work item id plus the organization and project needed to reach it. It deliberately carries
   no bindings and no presentation settings, so a teammate adopts the team's **live** source instead

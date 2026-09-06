@@ -31,6 +31,7 @@ export function renderHeaderButton(
     `width:${BUTTON_SIZE_PX}px`,
     `height:${BUTTON_SIZE_PX}px`,
     "display:inline-flex",
+    "flex:0 0 auto",
     "align-items:center",
     "justify-content:center",
     `border:${BUTTON_BORDER_PX}px solid var(--control-border-strong)`,

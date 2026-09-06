@@ -8,11 +8,15 @@ Dashboard data categories to select
   descriptions, tags, and discussions to render its enhanced views.
 - Web history: AwesomeADO processes supported Azure DevOps URLs and query identifiers to recognize the
   active Query route. It does not build, retain, or transmit a general browsing history.
+  It reads Favorites folder structure for destination autocomplete and saves project names and query
+  URLs as bookmarks only when the user requests a catalog sync.
 
 Storage and transmission
 
 - Extension configuration and query bindings are stored in browser sync storage. The browser provider
   may synchronize them to the user's other signed-in browser instances.
+- Catalog Favorites paths are personal browser-synced settings included in file exports, never in
+  shared ADO configuration. Created Favorites remain in the browser and may follow its bookmark sync.
 - A bounded diagnostics log is stored only in device-local extension storage.
 - Azure DevOps data is sent only to the hosted Azure DevOps organization the user is visiting, to
   provide reads and changes requested through AwesomeADO.

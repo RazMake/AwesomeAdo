@@ -18,7 +18,8 @@ This is a flattened snapshot of what exists now, not a build log.
   holding a `ViewType` config (in the `VIEW_TYPES` catalog) and an `EnhancedView` renderer (in the
   eager/lazy enhanced-view registry), a shared placeholder shell (`renderViewScaffold`), and
   `sprint` / `project-tracking` views. Every enhanced-view header displays the built extension version
-  discreetly in its lower-right corner. Project Tracking ships as an on-demand ESM renderer; store
+  discreetly in its lower-right corner and wraps complete controls without splitting their labels
+  when the viewport is narrow. Project Tracking ships as an on-demand ESM renderer; store
   builds minify it and the always-loaded runtime. Its hierarchy renders Primary work and planning
   ancestors as rows while rolling implementation-detail children into compact badges, and an open
   view redraws immediately when settings-backed configuration changes. Accepted drag reorders are
@@ -67,6 +68,14 @@ This is a flattened snapshot of what exists now, not a build log.
   folder field indicates while its three-round autocomplete vocabulary is loading and exposes
   clipped full paths on hover. New projects receive all initial fields in one patch. Ships as its
   own on-demand ESM renderer.
+- **Catalog Favorites**: title-menu sync exports only filtered top-level projects with tracking
+  queries, in display order, followed by the catalog URL with its filters. Missing queries offer
+  Continue/Cancel; missing destinations offer Set/Cancel with a specific-binding deep link. Personal
+  path autocomplete reads the browser's folder tree and stays editable on read-only shared bindings.
+  The separate browser-synced setting participates in full file transfer but never ADO sharing.
+  Background validation rechecks the query and destination before replacing Favorites. Authenticated
+  Edge validation confirmed autocomplete, Set routing, exact titles/URLs, stale-content removal,
+  repeated-sync uniqueness, and the final filtered link; the temporary folder and setting were removed.
 - **Sprint View** (`content/views/sprint`): accepts flat or tree queries; loads the selected
   team's complete paged member roster, recursively expanding direct and nested groups, before
   executing an offset-adjusted copy of the original WIQL;

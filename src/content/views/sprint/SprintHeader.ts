@@ -22,6 +22,13 @@ export interface SprintHeaderOptions {
   onTitleContextMenu: (event: MouseEvent) => void;
 }
 
+function keepControlsIntact(controls: readonly HTMLElement[]): void {
+  for (const control of controls) {
+    control.style.flex = "0 0 auto";
+    control.style.whiteSpace = "nowrap";
+  }
+}
+
 /** Render Sprint View's fixed-title, two-band themed header card. */
 export function renderSprintHeader(doc: Document, options: SprintHeaderOptions): HTMLElement {
   const header = doc.createElement("header");
@@ -47,7 +54,7 @@ export function renderSprintHeader(doc: Document, options: SprintHeaderOptions):
   });
   const topRow = doc.createElement("div");
   topRow.className = "awesomeado-sprint__header-top";
-  topRow.style.cssText = "display:flex;align-items:center;min-height:16px";
+  topRow.style.cssText = "display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-height:16px";
   if (breadcrumbs) topRow.append(breadcrumbs);
   // The version marker and the ordering glyph share one right-pinned group, so the glyph holds the
   // same corner position whether or not a version was supplied.
@@ -88,7 +95,9 @@ export function renderSprintHeader(doc: Document, options: SprintHeaderOptions):
 
   const actions = doc.createElement("div");
   actions.className = "awesomeado-sprint__header-actions";
-  actions.style.cssText = "display:flex;align-items:center;gap:8px";
+  actions.style.cssText =
+    "display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end";
+  keepControlsIntact([options.laneFilter, options.projectFilter]);
   actions.append(options.laneFilter, options.projectFilter, options.refresh.element);
   controls.append(statusSlot, actions);
 

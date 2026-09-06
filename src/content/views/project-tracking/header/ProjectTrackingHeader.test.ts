@@ -332,6 +332,23 @@ describe("renderProjectTrackingHeader - top band layout", () => {
   });
 });
 
+describe("renderProjectTrackingHeader - narrow layout", () => {
+  it("wraps complete controls instead of squeezing their labels", () => {
+    const options = baseOptions();
+    options.resolvedOnlyToggle.textContent = "Show only Done";
+    const { element } = renderProjectTrackingHeader(document, options);
+
+    const main = element.querySelector<HTMLElement>(".awesomeado-tracking__header-main");
+    const filters = element.querySelector<HTMLElement>(".awesomeado-tracking__header-filters");
+    const narrowing = element.querySelector<HTMLElement>(".awesomeado-tracking__header-narrowing");
+    expect(main?.style.flexWrap).toBe("wrap");
+    expect(filters?.style.flexWrap).toBe("wrap");
+    expect(narrowing?.style.flexWrap).toBe("wrap");
+    expect(options.resolvedOnlyToggle.style.whiteSpace).toBe("nowrap");
+    expect(options.resolvedOnlyToggle.style.flex).toBe("0 0 auto");
+  });
+});
+
 describe("renderProjectTrackingHeader - refresh button", () => {
   it("puts refresh last at the right edge, after the narrowing filters", () => {
     const { element, expandAllButton, collapseAllButton, refreshButton } =

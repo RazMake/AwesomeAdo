@@ -28,6 +28,7 @@ import type { TypeCatalogEntry } from "../ado/TrackedWorkItem";
 import type { ICurrentUserReader } from "../ado/currentUser";
 import type { SprintWindow } from "../ado/sprintWindow";
 import type { IQueryBindingWriter } from "../bindings/IQueryBindingWriter";
+import type { CatalogFavorites } from "../browser/Favorites";
 import type { ILogger } from "../logging/ILogger";
 import type { WorkItemMarkerTags } from "../settings/ExtensionSettings";
 import type { SprintAreaPathConfigurationService } from "../settings/SprintAreaPaths";
@@ -40,6 +41,7 @@ import type { SprintAreaPathConfigurationService } from "../settings/SprintAreaP
  * production views that need data receive a live implementation.
  */
 export interface EnhancedViewServices {
+  catalogFavorites?: CatalogFavorites;
   /** Load a tree query's work items into the normalized model. */
   loadTree(queryId: string, wiql?: string): Promise<WorkItemTreeResult>;
   /** Load a saved query's original WIQL independently from executing it. */

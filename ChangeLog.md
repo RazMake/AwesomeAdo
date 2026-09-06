@@ -7,6 +7,13 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ### New Features
 
+- All Projects Catalog can **Sync projects to Favorites** from its title's right-click menu. The
+  destination contains one Favorite per currently filtered project with a query, followed by a link
+  back to the filtered catalog. Missing queries offer Continue/Cancel; a missing destination offers
+  Set/Cancel and opens that catalog's binding. The personal folder path has autocomplete, is relative
+  to Favorites bar / Bookmarks bar, follows your browser account across machines, and is included in
+  configuration file exports but never shared with your team. Sync replaces the destination's entire
+  contents, including subfolders.
 - The All Projects Catalog View's tag filter is now shareable straight from the address bar. The URL
   carries the tags you required, the ones you ruled out, and whether a project must match all of them
   or any — e.g.
@@ -15,6 +22,12 @@ builds use the repository's `Major.Minor.Build` release versioning.
   always hands someone the board you are looking at. Opening such a link starts on that condition,
   which stays yours to change from the moment the board appears. Tag names are matched however they
   are cased, and a tag the query does not wear is simply dropped.
+
+### Bug Fixes
+
+- Project Tracking, Sprint View, and All Projects Catalog now keep header button labels intact when
+  the window is narrow, moving complete controls onto additional rows instead of stacking words or
+  squeezing buttons.
 
 ## 0.12
 

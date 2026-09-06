@@ -17,6 +17,8 @@ AwesomeADO is feature-complete for its current scope:
   browser adapters live under their owning `src/common/**` components.
 - Shared work-item type display colors preserve ADO hues on light schemes and lift them toward the
   active foreground on dark schemes across every enhanced view.
+- Every enhanced-view header wraps complete controls at narrow widths while keeping button and
+  filter labels intact.
 - Enhanced views use injected services and one serialized work-item write queue. Every item-changing
   operation must leave the model's `System.Rev` current; see `systemPatterns.md` and ADR-030.
 - Project Tracking verifies accepted backlog reorders against the requested sibling interval and
@@ -30,6 +32,10 @@ AwesomeADO is feature-complete for its current scope:
   bottom-left-to-top-right diagonal in the selected outline color.
 - Options manages appearance, Azure DevOps configuration, query bindings, file transfer, team
   configuration sharing, shared queries, and device-local diagnostics.
+- All Projects Catalog syncs filtered project query links and a final filtered-catalog link into a
+  personal Favorites destination below the browser bar. The binding editor autocompletes folders;
+  `settings.queryFavoritesPaths` follows native browser sync and full file export/import, never ADO
+  publishing, pulls, or shared-query overlays. Sync replaces destination contents, including folders.
 - User-visible decisions and failures are source-tagged in the bounded diagnostics log; every caught
   runtime exception is logged with its original value.
 - The complete quality gate remains coverage ≥ 85%, zero lint warnings, formatting, typecheck,

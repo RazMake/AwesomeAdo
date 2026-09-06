@@ -51,6 +51,14 @@ describe("renderCheckboxFilter - marking each instance", () => {
     expect(row.title).toBe("Project\\Web");
     expect(row.querySelector<HTMLInputElement>("input")?.value).toBe("Project\\Web");
   });
+
+  it("keeps its compact trigger label together when a header becomes narrow", () => {
+    const { handle } = mount();
+    const trigger = handle.element.querySelector<HTMLButtonElement>(`.${PREFIX}__trigger`)!;
+
+    expect(trigger.style.whiteSpace).toBe("nowrap");
+    expect(trigger.style.flex).toBe("0 0 auto");
+  });
 });
 
 describe("renderCheckboxFilter - quick search", () => {

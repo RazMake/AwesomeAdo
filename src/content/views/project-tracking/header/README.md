@@ -45,6 +45,8 @@ parent rows first; when every parent is already open, its next click opens every
 `−` closes any open notes and descriptions first; only a click made after all row details are closed
 collapses the parent rows. Refresh is separated to the far right because it discards the board's data
 and re-reads it, while the controls on the left only change the current view.
+At narrow widths, the bands wrap complete controls onto additional lines; labels such as **Show only
+Done** and **Assigned To** never collapse into stacked words.
 
 ### Options
 

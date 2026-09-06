@@ -93,7 +93,7 @@ function renderTopBand(
 ): HTMLElement {
   const band = doc.createElement("div");
   band.className = "awesomeado-projects__header-top";
-  band.style.cssText = "display:flex;align-items:center;gap:16px;min-height:20px";
+  band.style.cssText = "display:flex;align-items:center;gap:16px;flex-wrap:wrap;min-height:20px";
 
   const breadcrumbs = renderBreadcrumbs(doc, {
     segments: options.breadcrumbs,
@@ -103,7 +103,8 @@ function renderTopBand(
 
   const corner = doc.createElement("div");
   corner.className = "awesomeado-projects__header-corner";
-  corner.style.cssText = "display:flex;align-items:center;gap:8px;margin-left:auto";
+  corner.style.cssText =
+    "display:flex;align-items:center;gap:8px;flex:0 0 auto;margin-left:auto;white-space:nowrap";
   corner.append(options.queueStatus);
   if (version) {
     const marker = renderVersionLabel(doc, version);
@@ -156,7 +157,7 @@ function renderTitleBand(
 } {
   const band = doc.createElement("div");
   band.className = "awesomeado-projects__header-title";
-  band.style.cssText = "display:flex;align-items:center;gap:8px";
+  band.style.cssText = "display:flex;align-items:center;gap:8px;flex-wrap:wrap";
 
   const title = doc.createElement("h1");
   title.className = "awesomeado-view__title";
@@ -187,8 +188,12 @@ function renderTitleBand(
 
   const filters = doc.createElement("div");
   filters.className = "awesomeado-projects__filters";
-  filters.style.cssText = "display:flex;align-items:center;gap:8px;margin-left:auto";
-  filters.append(renderTagFilter(doc, options), refresh.element);
+  filters.style.cssText =
+    "display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end;margin-left:auto";
+  const tagFilter = renderTagFilter(doc, options);
+  tagFilter.style.flex = "0 0 auto";
+  tagFilter.style.whiteSpace = "nowrap";
+  filters.append(tagFilter, refresh.element);
 
   band.append(title, expand, collapse, filters);
   return { band, refresh };

@@ -1,6 +1,6 @@
 # AwesomeADO Privacy Policy
 
-Effective date: July 30, 2026
+Effective date: September 5, 2026
 
 AwesomeADO is a browser extension that enhances hosted Azure DevOps Query pages. This policy
 explains the information the extension handles and where that information goes.
@@ -16,6 +16,8 @@ AwesomeADO handles information only as needed to provide its work-tracking featu
   project members.
 - Extension configuration, including appearance preferences, query bindings, team and area settings,
   work item mappings, sprint windows, marker tags, and view-specific settings.
+- Browser Favorites (bookmarks), including folder structure for destination autocomplete and project
+  names and query URLs saved when the user requests a catalog sync.
 - Device-local diagnostic entries, including timestamps, extension component names, decisions,
   technical identifiers, and error details. Diagnostics are designed not to record setting values,
   query names, authentication credentials, or work item content.
@@ -33,6 +35,7 @@ AwesomeADO uses this information solely to:
 - perform changes the user requests, such as editing a field, discussion comment, ordering, or
   hierarchy;
 - remember extension configuration across pages and browser sessions; and
+- synchronize the currently filtered catalog's project queries into a user-selected Favorites folder;
 - provide device-local diagnostics for troubleshooting.
 
 AwesomeADO does not use information for advertising, profiling, credit decisions, or purposes
@@ -48,7 +51,14 @@ unrelated to its user-facing Azure DevOps features.
   500 entries, automatically discards the oldest entries, and can be cleared from AwesomeADO's
   Diagnostics page.
 - Azure DevOps work item and identity data is held in memory while needed to render the current view.
-  AwesomeADO does not create a persistent local cache of that data.
+  Apart from user-requested project Favorites, AwesomeADO does not create a persistent local cache
+  of that data.
+- Catalog Favorites paths are personal settings in browser sync storage and configuration file
+  exports. They are never published to or applied from a shared Azure DevOps configuration work item.
+  Native browser sync follows the same browser account; it does not bridge Chrome and Edge accounts.
+- Project Favorites remain in the selected browser folder until changed or deleted. Sync replaces
+  that folder's contents, including subfolders, with the selected project queries and catalog link.
+  The browser provider may synchronize bookmarks according to the user's browser sync settings.
 - Configuration exported by the user is written to a local `AwesomeADO.config` file. The user
   controls that file and is responsible for its storage and deletion.
 

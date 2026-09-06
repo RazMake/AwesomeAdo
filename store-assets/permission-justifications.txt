@@ -13,6 +13,12 @@ Runs fixed, packaged functions in the current Azure DevOps tab's MAIN world so u
 DevOps API reads and writes can use the tab's existing signed-in session. The extension does not load
 or execute remote code.
 
+bookmarks
+Reads Favorites folder structure to autocomplete a personal catalog destination. When the user
+chooses Sync projects to Favorites, creates missing destination folders and replaces that folder's
+contents with the filtered projects' query links and a link back to the filtered catalog. No other
+folders are changed. The destination setting follows browser-account sync and is not shared via ADO.
+
 Host access: https://dev.azure.com/* and https://*.visualstudio.com/*
 Limits the content script and Azure DevOps API operations to hosted Azure DevOps organizations. This
 access is required to recognize Query pages, render enhanced views, read work items and discussions,

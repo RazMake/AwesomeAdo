@@ -108,6 +108,11 @@ import {
   type LoadQueryTreeResponse,
 } from "../common/browser/AdoTreeRequest";
 import {
+  CatalogFavoritesHandler,
+  claimsCatalogFavorites,
+} from "../common/browser/CatalogFavoritesRequest";
+import { ChromeFavorites } from "../common/browser/ChromeFavorites";
+import {
   CREATE_WORK_ITEM_MESSAGE,
   createWorkItemMessageProblem,
   type CreateWorkItemMessage,
@@ -230,8 +235,29 @@ import { writeWorkItemNoteInPage } from "../common/browser/writeWorkItemNoteInPa
 import { writeWorkItemRanksInPage } from "../common/browser/writeWorkItemRanksInPage";
 import { createLoggerFactory } from "../common/logging/createLogger";
 import { notifyNavigation } from "../common/navigation/NavigationNotifier";
+import { PersonalQueryFavoritesPaths } from "../common/settings/QueryFavoritesPaths";
+import { createSettingsStore } from "../common/settings/createSettingsStore";
 
 const logger = createLoggerFactory().forSource("background");
+
+const favoritesLogger = createLoggerFactory().forSource("common/browser");
+const favoritesHandler = new CatalogFavoritesHandler(
+  new PersonalQueryFavoritesPaths(
+    createSettingsStore(createLoggerFactory().forSource("common/settings")),
+  ),
+  new ChromeFavorites(favoritesLogger),
+  favoritesLogger,
+);
+chrome.runtime.onMessage.addListener(
+  tabRequestListener(favoritesLogger, {
+    claims: claimsCatalogFavorites,
+    unscriptable: () => ({
+      log: "Favorites sync refused: no sender tab.",
+      response: { ok: false, error: "Open the catalog query before syncing Favorites." },
+    }),
+    serve: (message, _tabId, tabUrl) => favoritesHandler.serve(message, tabUrl),
+  }),
+);
 
 const handleNavigation = (details: chrome.webNavigation.WebNavigationTransitionCallbackDetails) => {
   void notifyNavigation(details, (tabId, message, options) =>

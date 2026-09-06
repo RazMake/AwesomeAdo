@@ -13,6 +13,7 @@ export interface ProjectsTitleCommandOptions {
   /** Whether the add-a-project row is already open, so the command cannot re-open it. */
   adding: boolean;
   onAddProject(): void;
+  favoritesPanel?: (close: () => void) => HTMLElement;
 }
 
 /**
@@ -31,6 +32,12 @@ export function buildProjectsTitleCommands(
       separatorBefore: true,
       disabledReason: addProjectRefusal(options),
       run: options.onAddProject,
+    },
+    {
+      label: "Sync projects to Favorites",
+      panel: options.favoritesPanel,
+      disabledReason:
+        options.favoritesPanel === undefined ? "Favorites are unavailable in this view." : null,
     },
   ];
 }

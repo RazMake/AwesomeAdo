@@ -21,7 +21,8 @@ Lane selection.
   lane table, so a fully filtered board never reads as a failed load.
 - `SprintHeader.ts` -> `renderSprintHeader` - assembles the sticky, theme-aware control card with
   the query's clickable parent-folder breadcrumb trail at the top. Sprint selection stays beside the
-  title; Lane, Project, and Refresh form the rightmost action group.
+  title; Lane, Project, and Refresh form the rightmost action group. At narrow widths the header
+  wraps complete controls onto additional lines instead of compressing their labels.
 - `SprintBulkMoveDialog.ts` -> `buildSprintBulkMovePlan` / `renderSprintBulkMoveDialog` - snapshots
   eligible visible cards and confirms their Lane/assignee summary before any write begins.
 - `SprintBulkMoveController.ts` -> `SprintBulkMoveController` - owns confirmation, progress,

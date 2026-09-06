@@ -1311,6 +1311,47 @@ const controllerWithShared = (
 const readOnlyValues = (): string[] =>
   [...elements.properties.querySelectorAll("output")].map((output) => output.textContent ?? "");
 
+describe("QueryBindingsController personal Favorites", () => {
+  it.each([false, true])(
+    "edits the path without publishing, including shared=%s",
+    async (shared) => {
+      const binding: QueryBinding = { view: "projects", properties: {}, name: "Catalog" };
+      const store = makeStore(shared ? {} : { [GUID_B]: binding });
+      const publishBindings = vi.fn(async () => {});
+      const paths = { read: vi.fn(async () => "Work"), write: vi.fn(async () => {}) };
+      const controller = new QueryBindingsController(
+        store as unknown as IQueryBindingStore,
+        elements,
+        reportError as unknown as (error: unknown) => void,
+        {
+          viewTypes: [{ id: "projects", label: "Catalog", properties: [] }],
+          publishBindings,
+          sharedQueries: shared
+            ? (sharedAccess(
+                { [GUID_B]: 42 },
+                { [GUID_B]: binding },
+              ) as unknown as SharedQueryAccess)
+            : undefined,
+          favorites: {
+            paths,
+            folderPaths: async () => ["Work/Projects"],
+            recordError: reportError as unknown as (error: unknown) => void,
+          },
+        },
+      );
+      await controller.init(GUID_B, "Catalog");
+      await settle();
+      expect(propInput("favoritesPath")?.disabled).toBe(false);
+      commitProp("favoritesPath", "Work/Projects");
+      await settle();
+      expect(paths.write).toHaveBeenCalledWith(GUID_B, "Work/Projects");
+      expect(publishBindings).not.toHaveBeenCalled();
+      expect(elements.viewSelect.disabled).toBe(shared);
+      controller.dispose();
+    },
+  );
+});
+
 describe("QueryBindingsController shared queries", () => {
   it("lists a shared query alongside the user's own bindings", async () => {
     const shared = sharedAccess({ [GUID_B]: 42 });

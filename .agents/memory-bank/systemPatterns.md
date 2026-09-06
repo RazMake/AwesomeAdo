@@ -202,10 +202,17 @@ snapshots derived from the same stale settings value. That rule is enforced by t
 by memory (ADR-074): `ITeamPublishingSettingsStore` carries a marker a plain store lacks, the pull and
 file-import paths take the segregated `LocalSettingsAccess` instead, and `createTeamSharedSettings`
 is handed the plain store inline so no options-page name binds it.
-Theme and default view are the exception: `PERSONAL_SETTING_KEYS` marks them as the reader's own, so
+Theme, default view, and query Favorites paths are the exception: `PERSONAL_SETTING_KEYS` marks them as the reader's own, so
 `IPersonalSettingsStore` (the disjoint `publishesBeforeWrite: false` counterpart) backs Appearance and
 they are stripped from the published payload, from a pull, and from a shared query's overlay. They
 still sync across the user's own devices and still travel in a file export (ADR-075).
+`settings.queryFavoritesPaths` maps catalog query IDs to personal destinations beneath Favorites bar /
+Bookmarks bar. It deliberately lives outside binding properties, which team pulls replace wholesale.
+The binding form's independent `FavoritesPathEditor` writes through `teamSettings.personal`, including
+for read-only shared queries. The view passes the filtered, ordered project snapshot and current URL
+to `ProjectsFavoritesPanel`; the background `CatalogFavoritesHandler` rechecks the sender query and
+stored destination before `ChromeFavorites` serializes replacement. Empty paths cannot clear the bar,
+ambiguous or managed folders fail closed, and link creation precedes removal of previous contents.
 `TeamSprintAreaPathStore` pulls before each Sprint load/refresh/switch and
 serializes save-plus-publish through the connected configuration work item. Checkbox changes remain
 open for multi-selection; Sprint persists each change and repaints once the popup closes by trigger,

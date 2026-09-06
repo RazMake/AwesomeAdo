@@ -68,7 +68,8 @@ header.append(filter.element);
   anything is chosen, and is disabled when there is nothing to choose from. Its **accessible name**
   spells the condition out (`Tags: all of api, docs; none of legacy`) rather than counting it,
   because a count cannot tell a required value from an excluded one, and reads `Filter by <label>`
-  with nothing chosen. The **tooltip** matches it unless `fixedTitle` pins it.
+  with nothing chosen. The **tooltip** matches it unless `fixedTitle` pins it. The compact trigger
+  keeps its label on one line and retains its natural width inside a wrapping header.
 - Required and excluded are mutually exclusive on one row: setting either clears the other.
 - The `Any`/`All` switch is a mode, not a selection — **Clear** empties both directions, reports it,
   closes the popup, and leaves the mode alone.

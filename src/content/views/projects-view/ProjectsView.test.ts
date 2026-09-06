@@ -342,6 +342,22 @@ describe("projectsView - ordering picker", () => {
     expect(actions.style.marginLeft).toBe("auto");
   });
 
+  it("wraps whole header controls instead of squeezing their labels", async () => {
+    const root = await renderUnsortedBoard();
+    const top = root.querySelector<HTMLElement>(".awesomeado-projects__header-top")!;
+    const titleBand = root.querySelector<HTMLElement>(".awesomeado-projects__header-title")!;
+    const filters = titleBand.querySelector<HTMLElement>(".awesomeado-projects__filters")!;
+    const tags = filters.querySelector<HTMLElement>(".awesomeado-tag-filter")!;
+    const refresh = filters.querySelector<HTMLElement>(".awesomeado-projects__refresh")!;
+
+    expect(top.style.flexWrap).toBe("wrap");
+    expect(titleBand.style.flexWrap).toBe("wrap");
+    expect(filters.style.flexWrap).toBe("wrap");
+    expect(tags.style.flex).toBe("0 0 auto");
+    expect(tags.style.whiteSpace).toBe("nowrap");
+    expect(refresh.style.flex).toBe("0 0 auto");
+  });
+
   it("re-orders the board from the items already loaded when another policy is picked", async () => {
     const root = await renderUnsortedBoard();
     expect(titles(root)).toEqual(["Zebra", "Apple"]);
@@ -734,7 +750,7 @@ describe("projectsView - catalog menu", () => {
       row.textContent?.trim(),
     );
 
-    expect(labels).toEqual(["Copy ADO Url", "Add new project"]);
+    expect(labels).toEqual(["Copy ADO Url", "Add new project", "Sync projects to Favorites"]);
   });
 
   it("opens the title box above the list, stating what the project will be born with", async () => {
@@ -776,6 +792,39 @@ describe("projectsView - catalog menu", () => {
     );
     openTagFilter(root);
     expect(tagOptionValues(root)).toEqual(["Platform"]);
+  });
+});
+
+describe("projectsView - Favorites integration", () => {
+  it("syncs only filtered top-level projects and appends the live filtered URL", async () => {
+    const sync = vi.fn(async () => {});
+    const projectUrl = "https://dev.azure.com/org/other/_queries/query/project-query";
+    const root = await renderBoard(
+      createContext({
+        services: createServices({
+          catalogFavorites: { readPath: async () => "Work", sync, openSettings: vi.fn() },
+          projectQueries: {
+            readLinks: async () => ({
+              links: [{ workItemId: 1, queryId: "project-query", url: projectUrl, managed: false }],
+              error: null,
+            }),
+            create: async () => ({ ok: true }),
+            remove: async () => ({ ok: true }),
+          },
+        }),
+      }),
+    );
+    clickTagOption(root, "Api");
+    expect(titles(root)).toEqual(["Payments"]);
+    openMenu(root.querySelector(".awesomeado-view__title")!);
+    menuCommand("Sync projects to Favorites").click();
+    await vi.waitFor(() => expect(sync).toHaveBeenCalledOnce());
+    expect(sync).toHaveBeenCalledWith("query-1", "Work", [
+      { title: "Payments", url: projectUrl },
+      { title: "All Projects Catalog View", url: window.location.href },
+    ]);
+    expect(readProjectsUrlTagCondition(window.location.search).required).toEqual(new Set(["api"]));
+    expect(document.body.textContent).not.toContain("project(s) have no query");
   });
 });
 

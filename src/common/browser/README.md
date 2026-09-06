@@ -30,6 +30,19 @@ retries the PATCH.
 
 ## Public API
 
+### Favorites
+
+- `Favorites.folderPaths()` lists writable folder paths below Favorites bar / Bookmarks bar for
+  autocomplete. `Favorites.replace(path, links)` creates missing folders and replaces all contents
+  of the destination, including subfolders, with the links in the supplied order.
+- `ChromeFavorites` provides those operations through the browser's `bookmarks` permission. Construct
+  it only at a composition root and supply a `common/browser` logger. Blank paths, root paths,
+  duplicate destination folders, and managed contents are refused. New links are created before old
+  contents are removed; an API failure is reported and may require another sync.
+- `CatalogFavorites` is the view-facing service: read the personal query path, sync its links, and
+  open that query's binding settings. `CatalogFavoritesHandler` handles the content-to-worker request,
+  checks the sender's query, and rechecks the stored destination before changing Favorites.
+
 ### `IBrowserSyncStorage` (interface)
 
 A minimal, promise-based key/value store abstraction. It is a named alias of the shared

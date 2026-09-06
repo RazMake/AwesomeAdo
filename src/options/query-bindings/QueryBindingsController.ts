@@ -15,6 +15,7 @@ import { VIEW_TYPES } from "../../content/views/viewCatalog";
 import { AutocompleteInput } from "../ado-config/AutocompleteInput";
 
 import { AreaPathListEditor } from "./AreaPathListEditor";
+import { FavoritesPathEditor, type FavoritesPathEditorOptions } from "./FavoritesPathEditor";
 import {
   QueryFolderVocabulary,
   type ReadFolderChildren,
@@ -71,6 +72,7 @@ interface SharedQueryLink {
 
 /** The optional collaborators, grouped so no caller ever passes a positional `undefined`. */
 export interface QueryBindingsOptions {
+  favorites?: FavoritesPathEditorOptions;
   /** The catalog the view picker offers. Defaults to the shipped catalog. */
   viewTypes?: readonly ViewType[];
   /** Resolves the query id of the ADO tab the user is on. Defaults to "none". */
@@ -139,6 +141,8 @@ export type CurrentQueryIdResolver = () => Promise<string | null>;
  * exercise the flow with fakes and without a browser.
  */
 export class QueryBindingsController {
+  private favoritesEditor: FavoritesPathEditor | undefined;
+  private readonly favorites: FavoritesPathEditorOptions | undefined;
   private readonly propertyInputs = new Map<string, PropertyControl>();
   private readonly queryNames = new Map<string, string | null>();
   /** Queries whose configuration is published by a work item this user may not write to. */
@@ -172,6 +176,7 @@ export class QueryBindingsController {
     options: QueryBindingsOptions = {},
   ) {
     this.viewTypes = options.viewTypes ?? VIEW_TYPES;
+    this.favorites = options.favorites;
     this.resolveCurrentQueryId = options.resolveCurrentQueryId ?? (async () => null);
     this.resolveSuggestions = options.resolveSuggestions ?? (async () => []);
     this.resolveDerivedValues = options.resolveDerivedValues ?? (async () => ({}));
@@ -523,6 +528,14 @@ export class QueryBindingsController {
     }
     this.reportMissingRequired();
     void this.applyDerivedSeeds(view);
+    this.renderFavoritesEditor(doc, view);
+  }
+
+  private renderFavoritesEditor(doc: Document, view: ViewType): void {
+    if (view.id === "projects" && this.selectedQueryId !== null && this.favorites !== undefined) {
+      this.favoritesEditor = new FavoritesPathEditor(doc, this.selectedQueryId, this.favorites);
+      this.elements.properties.append(this.favoritesEditor.root);
+    }
   }
 
   /**
@@ -888,6 +901,8 @@ export class QueryBindingsController {
   }
 
   private removePropertyInputs(): void {
+    this.favoritesEditor?.dispose();
+    this.favoritesEditor = undefined;
     for (const input of this.propertyInputs.values()) input.dispose();
     this.propertyInputs.clear();
     this.elements.properties.replaceChildren();

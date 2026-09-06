@@ -410,6 +410,11 @@ const SETTINGS_RULES: readonly {
     expected: `one of ${DEFAULT_VIEWS.join(", ")}`,
   },
   { key: "organization", isValid: isText, expected: "the organization name as text" },
+  {
+    key: "queryFavoritesPaths",
+    isValid: isPropertyMap,
+    expected: "a map of query IDs to Favorites folder paths",
+  },
   { key: "project", isValid: isText, expected: "the project name as text" },
   { key: "currentTeam", isValid: isTeamRef, expected: "null, or a team with an id and a name" },
   { key: "futureSprintsCount", isValid: isWholeNumber, expected: "a whole number" },

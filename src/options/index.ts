@@ -11,10 +11,12 @@ import {
 import { createQueryBindingStore } from "../common/bindings/createQueryBindingStore";
 import { ChromeAdoMetadataReader } from "../common/browser/ChromeAdoMetadataReader";
 import { ChromeAdoTabReader } from "../common/browser/ChromeAdoTabReader";
+import { ChromeFavorites } from "../common/browser/ChromeFavorites";
 import { ChromeQueryFactsReader } from "../common/browser/ChromeQueryFactsReader";
 import { ChromeQueryFolderReader } from "../common/browser/ChromeQueryFolderReader";
 import { ChromeTeamConfigClient } from "../common/browser/ChromeTeamConfigClient";
 import { createLogging } from "../common/logging/createLogger";
+import { PersonalQueryFavoritesPaths } from "../common/settings/QueryFavoritesPaths";
 import { createSettingsStore } from "../common/settings/createSettingsStore";
 import { SharedQueryConfigResolver } from "../common/settings-transfer/SharedQueryConfigResolver";
 import { createSharedQuerySourceStore } from "../common/settings-transfer/createSharedQuerySourceStore";
@@ -446,6 +448,11 @@ if (
     bindingElements,
     (error) => bindingLogger.error("Query binding operation failed", error),
     {
+      favorites: {
+        paths: new PersonalQueryFavoritesPaths(teamSettings.personal),
+        folderPaths: () => new ChromeFavorites(loggers.forSource("common/browser")).folderPaths(),
+        recordError: (error) => bindingLogger.error("Favorites path operation failed", error),
+      },
       resolveCurrentQueryId: () => adoTabReader.readCurrentQueryId(),
       resolveSuggestions: async (source) =>
         suggestionsFromMetadata((await readAdoMetadata()) ?? null, source),

@@ -33,6 +33,7 @@ import {
   type LoadQueryTreeMessage,
   type LoadQueryTreeResponse,
 } from "../common/browser/AdoTreeRequest";
+import { sendCatalogFavorites } from "../common/browser/CatalogFavoritesRequest";
 import {
   type CreateWorkItemMessage,
   type CreateWorkItemResponse,
@@ -159,6 +160,7 @@ import {
   normalizeMarkerTags,
 } from "../common/settings/ExtensionSettings";
 import { localSettingsAccess } from "../common/settings/LocalSettingsAccess";
+import { PersonalQueryFavoritesPaths } from "../common/settings/QueryFavoritesPaths";
 import { createSettingsStore } from "../common/settings/createSettingsStore";
 import { SharedQueryConfigResolver } from "../common/settings-transfer/SharedQueryConfigResolver";
 import { SharedQueryLinkService } from "../common/settings-transfer/SharedQueryLinkService";
@@ -408,6 +410,16 @@ const viewCurrentUserReader = new MessagingCurrentUserReader(
 );
 
 const trackingServices: EnhancedViewServices = {
+  catalogFavorites: {
+    readPath: (queryId) => new PersonalQueryFavoritesPaths(store).read(queryId),
+    sync: (queryId, path, links) =>
+      sendCatalogFavorites((message) => chrome.runtime.sendMessage(message), {
+        queryId,
+        path,
+        links,
+      }),
+    openSettings: (queryId) => openExtensionPage({ type: OPEN_BINDING_SETTINGS_MESSAGE, queryId }),
+  },
   loadTree: (queryId, wiql) => treeLoader.loadTree(queryId, wiql),
   loadQueryDefinition: (queryId) => queryDefinitionLoader.load(queryId),
   featureCrew: featureCrewWriter,

@@ -48,6 +48,7 @@ import { renderNewProjectRow } from "./NewProjectRow";
 import { renderNewWorkItemPanel, type NewWorkItemValues } from "./NewWorkItemPanel";
 import { buildProjectCommands } from "./ProjectCommands";
 import { renderProjectRow, type ProjectRowContext } from "./ProjectRow";
+import { renderProjectsFavoritesPanel } from "./ProjectsFavoritesPanel";
 import { renderProjectsHeader, type ProjectsHeaderHandle } from "./ProjectsHeader";
 import { buildProjectsTitleCommands } from "./ProjectsTitleMenu";
 import {
@@ -426,7 +427,7 @@ function projectMenuTarget(
 }
 
 /** The catalog-wide menu opened from the view's title. */
-function titleMenuTarget(board: Board): ItemContextMenuTarget {
+function titleMenuTarget(board: Board, data: LoadedProjects): ItemContextMenuTarget {
   const { context, session } = board;
   return {
     id: 0,
@@ -435,6 +436,23 @@ function titleMenuTarget(board: Board): ItemContextMenuTarget {
     commands: buildProjectsTitleCommands({
       projectType: context.services.getTypes()[0]?.name ?? null,
       adding: session.addingProject,
+      favoritesPanel:
+        context.services.catalogFavorites === undefined
+          ? undefined
+          : (close) =>
+              renderProjectsFavoritesPanel(context.doc, {
+                queryId: context.queryId,
+                projects: visibleProjects(data, createRowContext(board, data)).map((project) => ({
+                  id: project.id,
+                  title: project.title,
+                  url: data.queryLinks.get(project.id)?.url ?? null,
+                })),
+                queriesKnown: data.queryLinksKnown,
+                catalog: { title: projectsViewType.label, url: context.doc.location?.href ?? "" },
+                favorites: context.services.catalogFavorites!,
+                logger: context.services.logger,
+                close,
+              }),
       onAddProject: () => {
         session.addingProject = true;
         board.paint();
@@ -724,7 +742,7 @@ function headerOptionsFor(params: {
       board.paint();
     },
     onRefresh: params.onRefresh,
-    onTitleContextMenu: (event) => board.contextMenu.openAt(event, titleMenuTarget(board)),
+    onTitleContextMenu: (event) => board.contextMenu.openAt(event, titleMenuTarget(board, loaded)),
   };
 }
 

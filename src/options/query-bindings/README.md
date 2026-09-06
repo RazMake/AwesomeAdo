@@ -28,6 +28,17 @@ on: a setting still blank, a refused write, or the outcome of a delete.
 It supports two entry paths: a fixed query deep-linked from a query's top-bar button, and free
 selection from the options page itself.
 
+### Personal catalog Favorites
+
+All Projects Catalog bindings also show a **Favorites path** field, relative to Favorites bar /
+Bookmarks bar. Its autocomplete refreshes from the browser's existing folders on focus, and new
+paths may be typed. Empty text clears the destination. This field remains editable on read-only
+shared catalogs because it belongs to the reader, not the publisher.
+
+`FavoritesPathEditor` accepts a `QueryFavoritesPaths` store, a folder-list reader, and an error sink.
+It saves independently of the shared binding form, so editing it never publishes configuration to
+ADO. The path follows native browser-account sync and configuration file export/import.
+
 ### Shared (read-only) queries
 
 A query opened from someone else's shared link, when the user is **not** on that publisher's team,

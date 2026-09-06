@@ -179,12 +179,28 @@ function renderHeaderActions(
     "display:flex",
     "align-items:center",
     "gap:8px",
+    "flex-wrap:wrap",
+    "justify-content:flex-end",
     "margin-left:auto",
   ].join(";");
 
   const narrowing = doc.createElement("div");
   narrowing.className = "awesomeado-tracking__header-narrowing";
-  narrowing.style.cssText = ["display:flex", "align-items:center", "gap:8px"].join(";");
+  narrowing.style.cssText = [
+    "display:flex",
+    "align-items:center",
+    "gap:8px",
+    "flex-wrap:wrap",
+    "justify-content:flex-end",
+  ].join(";");
+  for (const control of [
+    options.resolvedOnlyToggle,
+    options.assignedToFilter,
+    options.areaPathFilter,
+  ]) {
+    control.style.flex = "0 0 auto";
+    control.style.whiteSpace = "nowrap";
+  }
   narrowing.append(options.resolvedOnlyToggle, options.assignedToFilter, options.areaPathFilter);
 
   filters.append(narrowing, refresh);
@@ -249,6 +265,7 @@ export function renderProjectTrackingHeader(
     "display:flex",
     "align-items:center",
     "gap:16px",
+    "flex-wrap:wrap",
     `min-height:${TOP_ROW_MIN_HEIGHT_PX}px`,
   ].join(";");
 
@@ -281,7 +298,8 @@ export function renderProjectTrackingHeader(
   // the +/− buttons line up with the middle of the two-line title/tech-lead block.
   const mainRow = doc.createElement("div");
   mainRow.className = "awesomeado-tracking__header-main";
-  mainRow.style.cssText = ["display:flex", "align-items:center", "gap:32px"].join(";");
+  mainRow.style.cssText =
+    "display:flex;align-items:center;column-gap:32px;row-gap:8px;flex-wrap:wrap";
 
   const info = renderInfoColumn(doc, options);
   mainRow.append(info.element);
@@ -290,7 +308,7 @@ export function renderProjectTrackingHeader(
   const collapseAllButton = renderHeaderButton(doc, "awesomeado-tracking__collapse-all", "\uFF0D");
   const refreshButton = renderRefreshButton(doc, "awesomeado-tracking__refresh");
   const bandButtons = doc.createElement("div");
-  bandButtons.style.cssText = ["display:flex", "align-items:center", "gap:8px"].join(";");
+  bandButtons.style.cssText = "display:flex;align-items:center;gap:8px;flex-wrap:wrap";
   bandButtons.append(options.sprintPicker, expandAllButton, collapseAllButton);
   mainRow.append(bandButtons);
 

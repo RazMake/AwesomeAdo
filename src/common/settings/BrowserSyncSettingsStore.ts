@@ -7,6 +7,7 @@ import type { ISettingsStore } from "./ISettingsStore";
 
 const THEME_KEY = "settings.theme";
 const DEFAULT_VIEW_KEY = "settings.defaultView";
+const QUERY_FAVORITES_PATHS_KEY = "settings.queryFavoritesPaths";
 const ORGANIZATION_KEY = "settings.organization";
 const PROJECT_KEY = "settings.project";
 const CURRENT_TEAM_KEY = "settings.currentTeam";
@@ -20,6 +21,7 @@ const MARKER_TAGS_KEY = "settings.markerTags";
 const SETTING_KEYS = [
   THEME_KEY,
   DEFAULT_VIEW_KEY,
+  QUERY_FAVORITES_PATHS_KEY,
   ORGANIZATION_KEY,
   PROJECT_KEY,
   CURRENT_TEAM_KEY,
@@ -36,6 +38,7 @@ const SETTING_KEYS = [
 const SETTING_WRITE_MAP: readonly { name: keyof ExtensionSettings; key: string }[] = [
   { name: "theme", key: THEME_KEY },
   { name: "defaultView", key: DEFAULT_VIEW_KEY },
+  { name: "queryFavoritesPaths", key: QUERY_FAVORITES_PATHS_KEY },
   { name: "organization", key: ORGANIZATION_KEY },
   { name: "project", key: PROJECT_KEY },
   { name: "currentTeam", key: CURRENT_TEAM_KEY },
@@ -52,6 +55,7 @@ function projectSettings(raw: Record<string, unknown>): ExtensionSettings {
   return normalizeSettings({
     theme: raw[THEME_KEY],
     defaultView: raw[DEFAULT_VIEW_KEY],
+    queryFavoritesPaths: raw[QUERY_FAVORITES_PATHS_KEY],
     organization: raw[ORGANIZATION_KEY],
     project: raw[PROJECT_KEY],
     currentTeam: raw[CURRENT_TEAM_KEY],

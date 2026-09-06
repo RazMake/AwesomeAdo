@@ -9,6 +9,30 @@ we hit, why they happened, and the exact fix so nobody re-derives them.
 agent-tool-local memory (it does not clone or transfer between machines/agents). Record new findings
 here so every agent, teammate, and clone sees them.
 
+## Header buttons stacked their labels in narrow windows
+
+- SYMPTOM: Project Tracking's **Show only Done** and **Assigned To** controls collapsed into tall,
+  word-per-line buttons as the viewport narrowed; sibling view headers had the same latent failure.
+- ROOT CAUSE: wrapping belonged only to some outer header rows, while action groups remained rigid
+  and text-bearing controls kept the flex default that permits shrinking.
+- FIX / RULE: enhanced-view header bands and action groups wrap, while shared icon buttons and
+  filter triggers keep `flex: 0 0 auto` and text labels stay `nowrap`. Reflow complete controls;
+  never solve header pressure by squeezing the text inside them.
+
+## Browser Favorites validation and tool boundaries
+
+- The Playwright unsafe-code tool does not preserve `globalThis` state between calls and cannot use
+  dynamic imports. Connect each call through
+  `page.context().browser().browserType().connectOverCDP('http://127.0.0.1:9222')`.
+- Reloading the development extension can close its options tab; rediscover tabs afterward. ADO may
+  never finish the full `load` event: use `domcontentloaded` and the enhanced view's own ready element.
+  Context commands have role `menuitem`, not `button`. Viewport screenshots avoid element-stability
+  waits when an element capture stalls. Restore CDP viewport overrides after responsive checks.
+- Use a uniquely named temporary Favorites folder, verify it does not exist first, and remove only
+  that folder afterward. Restore the tested query's personal setting without replacing other values.
+- PowerShell command substitutions passed directly to the `pnpm` shim can become one space-joined
+  filename argument. Explicit quoted globs work for focused Prettier/ESLint commands.
+
 ## Every Sprint View counter must agree with the cards the board paints
 
 - SYMPTOM: on a past sprint whose work was all Done, person pills reported queue totals nobody could

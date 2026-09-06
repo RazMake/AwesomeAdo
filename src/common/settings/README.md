@@ -17,6 +17,7 @@ The shape of user settings:
 interface ExtensionSettings {
   theme: Theme; // "auto" | "light" | "dark" | "blue"  (default: "auto")
   defaultView: DefaultView; // "original" | "enhanced"        (default: "enhanced")
+  queryFavoritesPaths: Record<string, string>;
   organization: string; // ADO organization, "" when not set  (default: "")
   project: string; // ADO project, "" when not set       (default: "")
   currentTeam: TeamRef | null; // selected ADO team, or null       (default: null)
@@ -82,10 +83,16 @@ interface ISettingsStore {
 ### Personal settings — `ExtensionSettings.ts`
 
 `PERSONAL_SETTING_KEYS` names the settings that belong to the person rather than the team (`theme`,
-`defaultView`), with `SharedSettings` for the rest and `withoutPersonalSettings(settings)` to drop
+`defaultView`, `queryFavoritesPaths`), with `SharedSettings` for the rest and `withoutPersonalSettings(settings)` to drop
 them from a snapshot or a partial update. They still sync across the user's own devices — "personal"
 is not "device-local" — but they never travel to or from a shared configuration work item. See
 ADR-075.
+
+`PersonalQueryFavoritesPaths` reads and writes one query's destination through the personal settings
+store. Empty text clears that query's path. Paths use `/` (also accepting `\` on input), are relative
+to Favorites bar / Bookmarks bar, and cannot address the bar itself. The map lives at
+`settings.queryFavoritesPaths`, follows the user's native browser-account sync, and round-trips in
+full configuration files. It is never placed in binding properties or team configuration.
 
 ### `LocalSettingsAccess` (interface) — `LocalSettingsAccess.ts`
 

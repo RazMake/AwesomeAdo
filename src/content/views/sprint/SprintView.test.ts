@@ -346,6 +346,23 @@ describe("Sprint View header", () => {
     expect(actions.lastElementChild).toBe(refresh);
   });
 
+  it("wraps whole header controls instead of squeezing their labels", async () => {
+    const root = await render();
+    const top = root.querySelector<HTMLElement>(".awesomeado-sprint__header-top")!;
+    const actions = root.querySelector<HTMLElement>(".awesomeado-sprint__header-actions")!;
+    const lane = actions.querySelector<HTMLElement>(".awesomeado-area-filter")!;
+    const project = actions.querySelector<HTMLElement>(".awesomeado-hierarchy-filter")!;
+    const refresh = actions.querySelector<HTMLElement>(".awesomeado-sprint__refresh")!;
+
+    expect(top.style.flexWrap).toBe("wrap");
+    expect(actions.style.flexWrap).toBe("wrap");
+    expect(lane.style.flex).toBe("0 0 auto");
+    expect(lane.style.whiteSpace).toBe("nowrap");
+    expect(project.style.flex).toBe("0 0 auto");
+    expect(project.style.whiteSpace).toBe("nowrap");
+    expect(refresh.style.flex).toBe("0 0 auto");
+  });
+
   it("renders team members, Unassigned, and queue/active counts", async () => {
     const root = await render();
     const alice = root.querySelector('[data-person="alice@example.com"]')!;

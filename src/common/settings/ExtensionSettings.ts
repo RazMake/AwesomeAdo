@@ -1,5 +1,6 @@
 import { THEME_PREFERENCES, type ThemePreference } from "../view-common/themes/themes";
 
+import { normalizeQueryFavoritesPaths } from "./QueryFavoritesPaths";
 import { normalizeSprintAreaPaths, type SprintAreaPaths } from "./SprintAreaPaths";
 import { reachesWorkItemType } from "./workItemHierarchy";
 
@@ -21,6 +22,8 @@ export interface ExtensionSettings {
    * `enhanced` lets the extension take over the page; `original` leaves ADO untouched.
    */
   defaultView: DefaultView;
+
+  queryFavoritesPaths: Record<string, string>;
 
   /**
    * The Azure DevOps organization the team works in; empty until it is set. Stored rather than only
@@ -233,6 +236,7 @@ const DEFAULT_PAST_SPRINTS = 0;
 export const DEFAULT_SETTINGS: ExtensionSettings = deepFreeze({
   theme: "auto",
   defaultView: "enhanced",
+  queryFavoritesPaths: {},
   organization: "",
   project: "",
   currentTeam: null,
@@ -251,7 +255,7 @@ export const DEFAULT_SETTINGS: ExtensionSettings = deepFreeze({
  * never published to a shared configuration work item and never taken from one, so a teammate cannot
  * repaint someone else's options page or decide which view their queries open in.
  */
-export const PERSONAL_SETTING_KEYS = ["theme", "defaultView"] as const;
+export const PERSONAL_SETTING_KEYS = ["theme", "defaultView", "queryFavoritesPaths"] as const;
 
 export type PersonalSettingKey = (typeof PERSONAL_SETTING_KEYS)[number];
 
@@ -644,6 +648,7 @@ export function normalizeSettings(raw: unknown): ExtensionSettings {
     defaultView: isDefaultView(candidate.defaultView)
       ? candidate.defaultView
       : DEFAULT_SETTINGS.defaultView,
+    queryFavoritesPaths: normalizeQueryFavoritesPaths(candidate.queryFavoritesPaths),
     organization: normalizeAdoName(candidate.organization),
     project: normalizeAdoName(candidate.project),
     currentTeam: normalizeTeamRef(candidate.currentTeam),

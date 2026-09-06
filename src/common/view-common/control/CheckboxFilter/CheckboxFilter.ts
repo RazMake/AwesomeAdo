@@ -470,6 +470,7 @@ function renderTrigger(
     "height:27.2px",
     "display:inline-flex",
     "align-items:center",
+    "flex:0 0 auto",
     "gap:5px",
     "border:1px solid var(--control-border-strong)",
     "border-radius:6px",
@@ -477,6 +478,7 @@ function renderTrigger(
     "font:inherit",
     "font-size:12px",
     "font-weight:600",
+    "white-space:nowrap",
     "cursor:pointer",
   ].join(";");
   if (disabled) {

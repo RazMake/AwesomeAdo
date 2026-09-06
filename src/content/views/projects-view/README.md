@@ -38,7 +38,9 @@ view answers "what is going on across all of them?" for a query that returns **m
 
 - `ProjectsHeader.ts` → `renderProjectsHeader(context, options)` — the sticky header card, with Tags
   immediately left of Refresh in the rightmost title-band group. `options`
-  carries the mounted write-queue indicator and `onTitleContextMenu`, which the title raises.
+  carries the mounted write-queue indicator and `onTitleContextMenu`, which the title raises. At
+  narrow widths its bands wrap complete controls onto additional lines rather than compressing
+  button labels.
 - `ProjectRow.ts` → `renderProjectRow(item, context, depth)` — one row and, when open, its children.
   The row context supplies `onContextMenu`, `newChildRow` (the inline "add a milestone" box when it
   belongs under that row), the optional `dragReorder` controller, the full `projectSiblingIds` a drop
@@ -63,6 +65,18 @@ view answers "what is going on across all of them?" for a query that returns **m
   `notTags`, and `tagMatch` parameters.
 
 ## The page URL is the board's shareable filter
+
+The title's **Sync projects to Favorites** command replaces the configured destination with one
+named query link per currently visible top-level project, in displayed order, plus **All Projects
+Catalog View** at the end using the current filtered URL. Projects without queries are listed in a
+Continue/Cancel warning; Continue omits them. A missing path offers Set/Cancel, with Set opening this
+query's binding settings. Failed query-link reads refuse syncing rather than treating every project
+as having no query. The destination's previous Favorites and subfolders are removed on sync.
+
+The path is a separate personal setting shown in the binding form, not one of the four shared
+`projectsViewType` properties. Inject `services.catalogFavorites` to enable the command.
+`renderProjectsFavoritesPanel` accepts the filtered project snapshot, query-link availability,
+catalog link, Favorites service, logger, and close callback.
 
 A link can name the tag condition the catalog opens on:
 `.../_queries/query/{query-id}?tags=platform,api&notTags=docs&tagMatch=all`. `tags` requires,
