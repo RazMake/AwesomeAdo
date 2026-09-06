@@ -78,6 +78,18 @@ theme.
   content script (via `chrome.tabs.sendMessage`) to read the rendered theme. The content script
   answers with `detectAdoTheme(document)`.
 
+### `PageUrl.ts`
+
+How an enhanced view keeps the address bar naming what it is showing, so the page URL is always a
+shareable link to the board on screen.
+
+- **`replacePageSearch(doc, rewrite)`** — hands `rewrite` the page's current query string (leading
+  `?` included) and writes back whatever it returns, leaving the path, the fragment, and the history
+  state untouched. The history entry is **replaced**, never pushed, so Back does not walk backwards
+  through filter clicks; an unchanged answer writes nothing, and a document with no window is a
+  no-op. Views own their own parameter contract (`sprintUrlPreferences`, `projectsUrlPreferences`)
+  and use this only to publish it.
+
 ### `SharedQueryLink.ts`
 
 The extra data a shared query URL carries so a recipient's extension knows which Azure DevOps work

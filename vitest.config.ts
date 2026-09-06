@@ -23,6 +23,7 @@ const domTestFiles = [
   "src/common/browser/writeWorkItemRanksInPage.test.ts",
   "src/common/logging/BrowserLocalLogStore.test.ts",
   "src/common/navigation/AdoHost.test.ts",
+  "src/common/navigation/PageUrl.test.ts",
 ] as const;
 
 export default defineConfig({

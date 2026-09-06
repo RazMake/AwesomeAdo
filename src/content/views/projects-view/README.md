@@ -58,6 +58,23 @@ view answers "what is going on across all of them?" for a query that returns **m
   `idsKeptByTagCondition(roots, condition)`, `isEmptyTagCondition(condition)`, and the `TagCondition`
   type — the tag vocabulary, the tags that are the query's own condition (lower-cased for comparison,
   and as spelled for writing), and what a required/excluded tag condition keeps.
+- `projectsUrlPreferences.ts` → `readProjectsUrlTagCondition(search)` /
+  `projectsSearchWithTagCondition(search, condition)` — the two-way page-URL contract for the `tags`,
+  `notTags`, and `tagMatch` parameters.
+
+## The page URL is the board's shareable filter
+
+A link can name the tag condition the catalog opens on:
+`.../_queries/query/{query-id}?tags=platform,api&notTags=docs&tagMatch=all`. `tags` requires,
+`notTags` rules out, and `tagMatch=all` demands every required tag rather than any one of them; both
+lists accept comma-separated values or repeated parameters, in any casing, because Azure DevOps
+matches tags case-insensitively. A tag the query does not wear is dropped and recorded in
+Diagnostics, exactly as one that disappears while the board is open.
+
+The board writes the same parameters back as the reader ticks, excludes, and clears them, so copying
+the address always hands someone the board on screen. Writes replace the history entry rather than
+pushing one, so Back never walks through filter clicks, and every parameter Azure DevOps put in the
+URL is left untouched.
 
 ## What the view shows
 
@@ -107,6 +124,8 @@ view answers "what is going on across all of them?" for a query that returns **m
   with it. The dropdown **stays open** while the condition is built and closes by pressing **Tags**
   again, clicking the board behind it, or pressing Escape. Once the dropdown is closed, pressing the
   lit **Tags** button clears the whole condition in one step; the dropdown has no separate Clear.
+  The condition is also the board's shareable state — see "The page URL is the board's shareable
+  filter" above.
 - **Refresh**: `⟳` re-reads the query in place, keeping the outline the reader opened and their tag
   condition. A failed refresh keeps the older board and reports itself on the button; pressing it in
   that state opens the Diagnostics log on the cause.

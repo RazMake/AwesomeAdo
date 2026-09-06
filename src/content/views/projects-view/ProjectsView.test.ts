@@ -7,6 +7,7 @@ import type {
 } from "../../../common/view-common/EnhancedView";
 
 import { projectsView } from "./ProjectsView";
+import { readProjectsUrlTagCondition } from "./projectsUrlPreferences";
 
 const TYPES: TypeCatalogEntry[] = [
   {
@@ -185,8 +186,11 @@ const clickTagExclude = (root: HTMLElement, label: string): void => {
   dismissPopup();
 };
 
+// The board keeps the page URL naming its tag condition, so the URL is shared test state and has to
+// be reset alongside the DOM.
 afterEach(() => {
   document.body.replaceChildren();
+  window.history.replaceState({}, "", "/");
 });
 
 describe("projectsView - shell", () => {
@@ -525,6 +529,80 @@ describe("projectsView - what the tag condition narrows", () => {
     expect(info).toHaveBeenCalledWith(
       "All Projects Catalog View dropped tag filter(s) no longer present in the query: api",
     );
+  });
+});
+
+describe("projectsView - the tag condition as a shareable link", () => {
+  it("opens narrowed by the tags a link requires, whatever their casing", async () => {
+    window.history.replaceState({}, "", "/?tags=PLATFORM");
+
+    const root = await renderBoard();
+
+    expect(titles(root)).toEqual(["Payments"]);
+  });
+
+  it("opens with the tags a link rules out already excluded", async () => {
+    window.history.replaceState({}, "", "/?notTags=docs");
+
+    const root = await renderBoard();
+
+    expect(titles(root)).toEqual(["Payments"]);
+  });
+
+  it("honours a link asking for every tag rather than any of them", async () => {
+    window.history.replaceState({}, "", "/?tags=api,docs");
+    expect(titles(await renderBoard())).toEqual(["Payments", "Reporting"]);
+
+    window.history.replaceState({}, "", "/?tags=api,docs&tagMatch=all");
+
+    // No single item wears both, so the same two tags now leave nothing standing.
+    expect(titles(await renderBoard())).toEqual([]);
+  });
+
+  it("names the condition the reader builds, without adding a step to go Back through", async () => {
+    const root = await renderBoard();
+    const steps = window.history.length;
+
+    openTagFilter(root);
+    tagOptionRow(root, "Api").querySelector("input")!.click();
+    tagOptionRow(root, "Docs")
+      .querySelector<HTMLButtonElement>(".awesomeado-tag-filter__exclude")!
+      .click();
+    dismissPopup();
+
+    expect(readProjectsUrlTagCondition(window.location.search)).toEqual({
+      required: new Set(["api"]),
+      excluded: new Set(["docs"]),
+      matchAll: false,
+    });
+    expect(window.history.length).toBe(steps);
+  });
+
+  it("keeps the parameters Azure DevOps put on the query page", async () => {
+    window.history.replaceState({}, "", "/?_a=query");
+    const root = await renderBoard();
+
+    clickTagOption(root, "Api");
+
+    expect(new URLSearchParams(window.location.search).get("_a")).toBe("query");
+  });
+
+  it("clears the link when the Tags button clears the condition", async () => {
+    const root = await renderBoard();
+    clickTagOption(root, "Api");
+
+    openTagFilter(root);
+
+    expect(window.location.search).toBe("");
+  });
+
+  it("drops a tag this query does not wear, so the link matches the board it opened", async () => {
+    window.history.replaceState({}, "", "/?tags=ghost");
+
+    const root = await renderBoard();
+
+    expect(titles(root)).toEqual(["Payments", "Reporting"]);
+    expect(window.location.search).toBe("");
   });
 });
 

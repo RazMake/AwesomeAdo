@@ -5,6 +5,17 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ## Next Version
 
+### New Features
+
+- The All Projects Catalog View's tag filter is now shareable straight from the address bar. The URL
+  carries the tags you required, the ones you ruled out, and whether a project must match all of them
+  or any — e.g.
+  `https://dev.azure.com/org/project/_queries/query/{query-id}?tags=platform,api&notTags=docs&tagMatch=all`
+  — and it keeps itself up to date as you tick, exclude, and clear tags, so copying the address
+  always hands someone the board you are looking at. Opening such a link starts on that condition,
+  which stays yours to change from the moment the board appears. Tag names are matched however they
+  are cased, and a tag the query does not wear is simply dropped.
+
 ## 0.10
 
 ### Bug Fixes

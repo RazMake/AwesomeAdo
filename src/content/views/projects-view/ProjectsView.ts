@@ -11,6 +11,7 @@ import {
   workItemTypeDisplayColor,
 } from "../../../common/ado/workItemTypes";
 import { parseAdoContext } from "../../../common/navigation/AdoContext";
+import { replacePageSearch } from "../../../common/navigation/PageUrl";
 import { MANUAL_ORDERING_POLICY, type OrderingPolicy } from "../../../common/ordering/ItemOrdering";
 import type {
   DataDrivenViewContext,
@@ -57,6 +58,10 @@ import {
   tagsInUse,
   type TagCondition,
 } from "./projectTags";
+import {
+  projectsSearchWithTagCondition,
+  readProjectsUrlTagCondition,
+} from "./projectsUrlPreferences";
 import {
   configuredNewProjectAreaPath,
   configuredNewProjectTags,
@@ -664,6 +669,14 @@ function describeTagCondition(condition: TagCondition): string {
   return parts.join(" and ");
 }
 
+/**
+ * Keep the page URL naming the tag condition the board is narrowed by, so the address bar is always
+ * a shareable link to exactly what the reader is looking at.
+ */
+function writeTagConditionUrl(context: DataDrivenViewContext, condition: TagCondition): void {
+  replacePageSearch(context.doc, (search) => projectsSearchWithTagCondition(search, condition));
+}
+
 /** Everything the header's controls do, gathered so one paint hands them over in one object. */
 function headerOptionsFor(params: {
   board: Board;
@@ -689,6 +702,7 @@ function headerOptionsFor(params: {
         excluded: new Set(selection.excluded.map((tag) => tag.toLowerCase())),
         matchAll: selection.matchAll,
       };
+      writeTagConditionUrl(context, session.tags);
       // The LIST only: the reader is watching what each tick leaves behind, and a full repaint would
       // rebuild the header and close the dropdown they are still composing in.
       //
@@ -862,7 +876,9 @@ function paintList(board: Board, loaded: LoadedProjects, listHost: HTMLElement):
 function startProjectsView(context: DataDrivenViewContext, root: HTMLElement): void {
   const session: ProjectsSession = {
     expandedIds: new Set(),
-    tags: { required: new Set(), excluded: new Set(), matchAll: false },
+    // Opened on whatever the link asks for, so a shared address lands on the same narrowed board its
+    // sender was looking at. A link that asks for nothing is the unfiltered catalog.
+    tags: readProjectsUrlTagCondition(context.doc.location?.search ?? ""),
     policy: orderingPolicyOf(context.properties),
     addingProject: false,
     addingChildOf: null,
@@ -894,6 +910,9 @@ function startProjectsView(context: DataDrivenViewContext, root: HTMLElement): v
     // by a tag nothing wears any more — with no way for the reader to see, let alone clear, it.
     loaded.tags = tagsInUse(flattenWorkItems(loaded.result.roots), loaded.hiddenTags);
     pruneTagCondition(context, session, loaded.tags);
+    // After the prune, so a link naming a tag this query does not wear leaves an address bar that
+    // still describes the board on screen rather than the one the sender thought they were sharing.
+    writeTagConditionUrl(context, session.tags);
     // Abandon any drag still in flight: the rows it was resolved against are about to be discarded.
     board.dragReorder.reset();
     queueStatus = createQueueStatus(board);

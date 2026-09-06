@@ -14,6 +14,7 @@ import {
   primaryWorkAncestors,
   workItemTypeColor,
 } from "../../../common/ado/workItemTypes";
+import { replacePageSearch } from "../../../common/navigation/PageUrl";
 import type { OrderingPolicy } from "../../../common/ordering/ItemOrdering";
 import { WORK_ITEM_MARKERS, type WorkItemMarker } from "../../../common/settings/ExtensionSettings";
 import {
@@ -259,17 +260,9 @@ function urlPreferences(context: DataDrivenViewContext): SprintUrlPreferences {
 /**
  * Keep the page URL naming what the board shows, so the address bar is always a shareable link to
  * this exact sprint and person selection.
- *
- * The entry is replaced rather than pushed: a filter toggle changes the view, not the place, and a
- * Back button that walked backwards through pill clicks would be worse than no history at all.
  */
 function writeSprintUrl(context: DataDrivenViewContext, preferences: SprintUrlPreferences): void {
-  const view = context.doc.defaultView;
-  if (view === null) return;
-  const { pathname, search, hash } = view.location;
-  const next = sprintSearchWith(search, preferences);
-  if (next === search) return;
-  view.history.replaceState(view.history.state, "", `${pathname}${next}${hash}`);
+  replacePageSearch(context.doc, (search) => sprintSearchWith(search, preferences));
 }
 
 function createSession(context: DataDrivenViewContext): SprintSession {
