@@ -66,9 +66,10 @@ export interface ReorderWorkItemResponse {
   /** Whether the optional state patch landed before a later order failure. */
   stateChanged?: boolean;
   /**
-   * Every rank the worker wrote directly, when Azure DevOps refused to order the item itself.
-   * Placing one item can renumber its whole level, so this names each item whose rank changed, with
-   * the `System.Rev` that write produced where ADO reported one.
+   * Every rank the worker wrote directly after Azure DevOps refused the order or accepted it without
+   * placing the item between the requested neighbours. Placing one item can renumber its whole level,
+   * so this names each item whose rank changed, with the `System.Rev` the write produced where ADO
+   * reported one.
    */
   ranks?: readonly { id: number; rank: number; rev?: number }[];
   /**

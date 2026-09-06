@@ -1,3 +1,4 @@
+import { ALL_WORK_ITEM_NOTES_SINCE } from "../../../common/ado/IWorkItemNoteLoader";
 import type { WorkItemTreeResult } from "../../../common/ado/IWorkItemTreeLoader";
 import type { TeamMember, TeamMembersResult } from "../../../common/ado/TeamMembers";
 import type {
@@ -99,6 +100,7 @@ interface SprintSession {
   selectedAreaPaths: Set<string>;
   selectedParentId: number | null;
   selectedPeople: Set<string>;
+  excludeUnassigned: boolean;
   /** The URL's requested people, held until the roster that resolves them arrives; applied once. */
   pendingAssignedTo: string[];
   selectedMarkers: Set<WorkItemMarker>;
@@ -271,6 +273,7 @@ function createSession(context: DataDrivenViewContext): SprintSession {
     selectedAreaPaths: new Set<string>(),
     selectedParentId: null,
     selectedPeople: new Set<string>(),
+    excludeUnassigned: false,
     pendingAssignedTo: urlPreferences(context).assignedTo,
     selectedMarkers: new Set<WorkItemMarker>(),
     selectedActivity: new Set<RecentActivityKind>(),
@@ -605,8 +608,10 @@ function filteredQueue(
   const sinceMs = recentWindowStart(context.services.now(), hours);
   const activity = activityFilterInForce(session.selectedActivity, session.recentNotes.isPending());
   return items.filter(({ item }) => {
-    const personMatches =
+    const selectedPersonMatches =
       session.selectedPeople.size === 0 || session.selectedPeople.has(personKey(item.assignedTo));
+    const personMatches =
+      selectedPersonMatches && !(session.excludeUnassigned && item.assignedTo === null);
     const markerMatches =
       session.selectedMarkers.size === 0 ||
       [...session.selectedMarkers].some((marker) => itemHasMarker(item, marker, markerTags));
@@ -628,23 +633,55 @@ function renderPersonPill(
   onChange: () => void,
 ): HTMLElement {
   const selected = session.selectedPeople.has(key);
+  const excluded = key === UNASSIGNED_KEY && session.excludeUnassigned;
   const pill = doc.createElement("button");
   pill.type = "button";
   pill.className = "awesomeado-sprint__person-pill";
   pill.dataset.person = key;
-  pill.setAttribute("aria-pressed", String(selected));
+  pill.setAttribute("aria-pressed", String(selected || excluded));
+  pill.dataset.filterMode = excluded ? "exclude" : selected ? "include" : "none";
   pill.style.cssText = filterPillStyle({
     background: "var(--control-background-muted)",
     color: "var(--text-primary-color)",
-    selected,
+    selected: selected || excluded,
   });
+  if (excluded) {
+    pill.style.position = "relative";
+    pill.style.overflow = "hidden";
+  }
   pill.append(doc.createTextNode(label));
   appendFilterPillCounts(doc, pill, counts);
+  if (excluded) {
+    const diagonal = doc.createElement("span");
+    diagonal.className = "awesomeado-sprint__person-pill-exclusion";
+    diagonal.setAttribute("aria-hidden", "true");
+    diagonal.style.cssText = [
+      "position:absolute",
+      "left:-2%",
+      "right:-2%",
+      "top:50%",
+      "height:2px",
+      "background:var(--tag-selected-border)",
+      "transform:rotate(-10deg)",
+      "transform-origin:center",
+      "pointer-events:none",
+    ].join(";");
+    pill.append(diagonal);
+  }
   pill.addEventListener("click", () => {
+    if (key === UNASSIGNED_KEY) session.excludeUnassigned = false;
     if (selected) session.selectedPeople.delete(key);
     else session.selectedPeople.add(key);
     onChange();
   });
+  if (key === UNASSIGNED_KEY) {
+    pill.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+      session.selectedPeople.delete(key);
+      session.excludeUnassigned = !excluded;
+      onChange();
+    });
+  }
   return pill;
 }
 
@@ -747,6 +784,7 @@ function renderFilterPanel(
   interruptAcceptance: InterruptAcceptanceState,
   session: SprintSession,
   onChange: () => void,
+  onClear: () => void,
 ): HTMLElement {
   const panel = context.doc.createElement("div");
   panel.className = "awesomeado-sprint__filters";
@@ -760,6 +798,20 @@ function renderFilterPanel(
   const label = context.doc.createElement("span");
   label.textContent = "Filters:";
   label.style.cssText = "font-size:11px;font-weight:600;color:var(--text-secondary-color)";
+  const clear = context.doc.createElement("button");
+  clear.type = "button";
+  clear.className = "awesomeado-sprint__clear-filters";
+  clear.textContent = "Clear all filters";
+  clear.style.cssText = [
+    "border:1px solid var(--palette-neutral-20)",
+    "border-radius:2px",
+    "padding:2px 8px",
+    "font-size:10px",
+    "color:var(--text-primary-color)",
+    "background:var(--control-background)",
+    "cursor:pointer",
+  ].join(";");
+  clear.addEventListener("click", onClear);
   const markerPills = renderMarkerPills(
     context,
     scopedItems,
@@ -776,6 +828,7 @@ function renderFilterPanel(
   });
   panel.append(
     label,
+    clear,
     renderFilterPillFamilies(context.doc, [
       { name: "other", pills: markerPills },
       { name: "activity", pills: activityPills },
@@ -883,8 +936,6 @@ function renderBoardHeader(options: SprintHeaderRenderOptions): {
   };
 }
 
-const ALL_NOTES_SINCE = new Date(0).toISOString();
-
 function sprintItemMenuTarget(params: {
   context: DataDrivenViewContext;
   item: TrackedWorkItem;
@@ -908,7 +959,6 @@ function sprintItemMenuTarget(params: {
         ...target,
         sprintWindow: params.data.sprintWindow,
         areaPaths: params.assignableAreaPaths,
-        notesSinceIso: ALL_NOTES_SINCE,
       }),
       ...buildMarkerCommands(target, params.data.interruptAcceptance),
     ],
@@ -1084,7 +1134,7 @@ function renderSprintQueue(params: {
       })),
     orderingPolicy: session.orderingPolicy ?? sprintOrderingPolicy(context.properties),
     interruptAcceptance: data.interruptAcceptance,
-    notesSinceIso: ALL_NOTES_SINCE,
+    notesSinceIso: ALL_WORK_ITEM_NOTES_SINCE,
     contextMenu: params.menus.menu,
     menuTarget: params.menus.target,
     onItemChanged: params.repaint,
@@ -1109,6 +1159,20 @@ function persistSprintAreaPaths(
     );
     void context.services.sprintAreaPaths?.save(data.sprintAreaPaths);
   }
+}
+
+function clearSprintFilters(
+  context: DataDrivenViewContext,
+  data: LoadedSprintData,
+  session: SprintSession,
+): void {
+  persistSprintAreaPaths(context, data, session, []);
+  session.selectedParentId = null;
+  session.selectedPeople.clear();
+  session.excludeUnassigned = false;
+  session.selectedMarkers.clear();
+  session.selectedActivity.clear();
+  writeSprintUrl(context, { sprint: session.sprintName, assignedTo: [] });
 }
 
 function sprintBoardCollections(context: DataDrivenViewContext, data: LoadedSprintData) {
@@ -1229,6 +1293,10 @@ function renderBoard(
       data.interruptAcceptance,
       session,
       repaint,
+      () => {
+        clearSprintFilters(context, data, session);
+        repaint();
+      },
     ),
     renderSprintQueue({
       context,

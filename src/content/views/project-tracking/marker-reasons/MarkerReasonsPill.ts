@@ -1,3 +1,4 @@
+import { ALL_WORK_ITEM_NOTES_SINCE } from "../../../../common/ado/IWorkItemNoteLoader";
 import type { TrackedWorkItem } from "../../../../common/ado/TrackedWorkItem";
 import type { MarkerTags, WorkItemMarker } from "../../../../common/settings/ExtensionSettings";
 import {
@@ -19,7 +20,7 @@ export interface MarkerReasonsPillOptions {
   marker: WorkItemMarker;
   /** The team's tag and comment token for this marker; the token is what identifies its notes. */
   tags: MarkerTags;
-  /** ISO 8601 start of the binding's Updates window; nothing older is fetched or shown. */
+  /** ISO 8601 start of the binding's Updates window; accepted Interrupt reasons bypass this. */
   notesSinceIso: string;
   services: NotesPanelServices;
   /** Current-lifetime acceptance, used only by the Interrupt pill paint. */
@@ -28,7 +29,7 @@ export interface MarkerReasonsPillOptions {
 
 /** Wide enough for a sentence of prose without the popup taking over the row it belongs to. */
 const POPUP_WIDTH_PX = 380;
-const noteStateByItem = new WeakMap<TrackedWorkItem, NotesPanelState>();
+const noteStatesByItem = new WeakMap<TrackedWorkItem, Map<string, NotesPanelState>>();
 
 /**
  * The pill an item wears for a marker, opening the notes that say WHY it wears it.
@@ -65,12 +66,16 @@ export function renderMarkerReasonsPill(options: MarkerReasonsPillOptions): HTML
     return shell;
   }
 
+  const sinceIso =
+    marker === "interrupt" && options.accepted ? ALL_WORK_ITEM_NOTES_SINCE : options.notesSinceIso;
   const notes = renderNotesPanel({
     doc,
     workItemId: options.item.id,
-    sinceIso: options.notesSinceIso,
+    // Acceptance may predate Project Tracking's Updates window. The lifetime reader has already
+    // proved the note exists, so its pill must search the whole discussion to show that reason.
+    sinceIso,
     services: options.services,
-    state: notesState(options.item),
+    state: notesState(options.item, sinceIso),
     onlyCommentPrefix: tags.commentTag,
     // A corrected marker note is a new revision of the item, so the row's own controls must be
     // tested against that one rather than the rev the board last read.
@@ -108,11 +113,13 @@ export function renderMarkerReasonsPill(options: MarkerReasonsPillOptions): HTML
   return shell;
 }
 
-function notesState(item: TrackedWorkItem): NotesPanelState {
-  const existing = noteStateByItem.get(item);
+function notesState(item: TrackedWorkItem, sinceIso: string): NotesPanelState {
+  const states = noteStatesByItem.get(item) ?? new Map<string, NotesPanelState>();
+  noteStatesByItem.set(item, states);
+  const existing = states.get(sinceIso);
   if (existing !== undefined) return existing;
   const created = createNotesPanelState();
-  noteStateByItem.set(item, created);
+  states.set(sinceIso, created);
   return created;
 }
 

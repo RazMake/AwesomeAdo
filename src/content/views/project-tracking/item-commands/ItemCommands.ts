@@ -1,3 +1,4 @@
+import { ALL_WORK_ITEM_NOTES_SINCE } from "../../../../common/ado/IWorkItemNoteLoader";
 import { AREA_PATH_FIELD } from "../../../../common/ado/adoApi";
 import type { SprintWindow, SprintWindowEntry } from "../../../../common/ado/sprintWindow";
 import { shortestUniqueAreaPathLabels } from "../../../../common/view-common/control/AreaPathFilter/AreaPathFilter";
@@ -20,15 +21,13 @@ export interface ItemCommandsOptions extends ItemCommandTarget {
   sprintWindow: SprintWindow;
   /** The same full area paths offered by the board's area-path filter. */
   areaPaths: readonly string[];
-  /** ISO 8601 start of the Updates window — how far back "View all notes" reaches. */
-  notesSinceIso: string;
 }
 
 /** The subset needed anywhere the board offers a direct sprint move. */
 export type SprintMoveOptions = ItemCommandTarget & Pick<ItemCommandsOptions, "sprintWindow">;
 
-/** The subset the whole-discussion command needs: an item, and how far back the window reaches. */
-export type NotesCommandOptions = ItemCommandTarget & Pick<ItemCommandsOptions, "notesSinceIso">;
+/** The subset the whole-discussion command needs. */
+export type NotesCommandOptions = ItemCommandTarget;
 
 const TITLE_FIELD = "System.Title";
 const DESCRIPTION_FIELD = "System.Description";
@@ -248,11 +247,12 @@ function buildAreaPathChangeCommands(options: ItemCommandsOptions): ItemContextM
 }
 
 /**
- * Opens the item's whole discussion inside the menu: every note in the Updates window, the reader's
- * own open to correction, and the composer to add another.
+ * Opens the item's whole discussion inside the menu, the reader's own open to correction, and the
+ * composer to add another.
  *
  * The panel under a row deliberately shows only the last two days with notes, because dozens of
- * those are on screen at once. This surface was asked for, so it shows everything the window holds.
+ * those are on screen at once. This surface explicitly promises all notes, so no view-specific
+ * display window is allowed to clip its history.
  */
 function viewAllNotesCommand(options: NotesCommandOptions): ItemContextMenuCommand {
   const { doc, item, services } = options;
@@ -267,7 +267,7 @@ function viewAllNotesCommand(options: NotesCommandOptions): ItemContextMenuComma
       const notes = renderNotesPanel({
         doc,
         workItemId: item.id,
-        sinceIso: options.notesSinceIso,
+        sinceIso: ALL_WORK_ITEM_NOTES_SINCE,
         services,
         showAllInWindow: true,
         // Writing a note advances the item's revision, and the next command on this very menu is

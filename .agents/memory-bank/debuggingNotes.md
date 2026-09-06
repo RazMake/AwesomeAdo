@@ -142,6 +142,19 @@ permissible range: Parameter Name: depth, Acceptable Range: 0 to 2"`. `getWithRe
   answer mentions the query, a filter, a column or a lane, it is wrong — and if the view cannot show
   a real level, it should not offer the gesture.
 
+## A successful ADO reorder can leave mixed work-item types unmoved
+
+- SYMPTOM: Project Tracking accepted a drag but the item sometimes stayed where it started, most
+  often in a sibling level mixing Bugs and User Stories.
+- ROOT CAUSE: ADO can answer the team backlog-order request successfully while assigning a rank in
+  the moved type's own backlog space, outside the visible neighbours' ranks. The direct-rank fallback
+  also treated an existing neighbour with no `StackRank` like an absent start/end boundary, so it
+  could rank only the moved item while the unranked neighbour still sorted last.
+- FIX / RULE: after every accepted order response, read the full destination level and verify that
+  the moved rank is strictly between its requested neighbours. Keep any valid server rank; directly
+  correct an out-of-interval rank. If either immediate neighbour exists but is unranked, renumber the
+  full level so every requested adjacency can be represented.
+
 ## A team roster can contain groups, and the Core API never expands them
 
 - SYMPTOM: Sprint View showed two member pills for `SFDA-ClientSDKs`, although the team was populated
@@ -241,11 +254,22 @@ permissible range: Parameter Name: depth, Acceptable Range: 0 to 2"`. `getWithRe
   no `System.History` delta at all; a third correctly painted card happened to have the same comment
   in both places.
 - FIX / RULE: acceptance is scoped to the latest tag-add revision, but Discussion is the canonical
-  note source. Page the work-item updates stream by the count actually returned to find the latest
-  `System.Tags` transition from absent to present; then page newest-first Discussion comments until
-  the configured token is found or a comment older than that transition proves the current lifetime
-  is exhausted. Do not use the item's current `ChangedDate`, which moves for unrelated edits, and do
-  not require Azure DevOps to echo a Discussion comment as `System.History`.
+  note source. A qualifying note must begin with the configured token, matching the marker-reason
+  lookup; merely mentioning it later in prose does not accept the Interrupt. Page the work-item
+  updates stream by the count actually returned to find the latest `System.Tags` transition from
+  absent to present; then page newest-first Discussion comments until the configured token is found
+  or a comment older than that transition proves the current lifetime is exhausted. Do not use the
+  item's current `ChangedDate`, which moves for unrelated edits, and do not require Azure DevOps to
+  echo a Discussion comment as `System.History`.
+- Project Tracking's normal notes panels remain bounded by the binding's Updates window, but an
+  accepted Interrupt's reason lookup must read the complete discussion. Sprint already does this;
+  otherwise Project Tracking can correctly paint acceptance while hiding the older note that proves
+  and explains it. Marker-note state is cached by item AND cutoff: Project Tracking paints before
+  acceptance settles, so a bounded empty read must never satisfy the all-history request after the
+  accepted state repaints the same item object.
+- **View all notes** means the complete Discussion history in every enhanced view. The binding's
+  Updates window limits inline Project Tracking panels only; it is not an input to the shared item
+  command.
 - Transport reuses `executeAdoRequestInPage`, so each idempotent page GET gets three bounded retries.
   Keep failed item IDs separate from unaccepted IDs; inability to read evidence is not evidence of
   rejection.
@@ -914,6 +938,10 @@ authorizedUser.id`. `isOwnNote` is correct as written — do not "fix" it.
   `length - 2`, i.e. the column before the abandoned bucket (Removed). Reject a negative ordinal —
   `boardColumnOrdinal` also answers `-1` for an unmapped status, so a short board would otherwise
   read every unmapped item as finished.
+- The Done-only header filter is the explicit way to inspect ALL completed work, so it bypasses the
+  normal hide-after-N-days cutoff. It still identifies completion through
+  `workItemBoardColumnOrdinal`, which follows every ADO state in the type's completed-column mapping;
+  never compare `System.State` with one hard-coded state name in a view.
 - The hide-after-N-days age is measured from `stateChangeDate`, NOT `changedDate`: a comment or a
   re-tag must not put finished work back on the board. An item with no state-change date is never
   aged out, and an ancestor survives while any descendant is still visible (`isVisibleUnderFilter`

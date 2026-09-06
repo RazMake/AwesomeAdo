@@ -16,6 +16,33 @@ builds use the repository's `Major.Minor.Build` release versioning.
   which stays yours to change from the moment the board appears. Tag names are matched however they
   are cased, and a tag the query does not wear is simply dropped.
 
+## 0.12
+
+### Bug Fixes
+
+- Sprint View and Project Tracking now agree that an Interrupt is accepted only when its current
+  lifetime has a note starting with the configured acceptance tag. Project Tracking now shows that
+  reason even when acceptance finishes loading after the board or predates the view's Updates
+  window; acceptance reasons no longer show an extra colon after the tag. **View all notes** now
+  loads the complete discussion consistently in every enhanced view.
+
+## 0.11
+
+### New Features
+
+- Sprint View now has a **Clear all filters** button in its pills row. Right-click **Unassigned** to
+  filter unassigned work OUT; a bottom-left-to-top-right diagonal crosses the outlined pill while
+  that opposite filter is active.
+- Project Tracking now has a **Show only Done** button immediately before **Assigned To**, using
+  your configured name for the fourth board state. Turn it on to show all work in any Azure DevOps
+  state mapped there, including older completed work hidden from the normal view, with the planning
+  context above it; turn it off to return to the normal view.
+
+### Bug Fixes
+
+- Project Tracking now reliably keeps a dragged item where it was dropped when its siblings mix work
+  item types such as Bugs and User Stories, including items that Azure DevOps has not ranked yet.
+
 ## 0.10
 
 ### Bug Fixes

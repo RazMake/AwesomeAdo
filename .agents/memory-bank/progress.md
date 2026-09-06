@@ -21,7 +21,13 @@ This is a flattened snapshot of what exists now, not a build log.
   discreetly in its lower-right corner. Project Tracking ships as an on-demand ESM renderer; store
   builds minify it and the always-loaded runtime. Its hierarchy renders Primary work and planning
   ancestors as rows while rolling implementation-detail children into compact badges, and an open
-  view redraws immediately when settings-backed configuration changes. Project
+  view redraws immediately when settings-backed configuration changes. Accepted drag reorders are
+  checked against their requested sibling interval; mixed work-item types and unranked neighbours
+  are corrected through the direct-rank fallback when ADO's team backlog endpoint leaves them out of
+  place. A framed Done toggle immediately before Assigned To fills blue while active, keeps every
+  ADO state the shared type mapping routes to the completed column plus its planning ancestors,
+  includes work outside the normal resolved-age window, composes with the other filters, and
+  restores the normal view on its next press. Project
   Tracking rows use theme-owned alternating
   backgrounds, with subtle hover and stronger `Ctrl+Shift+Alt` emphasis filling each row and its open details as one
   continuous surface while excluding child rows (shared `common/view-common/control/RowEmphasis`). Their unchanged total spacing is balanced toward
@@ -66,7 +72,9 @@ This is a flattened snapshot of what exists now, not a build log.
   executing an offset-adjusted copy of the original WIQL;
   retains only team members' or unassigned work plus parent chains; and renders clickable query-folder breadcrumbs plus an always-active Sprint
   selector, Lane, Project, refresh, write-queue, team, marker, and recent-activity controls; and
-  filters a lane-by-state card table. It uses configured labels with high-contrast theme-owned colors
+  filters a lane-by-state card table. Its pills row clears every active Lane, Project, person,
+  marker, and activity filter in one action; right-clicking Unassigned instead excludes unassigned
+  cards with a bottom-left-to-top-right diagonal in the active outline color. It uses configured labels with high-contrast theme-owned colors
   for Queue, Active, Waiting, and Done over quieter fills; the synchronized column titles stay
   lightly tinted at rest and gain 90%-opaque backdrops while cards scroll beneath them at half the
   header card's resting gap below
@@ -116,8 +124,11 @@ This is a flattened snapshot of what exists now, not a build log.
   raised item pills use muted purple with a 1px bright edge while accepted pills use solid purple.
   Both card sizes expose Priority (compact Done read-only)
   and the shared `?` popup, which wraps long content and scrolls vertically only. Project Tracking uses the same
-  latest-tag-lifetime acceptance state, sourced from Discussion even when update history omits the
-  note, without exposing Interrupt mutation commands.
+  latest-tag-lifetime acceptance state, sourced from Discussion notes beginning with the configured
+  token even when update history omits the note. Accepted reason pills search the complete
+  discussion with cutoff-aware caching rather than reusing a bounded pre-acceptance read, without
+  exposing Interrupt mutation commands. **View all notes** reads the complete Discussion history in
+  every enhanced view; the Updates window remains an inline-panel display bound only.
 - **Area-path filtering** (`common/view-common/control/AreaPathFilter` + both views): the live
   tree hydrates `System.AreaPath`; a compact themed header popup selects full paths using shortest
   unique display suffixes. Active selections match the Project filter's filled communication style

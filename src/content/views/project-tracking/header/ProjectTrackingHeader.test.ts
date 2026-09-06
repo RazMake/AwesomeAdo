@@ -27,6 +27,9 @@ function baseOptions(
   const assignedToFilter = document.createElement("div");
   assignedToFilter.className = "awesomeado-assignee-filter";
 
+  const resolvedOnlyToggle = document.createElement("button");
+  resolvedOnlyToggle.className = "awesomeado-resolved-filter";
+
   const orderingPicker = document.createElement("span");
   orderingPicker.className = "awesomeado-ordering";
 
@@ -38,6 +41,7 @@ function baseOptions(
     eta: renderEtaBadge(document, { eta: null, now }),
     areaPathFilter,
     assignedToFilter,
+    resolvedOnlyToggle,
     sprintPicker,
     orderingPicker,
     ...overrides,
@@ -76,7 +80,9 @@ describe("renderProjectTrackingHeader - title & controls", () => {
     const { element } = renderProjectTrackingHeader(document, baseOptions());
 
     const filters = element.querySelector<HTMLElement>(".awesomeado-tracking__header-filters");
-    expect(filters?.querySelector(".awesomeado-assignee-filter")).toBeTruthy();
+    const resolvedOnly = filters?.querySelector(".awesomeado-resolved-filter");
+    const assignedTo = filters?.querySelector(".awesomeado-assignee-filter");
+    expect(resolvedOnly?.nextElementSibling).toBe(assignedTo);
     expect(filters?.querySelector(".awesomeado-area-filter")).toBeTruthy();
     expect(filters?.querySelector(".awesomeado-sprint-picker")).toBeNull();
     expect(filters?.lastElementChild).toBe(element.querySelector(".awesomeado-tracking__refresh"));

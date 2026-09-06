@@ -28,9 +28,9 @@ Renders a single subtle-filled tile with these bands:
    sticky header.
 2. **Title + controls** — the project title (`options.title`, colored by `options.titleColor`), then
    the sprint picker (`options.sprintPicker`) as the first control, followed by expand-all (`+`) and
-   collapse-all (`−`). The narrowing filters — Assigned To (`options.assignedToFilter`) and the
-   compact area-path filter (`options.areaPathFilter`) — sit together at the right edge, immediately
-   before refresh (`⟳`), which is the band's final action.
+   collapse-all (`−`). The narrowing filters — Done (`options.resolvedOnlyToggle`), Assigned To
+   (`options.assignedToFilter`), and the compact area-path filter (`options.areaPathFilter`) — sit
+   together at the right edge, immediately before refresh (`⟳`), which is the band's final action.
 3. **Tech Lead + ETA** — the caller-supplied Tech Lead control (`options.techLead`) followed by the
    caller-supplied ETA badge (`options.eta`, built with the shared
    [`renderEtaBadge`](../../../../common/view-common/control/EtaBadge/README.md) so the view owns its
@@ -57,6 +57,7 @@ and re-reads it, while the controls on the left only change the current view.
 | `onTitleContextMenu` | Called when the title is right-clicked, so the view can offer the root item's own menu (omitted leaves the browser's menu alone). |
 | `techLead`           | The Tech Lead control element, or `null` when view services are unavailable.                                                      |
 | `eta`                | The root item's ETA badge element (pre-built by the view), or `null` when view services are unavailable.                          |
+| `resolvedOnlyToggle` | The `Show only {fourth state}` button, immediately before Assigned To.                                                            |
 | `areaPathFilter`     | The compact area-path multi-select, grouped with the other narrowing filters immediately before refresh.                          |
 | `assignedToFilter`   | The compact Assigned To multi-select, grouped with the other narrowing filters immediately before refresh.                        |
 | `sprintPicker`       | The sprint picker element, rendered as the first control before expand and collapse.                                              |
@@ -83,7 +84,7 @@ a re-read is neither instant nor guaranteed, and the glyph alone cannot tell "st
 
 The caller owns both states: only it knows when the fetch settled.
 
-The control composes the controls it is handed (Tech Lead, area-path filter, sprint picker, ordering
-picker) plus the shared ETA badge and
+The control composes the controls it is handed (Tech Lead, Done filter, area-path filter, sprint
+picker, ordering picker) plus the shared ETA badge and
 [`Breadcrumbs`](../../../../common/view-common/control/Breadcrumbs/README.md) controls; it never
 reaches for ADO data itself.

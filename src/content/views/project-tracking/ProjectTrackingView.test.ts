@@ -3905,18 +3905,22 @@ describe("ProjectTrackingView — moving an item", () => {
 });
 
 describe("ProjectTrackingView — reading an item's discussion", () => {
-  it("shows every note in the window, not the two days a row's panel is limited to", async () => {
+  it("loads the complete discussion, not the board's Updates window", async () => {
+    const requests: { workItemId: number; sinceIso: string }[] = [];
     const root = await renderDeepBoard({
       noteLoader: {
-        loadNotes: async () => ({
-          notes: [
-            fixtureNote(1, "2026-07-23T09:00:00Z"),
-            fixtureNote(2, "2026-07-22T09:00:00Z"),
-            fixtureNote(3, "2026-07-21T09:00:00Z"),
-          ],
-          currentUser: null,
-          error: null,
-        }),
+        loadNotes: async (request) => {
+          requests.push(request);
+          return {
+            notes: [
+              fixtureNote(1, "2026-07-23T09:00:00Z"),
+              fixtureNote(2, "2026-07-22T09:00:00Z"),
+              fixtureNote(3, "2026-07-21T09:00:00Z"),
+            ],
+            currentUser: null,
+            error: null,
+          };
+        },
       },
     });
     await turnSprintFilterOff(root);
@@ -3926,6 +3930,7 @@ describe("ProjectTrackingView — reading an item's discussion", () => {
     await settleWrites();
 
     const panel = root.querySelector(".awesomeado-item-menu__panel")!;
+    expect(requests[0]).toEqual({ workItemId: 2, sinceIso: new Date(0).toISOString() });
     expect(panel.querySelectorAll(".awesomeado-note")).toHaveLength(3);
     // The composer comes with the panel, so a discussion can be added to from here too.
     expect(panel.querySelector(".awesomeado-note-composer__trigger")).not.toBeNull();
@@ -4463,6 +4468,83 @@ describe("ProjectTrackingView — completed ETA", () => {
 
     expect(etaColorFor("On time")).toBe("var(--completion-foreground)");
     expect(etaColorFor("Late")).toBe("var(--text-secondary-color)");
+  });
+});
+
+describe("ProjectTrackingView — Done-only filter", () => {
+  it("shows completed work with its planning context and toggles back to the normal view", async () => {
+    const root = await renderBoardForTree(
+      epicOver([
+        createItem({
+          id: 2,
+          type: "Feature",
+          title: "Planning context",
+          children: [resolvedFeature(3, "Finished story", YESTERDAY, { type: "Story" })],
+        }),
+        createItem({ id: 4, type: "Feature", title: "Still active" }),
+      ]),
+    );
+    const toggle = root.querySelector<HTMLButtonElement>(".awesomeado-resolved-filter")!;
+
+    expect(toggle.textContent).toBe("Show only Done");
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+    expect(toggle.style.background).toBe("transparent");
+    expect(renderedRowTitles(root)).toEqual(["Planning context", "Finished story", "Still active"]);
+
+    toggle.click();
+
+    expect(toggle.getAttribute("aria-pressed")).toBe("true");
+    expect(toggle.style.background).toBe("var(--communication-background)");
+    expect(renderedRowTitles(root)).toEqual(["Planning context", "Finished story"]);
+
+    toggle.click();
+
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+    expect(renderedRowTitles(root)).toEqual(["Planning context", "Finished story", "Still active"]);
+  });
+
+  it("names the button after the fourth configured extension state", async () => {
+    const root = await renderBoardForTree(
+      epicOver([]),
+      {},
+      {
+        getBoardColumns: () => ["Backlog", "Doing", "Waiting", "Completed", "Removed"],
+      },
+    );
+
+    expect(root.querySelector(".awesomeado-resolved-filter")?.textContent).toBe(
+      "Show only Completed",
+    );
+  });
+
+  it("shows every ADO state mapped to Done regardless of the normal resolved-age window", async () => {
+    const featureTypes = FIXTURE_TYPES.map((type) =>
+      type.name === "Feature"
+        ? {
+            ...type,
+            columns: [
+              { column: "Active", states: ["Active"] },
+              { column: "Done", states: ["Resolved", "Closed", "Completed"] },
+            ],
+          }
+        : type,
+    );
+    const root = await renderBoardForTree(
+      epicOver([
+        resolvedFeature(2, "Resolved item", LONG_AGO, { state: "Resolved" }),
+        resolvedFeature(3, "Closed item", LONG_AGO),
+        resolvedFeature(4, "Completed item", LONG_AGO, { state: "Completed" }),
+        createItem({ id: 5, type: "Feature", title: "Active item" }),
+      ]),
+      {},
+      { getTypes: () => featureTypes },
+    );
+
+    expect(renderedRowTitles(root)).toEqual(["Active item"]);
+
+    root.querySelector<HTMLButtonElement>(".awesomeado-resolved-filter")!.click();
+
+    expect(renderedRowTitles(root)).toEqual(["Resolved item", "Closed item", "Completed item"]);
   });
 });
 

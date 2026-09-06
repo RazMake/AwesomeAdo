@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { ALL_WORK_ITEM_NOTES_SINCE } from "../../../../common/ado/IWorkItemNoteLoader";
 import type { WorkItemNote } from "../../../../common/ado/WorkItemNote";
 import { normalizeMarkerTags } from "../../../../common/settings/ExtensionSettings";
 import { renderMarkerPill } from "../../../../common/view-common/control/MarkerPill/MarkerPill";
@@ -26,6 +27,12 @@ function mountPill(
     marker?: "blocked" | "interrupt";
     accepted?: boolean;
     notes?: WorkItemNote[];
+    item?: object;
+    loadNotes?: (request: { workItemId: number; sinceIso: string }) => Promise<{
+      notes: WorkItemNote[];
+      currentUser: null;
+      error: null;
+    }>;
   } = {},
 ) {
   const notes = overrides.notes ?? [
@@ -33,12 +40,8 @@ function mountPill(
     createNote(2, "[ACCEPTED] Platform owns this now."),
     createNote(3, "An ordinary project note."),
   ];
-  const loadNotes = vi.fn(() =>
-    Promise.resolve({
-      notes,
-      currentUser: null,
-      error: null,
-    }),
+  const loadNotes = vi.fn(
+    overrides.loadNotes ?? (() => Promise.resolve({ notes, currentUser: null, error: null })),
   );
   const markerTags = normalizeMarkerTags(undefined);
   const marker = overrides.marker ?? "blocked";
@@ -49,7 +52,7 @@ function mountPill(
 
   const element = renderMarkerReasonsPill({
     doc: document,
-    item: { id: 7, tags: [tags.tag], noteCount: notes.length } as never,
+    item: (overrides.item ?? { id: 7, tags: [tags.tag], noteCount: notes.length }) as never,
     marker,
     tags,
     accepted: overrides.accepted,
@@ -123,7 +126,46 @@ describe("renderMarkerReasonsPill", () => {
     expect(loadNotes).toHaveBeenCalledTimes(1);
     element.remove();
   });
+});
 
+describe("renderMarkerReasonsPill - accepted Interrupts", () => {
+  it("reads an accepted Interrupt reason beyond Project Tracking's Updates window", async () => {
+    const { element, loadNotes } = mountPill({ marker: "interrupt", accepted: true });
+
+    for (let tick = 0; tick < 6; tick += 1) await Promise.resolve();
+
+    expect(loadNotes).toHaveBeenCalledWith({
+      workItemId: 7,
+      sinceIso: ALL_WORK_ITEM_NOTES_SINCE,
+    });
+    element.remove();
+  });
+
+  it("refetches all history when acceptance settles after a bounded empty read", async () => {
+    const item = { id: 7, tags: ["Interrupt"], noteCount: 1 };
+    const acceptedNote = createNote(2, "[ACCEPTED] Platform owns this now.");
+    const loadNotes = vi.fn(async (request: { sinceIso: string }) => ({
+      notes: request.sinceIso === ALL_WORK_ITEM_NOTES_SINCE ? [acceptedNote] : [],
+      currentUser: null,
+      error: null,
+    }));
+    const initial = mountPill({ marker: "interrupt", item, loadNotes });
+    for (let tick = 0; tick < 6; tick += 1) await Promise.resolve();
+    expect(initial.element.querySelector("button")).toBeNull();
+
+    const accepted = mountPill({ marker: "interrupt", accepted: true, item, loadNotes });
+    await openPopup(accepted.element);
+
+    expect(loadNotes).toHaveBeenCalledTimes(2);
+    expect(accepted.element.querySelector(".awesomeado-note__text")?.textContent).toBe(
+      "Platform owns this now.",
+    );
+    initial.element.remove();
+    accepted.element.remove();
+  });
+});
+
+describe("renderMarkerReasonsPill - unavailable and displayed reasons", () => {
   it("stays a tooltip-only label when no matching notes exist", async () => {
     const { element } = mountPill({ notes: [createNote(3, "An ordinary project note.")] });
     for (let tick = 0; tick < 6; tick += 1) await Promise.resolve();
@@ -150,14 +192,13 @@ describe("renderMarkerReasonsPill", () => {
   it("hides the configured acceptance token and shows only the reasoning", async () => {
     const { element } = mountPill({
       marker: "interrupt",
-      notes: [createNote(2, "[ACCEPTED] Platform owns this now.")],
+      notes: [createNote(2, "[ACCEPTED] : Platform owns this now.")],
     });
 
     await openPopup(element);
 
     const text = element.querySelector(".awesomeado-note__text")?.textContent ?? "";
-    expect(text).toContain("Platform owns this now.");
-    expect(text).not.toContain("[ACCEPTED]");
+    expect(text).toBe("Platform owns this now.");
     element.remove();
   });
 });

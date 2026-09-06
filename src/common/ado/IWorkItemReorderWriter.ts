@@ -67,10 +67,11 @@ export interface WorkItemReorderResult {
   /** Whether the optional state change landed, even when the later rank operation failed. */
   stateChanged?: boolean;
   /**
-   * Every rank written directly, when Azure DevOps refused to rank the item itself. Placing an item
-   * can renumber its whole level, so this names each item whose rank changed — not just the moved
-   * one — and the caller refreshes all of them or its next re-sort scrambles the level. Each entry
-   * also carries that item's new `System.Rev` where the write reported one.
+   * Every rank written directly after Azure DevOps refused the order or accepted it without placing
+   * the item between the requested neighbours. Placing an item can renumber its whole level, so this
+   * names each item whose rank changed — not just the moved one — and the caller refreshes all of
+   * them or its next re-sort scrambles the level. Each entry also carries that item's new
+   * `System.Rev` where the write reported one.
    */
   ranks?: readonly { id: number; rank: number; rev?: number }[];
   /** A short error description when ok is false. */

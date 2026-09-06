@@ -1,5 +1,8 @@
 import type { NoteAuthor, WorkItemNote } from "./WorkItemNote";
 
+/** Earliest cutoff used by surfaces that promise the item's complete discussion. */
+export const ALL_WORK_ITEM_NOTES_SINCE = new Date(0).toISOString();
+
 /** What to read: one work item's discussion, no further back than the view's Updates window. */
 export interface WorkItemNotesRequest {
   workItemId: number;

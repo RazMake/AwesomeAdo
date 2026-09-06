@@ -74,6 +74,15 @@ export function boardColumnOrdinal(label: string, boardColumns: readonly string[
   return boardColumns.findIndex((column) => column.trim().toLowerCase() === target);
 }
 
+/** The extension board-column position an item's mapped ADO state belongs to, or -1 when unmapped. */
+export function workItemBoardColumnOrdinal(
+  item: TrackedWorkItem,
+  entry: TypeCatalogEntry | undefined,
+  boardColumns: readonly string[],
+): number {
+  return boardColumnOrdinal(workItemStatusLabel(item, entry), boardColumns);
+}
+
 /** Every type reachable from `seeds` by walking parent → child links. */
 function typesBelow(
   types: readonly TypeCatalogEntry[],

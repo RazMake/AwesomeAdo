@@ -28,6 +28,7 @@ import {
   primaryWorkAncestors,
   primaryWorkWithAncestors,
   workItemIdsVisibleUnderPrimaryFilter,
+  workItemBoardColumnOrdinal,
   workItemsEligibleForPrimaryFilter,
   workItemStatusLabel,
   workItemTypeColor,
@@ -196,6 +197,10 @@ const statusLabelOf = workItemStatusLabel;
 interface TreeFilter {
   /** The sprint the board is filtered to, or null when the sprint filter is off. */
   sprint: string | null;
+  /** Whether the board should show only work in its completed column. */
+  resolvedOnly: boolean;
+  /** True when an item's state maps to the board's completed column. */
+  isResolved(item: TrackedWorkItem): boolean;
   /** Full Azure DevOps area paths selected in the header (empty = every area). */
   areaPaths: ReadonlySet<string>;
   /** The people selected in the header's Assigned To filter (empty = everyone). */
@@ -244,6 +249,11 @@ function unscheduledFilter(filter: TreeFilter): TreeFilter {
   return { ...filter, sprint: null };
 }
 
+/** Apply either the explicit Done-only selection or the normal view's resolved-age cutoff. */
+function matchesResolvedFilter(item: TrackedWorkItem, filter: TreeFilter): boolean {
+  return filter.resolvedOnly ? filter.isResolved(item) : !filter.isResolvedPastWindow(item);
+}
+
 /** Whether one filterable work item passes every active filter group. */
 function matchesTreeFilter(item: TrackedWorkItem, filter: TreeFilter): boolean {
   const matchesSprint = !filter.sprint || item.sprintName === filter.sprint;
@@ -251,10 +261,10 @@ function matchesTreeFilter(item: TrackedWorkItem, filter: TreeFilter): boolean {
     filter.areaPaths.size === 0 || (item.areaPath !== null && filter.areaPaths.has(item.areaPath));
   return (
     matchesSprint &&
+    matchesResolvedFilter(item, filter) &&
     matchesAreaPath &&
     matchesAssigneeFilter(item, filter.assignees) &&
-    matchesLitPills(item, filter) &&
-    !filter.isResolvedPastWindow(item)
+    matchesLitPills(item, filter)
   );
 }
 
@@ -602,8 +612,9 @@ function isCompleted(
   if (completedOrdinal < 0) {
     return false;
   }
-  const status = statusLabelOf(item, typeMap.get(item.type));
-  return boardColumnOrdinal(status, boardColumns) === completedOrdinal;
+  return (
+    workItemBoardColumnOrdinal(item, typeMap.get(item.type), boardColumns) === completedOrdinal
+  );
 }
 
 /**
@@ -1318,7 +1329,6 @@ function menuTargetFor(params: {
         ...target,
         sprintWindow: params.sprintWindow,
         areaPaths: params.areaPaths,
-        notesSinceIso: boardNotesSince(context),
       }),
       // Asked for explicitly, under their own rule: this board is where a team tracks what is stuck,
       // so it is the board that turns the shared menu's flagging commands on. A view with no such
@@ -1926,6 +1936,8 @@ interface BoardSession {
   selectedAreaPaths: Set<string>;
   /** The people selected in the header's Assigned To filter (OR across them; empty = everyone). */
   selectedAssignees: Set<string>;
+  /** Whether the header toggle narrows the board to completed work. */
+  resolvedOnly: boolean;
   /** The recent-activity pills the reader lit (OR across them; empty = no activity filter). */
   selectedActivity: Set<RecentActivityKind>;
   /** The marker pills the reader lit (OR across them; empty = no marker filter). */
@@ -1970,6 +1982,7 @@ function createBoardSession(services: EnhancedViewServices): BoardSession {
     selectedTags: new Set<string | null>(),
     selectedAreaPaths: new Set<string>(),
     selectedAssignees: new Set<string>(),
+    resolvedOnly: false,
     selectedActivity: new Set<RecentActivityKind>(),
     selectedMarkers: new Set<WorkItemMarker>(),
     boardWasEmpty: null,
@@ -2130,6 +2143,60 @@ function renderAssigneeControls(
   });
 }
 
+/** Build the one-press Done-only filter using the same frame/fill language as the adjacent filters. */
+function renderResolvedOnlyToggle(
+  context: DataDrivenViewContext,
+  session: BoardSession,
+  completedColumnName: string,
+  onChange: () => void,
+): HTMLButtonElement {
+  const button = context.doc.createElement("button");
+  button.type = "button";
+  button.className = "awesomeado-resolved-filter";
+  button.textContent = `Show only ${completedColumnName}`;
+  button.style.cssText = [
+    "box-sizing:border-box",
+    "height:27.2px",
+    "display:inline-flex",
+    "align-items:center",
+    "border:1px solid var(--control-border-strong)",
+    "border-radius:6px",
+    "padding:0 7px",
+    "font:inherit",
+    "font-size:12px",
+    "font-weight:600",
+    "cursor:pointer",
+  ].join(";");
+
+  const paint = (): void => {
+    button.setAttribute("aria-pressed", String(session.resolvedOnly));
+    button.title = session.resolvedOnly
+      ? "Show all items"
+      : `Show only ${completedColumnName} items`;
+    button.setAttribute("aria-label", button.title);
+    button.style.background = session.resolvedOnly
+      ? "var(--communication-background)"
+      : "transparent";
+    button.style.color = session.resolvedOnly
+      ? "var(--text-on-communication-background)"
+      : "var(--text-primary-color)";
+    button.style.borderColor = session.resolvedOnly
+      ? "var(--communication-background)"
+      : "var(--control-border-strong)";
+  };
+
+  button.addEventListener("click", () => {
+    session.resolvedOnly = !session.resolvedOnly;
+    paint();
+    context.services.logger.info(
+      `Project Tracking ${completedColumnName} filter: ${session.resolvedOnly ? `showing only ${completedColumnName} items` : "showing the normal view"}.`,
+    );
+    onChange();
+  });
+  paint();
+  return button;
+}
+
 /**
  * Fills (or refills) the tech lead group with its label and the epic assignee's picker. Split out so
  * the group can be rebuilt in place from the header, which is not part of the tree re-render.
@@ -2243,6 +2310,12 @@ function renderHeader(
     session,
     boardControls.onHeaderFilterChange,
   );
+  const resolvedOnlyToggle = renderResolvedOnlyToggle(
+    context,
+    session,
+    boardColumns[completedColumnOrdinal(boardColumns)] ?? "Done",
+    boardControls.onHeaderFilterChange,
+  );
   const techLead = createTechLeadGroup(root, chipContext);
 
   // The view runs on the ADO query page, so the page's own URL supplies the org/project the folder
@@ -2268,6 +2341,7 @@ function renderHeader(
     onTitleContextMenu: boardControls.onTitleContextMenu,
     techLead,
     eta: createItemEtaBadge(doc, root, typeMap, boardColumns, queue, context.services.now()),
+    resolvedOnlyToggle,
     areaPathFilter: areaPathFilter.element,
     assignedToFilter: assignedToFilter.element,
     sprintPicker: sprintPickerHandle.element,
@@ -2515,6 +2589,8 @@ function createTreeFilter(params: BoardTreeRendererParams, sprint: string | null
   const { properties } = params.context;
   return {
     sprint,
+    resolvedOnly: params.session.resolvedOnly,
+    isResolved: (item) => isCompleted(item, params.typeMap, params.metrics.boardColumns),
     areaPaths: params.session.selectedAreaPaths,
     assignees: params.session.selectedAssignees,
     tags: params.session.selectedTags,
@@ -2709,7 +2785,8 @@ function logBoardEmptinessFlip(
   session.boardWasEmpty = empty;
   context.services.logger.info(
     `Project Tracking tree ${empty ? "hid every row" : "is showing rows"}: rows=${rowCount}, ` +
-      `sprint=${filter.sprint ?? "any"}, areaPaths=${filter.areaPaths.size}, ` +
+      `sprint=${filter.sprint ?? "any"}, resolvedOnly=${filter.resolvedOnly}, ` +
+      `areaPaths=${filter.areaPaths.size}, ` +
       `assignees=${filter.assignees.size}, ` +
       `tags=${filter.tags.size}, activity=[${[...session.selectedActivity].join(", ")}], ` +
       `markers=[${[...session.selectedMarkers].join(", ")}].`,

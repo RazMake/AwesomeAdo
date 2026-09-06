@@ -128,6 +128,14 @@ export function planRankWrites(
   if (index < 0) {
     return null;
   }
+  if (
+    hasUnrankedNeighbour(siblingIds, index - 1, rankById) ||
+    hasUnrankedNeighbour(siblingIds, index + 1, rankById)
+  ) {
+    // An existing unranked neighbour sorts at the end of the board. Treating it like the boundary
+    // sentinel would rank only the moved item and make the requested adjacency impossible.
+    return reseedLevel(siblingIds, rankById);
+  }
   const landing = rankBetween(
     rankAt(siblingIds, index - 1, rankById),
     rankAt(siblingIds, index + 1, rankById),
@@ -139,6 +147,16 @@ export function planRankWrites(
     return { writes, reseeded: false };
   }
   return reseedLevel(siblingIds, rankById);
+}
+
+/** Whether a real sibling occupies `index` but carries no usable backlog rank. */
+function hasUnrankedNeighbour(
+  siblingIds: readonly number[],
+  index: number,
+  rankById: ReadonlyMap<number, number>,
+): boolean {
+  const id = siblingIds[index];
+  return id !== undefined && !rankById.has(id);
 }
 
 /** The rank of the sibling at `index`, or null when there is none or it carries no rank. */
@@ -241,11 +259,19 @@ export async function applyRankFallback(options: {
   /** The level in POST-drop order; every sibling, so a renumber cannot scramble hidden rows. */
   siblingIds: readonly number[];
   movedId: number;
+  /** Accept an already-correct rank instead of replacing it with this module's preferred spacing. */
+  acceptCurrentPlacement?: boolean;
   readRanks: ReadRanks;
   writeRanks: WriteRanks;
 }): Promise<RankFallbackResult> {
   const { siblingIds, movedId } = options;
   const field = await readAllRanks(siblingIds, options.readRanks);
+  if (
+    options.acceptCurrentPlacement === true &&
+    rankSatisfiesPlacement(siblingIds, field, movedId)
+  ) {
+    return { ok: true, order: field.get(movedId), ranks: [], reseeded: false };
+  }
   const plan = planRankWrites(siblingIds, field, movedId);
   if (plan === null) {
     return { ok: false, error: `item ${movedId} is not among the siblings it was ranked against` };
@@ -261,6 +287,28 @@ export async function applyRankFallback(options: {
     return { ok: false, error: written.error, reseeded: plan.reseeded };
   }
   return { ok: true, order, ranks: withRevs(plan.writes, written.revs), reseeded: plan.reseeded };
+}
+
+/** Whether the moved item's current rank places it strictly between its requested neighbours. */
+function rankSatisfiesPlacement(
+  siblingIds: readonly number[],
+  rankById: ReadonlyMap<number, number>,
+  movedId: number,
+): boolean {
+  const index = siblingIds.indexOf(movedId);
+  const moved = rankById.get(movedId);
+  if (index < 0 || moved === undefined) {
+    return false;
+  }
+  if (
+    hasUnrankedNeighbour(siblingIds, index - 1, rankById) ||
+    hasUnrankedNeighbour(siblingIds, index + 1, rankById)
+  ) {
+    return false;
+  }
+  const previous = rankAt(siblingIds, index - 1, rankById);
+  const next = rankAt(siblingIds, index + 1, rankById);
+  return (previous === null || previous < moved) && (next === null || moved < next);
 }
 
 /** Attach the revision each write produced, so the caller can keep every renumbered item current. */

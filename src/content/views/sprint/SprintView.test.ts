@@ -2163,7 +2163,9 @@ describe("Sprint View filters", () => {
 
     expect(lanes).toEqual(["Project\\Apps", "Project\\Platform\\API"]);
   });
+});
 
+describe("Sprint View person filters", () => {
   it("filters the item queue from a team-member pill", async () => {
     const root = await render();
     root.querySelector<HTMLButtonElement>('[data-person="__unassigned__"]')!.click();
@@ -2172,6 +2174,67 @@ describe("Sprint View filters", () => {
     expect(root.querySelector(".awesomeado-sprint__item")?.textContent).toContain("Unowned");
   });
 
+  it("filters out unassigned work when the Unassigned pill is right-clicked", async () => {
+    const root = await render();
+    const unassigned = root.querySelector<HTMLButtonElement>('[data-person="__unassigned__"]')!;
+
+    unassigned.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+
+    expect(cardTitles(root)).toEqual(["Queued", "Active blocked"]);
+    const excluded = root.querySelector<HTMLButtonElement>('[data-person="__unassigned__"]')!;
+    expect(excluded.dataset.filterMode).toBe("exclude");
+    const diagonal = excluded.querySelector<HTMLElement>(
+      ".awesomeado-sprint__person-pill-exclusion",
+    )!;
+    expect(diagonal.style.background).toBe("var(--tag-selected-border)");
+    expect(diagonal.style.transform).toBe("rotate(-10deg)");
+  });
+
+  it("clears every active filter from the pills section", async () => {
+    const save = vi.fn(async () => true);
+    const root = await render({
+      sprintAreaPaths: {
+        read: async () => ({ sprintAreaPaths: {} }),
+        save,
+      },
+    });
+    root
+      .querySelector<HTMLButtonElement>('[data-person="__unassigned__"]')!
+      .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+    root.querySelector<HTMLButtonElement>('[data-person="alice@example.com"]')!.click();
+    root.querySelector<HTMLButtonElement>('[data-marker="blocked"]')!.click();
+    root.querySelector<HTMLButtonElement>('[data-activity="created"]')!.click();
+    root.querySelector<HTMLButtonElement>(".awesomeado-area-filter__trigger")!.click();
+    const lane = root.querySelector<HTMLInputElement>(
+      '.awesomeado-area-filter input[type="checkbox"]',
+    )!;
+    lane.checked = true;
+    lane.dispatchEvent(new Event("change"));
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+
+    root.querySelector<HTMLButtonElement>(".awesomeado-sprint__clear-filters")!.click();
+
+    expect(cardTitles(root)).toEqual(["Queued", "Unowned", "Active blocked"]);
+    expect(root.querySelector('[data-person="__unassigned__"]')?.getAttribute("aria-pressed")).toBe(
+      "false",
+    );
+    expect(root.querySelector('[data-marker="blocked"]')?.getAttribute("aria-pressed")).toBe(
+      "false",
+    );
+    expect(root.querySelector('[data-activity="created"]')?.getAttribute("aria-pressed")).toBe(
+      "false",
+    );
+    expect(
+      root.querySelector(".awesomeado-area-filter__trigger")?.getAttribute("aria-pressed"),
+    ).toBe("false");
+    expect(readSprintUrlPreferences(window.location.search).assignedTo).toEqual([]);
+    expect(save).toHaveBeenLastCalledWith({
+      "Project\\Sprint 1": expect.objectContaining({ areaPaths: [] }),
+    });
+  });
+});
+
+describe("Sprint View Lane filters", () => {
   it("filters the queue from the Lane full-path selector", async () => {
     const roots = [item(1, "Platform item"), item(2, "Apps item", { areaPath: "Project\\Apps" })];
     const root = await render({

@@ -67,6 +67,9 @@ boards that disagree about the same query.
   modestly lifted toward the active foreground on dark surfaces, and `null` when unset.
 - `workItemTypeTextColor(color)` — the display color where it paints TEXT, falling back to
   `var(--text-primary-color)` so an uncolored type stays readable.
+- `workItemBoardColumnOrdinal(item, type, boardColumns)` — maps the item's ADO state through every
+  state configured for its work-item type and returns the matching extension board-column position,
+  or `-1` when no mapping exists.
 - `primaryWorkTypes(types)` — the types the team marked as independently trackable delivery.
 - `primaryWorkWithDescendants(types)` — primary work plus everything configured beneath it: the work
   that counts toward a person's load. A story's tasks are the same commitment seen closer up, so
@@ -436,7 +439,8 @@ board's filters and the tagging commands all share one interpretation of the fie
   rev when the re-parent patch ran, `reparented` whether the hierarchy link actually changed (reported
   on failure too, so a caller never keeps showing a parent ADO has already moved the item away from),
   `stateChanged` whether the optional state patch landed before a later rank failure, and `ranks`
-  every rank written directly when ADO refused to order the item.
+  every rank written directly when ADO refused to order the item or accepted it without placing the
+  item between the requested neighbours.
 - `IWorkItemReorderWriter` — moves a work item within or between parents. Kept separate from
   `IWorkItemFieldWriter` (Interface Segregation): a re-parent changes the item's **links** and its
   rank lives behind a team-scoped backlog endpoint, so neither is a field patch, and a consumer that
@@ -519,10 +523,13 @@ with no rank yet — or one nested under a parent of its own category, which Azu
 at all — gets `TF400486` every single time, so retrying is pointless and writing the rank is the only
 way the drop can stick.
 
-- `applyRankFallback({ siblingIds, movedId, readRanks, writeRanks })` — the whole operation: read the
-  level's current ranks, work out what to write, write it, and report `{ ok, order?, ranks?,
+- `applyRankFallback({ siblingIds, movedId, acceptCurrentPlacement?, readRanks, writeRanks })` — the
+  whole operation: read the level's current ranks, work out what to write, write it, and report `{ ok, order?, ranks?,
 reseeded?, error? }`. The two IO steps are **injected** because the real calls must run in the ADO
-  tab's MAIN world; that keeps every decision here unit-testable.
+  tab's MAIN world; that keeps every decision here unit-testable. Accepted endpoint responses use
+  `acceptCurrentPlacement` to keep any rank already between the requested neighbours and directly
+  correct one that is not. An existing neighbour with no rank forces a whole-level renumber, because
+  treating it like an absent boundary would leave it sorted at the end.
 - `planRankWrites(siblingIds, rankById, movedId)` — the arithmetic on its own: the midpoint of the
   neighbours' gap when there is one, a full `RANK_SPACING` step past the only neighbour at either end,
   or a whole-level renumber (anchored to the level's lowest existing rank) when nothing fits. `null`
@@ -612,11 +619,12 @@ timestamp each.
 ### `IInterruptAcceptanceReader.ts` + `interruptAcceptance.ts`
 
 Resolves whether each currently Interrupt-tagged item was accepted during its **current** tagged
-lifetime. `isInterruptAccepted` requires a configured acceptance token in Discussion at or after the
-latest update that added the configured Interrupt tag; equality is valid because tagging as accepted
-may write both in one revision. Failed items are returned separately and never treated as
-unaccepted. `fetchInterruptAcceptance.ts` builds the sender-project-scoped, `$skip`-paged work-item
-updates URL plus the newest-first Discussion URL and owns request/page/marker length guards.
+lifetime. `isInterruptAccepted` requires a Discussion note beginning with the configured acceptance
+token at or after the latest update that added the configured Interrupt tag; equality is valid
+because tagging as accepted may write both in one revision. Failed items are returned separately and
+never treated as unaccepted. `fetchInterruptAcceptance.ts` builds the sender-project-scoped,
+`$skip`-paged work-item updates URL plus the newest-first Discussion URL and owns
+request/page/marker length guards.
 
 ## Usage guidance
 
