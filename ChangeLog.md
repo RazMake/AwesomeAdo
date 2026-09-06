@@ -5,6 +5,8 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ## Next Version
 
+## 0.13
+
 ### New Features
 
 - All Projects Catalog can **Sync projects to Favorites** from its title's right-click menu. The
