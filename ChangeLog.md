@@ -5,6 +5,8 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ## Next Version
 
+## 0.14
+
 ### New Features
 
 - All Projects Catalog rows with a query now offer **Clear project query**. It deletes the query
