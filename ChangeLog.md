@@ -5,6 +5,18 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ## Next Version
 
+### New Features
+
+- All Projects Catalog rows with a query now offer **Clear project query**. It deletes the query
+  before removing its link from the item, leaving the link intact if deletion fails. Progress and
+  failures stay visible, and query links with trailing slashes are correctly cleared.
+
+### Bug Fixes
+
+- **Sync projects to Favorites** now includes linked queries at every hierarchy level selected by
+  the active tag filter, including collapsed branches, and skips items without queries. The
+  **All Projects Catalog View** Favorite preserves the exact current URL, including tag filters.
+
 ## 0.13
 
 ### New Features

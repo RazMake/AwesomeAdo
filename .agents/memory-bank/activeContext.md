@@ -32,6 +32,11 @@ AwesomeADO is feature-complete for its current scope:
   bottom-left-to-top-right diagonal in the selected outline color.
 - Options manages appearance, Azure DevOps configuration, query bindings, file transfer, team
   configuration sharing, shared queries, and device-local diagnostics.
+- Catalog Favorites traverses every tag-filtered hierarchy level in display order, including
+  collapsed branches, skips unlinked items, and appends the exact current catalog URL. Linked rows
+  offer Clear project query; the removal service deletes before unlinking and retains links on
+  deletion failure. Clear-query progress/errors remain visible; hyperlink matching ignores trailing
+  slashes and casing while the unlink guard uses the exact stored URL.
 - All Projects Catalog syncs filtered project query links and a final filtered-catalog link into a
   personal Favorites destination below the browser bar. The binding editor autocompletes folders;
   `settings.queryFavoritesPaths` follows native browser sync and full file export/import, never ADO

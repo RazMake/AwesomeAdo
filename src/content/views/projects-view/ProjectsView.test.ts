@@ -796,7 +796,7 @@ describe("projectsView - catalog menu", () => {
 });
 
 describe("projectsView - Favorites integration", () => {
-  it("syncs only filtered top-level projects and appends the live filtered URL", async () => {
+  it("syncs linked queries at every filtered level and appends the exact live URL", async () => {
     const sync = vi.fn(async () => {});
     const projectUrl = "https://dev.azure.com/org/other/_queries/query/project-query";
     const root = await renderBoard(
@@ -805,7 +805,12 @@ describe("projectsView - Favorites integration", () => {
           catalogFavorites: { readPath: async () => "Work", sync, openSettings: vi.fn() },
           projectQueries: {
             readLinks: async () => ({
-              links: [{ workItemId: 1, queryId: "project-query", url: projectUrl, managed: false }],
+              links: [1, 3, 4, 5].map((workItemId) => ({
+                workItemId,
+                queryId: `query-${workItemId}`,
+                url: `${projectUrl}-${workItemId}`,
+                managed: false,
+              })),
               error: null,
             }),
             create: async () => ({ ok: true }),
@@ -820,7 +825,8 @@ describe("projectsView - Favorites integration", () => {
     menuCommand("Sync projects to Favorites").click();
     await vi.waitFor(() => expect(sync).toHaveBeenCalledOnce());
     expect(sync).toHaveBeenCalledWith("query-1", "Work", [
-      { title: "Payments", url: projectUrl },
+      { title: "Payments", url: `${projectUrl}-1` },
+      { title: "Retry on decline", url: `${projectUrl}-3` },
       { title: "All Projects Catalog View", url: window.location.href },
     ]);
     expect(readProjectsUrlTagCondition(window.location.search).required).toEqual(new Set(["api"]));
@@ -1285,6 +1291,116 @@ function completionAnswer(label: string): HTMLButtonElement {
   return button;
 }
 
+describe("projectsView - clearing project queries", () => {
+  it.each([1, 2])(
+    "clears a linked item at hierarchy level %s without completing it",
+    async (workItemId) => {
+      let linked = true;
+      const remove = vi.fn(async () => {
+        linked = false;
+        return { ok: true, rev: 3 };
+      });
+      const unbind = vi.fn(async () => undefined);
+      const writeField = vi.fn(async () => ({ ok: true }));
+      const root = await renderBoard(
+        createContext({
+          services: createServices({
+            writeField,
+            projectQueries: {
+              readLinks: async () => ({
+                links: linked
+                  ? [
+                      {
+                        workItemId,
+                        queryId: LINKED_QUERY_ID,
+                        url: LINKED_QUERY_URL,
+                        managed: false,
+                      },
+                    ]
+                  : [],
+                error: null,
+              }),
+              create: async () => ({ ok: true }),
+              remove,
+            },
+            queryBindings: { bind: async () => undefined, unbind },
+          }),
+        }),
+      );
+      root.querySelector<HTMLButtonElement>(".awesomeado-projects__expand-all")!.click();
+      const title = workItemId === 1 ? "Payments" : "Card capture";
+      openMenu(projectTitle(root, title));
+      menuCommand("Clear project query").click();
+      await vi.waitFor(() => expect(unbind).toHaveBeenCalledWith(LINKED_QUERY_ID));
+      expect(remove).toHaveBeenCalledWith({
+        projectId: workItemId,
+        queryId: LINKED_QUERY_ID,
+        rev: 1,
+      });
+      expect(writeField).not.toHaveBeenCalled();
+      await vi.waitFor(() => {
+        expect(openMenu(projectTitle(root, title)).map(commandLabel)).not.toContain(
+          "Clear project query",
+        );
+      });
+    },
+  );
+});
+
+describe("projectsView - query clearing failures", () => {
+  it("retains the binding and linked-row command when removal fails", async () => {
+    const remove = vi.fn(async () => ({ ok: false, error: "HTTP 403" }));
+    const unbind = vi.fn(async () => undefined);
+    const { root } = await renderLinkedBoard({
+      projectQueries: {
+        readLinks: async () => ({
+          links: [
+            { workItemId: 1, queryId: LINKED_QUERY_ID, url: LINKED_QUERY_URL, managed: true },
+          ],
+          error: null,
+        }),
+        create: async () => ({ ok: true }),
+        remove,
+      },
+      queryBindings: { bind: async () => undefined, unbind },
+    });
+    openMenu(projectTitle(root, "Payments"));
+    menuCommand("Clear project query").click();
+    await vi.waitFor(() => expect(remove).toHaveBeenCalledOnce());
+    await vi.waitFor(() =>
+      expect(root.querySelector(".awesomeado-project-query-status")?.textContent).toBe(
+        "Could not clear project query: HTTP 403",
+      ),
+    );
+    expect(root.querySelector(".awesomeado-project-query-status")?.getAttribute("role")).toBe(
+      "alert",
+    );
+    expect(unbind).not.toHaveBeenCalled();
+    expect(openMenu(projectTitle(root, "Payments")).map(commandLabel)).toContain(
+      "Clear project query",
+    );
+  });
+
+  it("logs a rejected binding cleanup", async () => {
+    const error = new Error("storage unavailable");
+    const logger = { info: vi.fn(), error: vi.fn() };
+    const { root } = await renderLinkedBoard({
+      logger,
+      queryBindings: {
+        bind: async () => undefined,
+        unbind: async () => {
+          throw error;
+        },
+      },
+    });
+    openMenu(projectTitle(root, "Payments"));
+    menuCommand("Clear project query").click();
+    await vi.waitFor(() =>
+      expect(logger.error).toHaveBeenCalledWith("Could not clear project query for item 1", error),
+    );
+  });
+});
+
 describe("projectsView - project lifecycle", () => {
   it("disables creating a query for a project that already has one", async () => {
     const { root } = await renderLinkedBoard();
@@ -1292,10 +1408,12 @@ describe("projectsView - project lifecycle", () => {
     openMenu(projectTitle(root, "Payments"));
 
     expect(menuCommand("Create Project Query").disabled).toBe(true);
+    expect(menuCommand("Clear project query").disabled).toBe(false);
     expect(menuCommand("Create Project Query").title).toContain("already has a tracking query");
     // A project with no query still gets the offer.
-    openMenu(projectTitle(root, "Reporting"));
+    const unlinkedCommands = openMenu(projectTitle(root, "Reporting"));
     expect(menuCommand("Create Project Query").disabled).toBe(false);
+    expect(unlinkedCommands.map(commandLabel)).not.toContain("Clear project query");
   });
 
   it("creates the query in the catalog's own folder and binds it to Project Tracking", async () => {

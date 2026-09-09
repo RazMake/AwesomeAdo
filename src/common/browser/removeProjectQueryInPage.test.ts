@@ -51,23 +51,23 @@ function expandedItem(rev = 9): { rev: number; relations: unknown[] } {
 }
 
 describe("removeProjectQueryInPage", () => {
-  it("locates the link at read time, removes it, then deletes the query", async () => {
+  it("locates the link, deletes the query, then removes the link", async () => {
     const fetchMock = sequence(
       response(200, expandedItem()),
-      response(200, { rev: 10 }),
       response(204, null),
+      response(200, { rev: 10 }),
     );
 
     const outcome = await removeProjectQueryInPage(CONFIG);
 
-    const [, unlinkInit] = callAt(fetchMock, 1);
+    const [, unlinkInit] = callAt(fetchMock, 2);
     // The index comes from the read that just happened, and the URL test is what makes it safe.
     expect(JSON.parse(unlinkInit.body as string)).toEqual([
       { op: "test", path: "/rev", value: 9 },
       { op: "test", path: "/relations/1/url", value: RELATION_URL },
       { op: "remove", path: "/relations/1" },
     ]);
-    expect(callAt(fetchMock, 2)[1].method).toBe("DELETE");
+    expect(callAt(fetchMock, 1)[1].method).toBe("DELETE");
     expect(outcome).toEqual({ ok: true, rev: 10 });
   });
 
@@ -84,35 +84,71 @@ describe("removeProjectQueryInPage", () => {
     };
     const fetchMock = sequence(
       response(200, upper),
-      response(200, { rev: 10 }),
       response(204, null),
+      response(200, { rev: 10 }),
     );
 
     expect((await removeProjectQueryInPage(CONFIG)).ok).toBe(true);
     expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(JSON.parse(callAt(fetchMock, 2)[1].body as string)[1].value).toBe(
+      RELATION_URL.toUpperCase(),
+    );
   });
 
   it("deletes the query anyway when nothing links to it", async () => {
     const fetchMock = sequence(response(200, { rev: 9, relations: [] }), response(204, null));
 
-    expect(await removeProjectQueryInPage(CONFIG)).toEqual({ ok: true, rev: undefined });
+    expect(await removeProjectQueryInPage(CONFIG)).toEqual({ ok: true });
     // No unlink patch: there was no link, so a query nobody points at is still deleted.
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(callAt(fetchMock, 1)[1].method).toBe("DELETE");
   });
 
-  it("leaves the query alone when the unlink is refused, so a retry starts from here", async () => {
-    const fetchMock = sequence(response(200, expandedItem()), response(412, null));
+  it("reports an unlink refusal after deleting the query", async () => {
+    const fetchMock = sequence(
+      response(200, expandedItem()),
+      response(204, null),
+      response(412, null),
+    );
 
     const outcome = await removeProjectQueryInPage(CONFIG);
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(outcome.ok).toBe(false);
-    expect(outcome.error).toContain("could not unlink");
+    expect(outcome.error).toContain("could not be unlinked");
   });
 });
 
 describe("removeProjectQueryInPage outcomes", () => {
+  it("unlinks a query URL with a trailing slash using its exact stored value", async () => {
+    const url = RELATION_URL + "/";
+    const fetchMock = sequence(
+      response(200, { rev: 9, relations: [{ rel: "Hyperlink", url }] }),
+      response(404, null),
+      response(200, { rev: 10 }),
+    );
+    expect(await removeProjectQueryInPage(CONFIG)).toEqual({ ok: true, rev: 10 });
+    expect(JSON.parse(callAt(fetchMock, 2)[1].body as string)[1]).toEqual({
+      op: "test",
+      path: "/relations/0/url",
+      value: url,
+    });
+  });
+
+  it("removes an explicitly selected query link even when it was added outside AwesomeADO", async () => {
+    const fetchMock = sequence(
+      response(200, { rev: 9, relations: [{ rel: "Hyperlink", url: RELATION_URL }] }),
+      response(204, null),
+      response(200, { rev: 10 }),
+    );
+    expect(await removeProjectQueryInPage(CONFIG)).toEqual({ ok: true, rev: 10 });
+    expect(callAt(fetchMock, 1)[1].method).toBe("DELETE");
+    expect(JSON.parse(callAt(fetchMock, 2)[1].body as string)[2]).toEqual({
+      op: "remove",
+      path: "/relations/0",
+    });
+  });
+
   it("treats an already-deleted query as the state the command was asked to reach", async () => {
     sequence(response(200, { rev: 9, relations: [] }), {
       ok: false,
@@ -121,9 +157,11 @@ describe("removeProjectQueryInPage outcomes", () => {
 
     expect((await removeProjectQueryInPage(CONFIG)).ok).toBe(true);
   });
+});
 
-  it("says the link is gone but the query is not, so the user is not told it all worked", async () => {
-    sequence(response(200, expandedItem()), response(200, { rev: 10 }), {
+describe("removeProjectQueryInPage failures", () => {
+  it("retains the link when query deletion fails", async () => {
+    const fetchMock = sequence(response(200, expandedItem()), {
       ok: false,
       status: 403,
     } as unknown as Response);
@@ -132,21 +170,22 @@ describe("removeProjectQueryInPage outcomes", () => {
 
     expect(outcome).toEqual({
       ok: false,
-      rev: 10,
-      error: "the query was unlinked but not deleted: HTTP 403",
+      error: "could not delete the query; its link was retained: HTTP 403",
     });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(callAt(fetchMock, 1)[1].method).toBe("DELETE");
   });
 
   it("falls back to the caller's revision when the expanded read reports none", async () => {
     const fetchMock = sequence(
       response(200, { relations: expandedItem().relations }),
-      response(200, { rev: 10 }),
       response(204, null),
+      response(200, { rev: 10 }),
     );
 
     await removeProjectQueryInPage(CONFIG);
 
-    expect(JSON.parse(callAt(fetchMock, 1)[1].body as string)[0]).toEqual({
+    expect(JSON.parse(callAt(fetchMock, 2)[1].body as string)[0]).toEqual({
       op: "test",
       path: "/rev",
       value: 4,
@@ -163,14 +202,17 @@ describe("removeProjectQueryInPage outcomes", () => {
     expect(outcome.error).toContain("could not read the project's links");
   });
 
-  it("still deletes the query when the unlink response is not JSON", async () => {
+  it("reports an unreadable revision after deletion and unlinking", async () => {
     const brokenJson = {
       ok: true,
       status: 200,
       json: () => Promise.reject(new Error("boom")),
     } as unknown as Response;
-    sequence(response(200, expandedItem()), brokenJson, response(204, null));
+    sequence(response(200, expandedItem()), response(204, null), brokenJson);
 
-    expect(await removeProjectQueryInPage(CONFIG)).toEqual({ ok: true, rev: undefined });
+    expect(await removeProjectQueryInPage(CONFIG)).toEqual({
+      ok: false,
+      error: "Error: boom",
+    });
   });
 });

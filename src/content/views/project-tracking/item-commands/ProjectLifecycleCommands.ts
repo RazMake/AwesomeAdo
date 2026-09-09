@@ -65,6 +65,12 @@ export function buildProjectLifecycleCommands(
   const commands: ItemContextMenuCommand[] = [];
   if (options.offerCreate) {
     commands.push(createProjectQueryCommand(options));
+    if (options.queryLink !== null) {
+      commands.push({
+        label: "Clear project query",
+        panel: () => clearProjectQueryPanel(options),
+      });
+    }
   }
   if (options.offerComplete) {
     commands.push({ ...markCompletedCommand(options), separatorBefore: commands.length === 0 });
@@ -258,11 +264,43 @@ async function completeProject(
   options.onReload();
 }
 
-/** Unlink and delete the tracking query, then forget the binding that pointed at it. */
+function clearProjectQueryPanel(options: ProjectLifecycleOptions): HTMLElement {
+  const status = options.doc.createElement("div");
+  status.className = "awesomeado-project-query-status";
+  status.setAttribute("role", "status");
+  status.textContent = "Deleting project query...";
+  void clearProjectQuery(options, status);
+  return panelFor(options.doc, options.item, { withTitle: true, widthPx: CONFIRM_WIDTH_PX }, [
+    status,
+  ]);
+}
+
+async function clearProjectQuery(
+  options: ProjectLifecycleOptions,
+  status: HTMLElement,
+): Promise<void> {
+  const link = options.queryLink;
+  if (link === null) return;
+  try {
+    await deleteProjectQuery(options, link, true);
+    status.textContent = "Project query cleared.";
+    options.onReload();
+  } catch (error) {
+    status.setAttribute("role", "alert");
+    status.textContent = `Could not clear project query: ${error instanceof Error ? error.message : String(error)}`;
+    options.services.logger.error(
+      `Could not clear project query for item ${options.item.id}`,
+      error,
+    );
+  }
+}
+
+/** Delete and unlink the tracking query, then forget the binding that pointed at it. */
 async function deleteProjectQuery(
   options: ProjectLifecycleOptions,
   link: ProjectQueryLink,
-): Promise<void> {
+  reportFailure = false,
+): Promise<boolean> {
   const { item, services } = options;
   const removed = await services.projectQueries.remove({
     projectId: item.id,
@@ -270,7 +308,10 @@ async function deleteProjectQuery(
     // The item's own current rev, not the one the link was read at: the completion above advanced it.
     rev: item.rev,
   });
-  if (!removed.ok) return;
+  if (!removed.ok) {
+    if (reportFailure) throw new Error(removed.error ?? "Azure DevOps refused query removal.");
+    return false;
+  }
   if (removed.rev !== undefined) {
     item.rev = removed.rev;
   }
@@ -278,4 +319,5 @@ async function deleteProjectQuery(
   // without its enhanced view if the delete then failed — the harder state to notice and repair.
   await services.queryBindings.unbind(link.queryId);
   services.logger.info(`Removed the AwesomeADO binding for deleted query ${link.queryId}.`);
+  return true;
 }

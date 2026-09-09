@@ -8,7 +8,7 @@ export interface RemoveProjectQueryConfig {
   rev: number;
   /** The exact hyperlink URL to remove — the query's own web address. */
   relationUrl: string;
-  /** Stamped on links this extension created; a link without it belongs to somebody else. */
+  /** Stamped on links this extension created. */
   linkComment: string;
   /** The `_apis/wit/queries/{id}` endpoint the query itself is deleted through. */
   deleteQueryUrl: string;
@@ -22,7 +22,7 @@ export interface RemoveProjectQueryOutcome {
 }
 
 /**
- * Unlink a project's tracking query and delete the query itself, from inside the ADO page's MAIN
+ * Delete a project's tracking query and then unlink it, from inside the ADO page's MAIN
  * world.
  *
  * WHY this exists / why it must stay self-contained: the extension's content script runs in an
@@ -45,55 +45,62 @@ export function removeProjectQueryInPage(
 ): Promise<RemoveProjectQueryOutcome> {
   const linkIndexOf = (body: unknown): number => {
     const relations = (body as { relations?: unknown } | null)?.relations;
-    const list = Array.isArray(relations) ? relations : [];
-    for (let position = 0; position < list.length; position += 1) {
-      const relation = list[position] as {
-        url?: unknown;
-        attributes?: { comment?: unknown } | null;
-      } | null;
-      const url = relation?.url;
-      const matches =
-        typeof url === "string" && url.toLowerCase() === config.relationUrl.toLowerCase();
-      if (matches && relation?.attributes?.comment === config.linkComment) {
-        return position;
-      }
-    }
-    return -1;
+    const list: unknown[] = Array.isArray(relations) ? relations : [];
+    return list.findIndex((candidate) => {
+      const relation = candidate as { rel?: unknown; url?: unknown } | null;
+      return (
+        relation?.rel === "Hyperlink" &&
+        typeof relation.url === "string" &&
+        relation.url.replace(/\/+$/, "").toLowerCase() ===
+          config.relationUrl.replace(/\/+$/, "").toLowerCase()
+      );
+    });
   };
 
-  const deleteQuery = (rev: number | undefined): Promise<RemoveProjectQueryOutcome> =>
+  const deleteQuery = (
+    index: number,
+    rev: number,
+    relationUrl: string,
+  ): Promise<RemoveProjectQueryOutcome> =>
     fetch(config.deleteQueryUrl, { method: "DELETE", credentials: "include" }).then((response) =>
       // A query somebody already deleted is the state this command was asked to reach, so 404 is a
       // success rather than something to make the user retry.
       response.ok || response.status === 404
-        ? { ok: true, rev: rev }
+        ? index === -1
+          ? { ok: true }
+          : unlink(index, rev, relationUrl)
         : {
             ok: false,
-            rev: rev,
-            error: "the query was unlinked but not deleted: HTTP " + String(response.status),
+            error:
+              "could not delete the query; its link was retained: HTTP " + String(response.status),
           },
     );
 
-  const unlink = (index: number, rev: number): Promise<RemoveProjectQueryOutcome> =>
+  const unlink = (
+    index: number,
+    rev: number,
+    relationUrl: string,
+  ): Promise<RemoveProjectQueryOutcome> =>
     fetch(config.workItemUrl, {
       method: "PATCH",
       credentials: "include",
       headers: { "Content-Type": "application/json-patch+json", Accept: "application/json" },
       body: JSON.stringify([
         { op: "test", path: "/rev", value: rev },
-        { op: "test", path: "/relations/" + String(index) + "/url", value: config.relationUrl },
+        { op: "test", path: "/relations/" + String(index) + "/url", value: relationUrl },
         { op: "remove", path: "/relations/" + String(index) },
       ]),
     }).then((response) => {
       if (!response.ok) {
-        // The query is left alone on purpose: it is still reachable from the project, so a retry
-        // finds exactly the state this attempt started from.
-        return { ok: false, error: "could not unlink the query: HTTP " + String(response.status) };
+        return {
+          ok: false,
+          error: "the query was deleted but could not be unlinked: HTTP " + String(response.status),
+        };
       }
-      return response.json().then(
-        (body: unknown) => deleteQuery((body as { rev?: unknown }).rev as number | undefined),
-        () => deleteQuery(undefined),
-      );
+      return response.json().then((body: unknown) => ({
+        ok: true,
+        rev: (body as { rev?: number }).rev,
+      }));
     });
 
   return fetch(config.relationsUrl, {
@@ -110,11 +117,13 @@ export function removeProjectQueryInPage(
     .then((body: unknown) => {
       const index = linkIndexOf(body);
       const rev = (body as { rev?: unknown } | null)?.rev;
+      const relationUrl =
+        index === -1
+          ? config.relationUrl
+          : (body as { relations: { url: string }[] }).relations[index]!.url;
       // A query nobody linked is still a query the user asked to delete, so a missing link is a step
       // to skip rather than a failure to report.
-      return index === -1
-        ? deleteQuery(undefined)
-        : unlink(index, typeof rev === "number" ? rev : config.rev);
+      return deleteQuery(index, typeof rev === "number" ? rev : config.rev, relationUrl);
     })
     .catch((error: unknown): RemoveProjectQueryOutcome => ({ ok: false, error: String(error) }));
 }

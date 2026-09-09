@@ -67,9 +67,9 @@ view answers "what is going on across all of them?" for a query that returns **m
 ## The page URL is the board's shareable filter
 
 The title's **Sync projects to Favorites** command replaces the configured destination with one
-named query link per currently visible top-level project, in displayed order, plus **All Projects
-Catalog View** at the end using the current filtered URL. Projects without queries are listed in a
-Continue/Cancel warning; Continue omits them. A missing path offers Set/Cancel, with Set opening this
+named query link per item kept by the active tag filter at every hierarchy level, in displayed
+order, including collapsed branches, plus **All Projects Catalog View** at the end using the exact
+current filtered URL. Items without queries are omitted. A missing path offers Set/Cancel, with Set opening this
 query's binding settings. Failed query-link reads refuse syncing rather than treating every project
 as having no query. The destination's previous Favorites and subfolders are removed on sync.
 
@@ -77,6 +77,11 @@ The path is a separate personal setting shown in the binding form, not one of th
 `projectsViewType` properties. Inject `services.catalogFavorites` to enable the command.
 `renderProjectsFavoritesPanel` accepts the filtered project snapshot, query-link availability,
 catalog link, Favorites service, logger, and close callback.
+
+Rows with an associated query offer **Clear project query** in their context menu. The query is
+deleted first; only a successful deletion (or an already-missing query) permits removal of its link.
+Successful cleanup removes the query binding and refreshes the catalog, without completing the item.
+The command keeps progress and any failure visible in its panel.
 
 A link can name the tag condition the catalog opens on:
 `.../_queries/query/{query-id}?tags=platform,api&notTags=docs&tagMatch=all`. `tags` requires,

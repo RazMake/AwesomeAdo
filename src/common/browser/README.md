@@ -837,9 +837,9 @@ unit test can reach and each operation stands alone:
   tried in order, because ADO answers a duplicate query name with `400`; any other status is reported
   rather than retried under another name. The id is appended to `webUrlPrefix` / `deleteUrlPrefix`
   here, because the page world is the only place a freshly created query's id exists.
-- `removeProjectQueryInPage(config)` GETs the item with `$expand=relations`, finds the stamped link
-  whose URL matches, PATCHes it away (guarded by the revision **and** the link's own URL), then
-  DELETEs the query. The index is resolved here rather than supplied, because JSON Patch addresses a
+- `removeProjectQueryInPage(config)` GETs the item with `$expand=relations`, finds the hyperlink
+  whose URL matches, DELETEs the query, then PATCHes the link away (guarded by the revision **and**
+  the exact stored URL). A failed DELETE retains the link. The index is resolved here rather than supplied, because JSON Patch addresses a
   relation positionally and an index read minutes ago on a board is exactly what a concurrent edit
   invalidates. A project with no link still has its query deleted; a `404` on the delete is success,
   since that is the state the command was asked to reach.

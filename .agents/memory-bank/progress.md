@@ -68,14 +68,18 @@ This is a flattened snapshot of what exists now, not a build log.
   folder field indicates while its three-round autocomplete vocabulary is loading and exposes
   clipped full paths on hover. New projects receive all initial fields in one patch. Ships as its
   own on-demand ESM renderer.
-- **Catalog Favorites**: title-menu sync exports only filtered top-level projects with tracking
-  queries, in display order, followed by the catalog URL with its filters. Missing queries offer
-  Continue/Cancel; missing destinations offer Set/Cancel with a specific-binding deep link. Personal
+- **Catalog Favorites**: title-menu sync exports linked queries across every tag-filtered hierarchy
+  level in display order, including collapsed branches, followed by the exact current catalog URL.
+  Unlinked items are skipped; missing destinations offer Set/Cancel with a specific-binding deep link. Personal
   path autocomplete reads the browser's folder tree and stays editable on read-only shared bindings.
   The separate browser-synced setting participates in full file transfer but never ADO sharing.
   Background validation rechecks the query and destination before replacing Favorites. Authenticated
   Edge validation confirmed autocomplete, Set routing, exact titles/URLs, stale-content removal,
   repeated-sync uniqueness, and the final filtered link; the temporary folder and setting were removed.
+  Linked catalog rows also offer **Clear project query** without a state change. Removal deletes
+  the query before unlinking, retains the link on DELETE failure, then drops the binding and reloads.
+  The expanded traversal and clear action have deterministic regression coverage; authenticated
+  browser validation of these follow-up changes remains pending.
 - **Sprint View** (`content/views/sprint`): accepts flat or tree queries; loads the selected
   team's complete paged member roster, recursively expanding direct and nested groups, before
   executing an offset-adjusted copy of the original WIQL;

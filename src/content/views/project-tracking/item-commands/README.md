@@ -64,6 +64,8 @@ board-specific destinations:
   fields. Each is offered independently (`offerCreate` / `offerComplete`): the All Projects Catalog
   View offers **Create Project Query** on every row and **Mark completed** on its projects, while
   this view offers only **Mark completed** on its own title — the board already IS the query.
+  Catalog rows that already have a query also offer **Clear project query**, which deletes the
+  query before unlinking it and removing its binding, without changing the item's state.
 - `buildNewChildCommand(label, options)` (`NewChildCommands.ts`) — the one command that **creates**
   something: **Add new milestone/phase** on the board's title (and on a project row of the All
   Projects Catalog View), **New work identified** on a row whose

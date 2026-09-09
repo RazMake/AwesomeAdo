@@ -209,7 +209,8 @@ still sync across the user's own devices and still travel in a file export (ADR-
 `settings.queryFavoritesPaths` maps catalog query IDs to personal destinations beneath Favorites bar /
 Bookmarks bar. It deliberately lives outside binding properties, which team pulls replace wholesale.
 The binding form's independent `FavoritesPathEditor` writes through `teamSettings.personal`, including
-for read-only shared queries. The view passes the filtered, ordered project snapshot and current URL
+for read-only shared queries. The view passes linked items from a depth-first traversal of all
+tag-filtered hierarchy levels (independent of expansion), in sibling display order, and the exact current URL
 to `ProjectsFavoritesPanel`; the background `CatalogFavoritesHandler` rechecks the sender query and
 stored destination before `ChromeFavorites` serializes replacement. Empty paths cannot clear the bar,
 ambiguous or managed folders fail closed, and link creation precedes removal of previous contents.

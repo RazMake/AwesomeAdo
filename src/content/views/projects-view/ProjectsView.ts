@@ -47,7 +47,7 @@ import { panelFor } from "../project-tracking/item-commands/itemCommandCore";
 import { renderNewProjectRow } from "./NewProjectRow";
 import { renderNewWorkItemPanel, type NewWorkItemValues } from "./NewWorkItemPanel";
 import { buildProjectCommands } from "./ProjectCommands";
-import { renderProjectRow, type ProjectRowContext } from "./ProjectRow";
+import { renderProjectRow, visibleChildrenOf, type ProjectRowContext } from "./ProjectRow";
 import { renderProjectsFavoritesPanel } from "./ProjectsFavoritesPanel";
 import { renderProjectsHeader, type ProjectsHeaderHandle } from "./ProjectsHeader";
 import { buildProjectsTitleCommands } from "./ProjectsTitleMenu";
@@ -426,6 +426,19 @@ function projectMenuTarget(
   };
 }
 
+function favoriteProjects(board: Board, data: LoadedProjects) {
+  const rows = createRowContext(board, data);
+  const collect = (items: readonly TrackedWorkItem[]): TrackedWorkItem[] =>
+    items.flatMap((item) => [item, ...collect(visibleChildrenOf(item, rows))]);
+  return collect(visibleProjects(data, rows))
+    .filter((item) => data.queryLinks.has(item.id))
+    .map((item) => ({
+      id: item.id,
+      title: item.title,
+      url: data.queryLinks.get(item.id)!.url,
+    }));
+}
+
 /** The catalog-wide menu opened from the view's title. */
 function titleMenuTarget(board: Board, data: LoadedProjects): ItemContextMenuTarget {
   const { context, session } = board;
@@ -442,11 +455,7 @@ function titleMenuTarget(board: Board, data: LoadedProjects): ItemContextMenuTar
           : (close) =>
               renderProjectsFavoritesPanel(context.doc, {
                 queryId: context.queryId,
-                projects: visibleProjects(data, createRowContext(board, data)).map((project) => ({
-                  id: project.id,
-                  title: project.title,
-                  url: data.queryLinks.get(project.id)?.url ?? null,
-                })),
+                projects: favoriteProjects(board, data),
                 queriesKnown: data.queryLinksKnown,
                 catalog: { title: projectsViewType.label, url: context.doc.location?.href ?? "" },
                 favorites: context.services.catalogFavorites!,
