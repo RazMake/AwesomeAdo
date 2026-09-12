@@ -82,6 +82,26 @@ async function setup(initialSource: number | null = 42) {
   };
 }
 
+describe("configuration query startup", () => {
+  it("shows pending configurations before Azure DevOps is reachable", async () => {
+    const harness = await setup();
+    harness.controller.setAdoReachable(false);
+    harness.notifySettings(QUERY_ID);
+    expect(harness.reader.readQuery).not.toHaveBeenCalled();
+    expect(harness.table.getAttribute("aria-busy")).toBe("true");
+    expect(harness.elements.items.textContent).toBe(
+      "Waiting for Azure DevOps to load configurations…",
+    );
+    harness.notify(42);
+    expect(harness.elements.items.textContent).not.toContain("Connected item");
+    harness.controller.setAdoReachable(true);
+    expect(harness.elements.items.textContent).toBe("Loading configurations…");
+    await Promise.resolve();
+    expect(harness.table.getAttribute("aria-busy")).toBe("false");
+    expect(harness.elements.items.textContent).toContain(candidate.title);
+  });
+});
+
 describe("configuration query picker", () => {
   it("shows an unmistakable busy row instead of the connected fallback while loading", async () => {
     const harness = await setup();

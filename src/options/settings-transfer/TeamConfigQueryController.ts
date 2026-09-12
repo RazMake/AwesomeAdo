@@ -84,7 +84,7 @@ export class TeamConfigQueryController {
   };
 
   async load(save = true): Promise<void> {
-    if (!this.reachable || this.switching || this.disposed) return;
+    if (this.switching || this.disposed) return;
     const request = ++this.request;
     const queryId = this.elements.queryId.value.trim();
     this.candidates = [];
@@ -94,6 +94,7 @@ export class TeamConfigQueryController {
       this.status("Enter a valid Azure DevOps query ID.", true);
       return;
     }
+    if (!this.reachable) return;
     await this.loadQuery(queryId, request, save);
   }
 
@@ -189,7 +190,9 @@ export class TeamConfigQueryController {
     spinner.className = "team-config-items__loading-spinner";
     spinner.setAttribute("aria-hidden", "true");
     const label = doc.createElement("strong");
-    label.textContent = "Loading configurations…";
+    label.textContent = this.reachable
+      ? "Loading configurations…"
+      : "Waiting for Azure DevOps to load configurations…";
     cell.append(spinner, label);
     row.append(cell);
     return row;

@@ -15,7 +15,8 @@ builds use the repository's `Major.Minor.Build` release versioning.
   their tooltips.
 - Configuration Sharing now has an **Advanced** query table showing up to ten configuration items
   before scrolling, ordered by newest modification first, with ID, name, modification date/time, and
-  last editor. A prominent loading row appears while configurations are being fetched, instead of
+  last editor. A prominent loading row appears while waiting for Azure DevOps and while
+  configurations are being fetched, instead of
   making the connected item look like the only result. The connected item has a highlighted active
   marker and bold name; selecting another row's muted marker switches connected browsers using the
   same browser sync account. The query ID is included in shared configurations and file

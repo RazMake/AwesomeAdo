@@ -55,7 +55,8 @@ AwesomeADO is feature-complete for its current scope:
   when absent from results, orders rows by newest modification first, and separates modification
   date/time from the last editor. The connected row has a highlighted Active marker and bold name;
   muted Not active markers switch the source. A full-width busy row replaces candidate rows while the
-  configuration query is loading.
+  configuration query is loading, including the initial wait for Azure DevOps reachability after
+  the saved query setting arrives.
 - Catalog Favorites traverses every tag-filtered hierarchy level in display order, including
   collapsed branches, skips unlinked items, and appends the exact current catalog URL. Linked rows
   offer Clear project query; the removal service deletes before unlinking and retains links on
