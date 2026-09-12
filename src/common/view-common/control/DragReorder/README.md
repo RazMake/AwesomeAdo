@@ -27,6 +27,10 @@ rejected move must leave the item visibly where it started.
   also provide their `dragSurface` and `onLeaveSurface`: drag events remain local while the pointer is
   inside that surface, then reaching a legal target outside it dismisses the popup without ending the
   drag.
+  Supply `childDestination: { type, siblingIds }` to also accept drops inside the item: `type` is
+  its configured default child type and `siblingIds` is its complete, ordered child list, even when
+  empty or hidden. The middle half of the row becomes the inside target; its top and bottom edges
+  retain before/after ordering. Omitting `childDestination` preserves the two-way row target.
 - **`PlannedMove`** — a resolved drop: `{ id, currentParentId, parentId, previousId, nextId,
 siblingIds, type? }`, handed to `onMove` for the caller to persist.
 
@@ -39,8 +43,11 @@ siblingIds, type? }`, handed to `onMove` for the caller to persist.
   hand in that case is derived from the level the user actually ended up with.
 - **`placementOf(id, siblingIds, parentId)`** — the placement an item already occupies, or null when
   it is not in the list.
+- **`DropSide`** — `"before"`, `"after"`, or `"inside"`. An inside drop uses the parent item as
+  both `targetId` and `targetParentId`, and that parent's children as `targetSiblingIds`.
 - **`resolveMove({...})`** — where a drop lands, or **null** when the drop is impossible or is a
-  no-op (dropped back onto its own slot). Pure, so the rules are testable without a DOM.
+  no-op (dropped back onto its own slot). Inside drops append after the full child list, including
+  an empty list. Pure, so the rules are testable without a DOM.
 
 ### `DropIndicator.ts`
 
@@ -76,6 +83,8 @@ accident.
 
 Hierarchy changes move one level at a time. Dropping a child between rows one level above promotes it
 under their parent; dropping a leaf among rows one level below demotes it under their parent at the
-exact targeted position. A source that still owns children cannot be demoted. Any changed parent also
+exact targeted position. Dropping onto the middle of a configured parent row appends the item inside
+it, even when empty or collapsed; the row itself is highlighted to identify the destination. A source
+that still owns children cannot be demoted. Any changed parent also
 requires the destination parent's configured default child type; without one, the drop is refused.
 A drop that reproduces the item's current placement is reported as no move at all.

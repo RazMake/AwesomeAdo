@@ -5,8 +5,8 @@ export interface MovePlacement {
   nextId: number;
 }
 
-/** Which side of the row under the pointer receives the insertion. */
-export type DropSide = "before" | "after";
+/** Where the row under the pointer receives the insertion. */
+export type DropSide = "before" | "after" | "inside";
 
 /** A resolved destination plus its complete post-drop sibling order. */
 export interface ResolvedMove extends MovePlacement {
@@ -42,8 +42,8 @@ export function resolveMove(options: {
   if (movedId === targetId) return null;
   const remaining = options.targetSiblingIds.filter((siblingId) => siblingId !== movedId);
   const targetIndex = remaining.indexOf(targetId);
-  if (targetIndex < 0) return null;
-  const insertAt = side === "before" ? targetIndex : targetIndex + 1;
+  if (side !== "inside" && targetIndex < 0) return null;
+  const insertAt = side === "inside" ? remaining.length : targetIndex + (side === "after" ? 1 : 0);
   const siblingIds = [...remaining];
   siblingIds.splice(insertAt, 0, movedId);
   const placement: ResolvedMove = {

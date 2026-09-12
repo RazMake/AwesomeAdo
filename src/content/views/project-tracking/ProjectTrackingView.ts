@@ -419,6 +419,7 @@ function createItemAssignee(
       : undefined,
   });
   chip.handle = control;
+  control.style.setProperty("--assigned-to-text-color", "var(--text-primary-color)");
   return control;
 }
 
@@ -442,6 +443,7 @@ interface TreeRenderOptions {
   /** How the items within each level are ordered, straight from the binding. */
   orderingPolicy: OrderingPolicy;
   showSprintPills: boolean;
+  selectedSprint: string | null;
   /** How every assignee chip on this pass offers people and persists a pick. */
   chip: AssigneeChipContext;
   /**
@@ -1607,14 +1609,14 @@ function createRowSprintPill(item: TrackedWorkItem, options: TreeRenderOptions):
   pill.setAttribute("aria-label", `Move from ${item.sprintName ?? "current sprint"}`);
   pill.title = "Move to another sprint";
   pill.textContent = item.sprintName;
-  // Deliberately the same neutral chip as the unassigned assignee control beside it. The popup's
-  // option colors carry time direction; the current value stays quiet behind the item title.
+  const highlighted = item.sprintName === options.selectedSprint;
   pill.style.cssText = [
     "display:inline-flex",
     "align-items:center",
     "vertical-align:middle",
     "background:var(--control-background-subtle)",
     "border:0",
+    highlighted ? "box-shadow:inset 0 0 0 1px var(--communication-foreground)" : "box-shadow:none",
     "border-radius:9px",
     "padding:1px 8px",
     "font-family:inherit",
@@ -1717,8 +1719,8 @@ function renderRow(
 } {
   const { doc, typeMap } = options;
   const childDepth = depth + 1;
-  const showsChildRows = item.children.some((child) =>
-    rendersAsTreeRow(child, options, childDepth),
+  const showsChildRows = item.children.some(
+    (child) => rendersAsTreeRow(child, options, childDepth) && options.visibleItemIds.has(child.id),
   );
 
   const row = doc.createElement("div");
@@ -1886,6 +1888,7 @@ function renderTree(
     );
     if (twisty) options.expandableRows.push({ id: item.id, depth, twisty });
 
+    const childType = options.typeMap.get(item.type)?.children?.[0];
     options.dragReorder?.register({
       id: item.id,
       depth,
@@ -1893,6 +1896,16 @@ function renderTree(
       parentId: parent.id,
       destinationType: options.typeMap.get(parent.type)?.children?.[0] ?? null,
       siblingIds,
+      childDestination: childType
+        ? {
+            type: childType,
+            siblingIds: orderTrackedItems(
+              item.children,
+              (child) => child,
+              options.orderingPolicy,
+            ).map((child) => child.id),
+          }
+        : undefined,
       handle: title,
       row: line,
       wrapper: row,
@@ -2683,6 +2696,7 @@ function createBoardTreeRenderer(params: BoardTreeRendererParams): () => void {
       orderingPolicy,
       // Sprint pills only earn their space when the sprint filter is not already narrowing the board.
       showSprintPills: !filterOn,
+      selectedSprint: sprintPickerHandle.selectedSprint(),
       chip: params.chipContext,
       contextMenu: params.contextMenu,
       sprintWindow: params.sprintWindow,

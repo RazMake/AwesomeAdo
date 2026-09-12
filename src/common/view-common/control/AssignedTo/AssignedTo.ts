@@ -97,8 +97,6 @@ function buildAssignedRoot(
     // not inflate the chip; this keeps the assignee chip the same height as the status badge.
     "font-size:10px",
     "line-height:1",
-    // Slightly muted (secondary) so the assignee reads as supporting detail, not a primary heading.
-    "color:var(--text-secondary-color)",
   ].join(";");
 
   root.append(nameButton);
@@ -555,6 +553,10 @@ function showAssignee(
   assigned: TrackedUser | null,
 ): void {
   nameButton.textContent = assigned?.displayName ?? "Unassigned";
+  nameButton.style.color =
+    assigned === null
+      ? "var(--text-secondary-color)"
+      : "var(--assigned-to-text-color, var(--text-secondary-color))";
   if (tagSlot === null) {
     return;
   }

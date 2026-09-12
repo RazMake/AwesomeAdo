@@ -98,7 +98,10 @@ halves of the view — its configuration and its renderer.
     See [`drag-reorder`](./drag-reorder/README.md).
     - A row may stay at its level or move one level: dragging a child between its parent's peers
       promotes it under their parent, while dragging a leaf among another item's children demotes it
-      at the exact position targeted. A parent that still has children cannot be demoted.
+      at the exact position targeted. Dropping onto the middle of a configured parent row adds the
+      item as its last child, including when that parent is empty or collapsed, and highlights that
+      parent's row before release. The top and bottom edges still reorder before or after the row.
+      A parent that still has children cannot be demoted.
     - Dragging a rolled-up child outside its popup closes the popup and continues the same hierarchy
       move against the tree.
     - Rank is computed against the level's **full** sibling list, so a move made while the sprint or
@@ -120,7 +123,9 @@ halves of the view — its configuration and its renderer.
     window (`services.loadSprintWindow()` → the configured team's iterations around the current one,
     each labelled by its offset such as `Current - Sprint 5` or `2 sprints ago`). Filter ON by
     default when sprints exist and pre-selected on the current sprint (rows filtered to selected
-    sprint + ancestor paths, pills hidden); OFF shows all rows with sprint pills. Empty sprints →
+    sprint + ancestor paths, pills hidden); OFF leaves rows unfiltered by sprint and keeps the
+    dropdown enabled. Sprint pills matching the selection use a thin theme-accent outline; other sprint
+    pills stay muted. Empty sprints →
     forced OFF, toggle disabled.
   - **Area-path filter**: the compact
     [`AreaPathFilter`](../../../common/view-common/control/AreaPathFilter/README.md) in the sticky

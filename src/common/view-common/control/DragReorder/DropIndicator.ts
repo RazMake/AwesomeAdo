@@ -33,7 +33,8 @@ export class DropIndicator {
   ): void {
     const container = rowWrapper.parentElement;
     if (container === null) return;
-    if (side === "before") container.insertBefore(this.line, rowWrapper);
+    if (side === "inside") rowWrapper.append(this.line);
+    else if (side === "before") container.insertBefore(this.line, rowWrapper);
     else container.insertBefore(this.line, rowWrapper.nextSibling);
     this.line.dataset.dropKind = options.reparenting ? "reparent" : "reorder";
     this.line.style.background = options.reparenting

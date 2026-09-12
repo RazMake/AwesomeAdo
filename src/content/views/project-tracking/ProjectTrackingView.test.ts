@@ -801,6 +801,7 @@ describe("ProjectTrackingView — row backgrounds", () => {
 describe("ProjectTrackingView — expand & collapse", () => {
   it("should toggle twisty to collapse and expand children", async () => {
     const root = await renderOutlineBoard(createFixtureTree());
+    await turnSprintFilterOff(root);
 
     const twisty = root.querySelector(".awesomeado-tracking__twisty") as HTMLButtonElement;
     expect(twisty).toBeTruthy();
@@ -839,12 +840,12 @@ describe("ProjectTrackingView — expand & collapse", () => {
     const root = projectTrackingView.render(context);
     await Promise.resolve();
     await Promise.resolve();
+    await turnSprintFilterOff(root);
 
     // First collapse a node manually.
     const twisties = [...root.querySelectorAll<HTMLButtonElement>(".awesomeado-tracking__twisty")];
     // Counted BEFORE the loop below: a board that rendered no twisty would otherwise run through
-    // every assertion in it without executing one. Under the default Sprint 1 filter the Feature is
-    // the board's only expandable row.
+    // every assertion in it without executing one. The Feature is the board's only expandable row.
     expect(twisties).toHaveLength(1);
     twisties[0]!.click();
     expect(twisties[0]!.getAttribute("aria-expanded")).toBe("false");
@@ -864,7 +865,7 @@ describe("ProjectTrackingView — expand & collapse", () => {
     });
 
     const notes = root.querySelectorAll<HTMLButtonElement>(".awesomeado-tracking__notes-toggle");
-    expect(notes).toHaveLength(1);
+    expect(notes).toHaveLength(3);
     notes.forEach((toggle) => expect(toggle.getAttribute("aria-expanded")).toBe("false"));
   });
 
@@ -882,12 +883,14 @@ describe("ProjectTrackingView — expand & collapse", () => {
 describe("ProjectTrackingView — the outline survives a repaint", () => {
   it("keeps a collapsed row collapsed when the board repaints", async () => {
     const root = await renderOutlineBoard(createFixtureTree());
+    await turnSprintFilterOff(root);
 
     const collapsed = root.querySelector(".awesomeado-tracking__twisty") as HTMLButtonElement;
     collapsed.click();
     expect(collapsed.getAttribute("aria-expanded")).toBe("false");
 
-    await turnSprintFilterOff(root);
+    await toggleSprintFilter(root);
+    await toggleSprintFilter(root);
 
     // A repaint (here the sprint filter; a drag-reorder and a re-sort take the same path) throws the
     // old rows away, so the outline only survives if the collapsed state is remembered outside the
@@ -938,9 +941,11 @@ describe("ProjectTrackingView — the outline survives a repaint", () => {
 
   it("keeps a row collapsed by collapse-all collapsed across a repaint", async () => {
     const root = await renderOutlineBoard(createFixtureTree());
+    await turnSprintFilterOff(root);
 
     (root.querySelector(".awesomeado-tracking__collapse-all") as HTMLButtonElement).click();
-    await turnSprintFilterOff(root);
+    await toggleSprintFilter(root);
+    await toggleSprintFilter(root);
 
     // collapse-all has to record what it did for the same reason a single toggle does.
     const repainted = root.querySelector(".awesomeado-tracking__twisty") as HTMLButtonElement;
@@ -951,6 +956,7 @@ describe("ProjectTrackingView — the outline survives a repaint", () => {
 describe("ProjectTrackingView — staged collapse", () => {
   it("collapses notes and descriptions before collapsing parent rows", async () => {
     const root = await renderOutlineBoard(createFixtureTree());
+    await turnSprintFilterOff(root);
     const note = root.querySelector(".awesomeado-tracking__notes-toggle") as HTMLButtonElement;
     const description = root.querySelector(".awesomeado-tracking__describe") as HTMLButtonElement;
     const twisty = root.querySelector(".awesomeado-tracking__twisty") as HTMLButtonElement;
@@ -994,6 +1000,7 @@ describe("ProjectTrackingView — collapse all & description", () => {
     const root = projectTrackingView.render(context);
     await Promise.resolve();
     await Promise.resolve();
+    await turnSprintFilterOff(root);
 
     const collapseAll = root.querySelector(
       ".awesomeado-tracking__collapse-all",
@@ -1091,6 +1098,12 @@ describe("ProjectTrackingView — the row's leading controls", () => {
     )!;
     const leadingGap = Number.parseFloat(disc.style.marginRight);
     expect(Number.parseFloat(assignee.style.marginLeft)).toBe(leadingGap * 2);
+    expect(assignee.style.getPropertyValue("--assigned-to-text-color")).toBe(
+      "var(--text-primary-color)",
+    );
+    expect(assignee.querySelector<HTMLElement>(".awesomeado-assigned__name")!.style.color).toBe(
+      "var(--text-secondary-color)",
+    );
   });
 
   it("centers the title against the controls it shares a line with", async () => {
@@ -1954,6 +1967,59 @@ describe("ProjectTrackingView — blocked marker pills", () => {
       "interrupt",
       "sprint",
     ]);
+  });
+});
+
+describe("ProjectTrackingView — selected sprint highlighting", () => {
+  it("highlights the selected sprint without filtering until the filter is enabled", async () => {
+    const epic = createFixtureTree();
+    const story = epic.children[0]!.children[0]!;
+    story.sprintName = "Sprint 1";
+    story.iterationPath = "Project\\Sprint 1";
+    const root = projectTrackingView.render({
+      doc: document,
+      queryId: "q1",
+      properties: {},
+      services: createFakeServices({
+        loadTree: async () => ({ isTreeQuery: true, roots: [epic], error: null }),
+      }),
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    await turnSprintFilterOff(root);
+
+    const select = root.querySelector<HTMLSelectElement>(".awesomeado-sprint-picker__select")!;
+    const rowTitles = (): (string | null)[] =>
+      [...root.querySelectorAll(".awesomeado-tracking__item-title")].map(
+        (title) => title.textContent,
+      );
+    const originalTitles = rowTitles();
+    expect(select.disabled).toBe(false);
+    expect(select.value).toBe("Sprint 1");
+
+    for (const selected of ["Sprint 1", "Sprint 2"]) {
+      select.value = selected;
+      select.dispatchEvent(new Event("change"));
+      const pills = root.querySelectorAll<HTMLElement>(".awesomeado-tracking__sprint-pill-button");
+      expect([...pills].some((pill) => pill.textContent === selected)).toBe(true);
+      expect([...pills].some((pill) => pill.textContent !== selected)).toBe(true);
+      for (const pill of pills) {
+        const matches = pill.textContent === selected;
+        expect(pill.style.background).toBe("var(--control-background-subtle)");
+        expect(pill.style.color).toBe("var(--text-secondary-color)");
+        expect(pill.style.opacity).toBe("0.75");
+        expect(pill.style.boxShadow).toBe(
+          matches ? "inset 0 0 0 1px var(--communication-foreground)" : "none",
+        );
+      }
+      expect(rowTitles()).toEqual(originalTitles);
+    }
+
+    await toggleSprintFilter(root);
+    expect(select.value).toBe("Sprint 2");
+    expect(root.querySelectorAll(".awesomeado-tracking__sprint-pill")).toHaveLength(0);
+    expect(rowTitles()).not.toContain("User Authentication");
+    expect(rowTitles()).toContain("Data Migration");
   });
 });
 
@@ -3270,11 +3336,16 @@ describe("ProjectTrackingView — staged deep hierarchy expansion", () => {
   });
 });
 
-/** Turns the sprint filter off (it defaults ON, on the current sprint) and waits for the re-render. */
-async function turnSprintFilterOff(root: HTMLElement): Promise<void> {
+/** Flips the sprint filter and waits for the resulting tree repaint. */
+async function toggleSprintFilter(root: HTMLElement): Promise<void> {
   (root.querySelector(".awesomeado-sprint-picker__button") as HTMLButtonElement).click();
   await new Promise((resolve) => setTimeout(resolve, 10));
   await Promise.resolve();
+}
+
+/** Turns the sprint filter off (it defaults ON, on the current sprint) and waits for the re-render. */
+async function turnSprintFilterOff(root: HTMLElement): Promise<void> {
+  await toggleSprintFilter(root);
 }
 
 const rollupBadgeOf = (root: HTMLElement): HTMLElement =>
@@ -4207,22 +4278,12 @@ describe("ProjectTrackingView — popup hierarchy changes", () => {
       ...root.querySelectorAll<HTMLElement>(".awesomeado-tracking__item-title"),
     ].find((title) => title.textContent === "Login UI")!;
     const storyRow = storyTitle.closest<HTMLElement>(".awesomeado-tracking__row")!;
-    Object.assign(storyRow, {
-      getBoundingClientRect: () => ({ top: 40, height: 20, bottom: 60 }) as DOMRect,
+    dragRow(popupTitle, storyRow, 45, () => {
+      expect(root.querySelector(".awesomeado-child-items__popup")).toBeNull();
+      expect(
+        root.querySelector<HTMLElement>(".awesomeado-tracking__drop-line")?.dataset.dropKind,
+      ).toBe("reparent");
     });
-    popupTitle.dispatchEvent(new Event("dragstart", { bubbles: true }));
-    const preview = new Event("dragover", { bubbles: true, cancelable: true });
-    Object.assign(preview, { clientY: 45 });
-    storyRow.dispatchEvent(preview);
-
-    expect(root.querySelector(".awesomeado-child-items__popup")).toBeNull();
-    expect(
-      root.querySelector<HTMLElement>(".awesomeado-tracking__drop-line")?.dataset.dropKind,
-    ).toBe("reparent");
-
-    const drop = new Event("drop", { bubbles: true, cancelable: true });
-    Object.assign(drop, { clientY: 45 });
-    storyRow.dispatchEvent(drop);
 
     await vi.waitFor(() =>
       expect(moves).toEqual([
@@ -4246,6 +4307,136 @@ describe("ProjectTrackingView — popup hierarchy changes", () => {
         ),
       ).toContain("Wire the form"),
     );
+    root.remove();
+  });
+});
+
+describe("ProjectTrackingView - returning promoted items to parents", () => {
+  it.each([
+    {
+      parent: "populated",
+      taskIds: [4, 5, 6],
+      previousId: 6,
+      siblingIds: [5, 6, 4],
+      titles: ["Style the form", "Drop the old form", "Wire the form"],
+    },
+    { parent: "empty", taskIds: [4], previousId: 0, siblingIds: [4], titles: ["Wire the form"] },
+  ])(
+    "converts a promoted item back under its $parent parent",
+    async ({ taskIds, previousId, siblingIds, titles }) => {
+      const tree = createDeepTree();
+      const story = tree.children[0]!.children[0]!;
+      story.children = story.children.filter((child) => taskIds.includes(child.id));
+      const moves: WorkItemReorderRequest[] = [];
+      const root = await renderDeepBoard({
+        loadTree: async () => ({ isTreeQuery: true, roots: [tree], error: null }),
+        reorderItem: async (request) => {
+          moves.push(request);
+          return {
+            ok: true,
+            order: moves.length === 1 ? 2 : 7,
+            reparented: true,
+            rev: request.rev + 1,
+          };
+        },
+      });
+      document.body.append(root);
+      await turnSprintFilterOff(root);
+      rollupBadgeOf(root).click();
+
+      dragRow(
+        root.querySelector<HTMLElement>(".awesomeado-child-items__title")!,
+        itemWrapperTitled(root, "Login UI").querySelector<HTMLElement>(
+          ".awesomeado-tracking__row",
+        )!,
+        45,
+      );
+      await vi.waitFor(() => expect(itemWrapperTitled(root, "Wire the form")).toBeDefined());
+
+      dragTrackingItem(root, "Wire the form", "Login UI");
+
+      await vi.waitFor(() => expect(moves).toHaveLength(2));
+      expect(moves[1]).toEqual({
+        id: 4,
+        rev: 2,
+        parentId: 3,
+        currentParentId: 2,
+        previousId,
+        nextId: 0,
+        siblingIds,
+        type: "Task",
+        team: "team-guid",
+      });
+      await vi.waitFor(() => expect(itemWrapperTitled(root, "Wire the form")).toBeUndefined());
+      rollupBadgeOf(root).click();
+      expect(popupChildTitles(root)).toEqual(titles);
+      root.remove();
+    },
+  );
+});
+
+async function renderParentDropBoard(accepted: boolean) {
+  const tree = createDeepTree();
+  const moved = createItem({ id: 7, type: "Feature", title: "Moved work" });
+  tree.children.push(moved);
+  const moves: WorkItemReorderRequest[] = [];
+  const root = await renderDeepBoard({
+    loadTree: async () => ({ isTreeQuery: true, roots: [tree], error: null }),
+    reorderItem: async (request) => {
+      moves.push(request);
+      return accepted
+        ? { ok: true, rev: 2, order: 7, reparented: true }
+        : { ok: false, error: "rejected" };
+    },
+  });
+  document.body.append(root);
+  await turnSprintFilterOff(root);
+  return { root, tree, moved, moves };
+}
+
+describe("ProjectTrackingView - parent drop persistence", () => {
+  it("moves an item inside a collapsed parent without losing the collapsed state", async () => {
+    const { root, tree, moved, moves } = await renderParentDropBoard(true);
+    itemWrapperTitled(root, "User Authentication")
+      .querySelector<HTMLButtonElement>(".awesomeado-tracking__twisty")!
+      .click();
+
+    dragTrackingItem(root, "Moved work", "User Authentication");
+
+    await vi.waitFor(() => expect(moved.type).toBe("Story"));
+    expect(moved.rev).toBe(2);
+    expect(tree.children.map((item) => item.id)).toEqual([2]);
+    expect(moves).toEqual([
+      {
+        id: 7,
+        rev: 1,
+        parentId: 2,
+        currentParentId: 1,
+        previousId: 3,
+        nextId: 0,
+        siblingIds: [3, 7],
+        type: "Story",
+        team: "team-guid",
+      },
+    ]);
+    const parent = itemWrapperTitled(root, "User Authentication");
+    const children = parent.querySelector<HTMLElement>(":scope > .awesomeado-tracking__children")!;
+    expect(children.style.display).toBe("none");
+    expect(itemWrapperTitled(children, "Moved work")).toBeDefined();
+    root.remove();
+  });
+
+  it("leaves both the type and parent unchanged when saving fails", async () => {
+    const { root, tree, moved, moves } = await renderParentDropBoard(false);
+    const originalRow = itemWrapperTitled(root, "Moved work");
+
+    dragTrackingItem(root, "Moved work", "User Authentication");
+
+    await vi.waitFor(() => expect(moves).toHaveLength(1));
+    expect(moved.type).toBe("Feature");
+    expect(moved.rev).toBe(1);
+    expect(tree.children.map((item) => item.id)).toEqual([2, 7]);
+    expect(itemWrapperTitled(root, "Moved work")).toBe(originalRow);
     root.remove();
   });
 });
@@ -4277,16 +4468,35 @@ function dragPopupChild(
   const rows = [...root.querySelectorAll<HTMLElement>(".awesomeado-child-items__row")];
   const source = rows[sourceIndex]!.querySelector<HTMLElement>(".awesomeado-child-items__title")!;
   const target = rows[targetIndex]!;
+  dragRow(source, target, 55, onPreview);
+}
+
+function dragTrackingItem(root: HTMLElement, sourceTitle: string, parentTitle: string): void {
+  const source = itemWrapperTitled(root, sourceTitle).querySelector<HTMLElement>(
+    ".awesomeado-tracking__item-title",
+  )!;
+  const target = itemWrapperTitled(root, parentTitle).querySelector<HTMLElement>(
+    ".awesomeado-tracking__row",
+  )!;
+  dragRow(source, target, 50);
+}
+
+function dragRow(
+  source: HTMLElement,
+  target: HTMLElement,
+  clientY: number,
+  onPreview: (preview: Event, target: HTMLElement) => void = () => undefined,
+): void {
   source.dispatchEvent(new Event("dragstart", { bubbles: true }));
   Object.assign(target, {
     getBoundingClientRect: () => ({ top: 40, height: 20, bottom: 60 }) as DOMRect,
   });
   const preview = new Event("dragover", { bubbles: true, cancelable: true });
-  Object.assign(preview, { clientY: 55 });
+  Object.assign(preview, { clientY });
   target.dispatchEvent(preview);
   onPreview(preview, target);
   const drop = new Event("drop", { bubbles: true, cancelable: true });
-  Object.assign(drop, { clientY: 55 });
+  Object.assign(drop, { clientY });
   target.dispatchEvent(drop);
 }
 
@@ -4545,6 +4755,25 @@ describe("ProjectTrackingView — Done-only filter", () => {
     root.querySelector<HTMLButtonElement>(".awesomeado-resolved-filter")!.click();
 
     expect(renderedRowTitles(root)).toEqual(["Resolved item", "Closed item", "Completed item"]);
+  });
+});
+
+describe("ProjectTrackingView — filtered child twisties", () => {
+  it("hides the twisty when every child is outside the resolved window", async () => {
+    const root = await renderBoardForTree(
+      epicOver([
+        createItem({
+          id: 2,
+          type: "Feature",
+          title: "Still active parent",
+          state: "Active",
+          children: [resolvedFeature(3, "Long done child", LONG_AGO, { type: "Story" })],
+        }),
+      ]),
+    );
+
+    expect(renderedRowTitles(root)).toEqual(["Still active parent"]);
+    expect(root.querySelector(".awesomeado-tracking__twisty")).toBeNull();
   });
 });
 

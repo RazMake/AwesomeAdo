@@ -5,6 +5,21 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ## Next Version
 
+### New Features
+
+- Project View keeps the sprint dropdown available when sprint filtering is off and subtly outlines
+  pills matching the selected sprint without hiding items from other sprints.
+- Project Tracking now accepts drops directly onto parents, including empty or collapsed ones,
+  to move an item inside and change it to the appropriate child type.
+
+### Bug Fixes
+
+- Project Tracking no longer shows an expand arrow when every child row is hidden by the current
+  filters.
+- Project View's assigned-to pills now use brighter names for easier reading in dark themes,
+  while "Unassigned" keeps its muted color.
+- Expanded cards in the Sprint View's Done column now keep their priority read-only.
+
 ## 0.14
 
 ### New Features

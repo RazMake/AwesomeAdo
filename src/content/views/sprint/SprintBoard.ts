@@ -699,6 +699,7 @@ function wireCardContextMenu(
 
 function setCardControlsEditable(
   large: boolean,
+  done: boolean,
   priority: PriorityBadgeHandle,
   assigneeName: HTMLButtonElement,
   eta: HTMLElement,
@@ -706,11 +707,36 @@ function setCardControlsEditable(
 ): void {
   assigneeName.disabled = !large;
   assigneeName.style.cursor = large ? "pointer" : "default";
-  priority.setEditable(large);
+  priority.setEditable(large && !done);
   eta.setAttribute("aria-disabled", String(!large));
   eta.style.cursor = large ? "pointer" : "default";
   children?.setEditable(large);
   children?.setVisible(large);
+}
+
+function wireDoneCardExpansion(
+  card: HTMLElement,
+  itemId: number,
+  expandedDoneIds: Set<number>,
+  setSize: (large: boolean) => void,
+): void {
+  preventCompactFieldEditing(card);
+  const toggle = (): void => {
+    if (expandedDoneIds.has(itemId)) expandedDoneIds.delete(itemId);
+    else expandedDoneIds.add(itemId);
+    setSize(expandedDoneIds.has(itemId));
+  };
+  card.addEventListener("click", (event) => {
+    const target = event.target as Element | null;
+    if (target?.closest("button,a,input") !== null) return;
+    toggle();
+  });
+  card.addEventListener("keydown", (event) => {
+    if (event.target !== card) return;
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    toggle();
+  });
 }
 
 function renderCard(
@@ -762,29 +788,20 @@ function renderCard(
     card.dataset.size = large ? "large" : "compact";
     card.style.minHeight = large ? "112px" : "68px";
     details.style.display = large ? "flex" : "none";
-    setCardControlsEditable(large, meta.priority, assigneeName, eta, footer.children);
+    setCardControlsEditable(
+      large,
+      ordinal === 3,
+      meta.priority,
+      assigneeName,
+      eta,
+      footer.children,
+    );
     card.tabIndex = ordinal === 3 ? 0 : -1;
     if (ordinal === 3) card.setAttribute("aria-expanded", String(large));
   };
   setSize(ordinal !== 3 || options.expandedDoneIds.has(item.id));
   if (ordinal === 3) {
-    preventCompactFieldEditing(card);
-    const toggle = (): void => {
-      if (options.expandedDoneIds.has(item.id)) options.expandedDoneIds.delete(item.id);
-      else options.expandedDoneIds.add(item.id);
-      setSize(options.expandedDoneIds.has(item.id));
-    };
-    card.addEventListener("click", (event) => {
-      const target = event.target as Element | null;
-      if (target?.closest("button,a,input") !== null) return;
-      toggle();
-    });
-    card.addEventListener("keydown", (event) => {
-      if (event.target !== card) return;
-      if (event.key !== "Enter" && event.key !== " ") return;
-      event.preventDefault();
-      toggle();
-    });
+    wireDoneCardExpansion(card, item.id, options.expandedDoneIds, setSize);
   }
   registerCardDrag(card, entry, ordinal, lane, options);
   return card;

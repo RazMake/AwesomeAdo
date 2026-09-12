@@ -523,6 +523,16 @@ bindings ...` / `Pulled team configuration ...`.
   `awesomeado-tracking__children`. Bulk-control tests must assert the child container's `display`
   state as well as the glyph and ARIA metadata; metadata-only assertions accepted this broken UI.
 
+## Filtered child rows must not leave an empty twisty
+
+- SYMPTOM: Project Tracking showed a twisty for an item, but expanding it revealed nothing. Live
+  inspection of item `7703691` found one real child that the configured resolved-age window hid.
+- ROOT CAUSE: the row offered a twisty when its raw child collection contained a renderable type,
+  while the recursive renderer separately removed children absent from the pass's visible-id set.
+- FIX / RULE: decide whether a row has expandable children with the same type and visibility checks
+  used to render those direct child rows. Expansion tests must first expose a real child branch;
+  asserting only that a twisty toggles can accidentally bless an empty filtered branch.
+
 ## Follow ADO stayed dark after Azure DevOps switched to Light
 
 - SYMPTOM: an already-mounted enhanced view stayed on AwesomeADO's Dark palette after Azure DevOps

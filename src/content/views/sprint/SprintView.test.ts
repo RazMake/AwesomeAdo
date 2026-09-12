@@ -719,9 +719,9 @@ function expectCompactDoneCard(root: HTMLElement): void {
   expect(childBadge.style.display).toBe("inline-flex");
   expect(assignee.disabled).toBe(false);
   expect(eta.getAttribute("aria-disabled")).toBe("false");
-  expect(priority.disabled).toBe(false);
+  expect(priority.disabled).toBe(true);
   priority.click();
-  expect(done.querySelector(".awesomeado-priority__popup")).not.toBeNull();
+  expect(done.querySelector(".awesomeado-priority__popup")).toBeNull();
   document.body.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
   done.querySelector<HTMLButtonElement>(".awesomeado-sprint-card__parent-trigger")!.click();
   expect(done.dataset.size).toBe("large");

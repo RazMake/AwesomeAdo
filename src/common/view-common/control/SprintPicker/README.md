@@ -61,8 +61,8 @@ A handle for controlling and querying the sprint picker state.
 Renders a sprint dropdown with an optional **icon filter toggle button** in front.
 
 - The **filter button** uses an inline SVG funnel icon (NOT text), is theme-styled, and reflects its active state via `aria-pressed` and a subtle themed "on" look (`var(--palette-neutral-8, …)` background when active, `transparent` when inactive).
-- The **dropdown** is a native `<select>` element populated with one `<option>` per sprint, theme-styled. It is **disabled while the filter is inactive** (picking a sprint has no effect until the funnel is toggled on) and becomes enabled once the filter is active.
-- Clicking the button toggles the filter active state, enables/disables the dropdown to match, and calls `onFilterToggle(active, selectedSprint())`.
+- The **dropdown** is a native `<select>` element populated with one `<option>` per sprint, theme-styled. It remains enabled while the filter is inactive so consumers can use the selection for highlighting.
+- Clicking the button toggles the filter active state and calls `onFilterToggle(active, selectedSprint())` without changing dropdown availability.
 - With `showFilterButton: false`, the button is omitted, `isFilterActive()` stays `true`, and the dropdown remains enabled whenever sprint options exist.
 - Changing the select calls `onSprintChange(selectedName)`.
 - When `sprints` is empty, both the button and select are disabled, and `selectedSprint()` returns `null`.
@@ -71,7 +71,7 @@ Renders a sprint dropdown with an optional **icon filter toggle button** in fron
 
 - **Icon toggle button:** The filter button shows an SVG funnel icon (inherits `currentColor` so it follows the theme), NOT a text label. It has `aria-label="Filter by sprint"` and a `title` for accessibility.
 - **Active state signaling:** The button uses `aria-pressed` to reflect its active state (`"true"` or `"false"`). When active, the button uses the theme's communication background and on-communication foreground; when inactive, the background is `transparent`.
-- **Filter-gated dropdown:** The dropdown is disabled while the filter is inactive and enabled once the filter is toggled on, so choosing a sprint only becomes possible when it actually filters.
+- **Independent selection:** The dropdown stays enabled whenever sprint options exist, regardless of the filter toggle.
 - **Theme-aware:** Both the button and select use roles from the complete palette pinned by the resolved AwesomeADO theme.
 - **Time-direction styling:** Options carrying a `relation` are tinted by where their sprint sits in time — past amber, future in the theme accent, current bold and explicitly neutral. The closed `<select>` preserves the selected option's relation styling.
 - **Empty sprints handling:** When `sprints` is empty, both controls are disabled, and `selectedSprint()` returns `null`.

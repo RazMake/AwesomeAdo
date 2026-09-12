@@ -237,13 +237,7 @@ export function renderSprintPicker(
   // The sprint dropdown.
   const select = doc.createElement("select");
   select.className = "awesomeado-sprint-picker__select";
-  // The dropdown is only meaningful while the filter is on: picking a sprint with the filter off
-  // would change nothing, so keep it disabled until the funnel is toggled active (and always when
-  // there are no sprints to choose from).
-  const updateSelectEnabled = () => {
-    select.disabled = isEmpty || !active;
-  };
-  updateSelectEnabled();
+  select.disabled = isEmpty;
 
   populateSprintSelect(doc, select, sprints, selectedName);
   styleSelectForSelection(select, sprints);
@@ -257,7 +251,6 @@ export function renderSprintPicker(
   button.addEventListener("click", () => {
     active = !active;
     updateButtonStyle();
-    updateSelectEnabled();
     const currentSprint = sprints.length > 0 ? select.value : null;
     onFilterToggle?.(active, currentSprint);
   });

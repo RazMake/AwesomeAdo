@@ -22,10 +22,14 @@ This is a flattened snapshot of what exists now, not a build log.
   when the viewport is narrow. Project Tracking ships as an on-demand ESM renderer; store
   builds minify it and the always-loaded runtime. Its hierarchy renders Primary work and planning
   ancestors as rows while rolling implementation-detail children into compact badges, and an open
-  view redraws immediately when settings-backed configuration changes. Accepted drag reorders are
+  view redraws immediately when settings-backed configuration changes. Branch twisties appear only
+  when at least one child row survives the active filters. Accepted drag reorders are
   checked against their requested sibling interval; mixed work-item types and unranked neighbours
   are corrected through the direct-rank fallback when ADO's team backlog endpoint leaves them out of
-  place. A framed Done toggle immediately before Assigned To fills blue while active, keeps every
+  place. Center-row drops now return items inside configured parents, even empty or collapsed ones,
+  append after the full child list, and convert to the appropriate child type through the existing
+  revision-aware move queue. Edge ordering, one-level moves, and leaf-only demotion are preserved.
+  A framed Done toggle immediately before Assigned To fills blue while active, keeps every
   ADO state the shared type mapping routes to the completed column plus its planning ancestors,
   includes work outside the normal resolved-age window, composes with the other filters, and
   restores the normal view on its next press. Project
@@ -99,7 +103,8 @@ This is a flattened snapshot of what exists now, not a build log.
   render as cards, and the shared
   child-items badge lists each card's non-primary descendants on large cards only. Both card sizes anchor ID and a tag-free
   shared assignee control in their top corners, then align ETA left and child progress right below
-  the title. Compact Done cards keep their own assignee and ETA read-only until expanded. A top-right
+  the title. Compact Done cards keep their own assignee and ETA read-only until expanded; priority
+  stays read-only after expansion. A top-right
   ordering picker defaults cards and descendant rows to backlog rank and applies title/ETA sorting to
   both. Child popup rows provide completion toggles, shared assignee/ETA controls, and sibling drag
   ordering under backlog rank while suspending card drag for the popup lifetime; Done parents keep

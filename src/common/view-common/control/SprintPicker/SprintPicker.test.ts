@@ -136,7 +136,7 @@ describe("renderSprintPicker - filter enable state", () => {
     expect(handle.isFilterActive()).toBe(true);
   });
 
-  it("disables the select while the filter is inactive", () => {
+  it("keeps the select enabled while the filter is inactive", () => {
     const handle = renderSprintPicker(document, {
       sprints: [{ path: "Team\\Sprint 1", name: "Sprint 1" }],
       filterActive: false,
@@ -146,7 +146,7 @@ describe("renderSprintPicker - filter enable state", () => {
       ".awesomeado-sprint-picker__select",
     );
 
-    expect(select?.disabled).toBe(true);
+    expect(select?.disabled).toBe(false);
   });
 
   it("enables the select when the filter starts active", () => {
@@ -162,7 +162,7 @@ describe("renderSprintPicker - filter enable state", () => {
     expect(select?.disabled).toBe(false);
   });
 
-  it("toggles the select enabled state as the filter flips", () => {
+  it("keeps the select enabled as the filter flips", () => {
     const handle = renderSprintPicker(document, {
       sprints: [{ path: "Team\\Sprint 1", name: "Sprint 1" }],
       filterActive: false,
@@ -175,13 +175,13 @@ describe("renderSprintPicker - filter enable state", () => {
       ".awesomeado-sprint-picker__select",
     );
 
-    expect(select?.disabled).toBe(true);
+    expect(select?.disabled).toBe(false);
 
     button?.click();
     expect(select?.disabled).toBe(false);
 
     button?.click();
-    expect(select?.disabled).toBe(true);
+    expect(select?.disabled).toBe(false);
   });
 });
 

@@ -128,6 +128,13 @@ function buildBoard(): Board {
   return { controller, moves, infos, containerA, containerB, rows, surfaces };
 }
 
+function buildParentDropBoard(): Board {
+  const board = buildBoard();
+  board.rows.get(1)!.childDestination = { type: "User Story", siblingIds: [6] };
+  board.rows.get(3)!.childDestination = { type: "User Story", siblingIds: [] };
+  return board;
+}
+
 function startDrag(board: Board, id: number, withTransfer = true): FakeDataTransfer {
   const transfer = fakeTransfer();
   fire(board.rows.get(id)!.handle, "dragstart", withTransfer ? { dataTransfer: transfer } : {});
@@ -268,7 +275,7 @@ describe("DragReorderController - previewing a drop", () => {
   });
 
   it("does not treat a bubbled event inside a popup as a tree reparent", () => {
-    const board = buildBoard();
+    const board = buildParentDropBoard();
     const source = board.rows.get(6)!;
     const surface = source.wrapper.parentElement!;
     board.rows.get(1)!.row.append(surface);
@@ -415,6 +422,123 @@ describe("DragReorderController - completing a same-level drop", () => {
 
     expect(anyLine()).toBeNull();
     expect(board.rows.get(1)!.wrapper.style.opacity).toBe("");
+  });
+});
+
+describe("DragReorderController - dropping into a parent", () => {
+  it("demotes a leaf dropped onto the middle of a parent row", () => {
+    const board = buildParentDropBoard();
+    startDrag(board, 2);
+
+    const event = drop(board, 1, 10);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(board.moves).toEqual([
+      {
+        id: 2,
+        currentParentId: 10,
+        parentId: 1,
+        previousId: 6,
+        nextId: 0,
+        siblingIds: [6, 2],
+        type: "User Story",
+      },
+    ]);
+    expect(board.infos).toEqual([
+      "Drag-reorder: item 2 dropped inside item 1 at depth 1; parent 10→1, between 6 and 0",
+    ]);
+  });
+
+  it("accepts a parent whose children are empty", () => {
+    const board = buildParentDropBoard();
+    startDrag(board, 2);
+
+    drop(board, 3, 50);
+
+    expect(board.moves).toEqual([
+      {
+        id: 2,
+        currentParentId: 10,
+        parentId: 3,
+        previousId: 0,
+        nextId: 0,
+        siblingIds: [2],
+        type: "User Story",
+      },
+    ]);
+  });
+
+  it("appends after children hidden from the rendered rows", () => {
+    const board = buildParentDropBoard();
+    board.rows.get(1)!.childDestination = { type: "User Story", siblingIds: [6, 7] };
+    startDrag(board, 2);
+
+    drop(board, 1, 10);
+
+    expect(board.moves[0]).toMatchObject({ parentId: 1, previousId: 7, siblingIds: [6, 7, 2] });
+  });
+
+  it("does not convert an item already under that parent", () => {
+    const board = buildParentDropBoard();
+    board.rows.get(1)!.childDestination = { type: "User Story", siblingIds: [6, 7] };
+    board.rows.get(6)!.siblingIds = [6, 7];
+    startDrag(board, 6);
+
+    drop(board, 1, 10);
+
+    expect(board.moves).toEqual([
+      { id: 6, currentParentId: 1, parentId: 1, previousId: 7, nextId: 0, siblingIds: [7, 6] },
+    ]);
+  });
+});
+
+describe("DragReorderController - parent drop feedback", () => {
+  it("highlights a collapsed parent without washing its siblings", () => {
+    const board = buildParentDropBoard();
+    const target = board.rows.get(1)!;
+    board.rows.get(6)!.wrapper.parentElement!.style.display = "none";
+    startDrag(board, 2);
+
+    dragOver(board, 1, 10);
+
+    expect(target.wrapper.lastElementChild).toBe(anyLine());
+    expect(isWashed(board.surfaces.get(1)!)).toBe(true);
+    expect(isWashed(board.containerA)).toBe(false);
+    fire(board.rows.get(2)!.handle, "dragend");
+    expect(anyLine()).toBeNull();
+    expect(isWashed(board.surfaces.get(1)!)).toBe(false);
+  });
+
+  it.each([
+    { clientY: 2, previousId: 0, nextId: 1, siblingIds: [3, 1, 2] },
+    { clientY: 18, previousId: 1, nextId: 2, siblingIds: [1, 3, 2] },
+  ])("keeps the row edges available for reordering at $clientY", ({ clientY, ...placement }) => {
+    const board = buildParentDropBoard();
+    startDrag(board, 3);
+
+    drop(board, 1, clientY);
+
+    expect(board.moves).toEqual([{ id: 3, currentParentId: 10, parentId: 10, ...placement }]);
+  });
+});
+
+describe("DragReorderController - invalid parent drops", () => {
+  it.each([
+    { reason: "onto itself", source: 3, target: 3, clientY: 50 },
+    { reason: "demoting a subtree", source: 1, target: 3, clientY: 50 },
+    { reason: "more than one level deeper", source: 2, target: 6, clientY: 210 },
+    { reason: "its existing only-child position", source: 6, target: 1, clientY: 10 },
+  ])("refuses a drop $reason", ({ source, target, clientY }) => {
+    const board = buildParentDropBoard();
+    board.rows.get(6)!.childDestination = { type: "Task", siblingIds: [] };
+    startDrag(board, source);
+
+    const { event } = dragOver(board, target, clientY);
+    drop(board, target, clientY);
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(anyLine()).toBeNull();
+    expect(board.moves).toEqual([]);
   });
 });
 

@@ -47,12 +47,22 @@ describe("renderAssignedTo", () => {
     expect(control.querySelector(".awesomeado-assigned__name")?.textContent).toBe("Alice");
   });
 
-  it("shows 'Unassigned' when user is null", () => {
+  it("keeps Unassigned muted while updating assigned-name colors", () => {
     const directory = new FakeUserDirectory();
 
     const control = renderAssignedTo(document, { user: null, userDirectory: directory });
+    control.style.setProperty("--assigned-to-text-color", "var(--text-primary-color)");
+    const nameButton = control.querySelector<HTMLButtonElement>(".awesomeado-assigned__name")!;
 
-    expect(control.querySelector(".awesomeado-assigned__name")?.textContent).toBe("Unassigned");
+    expect(nameButton.textContent).toBe("Unassigned");
+    expect(nameButton.style.color).toBe("var(--text-secondary-color)");
+    control.setUser({ displayName: "Alice", uniqueName: null, imageUrl: null });
+    expect(nameButton.style.color).toBe(
+      "var(--assigned-to-text-color, var(--text-secondary-color))",
+    );
+    control.setUser(null);
+    expect(nameButton.textContent).toBe("Unassigned");
+    expect(nameButton.style.color).toBe("var(--text-secondary-color)");
   });
 
   it("styles the name button as clickable text with no border or background", () => {

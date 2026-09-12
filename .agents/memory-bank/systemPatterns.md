@@ -247,6 +247,12 @@ Sprint's Project hierarchy labels apply their stronger readability blend to the 
 placement math shared by Project Tracking rows and Sprint direct-child popups. Views register only
 the rows they permit to move and retain ownership of persistence and model mutation. Project
 Tracking's tree mutation (`drag-reorder/applyMoveToTree`) remains local, because only a tree has one.
+Project Tracking opts configured parents into center-row drops through `DraggableRow.childDestination`,
+passing the default child type and full ordered child ids independently of visibility or expansion.
+The controller resolves `inside` against that child level and appends after it, while top/bottom edge
+drops keep their sibling semantics. The existing adjacent-level and leaf-demotion guards also apply
+to inside drops. Feedback highlights the parent's own surface so empty and collapsed destinations
+remain visible; type conversion and reparenting still use one revision-guarded write.
 
 ### `src/common/ordering`
 

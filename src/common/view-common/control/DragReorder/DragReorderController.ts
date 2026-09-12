@@ -11,6 +11,7 @@ export interface DraggableRow {
   parentId: number;
   destinationType: string | null;
   siblingIds: readonly number[];
+  childDestination?: { type: string; siblingIds: readonly number[] };
   handle: HTMLElement;
   row: HTMLElement;
   wrapper: HTMLElement;
@@ -138,7 +139,8 @@ export class DragReorderController {
     if (this.session !== null) this.session.preview = { ...plan, target };
     this.indicator.show(target.wrapper, plan.side, {
       reparenting: plan.move.parentId !== plan.move.currentParentId,
-      parentContainer: target.wrapper.parentElement,
+      parentContainer:
+        plan.side === "inside" ? (target.dropZone ?? target.row) : target.wrapper.parentElement,
     });
   }
 
@@ -212,16 +214,17 @@ export class DragReorderController {
     target: DraggableRow,
   ): { move: PlannedMove; side: DropSide } | null {
     const source = this.session?.source;
-    if (source === undefined || !allowsDrop(source, target)) return null;
-    const side = dropSide(event, target.row);
+    const side = dropSide(event, target);
+    if (source === undefined || !allowsDrop(source, target, side)) return null;
+    const destination = dropDestination(target, side);
     const placement = resolveMove({
       movedId: source.id,
       currentParentId: source.parentId,
       currentSiblingIds: source.siblingIds,
       targetId: target.id,
       side,
-      targetParentId: target.parentId,
-      targetSiblingIds: target.siblingIds,
+      targetParentId: destination.parentId,
+      targetSiblingIds: destination.siblingIds,
     });
     if (placement === null) return null;
     const move: PlannedMove = {
@@ -229,8 +232,9 @@ export class DragReorderController {
       id: source.id,
       currentParentId: source.parentId,
     };
-    if (source.parentId !== placement.parentId && target.destinationType !== null) {
-      move.type = target.destinationType;
+    const destinationType = destination.destinationType;
+    if (source.parentId !== placement.parentId && destinationType !== null) {
+      move.type = destinationType;
     }
     return { move, side };
   }
@@ -259,16 +263,34 @@ export class DragReorderController {
   }
 }
 
-function allowsDrop(source: DraggableRow, target: DraggableRow): boolean {
-  const depthChange = target.depth - source.depth;
+function dropDestination(
+  target: DraggableRow,
+  side: DropSide,
+): Pick<DraggableRow, "parentId" | "destinationType" | "siblingIds"> {
+  const children = side === "inside" ? target.childDestination : undefined;
+  if (children === undefined) return target;
+  return {
+    parentId: target.id,
+    destinationType: children.type,
+    siblingIds: children.siblingIds,
+  };
+}
+
+function allowsDrop(source: DraggableRow, target: DraggableRow, side: DropSide): boolean {
+  const depthChange = target.depth + (side === "inside" ? 1 : 0) - source.depth;
   if (source.id === target.id || Math.abs(depthChange) > 1) return false;
   if (depthChange > 0 && source.hasChildren) return false;
+  if (side === "inside") return target.childDestination !== undefined;
   return source.parentId === target.parentId || target.destinationType !== null;
 }
 
-function dropSide(event: Event, row: HTMLElement): DropSide {
-  const box = row.getBoundingClientRect();
+function dropSide(event: Event, target: DraggableRow): DropSide {
+  const box = target.row.getBoundingClientRect();
   const pointerY = (event as DragEvent).clientY;
   if (box.height <= 0 || typeof pointerY !== "number") return "before";
-  return pointerY < box.top + box.height / 2 ? "before" : "after";
+  const position = (pointerY - box.top) / box.height;
+  if (target.childDestination !== undefined && position > 0.25 && position < 0.75) {
+    return "inside";
+  }
+  return position < 0.5 ? "before" : "after";
 }
