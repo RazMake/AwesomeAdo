@@ -10,6 +10,7 @@ import {
   exportCompactConfig,
   importConfig,
   mergeImportedSettings,
+  type ImportedConfig,
 } from "./AwesomeAdoConfig";
 import type { TeamConfigSourceStore } from "./TeamConfigSourceStore";
 
@@ -119,23 +120,19 @@ export class TeamConfigSynchronizer {
         return { status: "disconnected" };
       }
       const response = await this.reader.read(workItemId);
+      if ((await this.sourceStore.read()) !== workItemId) {
+        this.logger.info(
+          `Discarded team configuration from work item ${workItemId}: source changed.`,
+        );
+        return this.performPull();
+      }
       if (!response.ok) {
         throw new Error(response.error);
       }
       if (response.text === null) {
         return { status: "empty", workItemId };
       }
-      const imported = importConfig(response.text);
-      if (imported.problems.length > 0) {
-        throw new ConfigImportError(imported.problems);
-      }
-      if (!imported.replacesBindings) {
-        // A connection-only payload names a source; it never IS one. Adopting it would replace the
-        // team's shared bindings with its empty set on every client that pulled it.
-        throw new ConfigImportError([
-          "The shared work item does not hold a complete AwesomeADO configuration.",
-        ]);
-      }
+      const imported = readSharedConfig(response.text);
       const [currentSettings, currentBindings] = await Promise.all([
         this.settings.read(),
         this.bindingStore.read(),
@@ -148,6 +145,9 @@ export class TeamConfigSynchronizer {
       const nextSettings = { ...currentSettings, ...settingsUpdate };
       const nextText = exportCompactConfig(nextSettings, imported.enhancedQueries);
       const bindingCount = Object.keys(imported.enhancedQueries).length;
+      if ((await this.sourceStore.read()) !== workItemId) {
+        return this.performPull();
+      }
       if (nextText === exportCompactConfig(currentSettings, currentBindings)) {
         return { status: "unchanged", workItemId, bindingCount };
       }
@@ -155,6 +155,9 @@ export class TeamConfigSynchronizer {
         this.settings.applyLocally(settingsUpdate),
         this.bindingStore.replaceAll(imported.enhancedQueries),
       ]);
+      if ((await this.sourceStore.read()) !== workItemId) {
+        return this.performPull();
+      }
       this.logger.info(
         `Pulled team configuration from work item ${workItemId}: ${bindingCount} binding(s).`,
       );
@@ -168,4 +171,17 @@ export class TeamConfigSynchronizer {
 
 function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function readSharedConfig(text: string): ImportedConfig {
+  const imported = importConfig(text);
+  if (imported.problems.length > 0) {
+    throw new ConfigImportError(imported.problems);
+  }
+  if (!imported.replacesBindings) {
+    throw new ConfigImportError([
+      "The shared work item does not hold a complete AwesomeADO configuration.",
+    ]);
+  }
+  return imported;
 }

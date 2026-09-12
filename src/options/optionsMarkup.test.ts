@@ -27,7 +27,6 @@ const REQUIRED_ELEMENT_IDS: readonly string[] = [
   "default-view-select",
   // Configuration import/export
   "settings-export",
-  "settings-export-connection",
   "settings-import",
   "settings-import-file",
   "settings-transfer-status",
@@ -39,6 +38,11 @@ const REQUIRED_ELEMENT_IDS: readonly string[] = [
   "team-config-publish",
   "team-config-disconnect",
   "team-config-status",
+  "team-config-advanced",
+  "team-config-query-id",
+  "team-config-query-load",
+  "team-config-query-items",
+  "team-config-query-status",
   // Quick Bootstrap link
   "bootstrap-link-section",
   "bootstrap-link",
@@ -99,6 +103,34 @@ function requiredElement(doc: Document, id: string): HTMLElement {
   return element;
 }
 
+describe("configuration query layout", () => {
+  it("starts collapsed and keeps List Configs beside the query input", () => {
+    const doc = loadOptionsDocument();
+    const advanced = requiredElement(doc, "team-config-advanced");
+    const input = requiredElement(doc, "team-config-query-id");
+    const button = requiredElement(doc, "team-config-query-load");
+    expect(advanced.hasAttribute("open")).toBe(false);
+    expect(button.textContent.trim()).toBe("List Configs");
+    expect(input.parentElement).toBe(button.parentElement);
+    expect(input.parentElement?.classList.contains("team-config-query-row")).toBe(true);
+  });
+
+  it("uses a five-column configuration table with grouped modification details", () => {
+    const doc = loadOptionsDocument();
+    const items = requiredElement(doc, "team-config-query-items");
+    const table = items.closest("table");
+    const headers = Array.from(table?.querySelectorAll("th") ?? []);
+    expect(table?.getAttribute("aria-label")).toBe("Configuration items");
+    expect(headers.map((header) => header.textContent?.trim())).toEqual([
+      "Active",
+      "ID",
+      "Name",
+      "Last Modified",
+    ]);
+    expect(headers.at(-1)?.getAttribute("colspan")).toBe("2");
+  });
+});
+
 describe("options.html element contract", () => {
   it("declares every id the options composition root resolves", () => {
     const doc = loadOptionsDocument();
@@ -139,8 +171,10 @@ describe("options.html element contract", () => {
 
     expect(card.querySelector("h2")?.textContent).toBe("Configuration Sharing");
     expect(card.querySelector("h3")).toBeNull();
-    expect(card.querySelectorAll(".configuration-sharing__section")).toHaveLength(3);
+    expect(card.querySelectorAll(".configuration-sharing__section")).toHaveLength(4);
+    expect(card.querySelector("details summary")?.textContent).toBe("Advanced");
     expect(card.querySelector("#settings-export")).not.toBeNull();
+    expect(card.querySelector("#settings-export-connection")).toBeNull();
     expect(card.querySelector("#team-config-work-item-id")).not.toBeNull();
     expect(guidance).toContain("Import replaces your current configuration");
     expect(guidance).toContain("Once connected, the configuration is pulled automatically");

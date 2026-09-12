@@ -33,6 +33,18 @@ afterEach(() => {
 });
 
 describe("renderSelectField - what it shows", () => {
+  it("shows muted italic secondary text in both the field and its options", () => {
+    mount({
+      choices: [{ value: "item", label: "#42 Config", secondaryLabel: "Full Name (date)" }],
+    });
+    const detail = document.querySelector<HTMLElement>(".test-select__value em");
+    expect(shown()).toBe("#42 Config Full Name (date)");
+    expect(detail?.style.color).toBe("var(--text-secondary-color)");
+    expect(detail?.style.fontStyle).toBe("italic");
+    trigger().click();
+    expect(rows()[0]?.querySelector("em")?.textContent).toBe(" Full Name (date)");
+  });
+
   it("opens on the caller's value and names it for assistive technology", () => {
     mount();
 

@@ -61,6 +61,7 @@ export interface ChildItemDescriptor {
 
 /** Options for rendering a child-items badge. */
 export interface ChildItemsBadgeOptions {
+  label?: string;
   /** The descendants summarized by the badge and listed in its popup. */
   children: ChildItemDescriptor[];
   /** Whether the popup opens immediately when the badge is rendered. Defaults to false. */
@@ -204,7 +205,10 @@ export function renderChildItemsBadge(
   const badge = doc.createElement("button");
   badge.className = "awesomeado-child-items__badge";
   badge.type = "button";
-  badge.textContent = `${completedCount} / ${children.length}`;
+  badge.textContent = options.label
+    ? `${options.label}: ${completedCount}/${children.length}`
+    : `${completedCount} / ${children.length}`;
+  badge.title = `Completed: ${completedCount}\nTotal: ${children.length}`;
   badge.style.cssText = [
     "cursor:pointer",
     `border:1px solid ${tint.borderColor}`,

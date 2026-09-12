@@ -4,6 +4,16 @@ This is a flattened snapshot of what exists now, not a build log.
 
 ## Implemented
 
+- **Configuration picker**: Advanced Configuration Sharing lists a saved query's items in a
+  five-column table with ID, name, modification date/time, and modifier name. Ten rows are visible
+  before scrolling and rows are ordered by newest modification first; the connected row has a
+  highlighted Active marker and bold name, while muted Not active markers switch candidates. A
+  full-width spinner row replaces candidate rows while results load, so the connected fallback cannot
+  look like the complete result set. The query ID is a normal shared setting, including publish/pull
+  and full file transfer. Switching candidates updates the browser-synced source and open pages react
+  without navigation; old in-flight pulls follow the newest source. Connection-only export was
+  removed from options while legacy imports remain supported. Cross-vendor Edge/Chrome account
+  synchronization is not provided by native browser sync.
 - **Extension runtime** (`src/`): MV3 manifest; background service worker (SPA navigation
   forwarding + opening extension pages); content script (enhanced-view surface, top-bar button/menu,
   on-demand theme/query-name probes); options page (Appearance with import/export, Azure DevOps

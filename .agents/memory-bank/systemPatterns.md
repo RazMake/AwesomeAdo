@@ -293,9 +293,14 @@ back to JSON text and decodes entities before `importConfig` parses it.
 The trusted work item id is persisted separately under `teamConfig.workItemId`, so downloaded JSON
 cannot redirect a client to a different source. `TeamConfigSynchronizer` rejects partial remote
 data, replaces both stores only when the normalized snapshot changed, and coalesces concurrent
-pulls.
+pulls. A source change during a pull discards the obsolete response and follows the latest source;
+open options and saved-query pages observe source changes as well as navigation. The Advanced
+picker's query is the ordinary shared `settings.configurationQueryId`, not a separate locator or
+personal exception: it follows publish-before-save, full file transfer, pulls, and settings observation.
+Only the trusted work item ID remains outside the shared payload. Native browser-account sync does
+not bridge Edge and Chrome accounts.
 
-Export has two forms. `exportConfig` writes the whole configuration; `exportConnectionConfig` writes
+Options exports the whole configuration through `exportConfig`. The legacy `exportConnectionConfig` serializer writes
 `AwesomeADO.connection.config`, carrying only the connected work item id plus the organization and
 project needed to reach it and marked `configScope: "connection"`. `ImportedConfig.replacesBindings`
 is how a caller tells the two apart: a connection file never runs `replaceAll`, and both

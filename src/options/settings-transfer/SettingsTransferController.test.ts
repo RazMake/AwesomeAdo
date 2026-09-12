@@ -47,7 +47,6 @@ class FakeTeamConfigSourceStore implements TeamConfigSourceStore {
 function makeElements(): SettingsTransferElements {
   return {
     exportButton: document.createElement("button"),
-    exportConnectionButton: document.createElement("button"),
     importButton: document.createElement("button"),
     fileInput: document.createElement("input"),
     status: document.createElement("p"),
@@ -181,31 +180,6 @@ describe("SettingsTransferController export", () => {
     expect(h.downloaded.blobs).toHaveLength(0);
     expect(h.errors).toHaveLength(1);
     expect(h.elements.status.textContent).toContain("storage offline");
-  });
-});
-
-describe("SettingsTransferController connection export", () => {
-  it("downloads only the connection to the shared work item", async () => {
-    const h = setup();
-
-    h.elements.exportConnectionButton.dispatchEvent(new Event("click"));
-    await flush();
-
-    expect(h.downloaded.name).toBe("AwesomeADO.connection.config");
-    const parsed = JSON.parse(await h.downloaded.blobs[0]!.text()) as Record<string, unknown>;
-    expect(parsed.teamConfigWorkItemId).toBe(42);
-    expect(parsed).not.toHaveProperty("enhancedQueries");
-    expect(h.elements.status.textContent).toContain("42");
-  });
-
-  it("refuses to export a connection that does not exist yet", async () => {
-    const h = setup({ teamConfigWorkItemId: null });
-
-    h.elements.exportConnectionButton.dispatchEvent(new Event("click"));
-    await flush();
-
-    expect(h.downloaded.blobs).toHaveLength(0);
-    expect(h.elements.status.textContent).toContain("Connect to a configuration work item");
   });
 });
 

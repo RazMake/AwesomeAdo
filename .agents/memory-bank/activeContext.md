@@ -39,8 +39,23 @@ AwesomeADO is feature-complete for its current scope:
 - Sprint View clears Lane, Project, person, marker, and activity filters from one pills-row command;
   right-clicking its Unassigned person pill instead excludes unassigned work and draws a
   bottom-left-to-top-right diagonal in the selected outline color.
+- Sprint parent cards show a Sub-items completed/total badge for primary descendants in the selected
+  sprint, indexed from roster-eligible items before interactive filters. The popup labels hidden
+  cards and scrolls to visible ones with an immediate theme-colored outline held for 2.4 seconds,
+  then faded for 0.6 seconds; compact Done cards retain it.
+  Shared child badges now expose
+  completed/total tooltips. Authenticated visual validation of the new badge remains pending.
 - Options manages appearance, Azure DevOps configuration, query bindings, file transfer, team
   configuration sharing, shared queries, and device-local diagnostics.
+- Configuration Sharing has an Advanced query picker backed by the ordinary shared
+  `settings.configurationQueryId` field. Selecting another candidate disconnects, reconnects, and
+  pulls through the synced source; open query/options pages follow source changes and discard stale
+  pulls. Full file export/import remains; connection-only export UI is removed.
+  Advanced uses a five-column table capped at ten visible rows, defaults to the connected item even
+  when absent from results, orders rows by newest modification first, and separates modification
+  date/time from the last editor. The connected row has a highlighted Active marker and bold name;
+  muted Not active markers switch the source. A full-width busy row replaces candidate rows while the
+  configuration query is loading.
 - Catalog Favorites traverses every tag-filtered hierarchy level in display order, including
   collapsed branches, skips unlinked items, and appends the exact current catalog URL. Linked rows
   offer Clear project query; the removal service deletes before unlinking and retains links on

@@ -66,6 +66,7 @@ describe("renderChildItemsBadge - badge and popup rendering", () => {
     });
 
     expect(badgeOf(root).textContent).toBe("2 / 3");
+    expect(badgeOf(root).title).toBe("Completed: 2\nTotal: 3");
   });
 
   it("tints the badge with a discrete wash of the supplied type color", () => {

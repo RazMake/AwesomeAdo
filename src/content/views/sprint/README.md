@@ -151,8 +151,13 @@ marked as Primary work in the configuration render as cards. Their complete non-
 trees are summarized on large cards by the shared completed/total child-items badge; its popup lists
 every level in depth-first order with indentation, stopping at nested Primary work because that work
 filters independently and renders as its own card. Each sibling level follows the active ordering
-policy and uses the shared Assigned To and ETA controls. Queue,
-Active, and Waiting cards use the tall format; Done cards start compact and expand on click or
+policy and uses the shared Assigned To and ETA controls.
+Primary parents also show a blue `Sub-items: completed/total` badge beside the child badge for primary
+descendants in the selected sprint, including nested descendants and cards hidden by active filters.
+It remains visible on compact Done cards. Its popup lists IDs, titles, states, and assignees;
+selecting a visible title scrolls to and highlights that card. Hidden cards are labeled rather than
+clearing filters. Both badges explain their counts with a two-line `Completed: x` / `Total: y` tooltip.
+Queue, Active, and Waiting cards use the tall format; Done cards start compact and expand on click or
 keyboard activation. Both formats place the ID in the top-left corner and a tag-free shared Assigned
 To control in the top-right, followed by the wrapped title. The shared `?` button beside the ID opens
 Created, Last Modified, and the sanitized description in either size. The popup stays at least

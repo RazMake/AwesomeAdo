@@ -55,6 +55,7 @@ import {
   TeamConfigController,
   type TeamConfigElements,
 } from "./settings-transfer/TeamConfigController";
+import { TeamConfigQueryController } from "./settings-transfer/TeamConfigQueryController";
 import { TabsController } from "./shell/TabsController";
 
 // One logger factory + backing store shared by the whole options page: controllers record through
@@ -208,23 +209,13 @@ if (themeSelect && defaultViewSelect) {
 // Import/Export lives on the Appearance tab and spans both stores, so a single file captures and
 // restores the whole configuration (settings + every enhanced-query binding).
 const settingsExportButton = document.querySelector<HTMLButtonElement>("#settings-export");
-const settingsExportConnectionButton = document.querySelector<HTMLButtonElement>(
-  "#settings-export-connection",
-);
 const settingsImportButton = document.querySelector<HTMLButtonElement>("#settings-import");
 const settingsImportFile = document.querySelector<HTMLInputElement>("#settings-import-file");
 const settingsTransferStatus = document.querySelector<HTMLElement>("#settings-transfer-status");
 
-if (
-  settingsExportButton &&
-  settingsExportConnectionButton &&
-  settingsImportButton &&
-  settingsImportFile &&
-  settingsTransferStatus
-) {
+if (settingsExportButton && settingsImportButton && settingsImportFile && settingsTransferStatus) {
   const transferElements: SettingsTransferElements = {
     exportButton: settingsExportButton,
-    exportConnectionButton: settingsExportConnectionButton,
     importButton: settingsImportButton,
     fileInput: settingsImportFile,
     status: settingsTransferStatus,
@@ -286,6 +277,43 @@ if (
     teamConfigController.dispose();
     report(error);
   });
+  const observation = teamConfigSourceStore.observe(() => {
+    void teamConfigController.reload().catch(report);
+    void teamConfigSynchronizer
+      .pull()
+      .then((result) => {
+        if (result.status === "updated") reloadImportedConfiguration();
+      })
+      .catch(report);
+  });
+  void observation.ready.catch(report);
+  window.addEventListener("pagehide", observation.unsubscribe, { once: true });
+  const queryId = document.querySelector<HTMLInputElement>("#team-config-query-id");
+  const loadButton = document.querySelector<HTMLButtonElement>("#team-config-query-load");
+  const items = document.querySelector<HTMLTableSectionElement>("#team-config-query-items");
+  const status = document.querySelector<HTMLElement>("#team-config-query-status");
+  if (queryId && loadButton && items && status) {
+    const queryController = new TeamConfigQueryController(
+      teamConfigClient,
+      teamConfigSourceStore,
+      settingsStore,
+      { queryId, loadButton, items, status },
+      (id) => teamConfigController.switchTo(id),
+      loggers.forSource("options/settings-transfer"),
+    );
+    void queryController
+      .init()
+      .then(async () => {
+        queryController.setAdoReachable(await isAdoReachable());
+      })
+      .catch((error: unknown) => {
+        queryController.dispose();
+        report(error);
+      });
+    window.addEventListener("pagehide", () => queryController.dispose(), { once: true });
+  } else {
+    report(new Error("The options page is missing the configuration query controls."));
+  }
   void isAdoReachable()
     .then((reachable) => {
       teamConfigController.setAdoReachable(reachable);

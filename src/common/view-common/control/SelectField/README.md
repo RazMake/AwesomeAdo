@@ -35,6 +35,9 @@ Each choice may carry a `title` (the full value behind a shortened label) and `d
 style longhands the row and the collapsed field both wear, which is how a sprint's past/current/
 future emphasis reads the same here as in the [SprintPicker](../SprintPicker/README.md).
 
+Use `secondaryLabel` for supporting text after the primary label. It renders in muted italic text
+in both the collapsed field and each dropdown row; provide `title` when the tooltip should include it.
+
 `classPrefix` is the class-name stem for every element of one instance (`…__trigger`, `…__value`,
 `…__popup`, `…__option`), so a caller's selectors cannot match a different field on the same
 surface.

@@ -13,7 +13,7 @@ options-page glue.
 ### `SettingsTransferController.ts`
 
 - `SettingsTransferElements` — the elements the controller drives: `exportButton`,
-  `exportConnectionButton`, `importButton`, the hidden `fileInput`, and a `status` line.
+  `importButton`, the hidden `fileInput`, and a `status` line.
 - `new SettingsTransferController(settingsStore, bindingStore, teamConfigSourceStore, elements,
 reportError?, onImported?)` — construct with all three store abstractions.
   - `init()` — attach the click/change listeners.
@@ -26,10 +26,7 @@ reportError?, onImported?)` — construct with all three store abstractions.
 **Export** reads all three stores, builds the `AwesomeADO.config` JSON (including the trusted team
 configuration work item ID), and downloads it.
 
-**Export Connection** downloads `AwesomeADO.connection.config` instead: only the connected work item
-ID plus the organization and project needed to reach it. It is what you hand a teammate who should
-follow the team's **live** shared configuration rather than inherit a snapshot of yours, and it
-refuses to produce a file while no work item is connected. **Import** opens
+**Import** continues to accept legacy connection-only files. It opens
 the hidden file input, reads the chosen file, applies every setting and binding the file supplies
 usably — settings as a partial (so a value the file omitted or got wrong keeps what the user has
 today) and bindings via **`replaceAll`**, so the file is authoritative about which queries are
@@ -68,6 +65,27 @@ fail. Disconnect only clears the locally stored source, so it stays available.
 Successful pulls notify the same options-page reload callback as file import, so read-once sections
 cannot display or later re-save stale values. Publish conflicts and malformed remote configuration
 remain connected but surface as failures in both the card and Diagnostics.
+
+### `TeamConfigQueryController.ts`
+
+Drives the collapsible **Advanced** section with a configuration query ID and an item table.
+Inject a `TeamConfigQueryReader`, observable source, publishing settings store, elements, switch
+callback, and logger; call `init()`, `setAdoReachable()`, and `dispose()` with the page lifecycle.
+The query ID is the ordinary shared `configurationQueryId` setting: edits publish before saving,
+and imports or pulls update the picker without publishing again. **List Configs**, beside the query
+input, refreshes its results. Advanced starts collapsed on every page load.
+The table shows item ID, title, local modification date and time, and the last modifier's full name,
+ordered by newest modification first. It displays at most ten rows before scrolling. The connected
+item has a highlighted **Active** marker and bold name; each other row has a muted **Not active**
+button that switches the shared configuration. While the query is pending, a full-width **Loading
+configurations…** spinner row replaces all item rows so the connected fallback cannot be mistaken for
+a complete result set. A connected item absent from query results remains visible by ID after loading
+finishes, with its unknown modification date sorted last.
+
+The switch callback is `TeamConfigController.switchTo(id)`: an unchanged ID is a no-op; a new ID
+disconnects the source, saves the new ID, then pulls its configuration. Open options and query pages
+follow source changes received through browser-account sync. Offline profiles follow once sync
+resumes; Edge and Chrome do not share a native browser sync account.
 
 ### `BootstrapLinkController.ts`
 

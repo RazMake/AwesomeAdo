@@ -551,6 +551,14 @@ const pullTeamConfigForQuery = (url: string): void => {
   }
 };
 
+const teamSourceObservation = teamConfigSourceStore.observe(() => {
+  pullTeamConfigForQuery(location.href);
+});
+void teamSourceObservation.ready.catch((error: unknown) => {
+  logger.error("Could not observe the team configuration connection", error);
+});
+window.addEventListener("pagehide", teamSourceObservation.unsubscribe, { once: true });
+
 // A query opened from a shared link reads its configuration from someone else's work item. The
 // resolver is built per page so several queries sharing one item cost a single credentialed read,
 // and so a reload always sees what that item says today.

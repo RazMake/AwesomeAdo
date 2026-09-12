@@ -2,10 +2,8 @@ import type { IQueryBindingStore } from "../../common/bindings/IQueryBindingStor
 import type { LocalSettingsAccess } from "../../common/settings/LocalSettingsAccess";
 import {
   CONFIG_FILE_NAME,
-  CONNECTION_FILE_NAME,
   ConfigImportError,
   exportConfig,
-  exportConnectionConfig,
   importConfig,
   mergeImportedSettings,
 } from "../../common/settings-transfer/AwesomeAdoConfig";
@@ -16,8 +14,6 @@ import { renderTransferStatus } from "./transferStatus";
 /** The options-page elements the controller drives. Passed in so the controller stays testable. */
 export interface SettingsTransferElements {
   exportButton: HTMLButtonElement;
-  /** Exports only the shared work item connection, so a teammate adopts the team's live source. */
-  exportConnectionButton: HTMLButtonElement;
   importButton: HTMLButtonElement;
   /** Hidden `<input type="file">` the Import button opens; kept out of the visible layout. */
   fileInput: HTMLInputElement;
@@ -61,7 +57,6 @@ export class SettingsTransferController {
 
   init(): void {
     this.elements.exportButton.addEventListener("click", this.handleExport);
-    this.elements.exportConnectionButton.addEventListener("click", this.handleExportConnection);
     this.elements.importButton.addEventListener("click", this.handleImport);
     this.elements.fileInput.addEventListener("change", this.handleFileChosen);
   }
@@ -69,17 +64,12 @@ export class SettingsTransferController {
   dispose(): void {
     this.disposed = true;
     this.elements.exportButton.removeEventListener("click", this.handleExport);
-    this.elements.exportConnectionButton.removeEventListener("click", this.handleExportConnection);
     this.elements.importButton.removeEventListener("click", this.handleImport);
     this.elements.fileInput.removeEventListener("change", this.handleFileChosen);
   }
 
   private readonly handleExport = (): void => {
     void this.export();
-  };
-
-  private readonly handleExportConnection = (): void => {
-    void this.exportConnection();
   };
 
   private async export(): Promise<void> {
@@ -97,25 +87,6 @@ export class SettingsTransferController {
       this.setStatus(`Exported your configuration to ${CONFIG_FILE_NAME}.`);
     } catch (error: unknown) {
       this.fail("export your configuration", error);
-    }
-  }
-
-  private async exportConnection(): Promise<void> {
-    try {
-      const [settings, teamConfigWorkItemId] = await Promise.all([
-        this.settingsStore.read(),
-        this.teamConfigSourceStore.read(),
-      ]);
-      if (teamConfigWorkItemId === null) {
-        this.setStatus("Connect to a configuration work item before exporting a connection.", true);
-        return;
-      }
-      this.download(CONNECTION_FILE_NAME, exportConnectionConfig(settings, teamConfigWorkItemId));
-      this.setStatus(
-        `Exported the connection to work item ${teamConfigWorkItemId} as ${CONNECTION_FILE_NAME}.`,
-      );
-    } catch (error: unknown) {
-      this.fail("export your connection", error);
     }
   }
 

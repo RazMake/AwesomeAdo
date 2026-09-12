@@ -1,4 +1,14 @@
-import { buildWorkItemUpdateUrl, buildWorkItemUrl } from "../ado/fetchAdoTree";
+import {
+  buildAdoTreeUrls,
+  buildWorkItemUpdateUrl,
+  buildWorkItemUrl,
+  type AdoRawTree,
+} from "../ado/fetchAdoTree";
+import {
+  parseTeamConfigQuery,
+  type TeamConfigQueryItem,
+  type TeamConfigQueryReader,
+} from "../settings-transfer/TeamConfigQuery";
 import type {
   TeamConfigReader,
   TeamConfigReadResult,
@@ -7,6 +17,7 @@ import type {
 } from "../settings-transfer/TeamConfigSynchronizer";
 
 import { isReadTeamConfigResponse, isWriteTeamConfigResponse } from "./TeamConfigRequest";
+import { fetchAdoTreeInPage } from "./fetchAdoTreeInPage";
 import { fetchTeamConfigInPage } from "./fetchTeamConfigInPage";
 import { readCurrentAdoQueryContext } from "./pickAdoQueryTab";
 import { writeTeamConfigInPage } from "./writeTeamConfigInPage";
@@ -14,7 +25,29 @@ import { writeTeamConfigInPage } from "./writeTeamConfigInPage";
 const NO_QUERY_ERROR = "Open an Azure DevOps query in this organization first.";
 
 /** Pulls and publishes through the current ADO query tab's signed-in MAIN world. */
-export class ChromeTeamConfigClient implements TeamConfigReader, TeamConfigWriter {
+export class ChromeTeamConfigClient
+  implements TeamConfigReader, TeamConfigWriter, TeamConfigQueryReader
+{
+  async readQuery(queryId: string): Promise<readonly TeamConfigQueryItem[]> {
+    const context = await readCurrentAdoQueryContext();
+    const urls = context === null ? null : buildAdoTreeUrls(context.url, queryId);
+    if (context === null || urls === null) {
+      throw new Error(NO_QUERY_ERROR);
+    }
+    const results = await chrome.scripting.executeScript({
+      target: { tabId: context.tabId },
+      world: "MAIN",
+      func: fetchAdoTreeInPage,
+      args: [
+        urls.wiqlUrl,
+        urls.batchUrl,
+        ["System.Id", "System.Title", "System.ChangedBy", "System.ChangedDate"],
+        urls.queryUrl,
+      ],
+    });
+    return parseTeamConfigQuery(results[0]?.result as AdoRawTree | undefined);
+  }
+
   async resolveWorkItemUrl(workItemId: number): Promise<string | null> {
     const target = await this.target(workItemId);
     return typeof target === "string" ? null : target.workItemUrl;

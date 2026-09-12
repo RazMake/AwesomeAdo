@@ -64,6 +64,24 @@ export class TeamConfigController {
     this.updateButtons();
   }
 
+  async switchTo(workItemId: number): Promise<void> {
+    if (!this.adoReachable || normalizeWorkItemId(workItemId) === null) {
+      return;
+    }
+    await this.run(async () => {
+      if ((await this.sourceStore.read()) === workItemId) {
+        return undefined;
+      }
+      await this.sourceStore.write(null);
+      this.connected = false;
+      await this.renderWorkItem(null);
+      await this.sourceStore.write(workItemId);
+      this.connected = true;
+      await this.renderWorkItem(workItemId);
+      return this.synchronizer.pull();
+    });
+  }
+
   dispose(): void {
     this.disposed = true;
     this.elements.connectButton.removeEventListener("click", this.handleConnect);
@@ -140,14 +158,17 @@ export class TeamConfigController {
     }
   }
 
-  private async run(action: () => Promise<TeamConfigSyncResult>): Promise<void> {
+  private async run(action: () => Promise<TeamConfigSyncResult | undefined>): Promise<void> {
     if (this.busy) {
       return;
     }
     this.busy = true;
     this.updateButtons();
     try {
-      this.reportResult(await action());
+      const result = await action();
+      if (result !== undefined) {
+        this.reportResult(result);
+      }
     } catch (error) {
       this.reportError(error);
       this.setStatus(`Could not update team configuration: ${describeError(error)}`, true);

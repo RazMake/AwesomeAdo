@@ -745,6 +745,93 @@ async function verifyWorkCardRendering(): Promise<void> {
   expectCompactDoneCard(root);
 }
 
+async function renderRelatedCards(): Promise<HTMLElement> {
+  const done = item(3, "Completed descendant", { state: "Done", assignedTo: user("Bob") });
+  const nested = item(2, "Related child", { children: [done] });
+  const detail = item(4, "Implementation detail", { type: "Task", children: [nested] });
+  const otherSprint = item(5, "Other sprint", { sprintName: "Sprint 2" });
+  return render({
+    loadTree: async () => ({
+      isTreeQuery: true,
+      roots: [item(1, "Primary parent", { state: "Done", children: [detail, otherSprint] })],
+      error: null,
+    }),
+    getTypes: () => [
+      { ...defaultTypes()()[0]!, children: ["Task", "Story"] },
+      { ...defaultTypes()()[0]!, name: "Task", isPrimaryWork: false, children: ["Story"] },
+    ],
+  });
+}
+
+describe("Sprint View related cards", () => {
+  it("counts completed primary descendants across intermediate types, excluding other sprints", async () => {
+    const root = await renderRelatedCards();
+    const parent = root.querySelector<HTMLElement>('[data-item-id="1"]')!;
+    const related = parent.querySelector<HTMLButtonElement>(
+      ".awesomeado-sprint-card__related button",
+    )!;
+    expect(parent.dataset.size).toBe("compact");
+    expect(related.textContent).toBe("Sub-items: 1/2");
+    expect(related.title).toBe("Completed: 1\nTotal: 2");
+    expect(
+      related.closest<HTMLElement>(".awesomeado-sprint-card__related")!.style.display,
+    ).not.toBe("none");
+    parent.click();
+    const childBadge = parent.querySelector<HTMLButtonElement>(".awesomeado-child-items__badge")!;
+    expect(childBadge.title).toBe("Completed: 0\nTotal: 1");
+    expect(related.style.background).not.toBe(childBadge.style.background);
+    related.click();
+    const popup = parent.querySelector(
+      ".awesomeado-sprint-card__related .awesomeado-child-items__popup",
+    )!;
+    expect(popup.textContent).toContain("Related child");
+    expect(popup.textContent).toContain("Completed descendant");
+    expect(popup.textContent).not.toContain("Other sprint");
+    expect(popup.textContent).not.toContain("Implementation detail");
+    expect(root.querySelector('[data-item-id="3"] .awesomeado-sprint-card__related')).toBeNull();
+  });
+
+  it("keeps filtered descendants in the count and navigates to visible cards", async () => {
+    const root = await renderRelatedCards();
+    root.querySelector<HTMLButtonElement>('[data-person="alice@example.com"]')!.click();
+    const parent = root.querySelector<HTMLElement>('[data-item-id="1"]')!;
+    const related = parent.querySelector<HTMLButtonElement>(
+      ".awesomeado-sprint-card__related button",
+    )!;
+    expect(related.textContent).toBe("Sub-items: 1/2");
+    related.click();
+    const popup = parent.querySelector(
+      ".awesomeado-sprint-card__related .awesomeado-child-items__popup",
+    )!;
+    const links = [
+      ...popup.querySelectorAll<HTMLButtonElement>(".awesomeado-child-items__title-text button"),
+    ];
+    const hidden = links.find((link) => link.textContent?.includes("Completed descendant"))!;
+    expect(hidden.textContent).toContain("Hidden by filters");
+    expect(hidden.disabled).toBe(true);
+    const target = root.querySelector<HTMLElement>('[data-item-id="2"]')!;
+    target.scrollIntoView = vi.fn();
+    target.animate = vi.fn();
+    target.style.setProperty("--status-blue-foreground", "#0078d4");
+    links.find((link) => link.textContent?.includes("Related child"))!.click();
+    expect(target.scrollIntoView).toHaveBeenCalledWith({
+      block: "center",
+      inline: "nearest",
+      behavior: "smooth",
+    });
+    expect(target.animate).toHaveBeenCalledWith(
+      [
+        { outline: "3px solid #0078d4", offset: 0 },
+        { outline: "3px solid #0078d4", offset: 0.8 },
+        { outline: "3px solid transparent", offset: 1 },
+      ],
+      { duration: 3000, delay: 0 },
+    );
+    expect(document.activeElement).toBe(target);
+    expect(parent.querySelector(".awesomeado-child-items__popup")).toBeNull();
+  });
+});
+
 describe("Sprint View board", () => {
   it(
     "renders only work-flagged cards and their descendants in the shared badge",

@@ -25,6 +25,7 @@ const sampleSettings: ExtensionSettings = {
   theme: "dark",
   defaultView: "enhanced",
   currentTeam: { id: "team-1", name: "Contoso Team" },
+  configurationQueryId: "33333333-3333-3333-3333-333333333333",
   futureSprintsCount: 3,
   pastSprintsCount: 2,
   sprintAreaPaths: {
@@ -59,6 +60,17 @@ function withoutPrimaryWork(settings: ExtensionSettings): ExtensionSettings {
     }),
   };
 }
+
+describe("shared configuration query", () => {
+  it.each([exportConfig, exportCompactConfig])(
+    "round-trips the query ID in full and shared exports",
+    (serialize) => {
+      const imported = importConfig(serialize(sampleSettings, sampleBindings));
+      expect(imported.settings.configurationQueryId).toBe(sampleSettings.configurationQueryId);
+      expect(imported.problems).toEqual([]);
+    },
+  );
+});
 
 describe("exportConnectionConfig", () => {
   it("names the connection file distinctly from a full export", () => {

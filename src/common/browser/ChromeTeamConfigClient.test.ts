@@ -26,15 +26,15 @@ const ADO_TAB = {
 const ITEM_URL = "https://dev.azure.com/Contoso/_apis/wit/workitems/42?api-version=7.1";
 const ITEM_WEB_URL = "https://dev.azure.com/Contoso/Project/_workitems/edit/42";
 
-describe("ChromeTeamConfigClient", () => {
-  let chromeMock: MockChrome;
-  let client: ChromeTeamConfigClient;
+let chromeMock: MockChrome;
+let client: ChromeTeamConfigClient;
 
-  beforeEach(() => {
-    chromeMock = installMockChrome();
-    client = new ChromeTeamConfigClient();
-  });
+beforeEach(() => {
+  chromeMock = installMockChrome();
+  client = new ChromeTeamConfigClient();
+});
 
+describe("ChromeTeamConfigClient query candidates", () => {
   it("requires an open ADO query tab", async () => {
     chromeMock.query.mockResolvedValue([]);
 
@@ -45,6 +45,51 @@ describe("ChromeTeamConfigClient", () => {
     expect(chromeMock.executeScript).not.toHaveBeenCalled();
   });
 
+  it("loads configuration candidates with modification metadata", async () => {
+    chromeMock.query.mockResolvedValue([ADO_TAB]);
+    chromeMock.executeScript.mockResolvedValue([
+      {
+        result: {
+          wiql: { workItems: [{ id: 42 }] },
+          items: [
+            {
+              id: 42,
+              fields: {
+                "System.Title": "Team setup",
+                "System.ChangedBy": { displayName: "Full Name" },
+                "System.ChangedDate": "2026-09-12T10:00:00Z",
+              },
+            },
+          ],
+        },
+      },
+    ]);
+    await expect(client.readQuery("query-id")).resolves.toEqual([
+      { id: 42, title: "Team setup", changedBy: "Full Name", changedDate: "2026-09-12T10:00:00Z" },
+    ]);
+    expect(chromeMock.executeScript).toHaveBeenCalledWith(
+      expect.objectContaining({
+        world: "MAIN",
+        args: expect.arrayContaining([
+          "https://dev.azure.com/Contoso/Project/_apis/wit/wiql/query-id?api-version=7.1",
+          ["System.Id", "System.Title", "System.ChangedBy", "System.ChangedDate"],
+        ]),
+      }),
+    );
+  });
+
+  it("rejects failed query reads rather than presenting an empty list", async () => {
+    chromeMock.query.mockResolvedValue([]);
+    await expect(client.readQuery("query-id")).rejects.toThrow("Open an Azure DevOps query");
+    chromeMock.query.mockResolvedValue([ADO_TAB]);
+    chromeMock.executeScript.mockResolvedValue([
+      { result: { failure: { stage: "wiql", status: 403 } } },
+    ]);
+    await expect(client.readQuery("query-id")).rejects.toThrow("HTTP 403");
+  });
+});
+
+describe("ChromeTeamConfigClient sharing", () => {
   it("reads Description through the query tab's MAIN world", async () => {
     chromeMock.query.mockResolvedValue([ADO_TAB]);
     chromeMock.executeScript.mockResolvedValue([{ result: { ok: true, text: "config" } }]);

@@ -8,6 +8,7 @@ import type { ISettingsStore } from "./ISettingsStore";
 const THEME_KEY = "settings.theme";
 const DEFAULT_VIEW_KEY = "settings.defaultView";
 const QUERY_FAVORITES_PATHS_KEY = "settings.queryFavoritesPaths";
+const CONFIGURATION_QUERY_KEY = "settings.configurationQueryId";
 const ORGANIZATION_KEY = "settings.organization";
 const PROJECT_KEY = "settings.project";
 const CURRENT_TEAM_KEY = "settings.currentTeam";
@@ -22,6 +23,7 @@ const SETTING_KEYS = [
   THEME_KEY,
   DEFAULT_VIEW_KEY,
   QUERY_FAVORITES_PATHS_KEY,
+  CONFIGURATION_QUERY_KEY,
   ORGANIZATION_KEY,
   PROJECT_KEY,
   CURRENT_TEAM_KEY,
@@ -39,6 +41,7 @@ const SETTING_WRITE_MAP: readonly { name: keyof ExtensionSettings; key: string }
   { name: "theme", key: THEME_KEY },
   { name: "defaultView", key: DEFAULT_VIEW_KEY },
   { name: "queryFavoritesPaths", key: QUERY_FAVORITES_PATHS_KEY },
+  { name: "configurationQueryId", key: CONFIGURATION_QUERY_KEY },
   { name: "organization", key: ORGANIZATION_KEY },
   { name: "project", key: PROJECT_KEY },
   { name: "currentTeam", key: CURRENT_TEAM_KEY },
@@ -56,6 +59,7 @@ function projectSettings(raw: Record<string, unknown>): ExtensionSettings {
     theme: raw[THEME_KEY],
     defaultView: raw[DEFAULT_VIEW_KEY],
     queryFavoritesPaths: raw[QUERY_FAVORITES_PATHS_KEY],
+    configurationQueryId: raw[CONFIGURATION_QUERY_KEY],
     organization: raw[ORGANIZATION_KEY],
     project: raw[PROJECT_KEY],
     currentTeam: raw[CURRENT_TEAM_KEY],

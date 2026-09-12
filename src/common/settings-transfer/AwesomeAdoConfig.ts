@@ -416,6 +416,7 @@ const SETTINGS_RULES: readonly {
     expected: "a map of query IDs to Favorites folder paths",
   },
   { key: "project", isValid: isText, expected: "the project name as text" },
+  { key: "configurationQueryId", isValid: isText, expected: "the configuration query ID as text" },
   { key: "currentTeam", isValid: isTeamRef, expected: "null, or a team with an id and a name" },
   { key: "futureSprintsCount", isValid: isWholeNumber, expected: "a whole number" },
   { key: "pastSprintsCount", isValid: isWholeNumber, expected: "a whole number" },

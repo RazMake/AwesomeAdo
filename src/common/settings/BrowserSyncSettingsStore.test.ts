@@ -77,6 +77,23 @@ const BOARD_COLUMNS_KEY = "settings.boardColumns";
 const WORK_ITEM_TYPES_KEY = "settings.workItemTypes";
 const MARKER_TAGS_KEY = "settings.markerTags";
 
+describe("configuration query setting", () => {
+  it("persists and observes the query as an ordinary synced setting", async () => {
+    const storage = new FakeBrowserSyncStorage();
+    const store = new BrowserSyncSettingsStore(storage);
+    const listener = vi.fn();
+    const observation = store.observe(listener);
+    await observation.ready;
+    await store.write({ configurationQueryId: "query-id" });
+    expect(await store.read()).toMatchObject({ configurationQueryId: "query-id" });
+    storage.emit("settings.configurationQueryId", "other-query");
+    expect(listener).toHaveBeenLastCalledWith(
+      expect.objectContaining({ configurationQueryId: "other-query" }),
+    );
+    observation.unsubscribe();
+  });
+});
+
 describe("BrowserSyncSettingsStore - read", () => {
   describe("read", () => {
     it("normalizes missing values to the defaults", async () => {

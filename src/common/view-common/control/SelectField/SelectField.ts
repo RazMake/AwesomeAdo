@@ -6,6 +6,7 @@ export interface SelectFieldChoice {
   value: string;
   /** Display text for the row and, once picked, for the collapsed field. */
   label: string;
+  secondaryLabel?: string;
   /** The row's tooltip, for a label that had to be shortened. Defaults to the label. */
   title?: string;
   /** Style declarations the row and the collapsed field wear (e.g. a sprint's relation color). */
@@ -178,6 +179,16 @@ function triggerLabel(choice: SelectFieldChoice | undefined, options: SelectFiel
   return options.emptyLabel ?? `No ${options.label.toLowerCase()}`;
 }
 
+function paintLabel(element: HTMLElement, label: string, secondaryLabel?: string): void {
+  element.textContent = label;
+  if (secondaryLabel === undefined) return;
+  const detail = element.ownerDocument.createElement("em");
+  detail.textContent = ` ${secondaryLabel}`;
+  detail.style.color = "var(--text-secondary-color)";
+  detail.style.fontStyle = "italic";
+  element.append(detail);
+}
+
 /** Show the value in force, wearing that choice's own emphasis so the field reads like its row. */
 function paintTrigger(
   trigger: HTMLButtonElement,
@@ -185,7 +196,7 @@ function paintTrigger(
   choice: SelectFieldChoice | undefined,
   options: SelectFieldOptions,
 ): void {
-  text.textContent = triggerLabel(choice, options);
+  paintLabel(text, triggerLabel(choice, options), choice?.secondaryLabel);
   trigger.title = choice === undefined ? "" : (choice.title ?? choice.label);
   trigger.style.cssText = TRIGGER_STYLE.join(";");
   trigger.style.cursor = trigger.disabled ? "default" : "pointer";
@@ -255,7 +266,7 @@ function renderRow(
   row.setAttribute("role", "option");
   row.setAttribute("aria-selected", String(selected));
   row.value = choice.value;
-  row.textContent = choice.label;
+  paintLabel(row, choice.label, choice.secondaryLabel);
   row.title = choice.title ?? choice.label;
   row.style.cssText = ROW_STYLE.join(";");
   if (selected) {

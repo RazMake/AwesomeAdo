@@ -169,6 +169,29 @@ describe("TeamConfigController without a reachable Azure DevOps", () => {
 });
 
 describe("TeamConfigController connection actions", () => {
+  it("disconnects before connecting and pulling a different item", async () => {
+    const harness = makeHarness(42);
+    await harness.controller.init();
+
+    await harness.controller.switchTo(84);
+
+    expect(harness.sourceStore.write).toHaveBeenNthCalledWith(1, null);
+    expect(harness.sourceStore.write).toHaveBeenNthCalledWith(2, 84);
+    expect(harness.reader.read).toHaveBeenCalledWith(84);
+    expect(harness.elements.workItemId.value).toBe("84");
+    expect(harness.onPulled).toHaveBeenCalledOnce();
+  });
+
+  it("does not reconnect the selected source", async () => {
+    const harness = makeHarness(42);
+    await harness.controller.init();
+
+    await harness.controller.switchTo(42);
+
+    expect(harness.sourceStore.write).not.toHaveBeenCalled();
+    expect(harness.reader.read).not.toHaveBeenCalled();
+  });
+
   it("connects and applies the authoritative configuration", async () => {
     const harness = makeHarness();
     await harness.controller.init();

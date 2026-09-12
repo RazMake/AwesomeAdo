@@ -68,6 +68,12 @@ bindings via `IQueryBindingStore.replaceAll` (a wholesale replace, not a merge).
 
 ## Team configuration
 
+`settings.configurationQueryId` is an ordinary team-shared setting naming the query used by the
+Advanced configuration picker. Full exports, compact publishes, imports, and pulls include it just
+like other shared settings. `TeamConfigQueryReader.readQuery(id)` returns candidates with ID, title,
+modifier display name, and modification date; `parseTeamConfigQuery` validates the batched results.
+The options page no longer offers connection-only export; legacy connection imports remain supported.
+
 Team sharing stores the same full configuration as compact JSON in the `System.Description` field
 of one Azure DevOps work item. The work item id is a separate trusted connection value under the synced
 `teamConfig.workItemId` key; downloaded content cannot redirect clients to another source.
@@ -94,7 +100,8 @@ and `TeamConfigSynchronizer` never applies a source ID found in a remote payload
   proposed binding map without rereading stale local bindings; `publishSettings(writer, proposed)`
   does the same for settings. Both let options publish before making a mutation observable to
   pull-triggered content views. Work-item type settings include their Primary Work classification in
-  both directions. Concurrent pulls share one in-flight operation.
+  both directions. Concurrent pulls share one in-flight operation; a changed source causes an
+  outdated response to be discarded and the latest source to be pulled.
 - `TeamSprintAreaPathStore` — pulls before Sprint reads, serializes per-sprint setting writes, and
   publishes the resulting full normalized configuration through the connected work item.
 - `TeamSharedQueryBindingWriter` — an `IQueryBindingWriter` for content-script surfaces that create
@@ -129,7 +136,7 @@ in three places, so a teammate can neither receive nor impose them:
 - `overlaySettings` (`content/shared-query`) strips them, so opening someone else's shared query never
   repaints the reader's page.
 
-Connected content scripts pull when a saved query opens. Every **team** settings edit made on the
+Connected content scripts pull when a saved query opens or the synced source changes. Every **team** settings edit made on the
 options page publishes automatically, because the work-item payload is the team-shared source of
 truth. Two flows deliberately do **not** publish and use `LocalSettingsAccess` instead: applying a
 pull (it would echo the snapshot just read) and importing a file (it would push the outgoing

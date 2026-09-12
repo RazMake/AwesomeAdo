@@ -76,6 +76,37 @@ function makeHarness(
   };
 }
 
+describe("TeamConfigSynchronizer source changes", () => {
+  it("discards an old in-flight response and pulls the newly synced source", async () => {
+    const harness = makeHarness();
+    let finishOld!: (value: { ok: true; text: string }) => void;
+    vi.mocked(harness.reader.read).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishOld = resolve;
+        }),
+    );
+    const pending = harness.synchronizer.pull();
+    await Promise.resolve();
+    vi.mocked(harness.sourceStore.read).mockResolvedValue(84);
+    finishOld({ ok: true, text: exportConfig(DEFAULT_SETTINGS, { old: bindings.query! }) });
+
+    await expect(pending).resolves.toMatchObject({ status: "updated", workItemId: 84 });
+    expect(harness.reader.read).toHaveBeenNthCalledWith(2, 84);
+    expect(harness.bindingStore.replaceAll).toHaveBeenCalledExactlyOnceWith(bindings);
+  });
+
+  it("discards an in-flight response after disconnecting", async () => {
+    const harness = makeHarness();
+    vi.mocked(harness.reader.read).mockImplementation(async () => {
+      vi.mocked(harness.sourceStore.read).mockResolvedValue(null);
+      return { ok: true, text: exportConfig(DEFAULT_SETTINGS, bindings) };
+    });
+    await expect(harness.synchronizer.pull()).resolves.toEqual({ status: "disconnected" });
+    expect(harness.bindingStore.replaceAll).not.toHaveBeenCalled();
+  });
+});
+
 describe("TeamConfigSynchronizer pull", () => {
   it("replaces settings and bindings from a valid authoritative description", async () => {
     const harness = makeHarness();

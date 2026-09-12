@@ -24,6 +24,7 @@ export interface ExtensionSettings {
   defaultView: DefaultView;
 
   queryFavoritesPaths: Record<string, string>;
+  configurationQueryId: string;
 
   /**
    * The Azure DevOps organization the team works in; empty until it is set. Stored rather than only
@@ -237,6 +238,7 @@ export const DEFAULT_SETTINGS: ExtensionSettings = deepFreeze({
   theme: "auto",
   defaultView: "enhanced",
   queryFavoritesPaths: {},
+  configurationQueryId: "",
   organization: "",
   project: "",
   currentTeam: null,
@@ -650,6 +652,7 @@ export function normalizeSettings(raw: unknown): ExtensionSettings {
       : DEFAULT_SETTINGS.defaultView,
     queryFavoritesPaths: normalizeQueryFavoritesPaths(candidate.queryFavoritesPaths),
     organization: normalizeAdoName(candidate.organization),
+    configurationQueryId: normalizeAdoName(candidate.configurationQueryId),
     project: normalizeAdoName(candidate.project),
     currentTeam: normalizeTeamRef(candidate.currentTeam),
     futureSprintsCount: normalizeFutureSprintsCount(candidate.futureSprintsCount),

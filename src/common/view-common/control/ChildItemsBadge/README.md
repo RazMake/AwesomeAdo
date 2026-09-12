@@ -30,6 +30,8 @@ const badge = renderChildItemsBadge(document, {
 
 ### `ChildItemsBadgeOptions`
 
+- **`label?: string`** - Optional prefix, such as `Sub-items`, rendering `Sub-items: 2/3`.
+  Both labeled and ordinary badges have a two-line `Completed: x` / `Total: y` tooltip.
 - **`children: ChildItemDescriptor[]`** — The descendants summarized by the badge and listed in
   its popup. `children.length` is the denominator of "completed / total".
 - **`initiallyOpen?: boolean`** — Opens the popup as soon as the badge is rendered. Defaults to

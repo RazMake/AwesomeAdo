@@ -1120,6 +1120,7 @@ function renderSprintQueue(params: {
 }): HTMLElement {
   const { context, data, session } = params;
   return renderSprintBoard(context, params.visibleItems, {
+    sprintItems: selectedSprintItems(params.filterItems, session),
     types: params.types,
     boardColumns: context.services.getBoardColumns(),
     writes: params.writes,

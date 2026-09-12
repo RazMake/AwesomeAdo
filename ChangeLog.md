@@ -7,6 +7,19 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ### New Features
 
+- Sprint View parent cards now show a distinct **Sub-items: completed/total** badge for primary
+  descendants in the same sprint. Open it to find related cards, including those hidden by filters,
+  and jump to visible cards with an immediate three-second highlight that stays bright before fading.
+  Both Sub-items and
+  child badges explain completed and total counts in
+  their tooltips.
+- Configuration Sharing now has an **Advanced** query table showing up to ten configuration items
+  before scrolling, ordered by newest modification first, with ID, name, modification date/time, and
+  last editor. A prominent loading row appears while configurations are being fetched, instead of
+  making the connected item look like the only result. The connected item has a highlighted active
+  marker and bold name; selecting another row's muted marker switches connected browsers using the
+  same browser sync account. The query ID is included in shared configurations and file
+  export/import. **Export Connection** has been removed; full export/import remains available.
 - Project View keeps the sprint dropdown available when sprint filtering is off and subtly outlines
   pills matching the selected sprint without hiding items from other sprints.
 - Project Tracking now accepts drops directly onto parents, including empty or collapsed ones,

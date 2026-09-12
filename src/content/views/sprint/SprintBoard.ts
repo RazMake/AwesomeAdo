@@ -48,6 +48,7 @@ import { writeItemPriority } from "../item-priority/writeItemPriority";
 import { renderMarkerReasonsPill } from "../project-tracking/marker-reasons/MarkerReasonsPill";
 
 import { SprintCardDragController } from "./SprintCardDragController";
+import { relatedCardIndex, renderSprintRelatedCards } from "./SprintRelatedCards";
 
 const VISIBLE_COLUMN_COUNT = 4;
 const BOARD_LAYOUT_COLUMNS = "minmax(130px,170px) minmax(0,1fr)";
@@ -95,6 +96,9 @@ export interface SprintBoardItem {
 }
 
 interface SprintBoardOptions {
+  sprintItems: readonly SprintBoardItem[];
+  relatedCards?: ReadonlyMap<number, readonly TrackedWorkItem[]>;
+  visibleIds?: ReadonlySet<number>;
   types: ReadonlyMap<string, TypeCatalogEntry>;
   boardColumns: readonly string[];
   writes: WorkItemWriteQueue;
@@ -610,7 +614,7 @@ function renderCardFooter(
   const footer = context.doc.createElement("div");
   footer.className = "awesomeado-sprint-card__footer";
   footer.style.cssText =
-    "display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0;font-size:10px";
+    "display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;min-width:0;font-size:10px";
   const eta = renderItemEta(context, item, options);
   eta.classList.add("awesomeado-sprint-card__eta");
   footer.append(eta);
@@ -619,6 +623,21 @@ function renderCardFooter(
     children.element.style.marginLeft = "auto";
     footer.append(children.element);
   }
+  const related = renderSprintRelatedCards(
+    context,
+    options.relatedCards?.get(item.id) ?? [],
+    options.types,
+    options.visibleIds ?? new Set(),
+    options.orderingPolicy,
+    (open) => {
+      const card = footer.closest<HTMLElement>(".awesomeado-sprint-card");
+      if (card !== null) {
+        card.draggable = !open;
+        card.style.cursor = open ? "default" : "grab";
+      }
+    },
+  );
+  if (related !== null) footer.append(related);
   return { element: footer, children };
 }
 
@@ -1173,6 +1192,12 @@ export function renderSprintBoard(
   section.className = "awesomeado-sprint__queue awesomeado-sprint__board";
   const cardItems = items.filter(
     ({ item }) => options.types.get(item.type)?.isPrimaryWork === true,
+  );
+  options.relatedCards = relatedCardIndex(options.sprintItems, options.types);
+  options.visibleIds = new Set(
+    cardItems
+      .filter(({ item }) => visibleBoardColumn(item, options.types.get(item.type)) !== null)
+      .map(({ item }) => item.id),
   );
   // Guard on the cards the board would actually paint, not on the matches: lanes and column titles
   // wrapped around zero cards read as a failed load just as much as a bare empty rectangle does.
