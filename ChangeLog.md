@@ -5,6 +5,8 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ## Next Version
 
+## 0.15
+
 ### New Features
 
 - Sprint View parent cards now show a distinct **Sub-items: completed/total** badge for primary
