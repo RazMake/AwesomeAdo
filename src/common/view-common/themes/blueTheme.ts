@@ -46,6 +46,8 @@ export const BLUE_THEME = {
     "--marker-blocked-foreground": "#1a1a1a",
     "--marker-interrupt-background": "rgb(124,58,183)",
     "--marker-interrupt-foreground": "#ffffff",
+    // Deeper still than Light's: the blue rows are darker, and the × is a bare glyph on them.
+    "--remove-control-color": "rgb(170,25,25)",
     "--marker-other-background": "rgb(196,43,43)",
     "--marker-other-foreground": "#ffffff",
     "--mention-highlight": "color-mix(in srgb, #8a63d2 45%, transparent)",

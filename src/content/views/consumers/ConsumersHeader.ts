@@ -27,7 +27,9 @@ export interface ConsumersHeaderOptions {
   /** The header area-path filter, built by the board over the selection it retains. */
   areaPathFilter: HTMLElement;
   onOrderingChange(policy: OrderingPolicy): void;
+  /** Opens the next tree level. */
   onExpandAll(): void;
+  /** Closes open descriptions, then open discussions, then the deepest open tree level. */
   onCollapseAll(): void;
   onRefresh(): void;
   /** Opens the board-wide menu (copy this board's link) at the pointer. */
@@ -53,8 +55,8 @@ export function renderConsumersHeader(
     title: options.title,
     titleColor: options.titleColor,
     onTitleContextMenu: options.onTitleContextMenu,
-    expandLabel: "Expand every consumer",
-    collapseLabel: "Collapse every consumer",
+    expandLabel: "Expand the next tree level",
+    collapseLabel: "Collapse open descriptions, then discussions, then one tree level",
     onExpandAll: options.onExpandAll,
     onCollapseAll: options.onCollapseAll,
     // Area paths are the only narrowing this board has: sprints, markers, and blocked/interrupt

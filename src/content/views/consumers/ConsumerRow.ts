@@ -17,6 +17,10 @@ import { renderItemStatusBadge } from "../item-status/itemStatusBadge";
 import { renderItemNotesToggle } from "../project-tracking/notes/ItemNotesToggle";
 import { createNotesPanelState, type NotesPanelState } from "../project-tracking/notes/NotesPanel";
 
+import type { ConsumerContactEditor } from "./profile/ConsumerContactEditor";
+import { renderConsumerProfileLines, type ContactEditing } from "./profile/ConsumerProfileLines";
+import { readConsumerProfile } from "./profile/consumerProfile";
+
 /** What one paint of the consumer list hands every row it builds. */
 export interface ConsumerRowContext {
   doc: Document;
@@ -39,14 +43,18 @@ export interface ConsumerRowContext {
   /** The hidden grouping item every consumer is a child of, and so the parent a consumer drop names. */
   groupingId: number;
   /**
-   * Every consumer in the board's order. The full level is always complete — consumers are never
-   * filtered — so a dropped consumer is ranked against exactly the list on screen.
+   * Every consumer in the board's order, including any the area filters hide. A drop is ranked
+   * against the full level rather than what is on screen: ranking against only the visible
+   * consumers would place one relative to whatever the filter happened to leave, so clearing the
+   * filter afterwards would reveal it somewhere nobody dropped it.
    */
   consumerSiblingIds: readonly number[];
-  /** Whether a request passes both the binding's area paths and the header filter. */
-  showsRequest(request: TrackedWorkItem): boolean;
   /** Present only while a manual drag can be honoured (importance ordering, a configured team). */
   dragReorder: DragReorderController | null;
+  /** Writes a card's contact edits back into the consumer's description. */
+  contactEditor: ConsumerContactEditor;
+  /** Every role already given to a contact on this board, offered when a role is picked. */
+  contactRoles: readonly string[];
   onContextMenu(item: TrackedWorkItem, event: MouseEvent): void;
   /** Rebuild the list after an expand/collapse, so open/closed state lives outside the DOM. */
   repaint(): void;
@@ -54,47 +62,27 @@ export interface ConsumerRowContext {
 
 const PREFIX = "awesomeado-consumers";
 
-/** A consumer's requests that survive the area-path filters, in the board's ordering policy. */
-export function visibleRequestsOf(
-  consumer: TrackedWorkItem,
-  context: ConsumerRowContext,
-): TrackedWorkItem[] {
-  return orderTrackedItems(
-    consumer.children.filter((request) => context.showsRequest(request)),
-    (request) => request,
-    context.policy,
-  );
-}
-
 /**
- * The FULL ordered request level under a consumer, hidden requests included.
- *
- * A drop is ranked against this rather than what is on screen: ranking against only the visible
- * requests would place a request relative to whatever the filter happened to leave, so clearing
- * the filter afterwards would reveal it somewhere nobody dropped it.
+ * Every request a consumer made, in the board's ordering policy. Requests are never filtered: once
+ * a consumer is on the board, all of what it asked for is.
  */
-function requestSiblingIds(consumer: TrackedWorkItem, policy: OrderingPolicy): number[] {
-  return orderTrackedItems(consumer.children, (request) => request, policy).map(
-    (request) => request.id,
-  );
+export function requestsOf(consumer: TrackedWorkItem, policy: OrderingPolicy): TrackedWorkItem[] {
+  return orderTrackedItems(consumer.children, (request) => request, policy);
 }
 
-/** The line every row draws: twisty, optional Status, type icon, and title. */
-function renderItemLine(
-  item: TrackedWorkItem,
-  context: ConsumerRowContext,
-  twisty: HTMLElement,
-  isConsumer: boolean,
-): {
-  line: HTMLElement;
+/** What every row draws besides its twisty: the two toggles, the title, and the panels they open. */
+interface ItemParts {
+  describe: HTMLElement;
+  notesToggle: HTMLElement;
   title: HTMLElement;
   description: HTMLElement;
   notes: HTMLElement;
-} {
+}
+
+/** The `?` details toggle, the notes toggle, and the title, plus the panels the toggles open. */
+function renderItemParts(item: TrackedWorkItem, context: ConsumerRowContext): ItemParts {
   const { doc } = context;
   const entry = context.types.get(item.type);
-  const line = renderTreeRowLine(doc, PREFIX, isConsumer ? "is-consumer" : null);
-  const title = renderTreeTitle(doc, PREFIX, item, entry);
   const details = renderItemDetailsPanel(doc, {
     data: item,
     typeColor: workItemTypeColor(entry?.color),
@@ -129,25 +117,36 @@ function renderItemLine(
       else context.expandedNoteIds.delete(item.id);
     },
   });
-  line.append(twisty);
-  if (!isConsumer) {
-    line.append(
-      renderItemStatusBadge({
-        doc,
-        item,
-        entry,
-        boardColumns: context.boardColumns,
-        queue: context.queue,
-        minWidthCh: context.statusWidthCh,
-        now: () => context.now(),
-      }),
-    );
-  }
-  line.append(details.toggle, noteToggle.toggle, title);
-  // Bound on the line rather than the list so the INNERMOST row under the pointer wins; the shared
-  // menu stops the event itself, so the consumer around a request never also opens.
-  line.addEventListener("contextmenu", (event) => context.onContextMenu(item, event));
-  return { line, title, description: details.element, notes: noteToggle.panel };
+  return {
+    describe: details.toggle,
+    notesToggle: noteToggle.toggle,
+    title: renderTreeTitle(doc, PREFIX, item, entry),
+    description: details.element,
+    notes: noteToggle.panel,
+  };
+}
+
+/** Where a right-click belongs to the browser: the reader is editing text, not choosing a command. */
+const TEXT_ENTRY = "input, textarea, [contenteditable]";
+
+/**
+ * Open the item's menu from anywhere on `surface`.
+ *
+ * Bound per surface rather than on the list, so the INNERMOST row under the pointer wins; the shared
+ * menu stops the event itself, so the consumer around a request never also opens. A text field
+ * mounted on the surface (a picker's search box, the role editor) keeps its native menu, where
+ * paste and spelling suggestions live.
+ */
+function bindItemMenu(
+  surface: HTMLElement,
+  item: TrackedWorkItem,
+  context: ConsumerRowContext,
+): void {
+  surface.addEventListener("contextmenu", (event) => {
+    const target = event.target as Element | null;
+    if (target?.closest?.(TEXT_ENTRY)) return;
+    context.onContextMenu(item, event);
+  });
 }
 
 /** The consumer's twisty, or a same-width spacer when no request is left to open onto. */
@@ -181,14 +180,27 @@ function renderRequestRow(
   siblingIds: readonly number[],
   context: ConsumerRowContext,
 ): HTMLElement {
-  const { line, title, description, notes } = renderItemLine(
-    request,
-    context,
-    renderTreeTwisty(context.doc, PREFIX, request, null),
-    false,
+  const { doc } = context;
+  const parts = renderItemParts(request, context);
+  const line = renderTreeRowLine(doc, PREFIX, null);
+  line.append(
+    renderTreeTwisty(doc, PREFIX, request, null),
+    renderItemStatusBadge({
+      doc,
+      item: request,
+      entry: context.types.get(request.type),
+      boardColumns: context.boardColumns,
+      queue: context.queue,
+      minWidthCh: context.statusWidthCh,
+      now: () => context.now(),
+    }),
+    parts.describe,
+    parts.notesToggle,
+    parts.title,
   );
-  const wrapper = renderTreeItemWrapper(context.doc, PREFIX, request, line);
-  wrapper.append(description, notes);
+  bindItemMenu(line, request, context);
+  const wrapper = renderTreeItemWrapper(doc, PREFIX, request, line);
+  wrapper.append(parts.description, parts.notes);
   context.dragReorder?.register({
     id: request.id,
     depth: 1,
@@ -197,7 +209,7 @@ function renderRequestRow(
     parentId: consumer.id,
     destinationType: null,
     siblingIds,
-    handle: title,
+    handle: parts.title,
     row: line,
     wrapper,
   });
@@ -205,27 +217,92 @@ function renderRequestRow(
 }
 
 /**
- * One consumer and, while open, the requests it asked for.
+ * The consumer's ONE row surface, laid out as a grid: the twisty keeps a column of its own, and the
+ * title's line and everything the description says about the consumer share the second — so the
+ * `?` and the service details start at the same left edge, and the stripe and hover light the whole
+ * record at once instead of line by line.
+ */
+const CARD_LAYOUT: ReadonlyArray<readonly [string, string]> = [
+  ["display", "grid"],
+  ["grid-template-columns", "16px minmax(0, 1fr)"],
+  ["column-gap", "8px"],
+  ["row-gap", "4px"],
+  ["align-items", "center"],
+  ["padding", "6px 8px 7px 4px"],
+  ["border", "1px solid var(--control-border)"],
+  ["border-radius", "6px"],
+];
+
+/** The contact edits one consumer's card offers, each handed to the board's contact editor. */
+function contactEditingFor(consumer: TrackedWorkItem, context: ConsumerRowContext): ContactEditing {
+  const editor = context.contactEditor;
+  return {
+    userDirectory: context.services.userDirectory,
+    roles: context.contactRoles,
+    onAdd: (person) => editor.add(consumer, person),
+    onReplace: (index, person) => editor.replace(consumer, index, person),
+    onRoleChange: (index, role) => editor.setRole(consumer, index, role),
+    onRemove: (index) => editor.remove(consumer, index),
+  };
+}
+
+/**
+ * The consumer's card: its title line and, directly beneath, the service it is and the people behind
+ * it — what the row IS, not something the reader has to open. The panels the `?` and the type icon
+ * open are NOT part of it; they unfold below the card rather than stretching it.
+ */
+function renderConsumerCard(
+  consumer: TrackedWorkItem,
+  context: ConsumerRowContext,
+  twisty: HTMLElement,
+  parts: ItemParts,
+): HTMLElement {
+  const { doc } = context;
+  const card = renderTreeRowLine(doc, PREFIX, "is-consumer");
+  card.classList.add(`${PREFIX}__card`);
+  for (const [property, value] of CARD_LAYOUT) card.style.setProperty(property, value);
+  const head = doc.createElement("div");
+  head.className = `${PREFIX}__card-head`;
+  head.style.cssText = "display:flex;align-items:center;gap:8px;min-width:0";
+  head.append(parts.describe, parts.notesToggle, parts.title);
+  card.append(twisty, head);
+  const profile = renderConsumerProfileLines(
+    doc,
+    readConsumerProfile(consumer.description, { mentionNames: context.mentionNames }),
+    contactEditingFor(consumer, context),
+  );
+  profile.style.gridColumn = "2";
+  card.append(profile);
+  bindItemMenu(card, consumer, context);
+  return card;
+}
+
+/**
+ * One consumer and, while open, every request it asked for.
  *
- * Every consumer is drawn, even one whose requests the filters all hid: the board answers "who is
- * waiting on us?", and dropping a consumer because nothing of theirs is in scope would also remove
- * the row a request has to be dragged onto to be handed to them.
+ * A consumer with no request is still drawn: it is the row a request has to be dragged onto to be
+ * handed to them.
  */
 export function renderConsumerRow(
   consumer: TrackedWorkItem,
   context: ConsumerRowContext,
 ): HTMLElement {
-  const requests = visibleRequestsOf(consumer, context);
+  const requests = requestsOf(consumer, context.policy);
   const expanded = requests.length > 0 && !context.collapsedIds.has(consumer.id);
-  const { line, title, description, notes } = renderItemLine(
+  const parts = renderItemParts(consumer, context);
+  const card = renderConsumerCard(
     consumer,
     context,
     renderConsumerTwisty(consumer, context, requests.length > 0),
-    true,
+    parts,
   );
-  const wrapper = renderTreeItemWrapper(context.doc, PREFIX, consumer, line);
-  wrapper.append(description, notes);
-  const siblingIds = requestSiblingIds(consumer, context.policy);
+  const wrapper = renderTreeItemWrapper(context.doc, PREFIX, consumer, card);
+  wrapper.classList.add(`${PREFIX}__consumer`);
+  // The card draws its own outline; the gap below is what tells one consumer's requests from the
+  // next consumer's card.
+  wrapper.style.marginBottom = "6px";
+  wrapper.append(parts.description, parts.notes);
+  const siblingIds = requests.map((request) => request.id);
   context.dragReorder?.register({
     id: consumer.id,
     depth: 0,
@@ -236,8 +313,8 @@ export function renderConsumerRow(
     // A request dropped onto the middle of a consumer — open, closed, or empty — joins the end of
     // that consumer's requests.
     childDestination: { siblingIds },
-    handle: title,
-    row: line,
+    handle: parts.title,
+    row: card,
     wrapper,
   });
   if (expanded) {

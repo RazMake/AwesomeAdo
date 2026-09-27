@@ -12,13 +12,23 @@ AwesomeADO is feature-complete for its current scope:
 - Per-query enhanced-view bindings sync through browser storage and support Sprint, Project Tracking,
   All Projects Catalog, Consumers, and the original ADO view.
 - Consumers View (ADR-081) hides a tree query's grouping root and lists consumers with their feature
-  requests. Binding `requestAreaPaths` includes each configured area branch and its descendants;
-  the URL-synced header Area filter then narrows requests by represented full path. Consumer rows omit
+  requests. Binding `consumerAreaPaths` ("Consumer area paths", renamed from `requestAreaPaths` with
+  no fallback) keeps consumers in each configured area branch and its descendants; the URL-synced
+  header Area filter then narrows CONSUMERS by represented full path. Requests are never area
+  filtered. Header `−` closes open descriptions, then discussions, then the deepest open tree level;
+  `+` opens one tree level (`treeExpansion.ts`). Consumer rows omit
   Status editing while request rows retain it. A fixed-depth drag reorders consumers and
   reorders/moves requests with Project Tracking's backlog rank. Its header represents the hidden root
   with that item's title and theme-aware ADO type color. Every displayed item has the shared
   type-colored description control and lazy Discussion panel; right-click **View all notes** opens
   the complete discussion with the shared note editor.
+  Each consumer is one grid-laid card row (`__row.is-consumer.__card`: twisty column, then the title
+  line over the description-parsed identity and Contacts list, so the `?` and the details share a
+  left edge); its description and Discussion panels open below the card. Contacts are assignee
+  pills led by a red remove ×, with the role as the tag, editable in place and written back into the
+  description. The description reader is deliberately loose (`descriptionText` / `descriptionSections`
+  / `contactEntries`); only `own-line` contacts in Markdown are editable, and rich text shows a
+  "has to be Markdown to be editable" tooltip. Scenario and details are parsed only.
   Tree boards share `renderViewHeader`, TreeRow, item-status, board-lifecycle
   (loader/write-status/write-queue), retained area filter, and `persistTreeMove`. Authenticated
   browser validation of the Consumers View remains pending.

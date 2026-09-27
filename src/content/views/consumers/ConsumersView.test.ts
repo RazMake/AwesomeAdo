@@ -24,6 +24,7 @@ const TYPES: TypeCatalogEntry[] = [
 
 const TEAM_A = "Org\\Team A";
 const TEAM_B = "Org\\Team B";
+const OTHER = "Org\\Other";
 
 /** A tracked item carrying only what the board paints; each fixture overrides what it is about. */
 function item(overrides: Partial<TrackedWorkItem> & { id: number }): TrackedWorkItem {
@@ -53,9 +54,10 @@ function item(overrides: Partial<TrackedWorkItem> & { id: number }): TrackedWork
 }
 
 /**
- * The grouping item (never drawn) holding three consumers: Contoso with two requests in different
- * areas, Fabrikam with one request per area, and Northwind with none. A grandchild sits under
- * Contoso's first request to prove the board ignores anything below a request.
+ * The grouping item (never drawn) holding three consumers, one per area: Contoso (Team A) with two
+ * requests in different areas, Fabrikam (Team B) with requests filed outside its own area, and
+ * Northwind (Other) with none. A grandchild sits under Contoso's first request to prove the board
+ * ignores anything below a request.
  */
 function fixtureRoots(): TrackedWorkItem[] {
   return [
@@ -69,6 +71,7 @@ function fixtureRoots(): TrackedWorkItem[] {
           type: "Consumer",
           title: "Contoso",
           description: "Contoso consumer description.",
+          areaPath: TEAM_A,
           importance: 1,
           children: [
             item({
@@ -86,13 +89,36 @@ function fixtureRoots(): TrackedWorkItem[] {
           id: 20,
           type: "Consumer",
           title: "Fabrikam",
+          areaPath: TEAM_B,
           importance: 2,
           children: [
             item({ id: 21, title: "Single sign-on", areaPath: TEAM_A }),
-            item({ id: 22, title: "Audit log", areaPath: "Org\\Other" }),
+            item({ id: 22, title: "Audit log", areaPath: OTHER }),
           ],
         }),
-        item({ id: 30, type: "Consumer", title: "Northwind", importance: 3 }),
+        item({ id: 30, type: "Consumer", title: "Northwind", areaPath: OTHER, importance: 3 }),
+      ],
+    }),
+  ];
+}
+
+/** One consumer whose description carries the onboarding template the rows read. */
+function profiledRoots(): TrackedWorkItem[] {
+  return [
+    item({
+      id: 100,
+      type: "Group",
+      title: "All consumers",
+      children: [
+        item({
+          id: 10,
+          type: "Consumer",
+          title: "Contoso",
+          description:
+            "# Overview\n- **ServiceName**: `IPSimulationService`\n" +
+            "- **ClientId**: `531aebea-d218-4cad-8eab-dcec494dbe86`\n" +
+            "# Contacts\n- `M1`: Sundar Kameswaran (_skamesw_)\n",
+        }),
       ],
     }),
   ];
@@ -307,7 +333,191 @@ describe("consumersView - tree", () => {
     expect(request.querySelector(".awesomeado-consumers__twisty")).toBeNull();
     expect(request.children).toHaveLength(5);
     expect(consumer.querySelector(".awesomeado-status__badge")).toBeNull();
-    expect(consumer.children).toHaveLength(4);
+    expect([...consumer.children].map((part) => part.className)).toEqual([
+      "awesomeado-consumers__twisty",
+      "awesomeado-consumers__card-head",
+      "awesomeado-consumers__profile",
+    ]);
+  });
+
+  it("frames each consumer as its own card, and never a request", async () => {
+    const root = await renderBoard();
+
+    expect(
+      [...root.querySelectorAll(".awesomeado-consumers__consumer")].map(
+        (card) => (card as HTMLElement).dataset.itemId,
+      ),
+    ).toEqual(["10", "20", "30"]);
+  });
+});
+
+describe("consumersView - consumer profile", () => {
+  it("shows the service identity and contacts a consumer's description names", async () => {
+    const root = await renderBoard(
+      contextWith({
+        loadTree: async () => ({ isTreeQuery: true, roots: profiledRoots(), error: null }),
+      }),
+    );
+    const consumer = root.querySelector<HTMLElement>('[data-item-id="10"]')!;
+    const contact = consumer.querySelector<HTMLElement>(".awesomeado-consumers__contact")!;
+
+    expect(consumer.querySelector(".awesomeado-consumers__identity")?.textContent).toBe(
+      "IPSimulationService(531aebea-d218-4cad-8eab-dcec494dbe86)",
+    );
+    expect(contact.querySelector(".awesomeado-assigned__name")?.textContent).toBe(
+      "Sundar Kameswaran",
+    );
+    expect(contact.querySelector(".awesomeado-tag-pill")?.textContent).toBe("M1");
+    expect(contact.textContent).not.toContain("skamesw");
+  });
+
+  it("offers a consumer described only in prose a Contacts heading to add the first person", async () => {
+    const root = await renderBoard();
+    const consumer = root.querySelector<HTMLElement>('[data-item-id="10"]')!;
+
+    expect(consumer.querySelector(".awesomeado-consumers__identity")).toBeNull();
+    expect(consumer.querySelector(".awesomeado-consumers__contacts-label")?.textContent).toBe(
+      "Contacts",
+    );
+    expect(consumer.querySelector(".awesomeado-consumers__contact")).toBeNull();
+  });
+});
+
+const JANE = { displayName: "Jane Doe", uniqueName: "jdoe@contoso.com", imageUrl: null };
+
+/** The consumer card for `id`: the one row surface its title, details, and contacts share. */
+const cardOf = (root: HTMLElement, id: number): HTMLElement =>
+  root.querySelector<HTMLElement>(`[data-item-id="${id}"] > .awesomeado-consumers__row`)!;
+
+/** Type into the open people picker and pick its first answer. */
+async function pickFirstPerson(scope: HTMLElement): Promise<void> {
+  const search = scope.querySelector<HTMLInputElement>(".awesomeado-assigned__search")!;
+  search.value = "jane";
+  search.dispatchEvent(new Event("input"));
+  await flush();
+  scope.querySelector<HTMLButtonElement>(".awesomeado-assigned__result button")!.click();
+}
+
+describe("consumersView - consumer card", () => {
+  it("draws a consumer as ONE row surface holding its title line and its profile", async () => {
+    const root = await renderBoard(
+      contextWith({
+        loadTree: async () => ({ isTreeQuery: true, roots: profiledRoots(), error: null }),
+      }),
+    );
+    const consumer = root.querySelector<HTMLElement>('[data-item-id="10"]')!;
+    const card = cardOf(root, 10);
+
+    expect(consumer.querySelectorAll(":scope > .awesomeado-consumers__row")).toHaveLength(1);
+    expect(card.style.display).toBe("grid");
+    const profile = card.querySelector<HTMLElement>(".awesomeado-consumers__profile")!;
+    // The `?` opens the head line and the details sit under it, both in the card's second column.
+    expect(profile.style.gridColumn).toBe("2");
+    expect(profile.classList.contains("awesomeado-consumers__row")).toBe(false);
+  });
+
+  it("opens the description and discussion below the card rather than inside it", async () => {
+    const root = await renderBoard();
+    const consumer = root.querySelector<HTMLElement>('[data-item-id="10"]')!;
+    const card = cardOf(root, 10);
+
+    card.querySelector<HTMLButtonElement>(".awesomeado-consumers__describe")!.click();
+    card.querySelector<HTMLButtonElement>(".awesomeado-consumers__notes-toggle")!.click();
+
+    const [first, description, notes] = [...consumer.children];
+    expect(first).toBe(card);
+    expect(description?.classList.contains("awesomeado-consumers__description")).toBe(true);
+    expect(card.contains(notes!)).toBe(false);
+    expect(notes?.nextElementSibling?.classList.contains("awesomeado-consumers__children")).toBe(
+      true,
+    );
+  });
+
+  it("opens the consumer's menu from anywhere on its card, contacts included", async () => {
+    const writeText = vi.fn(async () => undefined);
+    Object.defineProperty(window.navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+    const root = await renderBoard(
+      contextWith({
+        loadTree: async () => ({ isTreeQuery: true, roots: profiledRoots(), error: null }),
+      }),
+    );
+    const name = cardOf(root, 10).querySelector<HTMLElement>(".awesomeado-assigned__name")!;
+
+    name.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+    [...root.querySelectorAll<HTMLElement>(".awesomeado-item-menu__command")]
+      .find((command) => command.textContent === "Copy Item ID")!
+      .click();
+
+    expect(writeText).toHaveBeenCalledWith("10");
+  });
+
+  it("leaves a right-click in a text field on the card to the browser", async () => {
+    const root = await renderBoard();
+    const card = cardOf(root, 10);
+
+    card.querySelector<HTMLButtonElement>(".awesomeado-consumers__add-contact-button")!.click();
+    const event = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+    card.querySelector(".awesomeado-assigned__search")!.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(root.querySelector(".awesomeado-item-menu")).toBeNull();
+  });
+});
+
+describe("consumersView - editing contacts", () => {
+  it("writes an added contact into the description and redraws the card with it", async () => {
+    const writeField = vi.fn(async () => ({ ok: true, rev: 2 }));
+    const root = await renderBoard(
+      contextWith({
+        loadTree: async () => ({ isTreeQuery: true, roots: profiledRoots(), error: null }),
+        userDirectory: { search: async () => [JANE], resolve: async () => null },
+        writeField,
+      }),
+    );
+
+    cardOf(root, 10)
+      .querySelector<HTMLButtonElement>(".awesomeado-consumers__add-contact-button")!
+      .click();
+    await pickFirstPerson(cardOf(root, 10));
+    await flush();
+
+    expect(writeField).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 10,
+        field: "System.Description",
+        value: expect.stringContaining(
+          "- `M1`: Sundar Kameswaran (_skamesw_)\n- Jane Doe (_jdoe_)",
+        ),
+        multilineFormat: "Markdown",
+      }),
+    );
+    expect(
+      [...cardOf(root, 10).querySelectorAll(".awesomeado-consumers__contact")].map(
+        (contact) => contact.querySelector(".awesomeado-assigned__name")?.textContent,
+      ),
+    ).toEqual(["Sundar Kameswaran", "Jane Doe"]);
+  });
+
+  it("offers the default roles and those already in use, under an Add new role field", async () => {
+    const root = await renderBoard(
+      contextWith({
+        loadTree: async () => ({ isTreeQuery: true, roots: profiledRoots(), error: null }),
+      }),
+    );
+
+    cardOf(root, 10).querySelector<HTMLElement>(".awesomeado-tag-pill")!.click();
+
+    expect(
+      [...root.querySelectorAll(".awesomeado-assigned__tag-choices .awesomeado-tag-pill")].map(
+        (choice) => choice.textContent,
+      ),
+    ).toEqual(["M1", "M2", "M3", "DEV", "PM"]);
+    expect(
+      root.querySelector<HTMLInputElement>(".awesomeado-assigned__tag-input")?.placeholder,
+    ).toBe("Add new role");
   });
 });
 
@@ -380,16 +590,25 @@ describe("consumersView - tree controls", () => {
       root.querySelector(".awesomeado-consumers__header-corner .awesomeado-ordering"),
     ).not.toBeNull();
   });
+});
 
-  it("collapses and expands one consumer from its twisty", async () => {
+describe("consumersView - expansion", () => {
+  it("collapses and expands one consumer's requests, drawn below its card", async () => {
     const root = await renderBoard();
+    const card = (): HTMLElement =>
+      titleOf(root, "Contoso").closest<HTMLElement>(".awesomeado-consumers__row")!;
     const twisty = (): HTMLButtonElement =>
-      titleOf(root, "Contoso")
-        .closest(".awesomeado-consumers__row")!
-        .querySelector<HTMLButtonElement>(".awesomeado-consumers__twisty")!;
+      card().querySelector<HTMLButtonElement>(".awesomeado-consumers__twisty")!;
+    const consumer = (): HTMLElement => card().parentElement!;
+
+    // Open: the requests follow the card inside the consumer, never inside the card itself.
+    const requests = consumer().querySelector(":scope > .awesomeado-consumers__children");
+    expect(requests?.textContent).toContain("Export to CSV");
+    expect(card().querySelector(".awesomeado-consumers__children")).toBeNull();
 
     twisty().click();
     expect(titles(root)).not.toContain("Export to CSV");
+    expect(consumer().querySelector(".awesomeado-consumers__children")).toBeNull();
     expect(twisty().getAttribute("aria-expanded")).toBe("false");
 
     twisty().click();
@@ -406,6 +625,52 @@ describe("consumersView - tree controls", () => {
     expect(titles(root)).toHaveLength(7);
   });
 
+  it("collapses open descriptions, then open discussions, and only then the tree", async () => {
+    const info = vi.fn();
+    const root = await renderBoard(contextWith({ logger: { info, error: () => undefined } }));
+    const toggle = (id: number, kind: "describe" | "notes-toggle"): HTMLButtonElement =>
+      root.querySelector<HTMLButtonElement>(
+        `[data-item-id="${id}"] .awesomeado-consumers__${kind}`,
+      )!;
+    const collapse = (): void =>
+      root.querySelector<HTMLButtonElement>(".awesomeado-consumers__collapse-all")!.click();
+    toggle(11, "describe").click();
+    toggle(20, "describe").click();
+    toggle(21, "notes-toggle").click();
+
+    collapse();
+    expect(toggle(11, "describe").getAttribute("aria-expanded")).toBe("false");
+    expect(toggle(20, "describe").getAttribute("aria-expanded")).toBe("false");
+    expect(toggle(21, "notes-toggle").getAttribute("aria-expanded")).toBe("true");
+    expect(titles(root)).toHaveLength(7);
+
+    collapse();
+    expect(toggle(21, "notes-toggle").getAttribute("aria-expanded")).toBe("false");
+    expect(titles(root)).toHaveLength(7);
+
+    collapse();
+    expect(titles(root)).toEqual(["Contoso", "Fabrikam", "Northwind"]);
+    expect(info).toHaveBeenCalledWith("Consumers View collapse: descriptions.");
+    expect(info).toHaveBeenCalledWith("Consumers View collapse: discussions.");
+    expect(info).toHaveBeenCalledWith("Consumers View collapse: tree level 1.");
+  });
+
+  it("expands only the tree from the header, never a closed panel", async () => {
+    const root = await renderBoard();
+    root.querySelector<HTMLButtonElement>(".awesomeado-consumers__collapse-all")!.click();
+
+    root.querySelector<HTMLButtonElement>(".awesomeado-consumers__expand-all")!.click();
+
+    expect(titles(root)).toHaveLength(7);
+    expect(
+      [...root.querySelectorAll(".awesomeado-consumers__describe")].map((describe) =>
+        describe.getAttribute("aria-expanded"),
+      ),
+    ).not.toContain("true");
+  });
+});
+
+describe("consumersView - refresh", () => {
   it("re-reads the query on Refresh", async () => {
     const loadTree = vi.fn(async () => ({
       isTreeQuery: true,
@@ -421,39 +686,46 @@ describe("consumersView - tree controls", () => {
 });
 
 describe("consumersView - configured area paths", () => {
-  it("shows only requests in the binding's area paths, yet keeps every consumer", async () => {
-    const root = await renderBoard(createContext({ properties: { requestAreaPaths: TEAM_A } }));
+  it("shows only consumers in the binding's area paths, each with every one of its requests", async () => {
+    const root = await renderBoard(createContext({ properties: { consumerAreaPaths: TEAM_A } }));
 
-    expect(titles(root)).toEqual([
-      "Contoso",
-      "Export to CSV",
-      "Fabrikam",
-      "Single sign-on",
-      "Northwind",
-    ]);
+    expect(titles(root)).toEqual(["Contoso", "Export to CSV", "Dark mode"]);
   });
 
   it("matches configured area branches and their descendants without case", async () => {
     const root = await renderBoard(
-      createContext({ properties: { requestAreaPaths: "org\\team b\nOrg" } }),
+      createContext({ properties: { consumerAreaPaths: "org\\team b\nOrg\\Other" } }),
     );
 
-    expect(titles(root)).toHaveLength(7);
+    expect(consumerTitles(root)).toEqual(["Fabrikam", "Northwind"]);
   });
 
-  it("offers represented descendant areas from the configured branch", async () => {
-    const root = await renderBoard(createContext({ properties: { requestAreaPaths: "Org" } }));
+  it("offers the consumers' represented areas under the configured branch", async () => {
+    const root = await renderBoard(createContext({ properties: { consumerAreaPaths: "Org" } }));
 
     openAreaFilter(root);
 
-    expect(areaOptionValues()).toEqual(["Org\\Other", TEAM_A, TEAM_B]);
+    expect(areaOptionValues()).toEqual([OTHER, TEAM_A, TEAM_B]);
+  });
+
+  it("says so when the binding's area paths keep none of the consumers", async () => {
+    const root = await renderBoard(
+      createContext({ properties: { consumerAreaPaths: "Elsewhere" } }),
+    );
+
+    expect(emptyMessage(root)).toContain(
+      "None of this query's consumers sit in this board's consumer area paths.",
+    );
+    expect(
+      root.querySelector<HTMLButtonElement>(".awesomeado-area-filter__trigger")!.disabled,
+    ).toBe(true);
   });
 
   it("logs what it shows only when the conclusion changes", async () => {
     const info = vi.fn();
     const root = await renderBoard(
       createContext({
-        properties: { requestAreaPaths: TEAM_A },
+        properties: { consumerAreaPaths: TEAM_A },
         services: createServices({ logger: { info, error: () => undefined } }),
       }),
     );
@@ -461,22 +733,23 @@ describe("consumersView - configured area paths", () => {
 
     const lines = info.mock.calls.map(([line]) => line as string);
     expect(lines.filter((line) => line.startsWith("Consumers View showing"))).toEqual([
-      "Consumers View showing 2 of 4 feature request(s) across 3 consumer(s): configuredAreaPaths=1, selectedAreaPaths=0.",
+      "Consumers View showing 1 of 3 consumer(s), with 2 feature request(s): configuredAreaPaths=1, selectedAreaPaths=0.",
     ]);
   });
 });
 
 describe("consumersView - header area filter", () => {
-  it("narrows the requests live, keeps the dropdown open, and names the areas in the URL", async () => {
+  it("narrows the consumers live, keeps the dropdown open, and names the areas in the URL", async () => {
     const info = vi.fn();
     const root = await renderBoard(contextWith({ logger: { info, error: () => undefined } }));
     const header = root.querySelector(".awesomeado-consumers__header");
 
     openAreaFilter(root);
-    expect(areaOptionValues()).toEqual(["Org\\Other", TEAM_A, TEAM_B]);
+    expect(areaOptionValues()).toEqual([OTHER, TEAM_A, TEAM_B]);
     tickArea(TEAM_B);
 
-    expect(titles(root)).toEqual(["Contoso", "Dark mode", "Fabrikam", "Northwind"]);
+    // Fabrikam's requests are filed in Team A and Other, and are shown all the same.
+    expect(titles(root)).toEqual(["Fabrikam", "Single sign-on", "Audit log"]);
     expect(root.querySelector(".awesomeado-consumers__header")).toBe(header);
     expect(new URLSearchParams(window.location.search).getAll("areaPath")).toEqual([TEAM_B]);
     expect(info).toHaveBeenCalledWith("Consumers View area-path filter: selectedCount=1.");
@@ -499,13 +772,7 @@ describe("consumersView - header area filter", () => {
 
     const root = await renderBoard();
 
-    expect(titles(root)).toEqual([
-      "Contoso",
-      "Export to CSV",
-      "Fabrikam",
-      "Single sign-on",
-      "Northwind",
-    ]);
+    expect(titles(root)).toEqual(["Contoso", "Export to CSV", "Dark mode"]);
   });
 
   it("drops a linked area the board cannot offer, from the board and from the URL", async () => {
@@ -517,7 +784,6 @@ describe("consumersView - header area filter", () => {
     expect(window.location.search).toBe("?_a=query");
   });
 });
-
 describe("consumersView - status and menus", () => {
   it("writes a picked Status and reflects it once Azure DevOps accepts it", async () => {
     const writeField = vi.fn(async () => ({ ok: true, rev: 5 }));

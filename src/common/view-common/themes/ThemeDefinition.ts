@@ -53,6 +53,7 @@ export const THEME_COLOR_VARIABLES = [
   "--marker-other-foreground",
   "--marker-interrupt-background",
   "--marker-interrupt-foreground",
+  "--remove-control-color",
   "--sprint-past-foreground",
   "--success-foreground",
   "--completion-foreground",

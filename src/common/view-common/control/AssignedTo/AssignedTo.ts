@@ -39,11 +39,24 @@ export interface AssignedToOptions {
    */
   assignableTags?: string[];
   /**
+   * The tag editor's add-field placeholder. Defaults to "New tag"; a view whose tags mean something
+   * more specific (a consumer contact's role) names that instead.
+   */
+  newTagPlaceholder?: string;
+  /**
    * Called with the tag the user picked (an existing one) or added (a non-empty, space-free name of
    * at most {@link MAX_TAG_LENGTH} characters that does not duplicate an existing tag) for this
    * assignee. Providing it turns the tag pill into a clickable editor; omit it for a read-only pill.
    */
   onTagChange?: (tag: string) => void;
+  /**
+   * Called when the chip's leading × is clicked. Providing it adds that red ×, for a chip that is
+   * one entry of a list the person can be taken off (a consumer's contacts); omit it for an
+   * assignment, which is changed rather than removed.
+   */
+  onRemove?: () => void;
+  /** The ×'s accessible name and tooltip. Defaults to "Remove". */
+  removeLabel?: string;
 }
 
 /**
@@ -101,6 +114,46 @@ function buildAssignedRoot(
 
   root.append(nameButton);
   return { root, nameButton };
+}
+
+/**
+ * The leading red × that takes the person off the list the chip belongs to.
+ *
+ * A bare bold glyph, set a little larger than the chip's text so it still reads as a control. Its
+ * color is a dedicated theme token, tuned per theme to stand on its own against every row and pill
+ * background, because a red that stands out on a light row disappears into a dark one.
+ */
+function buildRemoveButton(doc: Document, onRemove: () => void, label: string): HTMLElement {
+  const button = doc.createElement("button");
+  button.type = "button";
+  button.className = "awesomeado-assigned__remove";
+  button.textContent = "\u00d7";
+  button.title = label;
+  button.setAttribute("aria-label", label);
+  button.style.cssText = [
+    "display:inline-flex",
+    "align-items:center",
+    "justify-content:center",
+    "flex:none",
+    // As tall as the name beside it, so the larger glyph never makes the pill taller.
+    "height:12px",
+    "padding:0",
+    "border:none",
+    "background-color:transparent",
+    "color:var(--remove-control-color)",
+    "font-family:inherit",
+    "font-size:15px",
+    "font-weight:700",
+    "line-height:12px",
+    "cursor:pointer",
+  ].join(";");
+  button.addEventListener("click", (event) => {
+    // Removing someone is this click's whole meaning; the row or card holding the chip must not
+    // also act on it.
+    event.stopPropagation();
+    onRemove();
+  });
+  return button;
 }
 
 /** The class the spinner's keyframes are bound to, shared by the rule and the element. */
@@ -411,19 +464,23 @@ function pickerStatus(query: string, resultCount: number, searching: boolean): s
   return "";
 }
 
-/** Everything the picker popup needs to offer people and report the one that was picked. */
-interface PickerOptions {
+/** Everything the people picker needs to offer people and report the one that was picked. */
+export interface PeoplePickerOptions {
   doc: Document;
-  root: HTMLElement;
-  nameButton: HTMLButtonElement;
+  /** The `position:relative` element the popup is mounted into and floats beneath. */
+  anchor: HTMLElement;
+  /** The button that opens (and, pressed again, closes) the picker. */
+  trigger: HTMLElement;
   userDirectory: IUserDirectory;
-  /** Read fresh on every open, so a person assigned a moment ago is already offered. */
-  suggestions: () => TrackedUser[];
-  onChange: ((user: DirectoryUser) => void) | undefined;
+  /** Read fresh on every open, so a person picked a moment ago is already offered. */
+  suggestions?: () => TrackedUser[];
+  /** Called with the picked person; the picker closes itself and never repaints its trigger. */
+  onPick?: (user: DirectoryUser) => void;
 }
 
 /**
- * Wire the name button to the people picker.
+ * Wire a trigger to the people picker — the assignee chip's own name button, or any other control
+ * that needs to choose a person the same way.
  *
  * The popup lifecycle (outside-click and Escape dismissal, staying inside the viewport) is delegated
  * to the shared popup host: this control previously rolled its own and only closed when the trigger
@@ -442,15 +499,15 @@ interface PickerOptions {
  * Tech Lead, the dense rolled-up children list) while the roomy picker still benefits from showing
  * which crew each candidate belongs to. A view whose people carry no tags gets no pills at all.
  */
-function createPicker(options: PickerOptions): void {
-  const { doc, root, nameButton, userDirectory, suggestions, onChange } = options;
+export function attachPeoplePicker(options: PeoplePickerOptions): void {
+  const { doc, anchor, trigger, userDirectory, suggestions = () => [], onPick } = options;
   // Rebuilt on each open (the popup is discarded on close), so focus always lands on the live input.
   let searchBox: HTMLInputElement | null = null;
 
   createPopupHost({
     doc,
-    trigger: nameButton,
-    mountInto: root,
+    trigger,
+    mountInto: anchor,
     buildPopup: (close) => {
       const { popup, searchInput, resultsList, statusText, spinner } = buildPickerPopup(doc);
       searchBox = searchInput;
@@ -464,7 +521,7 @@ function createPicker(options: PickerOptions): void {
         // Persist-then-reflect (matching the status and ETA controls): the caller writes the
         // change and calls `setUser` once ADO accepts it, so a rejected write never leaves a name
         // on screen that was never saved.
-        onChange?.(picked);
+        onPick?.(picked);
         close();
       });
 
@@ -539,7 +596,10 @@ function mountTagSlot(
     doc,
     root,
     user?.tag ?? null,
-    options.assignableTags ?? [],
+    {
+      assignableTags: options.assignableTags ?? [],
+      newTagPlaceholder: options.newTagPlaceholder ?? "New tag",
+    },
     options.onTagChange,
   );
   root.append(slot.pill);
@@ -584,10 +644,20 @@ export function renderAssignedTo(doc: Document, options: AssignedToOptions): Ass
   const { user, userDirectory, suggestions = () => [], onChange } = options;
 
   const { root, nameButton } = buildAssignedRoot(doc, "Unassigned");
+  if (options.onRemove !== undefined) {
+    root.prepend(buildRemoveButton(doc, options.onRemove, options.removeLabel ?? "Remove"));
+  }
   const tagSlot = mountTagSlot(doc, root, user, options);
   showAssignee(nameButton, tagSlot, user);
 
-  createPicker({ doc, root, nameButton, userDirectory, suggestions, onChange });
+  attachPeoplePicker({
+    doc,
+    anchor: root,
+    trigger: nameButton,
+    userDirectory,
+    suggestions,
+    onPick: onChange,
+  });
 
   const handle = root as AssignedToHandle;
   handle.setUser = (assigned) => {
@@ -617,6 +687,12 @@ function compactTagPill(pill: HTMLElement): void {
   pill.style.textAlign = "center";
 }
 
+/** What the tag editor offers: the tags to pick from, and how its add field is labelled. */
+interface TagEditorContent {
+  assignableTags: string[];
+  newTagPlaceholder: string;
+}
+
 /**
  * Render the assignee's tag as a compact pill. Alone it is a static label; with an `onTagChange`
  * handler it becomes a clickable trigger that opens the tag editor (existing tags to pick from plus
@@ -627,7 +703,7 @@ function renderAssigneeTagPill(
   doc: Document,
   root: HTMLElement,
   currentTag: string | null,
-  assignableTags: string[],
+  editor: TagEditorContent,
   onTagChange: ((tag: string) => void) | undefined,
 ): TagPillSlot {
   const pill = renderTagPill(doc, { tag: currentTag });
@@ -656,7 +732,7 @@ function renderAssigneeTagPill(
     trigger: pill,
     mountInto: root,
     buildPopup: (close) =>
-      buildTagEditor(doc, activeTag, assignableTags, (tag) => {
+      buildTagEditor(doc, activeTag, editor, (tag) => {
         applyTag(tag);
         onTagChange(tag);
         close();
@@ -700,7 +776,7 @@ function buildTagChoices(
  */
 function buildTagAddRow(
   doc: Document,
-  assignableTags: string[],
+  { assignableTags, newTagPlaceholder }: TagEditorContent,
   onPick: (tag: string) => void,
 ): HTMLElement {
   const addRow = doc.createElement("div");
@@ -711,7 +787,7 @@ function buildTagAddRow(
   input.className = "awesomeado-assigned__tag-input";
   input.type = "text";
   input.maxLength = MAX_TAG_LENGTH;
-  input.placeholder = "New tag";
+  input.placeholder = newTagPlaceholder;
   input.style.cssText = [
     "flex:1 1 auto",
     "min-width:0",
@@ -788,7 +864,7 @@ function buildTagAddRow(
 function buildTagEditor(
   doc: Document,
   activeTag: string | null,
-  assignableTags: string[],
+  editor: TagEditorContent,
   onPick: (tag: string) => void,
 ): HTMLElement {
   const popup = doc.createElement("div");
@@ -810,10 +886,10 @@ function buildTagEditor(
 
   // Existing tags as one-click choices; nothing to pick from is still fine — the add field below
   // always offers a way forward.
-  if (assignableTags.length > 0) {
-    popup.append(buildTagChoices(doc, activeTag, assignableTags, onPick));
+  if (editor.assignableTags.length > 0) {
+    popup.append(buildTagChoices(doc, activeTag, editor.assignableTags, onPick));
   }
 
-  popup.append(buildTagAddRow(doc, assignableTags, onPick));
+  popup.append(buildTagAddRow(doc, editor, onPick));
   return popup;
 }

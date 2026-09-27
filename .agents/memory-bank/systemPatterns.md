@@ -458,6 +458,12 @@ Split into component subfolders (each with its own `README.md`):
   - `control/Breadcrumbs/queryFolderBreadcrumbs` and `control/ViewScaffold` → `renderViewSurface`.
     The header is rebuilt only by a full paint (load, ordering change); filter, twisty, expand/collapse
     and accepted moves repaint the list alone.
+  - `views/consumers/profile` reads the consumer's human-edited description in three layers — text
+    and line shapes (`descriptionText`), structure (`descriptionSections`: headings, fuzzy section
+    names, group labels), and people (`contactEntries`) — orchestrated by `consumerProfile`, which
+    also records each contact's line and `ContactShape`. Writers (`consumerContactsSource`) touch
+    only `own-line` contacts and only their one line, so everything the reader tolerated survives an
+    edit untouched.
 
 ### `src/options`
 

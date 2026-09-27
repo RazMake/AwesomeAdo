@@ -104,22 +104,22 @@ describe("VIEW_TYPES per-view properties", () => {
 });
 
 describe("VIEW_TYPES Consumers View properties", () => {
-  it("gives Consumers View its ordering and feature-request area-path settings", () => {
+  it("gives Consumers View its ordering and consumer area-path settings", () => {
     const consumers = getViewType("consumers");
     const sprint = getViewType("sprint");
     const byKey = new Map(consumers?.properties.map((property) => [property.key, property]));
 
     expect(consumers?.properties.map((property) => property.key)).toEqual([
       "orderingPolicy",
-      "requestAreaPaths",
+      "consumerAreaPaths",
     ]);
     expect(byKey.get("orderingPolicy")).toEqual(
       sprint?.properties.find((property) => property.key === "orderingPolicy"),
     );
     // Edited exactly like Sprint View's area paths: the same list editor with autocomplete.
-    expect(byKey.get("requestAreaPaths")).toMatchObject({
+    expect(byKey.get("consumerAreaPaths")).toMatchObject({
       kind: "area-path-list",
-      label: "Feature request area paths",
+      label: "Consumer area paths",
       required: false,
     });
   });

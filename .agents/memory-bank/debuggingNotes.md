@@ -2003,3 +2003,18 @@ fetch(
   silently resets `line-height`.
 - Different variants (accepted vs. raised Interrupt, filter toggle vs. label) SHOULD look different.
   The invariant is that one variant renders identically on every surface.
+
+## Right-clicks on a card: disabled buttons do NOT swallow `contextmenu` (Edge 154)
+
+- CHECKED while making the whole Consumers View card open the item menu: a right-click on a
+  `disabled` `<button>` still dispatches `contextmenu`, and it bubbles to a listener on an ancestor
+  (probed live on Edge 154 over CDP 9222). So a read-only control inside a row surface needs no
+  `pointer-events:none` workaround for the row's menu to open from it.
+- What a surface-wide `contextmenu` listener DOES have to skip is text entry
+  (`input, textarea, [contenteditable]`): pickers and editors mount their search boxes inside the
+  card, and a right-click there is for the browser's paste and spelling menu.
+- Reload recipe for the `edge-nodebug` profile when the extension id is unknown: the unpacked id is
+  the `extensions.settings` key whose `path` is this repo's `dist` in
+  `.debug-profiles/edge-nodebug/Default/Secure Preferences`; open
+  `chrome-extension://<id>/options/options.html` over CDP and evaluate `chrome.runtime.reload()`
+  there (the worker may be asleep and absent from `/json/list`), then reload the ADO tab.

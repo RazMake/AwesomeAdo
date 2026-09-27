@@ -4,28 +4,28 @@ import type { ViewType, ViewTypeProperty } from "../../../common/view-common/Vie
 
 export { orderingPolicyOf } from "../../../common/ordering/OrderingProperty";
 
-const requestAreaPathsProperty: ViewTypeProperty = {
-  key: "requestAreaPaths",
-  label: "Feature request area paths",
+const consumerAreaPathsProperty: ViewTypeProperty = {
+  key: "consumerAreaPaths",
+  label: "Consumer area paths",
   required: false,
   kind: "area-path-list",
-  hint: "Add the area paths feature requests are shown from, one at a time. Each area path edit box offers autocomplete suggestions that match any part of the path. Leave empty to show requests from every area path.",
+  hint: "Add the area paths consumers are shown from, one at a time. Each area path edit box offers autocomplete suggestions that match any part of the path. A shown consumer always lists every one of its feature requests. Leave empty to show every consumer.",
 };
 
 /**
  * The Consumers View's configuration: a tree query whose single root only groups the consumers
  * beneath it, each holding the feature requests it asked for.
  *
- * The area paths are per-query because they describe which team's requests this board is about;
- * two Consumers Views over the same consumers can each follow a different team's requests.
+ * The area paths are per-query because they describe which team's consumers this board is about;
+ * two Consumers Views over the same grouping item can each follow a different team's consumers.
  */
 export const consumersViewType: ViewType = {
   id: "consumers",
   label: "Consumers View",
-  properties: [orderingPolicyProperty, requestAreaPathsProperty],
+  properties: [orderingPolicyProperty, consumerAreaPathsProperty],
 };
 
-/** The full area paths a feature request must sit in to be shown; empty shows every request. */
-export function consumerRequestAreaPaths(properties: Record<string, string>): string[] {
-  return parseAreaPathList(properties[requestAreaPathsProperty.key]);
+/** The area branches a consumer must sit in to be shown; empty shows every consumer. */
+export function consumerAreaPaths(properties: Record<string, string>): string[] {
+  return parseAreaPathList(properties[consumerAreaPathsProperty.key]);
 }

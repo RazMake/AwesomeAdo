@@ -59,6 +59,8 @@ export const LIGHT_THEME = {
     "--marker-other-foreground": "#ffffff",
     "--marker-interrupt-background": "rgb(124,58,183)",
     "--marker-interrupt-foreground": "#ffffff",
+    // Deeper than the marker's red: the × is a bare glyph on a grey pill, not text on a red fill.
+    "--remove-control-color": "rgb(180,30,30)",
     "--sprint-past-foreground": "#c26c1d",
     "--success-foreground": "rgb(0,200,83)",
     "--completion-foreground": "rgb(21,128,38)",

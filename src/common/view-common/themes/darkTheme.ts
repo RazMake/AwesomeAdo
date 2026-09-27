@@ -53,6 +53,8 @@ export const DARK_THEME = {
     "--marker-other-foreground": "#ffffff",
     "--marker-interrupt-background": "rgb(124,58,183)",
     "--marker-interrupt-foreground": "#ffffff",
+    // A lighter red than the marker's: the × is a bare glyph, so it has to read on a dark row alone.
+    "--remove-control-color": "rgb(255,128,128)",
     "--activity-created-background": "hsl(140,34%,28%)",
     "--activity-updated-background": "hsl(210,38%,31%)",
     "--activity-notes-background": "hsl(280,30%,34%)",

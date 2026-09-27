@@ -1713,7 +1713,8 @@ cannot be null."` The patch that reached ADO was `{ op: "add", path: "/fields/<d
   zero threshold and let the boards drift apart visually.
 - Decision: the grouping root is never drawn. Consumers are always shown; the binding's
   `requestAreaPaths` includes each configured parent and its descendants, while the header
-  AreaPathFilter restricts feature requests by exact, case-insensitive represented paths. This keeps
+  AreaPathFilter restricts feature requests by exact, case-insensitive represented paths
+  (superseded: both now filter consumers — see the area-paths amendment below). This keeps
   a parent ownership boundary useful without merging the concrete lanes offered for live narrowing.
   The header filter round-trips through repeated `areaPath` URL parameters so a link reproduces the
   narrowed board, and the URL is rewritten after unoffered picks are pruned. Consumer rows omit the
@@ -1733,3 +1734,37 @@ cannot be null."` The patch that reached ADO was `{ op: "add", path: "/fields/<d
   Project Tracking notes controls for the type-icon Discussion toggle, complete-discussion popup,
   authoring, mention lookup, and revision refresh. It never loads or creates a Feature Crew item;
   identities come from the work items and the shared on-demand directories.
+- Amendment (consumer profiles): a consumer's description is onboarding data, not just prose, so
+  `consumers/profile` parses it for the service name, client id, scenario, detail links, and
+  contacts, and the row draws the identity and contacts under the title. Parsing is a small
+  allowlist of keys over a flattened text form (Markdown or ADO rich-text HTML both reduce to the
+  same lines), never inference from prose: guessing a GUID out of a sentence would print another
+  team's identity on a consumer's row. Scenario and details are parsed but not drawn — the full
+  description already opens from `?`. A consumer therefore occupies several lines, and it is drawn as
+  ONE card-shaped row surface (a grid on the consumer's own `__row`) rather than an outlined wrapper
+  with several striped rows: stripes, hover, drag hit-testing, and right-click then treat the record
+  as one thing, and the panels `?` and the type icon open sit below the card so they never stretch it.
+- Amendment (consumer contacts are edited in the description): the description stays the single
+  source of truth for contacts — no side store — so the card's add / replace / set-role edits
+  rewrite only the affected line of the Contacts section (reusing its list marker, or appending a
+  `# Contacts` section) and write it as one guarded `System.Description` patch with `baseValue` and
+  `multilineFormat: "Markdown"` through the board's queue. Edits to one consumer are chained and each
+  computes from the description the previous edit left, so two quick edits cannot overwrite each
+  other. A rich-text HTML description (or one whose lines reflow when read) is shown read-only:
+  rewriting it line by line could corrupt markup the reader cannot see. Contacts are written as
+  `` `Role`: Full Name (_alias_) `` with name characters that would read back as a role or alias
+  removed, so a write always parses back to the same contact.
+- Amendment (area paths filter consumers): the binding's area paths and the header Area filter now
+  restrict CONSUMERS, never requests; the property was renamed `requestAreaPaths` →
+  `consumerAreaPaths` with no fallback, because the old values meant something else and silently
+  reinterpreting them would hide consumers. A board is about one team's consumers, and a consumer's
+  requests are its whole queue wherever they are filed; offering only request areas also left the
+  filter disabled on boards with no requests yet.
+- Amendment (loose reading, removal): descriptions are human edited, so the reader accepts many
+  heading, entry, and table shapes, but stays an allowlist — a label or bold line only opens a
+  section when it NAMES one, and a bare person needs a name-shaped line — so prose never becomes
+  contacts. Each contact records its `ContactShape`; only `own-line` contacts are rewritten or
+  removed, since editing a shared line, table row, or inline `Owner:` line would rewrite text that
+  belongs to someone else. Rich-text descriptions are no longer read line-for-line at all
+  (`sourceLines` null) and say why in a tooltip. Removal deletes exactly the contact's line, with no
+  confirmation: it is one guarded write and the description's history restores it.

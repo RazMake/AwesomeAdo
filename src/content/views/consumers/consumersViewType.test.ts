@@ -1,24 +1,24 @@
 import { describe, expect, it } from "vitest";
 
 import { consumersSearchWithAreaPaths, readConsumersUrlAreaPaths } from "./consumersUrlPreferences";
-import { consumerRequestAreaPaths, consumersViewType, orderingPolicyOf } from "./consumersViewType";
+import { consumerAreaPaths, consumersViewType, orderingPolicyOf } from "./consumersViewType";
 
 describe("consumersViewType", () => {
-  it("reads the configured feature-request area paths, one per line", () => {
+  it("reads the configured consumer area paths, one per line", () => {
     expect(
-      consumerRequestAreaPaths({ requestAreaPaths: "Contoso\\Team A\n  \nContoso\\Team B" }),
+      consumerAreaPaths({ consumerAreaPaths: "Contoso\\Team A\n  \nContoso\\Team B" }),
     ).toEqual(["Contoso\\Team A", "Contoso\\Team B"]);
   });
 
-  it("lets every request through when no area path is configured", () => {
-    expect(consumerRequestAreaPaths({})).toEqual([]);
+  it("lets every consumer through when no area path is configured", () => {
+    expect(consumerAreaPaths({})).toEqual([]);
   });
 
   it("reads the binding's ordering policy through the shared property", () => {
     expect(orderingPolicyOf({ orderingPolicy: "title" })).toBe("title");
     expect(consumersViewType.properties.map((property) => property.key)).toEqual([
       "orderingPolicy",
-      "requestAreaPaths",
+      "consumerAreaPaths",
     ]);
   });
 });

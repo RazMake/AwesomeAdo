@@ -99,10 +99,15 @@ This is a flattened snapshot of what exists now, not a build log.
   level 2 rows are feature requests. Consumer rows show type and title; request rows additionally
   show an editable status badge. The header shows the grouping root's title in its theme-aware ADO
   work item type color. The binding's
-  `requestAreaPaths` (area-path-list, Sprint View's editor) and the header AreaPathFilter (shared
+  `consumerAreaPaths` (area-path-list, Sprint View's editor, labelled "Consumer area paths";
+  renamed from `requestAreaPaths` with no fallback) and the header AreaPathFilter (shared
   `renderRetainedAreaPathFilter`, mirrored to repeated `areaPath` URL parameters and pruned to
-  offered paths) both restrict REQUESTS only. Binding paths include descendants; header picks use
-  exact case-insensitive full paths. Consumers always stay visible as drop targets. Flat, empty,
+  offered paths) both restrict CONSUMERS only; a shown consumer lists every request. Binding paths
+  include descendants; header picks use exact case-insensitive full paths. The filter used to offer
+  request areas only, so a board with no requests had it permanently disabled. When the configured
+  paths keep no consumer, an empty state says so. Header `−` / `+` step through
+  `treeExpansion.ts` (`collapseStep`: open descriptions → open discussions → deepest open tree
+  level; `expandStep`: shallowest closed level), each step logged. Flat, empty,
   multi-root, and consumer-less queries render an empty
   state under the live header. Under importance ordering with a team, a `fixedDepth`
   DragReorderController reorders consumers and reorders/re-parents requests through
@@ -111,6 +116,31 @@ This is a flattened snapshot of what exists now, not a build log.
   Every displayed item exposes its loaded description through the shared type-colored `?` details
   panel and uses the type icon as the lazy Discussion toggle. Discussion authoring, revision refresh,
   and the right-click **View all notes** popup reuse Project Tracking's notes controls.
+  Each consumer's card IS its one row surface: `renderTreeRowLine(..., "is-consumer")` restyled as a
+  `16px | 1fr` grid (class `__card`, own outline) holding the twisty, a `__card-head` (`?`, type
+  icon, title), and the `__profile` block in column 2; the wrapper (`__consumer`) keeps only the
+  gap below it, then the description and notes panels, then `__children`. The card's contextmenu
+  opens the consumer's menu from any point except text fields (`input, textarea, [contenteditable]`).
+  `profile/consumerProfile.ts` parses Markdown, plain text, or ADO rich-text HTML for
+  `serviceName`, `clientId`, `scenario`, `details`, and `contacts` (optional `mentionId`), and
+  `readConsumerProfile` also returns each contact's `ContactPlacement` (`line`, `shape`:
+  own-line / shared-line / table-row / inline); `sourceLines` is null only for rich text, and
+  `headingLine` is a setext heading's underline. The loose reader is split into
+  `descriptionText.ts` (line cleanup, list/keyed/table line shapes), `descriptionSections.ts`
+  (ATX/setext/emphasis/label headings, fuzzy section names, sub-headings and `Owners:` labels as
+  group roles), and `contactEntries.ts` (roles before/after names, emails, mail links, `@<guid>`
+  mentions named via the mention directory, `;` and marked comma splits, placeholder/prose
+  rejection). `ConsumerProfileLines.ts` always draws the Contacts section (section tooltip
+  `RICH_TEXT_CONTACTS_REASON` for rich text) and a stacked `ul` of shared AssignedTo pills (red ×
+  via `onRemove`, role = tag, alias = tooltip, primary text + outline) with a Contacts `+`
+  (`attachPeoplePicker`); non-own-line contacts are read-only with a per-shape reason. The role
+  editor offers `DEFAULT_CONTACT_ROLES` (M1, M2, M3, DEV, PM) before the board's other roles
+  (`contactRolesIn`), and its add field reads "Add new role" via AssignedTo's `newTagPlaceholder`.
+  `ConsumerContactEditor` serializes add/replace/set-role/remove per consumer and writes one guarded
+  `System.Description` Markdown patch (`baseValue`) through the board queue, rewriting or deleting
+  only the affected line via `consumerContactsSource.ts`; every edit repaints the list. The theme
+  token `--remove-control-color` colours the bare bold × (no disc), tuned per theme for contrast on
+  every row background.
   Authenticated browser validation remains pending.
 - **Sprint View** (`content/views/sprint`): accepts flat or tree queries; loads the selected
   team's complete paged member roster, recursively expanding direct and nested groups, before

@@ -43,9 +43,19 @@ Configuration for rendering the control.
   belongs to. Anyone the directory returns who is not on the project shows "??".
 - **`assignableTags?: string[]`** — The tags already in use across the roster, offered as choices in
   the tag editor. Ignored unless `onTagChange` is also supplied.
+- **`newTagPlaceholder?: string`** — The tag editor's add-field placeholder. Defaults to `"New tag"`;
+  a view whose tags mean something more specific names that instead (a consumer contact's role
+  editor reads `"Add new role"`).
 - **`onTagChange?: (tag: string) => void`** — When supplied (together with `showTag`), the tag pill
   becomes interactive: clicking it opens an editor to move the assignee onto a different existing
   tag or to create a new one. Called with the chosen tag.
+- **`onRemove?: () => void`** — When supplied, the chip leads with a bold red **×** button
+  (`.awesomeado-assigned__remove`: a bare glyph with no background, drawn in the theme's
+  `--remove-control-color` so it stands out in every theme). Clicking it calls `onRemove`; the
+  click does not reach the row or card holding the chip, and does not open the picker. Leave it out
+  for a chip that cannot be removed.
+- **`removeLabel?: string`** — The tooltip and accessible name of the × — normally who it removes
+  and from what ("Remove Jane Doe from the contacts"). Defaults to "Remove".
 
 ### `AssignedToHandle`
 
@@ -72,6 +82,14 @@ Renders an assignee control as clickable text (no border or background) that ope
   because a still list plus one line of small text reads as "nobody matched" rather than "waiting".
 - Selecting a result calls `onChange` and closes the popup — **without** repainting the name.
 - An outside click or Escape closes the popup without changing the assignment.
+
+### `attachPeoplePicker(options: PeoplePickerOptions): void`
+
+Wires the same people picker to any other trigger — for example a `+` that adds a person to a list.
+`PeoplePickerOptions` takes `doc`, the `position:relative` `anchor` the popup mounts into, the
+`trigger` button that opens and closes it, `userDirectory`, optional `suggestions`, and `onPick`,
+which is called with the chosen `DirectoryUser`. Search, keyboard, and dismissal behave exactly as
+in the assignee chip, and the trigger is never repainted.
 
 ### Keyboard
 
@@ -108,7 +126,8 @@ When `showTag` and `onTagChange` are both set, the tag pill is a trigger that op
 
 - **Pick an existing tag:** the tags in `assignableTags` are listed as pills; clicking one moves the
   assignee onto that tag and closes the editor.
-- **Add a new tag:** an input (max 15 characters, spaces stripped as typed) plus an **Add** button.
+- **Add a new tag:** an input (max 15 characters, spaces stripped as typed, placeholder
+  `newTagPlaceholder`) plus an **Add** button.
   The button stays disabled for an empty value or a case-insensitive duplicate of an existing tag,
   so no orphan or duplicate tags can be created. `Enter` commits the same as clicking **Add**.
 - Selecting or adding a tag immediately assigns it to the current person, so a new tag is always in

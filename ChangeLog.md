@@ -9,14 +9,26 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 - New **Consumers View** for tree queries whose top item groups consumers: each consumer opens onto
   its feature requests, showing the consumer's type and title and each request's status, type, and
-  title. Limit requests to the area branches set in the query's binding, including their descendants,
-  and narrow them further with the header's Area filter (kept in the page link, so a shared link
-  opens the same filtered board). Refresh in place, drag to reorder consumers, and reorder requests
-  within a consumer or move them to another consumer, keeping the same backlog order as Project
-  Tracking. The view heading shows the root item's title in its Azure DevOps work item type color.
-  Every item also exposes its description from a type-colored `?`, opens Discussion from its work
-  item type icon, supports adding and editing notes, and offers the complete **View all notes**
-  popup.
+  title. Each consumer is one outlined card that, where its description says so, names the service
+  behind it with its client id and lists its contacts one per line with their roles. Descriptions
+  are read even when people have edited them by hand — extra text, other heading styles, tables,
+  email addresses, mentions, and roles written before or after a name are all understood. Add a
+  contact found in Azure DevOps, swap a contact for someone else, set their role (M1, M2, M3, DEV,
+  and PM are always offered, alongside any role already on the board, and **Add new role** creates
+  another), or remove them with the bold red × on their pill, right on the card, and the consumer's
+  description is updated to match; a description written as rich text shows its contacts read-only,
+  with a tooltip saying it has to be Markdown to be editable. Right-click anywhere on a card for its
+  menu; its description, discussion, and — while it is expanded — its requests open below the card.
+  Show only the consumers in the area branches set in the query's binding (**Consumer area
+  paths**), including their descendants, and narrow them further with the header's Area filter
+  (kept in the page link, so a shared link opens the same filtered board); a shown consumer always
+  lists all of its requests. The header's − closes open descriptions first, then open discussions,
+  then the tree one level at a time, and + opens the tree one level at a time. Refresh in place,
+  drag to reorder consumers, and reorder requests within a consumer or move them to another
+  consumer, keeping the same backlog order as Project Tracking. The view heading shows the root
+  item's title in its Azure DevOps work item type color. Every item also exposes its description
+  from a type-colored `?`, opens Discussion from its work item type icon, supports adding and
+  editing notes, and offers the complete **View all notes** popup.
 
 ## 0.15
 

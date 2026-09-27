@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { DirectoryUser, IUserDirectory } from "../../../ado/IUserDirectory";
 import type { TrackedUser } from "../../../ado/TrackedWorkItem";
 
-import { renderAssignedTo, type AssignedToHandle } from "./AssignedTo";
+import { attachPeoplePicker, renderAssignedTo, type AssignedToHandle } from "./AssignedTo";
 
 /**
  * A fake user directory for testing: returns controlled search results via a promise.
@@ -99,6 +99,68 @@ describe("renderAssignedTo", () => {
 
     const searchInput = popup?.querySelector<HTMLInputElement>(".awesomeado-assigned__search");
     expect(searchInput?.placeholder).toBe("Search people…");
+  });
+});
+
+describe("renderAssignedTo - remove button", () => {
+  const user: TrackedUser = { displayName: "Alice", uniqueName: null, imageUrl: null };
+
+  it("has no remove button unless onRemove is given", () => {
+    const control = renderAssignedTo(document, { user, userDirectory: new FakeUserDirectory() });
+
+    expect(control.querySelector(".awesomeado-assigned__remove")).toBeNull();
+  });
+
+  it("leads the chip with a bold red × and no disc, labelled for the reader", () => {
+    const control = renderAssignedTo(document, {
+      user,
+      userDirectory: new FakeUserDirectory(),
+      onRemove: () => undefined,
+      removeLabel: "Remove Alice from the contacts",
+    });
+    const remove = control.firstElementChild as HTMLButtonElement;
+
+    expect(remove.className).toBe("awesomeado-assigned__remove");
+    expect(remove.type).toBe("button");
+    expect(remove.textContent).toBe("\u00d7");
+    expect(remove.title).toBe("Remove Alice from the contacts");
+    expect(remove.getAttribute("aria-label")).toBe("Remove Alice from the contacts");
+    expect(remove.style.color).toBe("var(--remove-control-color)");
+    expect(remove.style.fontWeight).toBe("700");
+    expect(remove.style.backgroundColor).toBe("transparent");
+    expect(remove.style.borderRadius).toBe("");
+  });
+
+  it("is labelled plainly Remove when no label is given", () => {
+    const control = renderAssignedTo(document, {
+      user,
+      userDirectory: new FakeUserDirectory(),
+      onRemove: () => undefined,
+    });
+
+    expect(control.querySelector(".awesomeado-assigned__remove")?.getAttribute("aria-label")).toBe(
+      "Remove",
+    );
+  });
+
+  it("reports the click without opening the picker or reaching the row around the chip", () => {
+    const removed: string[] = [];
+    const rowClicks: string[] = [];
+    const row = document.createElement("div");
+    row.addEventListener("click", () => rowClicks.push("row"));
+    const control = renderAssignedTo(document, {
+      user,
+      userDirectory: new FakeUserDirectory(),
+      onRemove: () => removed.push("Alice"),
+    });
+    row.append(control);
+    document.body.append(row);
+
+    control.querySelector<HTMLButtonElement>(".awesomeado-assigned__remove")!.click();
+
+    expect(removed).toEqual(["Alice"]);
+    expect(rowClicks).toEqual([]);
+    expect(control.querySelector(".awesomeado-assigned__popup")).toBeNull();
   });
 });
 
@@ -952,5 +1014,60 @@ describe("renderAssignedTo tag editor - add field", () => {
     input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
 
     expect(picked).toBe("Infra");
+  });
+});
+
+describe("renderAssignedTo tag editor - add field label", () => {
+  it("labels the add field 'New tag' unless the caller names its tags otherwise", () => {
+    const placeholderOf = (newTagPlaceholder?: string): string | undefined => {
+      const control = renderAssignedTo(document, {
+        user: alice,
+        userDirectory: new FakeUserDirectory(),
+        showTag: true,
+        onTagChange: () => undefined,
+        newTagPlaceholder,
+      });
+      control.querySelector<HTMLElement>(".awesomeado-tag-pill")?.click();
+      return control.querySelector<HTMLInputElement>(".awesomeado-assigned__tag-input")
+        ?.placeholder;
+    };
+
+    expect(placeholderOf()).toBe("New tag");
+    expect(placeholderOf("Add new role")).toBe("Add new role");
+  });
+});
+
+describe("attachPeoplePicker", () => {
+  it("opens the same people picker from any trigger and reports the person picked", async () => {
+    const directory = new FakeUserDirectory();
+    directory.setSearchResults([
+      { displayName: "Ivy", uniqueName: "ivy@example.com", imageUrl: null },
+    ]);
+    const anchor = document.createElement("span");
+    anchor.style.position = "relative";
+    const trigger = document.createElement("button");
+    trigger.textContent = "+";
+    anchor.append(trigger);
+    document.body.append(anchor);
+    const picked: DirectoryUser[] = [];
+
+    attachPeoplePicker({
+      doc: document,
+      anchor,
+      trigger,
+      userDirectory: directory,
+      onPick: (user) => picked.push(user),
+    });
+    trigger.click();
+    const search = anchor.querySelector<HTMLInputElement>(".awesomeado-assigned__search")!;
+    search.value = "iv";
+    search.dispatchEvent(new Event("input"));
+    await Promise.resolve();
+    anchor.querySelector<HTMLButtonElement>(".awesomeado-assigned__result button")!.click();
+
+    expect(picked).toEqual([{ displayName: "Ivy", uniqueName: "ivy@example.com", imageUrl: null }]);
+    expect(anchor.querySelector(".awesomeado-assigned__popup")).toBeNull();
+    // The picker never repaints its trigger: what a pick means is the caller's to show.
+    expect(trigger.textContent).toBe("+");
   });
 });
