@@ -1,21 +1,11 @@
 import type { OrderingPolicy } from "../../../common/ordering/ItemOrdering";
 import type { EnhancedViewContext } from "../../../common/view-common/EnhancedView";
-import {
-  renderBreadcrumbs,
-  type BreadcrumbSegment,
-} from "../../../common/view-common/control/Breadcrumbs/Breadcrumbs";
+import type { BreadcrumbSegment } from "../../../common/view-common/control/Breadcrumbs/Breadcrumbs";
 import { renderCheckboxFilter } from "../../../common/view-common/control/CheckboxFilter/CheckboxFilter";
 import type { CheckboxFilterSelection } from "../../../common/view-common/control/CheckboxFilter/CheckboxFilter";
-import {
-  renderHeaderButton,
-  renderRefreshButton,
-  type RefreshButtonHandle,
-} from "../../../common/view-common/control/HeaderButtons/HeaderButtons";
+import type { RefreshButtonHandle } from "../../../common/view-common/control/HeaderButtons/HeaderButtons";
 import { renderOrderingPicker } from "../../../common/view-common/control/OrderingPicker/OrderingPicker";
-import {
-  renderVersionLabel,
-  VERSION_MARKER_GAP_PX,
-} from "../../../common/view-common/control/VersionLabel/VersionLabel";
+import { renderViewHeader } from "../../../common/view-common/control/ViewHeader/ViewHeader";
 
 import type { TagCondition } from "./projectTags";
 import { projectsViewType } from "./projectsViewType";
@@ -54,69 +44,7 @@ export interface ProjectsHeaderHandle {
 
 const TAG_FILTER_CLASS_PREFIX = "awesomeado-tag-filter";
 
-/**
- * How far the outline buttons sit from the view's title.
- *
- * Four times the band's own gap, so "open/close everything" reads as its own group rather than as
- * punctuation on the end of the title.
- */
-const OUTLINE_BUTTON_OFFSET_PX = 24;
-
-/** The sticky card the header sits in, so its controls stay reachable while projects scroll. */
-function createHeaderCard(doc: Document): HTMLElement {
-  const header = doc.createElement("div");
-  header.className = "awesomeado-projects__header";
-  // An OPAQUE surface is required for a sticky header: a translucent fill would let the rows
-  // scrolling underneath show through the controls sitting on top of them.
-  header.style.cssText = [
-    "display:flex",
-    "flex-direction:column",
-    "gap:8px",
-    "padding:8px 16px",
-    "background:var(--callout-background-color)",
-    "border:1px solid var(--control-border)",
-    "border-radius:6px",
-    "box-shadow:0 1px 3px var(--palette-neutral-20)",
-    "margin-bottom:16px",
-    "position:sticky",
-    "top:0",
-    "z-index:2",
-  ].join(";");
-  return header;
-}
-
-/** The trail band: the query's folders on the left, the version marker and sort glyph in the corner. */
-function renderTopBand(
-  doc: Document,
-  options: ProjectsHeaderOptions,
-  version?: string,
-): HTMLElement {
-  const band = doc.createElement("div");
-  band.className = "awesomeado-projects__header-top";
-  band.style.cssText = "display:flex;align-items:center;gap:16px;flex-wrap:wrap;min-height:20px";
-
-  const breadcrumbs = renderBreadcrumbs(doc, {
-    segments: options.breadcrumbs,
-    ariaLabel: "Query folder",
-  });
-  if (breadcrumbs) band.append(breadcrumbs);
-
-  const corner = doc.createElement("div");
-  corner.className = "awesomeado-projects__header-corner";
-  corner.style.cssText =
-    "display:flex;align-items:center;gap:8px;flex:0 0 auto;margin-left:auto;white-space:nowrap";
-  corner.append(options.queueStatus);
-  if (version) {
-    const marker = renderVersionLabel(doc, version);
-    marker.style.marginRight = `${VERSION_MARKER_GAP_PX}px`;
-    corner.append(marker);
-  }
-  corner.append(
-    renderOrderingPicker(doc, { policy: options.policy, onChange: options.onOrderingChange }),
-  );
-  band.append(corner);
-  return band;
-}
+const CLASS_PREFIX = "awesomeado-projects";
 
 /**
  * The tag multi-select, given a quick-search because a team's tag vocabulary is unbounded, and the
@@ -147,66 +75,28 @@ function renderTagFilter(doc: Document, options: ProjectsHeaderOptions): HTMLEle
   }).element;
 }
 
-/** The title band: the view's name and outline controls, then Tags + Refresh at the right edge. */
-function renderTitleBand(
-  doc: Document,
-  options: ProjectsHeaderOptions,
-): {
-  band: HTMLElement;
-  refresh: RefreshButtonHandle;
-} {
-  const band = doc.createElement("div");
-  band.className = "awesomeado-projects__header-title";
-  band.style.cssText = "display:flex;align-items:center;gap:8px;flex-wrap:wrap";
-
-  const title = doc.createElement("h1");
-  title.className = "awesomeado-view__title";
-  title.textContent = projectsViewType.label;
-  // The context-menu cursor is the only thing that advertises the menu, exactly as on the Sprint
-  // view's title: nothing else about a heading suggests it is right-clickable.
-  title.style.cssText = "margin:0;font-size:20px;font-weight:600;cursor:context-menu";
-  title.addEventListener("contextmenu", options.onTitleContextMenu);
-
-  const expand = renderHeaderButton(
-    doc,
-    "awesomeado-projects__expand-all",
-    "+",
-    "Expand every project",
-  );
-  expand.style.marginLeft = `${OUTLINE_BUTTON_OFFSET_PX}px`;
-  expand.addEventListener("click", options.onExpandAll);
-  const collapse = renderHeaderButton(
-    doc,
-    "awesomeado-projects__collapse-all",
-    "\u2212",
-    "Collapse every project",
-  );
-  collapse.addEventListener("click", options.onCollapseAll);
-
-  const refresh = renderRefreshButton(doc, "awesomeado-projects__refresh");
-  refresh.element.addEventListener("click", options.onRefresh);
-
-  const filters = doc.createElement("div");
-  filters.className = "awesomeado-projects__filters";
-  filters.style.cssText =
-    "display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end;margin-left:auto";
-  const tagFilter = renderTagFilter(doc, options);
-  tagFilter.style.flex = "0 0 auto";
-  tagFilter.style.whiteSpace = "nowrap";
-  filters.append(tagFilter, refresh.element);
-
-  band.append(title, expand, collapse, filters);
-  return { band, refresh };
-}
-
 /** Build the All Projects Catalog View header; the board mounts `element` and drives `refresh`. */
 export function renderProjectsHeader(
   context: EnhancedViewContext,
   options: ProjectsHeaderOptions,
 ): ProjectsHeaderHandle {
   const { doc } = context;
-  const header = createHeaderCard(doc);
-  const { band, refresh } = renderTitleBand(doc, options);
-  header.append(renderTopBand(doc, options, context.extensionVersion), band);
-  return { element: header, refresh };
+  return renderViewHeader(doc, {
+    classPrefix: CLASS_PREFIX,
+    breadcrumbs: options.breadcrumbs,
+    writeQueueStatus: options.queueStatus,
+    extensionVersion: context.extensionVersion,
+    orderingPicker: renderOrderingPicker(doc, {
+      policy: options.policy,
+      onChange: options.onOrderingChange,
+    }),
+    title: projectsViewType.label,
+    onTitleContextMenu: options.onTitleContextMenu,
+    expandLabel: "Expand every project",
+    collapseLabel: "Collapse every project",
+    onExpandAll: options.onExpandAll,
+    onCollapseAll: options.onCollapseAll,
+    filters: [renderTagFilter(doc, options)],
+    onRefresh: options.onRefresh,
+  });
 }

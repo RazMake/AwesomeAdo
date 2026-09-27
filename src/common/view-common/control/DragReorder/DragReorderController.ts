@@ -11,7 +11,7 @@ export interface DraggableRow {
   parentId: number;
   destinationType: string | null;
   siblingIds: readonly number[];
-  childDestination?: { type: string; siblingIds: readonly number[] };
+  childDestination?: { type?: string; siblingIds: readonly number[] };
   handle: HTMLElement;
   row: HTMLElement;
   wrapper: HTMLElement;
@@ -36,6 +36,18 @@ export interface PlannedMove extends ResolvedMove {
   id: number;
   currentParentId: number;
   type?: string;
+}
+
+/** How a surface's hierarchy may change under a drag. */
+export interface DragReorderOptions {
+  /**
+   * Keep every item at the level it started on.
+   *
+   * For boards whose levels are roles rather than a type hierarchy — a consumer's requests stay
+   * requests wherever they move — so a drop may re-order a level or re-home an item under another
+   * parent at its own depth, but never promote, demote, or convert its type.
+   */
+  fixedDepth?: boolean;
 }
 
 /** The landing the indicator is currently showing, kept so the release commits exactly that. */
@@ -71,6 +83,7 @@ export class DragReorderController {
     doc: Document,
     private readonly onMove: (move: PlannedMove) => void,
     private readonly logger: ILogger,
+    private readonly options: DragReorderOptions = {},
   ) {
     this.indicator = new DropIndicator(doc);
   }
@@ -214,8 +227,10 @@ export class DragReorderController {
     target: DraggableRow,
   ): { move: PlannedMove; side: DropSide } | null {
     const source = this.session?.source;
-    const side = dropSide(event, target);
-    if (source === undefined || !allowsDrop(source, target, side)) return null;
+    if (source === undefined) return null;
+    const fixedDepth = this.options.fixedDepth === true;
+    const side = dropSide(event, target, acceptsInside(source, target, fixedDepth));
+    if (!allowsDrop(source, target, side, fixedDepth)) return null;
     const destination = dropDestination(target, side);
     const placement = resolveMove({
       movedId: source.id,
@@ -233,7 +248,7 @@ export class DragReorderController {
       currentParentId: source.parentId,
     };
     const destinationType = destination.destinationType;
-    if (source.parentId !== placement.parentId && destinationType !== null) {
+    if (!fixedDepth && source.parentId !== placement.parentId && destinationType !== null) {
       move.type = destinationType;
     }
     return { move, side };
@@ -271,25 +286,44 @@ function dropDestination(
   if (children === undefined) return target;
   return {
     parentId: target.id,
-    destinationType: children.type,
+    destinationType: children.type ?? null,
     siblingIds: children.siblingIds,
   };
 }
 
-function allowsDrop(source: DraggableRow, target: DraggableRow, side: DropSide): boolean {
+/**
+ * Whether the middle of `target` offers an inside drop to this source.
+ *
+ * On a fixed-depth surface only a parent one level above the source can take it, so the middle of
+ * a same-level row keeps meaning before/after rather than promising a landing that would be refused.
+ */
+function acceptsInside(source: DraggableRow, target: DraggableRow, fixedDepth: boolean): boolean {
+  if (target.childDestination === undefined) return false;
+  return !fixedDepth || target.depth + 1 === source.depth;
+}
+
+function allowsDrop(
+  source: DraggableRow,
+  target: DraggableRow,
+  side: DropSide,
+  fixedDepth: boolean,
+): boolean {
   const depthChange = target.depth + (side === "inside" ? 1 : 0) - source.depth;
-  if (source.id === target.id || Math.abs(depthChange) > 1) return false;
+  if (source.id === target.id) return false;
+  // A fixed-depth level is a role, not a type, so any parent at the right depth may take the item.
+  if (fixedDepth) return depthChange === 0;
+  if (Math.abs(depthChange) > 1) return false;
   if (depthChange > 0 && source.hasChildren) return false;
   if (side === "inside") return target.childDestination !== undefined;
   return source.parentId === target.parentId || target.destinationType !== null;
 }
 
-function dropSide(event: Event, target: DraggableRow): DropSide {
+function dropSide(event: Event, target: DraggableRow, insideAllowed: boolean): DropSide {
   const box = target.row.getBoundingClientRect();
   const pointerY = (event as DragEvent).clientY;
   if (box.height <= 0 || typeof pointerY !== "number") return "before";
   const position = (pointerY - box.top) / box.height;
-  if (target.childDestination !== undefined && position > 0.25 && position < 0.75) {
+  if (insideAllowed && position > 0.25 && position < 0.75) {
     return "inside";
   }
   return position < 0.5 ? "before" : "after";

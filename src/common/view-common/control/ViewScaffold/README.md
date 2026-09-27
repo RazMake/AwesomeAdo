@@ -30,6 +30,12 @@ surface, showing the **Major.Minor** release only and linking to the store listi
 
 **XSS safety:** Title and message are set via `textContent` rather than `innerHTML`, preventing HTML injection.
 
+### `renderViewSurface(doc: Document, className: string): HTMLElement`
+
+The full-height, left-aligned `<section>` a data-driven board draws its header and rows on, with
+the shared padding and themed text color every board uses. Pass the board's classes (for example
+`"awesomeado-view awesomeado-consumers"`).
+
 ## Example
 
 ```typescript

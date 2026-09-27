@@ -18,9 +18,10 @@ import type {
   TypeCatalogEntry,
 } from "../../../common/ado/TrackedWorkItem";
 import { noteWindowStart } from "../../../common/ado/WorkItemNote";
-import { WorkItemWriteQueue } from "../../../common/ado/WorkItemWriteQueue/WorkItemWriteQueue";
-import { buildQueryFolderUrl, buildWorkItemUrl } from "../../../common/ado/fetchAdoTree";
+import type { WorkItemWriteQueue } from "../../../common/ado/WorkItemWriteQueue/WorkItemWriteQueue";
+import { buildWorkItemUrl } from "../../../common/ado/fetchAdoTree";
 import type { SprintWindow } from "../../../common/ado/sprintWindow";
+import { isInAreaPaths, representedAreaPaths } from "../../../common/ado/workItemAreaPaths";
 import {
   boardColumnOrdinal,
   flattenWorkItems,
@@ -30,7 +31,6 @@ import {
   workItemIdsVisibleUnderPrimaryFilter,
   workItemBoardColumnOrdinal,
   workItemsEligibleForPrimaryFilter,
-  workItemStatusLabel,
   workItemTypeColor,
   workItemTypeDisplayColor,
 } from "../../../common/ado/workItemTypes";
@@ -52,14 +52,12 @@ import {
   recentWindowStart,
   type RecentActivityKind,
 } from "../../../common/view-common/control/ActivityFilter/recentActivity";
-import {
-  renderAreaPathFilter,
-  type AreaPathFilterHandle,
-} from "../../../common/view-common/control/AreaPathFilter/AreaPathFilter";
+import type { AreaPathFilterHandle } from "../../../common/view-common/control/AreaPathFilter/AreaPathFilter";
 import {
   renderAssignedTo,
   type AssignedToHandle,
 } from "../../../common/view-common/control/AssignedTo/AssignedTo";
+import { queryFolderBreadcrumbs } from "../../../common/view-common/control/Breadcrumbs/queryFolderBreadcrumbs";
 import {
   renderCheckboxFilter,
   type CheckboxFilterHandle,
@@ -87,14 +85,7 @@ import {
   type ItemContextMenu,
   type ItemContextMenuTarget,
 } from "../../../common/view-common/control/ItemContextMenu/ItemContextMenu";
-import {
-  renderItemDetailsButton,
-  renderItemDetailsContent,
-} from "../../../common/view-common/control/ItemDetails/ItemDetails";
-import {
-  renderItemTypeIcon,
-  type ItemTypeIconEmphasis,
-} from "../../../common/view-common/control/ItemTypeIcon/ItemTypeIcon";
+import { renderItemDetailsPanel } from "../../../common/view-common/control/ItemDetails/ItemDetails";
 import { renderMarkerFilterPills } from "../../../common/view-common/control/MarkerPill/MarkerFilterPills";
 import {
   collectMarkersInUse,
@@ -117,10 +108,11 @@ import {
   renderSprintPicker,
   type SprintPickerHandle,
 } from "../../../common/view-common/control/SprintPicker/SprintPicker";
-import { renderStatusBadge } from "../../../common/view-common/control/StatusBadge/StatusBadge";
 import { renderViewScaffold } from "../../../common/view-common/control/ViewScaffold/ViewScaffold";
 import { renderWriteQueueStatus } from "../../../common/view-common/control/WriteQueueStatus/WriteQueueStatus";
 import { createPopupHost } from "../../../common/view-common/control/popupHost/popupHost";
+import { renderRetainedAreaPathFilter } from "../area-path-selection/retainedAreaPathFilter";
+import { createBoardWriteQueue } from "../board-lifecycle/boardWriteQueue";
 import {
   loadInterruptAcceptanceState,
   type InterruptAcceptanceState,
@@ -128,13 +120,16 @@ import {
 import { writeItemAssignee } from "../item-assignee/writeItemAssignee";
 import { writeItemEta } from "../item-eta/writeItemEta";
 import { writeItemPriority } from "../item-priority/writeItemPriority";
+import { renderItemStatusBadge, widestStatusLabelLength } from "../item-status/itemStatusBadge";
 
 import {
   assigneesInPrimaryWork,
   matchesAssigneeFilter,
   type AssigneeOption,
 } from "./assignee-filter/assigneeFilter";
-import { applyMoveToTree, applyRanksToTree } from "./drag-reorder/applyMoveToTree";
+import { applyRanksToTree } from "./drag-reorder/applyMoveToTree";
+import { dragReorderUnavailableReason } from "./drag-reorder/dragReorderAvailability";
+import { persistTreeMove } from "./drag-reorder/persistTreeMove";
 import {
   renderProjectTrackingHeader,
   type RefreshButtonHandle,
@@ -150,7 +145,8 @@ import {
 } from "./item-commands/NewChildCommands";
 import { buildProjectLifecycleCommands } from "./item-commands/ProjectLifecycleCommands";
 import { renderMarkerReasonsPill } from "./marker-reasons/MarkerReasonsPill";
-import { createNotesPanelState, renderNotesPanel, type NotesPanelState } from "./notes/NotesPanel";
+import { renderItemNotesToggle } from "./notes/ItemNotesToggle";
+import { createNotesPanelState, type NotesPanelState } from "./notes/NotesPanel";
 import { markerCommentPrefixes } from "./notes/markerNotes";
 import {
   hideResolvedAfterDays,
@@ -182,13 +178,6 @@ function displayTypeColorOf(
 function lastTypeColor(types: TypeCatalogEntry[]): string | null {
   return workItemTypeColor(types[types.length - 1]?.color);
 }
-
-/**
- * Maps a work item's ADO State (System.State) to the application Status — the board-column label it
- * is routed onto. Falls back to the raw ADO State when the type declares no matching column, so an
- * unmapped state is still shown rather than blanked.
- */
-const statusLabelOf = workItemStatusLabel;
 
 /**
  * Everything one render pass narrows the tree by, bundled so the recursive visibility test and the
@@ -257,12 +246,10 @@ function matchesResolvedFilter(item: TrackedWorkItem, filter: TreeFilter): boole
 /** Whether one filterable work item passes every active filter group. */
 function matchesTreeFilter(item: TrackedWorkItem, filter: TreeFilter): boolean {
   const matchesSprint = !filter.sprint || item.sprintName === filter.sprint;
-  const matchesAreaPath =
-    filter.areaPaths.size === 0 || (item.areaPath !== null && filter.areaPaths.has(item.areaPath));
   return (
     matchesSprint &&
     matchesResolvedFilter(item, filter) &&
-    matchesAreaPath &&
+    isInAreaPaths(item.areaPath, filter.areaPaths) &&
     matchesAssigneeFilter(item, filter.assignees) &&
     matchesLitPills(item, filter)
   );
@@ -278,69 +265,24 @@ function renderDescription(
   typeColor: string | null,
   mentionNames: ReadonlyMap<string, string>,
 ): { panel: HTMLElement; toggleButton: HTMLButtonElement; expansion: ExpansionControl } {
-  const hasDescription = item.description.trim().length > 0;
-  const toggleButton = renderItemDetailsButton(doc, {
-    hasDescription,
+  const details = renderItemDetailsPanel(doc, {
+    data: item,
     typeColor,
-    className: "awesomeado-tracking__describe",
-  });
-
-  const panel = doc.createElement("div");
-  panel.className = "awesomeado-tracking__description";
-  panel.style.cssText = "display:none;margin-top:8px;padding-left:39px";
-  const content = renderItemDetailsContent(doc, item, mentionNames);
-  content
-    .querySelector(".awesomeado-item-details__meta")
-    ?.classList.add("awesomeado-tracking__meta");
-  content
-    .querySelector(".awesomeado-item-details__description")
-    ?.classList.add("awesomeado-tracking__desc-text");
-  panel.append(content);
-
-  const setExpanded = (expanded: boolean): void => {
-    toggleButton.setExpanded(expanded);
-    panel.style.display = expanded ? "block" : "none";
-  };
-  setExpanded(false);
-
-  toggleButton.addEventListener("click", () => {
-    setExpanded(toggleButton.getAttribute("aria-expanded") !== "true");
+    mentionNames,
+    buttonClassName: "awesomeado-tracking__describe",
+    panelClassName: "awesomeado-tracking__description",
+    metaClassName: "awesomeado-tracking__meta",
+    descriptionClassName: "awesomeado-tracking__desc-text",
   });
 
   return {
-    panel,
-    toggleButton,
+    panel: details.element,
+    toggleButton: details.toggle,
     expansion: {
-      isExpanded: () => toggleButton.getAttribute("aria-expanded") === "true",
-      setExpanded,
+      isExpanded: details.isExpanded,
+      setExpanded: details.setExpanded,
     },
   };
-}
-
-/**
- * The character length of the widest Status label the whole board can show — every selectable column
- * label across all types plus each item's displayed status. Feeding this to every badge as a shared
- * `minWidthCh` makes all badges render one uniform width regardless of their individual type's labels.
- */
-function widestStatusLabelLength(
-  root: TrackedWorkItem,
-  typeMap: Map<string, TypeCatalogEntry>,
-): number {
-  let widest = 0;
-  // Any column can be picked from the dropdown, so all their labels must fit the shared width.
-  for (const entry of typeMap.values()) {
-    for (const column of entry.columns) {
-      widest = Math.max(widest, column.column.length);
-    }
-  }
-  // Plus every displayed status — covers items whose state maps to no column (raw-state fallback).
-  const pending = [...root.children];
-  while (pending.length > 0) {
-    const item = pending.pop()!;
-    widest = Math.max(widest, statusLabelOf(item, typeMap.get(item.type)).length);
-    pending.push(...item.children);
-  }
-  return widest;
 }
 
 /**
@@ -789,49 +731,17 @@ function createRowControls(
     gutter = spacer;
   }
 
-  const entry = typeMap.get(item.type);
-  const columns = (entry?.columns ?? [])
-    .filter((c) => c.states.length > 0)
-    .map((c) => ({
-      column: c.column,
-      primaryState: c.states[0] ?? c.column,
-      ordinal: boardColumnOrdinal(c.column, boardColumns),
-    }));
-
-  const statusLabel = statusLabelOf(item, entry);
-  const stateBadge = renderStatusBadge(doc, {
-    // Show the application Status (the mapped board-column label), never the raw ADO State.
-    state: statusLabel,
-    ordinal: boardColumnOrdinal(statusLabel, boardColumns),
-    columns,
-    editable: true,
+  const stateBadge = renderItemStatusBadge({
+    doc,
+    item,
+    entry: typeMap.get(item.type),
+    boardColumns,
+    queue,
     minWidthCh: statusWidthCh,
-    onChange: (primaryState, column) => {
-      // Persist first, then reflect the committed Status: the badge label only moves once the write
-      // succeeds, so a rejected write never leaves a value on screen that ADO did not accept. The
-      // rev is read at WRITE time (not here), so a second edit queued behind this one still carries
-      // a current rev. The queue logs and counts failures and never rejects, so there is nothing to
-      // roll back — the board's write-status indicator reports the loss.
-      queue
-        .enqueue({
-          id: item.id,
-          currentRev: () => item.rev,
-          field: "System.State",
-          value: primaryState,
-        })
-        .then((result) => {
-          if (result.ok && result.rev !== undefined) {
-            item.state = primaryState;
-            item.rev = result.rev;
-            item.stateChangeDate = options.context.services.now().toISOString();
-            // Reflect the new Status label and re-tint to its board-column ordinal so the badge's
-            // color tracks the label (the badge owns its own coloring). Repaint as well because ETA
-            // color and resolved-age visibility both depend on the item's completion transition.
-            stateBadge.setStatus(column, boardColumnOrdinal(column, boardColumns));
-            options.repaint();
-          }
-        });
-    },
+    now: () => options.context.services.now(),
+    // ETA color and resolved-age visibility both depend on the item's completion transition, so the
+    // whole tree repaints once a new Status lands.
+    onCommitted: () => options.repaint(),
   });
   // The badge flows inline at the head of the content block, so it sits on the same line as the
   // title/?/assignee and wraps together with them; middle-align it to the text line and give it a
@@ -907,111 +817,39 @@ function createItemNotes(
   options: TreeRenderOptions,
 ): { toggle: HTMLElement; panel: HTMLElement; expansion: ExpansionControl } {
   const { doc, typeMap, context } = options;
-  const services = context.services;
   const startsExpanded = options.expandedNoteIds.has(item.id);
-  // Seeded from the tree's comment count, then replaced by what a panel actually read. Held on the
-  // ITEM (not just in this closure) so the answer survives the repaint that discards these elements.
-  let hasNotes = item.noteCount > 0;
-
-  const icon = renderItemTypeIcon(doc, {
-    iconUrl: typeMap.get(item.type)?.icon ?? null,
-    color: displayTypeColorOf(item.type, typeMap),
-    typeName: item.type,
-    // The toggle below owns the tooltip: the icon IS the notes affordance here, so hovering it must
-    // say what clicking does, not repeat the work item type.
-    title: "",
-    emphasis: contentEmphasis(startsExpanded, hasNotes),
-  });
-
-  const toggle = doc.createElement("button");
-  toggle.className = "awesomeado-tracking__notes-toggle";
-  toggle.type = "button";
-  // A bare button: only the icon is visible, so the row still reads as "icon, then title".
-  toggle.style.cssText = [
-    "cursor:pointer",
-    "border:none",
-    "background:none",
-    "padding:0",
-    "display:inline-flex",
-    "align-items:center",
-    "vertical-align:middle",
-    "font:inherit",
-    "color:inherit",
-  ].join(";");
-  toggle.append(icon.element);
 
   let panelState = options.notePanelStates.get(item.id);
   if (panelState === undefined) {
     panelState = createNotesPanelState();
     options.notePanelStates.set(item.id, panelState);
   }
-  const notes = renderNotesPanel({
+  const notes = renderItemNotesToggle({
     doc,
-    workItemId: item.id,
+    item,
+    entry: typeMap.get(item.type),
     sinceIso: options.notesSinceIso,
-    services,
+    services: context.services,
     state: panelState,
-    // A note is a work item revision: without this the row's status, assignee and ETA controls would
-    // all be writing against a rev the reader's own note had already superseded.
-    onItemRevision: (rev) => {
-      item.rev = rev;
+    expanded: startsExpanded,
+    toggleClassName: "awesomeado-tracking__notes-toggle",
+    onExpandedChange: (expanded) => {
+      if (expanded) {
+        options.expandedNoteIds.add(item.id);
+      } else {
+        options.expandedNoteIds.delete(item.id);
+      }
     },
-    onNoteCountKnown: (count) => {
-      hasNotes = count > 0;
-      // Written back to the model so a later repaint seeds from the truth rather than from ADO's
-      // total again — otherwise an item whose notes all fall outside the window would flick back to
-      // "has notes" on every re-sort.
-      item.noteCount = count;
-      icon.setEmphasis(contentEmphasis(toggle.getAttribute("aria-expanded") === "true", hasNotes));
-    },
-  });
-
-  const setExpanded = (expanded: boolean): void => {
-    if (expanded) {
-      options.expandedNoteIds.add(item.id);
-    } else {
-      options.expandedNoteIds.delete(item.id);
-    }
-    toggle.setAttribute("aria-expanded", expanded ? "true" : "false");
-    toggle.title = notesToggleTitle(expanded);
-    icon.setEmphasis(contentEmphasis(expanded, hasNotes));
-    notes.setExpanded(expanded);
-  };
-  setExpanded(startsExpanded);
-
-  toggle.addEventListener("click", () => {
-    setExpanded(toggle.getAttribute("aria-expanded") !== "true");
   });
 
   return {
-    toggle,
-    panel: notes.element,
+    toggle: notes.toggle,
+    panel: notes.panel,
     expansion: {
-      isExpanded: () => toggle.getAttribute("aria-expanded") === "true",
-      setExpanded,
+      isExpanded: notes.isExpanded,
+      setExpanded: notes.setExpanded,
     },
   };
-}
-
-/**
- * How loudly a row's leading control renders: it carries the type's color only when there is
- * something behind it, and comes to full strength only while the reader has it open.
- *
- * Shared by the type icon (notes) and the description disc so the two can never drift apart on what
- * a given shade means. Keeping "is there anything here?" separate from "are you looking at it?" is
- * what lets an empty item open without borrowing a color that would promise content it does not have.
- */
-function contentEmphasis(expanded: boolean, hasContent: boolean): ItemTypeIconEmphasis {
-  return { colored: hasContent, loud: expanded };
-}
-
-/**
- * The toggle's tooltip: what pressing it does, nothing more. The icon is the row's only affordance
- * for its notes, so the tooltip is spent naming the action rather than repeating the work item type
- * (which the icon itself shows) or the shade's "has notes" answer.
- */
-function notesToggleTitle(expanded: boolean): string {
-  return expanded ? "Hide notes" : "Show notes";
 }
 
 /**
@@ -2035,17 +1873,7 @@ function collectAreaPaths(
   items: readonly TrackedWorkItem[],
   isResolvedPastWindow: (item: TrackedWorkItem) => boolean,
 ): string[] {
-  const paths = new Set<string>();
-  for (const item of items) {
-    if (
-      !isResolvedPastWindow(item) &&
-      typeof item.areaPath === "string" &&
-      item.areaPath.length > 0
-    ) {
-      paths.add(item.areaPath);
-    }
-  }
-  return [...paths].sort((left, right) => left.localeCompare(right));
+  return representedAreaPaths(items.filter((item) => !isResolvedPastWindow(item)));
 }
 
 /**
@@ -2094,25 +1922,17 @@ function collectItemAreaPaths(
   );
 }
 
-/** Build the shared full-path selector and keep stale refresh selections from hiding every row. */
+/** Build the shared full-path selector over the board's retained selection. */
 function renderAreaPathControls(
   context: DataDrivenViewContext,
   areaPaths: readonly string[],
   session: BoardSession,
   onChange: () => void,
 ): AreaPathFilterHandle {
-  for (const selected of [...session.selectedAreaPaths]) {
-    if (!areaPaths.includes(selected)) session.selectedAreaPaths.delete(selected);
-  }
-  return renderAreaPathFilter(context.doc, {
+  return renderRetainedAreaPathFilter(context.doc, {
     areaPaths,
-    selectedAreaPaths: [...session.selectedAreaPaths],
-    // A reading position rather than configuration, so the lit-up trigger is the way OUT of it —
-    // the same one press every other filter on this header answers to.
-    clearOnTriggerWhenActive: true,
+    selection: session.selectedAreaPaths,
     onChange: (selected) => {
-      session.selectedAreaPaths.clear();
-      for (const path of selected) session.selectedAreaPaths.add(path);
       context.services.logger.info(
         `Project Tracking area-path filter: selectedCount=${selected.length}.`,
       );
@@ -2331,11 +2151,6 @@ function renderHeader(
   );
   const techLead = createTechLeadGroup(root, chipContext);
 
-  // The view runs on the ADO query page, so the page's own URL supplies the org/project the folder
-  // links resolve against; when it is not a recognizable ADO location the segment stays plain text
-  // rather than pointing at a fabricated URL.
-  const pageHref = doc.location?.href ?? "";
-
   const {
     element: header,
     setTitle: setHeaderTitle,
@@ -2344,11 +2159,7 @@ function renderHeader(
     refreshButton: refresh,
   } = renderProjectTrackingHeader(doc, {
     // The query's ancestor folders, read from ADO's query metadata (its `path`) alongside the tree.
-    // Each folder links to its contents in ADO's query hub (`_queries/folder/…`).
-    breadcrumbs: folderPath.map((folder) => {
-      const url = buildQueryFolderUrl(pageHref, folder.path);
-      return url === null ? { label: folder.label } : { label: folder.label, url };
-    }),
+    breadcrumbs: queryFolderBreadcrumbs(folderPath, doc.location?.href ?? ""),
     title: root.title,
     titleColor: displayTypeColorOf(root.type, typeMap),
     onTitleContextMenu: boardControls.onTitleContextMenu,
@@ -3004,53 +2815,22 @@ function persistMove(params: {
   session: BoardSession;
   repaint: () => void;
 }): void {
-  const { root, move, queue, services, session, repaint } = params;
-  const moved = findTrackedItem(root, move.id);
-  if (moved === null) {
-    // The board is showing a tree that no longer contains the dragged item; writing a rev from a
-    // stale model would be worse than declining the move.
-    services.logger.error(`Drag-reorder aborted: item ${move.id} is not in the rendered tree.`);
-    return;
-  }
+  const { root, move, session, repaint } = params;
   const movedDepth = trackedItemDepth(root, move.id);
   const reopensMinorChildPopup = movedDepth !== null && movedDepth > MAX_ROW_DEPTH;
-  void queue
-    .enqueueReorder({
-      id: move.id,
-      currentRev: () => moved.rev,
-      parentId: move.parentId,
-      currentParentId: move.currentParentId,
-      previousId: move.previousId,
-      nextId: move.nextId,
-      siblingIds: move.siblingIds,
-      type: move.type,
-      team: params.team,
-    })
-    .then((result) => {
-      if (result.rev !== undefined) {
-        moved.rev = result.rev;
-      }
-      if (result.ranks !== undefined) {
-        // Placing one item can renumber its whole level, so every reported rank is copied back or
-        // the next re-sort would order the level by numbers ADO no longer holds.
-        applyRanksToTree(root, result.ranks);
-      }
-      // A move whose re-parent landed but whose ranking did not is still a change ADO has applied:
-      // leaving the item under its old parent on screen would show a tree that no longer exists and
-      // send the same rejected request again on the next drag.
-      if (!result.ok && result.reparented !== true) {
-        return;
-      }
-      if (move.type !== undefined) {
-        moved.type = move.type;
-      }
-      if (applyMoveToTree(root, move, result.order ?? null)) {
-        if (reopensMinorChildPopup) {
-          session.reopenMinorChildPopupId = move.parentId;
-        }
-        repaint();
-      }
-    });
+  void persistTreeMove({
+    root,
+    move,
+    team: params.team,
+    queue: params.queue,
+    logger: params.services.logger,
+  }).then((changed) => {
+    if (!changed) return;
+    if (reopensMinorChildPopup) {
+      session.reopenMinorChildPopupId = move.parentId;
+    }
+    repaint();
+  });
 }
 
 /** The item's rendered tree depth, where the root itself is -1; null when the item is absent. */
@@ -3060,20 +2840,6 @@ function trackedItemDepth(root: TrackedWorkItem, id: number, depth = -1): number
   }
   for (const child of root.children) {
     const found = trackedItemDepth(child, id, depth + 1);
-    if (found !== null) {
-      return found;
-    }
-  }
-  return null;
-}
-
-/** The item with `id` at or below `root`, or null when this tree does not hold it. */
-function findTrackedItem(root: TrackedWorkItem, id: number): TrackedWorkItem | null {
-  if (root.id === id) {
-    return root;
-  }
-  for (const child of root.children) {
-    const found = findTrackedItem(child, id);
     if (found !== null) {
       return found;
     }
@@ -3200,14 +2966,7 @@ function createBoardReordering(params: {
             (move) => persistMove({ root, move, team, queue, services, session, repaint }),
             services.logger,
           ),
-    dragReorderUnavailable: (policy) => {
-      if (team === null) {
-        return "drag to reorder needs a team (set one in AwesomeADO options)";
-      }
-      return policy === MANUAL_ORDERING_POLICY
-        ? null
-        : "drag to reorder is only available when ordering by importance";
-    },
+    dragReorderUnavailable: (policy) => dragReorderUnavailableReason(team, policy),
   };
 }
 
@@ -3263,7 +3022,7 @@ function createBoardCore(params: {
 }): BoardCore {
   const { doc, root, context, typeMap } = params;
   const services = context.services;
-  const writes = new WorkItemWriteQueue(services.writeField, services.logger, services.reorderItem);
+  const writes = createBoardWriteQueue(services);
 
   let repaint: () => void = () => {};
   const reordering = createBoardReordering({
@@ -3280,7 +3039,7 @@ function createBoardCore(params: {
     writes,
     writeStatus: createBoardWriteStatus(doc, writes, () => services.openDiagnosticsLog()),
     metrics: {
-      statusWidthCh: widestStatusLabelLength(root, typeMap),
+      statusWidthCh: widestStatusLabelLength(root.children, typeMap),
       boardColumns: services.getBoardColumns(),
       // Rolled-up children always sit at the bottom of the configured hierarchy, so the rollup badge
       // wears a discrete tint of the LAST configured type's color — it reads as "these are the Tasks"

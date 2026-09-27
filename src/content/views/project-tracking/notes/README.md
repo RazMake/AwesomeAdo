@@ -1,25 +1,27 @@
 # notes
 
-The per-item **Notes** panel on the Project Tracking board: a work item's Azure DevOps Discussion,
-shown under its row and authored in place.
+The reusable per-item **Notes** controls used by enhanced views: a work item's Azure DevOps
+Discussion, shown under its row or in the complete-discussion popup and authored in place.
 
 ## Public API
 
 ```ts
-import { renderNotesPanel } from "./notes/NotesPanel";
+import { renderItemNotesToggle } from "./notes/ItemNotesToggle";
 
-const notes = renderNotesPanel({
+const notes = renderItemNotesToggle({
   doc,
-  workItemId: item.id,
+  item,
+  entry: typeCatalog.get(item.type),
   sinceIso: noteWindowStart(services.now(), updatesWindowWeeks(properties)),
   services,
 });
 
-rowWrapper.append(notes.element);
-notes.setExpanded(true); // triggers the first fetch
+row.append(notes.toggle);
+rowWrapper.append(notes.panel);
 ```
 
-`renderNotesPanel(options)` returns `{ element, setExpanded, isExpanded }`.
+`renderItemNotesToggle(options)` returns `{ toggle, panel, setExpanded, isExpanded }`. Lower-level
+surfaces can use `renderNotesPanel(options)` directly.
 
 | Option              | Meaning                                                                                                                                                                                                                                                              |
 | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

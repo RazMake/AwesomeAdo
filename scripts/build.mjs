@@ -52,6 +52,7 @@ const deferredViewOptions = {
   entryPoints: {
     "content/project-tracking": "src/content/views/project-tracking/ProjectTrackingView.ts",
     "content/projects-view": "src/content/views/projects-view/ProjectsView.ts",
+    "content/consumers-view": "src/content/views/consumers/ConsumersView.ts",
   },
   outdir,
   bundle: true,

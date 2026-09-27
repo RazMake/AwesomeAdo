@@ -5,6 +5,19 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ## Next Version
 
+### New Features
+
+- New **Consumers View** for tree queries whose top item groups consumers: each consumer opens onto
+  its feature requests, showing the consumer's type and title and each request's status, type, and
+  title. Limit requests to the area branches set in the query's binding, including their descendants,
+  and narrow them further with the header's Area filter (kept in the page link, so a shared link
+  opens the same filtered board). Refresh in place, drag to reorder consumers, and reorder requests
+  within a consumer or move them to another consumer, keeping the same backlog order as Project
+  Tracking. The view heading shows the root item's title in its Azure DevOps work item type color.
+  Every item also exposes its description from a type-colored `?`, opens Discussion from its work
+  item type icon, supports adding and editing notes, and offers the complete **View all notes**
+  popup.
+
 ## 0.15
 
 ### New Features

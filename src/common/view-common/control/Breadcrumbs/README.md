@@ -23,3 +23,9 @@ whose folders have no reliable navigation target never ship broken links.
 The control is **data-only**: callers hand it resolved `{ label, url? }` segments; it never scrapes a
 page or interprets what a segment means, so the same control serves every view. It is theme-aware via
 ADO CSS custom properties (with hard-coded fallbacks): a muted trail with themed link color.
+
+`queryFolderBreadcrumbs.ts` → `queryFolderBreadcrumbs(folderPath, href): BreadcrumbSegment[]`
+
+Turns a loaded query's parent-folder trail into segments that link to each folder in the ADO query
+hub, resolved against the page's own `href`. A folder whose link cannot be built (the page is not a
+recognizable ADO location) stays plain text. Every enhanced view uses it so their trails match.

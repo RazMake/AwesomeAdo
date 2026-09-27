@@ -19,6 +19,14 @@ export interface ItemDetailsButtonHandle extends HTMLButtonElement {
   setExpanded(expanded: boolean): void;
 }
 
+/** A mounted item-details panel and the toggle that owns its visible state. */
+export interface ItemDetailsPanelHandle {
+  element: HTMLElement;
+  toggle: ItemDetailsButtonHandle;
+  isExpanded(): boolean;
+  setExpanded(expanded: boolean): void;
+}
+
 function discColor(expanded: boolean, hasDescription: boolean, typeColor: string | null): string {
   if (!hasDescription || typeColor === null) {
     return expanded
@@ -94,4 +102,48 @@ export function renderItemDetailsContent(
   description.style.cssText = "font-size:11px;color:var(--text-primary-color)";
   content.append(meta, description);
   return content;
+}
+
+/** The shared `?` toggle and the lifecycle/description panel it opens. */
+export function renderItemDetailsPanel(
+  doc: Document,
+  options: {
+    data: ItemDetailsData;
+    typeColor: string | null;
+    mentionNames: ReadonlyMap<string, string>;
+    buttonClassName?: string;
+    panelClassName?: string;
+    metaClassName?: string;
+    descriptionClassName?: string;
+  },
+): ItemDetailsPanelHandle {
+  const toggle = renderItemDetailsButton(doc, {
+    hasDescription: options.data.description.trim().length > 0,
+    typeColor: options.typeColor,
+    className: options.buttonClassName,
+  });
+  const element = doc.createElement("div");
+  element.className = options.panelClassName ?? "awesomeado-item-details__panel";
+  element.style.cssText = "display:none;margin-top:8px;padding-left:39px";
+  const content = renderItemDetailsContent(doc, options.data, options.mentionNames);
+  if (options.metaClassName !== undefined) {
+    content.querySelector(".awesomeado-item-details__meta")?.classList.add(options.metaClassName);
+  }
+  if (options.descriptionClassName !== undefined) {
+    content
+      .querySelector(".awesomeado-item-details__description")
+      ?.classList.add(options.descriptionClassName);
+  }
+  element.append(content);
+
+  const setExpanded = (expanded: boolean): void => {
+    toggle.setExpanded(expanded);
+    element.style.display = expanded ? "block" : "none";
+  };
+  setExpanded(false);
+  toggle.addEventListener("click", () => {
+    setExpanded(!isExpanded());
+  });
+  const isExpanded = (): boolean => toggle.getAttribute("aria-expanded") === "true";
+  return { element, toggle, isExpanded, setExpanded };
 }

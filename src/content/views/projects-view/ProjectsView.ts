@@ -2,9 +2,10 @@ import { collectAssignedDirectoryUsers } from "../../../common/ado/FeatureCrew";
 import type { WorkItemTreeResult } from "../../../common/ado/IWorkItemTreeLoader";
 import { parseQueryTagFilter } from "../../../common/ado/QueryDefinition";
 import type { TrackedWorkItem, TypeCatalogEntry } from "../../../common/ado/TrackedWorkItem";
-import { WorkItemWriteQueue } from "../../../common/ado/WorkItemWriteQueue/WorkItemWriteQueue";
-import { buildQueryFolderUrl, buildWorkItemUrl } from "../../../common/ado/fetchAdoTree";
+import type { WorkItemWriteQueue } from "../../../common/ado/WorkItemWriteQueue/WorkItemWriteQueue";
+import { buildWorkItemUrl } from "../../../common/ado/fetchAdoTree";
 import { DEFAULT_QUERY_FOLDER, type ProjectQueryLink } from "../../../common/ado/projectQuery";
+import { representedAreaPaths } from "../../../common/ado/workItemAreaPaths";
 import {
   flattenWorkItems,
   orderTrackedItems,
@@ -18,7 +19,7 @@ import type {
   EnhancedView,
   EnhancedViewContext,
 } from "../../../common/view-common/EnhancedView";
-import type { BreadcrumbSegment } from "../../../common/view-common/control/Breadcrumbs/Breadcrumbs";
+import { queryFolderBreadcrumbs } from "../../../common/view-common/control/Breadcrumbs/queryFolderBreadcrumbs";
 import {
   DragReorderController,
   type PlannedMove,
@@ -36,11 +37,14 @@ import {
   restripeVisibleRows,
   type RowEmphasisClasses,
 } from "../../../common/view-common/control/RowEmphasis/RowEmphasis";
-import { renderViewScaffold } from "../../../common/view-common/control/ViewScaffold/ViewScaffold";
+import { treeRowEmphasisClasses } from "../../../common/view-common/control/TreeRow/TreeRow";
 import {
-  renderWriteQueueStatus,
-  type WriteQueueStatusHandle,
-} from "../../../common/view-common/control/WriteQueueStatus/WriteQueueStatus";
+  renderViewScaffold,
+  renderViewSurface,
+} from "../../../common/view-common/control/ViewScaffold/ViewScaffold";
+import { createBoardLoader } from "../board-lifecycle/boardLoader";
+import { createBoardWriteQueue } from "../board-lifecycle/boardWriteQueue";
+import { createBoardWriteStatus } from "../board-lifecycle/boardWriteStatus";
 import { childTypeOf, newChildSummary } from "../project-tracking/item-commands/NewChildCommands";
 import { panelFor } from "../project-tracking/item-commands/itemCommandCore";
 
@@ -90,14 +94,6 @@ interface ProjectsSession {
   addingProject: boolean;
   /** The project the "add a milestone" box is open under, or null when none is. */
   addingChildOf: number | null;
-  /**
-   * The write queue's state, retained across repaints.
-   *
-   * The header is rebuilt on every paint, and the indicator inside it with it — without somewhere
-   * outside the DOM to keep this, a repaint mid-save would drop the "Saving…" chip and, far worse,
-   * the report that an edit was rejected.
-   */
-  write: { pending: number; failed: number; lastError?: string };
 }
 
 /** One load's answer, plus the catalog values the rows are painted with. */
@@ -120,41 +116,10 @@ interface LoadedProjects {
 }
 
 /** The catalog's own DOM, named for the shared stripe/hover/emphasis treatment. */
-const ROW_EMPHASIS_CLASSES: RowEmphasisClasses = {
-  wrapper: "awesomeado-projects__item",
-  surface: "awesomeado-projects__row",
-  children: "awesomeado-projects__children",
-};
+const ROW_EMPHASIS_CLASSES: RowEmphasisClasses = treeRowEmphasisClasses("awesomeado-projects");
 
 /** How wide the "Add work item" form opens: enough for a full area path to read without wrapping. */
 const NEW_WORK_ITEM_WIDTH_PX = 460;
-
-/** The view's own shell: a full-height, left-aligned surface ADO's stylesheet cannot restyle. */
-function createRoot(doc: Document): HTMLElement {
-  const root = doc.createElement("section");
-  root.className = "awesomeado-view awesomeado-projects";
-  root.style.cssText = [
-    "display:flex",
-    "flex-direction:column",
-    "min-height:100%",
-    "box-sizing:border-box",
-    "padding:2px 16px 16px",
-    "font-family:inherit",
-    "color:var(--text-primary-color)",
-    "text-align:left",
-  ].join(";");
-  return root;
-}
-
-/** The query's parent-folder trail, with a link on every folder ADO can address. */
-function queryFolderTrail(result: WorkItemTreeResult, href: string): BreadcrumbSegment[] {
-  const trail: BreadcrumbSegment[] = [];
-  for (const folder of result.folderPath ?? []) {
-    const url = buildQueryFolderUrl(href, folder.path);
-    trail.push(url === null ? { label: folder.label } : { label: folder.label, url });
-  }
-  return trail;
-}
 
 /**
  * The catalog query's own folder, used when the binding does not override the generated-query folder.
@@ -536,10 +501,7 @@ async function addChild(
 
 /** Every area path the catalog's work sits in, offered when new work is raised under a row. */
 function areaPathsInUse(roots: readonly TrackedWorkItem[]): string[] {
-  const paths = flattenWorkItems(roots)
-    .map((item) => item.areaPath)
-    .filter((path): path is string => path !== null && path.trim().length > 0);
-  return [...new Set(paths)].sort((left, right) => left.localeCompare(right));
+  return representedAreaPaths(flattenWorkItems(roots));
 }
 
 /** The "Add work item" form for one row, wired to this catalog's data and its creation. */
@@ -671,16 +633,6 @@ function applyRanks(
   }
 }
 
-/** The write-queue indicator, rebuilt each paint from the state the session retained. */
-function createQueueStatus(board: Board): WriteQueueStatusHandle {
-  const status = renderWriteQueueStatus(board.context.doc, {
-    onOpenLog: board.context.services.openDiagnosticsLog,
-  });
-  status.setCount(board.session.write.pending);
-  status.setFailedCount(board.session.write.failed, board.session.write.lastError);
-  return status;
-}
-
 /** The condition in one log-readable phrase, so a diagnostics reader can reconstruct the board. */
 function describeTagCondition(condition: TagCondition): string {
   if (isEmptyTagCondition(condition)) return "none";
@@ -714,7 +666,7 @@ function headerOptionsFor(params: {
   const { board, loaded } = params;
   const { context, session } = board;
   return {
-    breadcrumbs: queryFolderTrail(loaded.result, context.doc.location?.href ?? ""),
+    breadcrumbs: queryFolderBreadcrumbs(loaded.result.folderPath, context.doc.location?.href ?? ""),
     tags: loaded.tags,
     tagCondition: session.tags,
     policy: session.policy,
@@ -816,11 +768,7 @@ function createBoard(
   const board: Board = {
     context,
     session,
-    queue: new WorkItemWriteQueue(
-      (request) => context.services.writeField(request),
-      context.services.logger,
-      (request) => context.services.reorderItem(request),
-    ),
+    queue: createBoardWriteQueue(context.services),
     contextMenu: createItemContextMenu({
       doc: context.doc,
       mountInto: root,
@@ -839,25 +787,6 @@ function createBoard(
     reload: hooks.reload,
   };
   return board;
-}
-
-/**
- * Keep the write-queue's state in the session, and the indicator currently on screen in step.
- *
- * The indicator is rebuilt on every paint, so the subscription cannot hold one: it reads whichever
- * one the last paint produced, and the session keeps the values a fresh one is seeded from.
- */
-function trackWriteQueue(board: Board, currentStatus: () => WriteQueueStatusHandle | null): void {
-  const { write } = board.session;
-  board.queue.onPendingChange((count) => {
-    write.pending = count;
-    currentStatus()?.setCount(count);
-  });
-  board.queue.onWriteFailed((count, lastError) => {
-    write.failed = count;
-    write.lastError = lastError;
-    currentStatus()?.setFailedCount(count, lastError);
-  });
 }
 
 /** Rebuild the whole surface from data already loaded, and hand back the parts a repaint reuses. */
@@ -909,28 +838,39 @@ function startProjectsView(context: DataDrivenViewContext, root: HTMLElement): v
     policy: orderingPolicyOf(context.properties),
     addingProject: false,
     addingChildOf: null,
-    write: { pending: 0, failed: 0 },
   };
-  let data: LoadedProjects | null = null;
   let header: ProjectsHeaderHandle | null = null;
   let listHost: HTMLElement | null = null;
-  let queueStatus: WriteQueueStatusHandle | null = null;
-  let loadGeneration = 0;
-  let refreshFailed = false;
   // Built once and re-appended each paint: `replaceChildren` discards it with the rest of the
   // surface, and re-parsing the same rules on every repaint would be work for nothing.
   const rowStyle = createRowEmphasisStyle(context.doc, ROW_EMPHASIS_CLASSES);
 
   const board = createBoard(context, root, session, {
-    loaded: () => data,
+    loaded: () => loader.data(),
     paint: () => paint(),
     paintList: () => repaintList(),
-    reload: () => load(true),
+    reload: () => loader.load(true),
   });
-  trackWriteQueue(board, () => queueStatus);
+  const writeStatus = createBoardWriteStatus(
+    context.doc,
+    board.queue,
+    context.services.openDiagnosticsLog,
+  );
+
+  const loader = createBoardLoader({
+    fetch: () => loadProjects(context),
+    paint: () => paint(),
+    showMessage: (message) => showMessage(context, root, message),
+    loadingMessage: "Loading projects…",
+    failureLogMessage: "All Projects Catalog View could not load the query",
+    logger: context.services.logger,
+    openDiagnosticsLog: context.services.openDiagnosticsLog,
+    queue: board.queue,
+    refreshButton: () => header?.refresh ?? null,
+  });
 
   const paint = (): void => {
-    const loaded = data;
+    const loaded = loader.data();
     if (loaded === null) return;
     // Re-derived on every paint rather than only on load: a right-click command adds and clears tags
     // in place, and a filter still offering the load-time vocabulary would keep narrowing the board
@@ -942,62 +882,23 @@ function startProjectsView(context: DataDrivenViewContext, root: HTMLElement): v
     writeTagConditionUrl(context, session.tags);
     // Abandon any drag still in flight: the rows it was resolved against are about to be discarded.
     board.dragReorder.reset();
-    queueStatus = createQueueStatus(board);
     const painted = paintSurface(board, loaded, {
       root,
       rowStyle,
-      queueStatus: queueStatus.element,
-      onRefresh: () => refresh(),
+      queueStatus: writeStatus.render(),
+      onRefresh: () => loader.refresh(),
     });
     header = painted.header;
     listHost = painted.listHost;
-    header.refresh.setFailed(refreshFailed);
+    header.refresh.setFailed(loader.refreshFailed());
   };
 
   const repaintList = (): void => {
-    if (data !== null && listHost !== null) paintList(board, data, listHost);
+    const loaded = loader.data();
+    if (loaded !== null && listHost !== null) paintList(board, loaded, listHost);
   };
 
-  const load = (isRefresh: boolean): void => {
-    const generation = ++loadGeneration;
-    // What the board is about to show comes from Azure DevOps, so a report about an edit that never
-    // landed has nothing left to warn about.
-    board.queue.clearFailures();
-    if (!isRefresh) showMessage(context, root, "Loading projects…");
-    header?.refresh.setBusy(true);
-    void loadProjects(context)
-      .then((loaded) => {
-        if (generation !== loadGeneration) return;
-        refreshFailed = false;
-        data = loaded;
-        paint();
-      })
-      .catch((error: unknown) => {
-        if (generation !== loadGeneration) return;
-        context.services.logger.error("All Projects Catalog View could not load the query", error);
-        // A truthful-if-older board beats replacing it with a failure panel; the button says so.
-        if (isRefresh && data !== null) {
-          refreshFailed = true;
-          paint();
-          return;
-        }
-        showMessage(context, root, "Could not load this query.");
-      });
-  };
-
-  function refresh(): void {
-    // A failed refresh leaves the cause only in the log, so the next press hands the reader that log
-    // rather than silently retrying the thing that just failed.
-    if (refreshFailed) {
-      refreshFailed = false;
-      context.services.openDiagnosticsLog();
-      paint();
-      return;
-    }
-    load(true);
-  }
-
-  load(false);
+  loader.load(false);
 }
 
 /**
@@ -1015,7 +916,7 @@ export const projectsView: EnhancedView = {
         extensionVersion: context.extensionVersion,
       });
     }
-    const root = createRoot(context.doc);
+    const root = renderViewSurface(context.doc, "awesomeado-view awesomeado-projects");
     modifierHighlightTracker(context.doc).register(root);
     const dataContext: DataDrivenViewContext = { ...context, services: context.services };
     startProjectsView(dataContext, root);

@@ -18,6 +18,28 @@ export interface ViewScaffoldContent {
   extensionVersion?: string;
 }
 
+/**
+ * The full-height, left-aligned surface a data-driven board draws on.
+ *
+ * Self-styled for the same reason as the scaffold: ADO's stylesheet must neither restyle nor hide
+ * it. Shared so every board starts from the same padding and colors.
+ */
+export function renderViewSurface(doc: Document, className: string): HTMLElement {
+  const root = doc.createElement("section");
+  root.className = className;
+  root.style.cssText = [
+    "display:flex",
+    "flex-direction:column",
+    "min-height:100%",
+    "box-sizing:border-box",
+    "padding:2px 16px 16px",
+    "font-family:inherit",
+    "color:var(--text-primary-color)",
+    "text-align:left",
+  ].join(";");
+  return root;
+}
+
 /** Build the standard centered title + message shell for a view, in the given document. */
 export function renderViewScaffold(doc: Document, content: ViewScaffoldContent): HTMLElement {
   const root = doc.createElement("section");

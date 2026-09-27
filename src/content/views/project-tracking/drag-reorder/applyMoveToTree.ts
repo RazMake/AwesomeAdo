@@ -15,9 +15,9 @@ export function applyMoveToTree(
   move: MovePlacement & { id: number },
   order: number | null,
 ): boolean {
-  const moved = findItem(root, move.id);
+  const moved = findTreeItem(root, move.id);
   const oldParent = findParentOf(root, move.id);
-  const newParent = findItem(root, move.parentId);
+  const newParent = findTreeItem(root, move.parentId);
   if (moved === null || oldParent === null || newParent === null) {
     return false;
   }
@@ -66,12 +66,12 @@ function rankOf(siblings: readonly TrackedWorkItem[], id: number): number | null
 }
 
 /** The item with `id` anywhere at or below `root`, or null when this tree does not hold it. */
-function findItem(root: TrackedWorkItem, id: number): TrackedWorkItem | null {
+export function findTreeItem(root: TrackedWorkItem, id: number): TrackedWorkItem | null {
   if (root.id === id) {
     return root;
   }
   for (const child of root.children) {
-    const found = findItem(child, id);
+    const found = findTreeItem(child, id);
     if (found !== null) {
       return found;
     }
@@ -107,7 +107,7 @@ export function applyRanksToTree(
   ranks: readonly { id: number; rank: number; rev?: number }[],
 ): void {
   for (const { id, rank, rev } of ranks) {
-    const item = findItem(root, id);
+    const item = findTreeItem(root, id);
     if (item !== null) {
       item.importance = rank;
       // A rank write is a revision too, so an item renumbered here keeps a usable rev; without this

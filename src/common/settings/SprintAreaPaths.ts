@@ -35,6 +35,16 @@ export function normalizeAreaPaths(raw: unknown): string[] {
   return paths;
 }
 
+/**
+ * Read an `area-path-list` binding property: one full path per line, normalized.
+ *
+ * The one reader every view and the options editor share, so a list saved by the editor is exactly
+ * the list a view restricts itself to.
+ */
+export function parseAreaPathList(stored: string | undefined): string[] {
+  return normalizeAreaPaths((stored ?? "").split(/\r?\n/));
+}
+
 /** Normalize persisted sprint selections while dropping unusable keys and metadata. */
 export function normalizeSprintAreaPaths(raw: unknown): SprintAreaPaths {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return {};

@@ -1,10 +1,24 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  parseAreaPathList,
   pruneSprintAreaPaths,
   selectedAreaPathsForSprint,
   type SprintAreaPaths,
 } from "./SprintAreaPaths";
+
+describe("parseAreaPathList", () => {
+  it("reads one trimmed full path per line, dropping blanks and case-insensitive repeats", () => {
+    expect(parseAreaPathList("Fabrikam\\Api\r\n  \n Fabrikam\\Web \nfabrikam\\api")).toEqual([
+      "Fabrikam\\Api",
+      "Fabrikam\\Web",
+    ]);
+  });
+
+  it("reads a never-set property as an empty list", () => {
+    expect(parseAreaPathList(undefined)).toEqual([]);
+  });
+});
 
 describe("selectedAreaPathsForSprint", () => {
   it("uses an existing sprint selection instead of binding defaults", () => {

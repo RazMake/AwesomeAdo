@@ -1,4 +1,4 @@
-import { normalizeAreaPaths } from "../../common/settings/SprintAreaPaths";
+import { normalizeAreaPaths, parseAreaPathList } from "../../common/settings/SprintAreaPaths";
 import { AutocompleteInput } from "../ado-config/AutocompleteInput";
 
 /** Edits a newline-backed list as one autocomplete row per full Azure DevOps area path. */
@@ -19,7 +19,7 @@ export class AreaPathListEditor {
     description: string,
     private readonly onChange: () => void,
   ) {
-    this.paths = normalizeAreaPaths(stored.split(/\r?\n/));
+    this.paths = parseAreaPathList(stored);
     this.root = doc.createElement("div");
     this.root.className = "area-path-list-editor";
 

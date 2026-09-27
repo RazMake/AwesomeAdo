@@ -1,5 +1,6 @@
 import type { ViewType } from "../../common/view-common/ViewType";
 
+import { consumersViewType } from "./consumers/consumersViewType";
 import { projectTrackingViewType } from "./project-tracking/projectTrackingViewType";
 import { projectsViewType } from "./projects-view/projectsViewType";
 import { sprintViewType } from "./sprint/sprintViewType";
@@ -15,6 +16,7 @@ export const VIEW_TYPES: readonly ViewType[] = [
   sprintViewType,
   projectTrackingViewType,
   projectsViewType,
+  consumersViewType,
 ];
 
 /** Look up a view by its stored id, or undefined when the id is unknown (e.g. a newer build). */

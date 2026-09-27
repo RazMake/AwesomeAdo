@@ -10,7 +10,18 @@ for the feature being changed instead of loading them wholesale.
 AwesomeADO is feature-complete for its current scope:
 
 - Per-query enhanced-view bindings sync through browser storage and support Sprint, Project Tracking,
-  All Projects Catalog, and the original ADO view.
+  All Projects Catalog, Consumers, and the original ADO view.
+- Consumers View (ADR-081) hides a tree query's grouping root and lists consumers with their feature
+  requests. Binding `requestAreaPaths` includes each configured area branch and its descendants;
+  the URL-synced header Area filter then narrows requests by represented full path. Consumer rows omit
+  Status editing while request rows retain it. A fixed-depth drag reorders consumers and
+  reorders/moves requests with Project Tracking's backlog rank. Its header represents the hidden root
+  with that item's title and theme-aware ADO type color. Every displayed item has the shared
+  type-colored description control and lazy Discussion panel; right-click **View all notes** opens
+  the complete discussion with the shared note editor.
+  Tree boards share `renderViewHeader`, TreeRow, item-status, board-lifecycle
+  (loader/write-status/write-queue), retained area filter, and `persistTreeMove`. Authenticated
+  browser validation of the Consumers View remains pending.
 - The content runtime is SPA-aware, route-gates heavy work, lazy-loads large view renderers, and uses
   background-to-MAIN-world bridges for credentialed Azure DevOps operations.
 - Shared view controls, normalized ADO models, ordering, settings, bindings, navigation, logging, and

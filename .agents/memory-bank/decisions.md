@@ -1703,3 +1703,33 @@ cannot be null."` The patch that reached ADO was `{ op: "add", path: "/fields/<d
 - Consequence: the complete test run measured about 52 seconds after the environment split, down
   from about 81 seconds. A changed file or runtime invalidates pre-push reuse automatically, while
   ignored build, coverage, and analysis caches do not.
+
+## ADR-081: The Consumers View is a fixed-depth tree board built from the shared tree-board kit
+
+- Context: consumers and their feature requests live in a tree query under one grouping item. The
+  board needs Project Tracking's area filter, refresh, breadcrumbs, and backlog-rank drag, but its
+  two levels are roles (consumer, request), not a type hierarchy, and it has no sprint or
+  delivery-marker concepts. Copying Project Tracking's or the catalog's plumbing would break jscpd's
+  zero threshold and let the boards drift apart visually.
+- Decision: the grouping root is never drawn. Consumers are always shown; the binding's
+  `requestAreaPaths` includes each configured parent and its descendants, while the header
+  AreaPathFilter restricts feature requests by exact, case-insensitive represented paths. This keeps
+  a parent ownership boundary useful without merging the concrete lanes offered for live narrowing.
+  The header filter round-trips through repeated `areaPath` URL parameters so a link reproduces the
+  narrowed board, and the URL is rewritten after unoffered picks are pruned. Consumer rows omit the
+  editable status badge because their lifecycle is not managed from this request board; request rows
+  retain it.
+- Decision: `DragReorderController` gained `{ fixedDepth: true }`. Drops keep the dragged row's
+  depth and type, so consumers only reorder and requests reorder or move to another consumer; the
+  write reuses `persistTreeMove`, the same guarded rank-plus-parent patch and backlog rank as Project
+  Tracking. Dragging is offered only under the importance ordering with a team, with the same reason
+  text (`dragReorderUnavailableReason`) everywhere.
+- Decision: the header, tree row shell, status badge, loader, write-status chip, write queue,
+  breadcrumbs, and retained area filter were extracted into shared helpers and Projects/Project
+  Tracking/Sprint moved onto them, so every tree board renders the same controls from one source.
+- Consequence: a new tree-shaped view is mostly composition. The query-shape problems (flat, empty,
+  multi-root, no consumers) render as an empty state under a live header so Refresh stays usable.
+- Consequence: Consumers reuses `ItemDetails` for the type-colored description `?` and the
+  Project Tracking notes controls for the type-icon Discussion toggle, complete-discussion popup,
+  authoring, mention lookup, and revision refresh. It never loads or creates a Feature Crew item;
+  identities come from the work items and the shared on-demand directories.

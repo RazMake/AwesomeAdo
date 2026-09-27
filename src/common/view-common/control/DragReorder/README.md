@@ -12,7 +12,9 @@ rejected move must leave the item visibly where it started.
 
 ### `DragReorderController.ts`
 
-- **`new DragReorderController(doc, onMove, logger)`** — turns rows into a drag surface.
+- **`new DragReorderController(doc, onMove, logger, options?)`** — turns rows into a drag surface.
+  Pass `{ fixedDepth: true }` for a board whose levels are roles rather than a type hierarchy (see
+  _Fixed-depth surfaces_ below).
   - **`register(row: DraggableRow)`** — makes one row draggable by its `handle` and a drop target for
     rows at its own or an adjacent level. A row that is never registered is never draggable, so the
     caller alone decides when reordering is offered.
@@ -27,10 +29,11 @@ rejected move must leave the item visibly where it started.
   also provide their `dragSurface` and `onLeaveSurface`: drag events remain local while the pointer is
   inside that surface, then reaching a legal target outside it dismisses the popup without ending the
   drag.
-  Supply `childDestination: { type, siblingIds }` to also accept drops inside the item: `type` is
-  its configured default child type and `siblingIds` is its complete, ordered child list, even when
-  empty or hidden. The middle half of the row becomes the inside target; its top and bottom edges
-  retain before/after ordering. Omitting `childDestination` preserves the two-way row target.
+  Supply `childDestination: { type?, siblingIds }` to also accept drops inside the item: `type` is
+  its configured default child type (omit it on a fixed-depth surface) and `siblingIds` is its
+  complete, ordered child list, even when empty or hidden. The middle half of the row becomes the
+  inside target; its top and bottom edges retain before/after ordering. Omitting `childDestination`
+  preserves the two-way row target.
 - **`PlannedMove`** — a resolved drop: `{ id, currentParentId, parentId, previousId, nextId,
 siblingIds, type? }`, handed to `onMove` for the caller to persist.
 
@@ -88,3 +91,11 @@ it, even when empty or collapsed; the row itself is highlighted to identify the 
 that still owns children cannot be demoted. Any changed parent also
 requires the destination parent's configured default child type; without one, the drop is refused.
 A drop that reproduces the item's current placement is reported as no move at all.
+
+### Fixed-depth surfaces
+
+With `{ fixedDepth: true }` every item stays at the depth it started on and never changes type. A
+drop may reorder a level, or re-home an item under another parent at its own depth — by dropping it
+before or after a row under that parent, or onto the middle of the parent itself — with no default
+child type required. Only a parent one level above the dragged item offers the middle-of-row target,
+so dragging a top-level item across a sibling's middle still reads as before/after.

@@ -54,7 +54,9 @@ missing markers from a partial object, and trims both tokens while honoring a de
 entry) is likewise exported for the options UI.
 `SprintAreaPaths.ts` owns full-path normalization, saved-selection-over-binding-default precedence,
 the dated per-sprint record shape, and pruning that retains the newest ten completed sprints plus
-current, future, and undated records.
+current, future, and undated records. `parseAreaPathList(stored)` reads an `area-path-list` binding
+property (one full path per line) into that normalized list, so the options editor and every view
+that declares such a property agree on its contents.
 `isAdoConfigured(settings)` reports whether the Azure DevOps settings are complete enough for the
 extension to enhance a query (a current team and at least one work item type that maps a state); the
 content script and options page share it.

@@ -66,7 +66,7 @@ export function buildItemCommands(options: ItemCommandsOptions): ItemContextMenu
     updateDescriptionCommand(options),
     moveToSprintCommand(options),
     changeAreaPathCommand(options),
-    viewAllNotesCommand(options),
+    buildViewNotesCommand(options),
   ];
 }
 
@@ -81,7 +81,7 @@ export function buildItemEditingCommands(options: NotesCommandOptions): ItemCont
   return [
     updateTitleCommand(options),
     updateDescriptionCommand(options),
-    viewAllNotesCommand(options),
+    buildViewNotesCommand(options),
   ];
 }
 
@@ -254,7 +254,7 @@ function buildAreaPathChangeCommands(options: ItemCommandsOptions): ItemContextM
  * those are on screen at once. This surface explicitly promises all notes, so no view-specific
  * display window is allowed to clip its history.
  */
-function viewAllNotesCommand(options: NotesCommandOptions): ItemContextMenuCommand {
+export function buildViewNotesCommand(options: NotesCommandOptions): ItemContextMenuCommand {
   const { doc, item, services } = options;
   return {
     label: "View all notes",

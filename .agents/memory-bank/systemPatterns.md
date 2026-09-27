@@ -432,6 +432,32 @@ Split into component subfolders (each with its own `README.md`):
   paint while the project list has a host of its own, so the tag condition applies as it is built:
   a full repaint would rebuild the header and take the open dropdown with it. Project Tracking already
   worked that way — its header is outside every tree pass — which is why its filters were always live.
+  `views/consumers` is the **Consumers View** (ADR-081): a two-level tree board (consumers →
+  feature requests) under an undrawn grouping root. It is assembled almost entirely from the
+  cross-view tree-board kit that the Consumers work extracted so every tree view looks and behaves
+  identically, with jscpd at zero:
+  - `common/view-common/control/ViewHeader` → `renderViewHeader(doc, options)` composes the
+    breadcrumb/status band and title band into the sticky card (Projects and Consumers headers);
+    work-item-backed headings may supply a theme-aware semantic title color.
+  - `common/view-common/control/TreeRow` → the shared twisty/row shell; `views/item-status` →
+    `itemStatusBadge` (editable status, optional `onCommitted`).
+  - `common/view-common/control/ItemDetails` → the shared type-colored `?` plus lifecycle/description
+    panel; `views/project-tracking/notes` → the shared lazy Discussion toggle/panel and note editor
+    used by Project Tracking, Sprint, Projects, and Consumers.
+  - `views/board-lifecycle` → `createBoardLoader` (load/refresh/failure/refresh-button state),
+    `createBoardWriteStatus` (header write-queue chip), and `createBoardWriteQueue` (services bound
+    in closures, never unbound methods).
+  - `views/area-path-selection` → `renderRetainedAreaPathFilter` (prunes unoffered picks, one-press
+    clear); `common/ado/workItemAreaPaths` → exact `isInAreaPaths`, branch-inclusive
+    `isInAreaPathBranches`, and `representedAreaPaths`.
+  - `views/project-tracking/drag-reorder` → `persistTreeMove` (guarded rank + re-parent write) and
+    `dragReorderUnavailableReason(team, policy)`; `control/DragReorder` → the controller's
+    `{ fixedDepth: true }` option, which keeps every item at its starting depth and type: siblings
+    reorder, a middle drop on a row one level up appends into it, and nothing nests or lifts. Project
+    Tracking and the catalog leave it off.
+  - `control/Breadcrumbs/queryFolderBreadcrumbs` and `control/ViewScaffold` → `renderViewSurface`.
+    The header is rebuilt only by a full paint (load, ordering change); filter, twisty, expand/collapse
+    and accepted moves repaint the list alone.
 
 ### `src/options`
 

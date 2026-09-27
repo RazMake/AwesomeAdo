@@ -763,3 +763,113 @@ describe("DragReorderController - the re-parent wash", () => {
     expect(isWashed(board.containerB)).toBe(false);
   });
 });
+
+/**
+ * A fixed-depth board: consumers 10 and 20 under the hidden grouping root 99, holding requests 1-2
+ * and 3. No row names a type, because a fixed-depth level is a role rather than a type.
+ */
+function buildFixedDepthBoard(): Board {
+  const moves: PlannedMove[] = [];
+  const logger: ILogger = { info: () => undefined, error: () => undefined };
+  const controller = new DragReorderController(document, (move) => moves.push(move), logger, {
+    fixedDepth: true,
+  });
+  controllers.push(controller);
+  const containerA = document.createElement("div");
+  document.body.append(containerA);
+  const rows = new Map<number, DraggableRow>();
+  const specs: [id: number, depth: number, parentId: number, siblings: number[], top: number][] = [
+    [10, 0, 99, [10, 20], 0],
+    [1, 1, 10, [1, 2], 20],
+    [2, 1, 10, [1, 2], 40],
+    [20, 0, 99, [10, 20], 60],
+    [3, 1, 20, [3], 80],
+  ];
+  for (const [id, depth, parentId, siblingIds, top] of specs) {
+    const wrapper = document.createElement("div");
+    const row = document.createElement("div");
+    const handle = document.createElement("span");
+    row.append(handle);
+    wrapper.append(row);
+    containerA.append(wrapper);
+    row.getBoundingClientRect = () => ({ top, height: 20, bottom: top + 20 }) as DOMRect;
+    const descriptor: DraggableRow = {
+      id,
+      depth,
+      hasChildren: depth === 0,
+      parentId,
+      destinationType: null,
+      siblingIds,
+      handle,
+      row,
+      wrapper,
+    };
+    if (depth === 0) {
+      descriptor.childDestination = { siblingIds: id === 10 ? [1, 2] : [3] };
+    }
+    controller.register(descriptor);
+    rows.set(id, descriptor);
+  }
+  return {
+    controller,
+    moves,
+    infos: [],
+    containerA,
+    containerB: containerA,
+    rows,
+    surfaces: new Map(),
+  };
+}
+
+describe("DragReorderController - fixed depth", () => {
+  it("re-homes an item under another parent at its own depth without converting it", () => {
+    const board = buildFixedDepthBoard();
+    startDrag(board, 1);
+
+    drop(board, 3, 95);
+
+    expect(board.moves).toEqual([
+      { id: 1, currentParentId: 10, parentId: 20, previousId: 3, nextId: 0, siblingIds: [3, 1] },
+    ]);
+  });
+
+  it("appends an item dropped onto the middle of a parent one level up", () => {
+    const board = buildFixedDepthBoard();
+    startDrag(board, 3);
+
+    drop(board, 10, 10);
+
+    expect(board.moves).toEqual([
+      { id: 3, currentParentId: 20, parentId: 10, previousId: 2, nextId: 0, siblingIds: [1, 2, 3] },
+    ]);
+  });
+
+  it("reorders top-level items by the middle of a sibling rather than nesting them", () => {
+    const board = buildFixedDepthBoard();
+    startDrag(board, 20);
+
+    drop(board, 10, 8);
+
+    expect(board.moves).toEqual([
+      {
+        id: 20,
+        currentParentId: 99,
+        parentId: 99,
+        previousId: 0,
+        nextId: 10,
+        siblingIds: [20, 10],
+      },
+    ]);
+  });
+
+  it("refuses every drop that would change an item's depth", () => {
+    const board = buildFixedDepthBoard();
+    startDrag(board, 1);
+    drop(board, 20, 62);
+    fire(board.rows.get(1)!.handle, "dragend");
+    startDrag(board, 10);
+    drop(board, 3, 85);
+
+    expect(board.moves).toEqual([]);
+  });
+});

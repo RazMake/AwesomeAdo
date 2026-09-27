@@ -5,8 +5,8 @@ in visible reading order, a subtle pointer hover, and a stronger emphasis while 
 **Ctrl+Shift+Alt**.
 
 The control knows nothing about what a row _contains_ — it is handed the caller's own class names —
-so Project Tracking and the All Projects Catalog share one look, one modifier gesture, and one
-document-level listener rather than three look-alike copies.
+so Project Tracking, the All Projects Catalog, and the Consumers View share one look, one modifier
+gesture, and one document-level listener rather than look-alike copies.
 
 ## Public API
 

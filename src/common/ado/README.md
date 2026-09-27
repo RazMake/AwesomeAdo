@@ -99,6 +99,16 @@ boards that disagree about the same query.
   becomes the epoch milliseconds the policy compares. `itemOf` lets a caller order its own wrappers
   (a board entry carrying ancestry, say) without unwrapping them first.
 
+### `workItemAreaPaths.ts`
+
+The one definition of "which lane is this item in" that every area-path filter shares, so two boards
+narrowed by the same paths keep the same items.
+
+- `representedAreaPaths(items)` — the distinct non-blank full paths the items sit in, alphabetically:
+  the vocabulary an area-path filter offers.
+- `isInAreaPaths(areaPath, selected)` — an exact, case-insensitive full-path match; a parent path
+  does not bring its sub-areas along. An empty selection keeps every item, pathless ones included.
+
 ### `TeamIteration.ts`
 
 - `SprintTimeFrame` — `"past" | "current" | "future"`, ADO's own classification of where an

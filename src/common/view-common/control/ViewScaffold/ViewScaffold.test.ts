@@ -1,6 +1,18 @@
 import { describe, expect, it } from "vitest";
 
-import { renderViewScaffold } from "./ViewScaffold";
+import { renderViewScaffold, renderViewSurface } from "./ViewScaffold";
+
+describe("renderViewSurface", () => {
+  it("renders a full-height left-aligned themed section under the given classes", () => {
+    const surface = renderViewSurface(document, "awesomeado-view awesomeado-test");
+
+    expect(surface.tagName).toBe("SECTION");
+    expect(surface.className).toBe("awesomeado-view awesomeado-test");
+    expect(surface.style.minHeight).toBe("100%");
+    expect(surface.style.textAlign).toBe("left");
+    expect(surface.style.color).toContain("var(--text-primary-color");
+  });
+});
 
 describe("renderViewScaffold", () => {
   it("renders the title and message text", () => {

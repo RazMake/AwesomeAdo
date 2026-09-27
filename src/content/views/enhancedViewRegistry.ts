@@ -13,6 +13,7 @@ import { sprintView } from "./sprint/SprintView";
 const DEFERRED_VIEWS = {
   projectTracking: { bundle: "content/project-tracking.js", exportName: "projectTrackingView" },
   projects: { bundle: "content/projects-view.js", exportName: "projectsView" },
+  consumers: { bundle: "content/consumers-view.js", exportName: "consumersView" },
 } as const satisfies Record<string, { bundle: string; exportName: string }>;
 
 type DeferredViewId = keyof typeof DEFERRED_VIEWS;

@@ -94,6 +94,24 @@ This is a flattened snapshot of what exists now, not a build log.
   the query before unlinking, retains the link on DELETE failure, then drops the binding and reloads.
   The expanded traversal and clear action have deterministic regression coverage; authenticated
   browser validation of these follow-up changes remains pending.
+- **Consumers View** (`content/views/consumers`, deferred bundle `content/consumers-view.js`,
+  ADR-081): a tree query's single root is an undrawn grouping item; level 1 rows are consumers and
+  level 2 rows are feature requests. Consumer rows show type and title; request rows additionally
+  show an editable status badge. The header shows the grouping root's title in its theme-aware ADO
+  work item type color. The binding's
+  `requestAreaPaths` (area-path-list, Sprint View's editor) and the header AreaPathFilter (shared
+  `renderRetainedAreaPathFilter`, mirrored to repeated `areaPath` URL parameters and pruned to
+  offered paths) both restrict REQUESTS only. Binding paths include descendants; header picks use
+  exact case-insensitive full paths. Consumers always stay visible as drop targets. Flat, empty,
+  multi-root, and consumer-less queries render an empty
+  state under the live header. Under importance ordering with a team, a `fixedDepth`
+  DragReorderController reorders consumers and reorders/re-parents requests through
+  `persistTreeMove` (same backlog rank as Project Tracking); types never change. Refresh, ordering,
+  breadcrumbs, write-queue status, and flip-deduped "showing X of Y" logging match the other trees.
+  Every displayed item exposes its loaded description through the shared type-colored `?` details
+  panel and uses the type icon as the lazy Discussion toggle. Discussion authoring, revision refresh,
+  and the right-click **View all notes** popup reuse Project Tracking's notes controls.
+  Authenticated browser validation remains pending.
 - **Sprint View** (`content/views/sprint`): accepts flat or tree queries; loads the selected
   team's complete paged member roster, recursively expanding direct and nested groups, before
   executing an offset-adjusted copy of the original WIQL;

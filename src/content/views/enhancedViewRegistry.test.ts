@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { EnhancedView, EnhancedViewContext } from "../../common/view-common/EnhancedView";
 
+import { consumersView } from "./consumers/ConsumersView";
 import {
   createEnhancedViewRegistry,
   enhancedViewRegistry,
@@ -23,6 +24,7 @@ const textOf = (element: HTMLElement | undefined, selector: string): string | nu
 const deferredViews = new Map<string, EnhancedView>([
   ["projectTracking", projectTrackingView],
   ["projects", projectsView],
+  ["consumers", consumersView],
 ]);
 
 // One stand-in loader for every deferred view keeps each test's arrangement to the id under test.
@@ -39,21 +41,26 @@ describe("enhancedViewRegistry", () => {
     expect(enhancedViewRegistry.getLoaded("sprint")?.id).toBe("sprint");
     expect(enhancedViewRegistry.getLoaded("projectTracking")).toBeUndefined();
     expect(enhancedViewRegistry.getLoaded("projects")).toBeUndefined();
+    expect(enhancedViewRegistry.getLoaded("consumers")).toBeUndefined();
     expect(enhancedViewRegistry.has("projectTracking")).toBe(true);
     expect(enhancedViewRegistry.has("projects")).toBe(true);
+    expect(enhancedViewRegistry.has("consumers")).toBe(true);
     expect(enhancedViewRegistry.has("does-not-exist")).toBe(false);
   });
 
-  it.each(["projectTracking", "projects"])("loads %s once and caches its renderer", async (id) => {
-    const loader = vi.fn(fakeLoader);
-    const registry = createEnhancedViewRegistry(loader);
-    const expected = deferredViews.get(id);
+  it.each(["projectTracking", "projects", "consumers"])(
+    "loads %s once and caches its renderer",
+    async (id) => {
+      const loader = vi.fn(fakeLoader);
+      const registry = createEnhancedViewRegistry(loader);
+      const expected = deferredViews.get(id);
 
-    expect(await registry.load(id)).toBe(expected);
-    expect(await registry.load(id)).toBe(expected);
-    expect(registry.getLoaded(id)).toBe(expected);
-    expect(loader).toHaveBeenCalledTimes(1);
-  });
+      expect(await registry.load(id)).toBe(expected);
+      expect(await registry.load(id)).toBe(expected);
+      expect(registry.getLoaded(id)).toBe(expected);
+      expect(loader).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it("resolves an unknown id to no renderer at all", async () => {
     const registry = createEnhancedViewRegistry(fakeLoader);
@@ -78,9 +85,11 @@ describe("enhancedViewRegistry", () => {
     const sprint = (await registry.load("sprint"))?.render(context("sprint"));
     const tracking = (await registry.load("projectTracking"))?.render(context("tracking"));
     const projects = (await registry.load("projects"))?.render(context("projects"));
+    const consumers = (await registry.load("consumers"))?.render(context("consumers"));
 
     expect(textOf(sprint, ".awesomeado-view__title")).toBe("Sprint View");
     expect(textOf(tracking, ".awesomeado-view__title")).toBe("Project Tracking");
     expect(textOf(projects, ".awesomeado-view__title")).toBe("All Projects Catalog View");
+    expect(textOf(consumers, ".awesomeado-view__title")).toBe("Consumers View");
   });
 });

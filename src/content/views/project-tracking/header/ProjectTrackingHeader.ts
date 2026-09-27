@@ -4,7 +4,8 @@
  * This control is intentionally NOT generic: it encodes the exact three-band layout that only the
  * Project Tracking board wants, so it lives beside the view rather than under
  * `common/view-common/control`. It composes generic controls it is handed (the Tech Lead picker and
- * the sprint picker) plus the shared ETA badge; it never reaches for ADO data itself.
+ * the sprint picker) plus the shared ETA badge, inside the shared header card and top band every
+ * tree board uses; it never reaches for ADO data itself.
  *
  * Layout (a single subtle-filled tile so it reads as a card):
  *
@@ -20,19 +21,16 @@
  * write-queue status shares that corner with it.
  */
 
-import {
-  renderBreadcrumbs,
-  type BreadcrumbSegment,
-} from "../../../../common/view-common/control/Breadcrumbs/Breadcrumbs";
+import type { BreadcrumbSegment } from "../../../../common/view-common/control/Breadcrumbs/Breadcrumbs";
 import {
   renderHeaderButton,
   renderRefreshButton,
   type RefreshButtonHandle,
 } from "../../../../common/view-common/control/HeaderButtons/HeaderButtons";
 import {
-  renderVersionLabel,
-  VERSION_MARKER_GAP_PX,
-} from "../../../../common/view-common/control/VersionLabel/VersionLabel";
+  renderViewHeaderCard,
+  renderViewHeaderTopBand,
+} from "../../../../common/view-common/control/ViewHeader/ViewHeader";
 
 export type { RefreshButtonHandle } from "../../../../common/view-common/control/HeaderButtons/HeaderButtons";
 
@@ -113,16 +111,6 @@ export interface ProjectTrackingHeaderHandle {
   /** The refresh ("⟳") button; the view wires it to re-read the board's data from Azure DevOps. */
   refreshButton: RefreshButtonHandle;
 }
-
-/**
- * The height the top band always occupies, in pixels.
- *
- * Sized to the tallest thing that band can hold: the write-queue status chip in its failed state
- * (12px text + 3px padding + 1px border, top and bottom, plus slack). Reserving it unconditionally
- * is what stops the sticky header from growing and shrinking every time a save starts, finishes or
- * fails — which reads as the whole board flickering up and down while the user is looking at it.
- */
-const TOP_ROW_MIN_HEIGHT_PX = 24;
 
 /**
  * The outer box every band button occupies, in pixels (border included).
@@ -207,19 +195,6 @@ function renderHeaderActions(
   return filters;
 }
 
-function appendVersionMarker(
-  doc: Document,
-  corner: HTMLElement,
-  extensionVersion: string | undefined,
-): void {
-  if (!extensionVersion) {
-    return;
-  }
-  const version = renderVersionLabel(doc, extensionVersion);
-  version.style.marginRight = `${VERSION_MARKER_GAP_PX}px`;
-  corner.append(version);
-}
-
 /**
  * Renders the Project Tracking header tile. The view mounts `element` and wires the returned
  * expand/collapse buttons to the tree's twisties.
@@ -228,71 +203,22 @@ export function renderProjectTrackingHeader(
   doc: Document,
   options: ProjectTrackingHeaderOptions,
 ): ProjectTrackingHeaderHandle {
-  const header = doc.createElement("div");
-  header.className = "awesomeado-tracking__header";
-  // Read as a raised "card" on any theme. The callout surface plus a border and elevation shadow
-  // keeps the tile visible even where its fill approaches the page background.
-  // Pinned to the top of the scroll container (position:sticky + top:0) so the project title,
-  // sprint picker, and expand/collapse controls stay reachable while the board's items scroll under
-  // it. The card's fill is an OPAQUE surface (--callout-background-color), which is required for a
-  // sticky header: a translucent fill would let scrolled rows show through. The z-index keeps the
-  // card above the rows it overlaps.
-  header.style.cssText = [
-    "display:flex",
-    "flex-direction:column",
-    "gap:8px",
-    "padding:8px 16px",
-    "background:var(--callout-background-color)",
-    "border:1px solid var(--control-border)",
-    "border-radius:6px",
-    "box-shadow:0 1px 3px var(--palette-neutral-20)",
-    "margin-bottom:16px",
-    "position:sticky",
-    "top:0",
-    "z-index:2",
-  ].join(";");
+  // Pinned to the top of the scroll container so the project title, sprint picker, and
+  // expand/collapse controls stay reachable while the board's items scroll under it.
+  const header = renderViewHeaderCard(doc, "awesomeado-tracking__header");
 
   // The top band carries the folder trail on the left and, pinned to the right corner, the ordering
-  // indicator with the write-queue status beside it. It is rendered even with no breadcrumbs,
-  // because the indicator belongs in that corner whether or not the query sits in a folder.
-  //
-  // Its height is PINNED to the tallest thing it can hold (the write-queue chip). The status shows
-  // and hides itself as saves come and go, and without a reserved row that would grow and shrink the
-  // sticky header on every edit — shoving the whole board down and back while the user is reading it.
-  const topRow = doc.createElement("div");
-  topRow.className = "awesomeado-tracking__header-top";
-  topRow.style.cssText = [
-    "display:flex",
-    "align-items:center",
-    "gap:16px",
-    "flex-wrap:wrap",
-    `min-height:${TOP_ROW_MIN_HEIGHT_PX}px`,
-  ].join(";");
-
-  const breadcrumbs = renderBreadcrumbs(doc, {
-    segments: options.breadcrumbs,
-    ariaLabel: "Query folder",
-  });
-  if (breadcrumbs) {
-    topRow.append(breadcrumbs);
-  }
-
-  // Grouped and pushed right together, so the ordering glyph keeps the same corner position whether
-  // or not a save is in flight — the status grows leftward into the gap instead of displacing it.
-  // The version marker sits immediately left of the glyph for the same reason: anchored to it, it
-  // stays put while the status comes and goes further left.
-  const corner = doc.createElement("div");
-  corner.className = "awesomeado-tracking__header-corner";
-  corner.style.cssText = ["display:flex", "align-items:center", "gap:8px", "margin-left:auto"].join(
-    ";",
+  // indicator with the write-queue status beside it. Its height is reserved so the status showing
+  // and hiding cannot resize the sticky header.
+  header.append(
+    renderViewHeaderTopBand(doc, {
+      classPrefix: "awesomeado-tracking",
+      breadcrumbs: options.breadcrumbs,
+      writeQueueStatus: options.writeQueueStatus,
+      extensionVersion: options.extensionVersion,
+      orderingPicker: options.orderingPicker,
+    }),
   );
-  if (options.writeQueueStatus) {
-    corner.append(options.writeQueueStatus);
-  }
-  appendVersionMarker(doc, corner, options.extensionVersion);
-  corner.append(options.orderingPicker);
-  topRow.append(corner);
-  header.append(topRow);
 
   // The controls band shares one row with the info column and is vertically centred against it, so
   // the +/− buttons line up with the middle of the two-line title/tech-lead block.

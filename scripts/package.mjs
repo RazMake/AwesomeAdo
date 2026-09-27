@@ -22,6 +22,7 @@ const REQUIRED_DIST_FILES = [
   "content/awesomeado-content.js",
   "content/project-tracking.js",
   "content/projects-view.js",
+  "content/consumers-view.js",
   "options/options.js",
   "options/options.html",
 ];

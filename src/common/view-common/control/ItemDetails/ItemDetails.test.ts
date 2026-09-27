@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { renderItemDetailsButton, renderItemDetailsContent } from "./ItemDetails";
+import {
+  renderItemDetailsButton,
+  renderItemDetailsContent,
+  renderItemDetailsPanel,
+} from "./ItemDetails";
 
 describe("renderItemDetailsButton", () => {
   it("reports both states through aria-expanded, the hover title, and a distinct tint", () => {
@@ -83,6 +87,41 @@ describe("renderItemDetailsContent", () => {
 
     const description = content.querySelector(".awesomeado-item-details__description");
     expect(description?.textContent).toContain("A useful description");
+  });
+
+  describe("renderItemDetailsPanel", () => {
+    it("owns the shared toggle state and adopts view-specific class names", () => {
+      const details = renderItemDetailsPanel(document, {
+        data: {
+          description: "Shared details",
+          createdDate: "2026-07-01T10:00:00Z",
+          createdBy: null,
+          changedDate: "2026-07-02T10:00:00Z",
+          changedBy: null,
+        },
+        typeColor: "#0078d4",
+        mentionNames: new Map(),
+        buttonClassName: "view__describe",
+        panelClassName: "view__description",
+        metaClassName: "view__meta",
+        descriptionClassName: "view__description-text",
+      });
+
+      expect(details.toggle.className).toBe("view__describe");
+      expect(details.element.className).toBe("view__description");
+      expect(details.element.style.display).toBe("none");
+      expect(details.element.querySelector(".view__meta")).not.toBeNull();
+      expect(details.element.querySelector(".view__description-text")?.textContent).toContain(
+        "Shared details",
+      );
+
+      details.toggle.click();
+      expect(details.isExpanded()).toBe(true);
+      expect(details.element.style.display).toBe("block");
+
+      details.setExpanded(false);
+      expect(details.isExpanded()).toBe(false);
+    });
   });
 
   it("rebuilds the description through the shared allowlist instead of trusting its HTML", () => {

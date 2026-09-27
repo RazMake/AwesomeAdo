@@ -7,7 +7,7 @@ import type {
   TypeCatalogEntry,
 } from "../../../common/ado/TrackedWorkItem";
 import { WorkItemWriteQueue } from "../../../common/ado/WorkItemWriteQueue/WorkItemWriteQueue";
-import { buildQueryFolderUrl, buildWorkItemUrl } from "../../../common/ado/fetchAdoTree";
+import { buildWorkItemUrl } from "../../../common/ado/fetchAdoTree";
 import { filterTreeForSprintRoster, wiqlForSprint } from "../../../common/ado/sprintQuery";
 import type { SprintWindow, SprintWindowEntry } from "../../../common/ado/sprintWindow";
 import {
@@ -38,6 +38,7 @@ import {
   type RecentActivityKind,
 } from "../../../common/view-common/control/ActivityFilter/recentActivity";
 import { renderAreaPathFilter } from "../../../common/view-common/control/AreaPathFilter/AreaPathFilter";
+import { queryFolderBreadcrumbs } from "../../../common/view-common/control/Breadcrumbs/queryFolderBreadcrumbs";
 import {
   appendFilterPillCounts,
   filterPillStyle,
@@ -65,7 +66,10 @@ import {
   renderSprintPicker,
   sprintRelationDeclarations,
 } from "../../../common/view-common/control/SprintPicker/SprintPicker";
-import { renderViewScaffold } from "../../../common/view-common/control/ViewScaffold/ViewScaffold";
+import {
+  renderViewScaffold,
+  renderViewSurface,
+} from "../../../common/view-common/control/ViewScaffold/ViewScaffold";
 import { renderWriteQueueStatus } from "../../../common/view-common/control/WriteQueueStatus/WriteQueueStatus";
 import type { WriteQueueStatusHandle } from "../../../common/view-common/control/WriteQueueStatus/WriteQueueStatus";
 import {
@@ -238,13 +242,6 @@ interface SprintHeaderRenderOptions {
   onAreaPathsDismiss: () => void;
   onTitleContextMenu: (event: MouseEvent) => void;
   writeState: SprintWriteState;
-}
-
-function queryBreadcrumbs(result: WorkItemTreeResult, href: string) {
-  return (result.folderPath ?? []).map((folder) => {
-    const url = buildQueryFolderUrl(href, folder.path);
-    return url === null ? { label: folder.label } : { label: folder.label, url };
-  });
 }
 
 function markerPrefixes(context: DataDrivenViewContext): string[] {
@@ -918,7 +915,7 @@ function renderBoardHeader(options: SprintHeaderRenderOptions): {
   });
   return {
     header: renderSprintHeader(context.doc, {
-      breadcrumbs: queryBreadcrumbs(data.result, context.doc.location?.href ?? ""),
+      breadcrumbs: queryFolderBreadcrumbs(data.result.folderPath, context.doc.location?.href ?? ""),
       orderingPicker,
       sprintPicker: sprintPicker.element,
       laneFilter: laneFilter.element,
@@ -1547,18 +1544,7 @@ function startSprintView(context: DataDrivenViewContext, root: HTMLElement): voi
 export const sprintView: EnhancedView = {
   id: sprintViewType.id,
   render: (context) => {
-    const root = context.doc.createElement("section");
-    root.className = "awesomeado-view awesomeado-sprint";
-    root.style.cssText = [
-      "display:flex",
-      "flex-direction:column",
-      "min-height:100%",
-      "box-sizing:border-box",
-      "padding:2px 16px 16px",
-      "font-family:inherit",
-      "color:var(--text-primary-color)",
-      "text-align:left",
-    ].join(";");
+    const root = renderViewSurface(context.doc, "awesomeado-view awesomeado-sprint");
 
     const title = context.doc.createElement("h1");
     title.className = "awesomeado-view__title";

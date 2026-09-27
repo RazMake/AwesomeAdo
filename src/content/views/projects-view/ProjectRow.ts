@@ -5,11 +5,7 @@ import type {
   TypeCatalogEntry,
 } from "../../../common/ado/TrackedWorkItem";
 import type { WorkItemWriteQueue } from "../../../common/ado/WorkItemWriteQueue/WorkItemWriteQueue";
-import {
-  orderTrackedItems,
-  workItemTypeDisplayColor,
-  workItemTypeTextColor,
-} from "../../../common/ado/workItemTypes";
+import { orderTrackedItems } from "../../../common/ado/workItemTypes";
 import type { OrderingPolicy } from "../../../common/ordering/ItemOrdering";
 import type { EnhancedViewServices } from "../../../common/view-common/EnhancedView";
 import {
@@ -21,7 +17,14 @@ import {
   renderEtaBadge,
   type EtaBadgeHandle,
 } from "../../../common/view-common/control/EtaBadge/EtaBadge";
-import { renderItemTypeIcon } from "../../../common/view-common/control/ItemTypeIcon/ItemTypeIcon";
+import {
+  renderTreeChildren,
+  renderTreeItemWrapper,
+  renderTreeRowLine,
+  renderTreeTitle,
+  renderTreeTwisty,
+  renderTreeTypeIcon,
+} from "../../../common/view-common/control/TreeRow/TreeRow";
 import { createSvgCanvas } from "../../../common/view-common/control/svgIcon/svgIcon";
 import { writeItemAssignee } from "../item-assignee/writeItemAssignee";
 import { writeItemEta } from "../item-eta/writeItemEta";
@@ -60,8 +63,7 @@ export interface ProjectRowContext {
   repaint(): void;
 }
 
-const COLLAPSED_GLYPH = "\u25B8";
-const EXPANDED_GLYPH = "\u25BE";
+const PREFIX = "awesomeado-projects";
 
 /** The children of `item` that survive the tag filter, in the board's ordering policy. */
 export function visibleChildrenOf(
@@ -81,66 +83,21 @@ function renderTwisty(
   hasChildren: boolean,
   expanded: boolean,
 ): HTMLElement {
-  const { doc } = context;
-  if (!hasChildren) {
-    const spacer = doc.createElement("span");
-    spacer.className = "awesomeado-projects__twisty-spacer";
-    spacer.style.cssText = "display:inline-block;width:16px;flex:0 0 auto";
-    return spacer;
-  }
-
-  const twisty = doc.createElement("button");
-  twisty.type = "button";
-  twisty.className = "awesomeado-projects__twisty";
-  twisty.textContent = expanded ? EXPANDED_GLYPH : COLLAPSED_GLYPH;
-  twisty.setAttribute("aria-expanded", String(expanded));
-  twisty.title = expanded ? "Collapse" : "Expand";
-  twisty.setAttribute("aria-label", `${twisty.title} ${item.title}`);
-  twisty.style.cssText = [
-    "width:16px",
-    "flex:0 0 auto",
-    "border:none",
-    "background:transparent",
-    "color:var(--text-secondary-color)",
-    "font:inherit",
-    "line-height:1",
-    "padding:0",
-    "cursor:pointer",
-  ].join(";");
-  twisty.addEventListener("click", () => {
-    if (expanded) context.expandedIds.delete(item.id);
-    else context.expandedIds.add(item.id);
-    context.repaint();
-  });
-  return twisty;
-}
-
-/**
- * The item's title, colored by its work item type.
- *
- * Deliberately inert text rather than a deep link: this catalog is read by scrolling and dragging
- * across a dense tree, where a click that navigates away is far more often a slip than an intent.
- * The row's right-click menu still offers **Open in ADO** for the times it is meant.
- */
-function renderTitle(
-  item: TrackedWorkItem,
-  context: ProjectRowContext,
-  color: string,
-): HTMLElement {
-  const { doc } = context;
-  const title = doc.createElement("span");
-  title.className = "awesomeado-projects__title";
-  title.textContent = item.title;
-  title.title = `${item.type} ${item.id}: ${item.title}`;
-  title.style.cssText = [
-    `color:${color}`,
-    "font-weight:600",
-    "text-decoration:none",
-    "overflow:hidden",
-    "text-overflow:ellipsis",
-    "white-space:nowrap",
-  ].join(";");
-  return title;
+  return renderTreeTwisty(
+    context.doc,
+    PREFIX,
+    item,
+    hasChildren
+      ? {
+          expanded,
+          onToggle: () => {
+            if (expanded) context.expandedIds.delete(item.id);
+            else context.expandedIds.add(item.id);
+            context.repaint();
+          },
+        }
+      : null,
+  );
 }
 
 /** How much work sits beneath the item, shown beside its title. */
@@ -277,21 +234,6 @@ function renderRowEta(item: TrackedWorkItem, context: ProjectRowContext): HTMLEl
   return badge.handle;
 }
 
-/** The single line a row draws on; nested levels read slightly smaller than the projects above them. */
-function createRowLine(doc: Document, depth: number): HTMLElement {
-  const line = doc.createElement("div");
-  line.className = depth === 0 ? "awesomeado-projects__row is-project" : "awesomeado-projects__row";
-  line.style.cssText = [
-    "display:flex",
-    "align-items:center",
-    "gap:8px",
-    "padding:3px 4px",
-    "border-radius:4px",
-    depth === 0 ? "font-size:14px" : "font-size:13px",
-  ].join(";");
-  return line;
-}
-
 /**
  * Make a project's title the handle that re-ranks it.
  *
@@ -319,25 +261,6 @@ function registerProjectDrag(
 }
 
 /**
- * The type icon Azure DevOps shows for an item, neutral when this build does not know the type.
- *
- * Kept beside the row so the row itself never has to reason about a type the catalog has not loaded.
- */
-function renderTypeIcon(item: TrackedWorkItem, context: ProjectRowContext): HTMLElement {
-  const entry = context.types.get(item.type);
-  return renderItemTypeIcon(context.doc, {
-    iconUrl: entry?.icon ?? null,
-    color: workItemTypeDisplayColor(entry?.color),
-    typeName: item.type,
-  }).element;
-}
-
-/** The title colour for an item's type, readable against the row background. */
-function typeTextColorOf(item: TrackedWorkItem, context: ProjectRowContext): string {
-  return workItemTypeTextColor(context.types.get(item.type)?.color);
-}
-
-/**
  * One row and, when the reader has opened it, its children beneath.
  *
  * Child DOM is built only while a row is open: a query can return thousands of items, and materializing
@@ -351,12 +274,13 @@ export function renderProjectRow(
   const { doc } = context;
   const children = visibleChildrenOf(item, context);
   const expanded = context.expandedIds.has(item.id) && children.length > 0;
+  const entry = context.types.get(item.type);
 
-  const line = createRowLine(doc, depth);
-  const title = renderTitle(item, context, typeTextColorOf(item, context));
+  const line = renderTreeRowLine(doc, PREFIX, depth === 0 ? "is-project" : null);
+  const title = renderTreeTitle(doc, PREFIX, item, entry);
   line.append(
     renderTwisty(item, context, children.length > 0, expanded),
-    renderTypeIcon(item, context),
+    renderTreeTypeIcon(doc, item, entry),
     title,
   );
   if (children.length > 0) {
@@ -373,31 +297,36 @@ export function renderProjectRow(
   // menu stops the event itself, so an ancestor row never also opens.
   line.addEventListener("contextmenu", (event) => context.onContextMenu(item, event));
 
-  const wrapper = doc.createElement("div");
-  wrapper.className = "awesomeado-projects__item";
-  wrapper.dataset.itemId = String(item.id);
-  wrapper.append(line);
+  const wrapper = renderTreeItemWrapper(doc, PREFIX, item, line);
 
   if (depth === 0) {
     registerProjectDrag(item, context, { title, line, wrapper });
   }
 
+  const childrenBox = renderProjectChildren(item, context, depth, expanded ? children : null);
+  if (childrenBox !== null) wrapper.append(childrenBox);
+  return wrapper;
+}
+
+/**
+ * The branch box beneath a row, or null when there is nothing to show in it. `openChildren` is the
+ * visible children when the row is open, or null when it is collapsed.
+ */
+function renderProjectChildren(
+  item: TrackedWorkItem,
+  context: ProjectRowContext,
+  depth: number,
+  openChildren: readonly TrackedWorkItem[] | null,
+): HTMLElement | null {
   // A childless project still grows the branch while a title is being typed, so the box the reader
   // just asked for has somewhere to sit.
   const newChild = context.newChildRow(item);
-  if (expanded || newChild !== null) {
-    const childrenBox = doc.createElement("div");
-    childrenBox.className = "awesomeado-projects__children";
-    childrenBox.style.cssText =
-      "margin-left:8px;padding-left:8px;border-left:1px solid var(--control-border)";
-    // First inside the branch, so the title being typed sits at the top of the list it joins.
-    if (newChild !== null) childrenBox.append(newChild);
-    if (expanded) {
-      for (const child of children) {
-        childrenBox.append(renderProjectRow(child, context, depth + 1));
-      }
-    }
-    wrapper.append(childrenBox);
+  if (openChildren === null && newChild === null) return null;
+  const childrenBox = renderTreeChildren(context.doc, PREFIX);
+  // First inside the branch, so the title being typed sits at the top of the list it joins.
+  if (newChild !== null) childrenBox.append(newChild);
+  for (const child of openChildren ?? []) {
+    childrenBox.append(renderProjectRow(child, context, depth + 1));
   }
-  return wrapper;
+  return childrenBox;
 }

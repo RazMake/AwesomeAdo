@@ -3,16 +3,22 @@ import { describe, expect, it } from "vitest";
 import { getViewType, VIEW_TYPES } from "./viewCatalog";
 
 describe("VIEW_TYPES", () => {
-  it("offers Sprint View, Project Tracking, and All Projects Catalog View, in order", () => {
+  it("offers Sprint View, Project Tracking, All Projects Catalog View, and Consumers View, in order", () => {
     expect(VIEW_TYPES.map((view) => view.label)).toEqual([
       "Sprint View",
       "Project Tracking",
       "All Projects Catalog View",
+      "Consumers View",
     ]);
   });
 
   it("uses stable ids for every view", () => {
-    expect(VIEW_TYPES.map((view) => view.id)).toEqual(["sprint", "projectTracking", "projects"]);
+    expect(VIEW_TYPES.map((view) => view.id)).toEqual([
+      "sprint",
+      "projectTracking",
+      "projects",
+      "consumers",
+    ]);
   });
 
   it("keeps every property optional so any view can still be bound as-is", () => {
@@ -94,6 +100,28 @@ describe("VIEW_TYPES per-view properties", () => {
     );
     // Every catalog setting has a runtime fallback, so a query remains usable before it is tuned.
     expect(projects?.properties.slice(1).every((property) => !property.required)).toBe(true);
+  });
+});
+
+describe("VIEW_TYPES Consumers View properties", () => {
+  it("gives Consumers View its ordering and feature-request area-path settings", () => {
+    const consumers = getViewType("consumers");
+    const sprint = getViewType("sprint");
+    const byKey = new Map(consumers?.properties.map((property) => [property.key, property]));
+
+    expect(consumers?.properties.map((property) => property.key)).toEqual([
+      "orderingPolicy",
+      "requestAreaPaths",
+    ]);
+    expect(byKey.get("orderingPolicy")).toEqual(
+      sprint?.properties.find((property) => property.key === "orderingPolicy"),
+    );
+    // Edited exactly like Sprint View's area paths: the same list editor with autocomplete.
+    expect(byKey.get("requestAreaPaths")).toMatchObject({
+      kind: "area-path-list",
+      label: "Feature request area paths",
+      required: false,
+    });
   });
 });
 

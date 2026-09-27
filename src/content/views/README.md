@@ -15,13 +15,14 @@ content/views/
   sprint/                   sprintViewType.ts (config) + SprintView.ts (renderer)
   project-tracking/         projectTrackingViewType.ts + ProjectTrackingView.ts
   projects-view/            projectsViewType.ts + ProjectsView.ts
+  consumers/                consumersViewType.ts + ConsumersView.ts
 ```
 
 Every entry in `VIEW_TYPES` has a matching id in `enhancedViewRegistry`, pinned by
 `enhancedViewRegistry.test.ts`. `VIEW_TYPES` order **is** user-visible — it is the order the options
 page offers the views in, pinned by `viewCatalog.test.ts`. Sprint is available synchronously; Project
-Tracking and All Projects Catalog View are each resolved once from their own web-accessible ESM
-bundle and cached
+Tracking, All Projects Catalog View, and Consumers View are each resolved once from their own
+web-accessible ESM bundle and cached
 for the session, so their much larger renderers do not parse on every ADO page.
 
 ## The one cross-layer import (an intentional, scoped exception)

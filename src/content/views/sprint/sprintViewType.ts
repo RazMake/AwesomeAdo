@@ -1,5 +1,5 @@
 import { orderingPolicyProperty } from "../../../common/ordering/OrderingProperty";
-import { normalizeAreaPaths } from "../../../common/settings/SprintAreaPaths";
+import { parseAreaPathList } from "../../../common/settings/SprintAreaPaths";
 import {
   resolveViewTypePropertyValue,
   type ViewType,
@@ -40,7 +40,7 @@ export const sprintViewType: ViewType = {
 
 /** Full Lane paths used when the selected sprint has no team-shared selection yet. */
 export function sprintDefaultAreaPaths(properties: Record<string, string>): string[] {
-  return normalizeAreaPaths((properties[defaultAreaPathsProperty.key] ?? "").split(/\r?\n/));
+  return parseAreaPathList(properties[defaultAreaPathsProperty.key]);
 }
 
 /** The rolling window used by Sprint View's three recent-activity filters. */
