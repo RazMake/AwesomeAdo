@@ -33,7 +33,11 @@ import {
   type LoadQueryTreeMessage,
   type LoadQueryTreeResponse,
 } from "../common/browser/AdoTreeRequest";
-import { sendCatalogFavorites } from "../common/browser/CatalogFavoritesRequest";
+import {
+  requestCatalogFavoritesStatus,
+  sendCatalogFavorites,
+  sendCatalogFavoritesRestore,
+} from "../common/browser/CatalogFavoritesRequest";
 import {
   type CreateWorkItemMessage,
   type CreateWorkItemResponse,
@@ -160,7 +164,6 @@ import {
   normalizeMarkerTags,
 } from "../common/settings/ExtensionSettings";
 import { localSettingsAccess } from "../common/settings/LocalSettingsAccess";
-import { PersonalQueryFavoritesPaths } from "../common/settings/QueryFavoritesPaths";
 import { createSettingsStore } from "../common/settings/createSettingsStore";
 import { SharedQueryConfigResolver } from "../common/settings-transfer/SharedQueryConfigResolver";
 import { SharedQueryLinkService } from "../common/settings-transfer/SharedQueryLinkService";
@@ -411,12 +414,20 @@ const viewCurrentUserReader = new MessagingCurrentUserReader(
 
 const trackingServices: EnhancedViewServices = {
   catalogFavorites: {
-    readPath: (queryId) => new PersonalQueryFavoritesPaths(store).read(queryId),
-    sync: (queryId, path, links) =>
+    status: (queryId) =>
+      requestCatalogFavoritesStatus((message) => chrome.runtime.sendMessage(message), queryId),
+    sync: (queryId, path, links, keep) =>
       sendCatalogFavorites((message) => chrome.runtime.sendMessage(message), {
         queryId,
         path,
         links,
+        keep,
+      }),
+    restore: (queryId, syncId, ids) =>
+      sendCatalogFavoritesRestore((message) => chrome.runtime.sendMessage(message), {
+        queryId,
+        syncId,
+        ids,
       }),
     openSettings: (queryId) => openExtensionPage({ type: OPEN_BINDING_SETTINGS_MESSAGE, queryId }),
   },

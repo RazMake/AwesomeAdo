@@ -84,9 +84,16 @@ AwesomeADO is feature-complete for its current scope:
   deletion failure. Clear-query progress/errors remain visible; hyperlink matching ignores trailing
   slashes and casing while the unlink guard uses the exact stored URL.
 - All Projects Catalog syncs filtered project query links and a final filtered-catalog link into a
-  personal Favorites destination below the browser bar. The binding editor autocompletes folders;
-  `settings.queryFavoritesPaths` follows native browser sync and full file export/import, never ADO
-  publishing, pulls, or shared-query overlays. Sync replaces destination contents, including folders.
+  personal Favorites destination below the browser bar. The binding editor warns that sync replaces
+  the folder's favorites, never stores the bar root or malformed paths, and stays disabled (a saved
+  folder read-only) until its **Allow Favorites access** button obtains the optional `bookmarks`
+  permission, then autocompletes folders;
+  `settings.queryFavoritesPaths` follows native browser sync and full file export/import,
+  never ADO publishing, pulls, or shared-query overlays. Sync replaces only the folder's direct links
+  and never touches subfolders. The title command is always shown, disabled with the worker status
+  refusal (or checking/queries-unknown) as its tooltip. The post-sync popup lists removed favorites
+  for selective restore from a worker-held `chrome.storage.session` record (popup-only undo,
+  ADR-082). Authenticated validation of the permission prompt and restore flow is pending.
 - User-visible decisions and failures are source-tagged in the bounded diagnostics log; every caught
   runtime exception is logged with its original value.
 - The complete quality gate remains coverage ≥ 85%, zero lint warnings, formatting, typecheck,

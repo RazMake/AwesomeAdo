@@ -84,7 +84,9 @@ This is a flattened snapshot of what exists now, not a build log.
   own on-demand ESM renderer.
 - **Catalog Favorites**: title-menu sync exports linked queries across every tag-filtered hierarchy
   level in display order, including collapsed branches, followed by the exact current catalog URL.
-  Unlinked items are skipped; missing destinations offer Set/Cancel with a specific-binding deep link. Personal
+  Unlinked items are skipped. The command is always listed but disabled, with the refusal as its
+  tooltip, while the worker's status check finds no folder, no Favorites access, or an unsafe
+  destination; the popup re-checks and offers Open Options on refusal. Personal
   path autocomplete reads the browser's folder tree and stays editable on read-only shared bindings.
   The separate browser-synced setting participates in full file transfer but never ADO sharing.
   Background validation rechecks the query and destination before replacing Favorites. Authenticated
@@ -94,6 +96,14 @@ This is a flattened snapshot of what exists now, not a build log.
   the query before unlinking, retains the link on DELETE failure, then drops the binding and reloads.
   The expanded traversal and clear action have deterministic regression coverage; authenticated
   browser validation of these follow-up changes remains pending.
+  Safety hardening (ADR-082): `bookmarks` is an optional permission requested only from the Options
+  **Allow Favorites access** button, and the Favorites path stays disabled (a saved folder read-only)
+  until it is granted;
+  the Favorites bar root and malformed paths are unrepresentable; sync replaces direct links
+  only (subfolders untouched, managed links fail closed); and the completion popup lists removed
+  favorites by name with URL tooltips for selective restore until it closes. Deterministic coverage
+  exists; authenticated validation of the permission prompt, grant-without-reload, existing-install
+  permission migration, and restoring non-HTTP bookmarks remains pending.
 - **Consumers View** (`content/views/consumers`, deferred bundle `content/consumers-view.js`,
   ADR-081): a tree query's single root is an undrawn grouping item; level 1 rows are consumers and
   level 2 rows are feature requests. Consumer rows show type and title; request rows additionally

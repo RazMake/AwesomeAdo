@@ -1768,3 +1768,41 @@ cannot be null."` The patch that reached ADO was `{ op: "add", path: "/fields/<d
   belongs to someone else. Rich-text descriptions are no longer read line-for-line at all
   (`sourceLines` null) and say why in a tooltip. Removal deletes exactly the contact's line, with no
   confirmation: it is one guarded write and the description's history restores it.
+
+## ADR-082: Favorites sync fails closed and never removes a favorite without a way back
+
+- Context: **Sync projects to Favorites** replaced the destination's entire contents, subfolders
+  included, and trusted whatever path was stored. `bookmarks` was an install-time permission, so a
+  mistyped or root-like folder, a stale setting, or a click before setup could delete unrelated
+  favorites, with nothing to undo it.
+- Decision: replacement touches only the destination's direct links. New links are created first,
+  then the old ones are removed one at a time with `bookmarks.remove`, never `removeTree`.
+  Subfolders are never modified, and a managed (unmodifiable) link or folder fails the whole sync
+  closed before anything changes.
+- Decision: `normalizeFavoritesFolderPath` is the single path grammar. Blank means "no folder";
+  root-like and malformed values are dropped on read, refused on write and file import, and
+  re-checked by the worker and by `ChromeFavorites`, so the Favorites bar itself can never become a
+  destination — not through an early-closed Options page, sync from another device, or an import.
+- Decision: the background worker is the only judge of readiness. `status`, `sync`, and `restore`
+  share one assessment (folder set → access granted → `inspect`) and accept only the catalog's own
+  tab. The title command is always listed but disabled, with the refusal (or "checking", "could not
+  check", "queries unknown") as its tooltip. The popup re-checks before acting and the worker refuses
+  again, so a stale view cache can never start a sync.
+- Decision: undo is popup-only. The worker keeps the latest sync's removed links per catalog in
+  `chrome.storage.session` behind a random sync id, and the content script only ever sends ids back.
+  Session storage survives MV3 worker restarts but not a browser restart, and the next sync
+  overwrites it, so no durable copy of personal bookmarks is kept.
+- Decision: `bookmarks` is an optional permission. Options asks for it only from an explicit
+  **Allow Favorites access** button, synchronously inside that click, and keeps the Favorites path
+  field disabled (a saved folder read-only) until the grant, because without it folder suggestions
+  cannot load and sync cannot run. The first design asked only while saving a folder; with no saved
+  folder it offered no way to grant access, so autocomplete silently showed nothing. After a grant,
+  suggestions load before the field unlocks and takes focus. `ChromeFavorites` reads
+  `chrome.bookmarks` lazily so a fresh grant works without reloading the worker.
+- Consequence: restored links return to the synced folder, so the next sync removes them again unless
+  the user moves them; the popup says so. Restoring after the popup closes is impossible by design.
+  This supersedes the 0.13 behavior of replacing the destination's entire contents.
+- Consequence: authenticated validation must still confirm the permission prompt from Options,
+  syncing right after a grant without a reload, whether store updates (like unpacked reloads, which
+  were observed to) drop the earlier install-time grant, and restoring non-HTTP bookmarks. The
+  **Allow Favorites access** button restores access either way.

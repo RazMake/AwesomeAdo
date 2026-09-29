@@ -107,11 +107,21 @@ import {
   type LoadQueryTreeMessage,
   type LoadQueryTreeResponse,
 } from "../common/browser/AdoTreeRequest";
+import { CatalogFavoritesHandler } from "../common/browser/CatalogFavoritesHandler";
 import {
-  CatalogFavoritesHandler,
+  type CatalogFavoritesRequest,
+  type CatalogFavoritesResponse,
+  type CatalogFavoritesRestoreRequest,
+  type CatalogFavoritesRestoreResponse,
+  type CatalogFavoritesStatusRequest,
+  type CatalogFavoritesStatusResponse,
   claimsCatalogFavorites,
+  claimsCatalogFavoritesRestore,
+  claimsCatalogFavoritesStatus,
 } from "../common/browser/CatalogFavoritesRequest";
 import { ChromeFavorites } from "../common/browser/ChromeFavorites";
+import { ChromeFavoritesAccess } from "../common/browser/ChromeFavoritesAccess";
+import { ChromeSessionStorage } from "../common/browser/ChromeSessionStorage";
 import {
   CREATE_WORK_ITEM_MESSAGE,
   createWorkItemMessageProblem,
@@ -151,6 +161,7 @@ import {
   type ReadProjectQueryLinksMessage,
   type RemoveProjectQueryMessage,
 } from "../common/browser/ProjectQueryRequest";
+import { SessionRemovedFavoritesRecords } from "../common/browser/RemovedFavoritesRecords";
 import { prepareReorderState, withPreparedState } from "../common/browser/ReorderStateChange";
 import {
   isReadTeamConfigMessage,
@@ -241,22 +252,51 @@ import { createSettingsStore } from "../common/settings/createSettingsStore";
 const logger = createLoggerFactory().forSource("background");
 
 const favoritesLogger = createLoggerFactory().forSource("common/browser");
-const favoritesHandler = new CatalogFavoritesHandler(
-  new PersonalQueryFavoritesPaths(
+const favoritesHandler = new CatalogFavoritesHandler({
+  paths: new PersonalQueryFavoritesPaths(
     createSettingsStore(createLoggerFactory().forSource("common/settings")),
   ),
-  new ChromeFavorites(favoritesLogger),
-  favoritesLogger,
+  favorites: new ChromeFavorites(favoritesLogger),
+  access: new ChromeFavoritesAccess(),
+  records: new SessionRemovedFavoritesRecords(new ChromeSessionStorage()),
+  createSyncId: () => crypto.randomUUID(),
+  logger: favoritesLogger,
+});
+chrome.runtime.onMessage.addListener(
+  tabRequestListener<CatalogFavoritesStatusRequest, CatalogFavoritesStatusResponse>(
+    favoritesLogger,
+    {
+      claims: claimsCatalogFavoritesStatus,
+      unscriptable: () => ({
+        log: "Favorites status refused: no sender tab.",
+        response: { ok: false, error: "Open the catalog query before checking Favorites." },
+      }),
+      serve: (message, _tabId, tabUrl) => favoritesHandler.status(message, tabUrl),
+    },
+  ),
 );
 chrome.runtime.onMessage.addListener(
-  tabRequestListener(favoritesLogger, {
+  tabRequestListener<CatalogFavoritesRequest, CatalogFavoritesResponse>(favoritesLogger, {
     claims: claimsCatalogFavorites,
     unscriptable: () => ({
       log: "Favorites sync refused: no sender tab.",
       response: { ok: false, error: "Open the catalog query before syncing Favorites." },
     }),
-    serve: (message, _tabId, tabUrl) => favoritesHandler.serve(message, tabUrl),
+    serve: (message, _tabId, tabUrl) => favoritesHandler.sync(message, tabUrl),
   }),
+);
+chrome.runtime.onMessage.addListener(
+  tabRequestListener<CatalogFavoritesRestoreRequest, CatalogFavoritesRestoreResponse>(
+    favoritesLogger,
+    {
+      claims: claimsCatalogFavoritesRestore,
+      unscriptable: () => ({
+        log: "Favorites restore refused: no sender tab.",
+        response: { ok: false, error: "Open the catalog query before restoring Favorites." },
+      }),
+      serve: (message, _tabId, tabUrl) => favoritesHandler.restore(message, tabUrl),
+    },
+  ),
 );
 
 const handleNavigation = (details: chrome.webNavigation.WebNavigationTransitionCallbackDetails) => {

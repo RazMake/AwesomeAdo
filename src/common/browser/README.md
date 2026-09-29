@@ -33,15 +33,39 @@ retries the PATCH.
 ### Favorites
 
 - `Favorites.folderPaths()` lists writable folder paths below Favorites bar / Bookmarks bar for
-  autocomplete. `Favorites.replace(path, links)` creates missing folders and replaces all contents
-  of the destination, including subfolders, with the links in the supplied order.
-- `ChromeFavorites` provides those operations through the browser's `bookmarks` permission. Construct
-  it only at a composition root and supply a `common/browser` logger. Blank paths, root paths,
-  duplicate destination folders, and managed contents are refused. New links are created before old
-  contents are removed; an API failure is reported and may require another sync.
-- `CatalogFavorites` is the view-facing service: read the personal query path, sync its links, and
-  open that query's binding settings. `CatalogFavoritesHandler` handles the content-to-worker request,
-  checks the sender's query, and rechecks the stored destination before changing Favorites.
+  autocomplete. `Favorites.inspect(path)` is a read-only readiness check: it returns a user-facing
+  refusal reason or `null` when replacement is safe. `Favorites.existing(path)` lists the direct
+  links in the folder (empty when it does not exist yet).
+- `Favorites.replace(path, links, keep?)` leaves the existing link ids in `keep` in place, creates missing folders and replaces only direct links in the
+  destination with supplied links in order. It never removes subfolders, and returns removed links
+  that were not re-created one-for-one so callers can offer restoration.
+- `Favorites.restore(folderId, favorites)` appends selected removed favorites to the original
+  destination and reports individual restore failures without abandoning the remaining selection.
+- `ChromeFavorites` provides these operations through the optional browser `bookmarks` permission.
+  Construct it only at a composition root and supply a `common/browser` logger. It refuses with a
+  "not allowed" error until access is granted. Blank paths, root paths, duplicate destination
+  folders, and managed contents are refused. New links are created before old links are removed so a
+  failed write cannot empty the folder.
+- `CatalogFavorites` is the view-facing service: assess the configured destination, sync or restore
+  its links, and open that query's binding settings. The worker exposes `CATALOG_FAVORITES_STATUS`,
+  `SYNC_CATALOG_FAVORITES`, and `RESTORE_CATALOG_FAVORITES` messages. Status and sync share one
+  assessment for a missing folder, missing access, or unsafe destination; status also returns the
+  folder's `existing` links, sync carries the ids the user chose to `keep` and returns its id and
+  removed favorites, while restore accepts only ids from that catalog's latest recorded sync.
+- `CatalogFavoritesHandler` handles these content-to-worker requests, checks the sender's query, and
+  rechecks the stored destination before changing Favorites. Construct it at a composition root with
+  the path store, Favorites adapter, access gate, session record store, and a source-scoped logger.
+
+### `FavoritesAccess` and `ChromeFavoritesAccess`
+
+`FavoritesAccess` gates Favorites operations behind the browser's optional `bookmarks` permission,
+so installing AwesomeADO never grants it power over the user's Favorites. `ChromeFavoritesAccess`
+is the Chromium-backed implementation.
+
+- Construct `ChromeFavoritesAccess` only at a composition root.
+- Call `request()` directly inside an extension-page user gesture, such as a click or change handler.
+  Chromium rejects permission requests initiated outside that gesture.
+- Call `isGranted()` when gating UI or a Favorites operation.
 
 ### `IBrowserSyncStorage` (interface)
 
@@ -114,6 +138,32 @@ await storage.set("diagnostics.log", []);
 
 Construct `ChromeLocalStorage` only in a composition root (`src/common/logging/createLogger.ts`).
 Feature code depends on `IBrowserLocalStorage`.
+
+## Session storage
+
+### `IBrowserSessionStorage` (interface)
+
+`IBrowserSessionStorage` is the same shared key/value shape as the sync and local aliases, but
+expresses a dependency on `chrome.storage.session`. Data in this area survives an MV3 service-worker
+restart while the browser stays open, but is neither synced nor retained after the browser closes.
+
+### `ChromeSessionStorage` (class)
+
+The production `IBrowserSessionStorage` implementation. Construct it only at a composition root;
+feature code receives `IBrowserSessionStorage` through injection.
+
+```typescript
+const storage = new ChromeSessionStorage();
+await storage.set("catalogFavorites.removed.query-id", record);
+```
+
+### `RemovedFavoritesRecords` and `SessionRemovedFavoritesRecords`
+
+`RemovedFavoritesRecords` stores the removed bookmarks from a catalog's latest Favorites sync.
+`SessionRemovedFavoritesRecords` keeps one `RemovedFavoritesRecord` per catalog query in session
+storage so the background worker can restore a popup selection after an MV3 restart. The next sync
+replaces the record and closing the browser clears it, making this intentionally popup-only undo
+state. Call `read(queryId)`, `write(record)`, or `forget(queryId)` through the injected interface.
 
 ### `onStorageAreaChange(area, key, listener)` — `onStorageAreaChange.ts`
 

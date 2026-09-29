@@ -55,7 +55,8 @@ it to buttons and the two stores lives in `src/options/settings-transfer`.
   A connection-only file (`configScope: "connection"`) needs no `enhancedQueries` section and comes
   back with `replacesBindings: false`, so adopting a connection never deletes the enhanced queries it
   never described. It reports a problem when it names no work item id, because that is the only thing
-  it exists to carry.
+  it exists to carry. Per-query Favorites paths must name folders inside the Favorites bar; root and
+  malformed paths are skipped rather than being persisted.
   The retired `areaPaths` key in a legacy file or shared payload is ignored without being persisted.
 - `mergeImportedSettings(current, imported)` — apply legacy migrations that need current local
   context, including preserving Primary Work when a version 1 payload predates that field.

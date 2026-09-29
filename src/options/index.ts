@@ -12,6 +12,7 @@ import { createQueryBindingStore } from "../common/bindings/createQueryBindingSt
 import { ChromeAdoMetadataReader } from "../common/browser/ChromeAdoMetadataReader";
 import { ChromeAdoTabReader } from "../common/browser/ChromeAdoTabReader";
 import { ChromeFavorites } from "../common/browser/ChromeFavorites";
+import { ChromeFavoritesAccess } from "../common/browser/ChromeFavoritesAccess";
 import { ChromeQueryFactsReader } from "../common/browser/ChromeQueryFactsReader";
 import { ChromeQueryFolderReader } from "../common/browser/ChromeQueryFolderReader";
 import { ChromeTeamConfigClient } from "../common/browser/ChromeTeamConfigClient";
@@ -478,8 +479,10 @@ if (
     {
       favorites: {
         paths: new PersonalQueryFavoritesPaths(teamSettings.personal),
+        access: new ChromeFavoritesAccess(),
         folderPaths: () => new ChromeFavorites(loggers.forSource("common/browser")).folderPaths(),
         recordError: (error) => bindingLogger.error("Favorites path operation failed", error),
+        recordDecision: (message) => bindingLogger.info(message),
       },
       resolveCurrentQueryId: () => adoTabReader.readCurrentQueryId(),
       resolveSuggestions: async (source) =>

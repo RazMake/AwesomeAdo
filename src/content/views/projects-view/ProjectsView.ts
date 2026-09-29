@@ -48,6 +48,7 @@ import { createBoardWriteStatus } from "../board-lifecycle/boardWriteStatus";
 import { childTypeOf, newChildSummary } from "../project-tracking/item-commands/NewChildCommands";
 import { panelFor } from "../project-tracking/item-commands/itemCommandCore";
 
+import { CatalogFavoritesAvailability } from "./CatalogFavoritesAvailability";
 import { renderNewProjectRow } from "./NewProjectRow";
 import { renderNewWorkItemPanel, type NewWorkItemValues } from "./NewWorkItemPanel";
 import { buildProjectCommands } from "./ProjectCommands";
@@ -117,6 +118,7 @@ interface LoadedProjects {
 
 /** The catalog's own DOM, named for the shared stripe/hover/emphasis treatment. */
 const ROW_EMPHASIS_CLASSES: RowEmphasisClasses = treeRowEmphasisClasses("awesomeado-projects");
+const boardDisposers = new WeakMap<HTMLElement, () => void>();
 
 /** How wide the "Add work item" form opens: enough for a full area path to read without wrapping. */
 const NEW_WORK_ITEM_WIDTH_PX = 460;
@@ -305,6 +307,7 @@ function renderProjectsList(
 interface Board {
   context: DataDrivenViewContext;
   session: ProjectsSession;
+  favorites: CatalogFavoritesAvailability | null;
   queue: WorkItemWriteQueue;
   contextMenu: ItemContextMenu;
   dragReorder: DragReorderController;
@@ -426,7 +429,9 @@ function titleMenuTarget(board: Board, data: LoadedProjects): ItemContextMenuTar
                 favorites: context.services.catalogFavorites!,
                 logger: context.services.logger,
                 close,
+                onStatus: (status) => board.favorites?.update(status),
               }),
+      favoritesDisabledReason: board.favorites?.disabledReason(data.queryLinksKnown) ?? null,
       onAddProject: () => {
         session.addingProject = true;
         board.paint();
@@ -765,9 +770,18 @@ function createBoard(
     reload: () => void;
   },
 ): Board {
+  const favorites =
+    context.services.catalogFavorites === undefined
+      ? null
+      : new CatalogFavoritesAvailability(
+          context.services.catalogFavorites,
+          context.queryId,
+          context.services.logger,
+        );
   const board: Board = {
     context,
     session,
+    favorites,
     queue: createBoardWriteQueue(context.services),
     contextMenu: createItemContextMenu({
       doc: context.doc,
@@ -784,7 +798,10 @@ function createBoard(
     ),
     paint: hooks.paint,
     paintList: hooks.paintList,
-    reload: hooks.reload,
+    reload: () => {
+      favorites?.refresh();
+      hooks.reload();
+    },
   };
   return board;
 }
@@ -851,6 +868,15 @@ function startProjectsView(context: DataDrivenViewContext, root: HTMLElement): v
     paintList: () => repaintList(),
     reload: () => loader.load(true),
   });
+  board.favorites?.refresh();
+  const refreshFavoritesOnVisible = (): void => {
+    if (context.doc.visibilityState === "visible") board.favorites?.refresh();
+  };
+  // Users often return from Options after choosing a folder or granting Favorites access.
+  context.doc.addEventListener("visibilitychange", refreshFavoritesOnVisible);
+  boardDisposers.set(root, () =>
+    context.doc.removeEventListener("visibilitychange", refreshFavoritesOnVisible),
+  );
   const writeStatus = createBoardWriteStatus(
     context.doc,
     board.queue,
@@ -907,7 +933,11 @@ function startProjectsView(context: DataDrivenViewContext, root: HTMLElement): v
  */
 export const projectsView: EnhancedView = {
   id: projectsViewType.id,
-  dispose: (root) => modifierHighlightTracker(root.ownerDocument).unregister(root),
+  dispose: (root) => {
+    modifierHighlightTracker(root.ownerDocument).unregister(root);
+    boardDisposers.get(root)?.();
+    boardDisposers.delete(root);
+  },
   render: (context) => {
     if (context.services === undefined) {
       return renderViewScaffold(context.doc, {

@@ -1,76 +1,83 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import {
-  CatalogFavoritesHandler,
+  CATALOG_FAVORITES_STATUS,
   claimsCatalogFavorites,
+  claimsCatalogFavoritesRestore,
+  claimsCatalogFavoritesStatus,
+  requestCatalogFavoritesStatus,
+  RESTORE_CATALOG_FAVORITES,
   sendCatalogFavorites,
+  sendCatalogFavoritesRestore,
   SYNC_CATALOG_FAVORITES,
 } from "./CatalogFavoritesRequest";
 
 const QUERY_ID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
-const URL = `https://dev.azure.com/org/project/_queries/query/${QUERY_ID}?tags=api`;
 const REQUEST = {
-  type: SYNC_CATALOG_FAVORITES,
   queryId: QUERY_ID,
   path: "Work",
-  links: [{ title: "Catalog", url: URL }],
+  links: [
+    { title: "Catalog", url: `https://dev.azure.com/org/project/_queries/query/${QUERY_ID}` },
+  ],
+  keep: [],
 };
 
-function harness() {
-  const paths = { read: vi.fn(async () => "Work") };
-  const favorites = { folderPaths: vi.fn(async () => []), replace: vi.fn(async () => {}) };
-  const logger = { info: vi.fn(), error: vi.fn() };
-  return {
-    paths,
-    favorites,
-    logger,
-    handler: new CatalogFavoritesHandler(paths, favorites, logger),
-  };
-}
+describe("Catalog Favorites worker request contracts", () => {
+  it("claims only its three message types", () => {
+    expect(claimsCatalogFavoritesStatus({ type: CATALOG_FAVORITES_STATUS })).toBe(true);
+    expect(claimsCatalogFavorites({ type: SYNC_CATALOG_FAVORITES })).toBe(true);
+    expect(claimsCatalogFavoritesRestore({ type: RESTORE_CATALOG_FAVORITES })).toBe(true);
+    expect(claimsCatalogFavorites({ type: "other" })).toBe(false);
+  });
 
-describe("catalog Favorites worker boundary", () => {
-  it("uses the stored destination for a request from the catalog tab", async () => {
-    const { handler, favorites } = harness();
-    expect(await handler.serve(REQUEST, URL)).toEqual({ ok: true });
-    expect(favorites.replace).toHaveBeenCalledWith("Work", REQUEST.links);
+  it("sends and unwraps successful status, sync, and restore responses", async () => {
+    await expect(
+      requestCatalogFavoritesStatus(
+        async () => ({ ok: true, path: "Work", refusal: null, existing: [] }),
+        QUERY_ID,
+      ),
+    ).resolves.toEqual({ path: "Work", refusal: null, existing: [] });
+    await expect(
+      sendCatalogFavorites(async () => ({ ok: true, syncId: "sync", removed: [] }), REQUEST),
+    ).resolves.toEqual({ syncId: "sync", removed: [] });
+    await expect(
+      sendCatalogFavoritesRestore(async () => ({ ok: true, restored: ["one"], failed: [] }), {
+        queryId: QUERY_ID,
+        syncId: "sync",
+        ids: ["one"],
+      }),
+    ).resolves.toEqual({ restored: ["one"], failed: [] });
   });
 
   it.each([
-    null,
-    {},
-    { ...REQUEST, links: [] },
-    { ...REQUEST, links: [{ title: "Bad", url: "javascript:alert(1)" }] },
-  ])("rejects malformed requests before changing Favorites", async (request) => {
-    const { handler, favorites, logger } = harness();
-    expect((await handler.serve(request, URL)).ok).toBe(false);
-    expect(favorites.replace).not.toHaveBeenCalled();
-    expect(logger.error).toHaveBeenCalled();
+    [
+      "status",
+      () => requestCatalogFavoritesStatus(async () => ({ ok: false, error: "Refused" }), QUERY_ID),
+    ],
+    ["sync", () => sendCatalogFavorites(async () => ({ ok: false, error: "Refused" }), REQUEST)],
+    [
+      "restore",
+      () =>
+        sendCatalogFavoritesRestore(async () => ({ ok: false, error: "Refused" }), {
+          queryId: QUERY_ID,
+          syncId: "sync",
+          ids: ["one"],
+        }),
+    ],
+  ])("throws worker errors for %s", async (_name, send) => {
+    await expect(send()).rejects.toThrow("Refused");
   });
 
-  it("refuses a different sender query, an absent destination, and a changed destination", async () => {
-    const { handler, favorites, paths } = harness();
-    expect((await handler.serve(REQUEST, "https://example.com")).ok).toBe(false);
-    paths.read.mockResolvedValueOnce("");
-    expect((await handler.serve(REQUEST, URL)).ok).toBe(false);
-    paths.read.mockResolvedValueOnce("Different");
-    expect((await handler.serve(REQUEST, URL)).ok).toBe(false);
-    expect(favorites.replace).not.toHaveBeenCalled();
-  });
-
-  it("surfaces bookmark errors and missing worker replies", async () => {
-    const { handler, favorites } = harness();
-    favorites.replace.mockRejectedValueOnce(new Error("No permission"));
-    expect(await handler.serve(REQUEST, URL)).toEqual({ ok: false, error: "No permission" });
-    await expect(sendCatalogFavorites(async () => undefined, REQUEST)).rejects.toThrow(
-      "did not respond",
-    );
-    await expect(
-      sendCatalogFavorites(async () => ({ ok: false, error: "Refused" }), REQUEST),
-    ).rejects.toThrow("Refused");
-    await expect(
-      sendCatalogFavorites(async () => ({ ok: true }), REQUEST),
-    ).resolves.toBeUndefined();
-    expect(claimsCatalogFavorites(REQUEST)).toBe(true);
-    expect(claimsCatalogFavorites({ type: "other" })).toBe(false);
+  it.each([
+    () => requestCatalogFavoritesStatus(async () => undefined, QUERY_ID),
+    () => sendCatalogFavorites(async () => ({}) as never, REQUEST),
+    () =>
+      sendCatalogFavoritesRestore(async () => undefined, {
+        queryId: QUERY_ID,
+        syncId: "sync",
+        ids: ["one"],
+      }),
+  ])("rejects missing or malformed worker replies", async (send) => {
+    await expect(send()).rejects.toThrow("The Favorites worker did not respond.");
   });
 });

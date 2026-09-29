@@ -1,4 +1,4 @@
-import { favoritesPathSegments } from "../browser/Favorites";
+import { FAVORITES_REFUSALS, normalizeFavoritesFolderPath } from "../browser/Favorites";
 
 import type { ISettingsStore } from "./ISettingsStore";
 
@@ -10,9 +10,10 @@ export interface QueryFavoritesPaths {
 export function normalizeQueryFavoritesPaths(value: unknown): Record<string, string> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return {};
   return Object.fromEntries(
-    Object.entries(value).filter(
-      (entry): entry is [string, string] => typeof entry[1] === "string",
-    ),
+    Object.entries(value).flatMap(([queryId, path]) => {
+      const normalized = typeof path === "string" ? normalizeFavoritesFolderPath(path) : null;
+      return normalized === null ? [] : [[queryId, normalized]];
+    }),
   );
 }
 
@@ -25,9 +26,11 @@ export class PersonalQueryFavoritesPaths implements QueryFavoritesPaths {
   }
 
   async write(queryId: string, path: string): Promise<void> {
-    const normalized = path.trim() === "" ? "" : favoritesPathSegments(path).join("/");
+    const isBlank = path.trim() === "";
+    const normalized = normalizeFavoritesFolderPath(path);
+    if (!isBlank && normalized === null) throw new Error(FAVORITES_REFUSALS.invalidPath);
     const paths = { ...(await this.settings.read()).queryFavoritesPaths };
-    if (normalized === "") delete paths[queryId];
+    if (isBlank) delete paths[queryId];
     else Object.defineProperty(paths, queryId, { value: normalized, enumerable: true });
     await this.settings.write({ queryFavoritesPaths: paths });
   }

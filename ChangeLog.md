@@ -29,6 +29,18 @@ builds use the repository's `Major.Minor.Build` release versioning.
   item's title in its Azure DevOps work item type color. Every item also exposes its description
   from a type-colored `?`, opens Discussion from its work item type icon, supports adding and
   editing notes, and offers the complete **View all notes** popup.
+- **Sync projects to Favorites** now protects the favorites you already have. It replaces only the
+  links in the chosen folder and never touches its subfolders. Before changing anything, it asks
+  for confirmation, naming the folder and listing the existing favorites the sync would delete
+  (ones not being re-added) so you can tick any to keep; **Cancel** leaves Favorites unchanged. When it finishes, the popup lists
+  every favorite it removed — by name, with the link on hover — so you can tick any you want back
+  and restore them before closing it. The command always appears in the catalog title's right-click
+  menu, but stays disabled, with the reason as its tooltip, until a folder is set, Favorites access
+  is allowed, and the folder is safe to change; the popup checks again before syncing and offers
+  **Open Options** when something needs fixing. In Options, the **Favorites path** warns that
+  syncing replaces that folder's favorites, refuses the Favorites bar itself and malformed paths,
+  and can't be edited until you choose **Allow Favorites access**, after which it suggests your
+  folders as you type.
 
 ## 0.15
 

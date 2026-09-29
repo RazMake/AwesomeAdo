@@ -30,6 +30,22 @@ here so every agent, teammate, and clone sees them.
   waits when an element capture stalls. Restore CDP viewport overrides after responsive checks.
 - Use a uniquely named temporary Favorites folder, verify it does not exist first, and remove only
   that folder afterward. Restore the tested query's personal setting without replacing other values.
+- `bookmarks` is an optional permission (ADR-082). Grant it with the Options Favorites path's
+  **Allow Favorites access** button before exercising folder autocomplete or the catalog command.
+  `chrome.permissions.request` rejects without user activation, so any `await` before it, or a
+  CDP-evaluated call without `userGesture: true`, fails even when the code is correct.
+- SYMPTOM: Favorites path autocomplete silently shows nothing. ROOT CAUSE: the `bookmarks` grant is
+  missing, so folder suggestions never load. Reloading the unpacked extension after `bookmarks`
+  moved from required to optional dropped the earlier grant: on the options page,
+  `chrome.permissions.getAll()` listed only storage, webNavigation, and scripting, and
+  `chrome.bookmarks` was undefined. The first optional-permission UI asked only when a folder was
+  saved and hid the retry button for an empty path, leaving no way to grant access. DIAGNOSE:
+  evaluate `chrome.permissions.contains({ permissions: ["bookmarks"] })` in the options target over
+  CDP. `AutocompleteInput` opens its list only on focus when options already exist, so load
+  suggestions before focusing the field.
+- Never force Prettier onto `store-assets/*.txt` (e.g. with `--parser markdown`): Markdown
+  formatting rewrites `*` wildcards in host patterns (`https://*.visualstudio.com/*`) as `_`
+  emphasis. `pnpm format` / `format:check` skip `.txt` because Prettier infers no parser for it.
 - PowerShell command substitutions passed directly to the `pnpm` shim can become one space-joined
   filename argument. Explicit quoted globs work for focused Prettier/ESLint commands.
 

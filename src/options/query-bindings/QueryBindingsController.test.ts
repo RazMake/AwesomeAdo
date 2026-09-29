@@ -1334,8 +1334,10 @@ describe("QueryBindingsController personal Favorites", () => {
             : undefined,
           favorites: {
             paths,
+            access: { isGranted: async () => true, request: async () => true },
             folderPaths: async () => ["Work/Projects"],
             recordError: reportError as unknown as (error: unknown) => void,
+            recordDecision: () => {},
           },
         },
       );

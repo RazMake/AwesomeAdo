@@ -208,12 +208,26 @@ they are stripped from the published payload, from a pull, and from a shared que
 still sync across the user's own devices and still travel in a file export (ADR-075).
 `settings.queryFavoritesPaths` maps catalog query IDs to personal destinations beneath Favorites bar /
 Bookmarks bar. It deliberately lives outside binding properties, which team pulls replace wholesale.
+`normalizeFavoritesFolderPath` is the one path grammar: blank, root-like, and malformed values mean
+"no folder" on read, are refused on write and file import, and are re-checked by the worker and the
+adapter, so the bar itself is unrepresentable as a destination.
 The binding form's independent `FavoritesPathEditor` writes through `teamSettings.personal`, including
-for read-only shared queries. The view passes linked items from a depth-first traversal of all
+for read-only shared queries. It writes only on `change`. Because `bookmarks` is an optional
+permission, the field stays disabled until its **Allow Favorites access** button calls
+`FavoritesAccess.request()` synchronously inside the click; a grant loads folder suggestions before
+unlocking and focusing the field (`AutocompleteInput` opens only on focus with existing options), and
+a focus re-check locks it again if access was removed. The view passes linked items from a depth-first traversal of all
 tag-filtered hierarchy levels (independent of expansion), in sibling display order, and the exact current URL
-to `ProjectsFavoritesPanel`; the background `CatalogFavoritesHandler` rechecks the sender query and
-stored destination before `ChromeFavorites` serializes replacement. Empty paths cannot clear the bar,
-ambiguous or managed folders fail closed, and link creation precedes removal of previous contents.
+to `ProjectsFavoritesPanel`. The background `CatalogFavoritesHandler` is the single judge of
+readiness: `status`, `sync`, and `restore` accept only the catalog's own tab and share one assessment
+(folder set → access granted → `Favorites.inspect`). The view caches that status per board in
+`CatalogFavoritesAvailability` (refreshed on start, reload, and tab visibility) to disable — never
+hide — the title command, and the popup re-checks before acting. `ChromeFavorites` serializes
+replacement and restore, creates new links before removing old ones with `bookmarks.remove` (never
+`removeTree`), leaves subfolders untouched, and fails closed on ambiguous or managed folders and
+managed links. The worker records the removed links per catalog in `chrome.storage.session` behind a
+random sync id; the popup restores selected ids until it closes, the next sync overwrites the record,
+and a browser restart clears it (ADR-082).
 `TeamSprintAreaPathStore` pulls before each Sprint load/refresh/switch and
 serializes save-plus-publish through the connected configuration work item. Checkbox changes remain
 open for multi-selection; Sprint persists each change and repaints once the popup closes by trigger,

@@ -1,4 +1,5 @@
 import { normalizeBindings, type QueryBindings } from "../bindings/QueryBinding";
+import { normalizeFavoritesFolderPath } from "../browser/Favorites";
 import {
   DEFAULT_VIEWS,
   normalizeSettings,
@@ -412,8 +413,8 @@ const SETTINGS_RULES: readonly {
   { key: "organization", isValid: isText, expected: "the organization name as text" },
   {
     key: "queryFavoritesPaths",
-    isValid: isPropertyMap,
-    expected: "a map of query IDs to Favorites folder paths",
+    isValid: isFavoritesFolderPathMap,
+    expected: "a map of query IDs to folder paths inside Favorites bar",
   },
   { key: "project", isValid: isText, expected: "the project name as text" },
   { key: "configurationQueryId", isValid: isText, expected: "the configuration query ID as text" },
@@ -514,4 +515,13 @@ function isMarkerEntry(value: unknown): boolean {
 
 function isPropertyMap(value: unknown): boolean {
   return isRecord(value) && Object.values(value).every((entry) => typeof entry === "string");
+}
+
+function isFavoritesFolderPathMap(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    Object.values(value).every(
+      (path) => typeof path === "string" && normalizeFavoritesFolderPath(path) !== null,
+    )
+  );
 }

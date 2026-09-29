@@ -334,6 +334,23 @@ describe("importConfig - salvaging what a file does offer", () => {
   });
 });
 
+describe("importConfig - Favorites paths", () => {
+  it("skips a path that could target the Favorites bar root", () => {
+    const imported = importConfig(
+      JSON.stringify({
+        awesomeAdoConfigVersion: CONFIG_FORMAT_VERSION,
+        settings: { queryFavoritesPaths: { q: "/" } },
+        enhancedQueries: {},
+      }),
+    );
+
+    expect(imported.settings).not.toHaveProperty("queryFavoritesPaths");
+    expect(imported.problems).toEqual([
+      'The setting "queryFavoritesPaths" was skipped; expected a map of query IDs to folder paths inside Favorites bar.',
+    ]);
+  });
+});
+
 describe("importConfig - marker validation", () => {
   it("rejects duplicate normalized marker comment tags before returning a configuration", () => {
     expect(() =>

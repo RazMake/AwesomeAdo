@@ -42,3 +42,6 @@ const panel = renderConfirmPanel(doc, {
 Rendered elements carry `awesomeado-confirm`, `awesomeado-confirm__summary`,
 `awesomeado-confirm__detail`, `awesomeado-confirm__answers` and `awesomeado-confirm__answer` class
 names so a host can find and style them.
+
+`renderConfirmButton(doc, label, primary, onClick)` is available to a nearby action panel that needs
+the same primary or secondary button treatment without recreating its theme styles.

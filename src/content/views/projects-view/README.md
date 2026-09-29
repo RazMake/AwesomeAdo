@@ -66,17 +66,24 @@ view answers "what is going on across all of them?" for a query that returns **m
 
 ## The page URL is the board's shareable filter
 
-The title's **Sync projects to Favorites** command replaces the configured destination with one
-named query link per item kept by the active tag filter at every hierarchy level, in displayed
+The title's **Sync projects to Favorites** command replaces the configured destination's links with
+one named query link per item kept by the active tag filter at every hierarchy level, in displayed
 order, including collapsed branches, plus **All Projects Catalog View** at the end using the exact
-current filtered URL. Items without queries are omitted. A missing path offers Set/Cancel, with Set opening this
-query's binding settings. Failed query-link reads refuse syncing rather than treating every project
-as having no query. The destination's previous Favorites and subfolders are removed on sync.
+current filtered URL. Items without queries are omitted. The command always remains visible but is
+disabled, with the reason as its tooltip, when no folder is set, Favorites access isn't allowed, the
+destination is unsafe, the setup is being checked or could not be checked, or project queries could
+not be read. The popup checks setup again and offers **Open Options** when it refuses. Otherwise it
+always asks for confirmation first, naming the folder, stating that subfolders stay untouched, and
+listing (via `renderFavoritesKeepList`) existing links whose URL is not being synced so the reader
+can tick any to keep; **Cancel** changes nothing. Afterwards, the popup lists
+removed favorites by name (with their link on hover) and lets the reader selectively restore them;
+that undo list exists only until the popup closes.
 
 The path is a separate personal setting shown in the binding form, not one of the four shared
-`projectsViewType` properties. Inject `services.catalogFavorites` to enable the command.
-`renderProjectsFavoritesPanel` accepts the filtered project snapshot, query-link availability,
-catalog link, Favorites service, logger, and close callback.
+`projectsViewType` properties. Inject `services.catalogFavorites` (`status`, `sync`, `restore`, and
+`openSettings`) to enable the command. `renderProjectsFavoritesPanel` accepts the catalog query id,
+filtered project snapshot, query-link availability, catalog link, Favorites service, logger, close
+callback, and status callback.
 
 Rows with an associated query offer **Clear project query** in their context menu. The query is
 deleted first; only a successful deletion (or an already-missing query) permits removal of its link.

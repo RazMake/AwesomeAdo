@@ -74,15 +74,16 @@ function renderAnswers(doc: Document, options: ConfirmPanelOptions): HTMLElement
   row.className = "awesomeado-confirm__answers";
   row.style.cssText = "display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end";
   for (const choice of options.choices) {
-    row.append(renderAnswer(doc, choice.label, choice.primary === true, choice.onChoose));
+    row.append(renderConfirmButton(doc, choice.label, choice.primary === true, choice.onChoose));
   }
   // Last and quiet: the affirmative answers are what the reader opened this to decide between, and
   // Escape or an outside click already backs out of every surface this is hosted in.
-  row.append(renderAnswer(doc, options.cancelLabel ?? "Cancel", false, options.onCancel));
+  row.append(renderConfirmButton(doc, options.cancelLabel ?? "Cancel", false, options.onCancel));
   return row;
 }
 
-function renderAnswer(
+/** Renders an action using the shared confirmation-button treatment. */
+export function renderConfirmButton(
   doc: Document,
   label: string,
   primary: boolean,

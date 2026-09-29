@@ -8,8 +8,12 @@ Dashboard data categories to select
   descriptions, tags, and discussions to render its enhanced views.
 - Web history: AwesomeADO processes supported Azure DevOps URLs and query identifiers to recognize the
   active Query route. It does not build, retain, or transmit a general browsing history.
-  It reads Favorites folder structure for destination autocomplete and saves project names and query
-  URLs as bookmarks only when the user requests a catalog sync.
+  Optional Favorites (bookmarks) access is requested only when the user chooses Allow Favorites
+  access for an All Projects Catalog in AwesomeADO Options. It is used only to suggest Favorites
+  folders, to create and replace links in the chosen folder, and to restore favorites a sync
+  removed. When a sync removes favorites, their names and links are kept in the browser's session
+  storage on this device only until the next sync of that catalog or until the browser closes,
+  solely so they can be restored from the sync popup.
 
 Storage and transmission
 

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { FAVORITES_REFUSALS } from "../browser/Favorites";
 import {
   exportCompactConfig,
   exportConfig,
@@ -8,7 +9,7 @@ import {
 
 import { BrowserSyncSettingsStore } from "./BrowserSyncSettingsStore";
 import { normalizeSettings } from "./ExtensionSettings";
-import { PersonalQueryFavoritesPaths } from "./QueryFavoritesPaths";
+import { PersonalQueryFavoritesPaths, normalizeQueryFavoritesPaths } from "./QueryFavoritesPaths";
 
 function harness() {
   const values = new Map<string, unknown>();
@@ -41,7 +42,7 @@ describe("personal query Favorites paths", () => {
 
   it("refuses invalid paths before writing", async () => {
     const { paths, storage } = harness();
-    await expect(paths.write("query", "../")).rejects.toThrow("beneath Favorites bar");
+    await expect(paths.write("query", "../")).rejects.toThrow(FAVORITES_REFUSALS.invalidPath);
     expect(storage.set).not.toHaveBeenCalled();
   });
 
@@ -59,10 +60,15 @@ describe("personal query Favorites paths", () => {
   });
 
   it("normalizes malformed stored values without trusting inherited query keys", async () => {
+    const inheritedPaths = Object.create({ inherited: "Ignored" }) as Record<string, unknown>;
+
     expect(normalizeSettings({ queryFavoritesPaths: [] }).queryFavoritesPaths).toEqual({});
     expect(
-      normalizeSettings({ queryFavoritesPaths: { bad: 1, good: "Work" } }).queryFavoritesPaths,
-    ).toEqual({ good: "Work" });
+      normalizeSettings({
+        queryFavoritesPaths: { bad: 1, root: "/", malformed: "Work//Projects", good: " Work\\X " },
+      }).queryFavoritesPaths,
+    ).toEqual({ good: "Work/X" });
+    expect(normalizeQueryFavoritesPaths(inheritedPaths)).toEqual({});
     expect(await harness().paths.read("toString")).toBe("");
   });
 });

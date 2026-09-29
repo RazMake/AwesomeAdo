@@ -1,6 +1,15 @@
-import type { CatalogFavorites, FavoriteLink } from "../../../common/browser/Favorites";
+import type {
+  CatalogFavorites,
+  CatalogFavoritesStatus,
+  CatalogFavoritesSyncResult,
+  FavoriteLink,
+} from "../../../common/browser/Favorites";
 import type { ILogger } from "../../../common/logging/ILogger";
 import { renderConfirmPanel } from "../../../common/view-common/control/ConfirmPanel/ConfirmPanel";
+
+import { FAVORITES_AVAILABILITY_TEXT } from "./CatalogFavoritesAvailability";
+import { favoritesDeletedBySync, renderFavoritesKeepList } from "./FavoritesKeepList";
+import { renderRemovedFavoritesList } from "./RemovedFavoritesList";
 
 export interface CatalogFavoriteProject {
   id: number;
@@ -16,6 +25,7 @@ export interface ProjectsFavoritesOptions {
   favorites: CatalogFavorites;
   logger: ILogger;
   close(): void;
+  onStatus(status: CatalogFavoritesStatus): void;
 }
 
 export function renderProjectsFavoritesPanel(
@@ -27,24 +37,23 @@ export function renderProjectsFavoritesPanel(
   panel.style.cssText =
     "width:420px;max-width:80vw;max-height:70vh;overflow:auto;overflow-wrap:anywhere;font-size:12px";
   panel.setAttribute("role", "status");
-  panel.textContent = "Checking Favorites destination...";
+  panel.textContent = "Checking Favorites folder...";
   void prepare(panel, options).catch((error: unknown) => showFailure(panel, options, error));
   return panel;
 }
 
 async function prepare(panel: HTMLElement, options: ProjectsFavoritesOptions): Promise<void> {
-  const path = await options.favorites.readPath(options.queryId);
+  const status = await options.favorites.status(options.queryId);
+  options.onStatus(status);
   if (!panel.isConnected) return;
-  if (path.trim() === "") {
-    options.logger.info(
-      `Favorites sync for query ${options.queryId}: no personal path; asking to configure it.`,
-    );
+  if (status.refusal !== null) {
+    options.logger.info(`Favorites sync for query ${options.queryId}: refused — ${status.refusal}`);
     panel.replaceChildren(
       renderConfirmPanel(panel.ownerDocument, {
-        summary: "No Favorites path is configured for this catalog.",
+        summary: status.refusal,
         choices: [
           {
-            label: "Set",
+            label: "Open Options",
             primary: true,
             onChoose: () => {
               options.logger.info(
@@ -55,15 +64,13 @@ async function prepare(panel: HTMLElement, options: ProjectsFavoritesOptions): P
             },
           },
         ],
-        onCancel: () => cancel(options),
+        onCancel: options.close,
+        cancelLabel: "Close",
       }),
     );
     return;
   }
-  if (!options.queriesKnown)
-    throw new Error(
-      "Could not read project queries. Refresh the catalog before syncing Favorites.",
-    );
+  if (!options.queriesKnown) throw new Error(FAVORITES_AVAILABILITY_TEXT.queriesUnknown);
   const projects = [...new Map(options.projects.map((project) => [project.id, project])).values()];
   const missing = projects.filter((project) => project.url === null);
   const links = projects.flatMap((project) =>
@@ -73,45 +80,77 @@ async function prepare(panel: HTMLElement, options: ProjectsFavoritesOptions): P
   options.logger.info(
     `Favorites sync for query ${options.queryId}: ${projects.length} filtered project(s), ${missing.length} without queries.`,
   );
-  if (missing.length === 0) {
-    await sync(panel, options, path, links);
-    return;
-  }
-  panel.replaceChildren(
-    renderConfirmPanel(panel.ownerDocument, {
-      summary: `${missing.length} project(s) have no query: ${missing.map((project) => project.title).join(", ")}.`,
-      detail: `Continue replaces all contents of "${path}" with ${links.length - 1} project Favorite(s) and the catalog link. Projects without queries are omitted.`,
-      choices: [
-        {
-          label: "Continue",
-          primary: true,
-          onChoose: () => {
-            options.logger.info(
-              `Favorites sync for query ${options.queryId}: continuing without ${missing.length} project(s).`,
-            );
-            void sync(panel, options, path, links).catch((error: unknown) =>
-              showFailure(panel, options, error),
-            );
-          },
-        },
-      ],
-      onCancel: () => cancel(options),
-    }),
-  );
+  confirmSync(panel, options, status, links, missing);
 }
 
+function confirmSync(
+  panel: HTMLElement,
+  options: ProjectsFavoritesOptions,
+  status: CatalogFavoritesStatus,
+  links: readonly FavoriteLink[],
+  missing: readonly CatalogFavoriteProject[],
+): void {
+  const doc = panel.ownerDocument;
+  const deleted = favoritesDeletedBySync(status.existing, links);
+  const keepList = renderFavoritesKeepList(doc, deleted);
+  const omitted =
+    missing.length === 0
+      ? ""
+      : ` ${missing.length} project(s) have no query and are omitted: ${missing.map((project) => project.title).join(", ")}.`;
+  const confirm = renderConfirmPanel(doc, {
+    summary: `Sync replaces the favorites in "${status.path}" with ${links.length - 1} project Favorite(s) and the catalog link.`,
+    detail: `Subfolders of "${status.path}" are not touched.${omitted}`,
+    choices: [
+      {
+        label: "Sync",
+        primary: true,
+        onChoose: () => {
+          const keep = keepList.selectedIds();
+          options.logger.info(
+            `Favorites sync for query ${options.queryId}: confirmed; ${deleted.length} favorite(s) offered for deletion, ${keep.length} kept, ${missing.length} project(s) omitted.`,
+          );
+          void sync(panel, options, status.path, links, keep).catch((error: unknown) =>
+            showFailure(panel, options, error),
+          );
+        },
+      },
+    ],
+    onCancel: () => cancel(options),
+  });
+  if (deleted.length > 0) confirm.insertBefore(keepList.element, confirm.lastElementChild);
+  panel.replaceChildren(confirm);
+}
 async function sync(
   panel: HTMLElement,
   options: ProjectsFavoritesOptions,
   path: string,
   links: readonly FavoriteLink[],
+  keep: readonly string[],
 ): Promise<void> {
   panel.textContent = "Syncing projects to Favorites...";
-  await options.favorites.sync(options.queryId, path, links);
+  const result = await options.favorites.sync(options.queryId, path, links, keep);
   options.logger.info(
     `Favorites sync for query ${options.queryId}: saved ${links.length - 1} project link(s) and the catalog link.`,
   );
-  panel.textContent = `Synced ${links.length - 1} project Favorite(s) and the catalog link to "${path}".`;
+  renderCompletion(panel, options, result, path, links.length - 1);
+}
+
+function renderCompletion(
+  panel: HTMLElement,
+  options: ProjectsFavoritesOptions,
+  result: CatalogFavoritesSyncResult,
+  path: string,
+  projectCount: number,
+): void {
+  panel.replaceChildren(
+    renderRemovedFavoritesList(panel.ownerDocument, {
+      summary: `Synced ${projectCount} project Favorite(s) and the catalog link to "${path}".`,
+      removed: result.removed,
+      restore: (ids) => options.favorites.restore(options.queryId, result.syncId, ids),
+      logger: options.logger,
+      close: options.close,
+    }),
+  );
 }
 
 function cancel(options: ProjectsFavoritesOptions): void {

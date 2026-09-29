@@ -1,5 +1,7 @@
 import type { ItemContextMenuCommand } from "../../../common/view-common/control/ItemContextMenu/ItemContextMenu";
 
+import { FAVORITES_AVAILABILITY_TEXT } from "./CatalogFavoritesAvailability";
+
 /** What the catalog-wide menu needs to know about the board it was opened from. */
 export interface ProjectsTitleCommandOptions {
   /**
@@ -14,6 +16,7 @@ export interface ProjectsTitleCommandOptions {
   adding: boolean;
   onAddProject(): void;
   favoritesPanel?: (close: () => void) => HTMLElement;
+  favoritesDisabledReason?: string | null;
 }
 
 /**
@@ -37,7 +40,9 @@ export function buildProjectsTitleCommands(
       label: "Sync projects to Favorites",
       panel: options.favoritesPanel,
       disabledReason:
-        options.favoritesPanel === undefined ? "Favorites are unavailable in this view." : null,
+        options.favoritesPanel === undefined
+          ? FAVORITES_AVAILABILITY_TEXT.unavailable
+          : (options.favoritesDisabledReason ?? null),
     },
   ];
 }

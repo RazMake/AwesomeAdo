@@ -797,12 +797,17 @@ describe("projectsView - catalog menu", () => {
 
 describe("projectsView - Favorites integration", () => {
   it("syncs linked queries at every filtered level and appends the exact live URL", async () => {
-    const sync = vi.fn(async () => {});
+    const sync = vi.fn(async () => ({ syncId: "sync", removed: [] }));
     const projectUrl = "https://dev.azure.com/org/other/_queries/query/project-query";
     const root = await renderBoard(
       createContext({
         services: createServices({
-          catalogFavorites: { readPath: async () => "Work", sync, openSettings: vi.fn() },
+          catalogFavorites: {
+            status: async () => ({ path: "Work", refusal: null, existing: [] }),
+            sync,
+            restore: async () => ({ restored: [], failed: [] }),
+            openSettings: vi.fn(),
+          },
           projectQueries: {
             readLinks: async () => ({
               links: [1, 3, 4, 5].map((workItemId) => ({
@@ -823,14 +828,74 @@ describe("projectsView - Favorites integration", () => {
     expect(titles(root)).toEqual(["Payments"]);
     openMenu(root.querySelector(".awesomeado-view__title")!);
     menuCommand("Sync projects to Favorites").click();
+    await vi.waitFor(() => expect(document.body.textContent).toContain("Sync replaces"));
+    [...document.querySelectorAll("button")]
+      .find((button) => button.textContent === "Sync")!
+      .click();
     await vi.waitFor(() => expect(sync).toHaveBeenCalledOnce());
-    expect(sync).toHaveBeenCalledWith("query-1", "Work", [
-      { title: "Payments", url: `${projectUrl}-1` },
-      { title: "Retry on decline", url: `${projectUrl}-3` },
-      { title: "All Projects Catalog View", url: window.location.href },
-    ]);
+    expect(sync).toHaveBeenCalledWith(
+      "query-1",
+      "Work",
+      [
+        { title: "Payments", url: `${projectUrl}-1` },
+        { title: "Retry on decline", url: `${projectUrl}-3` },
+        { title: "All Projects Catalog View", url: window.location.href },
+      ],
+      [],
+    );
     expect(readProjectsUrlTagCondition(window.location.search).required).toEqual(new Set(["api"]));
     expect(document.body.textContent).not.toContain("project(s) have no query");
+  });
+});
+
+describe("projectsView - Favorites availability", () => {
+  it("disables Favorites sync with the worker's refusal", async () => {
+    const root = await renderBoard(
+      createContext({
+        services: createServices({
+          catalogFavorites: {
+            status: async () => ({
+              path: "Work",
+              refusal: "Favorites access is required.",
+              existing: [],
+            }),
+            sync: async () => ({ syncId: "sync", removed: [] }),
+            restore: async () => ({ restored: [], failed: [] }),
+            openSettings: vi.fn(),
+          },
+        }),
+      }),
+    );
+
+    openMenu(root.querySelector(".awesomeado-view__title")!);
+    const command = menuCommand("Sync projects to Favorites");
+    expect(command.disabled).toBe(true);
+    expect(command.title).toBe("Favorites access is required.");
+  });
+
+  it("refreshes Favorites availability on visibility and stops after disposal", async () => {
+    const status = vi.fn(async () => ({ path: "Work", refusal: null, existing: [] }));
+    const root = await renderBoard(
+      createContext({
+        services: createServices({
+          catalogFavorites: {
+            status,
+            sync: async () => ({ syncId: "sync", removed: [] }),
+            restore: async () => ({ restored: [], failed: [] }),
+            openSettings: vi.fn(),
+          },
+        }),
+      }),
+    );
+    await vi.waitFor(() => expect(status).toHaveBeenCalledOnce());
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+    document.dispatchEvent(new Event("visibilitychange"));
+    await vi.waitFor(() => expect(status).toHaveBeenCalledTimes(2));
+
+    projectsView.dispose!(root);
+    document.dispatchEvent(new Event("visibilitychange"));
+    await Promise.resolve();
+    expect(status).toHaveBeenCalledTimes(2);
   });
 });
 

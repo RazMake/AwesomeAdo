@@ -1,89 +1,103 @@
-import type { ILogger } from "../logging/ILogger";
-import { parseAdoQueryId } from "../navigation/AdoQueryRoute";
-import type { QueryFavoritesPaths } from "../settings/QueryFavoritesPaths";
-
-import type { FavoriteLink, Favorites } from "./Favorites";
+import type {
+  CatalogFavoritesStatus,
+  CatalogFavoritesSyncResult,
+  FavoriteLink,
+  FavoritesRestoreOutcome,
+} from "./Favorites";
 
 export const SYNC_CATALOG_FAVORITES = "awesomeado:sync-catalog-favorites";
+export const CATALOG_FAVORITES_STATUS = "awesomeado:catalog-favorites-status";
+export const RESTORE_CATALOG_FAVORITES = "awesomeado:restore-catalog-favorites";
+
+export interface CatalogFavoritesStatusRequest {
+  type: typeof CATALOG_FAVORITES_STATUS;
+  queryId: string;
+}
 
 export interface CatalogFavoritesRequest {
   type: typeof SYNC_CATALOG_FAVORITES;
   queryId: string;
   path: string;
   links: readonly FavoriteLink[];
+  /** Existing favorite ids the user chose to keep. */
+  keep: readonly string[];
 }
 
-export interface CatalogFavoritesResponse {
-  ok: boolean;
-  error?: string;
+export interface CatalogFavoritesRestoreRequest {
+  type: typeof RESTORE_CATALOG_FAVORITES;
+  queryId: string;
+  syncId: string;
+  ids: readonly string[];
 }
 
-export function claimsCatalogFavorites(value: unknown): boolean {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    (value as { type?: unknown }).type === SYNC_CATALOG_FAVORITES
-  );
+type WorkerResponse<T> = ({ ok: true } & T) | { ok: false; error: string };
+
+export type CatalogFavoritesStatusResponse = WorkerResponse<CatalogFavoritesStatus>;
+export type CatalogFavoritesResponse = WorkerResponse<CatalogFavoritesSyncResult>;
+export type CatalogFavoritesRestoreResponse = WorkerResponse<FavoritesRestoreOutcome>;
+
+export function claimsCatalogFavoritesStatus(
+  value: unknown,
+): value is CatalogFavoritesStatusRequest {
+  return claims(value, CATALOG_FAVORITES_STATUS);
 }
 
-function isQueryLink(value: unknown): value is FavoriteLink {
-  if (typeof value !== "object" || value === null) return false;
-  const candidate = value as Partial<FavoriteLink>;
-  return (
-    typeof candidate.title === "string" &&
-    candidate.title.trim() !== "" &&
-    typeof candidate.url === "string" &&
-    parseAdoQueryId(candidate.url) !== null
-  );
+export function claimsCatalogFavorites(value: unknown): value is CatalogFavoritesRequest {
+  return claims(value, SYNC_CATALOG_FAVORITES);
 }
 
-function isValidRequest(value: unknown): value is CatalogFavoritesRequest {
-  if (!claimsCatalogFavorites(value)) return false;
-  const candidate = value as Partial<CatalogFavoritesRequest>;
-  return (
-    typeof candidate.queryId === "string" &&
-    typeof candidate.path === "string" &&
-    Array.isArray(candidate.links) &&
-    candidate.links.length > 0 &&
-    candidate.links.every(isQueryLink)
-  );
+export function claimsCatalogFavoritesRestore(
+  value: unknown,
+): value is CatalogFavoritesRestoreRequest {
+  return claims(value, RESTORE_CATALOG_FAVORITES);
 }
 
-export class CatalogFavoritesHandler {
-  constructor(
-    private readonly paths: Pick<QueryFavoritesPaths, "read">,
-    private readonly favorites: Favorites,
-    private readonly logger: ILogger,
-  ) {}
-
-  async serve(message: unknown, tabUrl: string): Promise<CatalogFavoritesResponse> {
-    try {
-      if (!isValidRequest(message) || parseAdoQueryId(tabUrl) !== message.queryId) {
-        throw new Error("Favorites sync requires the catalog's own Azure DevOps query tab.");
-      }
-      const last = message.links.at(-1);
-      if (last === undefined || parseAdoQueryId(last.url) !== message.queryId) {
-        throw new Error("The final Favorite must point to the catalog query.");
-      }
-      const path = await this.paths.read(message.queryId);
-      if (path.trim() === "" || path !== message.path) {
-        throw new Error(
-          "The Favorites path changed. Reopen Sync projects to Favorites and try again.",
-        );
-      }
-      await this.favorites.replace(path, message.links);
-      return { ok: true };
-    } catch (error) {
-      this.logger.error("Catalog Favorites sync failed", error);
-      return { ok: false, error: error instanceof Error ? error.message : String(error) };
-    }
-  }
+export async function requestCatalogFavoritesStatus(
+  send: (
+    request: CatalogFavoritesStatusRequest,
+  ) => Promise<CatalogFavoritesStatusResponse | undefined>,
+  queryId: string,
+): Promise<CatalogFavoritesStatus> {
+  return unwrapResponse(await send({ type: CATALOG_FAVORITES_STATUS, queryId }));
 }
 
 export async function sendCatalogFavorites(
   send: (request: CatalogFavoritesRequest) => Promise<CatalogFavoritesResponse | undefined>,
   request: Omit<CatalogFavoritesRequest, "type">,
-): Promise<void> {
-  const response = await send({ type: SYNC_CATALOG_FAVORITES, ...request });
-  if (!response?.ok) throw new Error(response?.error ?? "The Favorites worker did not respond.");
+): Promise<CatalogFavoritesSyncResult> {
+  return unwrapResponse(await send({ type: SYNC_CATALOG_FAVORITES, ...request }));
+}
+
+export async function sendCatalogFavoritesRestore(
+  send: (
+    request: CatalogFavoritesRestoreRequest,
+  ) => Promise<CatalogFavoritesRestoreResponse | undefined>,
+  request: Omit<CatalogFavoritesRestoreRequest, "type">,
+): Promise<FavoritesRestoreOutcome> {
+  return unwrapResponse(await send({ type: RESTORE_CATALOG_FAVORITES, ...request }));
+}
+
+function claims(value: unknown, type: string): boolean {
+  return typeof value === "object" && value !== null && (value as { type?: unknown }).type === type;
+}
+
+function unwrapResponse<T>(response: unknown): T {
+  if (!isResponse(response)) throw new Error("The Favorites worker did not respond.");
+  if (!response.ok) {
+    if (typeof response.error !== "string") {
+      throw new Error("The Favorites worker did not respond.");
+    }
+    throw new Error(response.error);
+  }
+  const { ok, ...payload } = response;
+  void ok;
+  return payload as T;
+}
+
+function isResponse(value: unknown): value is { ok: boolean; error?: unknown } {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { ok?: unknown }).ok === "boolean"
+  );
 }

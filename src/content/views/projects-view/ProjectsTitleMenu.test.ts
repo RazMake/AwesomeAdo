@@ -40,4 +40,36 @@ describe("buildProjectsTitleCommands", () => {
 
     expect(add?.disabledReason).toContain("already open");
   });
+
+  it("always offers Favorites sync and explains why it is unavailable without a panel", () => {
+    const commands = buildProjectsTitleCommands({
+      projectType: "Epic",
+      adding: false,
+      onAddProject: vi.fn(),
+    });
+
+    expect(commands[1]?.label).toBe("Sync projects to Favorites");
+    expect(commands[1]?.disabledReason).toBe("Favorites are unavailable in this view.");
+  });
+
+  it("uses the current Favorites availability reason and leaves a safe command enabled", () => {
+    const panel = vi.fn(() => document.createElement("div"));
+    const disabled = buildProjectsTitleCommands({
+      projectType: "Epic",
+      adding: false,
+      onAddProject: vi.fn(),
+      favoritesPanel: panel,
+      favoritesDisabledReason: "Favorites access is required.",
+    });
+    const enabled = buildProjectsTitleCommands({
+      projectType: "Epic",
+      adding: false,
+      onAddProject: vi.fn(),
+      favoritesPanel: panel,
+      favoritesDisabledReason: null,
+    });
+
+    expect(disabled[1]?.disabledReason).toBe("Favorites access is required.");
+    expect(enabled[1]?.disabledReason).toBeNull();
+  });
 });

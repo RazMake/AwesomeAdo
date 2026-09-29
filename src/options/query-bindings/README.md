@@ -31,13 +31,19 @@ selection from the options page itself.
 ### Personal catalog Favorites
 
 All Projects Catalog bindings also show a **Favorites path** field, relative to Favorites bar /
-Bookmarks bar. Its autocomplete refreshes from the browser's existing folders on focus, and new
-paths may be typed. Empty text clears the destination. This field remains editable on read-only
-shared catalogs because it belongs to the reader, not the publisher.
+Bookmarks bar. Syncing replaces the favorites in that folder with this catalog's project queries;
+subfolders remain untouched, and the sync popup can restore removed favorites immediately after a
+sync. Empty text turns syncing off. The Favorites bar root and malformed paths are refused rather
+than saved. The field stays disabled until the user chooses **Allow Favorites access** and the
+browser grants that optional access; the field then unlocks with folder suggestions. If access is
+denied or later removed, the field locks again and a previously saved folder stays visible,
+read-only. Once access is allowed, the field is editable even on read-only shared catalogs because
+it belongs to the reader, not the publisher.
 
-`FavoritesPathEditor` accepts a `QueryFavoritesPaths` store, a folder-list reader, and an error sink.
-It saves independently of the shared binding form, so editing it never publishes configuration to
-ADO. The path follows native browser-account sync and configuration file export/import.
+`FavoritesPathEditor` accepts a `QueryFavoritesPaths` store, `FavoritesAccess`, a folder-list
+reader, and logging callbacks. It saves independently of the shared binding form, so editing it
+never publishes configuration to ADO. The path follows native browser-account sync and configuration
+file export/import.
 
 ### Shared (read-only) queries
 

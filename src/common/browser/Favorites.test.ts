@@ -1,17 +1,41 @@
 import { describe, expect, it } from "vitest";
 
-import { favoritesPathSegments } from "./Favorites";
+import {
+  FAVORITES_REFUSALS,
+  favoritesPathSegments,
+  favoritesReadFailed,
+  normalizeFavoritesFolderPath,
+} from "./Favorites";
 
 describe("Favorites destination paths", () => {
-  it("accepts nested paths relative to the favorites bar", () => {
-    expect(favoritesPathSegments(" Work / Projects ")).toEqual(["Work", "Projects"]);
-    expect(favoritesPathSegments("Work\\Projects")).toEqual(["Work", "Projects"]);
+  it.each([
+    ["/", null],
+    ["\\", null],
+    ["//", null],
+    [" / ", null],
+    [".", null],
+    ["..", null],
+    ["Work//X", null],
+    ["Work/", null],
+    ["", null],
+    ["   ", null],
+    [" Work\\Projects ", "Work/Projects"],
+  ])("normalizes %j to %j", (path, expected) => {
+    expect(normalizeFavoritesFolderPath(path)).toBe(expected);
   });
 
-  it.each(["", " ", "/", "/Work", "Work/", "Work//Projects", ".", "..", "Work/../Projects"])(
-    "refuses unsafe destination %j",
-    (path) => {
-      expect(() => favoritesPathSegments(path)).toThrow("beneath Favorites bar");
-    },
-  );
+  it("returns normalized segments for a nested path", () => {
+    expect(favoritesPathSegments(" Work / Projects ")).toEqual(["Work", "Projects"]);
+  });
+
+  it("refuses unsafe destinations with the user-facing error", () => {
+    expect(() => favoritesPathSegments("Work//Projects")).toThrow(FAVORITES_REFUSALS.invalidPath);
+  });
+
+  it("formats Favorites read failures", () => {
+    expect(favoritesReadFailed(new Error("Bookmarks unavailable"))).toBe(
+      "Could not read your Favorites: Bookmarks unavailable",
+    );
+    expect(favoritesReadFailed("Unavailable")).toBe("Could not read your Favorites: Unavailable");
+  });
 });

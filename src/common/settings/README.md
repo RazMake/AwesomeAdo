@@ -91,8 +91,10 @@ is not "device-local" — but they never travel to or from a shared configuratio
 ADR-075.
 
 `PersonalQueryFavoritesPaths` reads and writes one query's destination through the personal settings
-store. Empty text clears that query's path. Paths use `/` (also accepting `\` on input), are relative
-to Favorites bar / Bookmarks bar, and cannot address the bar itself. The map lives at
+store. Blank text means no folder and clears that query's path. Paths use `/` (also accepting `\` on
+input), are relative to Favorites bar / Bookmarks bar, and the bar itself is never stored because
+syncing it could replace unrelated favorites. Invalid paths received through browser sync or a file
+import are ignored. The map lives at
 `settings.queryFavoritesPaths`, follows the user's native browser-account sync, and round-trips in
 full configuration files. It is never placed in binding properties or team configuration.
 
