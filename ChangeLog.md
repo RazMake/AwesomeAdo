@@ -5,6 +5,8 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ## Next Version
 
+## 0.15
+
 ### New Features
 
 - New **Consumers View** for tree queries whose top item groups consumers: each consumer opens onto
