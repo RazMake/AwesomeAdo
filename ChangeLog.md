@@ -5,7 +5,7 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ## Next Version
 
-## 0.15
+## 0.16
 
 ### New Features
 
