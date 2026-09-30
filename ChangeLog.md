@@ -42,6 +42,13 @@ builds use the repository's `Major.Minor.Build` release versioning.
   and can't be edited until you choose **Allow Favorites access**, after which it suggests your
   folders as you type.
 
+### Bug Fixes
+
+- Project Tracking's **Assigned To** filter now offers everyone assigned to any item, including
+  Features and other planning items, and selecting a person shows the items they own even when none
+  of those items' children are theirs. Reassigning an item now updates the filter's people and the
+  filtered tree straight away instead of keeping the previous assignee until a refresh.
+
 ## 0.15
 
 ### New Features

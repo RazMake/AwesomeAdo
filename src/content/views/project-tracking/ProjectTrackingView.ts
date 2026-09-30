@@ -123,8 +123,9 @@ import { writeItemPriority } from "../item-priority/writeItemPriority";
 import { renderItemStatusBadge, widestStatusLabelLength } from "../item-status/itemStatusBadge";
 
 import {
-  assigneesInPrimaryWork,
+  assigneesInTree,
   matchesAssigneeFilter,
+  planningIdsOwnedBySelection,
   type AssigneeOption,
 } from "./assignee-filter/assigneeFilter";
 import { applyRanksToTree } from "./drag-reorder/applyMoveToTree";
@@ -1976,6 +1977,27 @@ function renderAssigneeControls(
   });
 }
 
+/**
+ * The Assigned To selector plus a way to rebuild it in place. Its people are a snapshot of the tree,
+ * so a reassignment must re-derive them: otherwise the dropdown keeps a person who no longer owns
+ * anything and never offers the one who now does.
+ */
+function renderRefreshableAssigneeControls(
+  context: DataDrivenViewContext,
+  root: TrackedWorkItem,
+  assignees: readonly AssigneeOption[],
+  session: BoardSession,
+  onChange: () => void,
+): { element: HTMLElement; refresh: () => void } {
+  let current = renderAssigneeControls(context, assignees, session, onChange);
+  const refresh = (): void => {
+    const next = renderAssigneeControls(context, assigneesInTree([root]), session, onChange);
+    current.element.replaceWith(next.element);
+    current = next;
+  };
+  return { element: current.element, refresh };
+}
+
 /** Build the one-press Done-only filter using the same frame/fill language as the adjacent filters. */
 function renderResolvedOnlyToggle(
   context: DataDrivenViewContext,
@@ -2124,6 +2146,8 @@ function renderHeader(
   header: HTMLElement;
   /** Re-labels the project title after the root is renamed; the tree repaint cannot reach it. */
   setHeaderTitle: (title: string) => void;
+  /** Re-derives the Assigned To options from the live tree after an assignee or crew tag changes. */
+  refreshAssignees: () => void;
   sprintPickerHandle: SprintPickerHandle;
   expandAll: HTMLButtonElement;
   collapseAll: HTMLButtonElement;
@@ -2137,8 +2161,9 @@ function renderHeader(
     session,
     boardControls.onHeaderFilterChange,
   );
-  const assignedToFilter = renderAssigneeControls(
+  const assignedToFilter = renderRefreshableAssigneeControls(
     context,
+    root,
     choices.assignees,
     session,
     boardControls.onHeaderFilterChange,
@@ -2174,7 +2199,17 @@ function renderHeader(
     extensionVersion: context.extensionVersion,
   });
 
-  return { header, setHeaderTitle, sprintPickerHandle, expandAll, collapseAll, refresh, techLead };
+  const refreshAssignees = assignedToFilter.refresh;
+  return {
+    header,
+    setHeaderTitle,
+    refreshAssignees,
+    sprintPickerHandle,
+    expandAll,
+    collapseAll,
+    refresh,
+    techLead,
+  };
 }
 
 /**
@@ -2236,6 +2271,8 @@ interface BoardHandle {
    * than once (e.g. after a fresh person is picked and the roster grows).
    */
   applyCrewMembers(members: FeatureCrewMember[]): void;
+  /** Re-offer the Assigned To filter and re-filter the tree after an item's assignee changed. */
+  onAssigneeCommitted(): void;
   /**
    * Feed the count of in-flight user-triggered roster reconciles (tag picks / inline assignee
    * changes) so the shared "Saving…" indicator reflects those saves too, not just state writes.
@@ -2451,16 +2488,18 @@ function visibleIdsForPass(
   params: BoardTreeRendererParams,
   filter: TreeFilter,
 ): ReadonlySet<number> {
-  return visibleWithAddedItems(
-    workItemIdsVisibleUnderPrimaryFilter(
-      [params.root],
-      [...params.typeMap.values()],
-      (item, subject) =>
-        matchesTreeFilter(item, subject === "primary-work" ? filter : unscheduledFilter(filter)),
+  const types = [...params.typeMap.values()];
+  const visible = new Set(
+    workItemIdsVisibleUnderPrimaryFilter([params.root], types, (item, subject) =>
+      matchesTreeFilter(item, subject === "primary-work" ? filter : unscheduledFilter(filter)),
     ),
-    params.root,
-    params.session.addedIds,
   );
+  for (const id of planningIdsOwnedBySelection(params.root, types, filter.assignees, (item) =>
+    matchesTreeFilter(item, unscheduledFilter(filter)),
+  )) {
+    visible.add(id);
+  }
+  return visibleWithAddedItems(visible, params.root, params.session.addedIds);
 }
 
 function createBoardTreeRenderer(params: BoardTreeRendererParams): () => void {
@@ -3210,7 +3249,7 @@ function mountBoardHeader(params: {
     // nothing else on the surface asks for them.
     {
       areaPaths: params.areaPaths,
-      assignees: assigneesInPrimaryWork([root], context.services.getTypes()),
+      assignees: assigneesInTree([root]),
     },
     session,
     core.chipContext,
@@ -3338,24 +3377,23 @@ function renderBoard(params: RenderBoardParams): BoardHandle {
   // first user event can arrive, mirroring the root-command callback directly above.
   let onHeaderFilterChange: () => void = () => {};
 
-  const { header, setHeaderTitle, sprintPickerHandle, expandAll, collapseAll, refresh, techLead } =
-    mountBoardHeader({
-      doc,
-      root,
-      context,
-      typeMap,
-      sprintWindow,
-      itemAreaPaths,
-      areaPaths,
-      session,
-      core,
-      folderPath,
-      contextMenu,
-      onRootChanged: () => onRootChanged(),
-      onHeaderFilterChange: () => onHeaderFilterChange(),
-    });
-  refresh.element.onclick = () => params.onRefresh();
-  board.append(header);
+  const headerParts = mountBoardHeader({
+    doc,
+    root,
+    context,
+    typeMap,
+    sprintWindow,
+    itemAreaPaths,
+    areaPaths,
+    session,
+    core,
+    folderPath,
+    contextMenu,
+    onRootChanged: () => onRootChanged(),
+    onHeaderFilterChange: () => onHeaderFilterChange(),
+  });
+  headerParts.refresh.element.onclick = () => params.onRefresh();
+  board.append(headerParts.header);
 
   const { renderTreeContent, refreshFilters } = mountBoardBody({
     doc,
@@ -3364,14 +3402,13 @@ function renderBoard(params: RenderBoardParams): BoardHandle {
     typeMap,
     session,
     board,
-    sprintPickerHandle,
+    // The sprint picker and expand/collapse buttons the body drives all come from the header.
+    ...headerParts,
     chipContext,
     contextMenu,
     sprintWindow,
     areaPaths: itemAreaPaths,
     core,
-    expandAll,
-    collapseAll,
   });
 
   renderTreeContent();
@@ -3381,26 +3418,31 @@ function renderBoard(params: RenderBoardParams): BoardHandle {
   // re-labelled here; the tree still repaints because the root's sprint reaches its children's rows,
   // and the filter row because the root can be flagged from this menu like any other item.
   onRootChanged = () => {
-    setHeaderTitle(root.title);
+    headerParts.setHeaderTitle(root.title);
     refreshFilters();
     renderTreeContent();
   };
-  wireSprintPickerRerender(sprintPickerHandle, session, renderTreeContent);
+  wireSprintPickerRerender(headerParts.sprintPickerHandle, session, renderTreeContent);
 
   return {
     element: board,
     applyCrewMembers: (members) => {
       applyFeatureCrewTags([root], members);
       // The header is not part of the tree re-render, so refresh the epic's TechLead in place.
-      if (techLead) populateTechLead(techLead, root, chipContext);
+      if (headerParts.techLead) populateTechLead(headerParts.techLead, root, chipContext);
+      headerParts.refreshAssignees();
       refreshFilters();
+      renderTreeContent();
+    },
+    onAssigneeCommitted: () => {
+      headerParts.refreshAssignees();
       renderTreeContent();
     },
     setReconcilePending: writeStatus.setReconcilePending,
     repaint: renderTreeContent,
     whenWritesSettled: () => core.writes.whenIdle(),
-    setRefreshBusy: refresh.setBusy,
-    setRefreshFailed: refresh.setFailed,
+    setRefreshBusy: headerParts.refresh.setBusy,
+    setRefreshFailed: headerParts.refresh.setFailed,
   };
 }
 
@@ -3705,6 +3747,8 @@ function renderLoadedBoard(params: RenderLoadedBoardParams): BoardHandle | null 
         );
   const onAssigneeChange = (user: DirectoryUser): void => {
     crewSync?.onAssigneeChange(user);
+    // Only a user pick reaches here, long after the synchronous `board` assignment below.
+    board.onAssigneeCommitted();
   };
   // Only offer tag editing when a roster can actually be stored (a crew sync exists); otherwise the
   // pills stay read-only rather than pretending to persist a choice that has nowhere to go.

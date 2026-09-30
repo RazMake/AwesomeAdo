@@ -1728,6 +1728,44 @@ describe("ProjectTrackingView — assignee writes", () => {
     expect(label.textContent).toBe("Dana Scott");
   });
 
+  it("refreshes the active filter and its people after a committed assignment", async () => {
+    const tree = createFixtureTree();
+    tree.children[1]!.assignedTo = createUser("Bob Jones");
+    tree.children[1]!.iterationPath = "Project\\Sprint 1";
+    tree.children[1]!.sprintName = "Sprint 1";
+    const { root } = await renderBoardWithWrites({
+      loadTree: async () => ({ isTreeQuery: true, roots: [tree], error: null }),
+      userDirectory: danaDirectory,
+    });
+    const trigger = root.querySelector<HTMLButtonElement>(".awesomeado-assignee-filter__trigger")!;
+    trigger.click();
+    const bobOption = [
+      ...root.querySelectorAll<HTMLElement>(".awesomeado-assignee-filter__option"),
+    ].find((option) => option.textContent === "Bob Jones")!;
+    const bobCheckbox = bobOption.querySelector<HTMLInputElement>("input[type=checkbox]")!;
+    bobCheckbox.checked = true;
+    bobCheckbox.dispatchEvent(new Event("change", { bubbles: true }));
+
+    const { chip, search } = openRowPicker(root);
+    await pickFromPicker(chip, search, "dana", "Dana Scott");
+
+    const visibleTree = root.querySelector(".awesomeado-tracking__tree")?.textContent;
+    expect(visibleTree).not.toContain("User Authentication");
+    expect(visibleTree).toContain("Data Migration");
+    const refreshedTrigger = root.querySelector<HTMLButtonElement>(
+      ".awesomeado-assignee-filter__trigger",
+    )!;
+    expect(refreshedTrigger.getAttribute("aria-pressed")).toBe("true");
+
+    refreshedTrigger.click();
+    refreshedTrigger.click();
+    const offered = [
+      ...root.querySelectorAll<HTMLElement>(".awesomeado-assignee-filter__option"),
+    ].map((option) => option.textContent);
+    expect(offered).toContain("Bob Jones");
+    expect(offered).toContain("Dana Scott");
+  });
+
   it("leaves the chip untouched when Azure DevOps rejects the write", async () => {
     const { root, writes } = await renderBoardWithWrites({
       writeField: async (request) => {

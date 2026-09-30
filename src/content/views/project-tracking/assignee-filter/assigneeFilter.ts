@@ -22,23 +22,14 @@ export function assigneeKeyOf(item: TrackedWorkItem): string | null {
 }
 
 /**
- * The distinct people assigned to Primary work or to anything configured beneath it.
+ * The distinct people assigned to any item in the tree, planning levels included.
  *
- * Deliberately narrower than "everyone in the tree": the planning levels above Primary work carry
- * owners (a Tech Lead, a milestone owner) who are accountable for a branch rather than working in
- * it, and offering them here would answer "show me this person's work" with a whole project.
- *
- * A catalog with no Primary work flagged has no such distinction to draw, so every assigned person
- * is offered — the same legacy rule the rest of the board falls back to.
+ * Owners of planning items (a Feature, a milestone) are offered too: selecting them shows the items
+ * they own even when nobody beneath is theirs — see {@link planningIdsOwnedBySelection}.
  */
-export function assigneesInPrimaryWork(
-  roots: readonly TrackedWorkItem[],
-  types: readonly TypeCatalogEntry[],
-): AssigneeOption[] {
-  const delivery = primaryWorkWithDescendants(types);
+export function assigneesInTree(roots: readonly TrackedWorkItem[]): AssigneeOption[] {
   const byKey = new Map<string, AssigneeOption>();
   for (const item of flattenWorkItems(roots)) {
-    if (delivery.size > 0 && !delivery.has(item.type)) continue;
     const key = assigneeKeyOf(item);
     const user = item.assignedTo;
     if (key === null || user === null || byKey.has(key)) continue;
@@ -51,6 +42,34 @@ export function assigneesInPrimaryWork(
   return [...byKey.values()].sort((left, right) =>
     left.label.localeCompare(right.label, undefined, { sensitivity: "base" }),
   );
+}
+
+/**
+ * Ids of planning items (above Primary work) assigned to a selected person, plus their ancestors.
+ *
+ * The Primary-work filter pass never judges a planning item that holds delivery, so without this a
+ * selected Feature owner would show nothing whenever none of the Feature's work is theirs. `accepts`
+ * lets the caller still apply its other filters to the owned item.
+ */
+export function planningIdsOwnedBySelection(
+  root: TrackedWorkItem,
+  types: readonly TypeCatalogEntry[],
+  selected: ReadonlySet<string>,
+  accepts: (item: TrackedWorkItem) => boolean,
+): Set<number> {
+  const ids = new Set<number>();
+  if (selected.size === 0) return ids;
+  const delivery = primaryWorkWithDescendants(types);
+  const visit = (item: TrackedWorkItem, ancestors: readonly number[]): void => {
+    const key = assigneeKeyOf(item);
+    if (!delivery.has(item.type) && key !== null && selected.has(key) && accepts(item)) {
+      ids.add(item.id);
+      for (const id of ancestors) ids.add(id);
+    }
+    for (const child of item.children) visit(child, [...ancestors, item.id]);
+  };
+  visit(root, []);
+  return ids;
 }
 
 /**
