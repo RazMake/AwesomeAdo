@@ -15,8 +15,9 @@ Lane selection.
 - `SprintBoard.ts` -> `renderSprintBoard` - groups cards by exact area-path lane and the first four
   configured application-state columns (Queue through Done), keeps their horizontally synchronized
   titles and per-column Primary work counts sticky below the control header, keeps each lane's name
-  and item count visible until the next lane pushes it away, and persists card and direct-child
-  drag-and-drop moves. When no card would be drawn it renders the shared
+  and item count visible until the next lane pushes it away, keeps card popups visible at clipped
+  lane edges, and persists card and direct-child drag-and-drop moves. When no card would be drawn it
+  renders the shared
   [`EmptyState`](../../../common/view-common/control/EmptyState/README.md) panel instead of an empty
   lane table, so a fully filtered board never reads as a failed load.
 - `SprintHeader.ts` -> `renderSprintHeader` - assembles the sticky, theme-aware control card with
@@ -160,8 +161,8 @@ clearing filters. Both badges explain their counts with a two-line `Completed: x
 Queue, Active, and Waiting cards use the tall format; Done cards start compact and expand on click or
 keyboard activation. Both formats place the ID in the top-left corner and a tag-free shared Assigned
 To control in the top-right, followed by the wrapped title. The shared `?` button beside the ID opens
-Created, Last Modified, and the sanitized description in either size. The popup stays at least
-280px wide, wraps long prose/code/table content without a horizontal scrollbar, and scrolls
+Created, Last Modified, and the sanitized description in either size. The popup opens 494px wide
+(at least 364px, never wider than the window), wraps long prose/code/table content without a horizontal scrollbar, and scrolls
 vertically when its height exceeds 320px. A shared Priority chip sits on the same top row in both
 sizes; it is read-only while a Done card is compact and editable after expansion. The row below places the shared ETA
 control on the left and the child-items badge on the right. Assigned To remains visually unchanged but

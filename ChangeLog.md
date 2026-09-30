@@ -41,6 +41,8 @@ builds use the repository's `Major.Minor.Build` release versioning.
   syncing replaces that folder's favorites, refuses the Favorites bar itself and malformed paths,
   and can't be edited until you choose **Allow Favorites access**, after which it suggests your
   folders as you type.
+- Sprint View's card description popup (the `?` beside the ID) is now about 30% wider, so longer
+  descriptions, tables, and code need less scrolling.
 
 ### Bug Fixes
 
@@ -48,6 +50,8 @@ builds use the repository's `Major.Minor.Build` release versioning.
   Features and other planning items, and selecting a person shows the items they own even when none
   of those items' children are theirs. Reassigning an item now updates the filter's people and the
   filtered tree straight away instead of keeping the previous assignee until a refresh.
+- Sprint View card **Assigned To** and `?` popups now open visibly even for cards near the bottom of
+  a lane or elsewhere along the horizontally scrolled board.
 
 ## 0.15
 

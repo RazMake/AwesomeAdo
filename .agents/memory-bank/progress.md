@@ -164,8 +164,10 @@ This is a flattened snapshot of what exists now, not a build log.
   lightly tinted at rest and gain 90%-opaque backdrops while cards scroll beneath them at half the
   header card's resting gap below
   the sticky controls while filter pills scroll beneath them. Per-lane names and item counts stick
-  vertically until the next lane pushes them away, with no table-wide total. Sprint, Lane, Project,
-  person, marker, and activity filters evaluate only Primary work. Arbitrarily deep planning chains
+  vertically until the next lane pushes them away, with no table-wide total. Horizontal
+  synchronization uses relative offsets rather than transformed card-grid ancestors, allowing card
+  popups near clipped lane edges to escape to the viewport and remain visible. Sprint, Lane,
+  Project, person, marker, and activity filters evaluate only Primary work. Arbitrarily deep planning chains
   remain available as context and complete non-primary descendant trees remain visible in indented
   child rollups. Only Primary-work types
   render as cards, and the shared

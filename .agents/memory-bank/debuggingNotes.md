@@ -426,6 +426,23 @@ bindings ...` / `Pulled team configuration ...`.
 - FIX / RULE: never put clipping overflow on an element that also hosts a popup. Keep the host
   overflow-visible and apply ellipsis to the trigger text itself. This preserves truncation while
   allowing the popup to remain absolutely positioned under its control.
+- SECOND SYMPTOM: Sprint card Assigned To and `?` popups sometimes did nothing on cards at the bottom
+  of the board (Bugs were incidental). `?` lit up as if open but showed nothing; Assigned To showed
+  nothing at all.
+- SECOND ROOT CAUSE (verified 2026-09-29 in real Edge layout): the lane viewport legitimately clips
+  its horizontally shifted grid, so a bottom card's popup escaped to `position:fixed`. The grid's
+  `transform` plus `will-change:transform` made that grid the fixed-position containing block, so
+  viewport coordinates resolved against the grid. The `?` popup landed at y=1250 in an 874px
+  viewport. The picker was partly visible, but focusing its search box scrolled the clipped lane.
+  The popup host closes escaped popups on any outside scroll, so the picker closed within frames.
+- SECOND FIX / RULE: horizontally synchronize popup-bearing grids with relative `left` offsets, not
+  transforms. No transformed, `will-change:transform`, filtered, or contained ancestor may sit
+  between an escaping popup and the viewport.
+- RECIPE (real layout without touching team data): bundle a harness that renders `sprintView` with
+  the test file's fake services (`esbuild --bundle --format=iife`), open it as a `file://` page in
+  the CDP browser (`PUT /json/new?<url>`), click triggers, and hit-test popup points with
+  `document.elementFromPoint`. Re-apply the suspect style in-page to compare before and after. Do
+  not change Sprint Lanes on a live board to find cards; it publishes team-shared configuration.
 
 ## A 100%-opaque sticky header was transparent because its base CSS token did not exist
 

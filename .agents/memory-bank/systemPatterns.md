@@ -151,7 +151,7 @@ label). Per-instance `classPrefix`, like `CheckboxFilter`.
 
 `control/ItemDetails` owns the shared `?` button paint plus Created / Last Modified / sanitized
 description content. Project Tracking places that content inline; Sprint cards place it in a popup,
-including compact Done cards. Sprint constrains that popup to a useful 280–380px width, wraps rich
+including compact Done cards. Sprint constrains that popup to a useful 364–494px width, wraps rich
 content (including code and tables), suppresses horizontal scrolling, and caps height with vertical
 scrolling.
 

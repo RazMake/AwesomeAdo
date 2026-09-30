@@ -503,7 +503,10 @@ function expectBoardScrolling(root: HTMLElement): void {
   const headerGrid = root.querySelector<HTMLElement>(".awesomeado-sprint__board-header-grid")!;
   scroller.scrollLeft = 48;
   scroller.dispatchEvent(new Event("scroll"));
-  expect(headerGrid.style.transform).toBe("translateX(-48px)");
+  expect(headerGrid.style.position).toBe("relative");
+  expect(headerGrid.style.left).toBe("-48px");
+  expect(headerGrid.style.transform).toBe("");
+  expect(headerGrid.style.willChange).toBe("");
   const lane = root.querySelector<HTMLElement>(".awesomeado-sprint__lane")!;
   expect(lane.style.position).toBe("sticky");
   expect(lane.style.left).toBe("");
@@ -524,9 +527,11 @@ function expectBoardScrolling(root: HTMLElement): void {
   expect(lane.querySelector<HTMLElement>(".awesomeado-sprint__lane-count")!.style.opacity).toBe(
     "0.65",
   );
-  expect(root.querySelector<HTMLElement>(".awesomeado-sprint__lane-grid")!.style.transform).toBe(
-    "translateX(-48px)",
-  );
+  const laneGrid = root.querySelector<HTMLElement>(".awesomeado-sprint__lane-grid")!;
+  expect(laneGrid.style.position).toBe("relative");
+  expect(laneGrid.style.left).toBe("-48px");
+  expect(laneGrid.style.transform).toBe("");
+  expect(laneGrid.style.willChange).toBe("");
 }
 
 function expectParentHierarchyPopup(card: HTMLElement): void {
@@ -968,8 +973,8 @@ describe("Sprint View card priority and details", () => {
     expect(activePopup.textContent).toContain("Created on:");
     expect(activePopup.textContent).toContain("Last Modified on:");
     expect(activePopup.textContent).toContain("Active card description");
-    expect(activePopup.style.width).toBe("380px");
-    expect(activePopup.style.minWidth).toBe("280px");
+    expect(activePopup.style.width).toBe("494px");
+    expect(activePopup.style.minWidth).toBe("364px");
     expect(activePopup.style.overflowX).toBe("hidden");
     expect(activePopup.style.overflowY).toBe("auto");
     expect(activePopup.style.overflowWrap).toBe("anywhere");

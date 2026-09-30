@@ -413,8 +413,8 @@ function renderCardDetailsPopup(
     "top:100%",
     "left:0",
     "margin-top:4px",
-    "width:380px",
-    "min-width:280px",
+    "width:494px",
+    "min-width:364px",
     "max-width:calc(100vw - 24px)",
     "max-height:320px",
     "overflow-y:auto",
@@ -1086,10 +1086,10 @@ function renderColumnHeader(
   grid.className = "awesomeado-sprint__board-header-grid";
   grid.setAttribute("role", "row");
   grid.style.cssText = [
+    "position:relative",
     "display:grid",
     `grid-template-columns:${CARD_GRID_COLUMNS}`,
     `min-width:${CARD_GRID_MIN_WIDTH}`,
-    "will-change:transform",
   ].join(";");
   const titles: HTMLElement[] = [];
   for (let ordinal = 0; ordinal < VISIBLE_COLUMN_COUNT; ordinal += 1) {
@@ -1162,10 +1162,10 @@ function renderLane(
   const grid = context.doc.createElement("div");
   grid.className = "awesomeado-sprint__lane-grid";
   grid.style.cssText = [
+    "position:relative",
     "display:grid",
     `grid-template-columns:${CARD_GRID_COLUMNS}`,
     `min-width:${CARD_GRID_MIN_WIDTH}`,
-    "will-change:transform",
   ].join(";");
   for (let ordinal = 0; ordinal < VISIBLE_COLUMN_COUNT; ordinal += 1) {
     const cellItems = orderTrackedItems(
@@ -1238,9 +1238,9 @@ export function renderSprintBoard(
   const scrollTrack = context.doc.createElement("div");
   scrollTrack.style.cssText = `width:max(100%,${CARD_GRID_MIN_WIDTH});height:1px`;
   scroller.addEventListener("scroll", () => {
-    const transform = `translateX(-${scroller.scrollLeft}px)`;
-    header.grid.style.transform = transform;
-    for (const grid of laneGrids) grid.style.transform = transform;
+    const offset = `-${scroller.scrollLeft}px`;
+    header.grid.style.left = offset;
+    for (const grid of laneGrids) grid.style.left = offset;
   });
   scroller.append(scrollTrack);
   scrollRow.append(scroller);
