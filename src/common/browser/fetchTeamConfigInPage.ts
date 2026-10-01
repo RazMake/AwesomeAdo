@@ -32,6 +32,9 @@ export function fetchTeamConfigInPage(url: string): Promise<TeamConfigReadResult
     return fetch(url, {
       credentials: "include",
       headers: { Accept: "application/json", "X-TFS-FedAuthRedirect": "Suppress" },
+      // A stale cached read of this work item silently overwrites team-shared settings (e.g.
+      // currentTeam) with outdated values on the next pull, so this read must never be cached.
+      cache: "no-store",
     })
       .then((response): Promise<TeamConfigReadResult> | TeamConfigReadResult => {
         const transient =

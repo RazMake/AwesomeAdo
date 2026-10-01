@@ -30,6 +30,7 @@ describe("fetchAdoIterationsInPage", () => {
     expect(fetchMock).toHaveBeenCalledWith(ITERATIONS_URL, {
       credentials: "include",
       headers: { Accept: "application/json" },
+      cache: "no-store",
     });
     expect(result).toEqual(body);
   });

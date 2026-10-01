@@ -15,7 +15,13 @@
  * paged tree fetch there is no cursor to advance here.
  */
 export function fetchAdoIterationsInPage(iterationsUrl: string): Promise<unknown> {
-  return fetch(iterationsUrl, { credentials: "include", headers: { Accept: "application/json" } })
+  return fetch(iterationsUrl, {
+    credentials: "include",
+    headers: { Accept: "application/json" },
+    // Team iteration membership changes outside any revision the browser's HTTP cache can key on, so
+    // a cached response can silently show a stale sprint list; always go to the network.
+    cache: "no-store",
+  })
     .then((response) => (response.ok ? response.json() : null))
     .catch(() => null);
 }

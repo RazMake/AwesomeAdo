@@ -9,6 +9,25 @@ we hit, why they happened, and the exact fix so nobody re-derives them.
 agent-tool-local memory (it does not clone or transfer between machines/agents). Record new findings
 here so every agent, teammate, and clone sees them.
 
+## Project Tracking / Sprint View showed another team's sprints
+
+- SYMPTOM: on one machine only, Project Tracking's sprint picker listed a different team's sprints
+  than Sprint View, even though Options and the shared configuration work item both showed the
+  correct team. DevTools showed two `teamsettings/iterations` requests per page load (both MAIN-world
+  injected fetches, i.e. both AwesomeADO's own), one for the configured team and one for a team id
+  absent from every exported setting and binding.
+- ROOT CAUSE: `TeamConfigSynchronizer.pull()` runs on every query-page load and every
+  `sprintAreaPaths.read()`. It reads the shared configuration work item's Description via
+  `fetchTeamConfigInPage.ts`'s `fetch()`, which had no `cache: "no-store"`. On a machine whose
+  browser had a cached HTTP response for that work item's REST URL from before the team was last
+  corrected, the pull silently re-applied the stale team (since `currentTeam` is a team-shared,
+  non-personal setting) via `applyLocally`, corrupting `chrome.storage.sync` and triggering a
+  second, wrong-team sprint-window render that won because it resolved last.
+- FIX / RULE: any fetch reading a mutable ADO field whose staleness isn't guarded by a revision
+  check (`fetchTeamConfigInPage.ts`, `fetchAdoIterationsInPage.ts`) must set `cache: "no-store"` —
+  the browser's ordinary HTTP cache is not an acceptable source of truth for config pulled into
+  team-shared settings.
+
 ## Header buttons stacked their labels in narrow windows
 
 - SYMPTOM: Project Tracking's **Show only Done** and **Assigned To** controls collapsed into tall,

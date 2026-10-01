@@ -5,6 +5,12 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ## Next Version
 
+### Bug Fixes
+
+- Fixed the sprint list on Project Tracking and Sprint View sometimes showing another team's
+  sprints. A stale cached read of the shared team configuration could silently swap back to a
+  previously configured team; team and sprint configuration reads are now always fetched fresh.
+
 ## 0.16
 
 ### New Features
