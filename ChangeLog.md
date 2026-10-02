@@ -5,6 +5,8 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ## Next Version
 
+## 0.17
+
 ### New Features
 
 - Project Tracking and the All Projects Catalog name their create commands from your configured
@@ -12,8 +14,7 @@ builds use the repository's `Major.Minor.Build` release versioning.
   marked it as a **Project** or an **Objective** in Options' work item type hierarchy; the last
   planning type above your Primary work offers **New work identified**; and any planning type in
   between offers **Add deliverable**. Primary work offers no create command.
-- The **Tag with** blocker and interrupt commands now appear only on Primary work items, in both
-  Project Tracking and Sprint View.
+- The **Tag with** blocker and interrupt commands now appear only on Primary work items, in both Project Tracking and Sprint View.
 
 ### Bug Fixes
 
