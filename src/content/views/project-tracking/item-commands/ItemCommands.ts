@@ -7,6 +7,7 @@ import { sprintRelationDeclarations } from "../../../../common/view-common/contr
 import { renderTextEditor } from "../../../../common/view-common/control/TextEditor/TextEditor";
 import { renderNotesPanel } from "../notes/NotesPanel";
 
+import { buildUpdateParentCommand, type ParentCommandOptions } from "./UpdateParentCommand";
 import {
   EDITOR_WIDTH_PX,
   finish,
@@ -16,7 +17,7 @@ import {
 } from "./itemCommandCore";
 
 /** Everything the item commands need to read an item, change it, and show the result. */
-export interface ItemCommandsOptions extends ItemCommandTarget {
+export interface ItemCommandsOptions extends ParentCommandOptions {
   /** The board's sprint window; "Move to another sprint" offers the current one and everything after. */
   sprintWindow: SprintWindow;
   /** The same full area paths offered by the board's area-path filter. */
@@ -64,6 +65,7 @@ export function buildItemCommands(options: ItemCommandsOptions): ItemContextMenu
   return [
     updateTitleCommand(options),
     updateDescriptionCommand(options),
+    buildUpdateParentCommand(options),
     moveToSprintCommand(options),
     changeAreaPathCommand(options),
     buildViewNotesCommand(options),
@@ -71,16 +73,17 @@ export function buildItemCommands(options: ItemCommandsOptions): ItemContextMenu
 }
 
 /**
- * The three commands that edit the item itself, in the order every menu shows them.
+ * The commands that edit the item itself, in the order every menu shows them.
  *
  * Split out so a view with no sprints and no area-path filter (the projects catalog) can offer
  * exactly these without either re-implementing them or inheriting board-specific destinations that
  * mean nothing on its surface.
  */
-export function buildItemEditingCommands(options: NotesCommandOptions): ItemContextMenuCommand[] {
+export function buildItemEditingCommands(options: ParentCommandOptions): ItemContextMenuCommand[] {
   return [
     updateTitleCommand(options),
     updateDescriptionCommand(options),
+    buildUpdateParentCommand(options),
     buildViewNotesCommand(options),
   ];
 }

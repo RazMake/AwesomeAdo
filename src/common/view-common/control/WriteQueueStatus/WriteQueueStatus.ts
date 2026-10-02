@@ -106,7 +106,7 @@ function createIconCanvas(doc: Document, display: string): SVGSVGElement {
  * spins without any @keyframes/stylesheet — which keeps the control deterministic and independent of
  * ADO's or the extension's CSS. `currentColor` makes it inherit the themed text color.
  */
-function createSpinnerIcon(doc: Document): SVGSVGElement {
+export function createSpinnerIcon(doc: Document): SVGSVGElement {
   const svg = createIconCanvas(doc, "block");
   // A partial-arc circle (stroke-dasharray leaves a gap) rotating about the viewBox center reads as
   // a classic spinner. Rotating the ring itself avoids needing a separate wrapper transform.

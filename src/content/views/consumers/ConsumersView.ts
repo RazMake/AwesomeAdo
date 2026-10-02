@@ -41,6 +41,7 @@ import { widestStatusLabelLength } from "../item-status/itemStatusBadge";
 import { dragReorderUnavailableReason } from "../project-tracking/drag-reorder/dragReorderAvailability";
 import { persistTreeMove } from "../project-tracking/drag-reorder/persistTreeMove";
 import { buildViewNotesCommand } from "../project-tracking/item-commands/ItemCommands";
+import { buildUpdateParentCommand } from "../project-tracking/item-commands/UpdateParentCommand";
 import type { NotesPanelState } from "../project-tracking/notes/NotesPanel";
 
 import { renderConsumerRow, type ConsumerRowContext } from "./ConsumerRow";
@@ -105,6 +106,8 @@ interface Board {
    * operated from, and rebuilding it would close the dropdown the reader is still picking in.
    */
   paintList(): void;
+  /** Re-read the query, for a change (a new parent) the loaded tree cannot represent. */
+  reload(): void;
 }
 
 const PREFIX = "awesomeado-consumers";
@@ -275,6 +278,15 @@ function createRowContext(
         id: item.id,
         url: buildWorkItemUrl(context.doc.location?.href ?? "", item.id),
         commands: [
+          buildUpdateParentCommand({
+            doc: context.doc,
+            item,
+            services: context.services,
+            queue: board.queue,
+            onChanged: board.paintList,
+            queryId: context.queryId,
+            onReload: board.reload,
+          }),
           buildViewNotesCommand({
             doc: context.doc,
             item,
@@ -358,7 +370,7 @@ function renderBoardList(
 function createBoard(
   context: DataDrivenViewContext,
   root: HTMLElement,
-  hooks: { loaded(): LoadedConsumers | null; paintList(): void },
+  hooks: { loaded(): LoadedConsumers | null; paintList(): void; reload(): void },
 ): Board {
   const queue = createBoardWriteQueue(context.services);
   const board: Board = {
@@ -396,6 +408,7 @@ function createBoard(
       { fixedDepth: true },
     ),
     paintList: hooks.paintList,
+    reload: hooks.reload,
   };
   return board;
 }
@@ -511,7 +524,11 @@ function startConsumersView(context: DataDrivenViewContext, root: HTMLElement): 
     lastDescription = description;
   };
 
-  const board = createBoard(context, root, { loaded: () => loader.data(), paintList });
+  const board = createBoard(context, root, {
+    loaded: () => loader.data(),
+    paintList,
+    reload: () => loader.refresh(),
+  });
   const writeStatus = createBoardWriteStatus(
     context.doc,
     board.queue,

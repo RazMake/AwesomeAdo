@@ -1251,6 +1251,7 @@ describe("Sprint View item context menus", () => {
       "Open in ADO",
       "Update title",
       "Update description",
+      "Update parent",
       "Move to another sprint",
       "Change area path",
       "View all notes",

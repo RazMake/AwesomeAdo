@@ -372,6 +372,7 @@ function projectMenuTarget(
       services: context.services,
       queue: board.queue,
       onChanged: () => board.paint(),
+      queryId: context.queryId,
       types: data.types,
       knownTags: data.tags,
       queryTags: data.hiddenTags,

@@ -47,6 +47,9 @@ const describe = renderTextEditor(document, {
 | `onSubmit`    | `(text) => Promise<boolean>` — resolve `true` to close, `false` to keep the editor open with the text in it. |
 | `onCancel`    | Abandon the edit and put the surface back as it was.                                                         |
 
+`createEditorButton(doc, label, primary)` builds the same compact themed button for other menu
+panels, so their Set/Cancel pair matches the editor's.
+
 ## Behaviour
 
 - **Keyboard.** `Esc` cancels. `Ctrl`/`Cmd`+`Enter` saves a multi-line box; a **bare `Enter`** saves a

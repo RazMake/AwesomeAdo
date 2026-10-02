@@ -407,6 +407,8 @@ interface TreeRenderOptions {
    * marker pill appear, and clearing the last one is what takes it away).
    */
   repaint: () => void;
+  /** Re-reads the board, for a menu command (a new parent) whose change a repaint cannot show. */
+  reload: () => void;
   /** Collects every expandable row rendered in this pass so expand-all/collapse-all can drive them. */
   expandableRows: ExpandableRow[];
   /** Collects each notes toggle so the header controls can open or close row discussions. */
@@ -1155,6 +1157,7 @@ function menuTargetFor(params: {
   areaPaths: readonly string[];
   typeMap: ReadonlyMap<string, TypeCatalogEntry>;
   onChanged: () => void;
+  onReload: () => void;
 }): ItemContextMenuTarget {
   const { doc, item, context } = params;
   const target = {
@@ -1170,6 +1173,8 @@ function menuTargetFor(params: {
     commands: [
       ...buildItemCommands({
         ...target,
+        queryId: context.queryId,
+        onReload: params.onReload,
         sprintWindow: params.sprintWindow,
         areaPaths: params.areaPaths,
       }),
@@ -1192,6 +1197,7 @@ function itemMenuTarget(item: TrackedWorkItem, options: TreeRenderOptions): Item
     areaPaths: options.areaPaths,
     typeMap: options.typeMap,
     onChanged: options.repaint,
+    onReload: options.reload,
   });
   // Named for the configured level the row sits on (root kind, milestone, or work), and absent on
   // Primary work and below, where adding would only create implementation detail nobody asked for.
@@ -2448,6 +2454,8 @@ interface BoardTreeRendererParams {
    * is built ON this one, so the combined repaint only exists once both do.
    */
   repaintBoard: () => void;
+  /** Re-reads the board, for a menu command whose change a repaint cannot show. */
+  reload: () => void;
 }
 
 function createTreeFilter(params: BoardTreeRendererParams, sprint: string | null): TreeFilter {
@@ -2561,6 +2569,7 @@ function createBoardTreeRenderer(params: BoardTreeRendererParams): () => void {
       // the whole-board repaint rather than this pass alone, because a command can also change which
       // filter pills the board should be offering.
       repaint: () => params.repaintBoard(),
+      reload: params.reload,
       expandableRows,
       noteExpansions,
       descriptionExpansions,
@@ -3040,6 +3049,8 @@ interface BoardCore {
    * board's synchronous setup finishes.
    */
   setRepaint(repaint: () => void): void;
+  /** Re-reads the board from Azure DevOps, for a change (a new parent) a repaint cannot show. */
+  reload: () => void;
 }
 
 /** Values derived once per board that every row on it shares. */
@@ -3062,6 +3073,7 @@ function createBoardCore(params: {
   session: BoardSession;
   onAssigneeChange: (user: DirectoryUser) => void;
   onTagAssign: ((user: TrackedUser, tag: string) => void) | null;
+  onRefresh: () => void;
 }): BoardCore {
   const { doc, root, context, typeMap } = params;
   const services = context.services;
@@ -3108,6 +3120,7 @@ function createBoardCore(params: {
     setRepaint: (next) => {
       repaint = next;
     },
+    reload: params.onRefresh,
   };
 }
 
@@ -3193,6 +3206,7 @@ function mountBoardBody(params: {
     currentOrderingPolicy: core.ordering.policy,
     dragReorder: core.dragReorder,
     repaintBoard: () => repaintBoard(),
+    reload: core.reload,
   });
 
   const refreshFilters = createFilterRowRenderer({
@@ -3296,6 +3310,7 @@ function rootMenuTarget(
     areaPaths: params.itemAreaPaths,
     typeMap: params.typeMap,
     onChanged: params.onRootChanged,
+    onReload: params.core.reload,
   });
   const offer = newChildOfferFor(root, params.typeMap);
   return {
@@ -3368,15 +3383,7 @@ function renderBoard(params: RenderBoardParams): BoardHandle {
   // opens it for the root item.
   const contextMenu = createBoardContextMenu(params, board);
 
-  const core = createBoardCore({
-    doc,
-    root,
-    context,
-    typeMap,
-    session,
-    onAssigneeChange: params.onAssigneeChange,
-    onTagAssign: params.onTagAssign,
-  });
+  const core = createBoardCore(params);
   const { chipContext, writeStatus } = core;
   const areaPaths = collectBoardAreaPaths(root, context, typeMap, core.metrics.boardColumns);
   const itemAreaPaths = collectItemAreaPaths(root, context, typeMap, core.metrics.boardColumns);

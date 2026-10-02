@@ -473,6 +473,8 @@ is guarded by that item's revision, while creation has neither.
 - `buildParentLinkUrl(href, parentId)` — the organization-scoped `_apis/wit/workItems/${id}` address
   a `System.LinkTypes.Hierarchy-Reverse` relation points at. Organization-scoped because that is what
   ADO stores in a relation; `null` for a URL that names no organization.
+- `parseWorkItemId(text)` (`workItemIdText.ts`) — reads a work item id from a work item URL or from a
+  bare number wrapped in spaces, dashes, or `[]` `()` `{}`; `null` for anything else.
 - `buildCreateWorkItemPatch(item, parentUrl?)` — title, tags, area path, iteration path, assignee,
   description, the reason it was raised **and the parent link** in **one** JSON Patch. They must not
   be separate writes: the query or tree that is about to show the item selects on exactly those

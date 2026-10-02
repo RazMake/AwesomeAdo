@@ -1029,6 +1029,7 @@ describe("projectsView - project menu", () => {
       "Open in ADO",
       "Update title",
       "Update description",
+      "Update parent",
       "View all notes",
       "Add custom tag",
       "Clear custom tag",

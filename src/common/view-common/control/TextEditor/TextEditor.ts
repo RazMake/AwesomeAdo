@@ -59,8 +59,8 @@ export function renderTextEditor(doc: Document, options: TextEditorOptions): HTM
   failure.className = "awesomeado-text-editor__error";
   failure.style.cssText = ["display:none", "font-size:11px", "color:var(--error)"].join(";");
 
-  const submit = createButton(doc, options.submitLabel, true);
-  const cancel = createButton(doc, "Cancel", false);
+  const submit = createEditorButton(doc, options.submitLabel, true);
+  const cancel = createEditorButton(doc, "Cancel", false);
   const buttons = doc.createElement("div");
   buttons.style.cssText = ["display:flex", "gap:6px", "align-items:center"].join(";");
   buttons.append(submit, cancel, failure);
@@ -143,8 +143,12 @@ function wireEditorEvents(options: {
   setTimeout(() => input.focus(), 0);
 }
 
-/** A compact themed button; `primary` marks the confirming one. */
-function createButton(doc: Document, label: string, primary: boolean): HTMLButtonElement {
+/** A compact themed button; `primary` marks the confirming one. Shared by every menu editor panel. */
+export function createEditorButton(
+  doc: Document,
+  label: string,
+  primary: boolean,
+): HTMLButtonElement {
   const button = doc.createElement("button");
   button.type = "button";
   button.textContent = label;

@@ -3,13 +3,14 @@
 The per-item commands the Project Tracking board hangs off a **right-click**, shown under a rule
 beneath the three every item menu carries (Copy Item ID / Copy ADO Url / Open in ADO).
 
-| Command                    | Does                                                                                 |
-| -------------------------- | ------------------------------------------------------------------------------------ |
-| **Update title**           | Opens a one-line editor on `System.Title`                                            |
-| **Update description**     | Opens a Markdown editor on `System.Description`, and saves the field as Markdown     |
-| **Move to another sprint** | A submenu of the current sprint and every future one, writing `System.IterationPath` |
-| **Change area path**       | A submenu of the board's other area paths, writing `System.AreaPath`                 |
-| **View all notes**         | The item's complete discussion — read, correct, add                                  |
+| Command                    | Does                                                                                                                       |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| **Update title**           | Opens a one-line editor on `System.Title`                                                                                  |
+| **Update description**     | Opens a Markdown editor on `System.Description`, and saves the field as Markdown                                           |
+| **Update parent**          | Asks for a parent id or URL (pre-filled from the clipboard), shows the resolved item, then re-parents and reloads the view |
+| **Move to another sprint** | A submenu of the current sprint and every future one, writing `System.IterationPath`                                       |
+| **Change area path**       | A submenu of the board's other area paths, writing `System.AreaPath`                                                       |
+| **View all notes**         | The item's complete discussion — read, correct, add                                                                        |
 
 Under a **second** rule, the marker flags (`buildMarkerCommands`), offered on **Primary work** only —
 planning items and implementation details never show them:
@@ -41,6 +42,8 @@ contextMenu.openAt(event, {
   commands: [
     ...buildItemCommands({
       ...target,
+      queryId,
+      onReload: reloadBoard,
       sprintWindow,
       areaPaths,
     }),
@@ -57,9 +60,13 @@ contextMenu.openAt(event, {
 Two further entry points exist so other views can reuse parts of this menu without inheriting the
 board-specific destinations:
 
-- `buildItemEditingCommands(options)` — just **Update title**, **Update description** and **View all
-  notes**. Takes an `ItemCommandTarget`; no sprint window and no area paths, so a view with neither
-  can still offer the three commands that edit the item itself.
+- `buildItemEditingCommands(options)` — just **Update title**, **Update description**, **Update
+  parent** and **View all notes**. Takes `ParentCommandOptions` (an `ItemCommandTarget` plus
+  `queryId` and `onReload`); no sprint window and no area paths, so a view with neither can still
+  offer the commands that edit the item itself. `buildItemCommands` needs the same two extra fields.
+- `buildUpdateParentCommand(options)` (`UpdateParentCommand.ts`) — **Update parent** on its own, for
+  a view (Consumers) that offers no other editing commands. Disabled when no team is configured,
+  because the move ranks through the per-team backlog endpoint like a drag.
 - `buildProjectLifecycleCommands(options)` (`ProjectLifecycleCommands.ts`) — **Create Project Query**
   and **Mark completed**, the two commands that govern a catalog entry rather than a work item's
   fields. Each is offered independently (`offerCreate` / `offerComplete`): the All Projects Catalog

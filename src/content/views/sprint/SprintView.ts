@@ -941,6 +941,8 @@ function sprintItemMenuTarget(params: {
   types: ReadonlyMap<string, TypeCatalogEntry>;
   assignableAreaPaths: readonly string[];
   repaint: () => void;
+  /** Re-reads the sprint, for a change (a new parent) a repaint cannot show. */
+  onRefresh: () => void;
 }): ItemContextMenuTarget {
   const target = {
     doc: params.context.doc,
@@ -955,6 +957,8 @@ function sprintItemMenuTarget(params: {
     commands: [
       ...buildItemCommands({
         ...target,
+        queryId: params.context.queryId,
+        onReload: params.onRefresh,
         sprintWindow: params.data.sprintWindow,
         areaPaths: params.assignableAreaPaths,
       }),
@@ -1040,6 +1044,7 @@ function createSprintContextMenu(params: {
   areaPaths: readonly string[];
   assignableAreaPaths: readonly string[];
   repaint: () => void;
+  onRefresh: () => void;
   session: SprintSession;
   visibleItems: readonly DisplayItem[];
   onBulkMove: (destination: SprintWindowEntry, items: readonly TrackedWorkItem[]) => void;
@@ -1273,6 +1278,7 @@ function renderBoard(
     areaPaths: selection.areaPaths,
     assignableAreaPaths: selection.assignableAreaPaths,
     repaint,
+    onRefresh,
     session,
     visibleItems: selection.visibleItems,
     onBulkMove: (destination, items) => {

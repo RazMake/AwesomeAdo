@@ -103,6 +103,11 @@ AwesomeADO is feature-complete for its current scope:
   refusal (or checking/queries-unknown) as its tooltip. The post-sync popup lists removed favorites
   for selective restore from a worker-held `chrome.storage.session` record (popup-only undo,
   ADR-082). Authenticated validation of the permission prompt and restore flow is pending.
+- Every item right-click menu (Sprint, Project Tracking, Catalog, Consumers) offers **Update parent**
+  (`item-commands/UpdateParentCommand.ts`): clipboard-prefilled id/URL box, 400 ms debounced lookup
+  through a flat WIQL `loadTree`, Set enabled only once resolved; the re-parent rides the shared
+  queue's `enqueueReorder` (`currentParentId: 0` forces the link patch, ranked last), so it needs a
+  configured team, then the view re-reads its query. Authenticated browser validation pending.
 - User-visible decisions and failures are source-tagged in the bounded diagnostics log; every caught
   runtime exception is logged with its original value.
 - The complete quality gate remains coverage ≥ 85%, zero lint warnings, formatting, typecheck,

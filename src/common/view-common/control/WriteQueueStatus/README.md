@@ -101,3 +101,6 @@ Renders the indicator.
 - **Robust counts:** Negative and non-finite counts are normalized to idle **where they enter** the
   control, not at render time, so a bad value cannot latch and silently suppress a later pulse.
 - **HTML injection safety:** The label is set via `textContent`, never `innerHTML`.
+
+`createSpinnerIcon(doc)` returns the same stylesheet-free spinner as a standalone inline SVG (it
+inherits `currentColor`) for other short busy states, such as a lookup in progress.

@@ -26,6 +26,8 @@ const TAGS_FIELD = "System.Tags";
 
 /** Everything the per-project commands need beyond the item itself. */
 export interface ProjectCommandsOptions extends ItemCommandTarget {
+  /** The bound catalog query, which "Update parent" looks the new parent up against. */
+  queryId: string;
   /** The catalog's type entries, so completion can resolve the project type's own final state. */
   types: ReadonlyMap<string, TypeCatalogEntry>;
   /** Every tag worn anywhere in the loaded tree, offered by "Add custom tag". */

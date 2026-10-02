@@ -5,6 +5,13 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ## Next Version
 
+### New Features
+
+- Every enhanced view's item right-click menu offers **Update parent**: enter (or paste — a copied
+  work item ID or URL is filled in automatically) the new parent's ID, confirm the resolved item by
+  its type icon and title, and press **Set** to move the item under it; the view reloads to show the
+  new hierarchy.
+
 ## 0.17
 
 ### New Features

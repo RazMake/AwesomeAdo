@@ -3822,7 +3822,7 @@ describe("ProjectTrackingView — the item right-click menu", () => {
     return writeText;
   };
 
-  it("offers the three shared commands, then the item's own, then the create command", async () => {
+  it("offers the shared commands, then the item's own, then the create command", async () => {
     const root = await renderDeepBoard();
     await turnSprintFilterOff(root);
 
@@ -3835,6 +3835,7 @@ describe("ProjectTrackingView — the item right-click menu", () => {
       "Open in ADO",
       "Update title",
       "Update description",
+      "Update parent",
       "Move to another sprint\u203A",
       "Change area path\u203A",
       "View all notes",
