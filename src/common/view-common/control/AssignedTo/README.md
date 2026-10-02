@@ -35,6 +35,8 @@ Configuration for rendering the control.
   assigned a moment ago is already on the list. Each may carry a `tag`, shown beside their name when
   `showTag` is on. Defaults to nobody.
 - **`onChange?: (user: DirectoryUser) => void`** — Called when a new user is selected from the picker.
+- **`onClear?: () => void`** — When supplied, an assigned chip leads with a red **×** button that
+  clears the assignment. The button is hidden while the control is unassigned.
 - **`showTag?: boolean`** — When `true`, render the assignee's Feature Crew tag as a colored
   [`TagPill`](../TagPill/README.md) after their name (the neutral "??" pill when they have no tag
   yet). Off by default; the tag is read from `user.tag`. The pill is hidden for an unassigned slot.
@@ -126,6 +128,7 @@ When `showTag` and `onTagChange` are both set, the tag pill is a trigger that op
 
 - **Pick an existing tag:** the tags in `assignableTags` are listed as pills; clicking one moves the
   assignee onto that tag and closes the editor.
+- **Clear the tag:** the neutral **??** pill clears the assignee's current tag.
 - **Add a new tag:** an input (max 15 characters, spaces stripped as typed, placeholder
   `newTagPlaceholder`) plus an **Add** button.
   The button stays disabled for an empty value or a case-insensitive duplicate of an existing tag,

@@ -288,6 +288,11 @@ function renderAssigneeField(options: NewWorkItemPanelOptions): AssigneeField {
       chosen = { displayName: user.displayName, uniqueName: user.uniqueName, imageUrl: null };
       control.setUser(chosen);
     },
+    onClear: () => {
+      picked = true;
+      chosen = null;
+      control.setUser(null);
+    },
   });
   // The chip is only as wide as the name it holds; stretched across the form it would read as a box
   // the reader is meant to type into, which is the one thing it is not.

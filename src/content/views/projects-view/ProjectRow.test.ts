@@ -277,6 +277,25 @@ describe("renderProjectRow - assignee", () => {
     expect(row.querySelector(".awesomeado-assigned__name")?.textContent).toBe("Bob");
   });
 
+  it("clears an assigned user through the chip button", async () => {
+    const writeField = vi.fn(async () => ({ ok: true, rev: 9 }));
+    const project = item({
+      id: 7,
+      assignedTo: { displayName: "Alice", uniqueName: "alice@contoso.com", imageUrl: null },
+    });
+    const row = mounted(renderProjectRow(project, context({ queue: writeQueue(writeField) }), 0));
+
+    row.querySelector<HTMLButtonElement>(".awesomeado-assigned__clear")!.click();
+
+    await vi.waitFor(() =>
+      expect(writeField).toHaveBeenCalledWith(
+        expect.objectContaining({ field: "System.AssignedTo", value: null }),
+      ),
+    );
+    await vi.waitFor(() => expect(project.assignedTo).toBeNull());
+    expect(row.querySelector(".awesomeado-assigned__name")?.textContent).toBe("Unassigned");
+  });
+
   it("gives the work beneath a project an assignee control of its own", () => {
     const parent = item({ id: 1, children: [item({ id: 2 })] });
     const row = renderProjectRow(parent, context({ expandedIds: new Set([1]) }), 0);

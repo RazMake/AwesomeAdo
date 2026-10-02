@@ -190,10 +190,26 @@ describe("renderConsumerProfileLines - editing", () => {
         ".awesomeado-assigned__tag-choices .awesomeado-tag-pill",
       ),
     ];
-    expect(choices.map((choice) => choice.textContent)).toEqual(["M1", "Owner"]);
+    expect(choices.map((choice) => choice.textContent)).toEqual(["??", "M1", "Owner"]);
     choices.find((choice) => choice.textContent === "Owner")!.click();
 
     expect(hooks.onRoleChange).toHaveBeenCalledWith(1, "Owner");
+  });
+
+  it("clears a contact role through the ?? choice", () => {
+    const hooks = editing();
+    const block = render({ contacts: [SUNDAR] }, true, hooks);
+
+    block.querySelector<HTMLElement>(".awesomeado-tag-pill")!.click();
+    [
+      ...block.querySelectorAll<HTMLButtonElement>(
+        ".awesomeado-assigned__tag-choices .awesomeado-tag-pill",
+      ),
+    ]
+      .find((choice) => choice.textContent === "??")!
+      .click();
+
+    expect(hooks.onRoleChange).toHaveBeenCalledWith(0, "");
   });
 
   it("replaces a contact with the person picked from their name", async () => {

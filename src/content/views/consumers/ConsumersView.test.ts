@@ -514,7 +514,7 @@ describe("consumersView - editing contacts", () => {
       [...root.querySelectorAll(".awesomeado-assigned__tag-choices .awesomeado-tag-pill")].map(
         (choice) => choice.textContent,
       ),
-    ).toEqual(["M1", "M2", "M3", "DEV", "PM"]);
+    ).toEqual(["??", "M1", "M2", "M3", "DEV", "PM"]);
     expect(
       root.querySelector<HTMLInputElement>(".awesomeado-assigned__tag-input")?.placeholder,
     ).toBe("Add new role");

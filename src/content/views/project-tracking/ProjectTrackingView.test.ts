@@ -1728,6 +1728,22 @@ describe("ProjectTrackingView — assignee writes", () => {
     expect(label.textContent).toBe("Dana Scott");
   });
 
+  it("clears an assigned user through the chip button", async () => {
+    const { root, writes } = await renderBoardWithWrites();
+    const chip = root.querySelector<HTMLElement>(".awesomeado-assigned")!;
+
+    chip.querySelector<HTMLButtonElement>(".awesomeado-assigned__clear")!.click();
+    await vi.waitFor(() => expect(writes).toHaveLength(1));
+
+    expect(writes[0]).toEqual(
+      expect.objectContaining({ id: 1, rev: 3, field: "System.AssignedTo", value: null }),
+    );
+    expect(chip.querySelector(".awesomeado-assigned__name")?.textContent).toBe("Unassigned");
+    expect(chip.querySelector<HTMLElement>(".awesomeado-assigned__clear")?.style.display).toBe(
+      "none",
+    );
+  });
+
   it("refreshes the active filter and its people after a committed assignment", async () => {
     const tree = createFixtureTree();
     tree.children[1]!.assignedTo = createUser("Bob Jones");

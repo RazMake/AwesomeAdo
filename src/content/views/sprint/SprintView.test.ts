@@ -920,6 +920,31 @@ describe("Sprint View board", () => {
   });
 });
 
+describe("Sprint View assignee clearing", () => {
+  it("clears a card's assigned user through the chip button", async () => {
+    const writeField = vi
+      .fn<EnhancedViewServices["writeField"]>()
+      .mockResolvedValue({ ok: true, rev: 2 });
+    const root = await render({
+      loadTree: async () => ({ isTreeQuery: false, roots: [item(1, "Editable")], error: null }),
+      writeField,
+    });
+    const assignee = root.querySelector<HTMLElement>(".awesomeado-sprint-card__assignee")!;
+
+    assignee.querySelector<HTMLButtonElement>(".awesomeado-assigned__clear")!.click();
+
+    await vi.waitFor(() =>
+      expect(writeField).toHaveBeenCalledWith({
+        id: 1,
+        rev: 1,
+        field: "System.AssignedTo",
+        value: null,
+      }),
+    );
+    expect(assignee.querySelector(".awesomeado-assigned__name")?.textContent).toBe("Unassigned");
+  });
+});
+
 describe("Sprint View card priority and details", () => {
   it("persists priority changes through the shared card control", async () => {
     const writeField = vi

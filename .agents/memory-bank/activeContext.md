@@ -46,6 +46,8 @@ AwesomeADO is feature-complete for its current scope:
   pills without narrowing the tree; SprintPicker disables selection only when no options exist.
 - Enhanced views use injected services and one serialized work-item write queue. Every item-changing
   operation must leave the model's `System.Rev` current; see `systemPatterns.md` and ADR-030.
+- Editable assignee chips in every enhanced view expose a leading clear-assignment ×, hidden while
+  unassigned. Tag editors always offer the neutral `??` pill to clear the current tag.
 - Project Tracking create commands are level-named (`newChildOfferFor`): the work level is the last
   non-Primary-work planning type in config order (**New work identified**), its parent types offer
   **New deliverable**, every type above offers **New project**; the title offers **Add deliverable**

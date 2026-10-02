@@ -312,8 +312,8 @@ interface AssigneeChipContext {
    * each carrying the crew tag the picker shows beside their name.
    */
   crew(): TrackedUser[];
-  /** Records a picked person on the Feature Crew roster (a no-op when they are already on it). */
-  onPicked(user: DirectoryUser): void;
+  /** Reconciles a picked person when present, then refreshes assignment-dependent board state. */
+  onAssignmentChanged(user: DirectoryUser | null): void;
   /** Tag editing for the chip's pill; null leaves the pill read-only. */
   tagEditor: AssigneeTagEditor | null;
 }
@@ -335,7 +335,7 @@ function createItemAssignee(
   chipContext: AssigneeChipContext,
   showTag: boolean,
 ): AssignedToHandle {
-  const { doc, services, queue, crew, onPicked, tagEditor } = chipContext;
+  const { doc, services, queue, crew, onAssignmentChanged, tagEditor } = chipContext;
   // The onChange closure needs the handle to reflect a committed change, but the handle only exists
   // after renderAssignedTo returns. A ref cell breaks that cycle with a single const binding: the
   // closure runs only on a later user pick, by which point `chip.handle` is set.
@@ -347,9 +347,14 @@ function createItemAssignee(
     onChange: (picked) => {
       writeItemAssignee(item, picked, queue, (assigned) => {
         chip.handle?.setUser(assigned);
-        onPicked(picked);
+        onAssignmentChanged(picked);
       });
     },
+    onClear: () =>
+      writeItemAssignee(item, null, queue, (assigned) => {
+        chip.handle?.setUser(assigned);
+        onAssignmentChanged(null);
+      }),
     showTag,
     assignableTags: tagEditor ? tagEditor.tagsInUse() : undefined,
     // Bound to the ITEM, not to the person assigned when the chip was built: after a reassignment
@@ -2972,7 +2977,7 @@ function createChipContext(
   services: EnhancedViewServices,
   queue: WorkItemWriteQueue,
   root: TrackedWorkItem,
-  onPicked: (user: DirectoryUser) => void,
+  onAssignmentChanged: (user: DirectoryUser | null) => void,
   tagEditor: AssigneeTagEditor | null,
 ): AssigneeChipContext {
   return {
@@ -2980,7 +2985,7 @@ function createChipContext(
     services,
     queue,
     crew: () => collectAssignedDirectoryUsers([root]),
-    onPicked,
+    onAssignmentChanged,
     tagEditor,
   };
 }
@@ -3071,7 +3076,7 @@ function createBoardCore(params: {
   context: DataDrivenViewContext;
   typeMap: Map<string, TypeCatalogEntry>;
   session: BoardSession;
-  onAssigneeChange: (user: DirectoryUser) => void;
+  onAssigneeChange: (user: DirectoryUser | null) => void;
   onTagAssign: ((user: TrackedUser, tag: string) => void) | null;
   onRefresh: () => void;
 }): BoardCore {
@@ -3135,7 +3140,7 @@ interface RenderBoardParams {
   sprintWindow: SprintWindow;
   /** The reader's own state, owned by the view so it outlives this board (see `BoardSession`). */
   session: BoardSession;
-  onAssigneeChange: (user: DirectoryUser) => void;
+  onAssigneeChange: (user: DirectoryUser | null) => void;
   onTagAssign: ((user: TrackedUser, tag: string) => void) | null;
   folderPath: QueryFolderCrumb[];
   /**
@@ -3771,9 +3776,12 @@ function renderLoadedBoard(params: RenderLoadedBoardParams): BoardHandle | null 
           (members) => applyCrewMembers(members),
           (count) => reportReconcilePending(count),
         );
-  const onAssigneeChange = (user: DirectoryUser): void => {
-    crewSync?.onAssigneeChange(user);
-    // Only a user pick reaches here, long after the synchronous `board` assignment below.
+  const onAssigneeChange = (user: DirectoryUser | null): void => {
+    if (user !== null) {
+      crewSync?.onAssigneeChange(user);
+    }
+    // Only a committed assignment change reaches here, long after the synchronous `board`
+    // assignment below.
     board.onAssigneeCommitted();
   };
   // Only offer tag editing when a roster can actually be stored (a crew sync exists); otherwise the

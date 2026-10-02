@@ -11,6 +11,8 @@ builds use the repository's `Major.Minor.Build` release versioning.
   work item ID or URL is filled in automatically) the new parent's ID, confirm the resolved item by
   its type icon and title, and press **Set** to move the item under it; the view reloads to show the
   new hierarchy.
+- Assigned users can be cleared directly from assignee chips in every enhanced view, and tag-enabled
+  assignee chips offer a **??** choice that clears the current tag.
 
 ### Bug Fixes
 

@@ -201,6 +201,8 @@ function renderRowAssignee(item: TrackedWorkItem, context: ProjectRowContext): H
     suggestions: context.assigneeSuggestions,
     onChange: (picked: DirectoryUser) =>
       writeItemAssignee(item, picked, context.queue, (assigned) => chip.handle?.setUser(assigned)),
+    onClear: () =>
+      writeItemAssignee(item, null, context.queue, (assigned) => chip.handle?.setUser(assigned)),
   });
   // The row's own right-click menu is about the work item, not this control.
   chip.handle.addEventListener("click", (event) => event.stopPropagation());

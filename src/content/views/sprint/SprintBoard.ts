@@ -4,7 +4,6 @@ import type {
   TypeCatalogEntry,
 } from "../../../common/ado/TrackedWorkItem";
 import type { WorkItemWriteQueue } from "../../../common/ado/WorkItemWriteQueue/WorkItemWriteQueue";
-import { ASSIGNED_TO_FIELD, identityFieldValue } from "../../../common/ado/adoApi";
 import { buildWorkItemUrl } from "../../../common/ado/fetchAdoTree";
 import {
   orderTrackedItems,
@@ -44,6 +43,7 @@ import {
 } from "../../../common/view-common/control/PriorityBadge/PriorityBadge";
 import { createPopupHost } from "../../../common/view-common/control/popupHost/popupHost";
 import type { InterruptAcceptanceState } from "../interrupt-acceptance/interruptAcceptanceState";
+import { writeItemAssignee } from "../item-assignee/writeItemAssignee";
 import { writeItemPriority } from "../item-priority/writeItemPriority";
 import { renderMarkerReasonsPill } from "../project-tracking/marker-reasons/MarkerReasonsPill";
 
@@ -173,24 +173,18 @@ function renderItemAssignee(
     showTag: false,
     onChange: editable
       ? (picked) => {
-          void options.writes
-            .enqueue({
-              id: item.id,
-              currentRev: () => item.rev,
-              field: ASSIGNED_TO_FIELD,
-              value: identityFieldValue(picked),
-            })
-            .then((result) => {
-              if (!result.ok) return;
-              item.assignedTo = {
-                displayName: picked.displayName,
-                uniqueName: picked.uniqueName,
-                imageUrl: picked.imageUrl,
-              };
-              if (result.rev !== undefined) item.rev = result.rev;
-              assignee.handle?.setUser(item.assignedTo);
-              options.onItemChanged();
-            });
+          writeItemAssignee(item, picked, options.writes, (assigned) => {
+            assignee.handle?.setUser(assigned);
+            options.onItemChanged();
+          });
+        }
+      : undefined,
+    onClear: editable
+      ? () => {
+          writeItemAssignee(item, null, options.writes, (assigned) => {
+            assignee.handle?.setUser(assigned);
+            options.onItemChanged();
+          });
         }
       : undefined,
   });

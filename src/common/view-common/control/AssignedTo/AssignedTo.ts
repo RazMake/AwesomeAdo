@@ -26,6 +26,11 @@ export interface AssignedToOptions {
   /** Called when a new user is picked from the directory. */
   onChange?: (user: DirectoryUser) => void;
   /**
+   * Called when the assignment's leading × is clicked. Providing it lets an assigned user be
+   * cleared; the button is hidden while the control is unassigned.
+   */
+  onClear?: () => void;
+  /**
    * When true, render the assigned person's Feature Crew tag as a colored pill after their name (and
    * the neutral "??" pill when they have no tag yet). Off by default so views that do not use tags
    * stay uncluttered; the tag is read from `user.tag`. This governs the CHIP only — the picker tags
@@ -123,10 +128,15 @@ function buildAssignedRoot(
  * color is a dedicated theme token, tuned per theme to stand on its own against every row and pill
  * background, because a red that stands out on a light row disappears into a dark one.
  */
-function buildRemoveButton(doc: Document, onRemove: () => void, label: string): HTMLElement {
+function buildRemoveButton(
+  doc: Document,
+  onRemove: () => void,
+  label: string,
+  className = "awesomeado-assigned__remove",
+): HTMLElement {
   const button = doc.createElement("button");
   button.type = "button";
-  button.className = "awesomeado-assigned__remove";
+  button.className = className;
   button.textContent = "\u00d7";
   button.title = label;
   button.setAttribute("aria-label", label);
@@ -610,6 +620,7 @@ function mountTagSlot(
 function showAssignee(
   nameButton: HTMLButtonElement,
   tagSlot: TagPillSlot | null,
+  clearButton: HTMLElement | null,
   assigned: TrackedUser | null,
 ): void {
   nameButton.textContent = assigned?.displayName ?? "Unassigned";
@@ -617,6 +628,9 @@ function showAssignee(
     assigned === null
       ? "var(--text-secondary-color)"
       : "var(--assigned-to-text-color, var(--text-secondary-color))";
+  if (clearButton !== null) {
+    clearButton.style.display = assigned === null ? "none" : "inline-flex";
+  }
   if (tagSlot === null) {
     return;
   }
@@ -647,8 +661,20 @@ export function renderAssignedTo(doc: Document, options: AssignedToOptions): Ass
   if (options.onRemove !== undefined) {
     root.prepend(buildRemoveButton(doc, options.onRemove, options.removeLabel ?? "Remove"));
   }
+  const clearButton =
+    options.onClear === undefined
+      ? null
+      : buildRemoveButton(
+          doc,
+          options.onClear,
+          "Clear assigned user",
+          "awesomeado-assigned__clear",
+        );
+  if (clearButton !== null) {
+    root.prepend(clearButton);
+  }
   const tagSlot = mountTagSlot(doc, root, user, options);
-  showAssignee(nameButton, tagSlot, user);
+  showAssignee(nameButton, tagSlot, clearButton, user);
 
   attachPeoplePicker({
     doc,
@@ -661,7 +687,7 @@ export function renderAssignedTo(doc: Document, options: AssignedToOptions): Ass
 
   const handle = root as AssignedToHandle;
   handle.setUser = (assigned) => {
-    showAssignee(nameButton, tagSlot, assigned);
+    showAssignee(nameButton, tagSlot, clearButton, assigned);
   };
   return handle;
 }
@@ -755,6 +781,14 @@ function buildTagChoices(
   const choices = doc.createElement("div");
   choices.className = "awesomeado-assigned__tag-choices";
   choices.style.cssText = "display:flex;flex-wrap:wrap;gap:6px";
+  choices.append(
+    renderTagPill(doc, {
+      tag: null,
+      interactive: true,
+      selected: activeTag === null,
+      onToggle: () => onPick(""),
+    }),
+  );
   for (const tag of assignableTags) {
     choices.append(
       renderTagPill(doc, {
@@ -884,12 +918,7 @@ function buildTagEditor(
     "z-index:1000",
   ].join(";");
 
-  // Existing tags as one-click choices; nothing to pick from is still fine — the add field below
-  // always offers a way forward.
-  if (editor.assignableTags.length > 0) {
-    popup.append(buildTagChoices(doc, activeTag, editor.assignableTags, onPick));
-  }
-
+  popup.append(buildTagChoices(doc, activeTag, editor.assignableTags, onPick));
   popup.append(buildTagAddRow(doc, editor, onPick));
   return popup;
 }

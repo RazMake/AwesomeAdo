@@ -164,6 +164,41 @@ describe("renderAssignedTo - remove button", () => {
   });
 });
 
+describe("renderAssignedTo - clear assignment button", () => {
+  const user: TrackedUser = { displayName: "Alice", uniqueName: null, imageUrl: null };
+
+  it("shows a labelled × for an assigned user and reports a clear click", () => {
+    const cleared: string[] = [];
+    const control = renderAssignedTo(document, {
+      user,
+      userDirectory: new FakeUserDirectory(),
+      onClear: () => cleared.push("Alice"),
+    });
+    const clear = control.querySelector<HTMLButtonElement>(".awesomeado-assigned__clear")!;
+
+    expect(clear.textContent).toBe("\u00d7");
+    expect(clear.getAttribute("aria-label")).toBe("Clear assigned user");
+    expect(clear.style.display).toBe("inline-flex");
+    clear.click();
+    expect(cleared).toEqual(["Alice"]);
+  });
+
+  it("hides the clear button when unassigned and follows committed user changes", () => {
+    const control = renderAssignedTo(document, {
+      user: null,
+      userDirectory: new FakeUserDirectory(),
+      onClear: () => undefined,
+    });
+    const clear = control.querySelector<HTMLButtonElement>(".awesomeado-assigned__clear")!;
+
+    expect(clear.style.display).toBe("none");
+    control.setUser(user);
+    expect(clear.style.display).toBe("inline-flex");
+    control.setUser(null);
+    expect(clear.style.display).toBe("none");
+  });
+});
+
 describe("renderAssignedTo - suggestions", () => {
   const crew: DirectoryUser[] = [
     { displayName: "Ada Lovelace", uniqueName: "ada@example.com", imageUrl: null },
@@ -893,7 +928,7 @@ describe("renderAssignedTo tag editor - opening and selection", () => {
     const choices = popup!.querySelectorAll(
       ".awesomeado-assigned__tag-choices .awesomeado-tag-pill",
     );
-    expect([...choices].map((c) => c.textContent)).toEqual(["Core", "Platform"]);
+    expect([...choices].map((c) => c.textContent)).toEqual(["??", "Core", "Platform"]);
     expect(popup!.querySelector(".awesomeado-assigned__tag-input")).not.toBeNull();
   });
 
@@ -914,6 +949,26 @@ describe("renderAssignedTo tag editor - opening and selection", () => {
 
     expect(picked).toBe("Platform");
     expect(pill?.textContent).toBe("Platform");
+    expect(control.querySelector(".awesomeado-assigned__tag-popup")).toBeNull();
+  });
+
+  it("offers ?? and clears the current tag when clicked", () => {
+    let picked: string | null = null;
+    const control = renderEditable(["Core", "Platform"], (tag) => {
+      picked = tag;
+    });
+    const pill = control.querySelector<HTMLElement>(".awesomeado-tag-pill");
+    pill?.click();
+
+    const clear = [
+      ...control.querySelectorAll<HTMLButtonElement>(
+        ".awesomeado-assigned__tag-choices .awesomeado-tag-pill",
+      ),
+    ].find((choice) => choice.textContent === "??");
+    clear?.click();
+
+    expect(picked).toBe("");
+    expect(pill?.textContent).toBe("??");
     expect(control.querySelector(".awesomeado-assigned__tag-popup")).toBeNull();
   });
 });

@@ -56,6 +56,9 @@ This is a flattened snapshot of what exists now, not a build log.
   Tracking (ADR-066). Lists every top-level item a query returns as a collapsed project that opens
   into its own tree; rows show type icon, an inert title (opening in ADO is a menu command), the
   child count beside it, then the item's tracking-query link, assignee chip, and ETA — at every level.
+  Editable assignee chips across enhanced views expose a leading × that clears `System.AssignedTo`
+  through the shared guarded write path and disappears while unassigned. Tag-enabled assignee chips
+  always offer the neutral `??` choice to clear the current Feature Crew tag or contact role.
   Rows wear no tag pills and use the shared `RowEmphasis` stripe/hover/`Ctrl+Shift+Alt` treatment.
   Child DOM is built only while a row is open, and open/closed state lives outside the DOM so
   it survives repaints and in-place refreshes. Its sticky header carries the query breadcrumbs, a

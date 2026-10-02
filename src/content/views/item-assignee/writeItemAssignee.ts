@@ -3,30 +3,33 @@ import type { TrackedUser, TrackedWorkItem } from "../../../common/ado/TrackedWo
 import type { WorkItemWriteQueue } from "../../../common/ado/WorkItemWriteQueue/WorkItemWriteQueue";
 import { ASSIGNED_TO_FIELD, identityFieldValue } from "../../../common/ado/adoApi";
 
-/** Persist an assignment and reflect it only after Azure DevOps returns the committed revision. */
+/** Persist an assignment or clear and reflect it only after Azure DevOps commits the revision. */
 export function writeItemAssignee(
   item: TrackedWorkItem,
-  picked: DirectoryUser,
+  picked: DirectoryUser | null,
   queue: WorkItemWriteQueue,
-  onCommitted: (assigned: TrackedUser) => void,
+  onCommitted: (assigned: TrackedUser | null) => void,
 ): void {
   void queue
     .enqueue({
       id: item.id,
       currentRev: () => item.rev,
       field: ASSIGNED_TO_FIELD,
-      value: identityFieldValue(picked),
+      value: picked === null ? null : identityFieldValue(picked),
     })
     .then((result) => {
       if (!result.ok || result.rev === undefined) return;
       // A freshly assigned person has no known crew tag until a roster reconcile answers, so the
       // chip shows the neutral pill in the meantime rather than the previous person's.
-      const assigned: TrackedUser = {
-        displayName: picked.displayName,
-        uniqueName: picked.uniqueName,
-        imageUrl: picked.imageUrl,
-        tag: null,
-      };
+      const assigned: TrackedUser | null =
+        picked === null
+          ? null
+          : {
+              displayName: picked.displayName,
+              uniqueName: picked.uniqueName,
+              imageUrl: picked.imageUrl,
+              tag: null,
+            };
       item.assignedTo = assigned;
       item.rev = result.rev;
       onCommitted(assigned);
