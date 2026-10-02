@@ -3,11 +3,13 @@ import { describe, expect, it } from "vitest";
 import type { TrackedWorkItem, TypeCatalogEntry } from "./TrackedWorkItem";
 import {
   flattenWorkItems,
+  isWorkItemAbandoned,
   orderTrackedItems,
   primaryWorkAncestors,
   primaryWorkTypes,
   primaryWorkWithAncestors,
   primaryWorkWithDescendants,
+  pruneAbandonedWorkItems,
   workItemIdsVisibleUnderPrimaryFilter,
   workItemBoardColumnOrdinal,
   workItemsEligibleForPrimaryFilter,
@@ -116,6 +118,47 @@ describe("workItemBoardColumnOrdinal", () => {
 
   it("returns -1 when the ADO state has no extension-column mapping", () => {
     expect(workItemBoardColumnOrdinal(item({ state: "Proposed" }), entry, boardColumns)).toBe(-1);
+  });
+});
+
+describe("abandoned work items", () => {
+  const story = {
+    ...type("Story", ["Task"]),
+    columns: [
+      { column: "Active", states: ["Active"] },
+      { column: "Removed", states: ["Cut", "Removed"] },
+    ],
+  };
+  const types = new Map([["Story", story]]);
+  const boardColumns = ["Queue", "Active", "Waiting", "Done", "Removed"];
+
+  it("recognises any ADO state the mapping routes to the last column", () => {
+    expect(isWorkItemAbandoned(item({ state: "Cut" }), story, boardColumns)).toBe(true);
+    expect(isWorkItemAbandoned(item({ state: "removed" }), story, boardColumns)).toBe(true);
+    expect(isWorkItemAbandoned(item({ state: "Active" }), story, boardColumns)).toBe(false);
+  });
+
+  it("does not trust a literal state name the mapping does not route there", () => {
+    const unmapped = { ...story, columns: [{ column: "Done", states: ["Removed"] }] };
+    expect(isWorkItemAbandoned(item({ state: "Removed" }), unmapped, boardColumns)).toBe(false);
+  });
+
+  it("treats nothing as abandoned on a board with a single column", () => {
+    expect(isWorkItemAbandoned(item({ state: "Removed" }), story, ["Removed"])).toBe(false);
+  });
+
+  it("prunes abandoned items with their subtrees but keeps the roots", () => {
+    const cutTask = item({ id: 4, type: "Story", state: "Active" });
+    const root = item({
+      id: 1,
+      state: "Cut",
+      children: [
+        item({ id: 2, state: "Active", children: [item({ id: 5, state: "Removed" })] }),
+        item({ id: 3, state: "Cut", children: [cutTask] }),
+      ],
+    });
+    expect(pruneAbandonedWorkItems([root], types, boardColumns)).toBe(2);
+    expect(flattenWorkItems([root]).map((entry) => entry.id)).toEqual([1, 2]);
   });
 });
 

@@ -235,6 +235,18 @@ permissible range: Parameter Name: depth, Acceptable Range: 0 to 2"`. `getWithRe
   containers themselves. If any lookup or connections read fails or is malformed, fail the whole
   roster; a partial membership boundary must never be presented as authoritative.
 
+## A bare `HTTP 400` on a field write (e.g. State → Removed) says nothing — read `detail`
+
+- SYMPTOM: `Work item <id> field write failed: HTTP 400` when setting a User Story's Status to the
+  Removed column. The state value written is the column's first mapped ADO state, so the 400 is
+  Azure DevOps refusing the transition (process rule, required field, a state the type does not
+  have), not a rev conflict (that is 412/409) and not the null-`args` bug below.
+- FIX: `updateWorkItemFieldInPage` now returns the raw refusal body as `detail` for every non-conflict
+  failure; the worker folds it with `describeFieldWriteFailure` (shared `readAdoErrorMessage`), so the
+  log reads `HTTP 400: <ADO message>`. Read that message first — it names the rule or field.
+- The page function sits at ESLint's 80-line `max-lines-per-function` limit: interpret/bound bodies in
+  the worker, never inside the injected function.
+
 ## `chrome.scripting.executeScript` DROPS null-valued `args` properties (clearing a field → HTTP 400)
 
 - SYMPTOM: clearing an ETA from the All Projects Catalog View logged

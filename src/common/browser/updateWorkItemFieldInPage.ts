@@ -107,9 +107,16 @@ export function updateWorkItemFieldInPage(
       }
       const failure = { ok: false, error: "HTTP " + String(response.status) };
       // 412 is the `test /rev` op being refused; 409 is ADO's other shape of the same conflict.
-      return mayRebase && (response.status === 412 || response.status === 409)
-        ? rebase(failure)
-        : failure;
+      if (response.status === 412 || response.status === 409) {
+        return mayRebase ? rebase(failure) : failure;
+      }
+      // The body says WHY (a process rule, a forbidden state transition, a required field), which is
+      // all that tells a rejected write from an extension bug. It is handed back raw: the worker, being
+      // ordinary testable code, turns it into the sentence a human reads (`describeFieldWriteFailure`).
+      return response
+        .text()
+        .then((detail) => ({ ...failure, detail }))
+        .catch(() => failure);
     });
   }
 
@@ -135,8 +142,5 @@ export function updateWorkItemFieldInPage(
   }
 
   const mayRebase = config.baseValue !== undefined && (config.preconditions?.length ?? 0) === 0;
-  return sendPatch(config.rev, mayRebase).catch((err): UpdateWorkItemFieldResponse => ({
-    ok: false,
-    error: String(err),
-  }));
+  return sendPatch(config.rev, mayRebase).catch((err) => ({ ok: false, error: String(err) }));
 }

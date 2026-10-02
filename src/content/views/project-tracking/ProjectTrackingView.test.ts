@@ -3273,7 +3273,7 @@ function createItem(overrides: Partial<TrackedWorkItem> & { id: number }): Track
 }
 
 /**
- * Epic → Feature → Story → three Tasks (one Done, one Active, one Removed, the last on Sprint 2),
+ * Epic → Feature → Story → three Tasks (one Done, one Active, one New on Sprint 2),
  * so the rollup badge can be checked for depth, completion counting, and filter agreement.
  */
 function createDeepTree(): TrackedWorkItem {
@@ -3311,7 +3311,7 @@ function createDeepTree(): TrackedWorkItem {
               createItem({
                 id: 6,
                 title: "Drop the old form",
-                state: "Removed",
+                state: "New",
                 iterationPath: "Project\\Sprint 2",
                 sprintName: "Sprint 2",
               }),
@@ -3643,6 +3643,30 @@ describe("ProjectTrackingView — milestones holding work", () => {
     await turnSprintFilterOff(root);
 
     expect(renderedRowTitles(root)).toEqual(["Phase 1", "Login UI", "Phase 2"]);
+  });
+});
+
+describe("ProjectTrackingView — abandoned work", () => {
+  it("hides work whose ADO state is mapped to the abandoned column, such as Cut", async () => {
+    const tree = createDeepTree();
+    tree.children[0]!.children[0]!.children[2]!.state = "Cut";
+    const root = await renderDeepBoard({
+      loadTree: async () => ({ isTreeQuery: true, roots: [tree], error: null }),
+      getTypes: () =>
+        DEEP_TYPES.map((type) =>
+          type.name === "Task"
+            ? {
+                ...type,
+                isPrimaryWork: true,
+                columns: [...type.columns, { column: "Removed", states: ["Cut"] }],
+              }
+            : type,
+        ),
+    });
+    await turnSprintFilterOff(root);
+
+    expect(renderedRowTitles(root)).not.toContain("Drop the old form");
+    expect(renderedRowTitles(root)).toContain("Style the form");
   });
 });
 
@@ -4864,14 +4888,14 @@ describe("ProjectTrackingView — resolved item window", () => {
     expect(renderedRowTitles(await renderBoardForTree(tree))).toEqual(["Done, undated"]);
   });
 
-  it("leaves an abandoned item alone: only the column before Removed ages out", async () => {
+  it("hides an abandoned item whatever its age: the last column never shows", async () => {
     // No column routes "Removed" for this type, so its status is the raw state — which is the LAST
-    // board column, not the resolved one before it.
+    // board column, the abandoned one.
     const tree = epicOver([
       createItem({ id: 2, type: "Feature", title: "Abandoned", state: "Removed" }),
     ]);
 
-    expect(renderedRowTitles(await renderBoardForTree(tree))).toEqual(["Abandoned"]);
+    expect(renderedRowTitles(await renderBoardForTree(tree))).toEqual([]);
   });
 
   it("hides a resolved item immediately when the window is zero days", async () => {
@@ -6366,14 +6390,14 @@ describe("ProjectTrackingView — adding a milestone from the title", () => {
 
     rightClick(root.querySelector(".awesomeado-tracking__title")!);
 
-    expect(commandNamed(root, "Add new milestone/phase").disabled).toBe(false);
+    expect(commandNamed(root, "Add deliverable").disabled).toBe(false);
   });
 
   it("opens a box at the top of the list, stating what it will create", async () => {
     const { root } = await renderCreatingBoard();
 
     rightClick(root.querySelector(".awesomeado-tracking__title")!);
-    commandNamed(root, "Add new milestone/phase").click();
+    commandNamed(root, "Add deliverable").click();
 
     const tree = root.querySelector(".awesomeado-tracking__tree")!;
     expect(tree.firstElementChild?.classList.contains("awesomeado-new-item")).toBe(true);
@@ -6385,17 +6409,17 @@ describe("ProjectTrackingView — adding a milestone from the title", () => {
     const root = await renderDeepBoard();
 
     rightClick(root.querySelector(".awesomeado-tracking__title")!);
-    commandNamed(root, "Add new milestone/phase").click();
+    commandNamed(root, "Add deliverable").click();
     rightClick(root.querySelector(".awesomeado-tracking__title")!);
 
-    expect(commandNamed(root, "Add new milestone/phase").disabled).toBe(true);
+    expect(commandNamed(root, "Add deliverable").disabled).toBe(true);
   });
 
   it("creates the milestone under the project, inheriting where the project sits", async () => {
     const { root, created } = await renderCreatingBoard();
 
     rightClick(root.querySelector(".awesomeado-tracking__title")!);
-    commandNamed(root, "Add new milestone/phase").click();
+    commandNamed(root, "Add deliverable").click();
     submitNewItem(root, "Phase 2");
 
     await vi.waitFor(() =>
@@ -6416,7 +6440,7 @@ describe("ProjectTrackingView — adding a milestone from the title", () => {
     const { root, reorders } = await renderCreatingBoard();
 
     rightClick(root.querySelector(".awesomeado-tracking__title")!);
-    commandNamed(root, "Add new milestone/phase").click();
+    commandNamed(root, "Add deliverable").click();
     submitNewItem(root, "Phase 2");
     await settleWrites();
     await turnSprintFilterOff(root);
@@ -6432,7 +6456,7 @@ describe("ProjectTrackingView — adding a milestone from the title", () => {
     const { root } = await renderCreatingBoard();
 
     rightClick(root.querySelector(".awesomeado-tracking__title")!);
-    commandNamed(root, "Add new milestone/phase").click();
+    commandNamed(root, "Add deliverable").click();
     submitNewItem(root, "Phase 2");
     await settleWrites();
     await turnSprintFilterOff(root);
@@ -6447,7 +6471,7 @@ describe("ProjectTrackingView — adding a milestone from the title", () => {
     const { root, created } = await renderCreatingBoard();
 
     rightClick(root.querySelector(".awesomeado-tracking__title")!);
-    commandNamed(root, "Add new milestone/phase").click();
+    commandNamed(root, "Add deliverable").click();
     [...newItemRow(root)!.querySelectorAll("button")]
       .find((button) => button.textContent === "Cancel")!
       .click();

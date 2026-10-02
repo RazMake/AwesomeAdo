@@ -101,7 +101,7 @@ export function buildProjectCommands(options: ProjectCommandsOptions): ItemConte
 function newMilestoneCommand(options: ProjectCommandsOptions): ItemContextMenuCommand[] {
   if (!options.isProject) return [];
   return [
-    buildNewChildCommand("Add new milestone/phase", {
+    buildNewChildCommand("Add deliverable", {
       parent: options.item,
       types: options.types,
       adding: options.addingChild,

@@ -1030,7 +1030,7 @@ describe("projectsView - project menu", () => {
       "View all notes",
       "Add custom tag",
       "Clear custom tag",
-      "Add new milestone/phase",
+      "Add deliverable",
       "Create Project Query",
       "Mark completed",
     ]);
@@ -1098,11 +1098,9 @@ describe("projectsView - adding a milestone", () => {
 
     root.querySelector<HTMLButtonElement>(".awesomeado-projects__twisty")!.click();
 
-    expect(openMenu(projectTitle(root, "Payments")).map(commandLabel)).toContain(
-      "Add new milestone/phase",
-    );
+    expect(openMenu(projectTitle(root, "Payments")).map(commandLabel)).toContain("Add deliverable");
     expect(openMenu(projectTitle(root, "Card capture")).map(commandLabel)).not.toContain(
-      "Add new milestone/phase",
+      "Add deliverable",
     );
   });
 
@@ -1110,7 +1108,7 @@ describe("projectsView - adding a milestone", () => {
     const root = await renderBoard();
 
     openMenu(projectTitle(root, "Reporting"));
-    menuCommand("Add new milestone/phase").click();
+    menuCommand("Add deliverable").click();
 
     // The Epic's first configured child type is what a milestone is on this catalog.
     expect(milestoneBox(root)?.textContent).toContain("Created as a Story under Reporting");
@@ -1135,7 +1133,7 @@ describe("projectsView - adding a milestone", () => {
     );
 
     openMenu(projectTitle(root, "Payments"));
-    menuCommand("Add new milestone/phase").click();
+    menuCommand("Add deliverable").click();
     submitNewItem(milestoneBox(root)!, "Phase 2");
 
     await vi.waitFor(() =>
@@ -1159,7 +1157,7 @@ describe("projectsView - adding a milestone", () => {
     );
 
     openMenu(projectTitle(root, "Reporting"));
-    menuCommand("Add new milestone/phase").click();
+    menuCommand("Add deliverable").click();
     submitNewItem(milestoneBox(root)!, "Phase 2");
 
     await vi.waitFor(() => expect(create).toHaveBeenCalledOnce());
@@ -1170,7 +1168,7 @@ describe("projectsView - adding a milestone", () => {
     const root = await renderBoard();
 
     openMenu(projectTitle(root, "Reporting"));
-    menuCommand("Add new milestone/phase").click();
+    menuCommand("Add deliverable").click();
     [...milestoneBox(root)!.querySelectorAll<HTMLButtonElement>("button")]
       .find((button) => button.textContent === "Cancel")!
       .click();

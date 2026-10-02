@@ -1,3 +1,5 @@
+import { readAdoErrorMessage } from "./adoErrorBody";
+
 /**
  * The content→background message contract for moving a work item to a new position/parent.
  *
@@ -8,6 +10,7 @@
  * back the result. Keeping the message shape here means both ends agree on one contract instead of
  * drifting apart.
  */
+
 export const REORDER_WORK_ITEM_MESSAGE = "awesomeado:reorder-work-item";
 
 export interface ReorderWorkItemMessage {
@@ -98,16 +101,7 @@ export function describeReorderFailure(response: ReorderWorkItemResponse): strin
   if (body.length === 0) {
     return `${status} (no response body)`;
   }
-  let explanation = body;
-  try {
-    const parsed = JSON.parse(body) as { message?: unknown };
-    if (typeof parsed.message === "string" && parsed.message.length > 0) {
-      explanation = parsed.message;
-    }
-  } catch {
-    // Not JSON; the raw text is still the best clue there is.
-  }
-  return `${status}: ${explanation}`;
+  return `${status}: ${readAdoErrorMessage(body)}`;
 }
 
 /**

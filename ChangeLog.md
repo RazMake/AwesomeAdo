@@ -5,11 +5,23 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ## Next Version
 
+### New Features
+
+- Project Tracking's create commands now follow your configured hierarchy: the project title offers
+  **Add deliverable**, and right-clicking a row offers **New work identified** on the last planning
+  type above your Primary work, **New deliverable** on its parent type, and **New project** on every
+  type above that. The All Projects Catalog's project rows also say **Add deliverable**.
+
 ### Bug Fixes
 
+- Project Tracking now hides every item whose Azure DevOps state is mapped to your abandoned
+  (last) board column, such as a user story in "Cut", instead of only items in "Removed".
 - Fixed the sprint list on Project Tracking and Sprint View sometimes showing another team's
   sprints. A stale cached read of the shared team configuration could silently swap back to a
   previously configured team; team and sprint configuration reads are now always fetched fresh.
+- When Azure DevOps refuses a change to a work item field (for example a state change blocked by a
+  process rule), the Diagnostics log now records Azure DevOps' own explanation instead of a bare
+  "HTTP 400".
 
 ## 0.16
 

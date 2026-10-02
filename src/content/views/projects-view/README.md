@@ -175,7 +175,7 @@ save" indicator sits in the header's top-right corner beside the version marker.
   shared Update title / Update description / View all notes commands, plus **Add custom tag**
   (completing against the tags already in use, or a new one typed in) and **Clear custom tag** (the
   project's own tags only — never the tag that keeps it in this query).
-- **Add new milestone/phase** (projects only): the same command Project Tracking offers on its own
+- **Add deliverable** (projects only): the same command Project Tracking offers on its own
   title, so a milestone means one thing on both surfaces. A title box opens at the top of the
   project's own level — opening the project if it was closed — and the item is created as the project
   type's first configured child type, inheriting the project's area and iteration paths. The board is

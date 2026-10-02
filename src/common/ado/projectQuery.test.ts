@@ -60,7 +60,7 @@ describe("buildProjectQueryWiql", () => {
 
   it("keeps deleted work out of the tree and orders it by assignee", () => {
     const wiql = buildProjectQueryWiql(42);
-    expect(wiql).toContain("NOT [Target].[System.State] IN ('Removed')");
+    expect(wiql).toContain("NOT [Target].[System.State] IN ('Removed', 'Cut')");
     expect(wiql).toContain("ORDER BY [System.AssignedTo] DESC");
     // MODE must close the statement, or Azure DevOps refuses the WIQL outright.
     expect(wiql.trimEnd().endsWith("MODE (Recursive)")).toBe(true);

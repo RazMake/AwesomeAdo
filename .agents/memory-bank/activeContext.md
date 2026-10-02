@@ -46,6 +46,10 @@ AwesomeADO is feature-complete for its current scope:
   pills without narrowing the tree; SprintPicker disables selection only when no options exist.
 - Enhanced views use injected services and one serialized work-item write queue. Every item-changing
   operation must leave the model's `System.Rev` current; see `systemPatterns.md` and ADR-030.
+- Project Tracking create commands are level-named (`newChildOfferFor`): the work level is the last
+  non-Primary-work planning type in config order (**New work identified**), its parent types offer
+  **New deliverable**, every type above offers **New project**; the title offers **Add deliverable**
+  (also the All Projects Catalog project-row label).
 - Project Tracking verifies accepted backlog reorders against the requested sibling interval and
   directly corrects mixed-type or unranked levels when ADO's team endpoint did not place the item.
 - Project Tracking accepts center-row drops into configured parents, even empty or collapsed ones,
@@ -53,6 +57,9 @@ AwesomeADO is feature-complete for its current scope:
   parent-link write. Edge drops still reorder; hierarchy changes remain one-level and demotion leaf-only.
 - Project Tracking renders a branch twisty only when at least one child row survives the active
   filters, so expanding a row never reveals an empty child container.
+- Project Tracking prunes abandoned work at load through the state mapping
+  (`pruneAbandonedWorkItems`: mapped to the last board column), so `Cut` hides like `Removed`;
+  the generated project-query WIQL still pre-excludes the literal ADO `Removed` and `Cut` states.
 - Project Tracking's session-scoped `Show only {fourth state}` toggle narrows the tree to the
   configured completed column through the shared ADO-state mapping, including work outside the
   normal resolved-age window, while preserving planning ancestors and composing with every other

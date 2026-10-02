@@ -67,11 +67,15 @@ board-specific destinations:
   Catalog rows that already have a query also offer **Clear project query**, which deletes the
   query before unlinking it and removing its binding, without changing the item's state.
 - `buildNewChildCommand(label, options)` (`NewChildCommands.ts`) — the one command that **creates**
-  something: **Add new milestone/phase** on the board's title (and on a project row of the All
-  Projects Catalog View), **New work identified** on a row whose
-  children are the team's delivery. Same builder, different label, because both add an item of the
-  parent type's first configured child type. The file also exports `childTypeOf`,
-  `isImmediateParentOfPrimaryWork` (which rows may offer it), `primaryChildTypeOf` (the first child
+  something: **Add deliverable** on the board's title (and on a project row of the All
+  Projects Catalog View), and on rows the label `newChildOfferFor` names for the row's configured
+  level. `newChildOfferFor(parent, types)` returns `{ label, childType }` or null: the **work level**
+  is the last type in config order that is not Primary work yet leads down to it, and offers
+  **New work identified** (creating its first Primary-work child); the work level's parent types
+  offer **New deliverable** (creating a work-level item); every type above those offers
+  **New project** (creating the child on the way down). `newChildTypeOf` is the type the inline box
+  creates — the offer's type, else `childTypeOf`. The file also exports `childTypeOf`,
+  `primaryChildTypeOf` (the first child
   type under a row that IS the team's delivery, so a command promising work cannot create planning),
   `newChildSummary` (the line stating
   what the reader is not being asked to type) and `newChildItem` (the in-memory item the created one
@@ -146,9 +150,9 @@ board-specific destinations:
 - **Adding is asked for once and stated in full.** The create commands open a box only for the
   title; the parent, area path and iteration are inherited from the parent item and named in the
   summary line, because work identified under an item belongs where that item is until someone moves
-  it deliberately. **New work identified** appears only where the children ARE the team's delivery:
-  offering it on planning context above that would create structure under the guise of finding work,
-  and below it would create implementation detail nobody asked for.
+  it deliberately. Row commands are named for the configured level: **New work identified** on the
+  last planning type, **New deliverable** on its parent, **New project** above that — and nothing
+  below the work level, where adding would create implementation detail nobody asked for.
 - **A marker the team never configured stays visible but inert**, saying where to set it, rather than
   vanishing from the menu: settings the reader cannot see from here must not silently change what
   the menu contains.

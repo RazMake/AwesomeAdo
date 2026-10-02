@@ -1,6 +1,10 @@
 import type { TrackedWorkItem, TypeCatalogEntry } from "../../../../common/ado/TrackedWorkItem";
 import { hydrateTrackedWorkItem } from "../../../../common/ado/fetchAdoTree";
-import { primaryWorkTypes } from "../../../../common/ado/workItemTypes";
+import {
+  primaryWorkAncestors,
+  primaryWorkTypes,
+  typesAbove,
+} from "../../../../common/ado/workItemTypes";
 import type { ItemContextMenuCommand } from "../../../../common/view-common/control/ItemContextMenu/ItemContextMenu";
 
 /** What the "add a child" command needs to know about the item it would create one under. */
@@ -32,21 +36,6 @@ export function childTypeOf(
 }
 
 /**
- * Whether work planned directly under this item IS the delivery the team tracks, rather than more
- * planning context.
- *
- * "New work identified" belongs only on the level that actually holds work: offering it on an Epic
- * whose children are Features would create planning structure under the guise of finding work, and
- * offering it below primary work would create implementation detail nobody asked for.
- */
-export function isImmediateParentOfPrimaryWork(
-  parent: TrackedWorkItem,
-  types: ReadonlyMap<string, TypeCatalogEntry>,
-): boolean {
-  return primaryChildTypeOf(parent, types) !== null;
-}
-
-/**
  * The first configured child type under `parent` that IS the delivery the team tracks, or null when
  * this level holds only more planning.
  *
@@ -60,6 +49,109 @@ export function primaryChildTypeOf(
 ): string | null {
   const primary = primaryWorkTypes([...types.values()]);
   return types.get(parent.type)?.children?.find((child) => primary.has(child)) ?? null;
+}
+
+/** The label of each row-level "add a child" command, named for what the reader is adding. */
+export type NewChildLabel = "New work identified" | "New deliverable" | "New project";
+
+/** What a row's "add a child" command is called and which type it creates. */
+export interface NewChildOffer {
+  label: NewChildLabel;
+  childType: string;
+}
+
+/** The configured types playing each creation role, derived once from the catalog. */
+interface CreationLevels {
+  /** The type whose children are newly identified work, or null when none is configured. */
+  work: string | null;
+  /** The types that hold deliverables (work-level items) directly. */
+  deliverableParents: ReadonlySet<string>;
+  /** Every type above a deliverable parent: where new projects are raised. */
+  projectParents: ReadonlySet<string>;
+}
+
+/**
+ * Picks the configured level for each creation command.
+ *
+ * The work level is the LAST planning type (not Primary work, yet leading down to it) in the order
+ * the team configured its types: a team lists its hierarchy top-down, so the last planning type is
+ * the one sitting directly above the delivery. Types below primary work are never candidates — a
+ * Task is not where new work is identified.
+ */
+function creationLevels(types: ReadonlyMap<string, TypeCatalogEntry>): CreationLevels {
+  const catalog = [...types.values()];
+  const planning = primaryWorkAncestors(catalog);
+  const work =
+    catalog.filter((type) => type.isPrimaryWork !== true && planning.has(type.name)).at(-1)?.name ??
+    null;
+  if (work === null) {
+    return { work, deliverableParents: new Set(), projectParents: new Set() };
+  }
+  const deliverableParents = new Set(
+    catalog.filter((type) => type.children?.includes(work) === true).map((type) => type.name),
+  );
+  return {
+    work,
+    deliverableParents,
+    projectParents: typesAbove(catalog, deliverableParents),
+  };
+}
+
+/**
+ * Which "add a child" command a row offers, or null when its level is not one new items are raised
+ * under.
+ *
+ * Checked from the bottom up so a type that recurs at several levels takes its lowest role: the
+ * command nearest the delivery is the one the reader most often needs.
+ */
+export function newChildOfferFor(
+  parent: TrackedWorkItem,
+  types: ReadonlyMap<string, TypeCatalogEntry>,
+): NewChildOffer | null {
+  const levels = creationLevels(types);
+  if (levels.work === null) return null;
+  const children = types.get(parent.type)?.children ?? [];
+  if (parent.type === levels.work) {
+    return offerOf("New work identified", primaryChildTypeOf(parent, types) ?? children[0]);
+  }
+  if (levels.deliverableParents.has(parent.type)) {
+    return offerOf("New deliverable", levels.work);
+  }
+  if (levels.projectParents.has(parent.type)) {
+    return offerOf("New project", projectChildTypeOf(children, levels));
+  }
+  return null;
+}
+
+/**
+ * The type a new project is created as under one of `children`'s parent.
+ *
+ * Directly above the deliverable parents a project is one of them; further up, the child on the way
+ * down to them is the only type that keeps the new project inside the hierarchy.
+ */
+function projectChildTypeOf(
+  children: readonly string[],
+  levels: CreationLevels,
+): string | undefined {
+  return (
+    children.find((child) => levels.deliverableParents.has(child)) ??
+    children.find((child) => levels.projectParents.has(child))
+  );
+}
+
+function offerOf(label: NewChildLabel, childType: string | undefined): NewChildOffer | null {
+  return childType === undefined ? null : { label, childType };
+}
+
+/**
+ * The type a child added under `parent` is created as on a board offering the leveled commands:
+ * the type its row command promises, else the parent's default child type.
+ */
+export function newChildTypeOf(
+  parent: TrackedWorkItem,
+  types: ReadonlyMap<string, TypeCatalogEntry>,
+): string | null {
+  return newChildOfferFor(parent, types)?.childType ?? childTypeOf(parent, types);
 }
 
 /**

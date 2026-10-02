@@ -92,7 +92,7 @@ WHERE
     AND (
         [Target].[System.TeamProject] = @project
         AND [Target].[System.WorkItemType] <> ''
-        AND NOT [Target].[System.State] IN ('Removed')
+        AND NOT [Target].[System.State] IN ('Removed', 'Cut')
     )
 ORDER BY [System.AssignedTo] DESC
 MODE (Recursive)`;

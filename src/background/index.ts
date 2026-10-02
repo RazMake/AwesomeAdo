@@ -176,6 +176,7 @@ import {
   type WriteTeamConfigResponse,
 } from "../common/browser/TeamConfigRequest";
 import {
+  describeFieldWriteFailure,
   isUpdateWorkItemFieldMessage,
   type UpdateWorkItemFieldConfig,
   type UpdateWorkItemFieldMessage,
@@ -1114,12 +1115,13 @@ const updateWorkItemField = async (
       return { ok: false, error: "no result" };
     }
     if (result.ok === false) {
-      logger.error(`Work item ${message.id} field update failed: ${result.error ?? "unknown"}.`);
-    } else {
-      logger.info(
-        `Work item ${message.id} field ${message.field} updated, rev=${result.rev ?? "none"}.`,
-      );
+      const error = describeFieldWriteFailure(result);
+      logger.error(`Work item ${message.id} field update failed: ${error}.`);
+      return { ok: false, error };
     }
+    logger.info(
+      `Work item ${message.id} field ${message.field} updated, rev=${result.rev ?? "none"}.`,
+    );
     return result;
   } catch (error) {
     // Injection fails on a closed/navigated/restricted tab — and ALSO when an argument is not

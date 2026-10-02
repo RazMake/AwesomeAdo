@@ -70,6 +70,10 @@ boards that disagree about the same query.
 - `workItemBoardColumnOrdinal(item, type, boardColumns)` — maps the item's ADO state through every
   state configured for its work-item type and returns the matching extension board-column position,
   or `-1` when no mapping exists.
+- `isWorkItemAbandoned(item, type, boardColumns)` — whether the item's mapped state lands on the
+  abandoned (last) board column; decided through the mapping, never a literal state name.
+- `pruneAbandonedWorkItems(roots, types, boardColumns)` — removes abandoned items (with their
+  subtrees) beneath the roots in place and returns how many were removed.
 - `primaryWorkTypes(types)` — the types the team marked as independently trackable delivery.
 - `primaryWorkWithDescendants(types)` — primary work plus everything configured beneath it: the work
   that counts toward a person's load. A story's tasks are the same commitment seen closer up, so
@@ -490,7 +494,7 @@ let a caller offer to create a second query for a project it never asked about.
 - `buildProjectQueryWiql(projectId)` — the recursive `WorkItemLinks` tree query covering the project
   and everything beneath it. A **tree** query, because that is what Project Tracking consumes. Both
   ends of every link are pinned to `@project` — the macro ADO resolves to the project the saved query
-  lives in, so no caller has to supply a name that could point somewhere else — and `Removed` targets
+  lives in, so no caller has to supply a name that could point somewhere else — and `Removed` / `Cut` targets
   are excluded; the selected columns and the assignee ordering are what a human sees when they open
   the saved query in Azure DevOps.
 - `projectQueryName(title)` / `uniqueProjectQueryName(title, id)` — the query's name, with the

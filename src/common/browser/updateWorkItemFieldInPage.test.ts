@@ -227,6 +227,38 @@ describe("updateWorkItemFieldInPage - what it reports back", () => {
     expect(result).toEqual({ ok: false, error: "HTTP 409" });
   });
 
+  describe("when Azure DevOps rejects the write with a reason", () => {
+    const stateChange = {
+      updateUrl: UPDATE_URL,
+      rev: 6,
+      field: "System.State",
+      value: "Removed",
+    };
+
+    function rejectWith(text: () => Promise<string>) {
+      const fetchMock = vi.fn(() => Promise.resolve({ ok: false, status: 400, text } as Response));
+      globalThis.fetch = fetchMock as unknown as typeof fetch;
+    }
+
+    it("hands the raw body back as detail for the worker to interpret", async () => {
+      rejectWith(() => Promise.resolve('{"message":"TF401320: Rule Error"}'));
+
+      expect(await updateWorkItemFieldInPage(stateChange)).toEqual({
+        ok: false,
+        error: "HTTP 400",
+        detail: '{"message":"TF401320: Rule Error"}',
+      });
+    });
+
+    it("reports just the status when the body is unreadable", async () => {
+      rejectWith(() => Promise.reject(new Error("body gone")));
+
+      expect(await updateWorkItemFieldInPage(stateChange)).toEqual({
+        ok: false,
+        error: "HTTP 400",
+      });
+    });
+  });
   it("returns a failure result when the fetch rejects", async () => {
     const fetchMock = vi.fn(() => Promise.reject(new Error("network down")));
     globalThis.fetch = fetchMock as unknown as typeof fetch;

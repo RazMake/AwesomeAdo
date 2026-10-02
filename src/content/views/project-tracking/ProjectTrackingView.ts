@@ -28,6 +28,7 @@ import {
   orderTrackedItems,
   primaryWorkAncestors,
   primaryWorkWithAncestors,
+  pruneAbandonedWorkItems,
   workItemIdsVisibleUnderPrimaryFilter,
   workItemBoardColumnOrdinal,
   workItemsEligibleForPrimaryFilter,
@@ -139,10 +140,10 @@ import { buildItemCommands, buildSprintMoveCommands } from "./item-commands/Item
 import { buildMarkerCommands } from "./item-commands/MarkerCommands";
 import {
   buildNewChildCommand,
-  childTypeOf,
-  isImmediateParentOfPrimaryWork,
   newChildItem,
+  newChildOfferFor,
   newChildSummary,
+  newChildTypeOf,
 } from "./item-commands/NewChildCommands";
 import { buildProjectLifecycleCommands } from "./item-commands/ProjectLifecycleCommands";
 import { renderMarkerReasonsPill } from "./marker-reasons/MarkerReasonsPill";
@@ -1028,7 +1029,7 @@ function createNewChildSurface(ctx: NewChildContext): NewChildSurface {
 
 /** The inline box asking for the new child's title, wired to this board's configuration. */
 function newChildRow(parent: TrackedWorkItem, ctx: NewChildContext): HTMLElement | null {
-  const type = childTypeOf(parent, ctx.typeMap);
+  const type = newChildTypeOf(parent, ctx.typeMap);
   if (type === null) return null;
   const entry = ctx.typeMap.get(type);
   return renderNewItemRow({
@@ -1190,16 +1191,17 @@ function itemMenuTarget(item: TrackedWorkItem, options: TreeRenderOptions): Item
     areaPaths: options.areaPaths,
     onChanged: options.repaint,
   });
-  // Offered only on the level that actually holds the team's delivery: adding "new work" anywhere
-  // else would create planning structure or implementation detail nobody asked for.
-  if (!isImmediateParentOfPrimaryWork(item, options.typeMap)) {
+  // Named for the configured level the row sits on (work, deliverable, or project), and absent below
+  // the work level, where adding would only create implementation detail nobody asked for.
+  const offer = newChildOfferFor(item, options.typeMap);
+  if (offer === null) {
     return target;
   }
   return {
     ...target,
     commands: [
       ...(target.commands ?? []),
-      buildNewChildCommand("New work identified", {
+      buildNewChildCommand(offer.label, {
         parent: item,
         types: options.typeMap,
         adding: options.newChild.isOpen(item),
@@ -3273,7 +3275,7 @@ function mountBoardHeader(params: {
  * exactly what completing it offers to clean up. "Create Project Query" is left out: the board is
  * already standing on one, so a second could only ever be a duplicate.
  *
- * "Add new milestone/phase" belongs here for the same reason in reverse: the root's own children are
+ * "Add deliverable" belongs here for the same reason in reverse: the root's own children are
  * the board's top level, and the title is the only place that level can be added to.
  */
 function rootMenuTarget(
@@ -3295,7 +3297,7 @@ function rootMenuTarget(
     ...target,
     commands: [
       ...(target.commands ?? []),
-      buildNewChildCommand("Add new milestone/phase", {
+      buildNewChildCommand("Add deliverable", {
         parent: root,
         types: params.typeMap,
         adding: params.session.addingChildOf === root.id,
@@ -3721,10 +3723,18 @@ function renderLoadedBoard(params: RenderLoadedBoardParams): BoardHandle | null 
   if (treeRoot === null) {
     return null;
   }
-  retainBoardCaches(session, treeRoot);
 
   const types = services.getTypes();
   const typeMap = new Map(types.map((t) => [t.name, t]));
+  // Abandoned work is hidden through the team's state mapping, so a process that abandons into "Cut"
+  // (or anything else routed to the last column) drops off just like ADO's own "Removed".
+  const abandoned = pruneAbandonedWorkItems([treeRoot], typeMap, services.getBoardColumns());
+  if (abandoned > 0) {
+    services.logger.info(
+      `Project Tracking hid ${abandoned} abandoned item(s) under ${treeRoot.id}`,
+    );
+  }
+  retainBoardCaches(session, treeRoot);
 
   const lastTypeName = types[types.length - 1]?.name;
   // The board is rendered below; the reconcile callback needs it, so route through a mutable handle

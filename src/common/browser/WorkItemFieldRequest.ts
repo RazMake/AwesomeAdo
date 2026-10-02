@@ -6,6 +6,8 @@ import type {
   WorkItemFieldPrecondition,
 } from "../ado/IWorkItemFieldWriter";
 
+import { readAdoErrorMessage } from "./adoErrorBody";
+
 /**
  * The content→background message contract for updating a single work item field.
  *
@@ -37,6 +39,18 @@ export type UpdateWorkItemFieldResponse = WorkItemFieldWriteResult;
 export interface UpdateWorkItemFieldConfig extends Omit<WorkItemFieldWriteRequest, "id"> {
   /** The item's `_apis/wit/workitems/{id}` endpoint, already resolved from the sender's tab. */
   updateUrl: string;
+}
+
+/**
+ * Fold a rejected field write into one human-readable sentence: the page world's bare status plus
+ * Azure DevOps' own explanation when it sent one, so "HTTP 400" becomes the rule that refused the
+ * write. Without a body the status stands alone.
+ */
+export function describeFieldWriteFailure(result: UpdateWorkItemFieldResponse): string {
+  const status = result.error ?? "unknown";
+  // Bounded here, not in the injected page function, which has no line budget to spare.
+  const body = (result.detail ?? "").trim().slice(0, 600);
+  return body.length === 0 ? status : `${status}: ${readAdoErrorMessage(body)}`;
 }
 
 /**

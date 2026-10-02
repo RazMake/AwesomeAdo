@@ -84,6 +84,8 @@ export interface WorkItemFieldWriteResult {
   rev?: number;
   /** A short error description when ok is false. */
   error?: string;
+  /** The raw refusal body Azure DevOps returned (bounded), for the worker to turn into a reason. */
+  detail?: string;
 }
 
 /**

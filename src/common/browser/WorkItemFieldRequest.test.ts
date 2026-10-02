@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  describeFieldWriteFailure,
   isFieldReferenceName,
   isUpdateWorkItemFieldMessage,
   UPDATE_WORK_ITEM_FIELD_MESSAGE,
@@ -385,5 +386,34 @@ describe("isUpdateWorkItemFieldMessage - base value", () => {
         }),
       ).toBe(false);
     }
+  });
+});
+
+describe("describeFieldWriteFailure", () => {
+  it("appends ADO's message when the refusal carried a JSON envelope", () => {
+    expect(
+      describeFieldWriteFailure({
+        ok: false,
+        error: "HTTP 400",
+        detail: '{"message":"TF401320: Rule Error for field Reason."}',
+      }),
+    ).toBe("HTTP 400: TF401320: Rule Error for field Reason.");
+  });
+
+  it("falls back to the raw body when it is not JSON", () => {
+    expect(describeFieldWriteFailure({ ok: false, error: "HTTP 400", detail: " sign in " })).toBe(
+      "HTTP 400: sign in",
+    );
+  });
+
+  it("bounds the body it reports", () => {
+    expect(
+      describeFieldWriteFailure({ ok: false, error: "HTTP 400", detail: "x".repeat(700) }),
+    ).toBe(`HTTP 400: ${"x".repeat(600)}`);
+  });
+
+  it("reports the status alone when there is no body, and unknown when there is no status", () => {
+    expect(describeFieldWriteFailure({ ok: false, error: "HTTP 412" })).toBe("HTTP 412");
+    expect(describeFieldWriteFailure({ ok: false, detail: "   " })).toBe("unknown");
   });
 });

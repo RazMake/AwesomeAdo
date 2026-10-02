@@ -302,10 +302,11 @@ halves of the view — its configuration and its renderer.
     that reason (prefixed with the team's configured token) as **one** JSON Patch — a separately
     posted comment would advance `System.Rev` and get the tag patch rejected with HTTP 412. Clearing
     asks for nothing. See [`item-commands`](./item-commands/README.md).
-  - **Adding work**: the project title's menu offers **Add new milestone/phase** and every row whose
-    children ARE the team's delivery offers **New work identified**. Both create an item of the
-    parent type's **first** configured child type — the same default a hierarchy drag re-types to —
-    through the shared
+  - **Adding work**: the project title's menu offers **Add deliverable**; rows offer a command named
+    for their configured level — **New work identified** on the last non-Primary-work planning type
+    (config order), **New deliverable** on its parent type, **New project** on every type above.
+    Each creates the type its level implies (the title's command, the root's own level type, else
+    the root type's **first** configured child) through the shared
     [`NewItemRow`](../../../common/view-common/control/NewItemRow/README.md): a box opens at the top
     of the list it will join, asks only for the title, and states the parent, area path and iteration
     the item inherits. Nothing else is asked, because work identified under an item belongs where

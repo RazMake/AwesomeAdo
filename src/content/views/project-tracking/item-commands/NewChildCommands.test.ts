@@ -5,9 +5,10 @@ import type { TrackedWorkItem, TypeCatalogEntry } from "../../../../common/ado/T
 import {
   buildNewChildCommand,
   childTypeOf,
-  isImmediateParentOfPrimaryWork,
   newChildItem,
+  newChildOfferFor,
   newChildSummary,
+  newChildTypeOf,
 } from "./NewChildCommands";
 
 const TYPES = new Map<string, TypeCatalogEntry>(
@@ -70,15 +71,64 @@ describe("childTypeOf", () => {
   });
 });
 
-describe("isImmediateParentOfPrimaryWork", () => {
-  it("recognizes the level whose children ARE the team's delivery", () => {
-    expect(isImmediateParentOfPrimaryWork(itemOf({ type: "Feature" }), TYPES)).toBe(true);
+describe("newChildOfferFor", () => {
+  // Listed top-down the way a team configures it; Epic also holds Stories directly, so only the
+  // config order decides which planning level is the one where work is identified.
+  const LEVELED = new Map<string, TypeCatalogEntry>(
+    (
+      [
+        { name: "Portfolio", children: ["Initiative"] },
+        { name: "Initiative", children: ["Epic"] },
+        { name: "Epic", children: ["Feature", "Story"] },
+        { name: "Feature", children: ["Story", "Bug"] },
+        { name: "Story", isPrimaryWork: true, children: ["Task"] },
+        { name: "Bug", isPrimaryWork: true, children: [] },
+        { name: "Task", children: [] },
+      ] as const
+    ).map((type) => [
+      type.name,
+      {
+        name: type.name,
+        color: "",
+        icon: "",
+        isPrimaryWork: "isPrimaryWork" in type ? type.isPrimaryWork : false,
+        etaField: null,
+        columns: [],
+        children: [...type.children],
+      },
+    ]),
+  );
+  const offerOn = (type: string, types = LEVELED) => newChildOfferFor(itemOf({ type }), types);
+
+  it("names the last planning type in config order as where new work is identified", () => {
+    expect(offerOn("Feature")).toEqual({ label: "New work identified", childType: "Story" });
   });
 
-  it("rejects planning context further up and implementation detail further down", () => {
-    expect(isImmediateParentOfPrimaryWork(itemOf({ type: "Epic" }), TYPES)).toBe(false);
-    expect(isImmediateParentOfPrimaryWork(itemOf({ type: "Story" }), TYPES)).toBe(false);
-    expect(isImmediateParentOfPrimaryWork(itemOf({ type: "Impediment" }), TYPES)).toBe(false);
+  it("raises deliverables on the work level's parent, never its other children", () => {
+    expect(offerOn("Epic")).toEqual({ label: "New deliverable", childType: "Feature" });
+  });
+
+  it("raises projects on every level above, creating the type on the way down", () => {
+    expect(offerOn("Initiative")).toEqual({ label: "New project", childType: "Epic" });
+    expect(offerOn("Portfolio")).toEqual({ label: "New project", childType: "Initiative" });
+  });
+
+  it("offers nothing on primary work, below it, or on an unknown type", () => {
+    expect(offerOn("Story")).toBeNull();
+    expect(offerOn("Task")).toBeNull();
+    expect(offerOn("Impediment")).toBeNull();
+  });
+
+  it("offers nothing when no type is marked as Primary work", () => {
+    const unmarked = new Map(
+      [...LEVELED].map(([name, entry]) => [name, { ...entry, isPrimaryWork: false }]),
+    );
+    expect(offerOn("Feature", unmarked)).toBeNull();
+  });
+
+  it("creates the promised type, else the parent's default child", () => {
+    expect(newChildTypeOf(itemOf({ type: "Portfolio" }), LEVELED)).toBe("Initiative");
+    expect(newChildTypeOf(itemOf({ type: "Story" }), LEVELED)).toBe("Task");
   });
 });
 

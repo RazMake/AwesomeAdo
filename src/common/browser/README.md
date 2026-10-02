@@ -712,7 +712,8 @@ the PATCH in the ADO tab's MAIN world.
   advanced).
 - `UpdateWorkItemFieldResponse` (`{ ok, rev?, error? }`) — the worker's reply; `ok` is false with an
   `error` string when the update could not complete, and `rev` is the item's new System.Rev on
-  success.
+  success. A refusal other than a rev conflict reads `HTTP <status>: <ADO's message>` (for example
+  the process rule that blocked a state change), so the Diagnostics log says why.
 - `isUpdateWorkItemFieldMessage(value)` — the guard the worker uses to accept only well-formed
   requests.
 

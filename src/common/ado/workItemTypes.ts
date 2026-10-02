@@ -83,6 +83,47 @@ export function workItemBoardColumnOrdinal(
   return boardColumnOrdinal(workItemStatusLabel(item, entry), boardColumns);
 }
 
+/**
+ * Whether an item's mapped ADO state lands on the board's abandoned (last) column.
+ *
+ * Decided through the team's state mapping rather than a literal ADO state name, because processes
+ * name abandonment differently (`Removed`, `Cut`, ...) and only the mapping knows which they use.
+ * A board too short to separate an abandoned column from the rest never treats anything as abandoned.
+ */
+export function isWorkItemAbandoned(
+  item: TrackedWorkItem,
+  entry: TypeCatalogEntry | undefined,
+  boardColumns: readonly string[],
+): boolean {
+  const abandonedOrdinal = boardColumns.length - 1;
+  return (
+    abandonedOrdinal > 0 &&
+    workItemBoardColumnOrdinal(item, entry, boardColumns) === abandonedOrdinal
+  );
+}
+
+/**
+ * Drops every abandoned item, with its whole subtree, from beneath `roots` in place, and returns how
+ * many abandoned items were dropped (their descendants are not counted). Roots themselves are kept: they are what the query reports on.
+ */
+export function pruneAbandonedWorkItems(
+  roots: readonly TrackedWorkItem[],
+  types: ReadonlyMap<string, TypeCatalogEntry>,
+  boardColumns: readonly string[],
+): number {
+  let pruned = 0;
+  const prune = (item: TrackedWorkItem): void => {
+    const kept = item.children.filter(
+      (child) => !isWorkItemAbandoned(child, types.get(child.type), boardColumns),
+    );
+    pruned += item.children.length - kept.length;
+    item.children = kept;
+    kept.forEach(prune);
+  };
+  roots.forEach(prune);
+  return pruned;
+}
+
 /** Every type reachable from `seeds` by walking parent → child links. */
 function typesBelow(
   types: readonly TypeCatalogEntry[],
@@ -102,7 +143,7 @@ function typesBelow(
 }
 
 /** Every type that has a child leading down to `targets`, `targets` themselves aside. */
-function typesAbove(
+export function typesAbove(
   types: readonly TypeCatalogEntry[],
   targets: ReadonlySet<string>,
 ): ReadonlySet<string> {
