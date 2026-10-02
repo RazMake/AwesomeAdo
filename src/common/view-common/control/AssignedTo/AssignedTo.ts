@@ -627,7 +627,7 @@ function showAssignee(
   nameButton.style.color =
     assigned === null
       ? "var(--text-secondary-color)"
-      : "var(--assigned-to-text-color, var(--text-secondary-color))";
+      : "var(--assigned-to-text-color, var(--text-primary-color))";
   if (clearButton !== null) {
     clearButton.style.display = assigned === null ? "none" : "inline-flex";
   }

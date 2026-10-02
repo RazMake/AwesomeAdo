@@ -21,7 +21,7 @@ const control = renderAssignedTo(document, {
 ## Public API
 
 Set `--assigned-to-text-color` on the control or an ancestor to customize the name's text color.
-It defaults to `--text-secondary-color`; "Unassigned" always uses `--text-secondary-color`.
+It defaults to `--text-primary-color`; "Unassigned" always uses `--text-secondary-color`.
 
 ### `AssignedToOptions`
 

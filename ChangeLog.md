@@ -12,7 +12,8 @@ builds use the repository's `Major.Minor.Build` release versioning.
   its type icon and title, and press **Set** to move the item under it; the view reloads to show the
   new hierarchy.
 - Assigned users can be cleared directly from assignee chips in every enhanced view, and tag-enabled
-  assignee chips offer a **??** choice that clears the current tag.
+  assignee chips offer a **??** choice that clears the current tag. Assigned names now use brighter
+  primary text in every view.
 
 ### Bug Fixes
 

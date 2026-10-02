@@ -57,9 +57,7 @@ describe("renderAssignedTo", () => {
     expect(nameButton.textContent).toBe("Unassigned");
     expect(nameButton.style.color).toBe("var(--text-secondary-color)");
     control.setUser({ displayName: "Alice", uniqueName: null, imageUrl: null });
-    expect(nameButton.style.color).toBe(
-      "var(--assigned-to-text-color, var(--text-secondary-color))",
-    );
+    expect(nameButton.style.color).toBe("var(--assigned-to-text-color, var(--text-primary-color))");
     control.setUser(null);
     expect(nameButton.textContent).toBe("Unassigned");
     expect(nameButton.style.color).toBe("var(--text-secondary-color)");
