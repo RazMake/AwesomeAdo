@@ -1,4 +1,5 @@
 import type { TrackedWorkItem, TypeCatalogEntry } from "../../../../common/ado/TrackedWorkItem";
+import { buildWorkItemUrl } from "../../../../common/ado/fetchAdoTree";
 import { parseWorkItemId } from "../../../../common/ado/workItemIdText";
 import {
   workItemTypeDisplayColor,
@@ -72,6 +73,14 @@ function renderParentPicker(
     lookup = next;
     renderLookup(options, view, lookup);
     setEnabled(view.set, !saving && lookup.kind === "resolved");
+    setEnabled(view.open, lookup.kind === "resolved");
+  };
+
+  const openParent = (): void => {
+    if (lookup.kind !== "resolved") return;
+    const url = buildWorkItemUrl(doc.location?.href ?? "", lookup.parent.id);
+    // `noopener` so the opened tab cannot reach back into the page the extension runs in.
+    if (url !== null) doc.defaultView?.open(url, "_blank", "noopener");
   };
 
   const resolve = (): void => {
@@ -120,6 +129,7 @@ function renderParentPicker(
   };
 
   wirePickerEvents(view, { onInput: scheduleResolve, save, close });
+  view.open.addEventListener("click", openParent);
   show(lookup);
   prefillFromClipboard(options, view.input, resolve);
   return view.root;
@@ -139,6 +149,7 @@ interface PickerElements {
   failure: HTMLElement;
   set: HTMLButtonElement;
   cancel: HTMLButtonElement;
+  open: HTMLButtonElement;
 }
 
 function createPickerElements(doc: Document): PickerElements {
@@ -171,12 +182,14 @@ function createPickerElements(doc: Document): PickerElements {
 
   const set = createEditorButton(doc, "Set", true);
   const cancel = createEditorButton(doc, "Cancel", false);
+  const open = createEditorButton(doc, "Open parent", false);
+  open.title = "Open the parent item in a new tab";
   const buttons = doc.createElement("div");
   buttons.style.cssText = "display:flex;gap:6px;align-items:center";
-  buttons.append(set, cancel, failure);
+  buttons.append(set, cancel, open, failure);
 
   root.append(input, result, buttons);
-  return { root, input, result, failure, set, cancel };
+  return { root, input, result, failure, set, cancel, open };
 }
 
 function wirePickerEvents(

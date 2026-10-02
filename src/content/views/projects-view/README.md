@@ -175,16 +175,14 @@ save" indicator sits in the header's top-right corner beside the version marker.
   shared Update title / Update description / View all notes commands, plus **Add custom tag**
   (completing against the tags already in use, or a new one typed in) and **Clear custom tag** (the
   project's own tags only — never the tag that keeps it in this query).
-- **Add deliverable** / **Add project** (projects only, named by the same
-  configured-level rule Project Tracking uses), so each level means one thing on both surfaces. A title box opens at the top of the
-  project's own level — opening the project if it was closed — and the item is created as the project
-  type's first configured child type, inheriting the project's area and iteration paths. The board is
-  then re-read, because the query is what decides the tree this catalog shows. The command is not
-  offered on the work beneath a project: planning inside a milestone is done on the board that tracks
-  that project.
-- **New work identified** (the lowest planning level only — the row whose configured children are
-  the team's delivery; a root holding delivery directly keeps its **Add deliverable** /
-  **Add project** name): opens a form rather than a title box, because this is the one creation whose
+- **Add deliverable** / **Add project** / **New work identified** — offered on exactly the rows,
+  with exactly the label and child type, that Project Tracking offers them (one shared
+  configured-level rule), regardless of a row's depth in this catalog. When the child is a planning
+  type, a title box opens at the top of the row's own level — opening the row if it was closed — and
+  the item is created as that type, inheriting the row's area and iteration paths. The board is then
+  re-read, because the query is what decides the tree this catalog shows.
+- When the offered child is **Primary work** (for example **New work identified**): opens a form
+  rather than a title box, because this is the one creation whose
   values are not all inherited. It opens in the middle of the window, headed by the item the work is
   raised under (`Parent: …`). It asks for the title and a **Markdown** description — the same box,
   shortcuts and `@` mentions as every other authored value in the extension — opens the assignee on

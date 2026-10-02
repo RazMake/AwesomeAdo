@@ -1095,8 +1095,29 @@ function submitNewItem(box: HTMLElement, title: string): void {
   box.querySelector<HTMLButtonElement>("button")!.click();
 }
 
+describe("projectsView - adding a nested milestone", () => {
+  it("offers the command on a planning row nested beneath another result", async () => {
+    const nested = item({ id: 2, title: "Checkout" });
+    const root = await renderBoard(
+      createContext({
+        services: createServices({
+          loadTree: async () => ({
+            isTreeQuery: true,
+            roots: [item({ id: 1, title: "Payments", children: [nested] })],
+            error: null,
+          }),
+        }),
+      }),
+    );
+
+    root.querySelector<HTMLButtonElement>(".awesomeado-projects__twisty")!.click();
+
+    expect(openMenu(projectTitle(root, "Checkout")).map(commandLabel)).toContain("Add deliverable");
+  });
+});
+
 describe("projectsView - adding a milestone", () => {
-  it("offers the command on a project, but never on the work beneath one", async () => {
+  it("offers the command on a project, but never on a level that holds no deliverables", async () => {
     const root = await renderBoard();
 
     root.querySelector<HTMLButtonElement>(".awesomeado-projects__twisty")!.click();

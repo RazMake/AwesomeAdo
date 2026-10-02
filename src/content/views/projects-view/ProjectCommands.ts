@@ -5,13 +5,13 @@ import {
   withWorkItemTag,
   withoutWorkItemTag,
 } from "../../../common/ado/workItemTags";
+import { primaryWorkTypes } from "../../../common/ado/workItemTypes";
 import type { ItemContextMenuCommand } from "../../../common/view-common/control/ItemContextMenu/ItemContextMenu";
 import { renderTextEditor } from "../../../common/view-common/control/TextEditor/TextEditor";
 import { buildItemEditingCommands } from "../project-tracking/item-commands/ItemCommands";
 import {
   buildNewChildCommand,
   newChildOfferFor,
-  primaryChildTypeOf,
 } from "../project-tracking/item-commands/NewChildCommands";
 import { buildProjectLifecycleCommands } from "../project-tracking/item-commands/ProjectLifecycleCommands";
 import {
@@ -81,8 +81,7 @@ export function buildProjectCommands(options: ProjectCommandsOptions): ItemConte
     ...buildItemEditingCommands(options),
     { ...addTagCommand(options), separatorBefore: true },
     clearTagCommand(options),
-    ...newMilestoneCommand(options),
-    ...newWorkItemCommand(options),
+    ...newChildCommand(options),
     ...buildProjectLifecycleCommands({
       ...options,
       // Offered on every row, not just the projects: a milestone or a phase beneath a project is a
@@ -95,43 +94,30 @@ export function buildProjectCommands(options: ProjectCommandsOptions): ItemConte
 }
 
 /**
- * Adds a child under a project inline, named by the same configured-level rule Project Tracking
- * uses on its title and rows (Add deliverable / Add project).
+ * The row's "add a child" command, decided by exactly the rule Project Tracking uses
+ * (`newChildOfferFor`), so a row offers the same command — and creates the same type — on both
+ * surfaces regardless of its depth in this tree.
  *
- * Offered on the projects only, not on the work beneath them: the level under a project is what this
- * catalog reports on, while planning inside a milestone is a decision made on the board that tracks
- * that project alongside the rest of its branch. A project whose children are Primary work is left
- * to `newWorkItemCommand`, so the menu never offers the same creation twice.
+ * Only the editor differs: a Primary-work child opens the full work-item form, because new work needs
+ * its area, sprint and assignee up front; a planning child gets the inline title box.
  */
-function newMilestoneCommand(options: ProjectCommandsOptions): ItemContextMenuCommand[] {
-  if (!options.isProject || primaryChildTypeOf(options.item, options.types) !== null) return [];
+function newChildCommand(options: ProjectCommandsOptions): ItemContextMenuCommand[] {
   const offer = newChildOfferFor(options.item, options.types);
   if (offer === null) return [];
-  return [
-    buildNewChildCommand(offer.label, {
-      parent: options.item,
-      types: options.types,
-      adding: options.addingChild,
-      onAdd: options.onAddChild,
-    }),
-  ];
-}
-
-/**
- * Raises a new piece of work under the LOWEST planning level — the row whose configured children are
- * the delivery the team tracks.
- *
- * Offered only there because that is the only level where "new work" means work: on an item whose
- * children are more planning it would quietly create structure, and beneath the delivery level it
- * would create implementation detail nobody asked for. Named by the shared configured-level rule, so
- * a root holding Primary work directly still reads as its Project/Objective command.
- */
-function newWorkItemCommand(options: ProjectCommandsOptions): ItemContextMenuCommand[] {
-  const type = primaryChildTypeOf(options.item, options.types);
-  if (type === null) return [];
+  const type = offer.childType;
+  if (!primaryWorkTypes([...options.types.values()]).has(type)) {
+    return [
+      buildNewChildCommand(offer.label, {
+        parent: options.item,
+        types: options.types,
+        adding: options.addingChild,
+        onAdd: options.onAddChild,
+      }),
+    ];
+  }
   return [
     {
-      label: newChildOfferFor(options.item, options.types)?.label ?? "New work identified",
+      label: offer.label,
       separatorBefore: true,
       // Centred rather than left where the reader right-clicked: this is the one panel here that
       // asks half a dozen questions, and anchored to the pointer it lands somewhere different for

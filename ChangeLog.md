@@ -12,6 +12,11 @@ builds use the repository's `Major.Minor.Build` release versioning.
   its type icon and title, and press **Set** to move the item under it; the view reloads to show the
   new hierarchy.
 
+### Bug Fixes
+
+- The All Projects Catalog now offers the same add commands as Project Tracking on every row — for
+  example **Add deliverable** on a Feature beneath an Epic — instead of only on the top-level rows.
+
 ## 0.17
 
 ### New Features

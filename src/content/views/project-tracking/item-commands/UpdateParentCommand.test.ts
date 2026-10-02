@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment-options { "url": "https://dev.azure.com/org/Proj/_queries/query/q" }
+ */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { WorkItemReorderResult } from "../../../../common/ado/IWorkItemReorderWriter";
@@ -227,6 +230,21 @@ describe("Update parent command", () => {
 });
 
 describe("Update parent command — while resolving", () => {
+  it("opens the resolved parent in a new tab only once it has resolved", async () => {
+    const open = vi.spyOn(window, "open").mockReturnValue(null);
+    const panel = harness().open();
+    expect(button(panel, "Open parent").disabled).toBe(true);
+    type(panel, "77");
+    await settle();
+    button(panel, "Open parent").click();
+    expect(open).toHaveBeenCalledWith(
+      "https://dev.azure.com/org/Proj/_workitems/edit/77",
+      "_blank",
+      "noopener",
+    );
+    open.mockRestore();
+  });
+
   it("disables Set and shows a spinner from the first keystroke until the new id resolves", async () => {
     const h = harness();
     const panel = h.open();
