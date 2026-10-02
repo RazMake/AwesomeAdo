@@ -11,7 +11,8 @@ beneath the three every item menu carries (Copy Item ID / Copy ADO Url / Open in
 | **Change area path**       | A submenu of the board's other area paths, writing `System.AreaPath`                 |
 | **View all notes**         | The item's complete discussion — read, correct, add                                  |
 
-Under a **second** rule, the marker flags (`buildMarkerCommands`):
+Under a **second** rule, the marker flags (`buildMarkerCommands`), offered on **Primary work** only —
+planning items and implementation details never show them:
 
 | Command                                | Does                                                                                                      |
 | -------------------------------------- | --------------------------------------------------------------------------------------------------------- |
@@ -22,7 +23,7 @@ Under a **second** rule, the marker flags (`buildMarkerCommands`):
 The marker's name is drawn as the very [`MarkerPill`](../../../../common/view-common/control/MarkerPill/README.md)
 the item will wear, so the command previews its own result.
 
-Sprint View passes an `InterruptCommandState` as the optional second argument. That opt-in adds
+Sprint View passes an `InterruptCommandState` as the optional third argument. That opt-in adds
 Tag/Accept/Clear Interrupt commands and updates the supplied accepted-ID set after a committed
 write. Project Tracking omits the argument, so Interrupt mutation remains unavailable there.
 
@@ -44,12 +45,12 @@ contextMenu.openAt(event, {
       areaPaths,
     }),
     // Opt-in: a view with no notion of "stuck work" simply never asks for these.
-    ...buildMarkerCommands(target),
+    ...buildMarkerCommands(target, typeCatalog),
   ],
 });
 ```
 
-`buildItemCommands(options)` and `buildMarkerCommands(target)` both return
+`buildItemCommands(options)` and `buildMarkerCommands(target, types)` both return
 `ItemContextMenuCommand[]` for the shared
 [`ItemContextMenu`](../../../../common/view-common/control/ItemContextMenu/README.md).
 
@@ -67,13 +68,14 @@ board-specific destinations:
   Catalog rows that already have a query also offer **Clear project query**, which deletes the
   query before unlinking it and removing its binding, without changing the item's state.
 - `buildNewChildCommand(label, options)` (`NewChildCommands.ts`) — the one command that **creates**
-  something: **Add deliverable** on the board's title (and on a project row of the All
-  Projects Catalog View), and on rows the label `newChildOfferFor` names for the row's configured
-  level. `newChildOfferFor(parent, types)` returns `{ label, childType }` or null: the **work level**
-  is the last type in config order that is not Primary work yet leads down to it, and offers
-  **New work identified** (creating its first Primary-work child); the work level's parent types
-  offer **New deliverable** (creating a work-level item); every type above those offers
-  **New project** (creating the child on the way down). `newChildTypeOf` is the type the inline box
+  something, on the board's title and rows (and on the All Projects Catalog View's rows), always
+  labelled by `newChildOfferFor`. `newChildOfferFor(parent, types)` returns `{ label, childType }`
+  or null: the root type offers **Add deliverable** when its `rootKind` is Project and
+  **Add project** when it is Objective (creating its first child); the **work level** — the last
+  planning type (not Primary work, yet leading down to it) in config order — offers
+  **New work identified** (creating its first Primary-work child, else its first child); every
+  planning type between the two offers **Add deliverable** (creating the child on the way down);
+  Primary work and the types below it offer nothing. `newChildTypeOf` is the type the inline box
   creates — the offer's type, else `childTypeOf`. The file also exports `childTypeOf`,
   `primaryChildTypeOf` (the first child
   type under a row that IS the team's delivery, so a command promising work cannot create planning),
@@ -150,9 +152,11 @@ board-specific destinations:
 - **Adding is asked for once and stated in full.** The create commands open a box only for the
   title; the parent, area path and iteration are inherited from the parent item and named in the
   summary line, because work identified under an item belongs where that item is until someone moves
-  it deliberately. Row commands are named for the configured level: **New work identified** on the
-  last planning type, **New deliverable** on its parent, **New project** above that — and nothing
-  below the work level, where adding would create implementation detail nobody asked for.
+  it deliberately. Row commands are named for the configured level: **Add deliverable** on a Project
+  root, **Add project** on an Objective root, **New work identified** on the last planning type,
+  **Add deliverable** on the planning types between —
+  and nothing on Primary work or below, where adding would create implementation detail nobody asked
+  for.
 - **A marker the team never configured stays visible but inert**, saying where to set it, rather than
   vanishing from the menu: settings the reader cannot see from here must not silently change what
   the menu contains.

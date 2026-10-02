@@ -442,11 +442,13 @@ const trackingServices: EnhancedViewServices = {
   mentionDirectory,
   currentUser: viewCurrentUserReader,
   getTypes: () =>
-    (latestSettings?.workItemTypes ?? []).map((t) => ({
+    (latestSettings?.workItemTypes ?? []).map((t, index) => ({
       name: t.name,
       color: t.color,
       icon: t.icon,
       isPrimaryWork: t.isPrimaryWork === true,
+      // Settings omit the default kind, so the root is spelled out as Project for the views.
+      ...(index === 0 ? { rootKind: t.rootKind ?? "project" } : {}),
       etaField: t.etaField ?? null,
       columns: t.columns.map((c) => ({ column: c.column, states: [...c.states] })),
       children: [...(t.children ?? [])],

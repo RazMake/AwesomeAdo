@@ -10,6 +10,7 @@ import { renderTextEditor } from "../../../common/view-common/control/TextEditor
 import { buildItemEditingCommands } from "../project-tracking/item-commands/ItemCommands";
 import {
   buildNewChildCommand,
+  newChildOfferFor,
   primaryChildTypeOf,
 } from "../project-tracking/item-commands/NewChildCommands";
 import { buildProjectLifecycleCommands } from "../project-tracking/item-commands/ProjectLifecycleCommands";
@@ -92,16 +93,20 @@ export function buildProjectCommands(options: ProjectCommandsOptions): ItemConte
 }
 
 /**
- * Adds the project's next milestone, the same command Project Tracking offers on its own title.
+ * Adds a child under a project inline, named by the same configured-level rule Project Tracking
+ * uses on its title and rows (Add deliverable / Add project).
  *
  * Offered on the projects only, not on the work beneath them: the level under a project is what this
  * catalog reports on, while planning inside a milestone is a decision made on the board that tracks
- * that project alongside the rest of its branch.
+ * that project alongside the rest of its branch. A project whose children are Primary work is left
+ * to `newWorkItemCommand`, so the menu never offers the same creation twice.
  */
 function newMilestoneCommand(options: ProjectCommandsOptions): ItemContextMenuCommand[] {
-  if (!options.isProject) return [];
+  if (!options.isProject || primaryChildTypeOf(options.item, options.types) !== null) return [];
+  const offer = newChildOfferFor(options.item, options.types);
+  if (offer === null) return [];
   return [
-    buildNewChildCommand("Add deliverable", {
+    buildNewChildCommand(offer.label, {
       parent: options.item,
       types: options.types,
       adding: options.addingChild,
@@ -116,14 +121,15 @@ function newMilestoneCommand(options: ProjectCommandsOptions): ItemContextMenuCo
  *
  * Offered only there because that is the only level where "new work" means work: on an item whose
  * children are more planning it would quietly create structure, and beneath the delivery level it
- * would create implementation detail nobody asked for.
+ * would create implementation detail nobody asked for. Named by the shared configured-level rule, so
+ * a root holding Primary work directly still reads as its Project/Objective command.
  */
 function newWorkItemCommand(options: ProjectCommandsOptions): ItemContextMenuCommand[] {
   const type = primaryChildTypeOf(options.item, options.types);
   if (type === null) return [];
   return [
     {
-      label: "Add work item",
+      label: newChildOfferFor(options.item, options.types)?.label ?? "New work identified",
       separatorBefore: true,
       // Centred rather than left where the reader right-clicked: this is the one panel here that
       // asks half a dozen questions, and anchored to the pointer it lands somewhere different for

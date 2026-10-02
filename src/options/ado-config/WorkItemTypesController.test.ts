@@ -1170,6 +1170,29 @@ describe("WorkItemTypesController hierarchy section", () => {
     });
   });
 
+  it("persists an Objective root kind on the root type and seeds it on load", () => {
+    const { store, elements } = setup({
+      boardColumns: ["Active"],
+      entries: [
+        { name: "Bug", color: "CC293D", icon: "", columns: [], rootKind: "objective" },
+        { name: "Task", color: "F2CB1D", icon: "", columns: [] },
+      ],
+    });
+    const kind = hierarchyRowFor(elements, "Bug").querySelector<HTMLSelectElement>(
+      '[data-role="root-kind"]',
+    )!;
+    expect(kind.value).toBe("objective");
+
+    setPrimaryWork(hierarchyRowFor(elements, "Task"), true);
+
+    expect(store.writeCalls.at(-1)).toEqual({
+      workItemTypes: [
+        { name: "Bug", color: "CC293D", icon: "", columns: [], rootKind: "objective" },
+        { name: "Task", color: "F2CB1D", icon: "", columns: [], isPrimaryWork: true },
+      ],
+    });
+  });
+
   it("drops a removed type's links from the next save", () => {
     const { store, elements } = setup({
       boardColumns: ["Active"],

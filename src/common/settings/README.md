@@ -175,7 +175,9 @@ unsubscribe();
   a child. It is omitted for a leaf, and the stored graph is always acyclic. `isPrimaryWork: true`
   classifies a type as independently trackable delivery. Unchecked types above it provide planning
   context; unchecked types below it are implementation details. The first/root type is always
-  planning context, so normalization removes `isPrimaryWork` from it.
+  planning context, so normalization removes `isPrimaryWork` from it. Instead, the root alone may
+  carry `rootKind` (`"project"` or `"objective"`) naming what it represents; absent means Project,
+  and normalization drops it from every other type.
 
 ### `workItemHierarchy.ts`
 

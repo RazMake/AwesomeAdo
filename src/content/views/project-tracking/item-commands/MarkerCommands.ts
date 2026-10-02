@@ -1,3 +1,4 @@
+import type { TypeCatalogEntry } from "../../../../common/ado/TrackedWorkItem";
 import {
   formatWorkItemTags,
   hasWorkItemTag,
@@ -53,11 +54,16 @@ function unconfiguredReason(marker: WorkItemMarker): string {
  * question from the editing commands above them: those change what the item SAYS, these change what
  * the board says ABOUT it. A view that does not want them simply does not ask for them — which is
  * what keeps "flag this item" out of a menu on a surface where flagging means nothing.
+ *
+ * Offered only on Primary work: blockers and interrupts are tracked on the delivery the team works,
+ * so flagging a planning item or an implementation detail would raise a condition no board counts.
  */
 export function buildMarkerCommands(
   target: ItemCommandTarget,
+  types: ReadonlyMap<string, TypeCatalogEntry>,
   interrupt?: InterruptCommandState,
 ): ItemContextMenuCommand[] {
+  if (types.get(target.item.type)?.isPrimaryWork !== true) return [];
   const configured = target.services.markerTags();
   const commands: ItemContextMenuCommand[] = TAGGABLE_MARKERS.map((marker, index) => ({
     ...markerCommand(target, marker, configured[marker]),

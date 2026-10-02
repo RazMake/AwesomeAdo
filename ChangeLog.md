@@ -7,10 +7,13 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ### New Features
 
-- Project Tracking's create commands now follow your configured hierarchy: the project title offers
-  **Add deliverable**, and right-clicking a row offers **New work identified** on the last planning
-  type above your Primary work, **New deliverable** on its parent type, and **New project** on every
-  type above that. The All Projects Catalog's project rows also say **Add deliverable**.
+- Project Tracking and the All Projects Catalog name their create commands from your configured
+  hierarchy: the top type offers **Add deliverable** or **Add project**, depending on whether you
+  marked it as a **Project** or an **Objective** in Options' work item type hierarchy; the last
+  planning type above your Primary work offers **New work identified**; and any planning type in
+  between offers **Add deliverable**. Primary work offers no create command.
+- The **Tag with** blocker and interrupt commands now appear only on Primary work items, in both
+  Project Tracking and Sprint View.
 
 ### Bug Fixes
 

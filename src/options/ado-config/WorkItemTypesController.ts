@@ -173,6 +173,9 @@ export class WorkItemTypesController {
         this.hierarchy.setChildren(entry.name, entry.children);
       }
       this.hierarchy.setPrimaryWork(entry.name, entry.isPrimaryWork === true);
+      if (entry.rootKind) {
+        this.hierarchy.setRootKind(entry.rootKind);
+      }
       this.fillCellsFromEntry(row, entry.columns);
       this.refreshRow(row);
     }
@@ -953,6 +956,10 @@ export class WorkItemTypesController {
       }
       if (this.hierarchy.isPrimaryWork(name)) {
         type.isPrimaryWork = true;
+      }
+      // Project is the default root kind, so only a deliberate Objective is stored.
+      if (result.length === 0 && this.hierarchy.getRootKind() !== "project") {
+        type.rootKind = this.hierarchy.getRootKind();
       }
       result.push(type);
     }

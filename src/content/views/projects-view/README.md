@@ -52,7 +52,7 @@ view answers "what is going on across all of them?" for a query that returns **m
   shared item-editing commands, this view's tag commands, and the shared
   [project-lifecycle commands](../project-tracking/item-commands/README.md) (**Create Project Query**
   on every row, **Mark completed** on projects only).
-- `NewWorkItemPanel.ts` → `renderNewWorkItemPanel(options)` — the **Add work item** form, plus the
+- `NewWorkItemPanel.ts` → `renderNewWorkItemPanel(options)` — the **New work identified** form, plus the
   `NewWorkItemValues` the caller persists.
 - `NewProjectRow.ts` → `renderNewProjectRow(options)` — the inline "add a project" row, including the
   sprint field it opens on the team's current iteration.
@@ -175,15 +175,16 @@ save" indicator sits in the header's top-right corner beside the version marker.
   shared Update title / Update description / View all notes commands, plus **Add custom tag**
   (completing against the tags already in use, or a new one typed in) and **Clear custom tag** (the
   project's own tags only — never the tag that keeps it in this query).
-- **Add deliverable** (projects only): the same command Project Tracking offers on its own
-  title, so a milestone means one thing on both surfaces. A title box opens at the top of the
+- **Add deliverable** / **Add project** (projects only, named by the same
+  configured-level rule Project Tracking uses), so each level means one thing on both surfaces. A title box opens at the top of the
   project's own level — opening the project if it was closed — and the item is created as the project
   type's first configured child type, inheriting the project's area and iteration paths. The board is
   then re-read, because the query is what decides the tree this catalog shows. The command is not
   offered on the work beneath a project: planning inside a milestone is done on the board that tracks
   that project.
-- **Add work item** (the lowest planning level only — the row whose configured children are the
-  team's delivery): opens a form rather than a title box, because this is the one creation whose
+- **New work identified** (the lowest planning level only — the row whose configured children are
+  the team's delivery; a root holding delivery directly keeps its **Add deliverable** /
+  **Add project** name): opens a form rather than a title box, because this is the one creation whose
   values are not all inherited. It opens in the middle of the window, headed by the item the work is
   raised under (`Parent: …`). It asks for the title and a **Markdown** description — the same box,
   shortcuts and `@` mentions as every other authored value in the extension — opens the assignee on

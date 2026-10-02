@@ -110,6 +110,16 @@ export interface WorkItemColumn {
  * — so the surrounding `workItemTypes` array position carries meaning; never sort or dedupe it in a
  * way that loses that order.
  */
+/** The meaning of the hierarchy's root type: a Project or an Objective. */
+export type WorkItemRootKind = "project" | "objective";
+
+/** Every root kind, in the order the options page offers them. */
+export const WORK_ITEM_ROOT_KINDS: readonly WorkItemRootKind[] = ["project", "objective"];
+
+export function isWorkItemRootKind(value: unknown): value is WorkItemRootKind {
+  return value === "project" || value === "objective";
+}
+
 export interface WorkItemType {
   name: string;
   /** The ADO type color as a hex string without a leading `#` (e.g. `CC293D`). */
@@ -119,6 +129,11 @@ export interface WorkItemType {
   columns: WorkItemColumn[];
   /** Whether this type represents independently trackable delivery rather than context or detail. */
   isPrimaryWork?: boolean;
+  /**
+   * What the root (top) type stands for in this team's process. Only ever set on the first type;
+   * the normalizer drops it from every other entry.
+   */
+  rootKind?: WorkItemRootKind;
   /**
    * The ADO date field this type surfaces as its "ETA" (e.g. `Microsoft.VSTS.Scheduling.TargetDate`),
    * or absent when the user has not set one. Configured per type — there is no global default — so a
@@ -423,6 +438,19 @@ function normalizeIconUrl(raw: unknown): string {
   }
 }
 
+/** Copy the optional hierarchy classification flags, keeping only well-formed values. */
+function applyClassification(
+  type: WorkItemType,
+  candidate: { isPrimaryWork?: unknown; rootKind?: unknown },
+): void {
+  if (candidate.isPrimaryWork === true) {
+    type.isPrimaryWork = true;
+  }
+  if (isWorkItemRootKind(candidate.rootKind)) {
+    type.rootKind = candidate.rootKind;
+  }
+}
+
 function normalizeWorkItemType(raw: unknown): WorkItemType | null {
   if (typeof raw !== "object" || raw === null) {
     return null;
@@ -433,6 +461,7 @@ function normalizeWorkItemType(raw: unknown): WorkItemType | null {
     icon?: unknown;
     columns?: unknown;
     isPrimaryWork?: unknown;
+    rootKind?: unknown;
     etaField?: unknown;
     children?: unknown;
   };
@@ -444,9 +473,7 @@ function normalizeWorkItemType(raw: unknown): WorkItemType | null {
   const icon = normalizeIconUrl(candidate.icon);
   const columns = collectTypeColumns(candidate.columns);
   const type: WorkItemType = { name, color, icon, columns };
-  if (candidate.isPrimaryWork === true) {
-    type.isPrimaryWork = true;
-  }
+  applyClassification(type, candidate);
   // The ETA field is optional and per-type, so store it only when set; a blank never bloats the map
   // (mirrors how bindings omit an absent name/active).
   const etaField = typeof candidate.etaField === "string" ? candidate.etaField.trim() : "";
@@ -510,6 +537,10 @@ export function normalizeWorkItemTypes(raw: unknown): WorkItemType[] {
   // itself as delivery would make the hierarchy's context boundary ambiguous.
   if (result.length > 0) {
     delete result[0]!.isPrimaryWork;
+  }
+  // The root kind describes the top of the hierarchy only, so a reordered type cannot carry it down.
+  for (const type of result.slice(1)) {
+    delete type.rootKind;
   }
   // Child links can only be judged against the whole list, so they are settled once it is complete.
   pruneChildReferences(result);

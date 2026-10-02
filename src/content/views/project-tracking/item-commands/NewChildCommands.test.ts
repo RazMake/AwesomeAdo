@@ -72,12 +72,10 @@ describe("childTypeOf", () => {
 });
 
 describe("newChildOfferFor", () => {
-  // Listed top-down the way a team configures it; Epic also holds Stories directly, so only the
-  // config order decides which planning level is the one where work is identified.
   const LEVELED = new Map<string, TypeCatalogEntry>(
     (
       [
-        { name: "Portfolio", children: ["Initiative"] },
+        { name: "Portfolio", rootKind: "project", children: ["Initiative"] },
         { name: "Initiative", children: ["Epic"] },
         { name: "Epic", children: ["Feature", "Story"] },
         { name: "Feature", children: ["Story", "Bug"] },
@@ -92,6 +90,7 @@ describe("newChildOfferFor", () => {
         color: "",
         icon: "",
         isPrimaryWork: "isPrimaryWork" in type ? type.isPrimaryWork : false,
+        ...("rootKind" in type ? { rootKind: type.rootKind } : {}),
         etaField: null,
         columns: [],
         children: [...type.children],
@@ -99,18 +98,24 @@ describe("newChildOfferFor", () => {
     ]),
   );
   const offerOn = (type: string, types = LEVELED) => newChildOfferFor(itemOf({ type }), types);
+  const withRootKind = (rootKind: "project" | "objective") =>
+    new Map([...LEVELED].map(([name, e]) => [name, name === "Portfolio" ? { ...e, rootKind } : e]));
 
-  it("names the last planning type in config order as where new work is identified", () => {
+  it("adds deliverables under a Project root and projects under an Objective root", () => {
+    expect(offerOn("Portfolio", withRootKind("project"))).toEqual({
+      label: "Add deliverable",
+      childType: "Initiative",
+    });
+    expect(offerOn("Portfolio", withRootKind("objective"))).toEqual({
+      label: "Add project",
+      childType: "Initiative",
+    });
+  });
+
+  it("identifies new work on the last planning type and deliverables on those between", () => {
     expect(offerOn("Feature")).toEqual({ label: "New work identified", childType: "Story" });
-  });
-
-  it("raises deliverables on the work level's parent, never its other children", () => {
-    expect(offerOn("Epic")).toEqual({ label: "New deliverable", childType: "Feature" });
-  });
-
-  it("raises projects on every level above, creating the type on the way down", () => {
-    expect(offerOn("Initiative")).toEqual({ label: "New project", childType: "Epic" });
-    expect(offerOn("Portfolio")).toEqual({ label: "New project", childType: "Initiative" });
+    expect(offerOn("Epic")).toEqual({ label: "Add deliverable", childType: "Feature" });
+    expect(offerOn("Initiative")).toEqual({ label: "Add deliverable", childType: "Epic" });
   });
 
   it("offers nothing on primary work, below it, or on an unknown type", () => {
@@ -119,11 +124,11 @@ describe("newChildOfferFor", () => {
     expect(offerOn("Impediment")).toBeNull();
   });
 
-  it("offers nothing when no type is marked as Primary work", () => {
-    const unmarked = new Map(
-      [...LEVELED].map(([name, entry]) => [name, { ...entry, isPrimaryWork: false }]),
+  it("offers nothing on a root with no configured children", () => {
+    const leafRoot = new Map(
+      [...LEVELED].map(([name, e]) => [name, name === "Portfolio" ? { ...e, children: [] } : e]),
     );
-    expect(offerOn("Feature", unmarked)).toBeNull();
+    expect(offerOn("Portfolio", leafRoot)).toBeNull();
   });
 
   it("creates the promised type, else the parent's default child", () => {
@@ -131,7 +136,6 @@ describe("newChildOfferFor", () => {
     expect(newChildTypeOf(itemOf({ type: "Story" }), LEVELED)).toBe("Task");
   });
 });
-
 describe("buildNewChildCommand", () => {
   const command = (overrides: Partial<Parameters<typeof buildNewChildCommand>[1]> = {}) =>
     buildNewChildCommand("New work identified", {
@@ -247,5 +251,41 @@ describe("newChildItem", () => {
     it("still ranks below every sibling", () => {
       expect(created([itemOf({ id: 2, type: "Story", importance: 4 })]).importance).toBe(-1);
     });
+  });
+});
+
+describe("newChildOfferFor on an Objective hierarchy", () => {
+  const OBJECTIVE = new Map<string, TypeCatalogEntry>(
+    (
+      [
+        { name: "Epic", rootKind: "objective", children: ["Feature"] },
+        { name: "Feature", children: ["User Story"] },
+        { name: "User Story", children: ["Bug", "Task"] },
+        { name: "Bug", isPrimaryWork: true, children: [] },
+        { name: "Task", isPrimaryWork: true, children: [] },
+      ] as const
+    ).map((type) => [
+      type.name,
+      {
+        name: type.name,
+        color: "",
+        icon: "",
+        isPrimaryWork: "isPrimaryWork" in type,
+        ...("rootKind" in type ? { rootKind: type.rootKind } : {}),
+        etaField: null,
+        columns: [],
+        children: [...type.children],
+      },
+    ]),
+  );
+  const offerOnObjective = (type: string) => newChildOfferFor(itemOf({ type }), OBJECTIVE);
+  it("names Epic → Feature → User Story → Bug/Task the way an Objective team reads it", () => {
+    expect(offerOnObjective("Epic")?.label).toBe("Add project");
+    expect(offerOnObjective("Feature")?.label).toBe("Add deliverable");
+    expect(offerOnObjective("User Story")).toEqual({
+      label: "New work identified",
+      childType: "Bug",
+    });
+    expect(offerOnObjective("Task")).toBeNull();
   });
 });

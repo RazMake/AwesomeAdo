@@ -1153,6 +1153,7 @@ function menuTargetFor(params: {
   queue: WorkItemWriteQueue;
   sprintWindow: SprintWindow;
   areaPaths: readonly string[];
+  typeMap: ReadonlyMap<string, TypeCatalogEntry>;
   onChanged: () => void;
 }): ItemContextMenuTarget {
   const { doc, item, context } = params;
@@ -1175,7 +1176,7 @@ function menuTargetFor(params: {
       // Asked for explicitly, under their own rule: this board is where a team tracks what is stuck,
       // so it is the board that turns the shared menu's flagging commands on. A view with no such
       // notion simply never asks for them.
-      ...buildMarkerCommands(target),
+      ...buildMarkerCommands(target, params.typeMap),
     ],
   };
 }
@@ -1189,10 +1190,11 @@ function itemMenuTarget(item: TrackedWorkItem, options: TreeRenderOptions): Item
     queue: options.queue,
     sprintWindow: options.sprintWindow,
     areaPaths: options.areaPaths,
+    typeMap: options.typeMap,
     onChanged: options.repaint,
   });
-  // Named for the configured level the row sits on (work, deliverable, or project), and absent below
-  // the work level, where adding would only create implementation detail nobody asked for.
+  // Named for the configured level the row sits on (root kind, milestone, or work), and absent on
+  // Primary work and below, where adding would only create implementation detail nobody asked for.
   const offer = newChildOfferFor(item, options.typeMap);
   if (offer === null) {
     return target;
@@ -3275,8 +3277,9 @@ function mountBoardHeader(params: {
  * exactly what completing it offers to clean up. "Create Project Query" is left out: the board is
  * already standing on one, so a second could only ever be a duplicate.
  *
- * "Add deliverable" belongs here for the same reason in reverse: the root's own children are
- * the board's top level, and the title is the only place that level can be added to.
+ * The root's "add a child" command belongs here for the same reason in reverse: the root's own
+ * children are the board's top level, and the title is the only place that level can be added to. It
+ * is named by the same configured-level rule as every row.
  */
 function rootMenuTarget(
   params: Parameters<typeof mountBoardHeader>[0],
@@ -3291,21 +3294,27 @@ function rootMenuTarget(
     queue: params.core.writes,
     sprintWindow,
     areaPaths: params.itemAreaPaths,
+    typeMap: params.typeMap,
     onChanged: params.onRootChanged,
   });
+  const offer = newChildOfferFor(root, params.typeMap);
   return {
     ...target,
     commands: [
       ...(target.commands ?? []),
-      buildNewChildCommand("Add deliverable", {
-        parent: root,
-        types: params.typeMap,
-        adding: params.session.addingChildOf === root.id,
-        onAdd: () => {
-          params.session.addingChildOf = root.id;
-          params.onRootChanged();
-        },
-      }),
+      ...(offer === null
+        ? []
+        : [
+            buildNewChildCommand(offer.label, {
+              parent: root,
+              types: params.typeMap,
+              adding: params.session.addingChildOf === root.id,
+              onAdd: () => {
+                params.session.addingChildOf = root.id;
+                params.onRootChanged();
+              },
+            }),
+          ]),
       ...buildProjectLifecycleCommands({
         doc: params.doc,
         item: root,

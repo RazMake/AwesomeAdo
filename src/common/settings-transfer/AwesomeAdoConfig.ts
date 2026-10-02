@@ -2,6 +2,7 @@ import { normalizeBindings, type QueryBindings } from "../bindings/QueryBinding"
 import { normalizeFavoritesFolderPath } from "../browser/Favorites";
 import {
   DEFAULT_VIEWS,
+  isWorkItemRootKind,
   normalizeSettings,
   THEMES,
   withoutPersonalSettings,
@@ -485,7 +486,8 @@ function isWorkItemType(value: unknown): boolean {
     isFilledString(value.name) &&
     (value.columns === undefined || isStateMapping(value.columns)) &&
     (value.children === undefined || isStringList(value.children)) &&
-    (value.isPrimaryWork === undefined || typeof value.isPrimaryWork === "boolean")
+    (value.isPrimaryWork === undefined || typeof value.isPrimaryWork === "boolean") &&
+    (value.rootKind === undefined || isWorkItemRootKind(value.rootKind))
   );
 }
 

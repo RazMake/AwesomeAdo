@@ -14,6 +14,8 @@ const TYPES: TypeCatalogEntry[] = [
     name: "Epic",
     color: "ff6b6b",
     icon: "epic.svg",
+    // What the content composition root stamps on the first configured type.
+    rootKind: "project",
     etaField: null,
     children: ["Story"],
     columns: [
@@ -1182,7 +1184,7 @@ const DELIVERY_TYPES: TypeCatalogEntry[] = TYPES.map((type) =>
   type.name === "Story" ? { ...type, isPrimaryWork: true } : type,
 );
 
-/** The form the "Add work item" command opens, wherever the menu put it. */
+/** The form the "Add deliverable" command opens, wherever the menu put it. */
 const workItemForm = (): HTMLElement | null => document.querySelector(".awesomeado-new-work-item");
 
 async function renderDeliveryBoard(overrides: Partial<EnhancedViewServices> = {}) {
@@ -1219,25 +1221,27 @@ describe("projectsView - adding work", () => {
 
     root.querySelector<HTMLButtonElement>(".awesomeado-projects__twisty")!.click();
 
-    expect(openMenu(projectTitle(root, "Payments")).map(commandLabel)).toContain("Add work item");
+    expect(openMenu(projectTitle(root, "Payments")).map(commandLabel)).toContain("Add deliverable");
     expect(openMenu(projectTitle(root, "Card capture")).map(commandLabel)).not.toContain(
-      "Add work item",
+      "Add deliverable",
     );
   });
 
-  it("never offers it while no type is configured as the delivery the team tracks", async () => {
+  it("opens the inline box, not the form, while no type is configured as delivery", async () => {
     const root = await renderBoard();
 
-    expect(openMenu(projectTitle(root, "Payments")).map(commandLabel)).not.toContain(
-      "Add work item",
-    );
+    openMenu(projectTitle(root, "Payments"));
+    menuCommand("Add deliverable").click();
+
+    expect(workItemForm()).toBeNull();
+    expect(milestoneBox(root)).not.toBeNull();
   });
 
   it("opens in the middle of the window, saying which item the work is raised under", async () => {
     const root = await renderDeliveryBoard();
 
     openMenu(projectTitle(root, "Payments"));
-    menuCommand("Add work item").click();
+    menuCommand("Add deliverable").click();
 
     expect(document.querySelector(".awesomeado-item-command__title")!.textContent).toBe(
       "Parent: Payments",
@@ -1258,7 +1262,7 @@ describe("projectsView - creating the described work", () => {
     const root = await renderDeliveryBoard({ createWorkItem: { create }, loadTree });
 
     openMenu(projectTitle(root, "Payments"));
-    menuCommand("Add work item").click();
+    menuCommand("Add deliverable").click();
     const form = workItemForm()!;
     await vi.waitFor(() =>
       expect(
@@ -1293,7 +1297,7 @@ describe("projectsView - creating the described work", () => {
     const root = await renderDeliveryBoard({ logger: { info, error: () => undefined } });
 
     openMenu(projectTitle(root, "Payments"));
-    menuCommand("Add work item").click();
+    menuCommand("Add deliverable").click();
     const form = workItemForm()!;
     const title = form.querySelector<HTMLInputElement>(".awesomeado-new-work-item__title")!;
     title.value = "Retry on decline";

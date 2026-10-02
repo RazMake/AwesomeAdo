@@ -938,6 +938,7 @@ function sprintItemMenuTarget(params: {
   item: TrackedWorkItem;
   writes: WorkItemWriteQueue;
   data: LoadedSprintData;
+  types: ReadonlyMap<string, TypeCatalogEntry>;
   assignableAreaPaths: readonly string[];
   repaint: () => void;
 }): ItemContextMenuTarget {
@@ -957,7 +958,7 @@ function sprintItemMenuTarget(params: {
         sprintWindow: params.data.sprintWindow,
         areaPaths: params.assignableAreaPaths,
       }),
-      ...buildMarkerCommands(target, params.data.interruptAcceptance),
+      ...buildMarkerCommands(target, params.types, params.data.interruptAcceptance),
     ],
   };
 }

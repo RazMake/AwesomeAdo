@@ -3208,6 +3208,8 @@ const DEEP_TYPES: TypeCatalogEntry[] = [
     name: "Epic",
     color: "ff6b6b",
     icon: "epic.svg",
+    // What the content composition root stamps on the first configured type.
+    rootKind: "project",
     etaField: null,
     columns: [],
     children: ["Feature"],
@@ -3820,12 +3822,13 @@ describe("ProjectTrackingView — the item right-click menu", () => {
     return writeText;
   };
 
-  it("offers the three shared commands, then the item's own, then the marker flags", async () => {
+  it("offers the three shared commands, then the item's own, then the create command", async () => {
     const root = await renderDeepBoard();
     await turnSprintFilterOff(root);
 
     rightClick(root.querySelector(".awesomeado-tracking__row")!);
 
+    // A Feature is planning, so it offers no marker flags — those belong to Primary work only.
     expect(menuCommands(root).map((command) => command.textContent)).toEqual([
       "Copy Item ID",
       "Copy ADO Url",
@@ -3835,13 +3838,22 @@ describe("ProjectTrackingView — the item right-click menu", () => {
       "Move to another sprint\u203A",
       "Change area path\u203A",
       "View all notes",
-      "Tag with Blocked (internal)",
-      "Tag with Blocked by another team",
       "New work identified",
     ]);
-    // Three rules: under the commands that only DESCRIBE the item, above the flags, and above the
-    // one command that creates something rather than changing what is there.
-    expect(root.querySelectorAll(".awesomeado-item-menu__separator")).toHaveLength(3);
+    // Rules under the commands that only DESCRIBE the item, and above the one that creates.
+    expect(root.querySelectorAll(".awesomeado-item-menu__separator")).toHaveLength(2);
+  });
+
+  it("offers the marker flags on Primary work, and no create command there", async () => {
+    // The flagged board marks Feature as Primary work, so its first row is delivery.
+    const { root } = await renderFlaggedBoard([]);
+
+    rightClick(root.querySelector(".awesomeado-tracking__row")!);
+
+    const labels = menuCommands(root).map((command) => command.textContent);
+    expect(labels).toContain("Tag with Blocked (internal)");
+    expect(labels).toContain("Tag with Blocked by another team");
+    expect(labels).not.toContain("New work identified");
   });
 
   it("copies the id of the row that was right-clicked", async () => {

@@ -1,3 +1,8 @@
+import {
+  isWorkItemRootKind,
+  WORK_ITEM_ROOT_KINDS,
+  type WorkItemRootKind,
+} from "../../common/settings/ExtensionSettings";
 import { reachesWorkItemType } from "../../common/settings/workItemHierarchy";
 
 import { AutocompleteInput } from "./AutocompleteInput";
@@ -16,6 +21,12 @@ const CHILD_ROLE = "child";
 const CHILD_REMOVE_ROLE = "child-remove";
 const CHILD_ADD_ROLE = "child-add";
 const PRIMARY_WORK_ROLE = "primary-work";
+const ROOT_KIND_ROLE = "root-kind";
+
+const ROOT_KIND_LABELS: Record<WorkItemRootKind, string> = {
+  project: "Project",
+  objective: "Objective",
+};
 
 const ROW_SELECTOR = ".wit-child-row";
 const CHILDREN_SELECTOR = ".wit-child-row__children";
@@ -55,6 +66,7 @@ export class WorkItemHierarchyController {
   private readonly childrenByType = new Map<string, string[]>();
   // Only checked values need state; unchecked means either planning context or implementation detail.
   private readonly primaryWorkTypes = new Set<string>();
+  private rootKind: WorkItemRootKind = "project";
   // Each row's picker owns a searchable dropdown, keyed by its input so a removed row drops the
   // combobox out with the input (no manual bookkeeping).
   private readonly comboboxes = new WeakMap<HTMLInputElement, AutocompleteInput>();
@@ -100,6 +112,7 @@ export class WorkItemHierarchyController {
   reset(): void {
     this.childrenByType.clear();
     this.primaryWorkTypes.clear();
+    this.rootKind = "project";
   }
 
   /** Seed one type's stored children. Call before `render` while loading settings. */
@@ -125,6 +138,16 @@ export class WorkItemHierarchyController {
   /** Whether a type is classified as independently trackable primary work. */
   isPrimaryWork(name: string): boolean {
     return this.primaryWorkTypes.has(name.toLowerCase());
+  }
+
+  /** What the root type represents; Project until the user or stored settings say otherwise. */
+  getRootKind(): WorkItemRootKind {
+    return this.rootKind;
+  }
+
+  /** Seed the stored root kind. Call before `render` while loading settings. */
+  setRootKind(kind: WorkItemRootKind): void {
+    this.rootKind = kind;
   }
 
   /** Rebuild the section from the committed types, dropping links to types that no longer exist. */
@@ -158,6 +181,12 @@ export class WorkItemHierarchyController {
       this.commitChild(target as HTMLInputElement);
     } else if (target.getAttribute(ROLE_ATTRIBUTE) === PRIMARY_WORK_ROLE) {
       this.commitPrimaryWork(target as HTMLInputElement);
+    } else if (target.getAttribute(ROLE_ATTRIBUTE) === ROOT_KIND_ROLE) {
+      const value = (target as HTMLSelectElement).value;
+      if (isWorkItemRootKind(value)) {
+        this.rootKind = value;
+        this.onChange();
+      }
     }
   };
 
@@ -339,17 +368,36 @@ export class WorkItemHierarchyController {
   private createPrimaryWorkCell(doc: Document, typeName: string, isRoot: boolean): HTMLElement {
     const cell = doc.createElement("td");
     cell.className = "wit-child-row__primary-work";
+    if (isRoot) {
+      cell.append(this.createRootKindSelect(doc, typeName));
+      return cell;
+    }
     const checkbox = doc.createElement("input");
     checkbox.type = "checkbox";
     checkbox.setAttribute(ROLE_ATTRIBUTE, PRIMARY_WORK_ROLE);
     checkbox.setAttribute("aria-label", `Treat ${typeName} as primary work`);
-    checkbox.checked = !isRoot && this.isPrimaryWork(typeName);
-    checkbox.disabled = isRoot;
-    checkbox.title = isRoot
-      ? "The root provides planning context and cannot be primary work."
-      : "Primary work is independently trackable delivery; leave planning context and implementation details unchecked.";
+    checkbox.checked = this.isPrimaryWork(typeName);
+    checkbox.title =
+      "Primary work is independently trackable delivery; leave planning context and implementation details unchecked.";
     cell.append(checkbox);
     return cell;
+  }
+
+  // The root always provides planning context, so its cell instead records what the root stands for.
+  private createRootKindSelect(doc: Document, typeName: string): HTMLElement {
+    const select = doc.createElement("select");
+    select.className = "wit-root-kind";
+    select.setAttribute(ROLE_ATTRIBUTE, ROOT_KIND_ROLE);
+    select.setAttribute("aria-label", `What ${typeName} represents`);
+    select.title = "The root provides planning context and cannot be primary work.";
+    for (const kind of WORK_ITEM_ROOT_KINDS) {
+      const option = doc.createElement("option");
+      option.value = kind;
+      option.textContent = ROOT_KIND_LABELS[kind];
+      select.append(option);
+    }
+    select.value = this.rootKind;
+    return select;
   }
 
   private createChildrenCell(doc: Document): HTMLElement {

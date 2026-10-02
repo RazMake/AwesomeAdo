@@ -1236,7 +1236,7 @@ describe("Sprint View item context menus", () => {
     expect(destinations).not.toContain("Project\\Detail");
   });
 
-  it("offers the same item commands on cards and direct child rows", async () => {
+  it("offers the item commands on cards and child rows, with marker flags only on Primary work", async () => {
     const parent = item(1, "Parent", { children: [item(2, "Child", { type: "Task" })] });
     const root = await render({
       loadTree: async () => ({ isTreeQuery: true, roots: [parent], error: null }),
@@ -1245,7 +1245,7 @@ describe("Sprint View item context menus", () => {
         { ...services().getTypes()[0]!, name: "Task", isPrimaryWork: false, children: [] },
       ],
     });
-    const expected = [
+    const shared = [
       "Copy Item ID",
       "Copy ADO Url",
       "Open in ADO",
@@ -1254,6 +1254,8 @@ describe("Sprint View item context menus", () => {
       "Move to another sprint",
       "Change area path",
       "View all notes",
+    ];
+    const markers = [
       "Tag with Blocked (internal)",
       "Tag with Blocked by another team",
       "Tag with Interrupt",
@@ -1264,14 +1266,15 @@ describe("Sprint View item context menus", () => {
       cardRows.map(
         (row) => row.getAttribute("aria-label") ?? row.textContent?.replace("›", "").trim(),
       ),
-    ).toEqual(expected);
+    ).toEqual([...shared, ...markers]);
     root.querySelector<HTMLButtonElement>(".awesomeado-child-items__badge")!.click();
+    // The child is an implementation detail, which is never flagged.
     const childRows = openContextMenu(root.querySelector(".awesomeado-child-items__row")!);
     expect(
       childRows.map(
         (row) => row.getAttribute("aria-label") ?? row.textContent?.replace("›", "").trim(),
       ),
-    ).toEqual(expected);
+    ).toEqual(shared);
   });
 });
 

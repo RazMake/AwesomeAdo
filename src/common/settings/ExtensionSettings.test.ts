@@ -601,3 +601,20 @@ describe("normalizeWorkItemTypes - child types", () => {
     ]);
   });
 });
+
+describe("normalizeWorkItemTypes root kind", () => {
+  it("keeps a valid root kind only on the root type", () => {
+    expect(
+      normalizeWorkItemTypes([
+        { name: "Objective", columns: [], rootKind: "objective" },
+        { name: "Feature", columns: [], rootKind: "project" },
+      ]),
+    ).toEqual([
+      { name: "Objective", color: "", icon: "", columns: [], rootKind: "objective" },
+      { name: "Feature", color: "", icon: "", columns: [] },
+    ]);
+    expect(normalizeWorkItemTypes([{ name: "Epic", columns: [], rootKind: "program" }])).toEqual([
+      { name: "Epic", color: "", icon: "", columns: [] },
+    ]);
+  });
+});

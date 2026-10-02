@@ -98,6 +98,10 @@ function primaryWork(row: HTMLElement): HTMLInputElement {
   return row.querySelector<HTMLInputElement>('[data-role="primary-work"]')!;
 }
 
+function rootKind(row: HTMLElement): HTMLSelectElement {
+  return row.querySelector<HTMLSelectElement>('[data-role="root-kind"]')!;
+}
+
 /** Whether the row still offers the "+" that unfolds its child picker. */
 function canAdd(row: HTMLElement): boolean {
   return !addButton(row).hidden;
@@ -210,12 +214,33 @@ describe("WorkItemHierarchyController rows", () => {
     expect(row.querySelector<HTMLElement>(".wit-type-label__name")!.textContent).toBe("Feature");
   });
 
-  it("forces the root to planning context and disables its primary-work checkbox", () => {
-    const { elements, controller } = setup({ primaryWork: ["Epic"] });
+  it("replaces the root's primary-work checkbox with a Project/Objective picker", () => {
+    const { elements, controller, changes } = setup({ primaryWork: ["Epic"] });
+    const root = rowFor(elements, "Epic");
+    const kind = rootKind(root);
 
-    expect(primaryWork(rowFor(elements, "Epic")).checked).toBe(false);
-    expect(primaryWork(rowFor(elements, "Epic")).disabled).toBe(true);
+    expect(root.querySelector('[data-role="primary-work"]')).toBeNull();
     expect(controller.isPrimaryWork("Epic")).toBe(false);
+    expect([...kind.options].map((option) => option.textContent)).toEqual(["Project", "Objective"]);
+    expect(kind.value).toBe("project");
+
+    kind.value = "objective";
+    kind.dispatchEvent(new Event("change", { bubbles: true }));
+
+    expect(controller.getRootKind()).toBe("objective");
+    expect(changes()).toBe(1);
+  });
+
+  it("renders a seeded root kind and resets it to Project", () => {
+    const { elements, controller } = setup();
+    controller.setRootKind("objective");
+    controller.render([EPIC, FEATURE, STORY, TASK]);
+
+    expect(rootKind(rowFor(elements, "Epic")).value).toBe("objective");
+    expect(rootKind(rowFor(elements, "Feature"))).toBeNull();
+
+    controller.reset();
+    expect(controller.getRootKind()).toBe("project");
   });
 
   it("renders and updates primary work for non-root types", () => {
@@ -237,8 +262,8 @@ describe("WorkItemHierarchyController rows", () => {
 
     controller.render([STORY, EPIC, FEATURE, TASK]);
 
-    expect(primaryWork(rowFor(elements, "User Story")).checked).toBe(false);
-    expect(primaryWork(rowFor(elements, "User Story")).disabled).toBe(true);
+    expect(primaryWork(rowFor(elements, "User Story"))).toBeNull();
+    expect(rootKind(rowFor(elements, "User Story"))).not.toBeNull();
     expect(controller.isPrimaryWork("User Story")).toBe(false);
   });
 });
