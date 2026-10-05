@@ -597,8 +597,34 @@ extension in a real browser.
   `EnhancedViewSurface` mounts only when `QueryPageController.shouldEnhance()` is true, and
   `BindingButton`'s `MutationObserver` is created only when `QueryBindingController` sees a query id.
   The probes run only on request from the options page.
-- The only always-on cost on any ADO page is the two synced-storage observers and the one runtime
-  message listener the content script wires. See ADR-020.
+- The only always-on cost on any ADO page is the three synced-storage observers (settings, bindings,
+  work item collection) and the one runtime message listener the content script wires. See ADR-020.
+
+## Cross-View Work Item Collection
+
+Ctrl+click collection does not teach each view a hit test. `content/item-collector` replays a
+Ctrl/Cmd+left click as a `collectProbe`-marked synthetic `contextmenu` event on the click target, so
+each view's existing row `contextmenu → ItemContextMenu.openAt(event, target)` wiring resolves the
+innermost work item. `openAt` toggles the item in the shared `IItemCollection` (only for targets with
+`workItem`), marks the probe handled and never opens a menu; the collector then spends the original
+click. The widget lives on `document.body`, not the view host (which is cleared on every render and
+removed when ADO's own view is restored), re-attaches through a MutationObserver while active, and
+pins the theme palette itself like `BindingMenu`. Its button reserves left-click for the collected
+items dialog and `contextmenu` for copy/end commands. Pointer movement beyond a small threshold turns
+the same button into a drag handle and suppresses the resulting click. The saved position is a pair
+of fractions over the viewport's available travel distance (viewport minus button size), so browser
+sync can reproduce an on-screen position on differently sized windows.
+
+The collection itself follows the reader across tabs, reloads and devices. `ItemCollectionSync`
+writes the whole collection to the synced key `itemCollection` on every local change and `restore`s
+the local collection on every stored change (guarded so a restore never writes back). Change events
+arrive in commit order, including this tab's own writes, so it keeps a FIFO of in-flight canonical
+JSON writes: while any are outstanding, stored changes are ignored (an older echo, or another tab's
+write the newer local write overwrites); once the last echo arrives, the stored value is
+authoritative. The `storedItemCollection` codec stores tuples, one shared deep-link prefix per
+project, and evenly shortens titles to stay within the 8192-byte per-key sync quota (measured in
+UTF-8); a collection too large even without titles (~hundreds of items) is not written and the
+crossing is logged once. Concurrent edits on two devices resolve last-writer-wins.
 
 ## Enhanced View Runtime Principles
 

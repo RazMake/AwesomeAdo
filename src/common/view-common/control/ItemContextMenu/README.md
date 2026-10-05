@@ -41,6 +41,10 @@ row.addEventListener("contextmenu", (event) => {
 - **`panelBounds?: () => Element | null`** — Resolves the live surface a maximized panel must stay
   inside. Omit it to use the viewport.
 - **`logger: ILogger`** — Records a clipboard write that never landed.
+- **`collection?: IItemCollection`** — The shared work item collection
+  (`EnhancedViewServices.itemCollection`). When given, work item targets get **Start collecting
+  work items** (starts a collection holding that item) / **End collection** after the standard commands, and a Ctrl+click collection probe
+  (see `common/item-collection`) toggles the item instead of opening the menu.
 
 ### `ItemContextMenu`
 
@@ -60,6 +64,8 @@ row.addEventListener("contextmenu", (event) => {
   move to are facts about the owning view's data.
 - **`standardCommands?`** — Optional ordered subset of `copy-id`, `copy-url`, and `open`; omitted
   keeps all three. Sprint's title uses only `copy-url` before its view-level bulk command.
+- **`workItem?: { title, type }`** — Marks the target as a collectable work item. Omit it for
+  non-item targets such as a view title.
 
 ### `ItemContextMenuCommand`
 

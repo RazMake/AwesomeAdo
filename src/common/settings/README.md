@@ -19,6 +19,7 @@ interface ExtensionSettings {
   defaultView: DefaultView; // "original" | "enhanced"        (default: "enhanced")
   queryFavoritesPaths: Record<string, string>;
   consumersShowConsumersQueryIds: string[]; // queries whose Consumers View opens on the consumers (default: [])
+  itemCollectorPosition: RelativeViewportPosition | null; // synced relative position, or bottom-right by default
   organization: string; // ADO organization, "" when not set  (default: "")
   project: string; // ADO project, "" when not set       (default: "")
   currentTeam: TeamRef | null; // selected ADO team, or null       (default: null)
@@ -31,7 +32,8 @@ interface ExtensionSettings {
 }
 ```
 
-`ExtensionSettings.ts` also exports the `Theme` and `DefaultView` unions, the `TeamRef`,
+`ExtensionSettings.ts` also exports the `Theme` and `DefaultView` unions, the
+`RelativeViewportPosition` / `ItemCollectorPosition` shapes, the `TeamRef`,
 `WorkItemType` / `WorkItemColumn` shapes, the `BOARD_COLUMN_COUNT` count and
 `DEFAULT_BOARD_COLUMNS` fixed list, the `WorkItemMarker` / `MarkerTags` / `WorkItemMarkerTags` shapes,
 the `WORK_ITEM_MARKERS` ordered marker list (key + UI label) and its `DEFAULT_MARKER_TAGS` seed, the
@@ -86,10 +88,10 @@ interface ISettingsStore {
 ### Personal settings — `ExtensionSettings.ts`
 
 `PERSONAL_SETTING_KEYS` names the settings that belong to the person rather than the team (`theme`,
-`defaultView`, `queryFavoritesPaths`, `consumersShowConsumersQueryIds`), with `SharedSettings` for the rest and `withoutPersonalSettings(settings)` to drop
-them from a snapshot or a partial update. They still sync across the user's own devices — "personal"
-is not "device-local" — but they never travel to or from a shared configuration work item. See
-ADR-075.
+`defaultView`, `queryFavoritesPaths`, `consumersShowConsumersQueryIds`, `itemCollectorPosition`), with
+`SharedSettings` for the rest and `withoutPersonalSettings(settings)` to drop them from a snapshot or
+a partial update. They still sync across the user's own devices — "personal" is not "device-local" —
+but they never travel to or from a shared configuration work item. See ADR-075.
 
 `PersonalQueryFavoritesPaths` reads and writes one query's destination through the personal settings
 store. Blank text means no folder and clears that query's path. Paths use `/` (also accepting `\` on
@@ -148,6 +150,9 @@ unsubscribe();
 - **`defaultView`** decides what the content script shows on an ADO Query page. `enhanced`
   (default) lets the extension take over the page below the breadcrumb bar; `original` leaves ADO
   untouched.
+- **`itemCollectorPosition`** stores the collector's horizontal and vertical positions as fractions
+  of the viewport space available after accounting for the collector's size. This keeps a dragged
+  position visible across different window sizes while browser sync carries it across devices.
 - **`organization`** and **`project`** name the Azure DevOps scope AwesomeADO works against, `""`
   until set. The options page seeds them from the open ADO query tab the first time and then only
   ever _offers_ the tab's values as a one-click update, so a saved scope is never silently replaced.

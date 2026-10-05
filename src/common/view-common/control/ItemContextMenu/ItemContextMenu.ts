@@ -1,3 +1,5 @@
+import type { CollectedItem, IItemCollection } from "../../../item-collection/ItemCollection";
+import { isCollectProbe, markCollectProbeHandled } from "../../../item-collection/collectProbe";
 import type { ILogger } from "../../../logging/ILogger";
 import { createPopupHost, type PopupHost } from "../popupHost/popupHost";
 
@@ -77,6 +79,11 @@ export interface ItemContextMenuTarget {
   /** Which standard rows appear; omitted keeps Copy ID, Copy URL, and Open in ADO. */
   standardCommands?: readonly ("copy-id" | "copy-url" | "open")[];
   /**
+   * What the work item collection records about this item. Present only on a target that IS a work
+   * item (not a view title), and only such targets offer the collection command or answer Ctrl+click.
+   */
+  workItem?: { title: string; type: string };
+  /**
    * Commands specific to this item, shown under a separator beneath the three every menu carries.
    *
    * Supplied by the caller rather than built here so the menu stays a MENU: what it means to rename
@@ -99,6 +106,36 @@ export interface ItemContextMenuOptions {
   panelBounds?: () => Element | null;
   /** Records a clipboard write that never landed — see `copyToClipboard`. */
   logger: ILogger;
+  /**
+   * The reader's work item collection. When given, work item targets offer Start collecting / End
+   * collection beside the standard commands, and a Ctrl+click probe toggles the item in it.
+   */
+  collection?: IItemCollection;
+}
+
+/** Answers a Ctrl+click probe: toggles the work item in the collection instead of opening the menu.
+ * A target that is not a work item (a view title) still swallows the probe — a probe never opens a
+ * menu — but leaves the click unspent so it keeps its ordinary meaning.
+ */
+function collectedItemFor(
+  target: ItemContextMenuTarget,
+  workItem: NonNullable<ItemContextMenuTarget["workItem"]>,
+): CollectedItem {
+  return { id: target.id, title: workItem.title, type: workItem.type, url: target.url };
+}
+
+/** Answers a Ctrl+click probe: toggles the work item in the collection instead of opening the menu.
+ * A target that is not a work item (a view title) still swallows the probe — a probe never opens a
+ * menu — but leaves the click unspent so it keeps its ordinary meaning.
+ */
+function collectFromProbe(
+  event: MouseEvent,
+  target: ItemContextMenuTarget,
+  collection: IItemCollection | undefined,
+): void {
+  if (collection?.isActive !== true || target.workItem === undefined) return;
+  markCollectProbeHandled(event);
+  collection.toggle(collectedItemFor(target, target.workItem));
 }
 
 /** A shared, single-instance context menu that any number of rows can open. */
@@ -115,6 +152,8 @@ export interface ItemContextMenu {
 const COPY_ID_LABEL = "Copy Item ID";
 const COPY_URL_LABEL = "Copy ADO Url";
 const OPEN_LABEL = "Open in ADO";
+const START_COLLECTING_LABEL = "Start collecting work items";
+const END_COLLECTION_LABEL = "End collection";
 
 /** What an inert URL command tells the reader when it is hovered. */
 const NO_URL_REASON = "This page's address does not resolve to an Azure DevOps project.";
@@ -280,6 +319,57 @@ function renderOpenCommand(
   return row;
 }
 
+/** The standard "about this item" group, plus the collection command for a work item target. */
+function renderStandardCommands(
+  doc: Document,
+  target: ItemContextMenuTarget,
+  close: () => void,
+  logger: ILogger,
+  collection: IItemCollection | undefined,
+): HTMLButtonElement[] {
+  const rows = (target.standardCommands ?? ["copy-id", "copy-url", "open"]).map((command) => {
+    if (command === "copy-id") {
+      return renderCopyCommand(doc, COPY_ID_LABEL, String(target.id), close, logger);
+    }
+    if (command === "copy-url") {
+      return renderCopyCommand(doc, COPY_URL_LABEL, target.url, close, logger);
+    }
+    return renderOpenCommand(doc, target.url, close);
+  });
+  if (collection !== undefined && target.workItem !== undefined) {
+    const item = collectedItemFor(target, target.workItem);
+    rows.push(renderCollectionCommand(doc, collection, item, close));
+  }
+  return rows;
+}
+
+/**
+ * Starts a collection, or — while one runs — ends it. Items are added by Ctrl+click, not from here,
+ * so the one menu slot only ever controls the collection's lifetime.
+ */
+function renderCollectionCommand(
+  doc: Document,
+  collection: IItemCollection,
+  clickedItem: CollectedItem,
+  close: () => void,
+): HTMLButtonElement {
+  const active = collection.isActive;
+  const row = renderCommandRow(doc, active ? END_COLLECTION_LABEL : START_COLLECTING_LABEL);
+  row.title = active ? "" : "Collects this item; then Ctrl+click work items to add or remove them.";
+  row.addEventListener("click", () => {
+    if (active) {
+      collection.end();
+    } else {
+      // The item the reader right-clicked is the obvious first entry; starting empty would make
+      // them Ctrl+click the very item they just chose.
+      collection.start();
+      collection.toggle(clickedItem);
+    }
+    close();
+  });
+  return row;
+}
+
 /** Builds the menu surface and its three commands. */
 function buildMenu(
   doc: Document,
@@ -287,6 +377,7 @@ function buildMenu(
   close: () => void,
   logger: ILogger,
   panelBounds?: () => Element | null,
+  collection?: IItemCollection,
 ): HTMLElement {
   const menu = doc.createElement("div");
   menu.className = "awesomeado-item-menu";
@@ -317,16 +408,8 @@ function buildMenu(
 
   const commands = doc.createElement("div");
   commands.className = "awesomeado-item-menu__commands";
-  const standard = target.standardCommands ?? ["copy-id", "copy-url", "open"];
-  for (const command of standard) {
-    if (command === "copy-id") {
-      commands.append(renderCopyCommand(doc, COPY_ID_LABEL, String(target.id), close, logger));
-    } else if (command === "copy-url") {
-      commands.append(renderCopyCommand(doc, COPY_URL_LABEL, target.url, close, logger));
-    } else {
-      commands.append(renderOpenCommand(doc, target.url, close));
-    }
-  }
+  const standard = renderStandardCommands(doc, target, close, logger, collection);
+  commands.append(...standard);
 
   // The caller's commands act ON the item; the three above only describe it. The rule separates two
   // groups that answer different questions, so a mis-click cannot cross between "tell me about this"
@@ -869,7 +952,7 @@ function centerInWindow(menu: HTMLElement): void {
  * which are written against a trigger element rather than a coordinate.
  */
 export function createItemContextMenu(options: ItemContextMenuOptions): ItemContextMenu {
-  const { doc, mountInto, logger, panelBounds } = options;
+  const { doc, mountInto, logger, panelBounds, collection } = options;
 
   // Reused rather than built per open: the popup host removes only the popup it built, so a fresh
   // anchor each time would leave one stray node behind for every right-click.
@@ -892,6 +975,10 @@ export function createItemContextMenu(options: ItemContextMenuOptions): ItemCont
     // the parent's listener would fire second and overwrite the child's menu with its own.
     event.preventDefault();
     event.stopPropagation();
+    if (isCollectProbe(event)) {
+      collectFromProbe(event, target, collection);
+      return;
+    }
     close();
 
     if (target.url === null) {
@@ -915,7 +1002,7 @@ export function createItemContextMenu(options: ItemContextMenuOptions): ItemCont
       // what they are typing — taking the whole menu with it would close the discussion they opened
       // the editor from. A second Escape, with nothing left editing, still dismisses the menu.
       dismissOnFieldEscape: false,
-      buildPopup: (dismiss) => buildMenu(doc, target, dismiss, logger, panelBounds),
+      buildPopup: (dismiss) => buildMenu(doc, target, dismiss, logger, panelBounds, collection),
     });
     host.toggle();
   };

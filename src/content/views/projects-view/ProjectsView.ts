@@ -351,6 +351,7 @@ function projectMenuTarget(
   return {
     id: item.id,
     url: buildWorkItemUrl(context.doc.location?.href ?? "", item.id),
+    workItem: { title: item.title, type: item.type },
     commands: buildProjectCommands({
       doc: context.doc,
       item,
@@ -754,6 +755,7 @@ function createBoard(
       doc: context.doc,
       mountInto: root,
       logger: context.services.logger,
+      collection: context.services.itemCollection,
     }),
     dragReorder: new DragReorderController(
       context.doc,

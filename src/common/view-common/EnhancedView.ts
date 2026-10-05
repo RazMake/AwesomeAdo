@@ -29,6 +29,7 @@ import type { ICurrentUserReader } from "../ado/currentUser";
 import type { SprintWindow } from "../ado/sprintWindow";
 import type { IQueryBindingWriter } from "../bindings/IQueryBindingWriter";
 import type { CatalogFavorites } from "../browser/Favorites";
+import type { IItemCollection } from "../item-collection/ItemCollection";
 import type { ILogger } from "../logging/ILogger";
 import type { ConsumersShowConsumers } from "../settings/ConsumersShowConsumers";
 import type { WorkItemMarkerTags } from "../settings/ExtensionSettings";
@@ -100,6 +101,11 @@ export interface EnhancedViewServices {
   now(): Date;
   /** The logger for view-level diagnostics. */
   logger: ILogger;
+  /**
+   * The reader's work item collection, shared by every view so it outlives a switch between queries.
+   * Handed to each view's item context menu; absent, the menus simply offer no collection command.
+   */
+  itemCollection?: IItemCollection;
   /**
    * Creates or updates the project's "Feature Crew" work item — the permanently-`Removed`,
    * roster-holding item linked to the root — so a data-driven view can keep it in sync with everyone

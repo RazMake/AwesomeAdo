@@ -5,6 +5,7 @@ const domTestFiles = [
   "src/options/**/*.test.ts",
   "src/content/ado-probe/**/*.test.ts",
   "src/content/query-binding/**/*.test.ts",
+  "src/content/item-collector/**/*.test.ts",
   "src/content/views/**/*.test.ts",
   "src/content/query-page/EnhancedViewSurface.test.ts",
   "src/common/ado/createWorkItem.test.ts",

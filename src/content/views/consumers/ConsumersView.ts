@@ -357,6 +357,7 @@ function createRowContext(
       board.contextMenu.openAt(event, {
         id: item.id,
         url: buildWorkItemUrl(context.doc.location?.href ?? "", item.id),
+        workItem: { title: item.title, type: item.type },
         commands: [
           buildUpdateParentCommand({
             doc: context.doc,
@@ -557,6 +558,7 @@ function createBoard(
       doc: context.doc,
       mountInto: root,
       logger: context.services.logger,
+      collection: context.services.itemCollection,
     }),
     dragReorder: new DragReorderController(
       context.doc,

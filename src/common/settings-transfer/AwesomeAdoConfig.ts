@@ -422,6 +422,19 @@ const SETTINGS_RULES: readonly {
     isValid: isStringList,
     expected: "a list of query IDs",
   },
+  {
+    key: "itemCollectorPosition",
+    isValid: (value) =>
+      value === null ||
+      (isRecord(value) &&
+        typeof value.x === "number" &&
+        typeof value.y === "number" &&
+        value.x >= 0 &&
+        value.x <= 1 &&
+        value.y >= 0 &&
+        value.y <= 1),
+    expected: "null, or relative x and y coordinates between 0 and 1",
+  },
   { key: "project", isValid: isText, expected: "the project name as text" },
   { key: "configurationQueryId", isValid: isText, expected: "the configuration query ID as text" },
   { key: "currentTeam", isValid: isTeamRef, expected: "null, or a team with an id and a name" },

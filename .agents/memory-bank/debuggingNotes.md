@@ -28,6 +28,21 @@ here so every agent, teammate, and clone sees them.
   the browser's ordinary HTTP cache is not an acceptable source of truth for config pulled into
   team-shared settings.
 
+## Module-level state is NOT shared with the deferred view bundles
+
+- SYMPTOM: with a work item collection active, Ctrl+click in Project Tracking (and the other
+  deferred views) opened the item's right-click menu instead of collecting the item.
+- ROOT CAUSE: `scripts/build.mjs` emits Project Tracking, All Projects Catalog and Consumers as
+  separate ESM bundles loaded by dynamic import, and each one inlines its own copy of every `common`
+  module it imports. The collector (main content bundle) marked the synthetic `contextmenu` probe in
+  `collectProbe.ts`'s module `WeakSet`. The view's `ItemContextMenu` checked a different copy of
+  that `WeakSet`, missed the mark, and opened the menu. Sprint View (main bundle) was unaffected.
+- FIX / RULE: anything that marks objects or coordinates across the content runtime and a deferred
+  view must not rely on module-level singletons (WeakSet/Map, `instanceof` on a common class, module
+  counters). Put the state on the shared object under a `Symbol.for(...)` key (the realm-wide
+  registry is shared), or pass an instance through `EnhancedViewServices`. `collectProbe.ts` now
+  stores its mark on the event under `Symbol.for("awesomeado.itemCollection.probe")`.
+
 ## Header buttons stacked their labels in narrow windows
 
 - SYMPTOM: Project Tracking's **Show only Done** and **Assigned To** controls collapsed into tall,

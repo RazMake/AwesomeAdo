@@ -954,6 +954,7 @@ function sprintItemMenuTarget(params: {
   return {
     id: params.item.id,
     url: buildWorkItemUrl(params.context.doc.location?.href ?? "", params.item.id),
+    workItem: { title: params.item.title, type: params.item.type },
     commands: [
       ...buildItemCommands({
         ...target,
@@ -1057,6 +1058,7 @@ function createSprintContextMenu(params: {
     doc: params.context.doc,
     mountInto: params.header,
     logger: params.context.services.logger,
+    collection: params.context.services.itemCollection,
   });
   return {
     menu,

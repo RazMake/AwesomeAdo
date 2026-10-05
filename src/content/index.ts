@@ -38,6 +38,7 @@ import {
   sendCatalogFavorites,
   sendCatalogFavoritesRestore,
 } from "../common/browser/CatalogFavoritesRequest";
+import { ChromeSyncStorage } from "../common/browser/ChromeSyncStorage";
 import {
   type CreateWorkItemMessage,
   type CreateWorkItemResponse,
@@ -154,6 +155,8 @@ import {
   type ReorderWorkItemMessage,
   type ReorderWorkItemResponse,
 } from "../common/browser/WorkItemReorderRequest";
+import { ItemCollection } from "../common/item-collection/ItemCollection";
+import { ItemCollectionSync } from "../common/item-collection/ItemCollectionSync";
 import { createLoggerFactory } from "../common/logging/createLogger";
 import { type AdoThemeResponse, isAdoThemeRequest } from "../common/navigation/AdoContext";
 import { isAdoNavigationMessage, isAdoQueryUrl } from "../common/navigation/AdoQueryRoute";
@@ -178,6 +181,7 @@ import type { EnhancedViewServices } from "../common/view-common/EnhancedView";
 import { SessionActiveViewOverrides } from "./active-view/SessionActiveViewOverrides";
 import { detectAdoQueryName } from "./ado-probe/AdoQueryNameProbe";
 import { detectAdoTheme } from "./ado-probe/AdoThemeProbe";
+import { ItemCollectorWidget } from "./item-collector/ItemCollectorWidget";
 import { BindingButton } from "./query-binding/BindingButton";
 import { BindingMenu } from "./query-binding/BindingMenu";
 import {
@@ -194,8 +198,8 @@ import { overlayBindings, overlaySettings } from "./shared-query/sharedQueryOver
 
 // Performance posture: this script is injected on every hosted ADO page, because host-wide
 // injection is the only way to catch SPA navigation into a Query route (see navigation/README.md).
-// It must therefore stay light on pages that are not queries. The only always-on cost is the two
-// synced-storage observers and the one runtime message listener wired below — no DOM scanning, no
+// It must therefore stay light on pages that are not queries. The only always-on cost is the three
+// synced-storage observers (settings, bindings, the work item collection) and the one runtime message listener wired below — no DOM scanning, no
 // MutationObserver, and no blanking happen off a Query route. Every heavier action is gated behind a
 // parsed query id: PageBlanker paints only when QueryPageController's enhance decision is true, and
 // the top-bar button's MutationObserver is created only when QueryBindingController sees a query id
@@ -224,6 +228,15 @@ const bindingStore = createQueryBindingStore(loggers.forSource("common/bindings"
 // configured team's iterations; the user directory searches ADO's identity picker the same way; the
 // clock is live; the logger is shared.
 let latestSettings: ExtensionSettings | undefined;
+
+// One collection for the whole content runtime, so it outlives every view repaint and query switch.
+// It is mirrored through synced storage so a collection continues across tabs, reloads and devices.
+const itemCollection = new ItemCollection(loggers.forSource("common/item-collection"));
+new ItemCollectionSync(
+  itemCollection,
+  new ChromeSyncStorage(),
+  loggers.forSource("common/item-collection"),
+).connect();
 
 // Rebuilt per load from the latest settings so a type's configured ETA date field is both requested
 // from ADO and read back per type (an empty map means no type has an ETA field configured yet).
@@ -414,6 +427,7 @@ const viewCurrentUserReader = new MessagingCurrentUserReader(
 );
 
 const trackingServices: EnhancedViewServices = {
+  itemCollection,
   catalogFavorites: {
     status: (queryId) =>
       requestCatalogFavoritesStatus((message) => chrome.runtime.sendMessage(message), queryId),
@@ -518,6 +532,14 @@ const trackingServices: EnhancedViewServices = {
   },
 };
 
+const itemCollector = new ItemCollectorWidget(
+  document,
+  itemCollection,
+  (type) => trackingServices.getTypes().find((entry) => entry.name === type),
+  loggers.forSource("content/item-collector"),
+  (position) => store.write({ itemCollectorPosition: position }),
+);
+
 // The in-session view choice lives here, in memory only: switching a query between its enhanced view
 // and ADO's standard page is deliberately not persisted, so a reopened browser returns every query
 // to the configured default view (see content/active-view). Shared by the page controller (to decide
@@ -617,6 +639,8 @@ const applyConfiguration = (): void => {
     latestSettings = settings;
     controller.applySettings(settings);
     bindingMenu.applyTheme(settings.theme);
+    itemCollector.applyTheme(settings.theme);
+    itemCollector.applyPosition(settings.itemCollectorPosition);
     // The menu's check marks resolve a bound query's default presentation from this same setting.
     bindingController.applyDefaultView(settings.defaultView);
     // Incomplete ADO settings force bound queries back to ADO's view, so the menu hides the swap

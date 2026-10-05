@@ -275,6 +275,16 @@ This is a flattened snapshot of what exists now, not a build log.
   saved-query URL carrying `?awesomeAdoConfig={workItemId}` connects a team member outright and gives
   everyone else a read-only, single-query link that changes nothing else. Each work item is read once
   per resolver however many queries point at it (ADR-064).
+- **Work item collector** (`common/item-collection`, `content/item-collector`): one in-memory
+  `ItemCollection` per content runtime, created at the content root and handed to views through
+  `EnhancedViewServices.itemCollection`, mirrored by `ItemCollectionSync` through the synced storage
+  key `itemCollection` (compact `storedItemCollection` codec) so a collection continues across tabs,
+  reloads and devices. Every work item right-click menu offers **Start collecting
+  work items** / **End collection** in the standard group (start also collects the clicked item); a body-mounted floating counter (survives
+  view repaints and query switches) opens View on left-click and Copy Ids / Copy ADO links / End
+  collection on right-click. The counter is draggable and stores its viewport-relative position as a
+  personal browser-synced setting. Ctrl+click toggles items through a marked synthetic `contextmenu`
+  probe. Authenticated browser validation pending.
 - **Navigation** (`src/common/navigation`): `AdoHost` single-source host matching, query-route and
   identity parsing, navigation + theme + query-name message contracts, `NavigationNotifier`.
 - **Browser isolation** (`src/common/browser`): `ChromeSyncStorage`, the two ADO tab readers, and

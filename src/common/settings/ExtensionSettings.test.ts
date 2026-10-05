@@ -80,6 +80,18 @@ describe("normalizeSettings", () => {
     expect(normalizeSettings({ defaultView }).defaultView).toBe(defaultView);
   });
 
+  it("keeps valid collector coordinates and rejects unsafe positions", () => {
+    expect(
+      normalizeSettings({ itemCollectorPosition: { x: 0.25, y: 1 } }).itemCollectorPosition,
+    ).toEqual({ x: 0.25, y: 1 });
+    expect(
+      normalizeSettings({ itemCollectorPosition: { x: -1, y: 0.5 } }).itemCollectorPosition,
+    ).toBeNull();
+    expect(
+      normalizeSettings({ itemCollectorPosition: { x: 0.5, y: "top" } }).itemCollectorPosition,
+    ).toBeNull();
+  });
+
   it("normalizes each field independently", () => {
     expect(normalizeSettings({ theme: "dark", defaultView: "nope" })).toEqual({
       ...DEFAULT_SETTINGS,

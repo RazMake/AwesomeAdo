@@ -9,6 +9,7 @@ const THEME_KEY = "settings.theme";
 const DEFAULT_VIEW_KEY = "settings.defaultView";
 const QUERY_FAVORITES_PATHS_KEY = "settings.queryFavoritesPaths";
 const CONSUMERS_SHOW_CONSUMERS_KEY = "settings.consumersShowConsumersQueryIds";
+const ITEM_COLLECTOR_POSITION_KEY = "settings.itemCollectorPosition";
 const CONFIGURATION_QUERY_KEY = "settings.configurationQueryId";
 const ORGANIZATION_KEY = "settings.organization";
 const PROJECT_KEY = "settings.project";
@@ -25,6 +26,7 @@ const SETTING_KEYS = [
   DEFAULT_VIEW_KEY,
   QUERY_FAVORITES_PATHS_KEY,
   CONSUMERS_SHOW_CONSUMERS_KEY,
+  ITEM_COLLECTOR_POSITION_KEY,
   CONFIGURATION_QUERY_KEY,
   ORGANIZATION_KEY,
   PROJECT_KEY,
@@ -44,6 +46,7 @@ const SETTING_WRITE_MAP: readonly { name: keyof ExtensionSettings; key: string }
   { name: "defaultView", key: DEFAULT_VIEW_KEY },
   { name: "queryFavoritesPaths", key: QUERY_FAVORITES_PATHS_KEY },
   { name: "consumersShowConsumersQueryIds", key: CONSUMERS_SHOW_CONSUMERS_KEY },
+  { name: "itemCollectorPosition", key: ITEM_COLLECTOR_POSITION_KEY },
   { name: "configurationQueryId", key: CONFIGURATION_QUERY_KEY },
   { name: "organization", key: ORGANIZATION_KEY },
   { name: "project", key: PROJECT_KEY },
@@ -63,6 +66,7 @@ function projectSettings(raw: Record<string, unknown>): ExtensionSettings {
     defaultView: raw[DEFAULT_VIEW_KEY],
     queryFavoritesPaths: raw[QUERY_FAVORITES_PATHS_KEY],
     consumersShowConsumersQueryIds: raw[CONSUMERS_SHOW_CONSUMERS_KEY],
+    itemCollectorPosition: raw[ITEM_COLLECTOR_POSITION_KEY],
     configurationQueryId: raw[CONFIGURATION_QUERY_KEY],
     organization: raw[ORGANIZATION_KEY],
     project: raw[PROJECT_KEY],

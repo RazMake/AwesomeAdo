@@ -1176,6 +1176,7 @@ function menuTargetFor(params: {
   return {
     id: item.id,
     url: itemUrl(doc, item.id),
+    workItem: { title: item.title, type: item.type },
     commands: [
       ...buildItemCommands({
         ...target,
@@ -3341,6 +3342,7 @@ function createBoardContextMenu(params: RenderBoardParams, board: HTMLElement): 
     mountInto: board,
     panelBounds: () => params.viewRoot.parentElement ?? params.viewRoot,
     logger: params.context.services.logger,
+    collection: params.context.services.itemCollection,
   });
 }
 

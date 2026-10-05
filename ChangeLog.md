@@ -13,7 +13,15 @@ builds use the repository's `Major.Minor.Build` release versioning.
   new hierarchy.
 - Assigned users can be cleared directly from assignee chips in every enhanced view, and tag-enabled
   assignee chips offer a **??** choice that clears the current tag. Assigned names now use brighter
-  primary text in every view.
+  primary text in every view, and the name and its × sit vertically centered in the chip.
+- Collect work items across every enhanced view: right-click any item and pick **Start collecting
+  work items** to collect it, then Ctrl+click more items to add or remove them — even after switching
+  to another query. A collection keeps running across views, tabs, page reloads, and your other
+  signed-in browsers, so you can start it in one place and finish it in another; ending it anywhere
+  ends it everywhere. A floating counter shows how many are collected: left-click it to view the
+  collected items (open any item by its `#id` or remove it with its red ×), right-click it to copy
+  IDs, copy ADO links, or end collection, and drag it anywhere convenient. Its position is remembered
+  across sessions and synced across browsers.
 - Consumers View now opens on one list of every shown consumer's feature requests, each tagged with
   its consumer and showing its **Needed by** date (your configured ETA field), Status, description,
   Discussion, and right-click menu. Drag requests to rank them (saved to the backlog order like

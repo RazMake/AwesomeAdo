@@ -119,6 +119,13 @@ AwesomeADO is feature-complete for its current scope:
   through a flat WIQL `loadTree`, Set enabled only once resolved; the re-parent rides the shared
   queue's `enqueueReorder` (`currentParentId: 0` forces the link patch, ranked last), so it needs a
   configured team, then the view re-reads its query. Authenticated browser validation pending.
+- Every work item right-click menu offers **Start collecting work items** / **End collection**
+  (`common/item-collection`), starting with the right-clicked item; while active, Ctrl+click toggles items through a synthetic
+  `contextmenu` probe. The body-mounted counter (`content/item-collector`) opens the collected-items
+  list on left-click, opens copy/end commands on right-click, and can be dragged; its relative
+  viewport position is a personal synced setting. The collection itself is mirrored through the
+  synced `itemCollection` key (`ItemCollectionSync`), so it continues across tabs, reloads and
+  devices; ending it anywhere ends it everywhere. Authenticated browser validation pending.
 - User-visible decisions and failures are source-tagged in the bounded diagnostics log; every caught
   runtime exception is logged with its original value.
 - The complete quality gate remains coverage ≥ 85%, zero lint warnings, formatting, typecheck,

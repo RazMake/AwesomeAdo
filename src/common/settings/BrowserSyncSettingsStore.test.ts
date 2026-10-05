@@ -67,6 +67,7 @@ class FakeBrowserSyncStorage implements IBrowserSyncStorage {
 
 const THEME_KEY = "settings.theme";
 const DEFAULT_VIEW_KEY = "settings.defaultView";
+const ITEM_COLLECTOR_POSITION_KEY = "settings.itemCollectorPosition";
 const ORGANIZATION_KEY = "settings.organization";
 const PROJECT_KEY = "settings.project";
 const CURRENT_TEAM_KEY = "settings.currentTeam";
@@ -119,6 +120,16 @@ describe("BrowserSyncSettingsStore - read", () => {
       const store = new BrowserSyncSettingsStore(fake);
       const settings = await store.read();
       expect(settings).toEqual({ ...DEFAULT_SETTINGS, theme: "dark", defaultView: "original" });
+    });
+
+    it("reads and writes the synced collector position", async () => {
+      const fake = new FakeBrowserSyncStorage();
+      await fake.set(ITEM_COLLECTOR_POSITION_KEY, { x: 0.25, y: 0.75 });
+      const store = new BrowserSyncSettingsStore(fake);
+
+      expect((await store.read()).itemCollectorPosition).toEqual({ x: 0.25, y: 0.75 });
+      await store.write({ itemCollectorPosition: { x: 0.5, y: 0.4 } });
+      expect(await fake.get(ITEM_COLLECTOR_POSITION_KEY)).toEqual({ x: 0.5, y: 0.4 });
     });
 
     it("reads the team and sprint-count keys", async () => {

@@ -29,6 +29,9 @@ export interface ExtensionSettings {
   /** The queries whose Consumers View opens on the consumers; every other opens on requests only. */
   consumersShowConsumersQueryIds: string[];
 
+  /** The collector's relative viewport position, or null for its bottom-right default. */
+  itemCollectorPosition: ItemCollectorPosition;
+
   configurationQueryId: string;
 
   /**
@@ -85,6 +88,14 @@ export interface ExtensionSettings {
    */
   markerTags: WorkItemMarkerTags;
 }
+
+/** Fractions of the viewport space available after accounting for the collector's own size. */
+export interface RelativeViewportPosition {
+  x: number;
+  y: number;
+}
+
+export type ItemCollectorPosition = RelativeViewportPosition | null;
 
 export type Theme = ThemePreference;
 export type DefaultView = "original" | "enhanced";
@@ -259,6 +270,7 @@ export const DEFAULT_SETTINGS: ExtensionSettings = deepFreeze({
   defaultView: "enhanced",
   queryFavoritesPaths: {},
   consumersShowConsumersQueryIds: [],
+  itemCollectorPosition: null,
   configurationQueryId: "",
   organization: "",
   project: "",
@@ -283,6 +295,7 @@ export const PERSONAL_SETTING_KEYS = [
   "defaultView",
   "queryFavoritesPaths",
   "consumersShowConsumersQueryIds",
+  "itemCollectorPosition",
 ] as const;
 
 export type PersonalSettingKey = (typeof PERSONAL_SETTING_KEYS)[number];
@@ -318,6 +331,19 @@ function isTheme(value: unknown): value is Theme {
 
 function isDefaultView(value: unknown): value is DefaultView {
   return typeof value === "string" && (DEFAULT_VIEWS as readonly string[]).includes(value);
+}
+
+function normalizeItemCollectorPosition(value: unknown): ItemCollectorPosition {
+  if (typeof value !== "object" || value === null) return null;
+  const position = value as Partial<Record<keyof RelativeViewportPosition, unknown>>;
+  if (!isUnitCoordinate(position.x) || !isUnitCoordinate(position.y)) {
+    return null;
+  }
+  return { x: position.x, y: position.y };
+}
+
+function isUnitCoordinate(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1;
 }
 
 /**
@@ -696,6 +722,7 @@ export function normalizeSettings(raw: unknown): ExtensionSettings {
     consumersShowConsumersQueryIds: normalizeConsumersShowConsumersQueryIds(
       candidate.consumersShowConsumersQueryIds,
     ),
+    itemCollectorPosition: normalizeItemCollectorPosition(candidate.itemCollectorPosition),
     organization: normalizeAdoName(candidate.organization),
     configurationQueryId: normalizeAdoName(candidate.configurationQueryId),
     project: normalizeAdoName(candidate.project),
