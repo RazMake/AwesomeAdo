@@ -1,5 +1,8 @@
 import type { ILogger } from "../../../common/logging/ILogger";
-import type { RefreshButtonHandle } from "../../../common/view-common/control/HeaderButtons/HeaderButtons";
+import type {
+  RefreshButtonHandle,
+  RefreshRequest,
+} from "../../../common/view-common/control/HeaderButtons/HeaderButtons";
 
 /** What a board hands the loader: how to read its data, and how to show each outcome. */
 export interface BoardLoaderOptions<T> {
@@ -19,6 +22,8 @@ export interface BoardLoaderOptions<T> {
   queue: { clearFailures(): void };
   /** The refresh button currently on screen, or null before the first paint. */
   refreshButton(): RefreshButtonHandle | null;
+  /** Forget everything the board remembers between reads; run before a Ctrl+Refresh re-read. */
+  discardCaches?(): void;
 }
 
 /** A board's load/refresh lifecycle. */
@@ -27,8 +32,11 @@ export interface BoardLoader<T> {
   data(): T | null;
   /** Read the query; a refresh keeps the current board on screen while it runs. */
   load(isRefresh: boolean): void;
-  /** What the header's Refresh press does: re-read, or open Diagnostics after a failed refresh. */
-  refresh(): void;
+  /**
+   * What the header's Refresh press does: re-read, or open Diagnostics after a failed refresh. A
+   * request to discard caches always discards and re-reads — the reader is forcing a fresh start.
+   */
+  refresh(request?: RefreshRequest): void;
   /** Whether the board on screen is older data a failed refresh left behind. */
   refreshFailed(): boolean;
 }
@@ -79,7 +87,12 @@ export function createBoardLoader<T>(options: BoardLoaderOptions<T>): BoardLoade
   return {
     data: () => data,
     load,
-    refresh: () => {
+    refresh: (request) => {
+      if (request?.discardCaches === true) {
+        options.discardCaches?.();
+        load(true);
+        return;
+      }
       if (failed) {
         failed = false;
         options.openDiagnosticsLog();

@@ -65,6 +65,18 @@ export class MessagingMentionDirectory implements IMentionDirectory {
     return this.names;
   }
 
+  /**
+   * Forget every settled answer, so the next resolve asks Azure DevOps again.
+   *
+   * Reads already in flight are left to finish: they were issued moments ago, so what they bring back
+   * is as fresh as a new read would be, and dropping them would leave their awaiting callers hanging
+   * on a promise nobody resolves into the directory.
+   */
+  clear(): void {
+    this.names.clear();
+    this.settled.clear();
+  }
+
   async resolveNames(ids: readonly string[]): Promise<ReadonlyMap<string, string>> {
     const wanted = [...new Set(ids.map((id) => id.toLowerCase()))];
     const reads = new Set<Promise<void>>();

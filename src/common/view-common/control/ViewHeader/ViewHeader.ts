@@ -1,8 +1,10 @@
 import { renderBreadcrumbs, type BreadcrumbSegment } from "../Breadcrumbs/Breadcrumbs";
 import {
+  refreshRequestOf,
   renderHeaderButton,
   renderRefreshButton,
   type RefreshButtonHandle,
+  type RefreshRequest,
 } from "../HeaderButtons/HeaderButtons";
 import { renderVersionLabel, VERSION_MARKER_GAP_PX } from "../VersionLabel/VersionLabel";
 
@@ -43,7 +45,8 @@ export interface ViewTitleBandOptions {
   outlineControls?: readonly HTMLElement[];
   /** The narrowing controls, left to right, immediately before Refresh at the far right. */
   filters: readonly HTMLElement[];
-  onRefresh(): void;
+  /** Runs on a Refresh click; `request.discardCaches` is set when Ctrl (Cmd on macOS) was held. */
+  onRefresh(request: RefreshRequest): void;
 }
 
 /** The mounted title band plus the refresh button whose state the board drives. */
@@ -179,7 +182,7 @@ export function renderViewTitleBand(
   collapse.addEventListener("click", options.onCollapseAll);
 
   const refresh = renderRefreshButton(doc, `${classPrefix}__refresh`);
-  refresh.element.addEventListener("click", options.onRefresh);
+  refresh.element.addEventListener("click", (event) => options.onRefresh(refreshRequestOf(event)));
 
   const filters = doc.createElement("div");
   filters.className = `${classPrefix}__filters`;

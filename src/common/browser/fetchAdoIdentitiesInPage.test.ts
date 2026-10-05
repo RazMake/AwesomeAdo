@@ -44,6 +44,7 @@ describe("fetchAdoIdentitiesInPage", () => {
         "X-TFS-FedAuthRedirect": "Suppress",
       },
       body: BODY,
+      cache: "no-store",
     });
     expect(result).toEqual({ status: 200, body, failure: "none" });
   });

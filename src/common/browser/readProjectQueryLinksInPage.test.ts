@@ -28,6 +28,7 @@ describe("readProjectQueryLinksInPage", () => {
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe(BATCH_URL);
     expect(init.credentials).toBe("include");
+    expect(init.cache).toBe("no-store");
     expect(JSON.parse(init.body as string)).toEqual({ ids: [1], $expand: "Relations" });
     expect(outcome).toEqual({ ok: true, raw: { value: [{ id: 1 }] } });
   });

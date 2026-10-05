@@ -34,14 +34,15 @@ export function writeWorkItemNoteInPage(
       return saved;
     }
     return fetch(config.workItemUrl, {
+      // A cached body would hand back the pre-note rev this read exists to replace.
+      cache: "no-store",
       credentials: "include",
       headers: { Accept: "application/json" },
     })
       .then((response) => (response.ok ? response.json() : null))
-      .then((body: { rev?: unknown } | null) => {
-        const rev = body === null ? null : body.rev;
-        return typeof rev === "number" ? { ok: true, raw: saved.raw, rev: rev } : saved;
-      })
+      .then((body: { rev?: unknown } | null) =>
+        typeof body?.rev === "number" ? { ok: true, raw: saved.raw, rev: body.rev } : saved,
+      )
       .catch(() => saved);
   }
 

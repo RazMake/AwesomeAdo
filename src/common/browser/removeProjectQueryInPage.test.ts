@@ -68,6 +68,8 @@ describe("removeProjectQueryInPage", () => {
       { op: "remove", path: "/relations/1" },
     ]);
     expect(callAt(fetchMock, 1)[1].method).toBe("DELETE");
+    // A cached read would address a link index from before the item last changed.
+    expect(callAt(fetchMock, 0)[1].cache).toBe("no-store");
     expect(outcome).toEqual({ ok: true, rev: 10 });
   });
 

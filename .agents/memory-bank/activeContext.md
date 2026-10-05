@@ -55,6 +55,8 @@ AwesomeADO is feature-complete for its current scope:
   pills without narrowing the tree; SprintPicker disables selection only when no options exist.
 - Enhanced views use injected services and one serialized work-item write queue. Every item-changing
   operation must leave the model's `System.Rev` current; see `systemPatterns.md` and ADR-030.
+- Every MAIN-world ADO read is `cache: "no-store"`, and Ctrl+click Refresh in every view discards all
+  page-lifetime memos and re-reads (Runtime Principles §3 in `systemPatterns.md`).
 - Editable assignee chips in every enhanced view expose a leading clear-assignment ×, hidden while
   unassigned. Tag editors always offer the neutral `??` pill to clear the current tag.
 - Project Tracking create commands are level-named (`newChildOfferFor`): the work level is the last

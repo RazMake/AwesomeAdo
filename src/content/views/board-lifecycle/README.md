@@ -18,13 +18,15 @@ Consumers View load, refresh, save, and fail identically (Project Tracking share
 | `openDiagnosticsLog()` | Opens the Diagnostics log.                                           |
 | `queue`                | The board's write queue; every fresh read clears its failure report. |
 | `refreshButton()`      | The refresh button on screen, or null before the first paint.        |
+| `discardCaches()`      | Optional; runs before a Ctrl+click refresh re-reads (see below).     |
 
 The returned loader offers:
 
 - **`load(isRefresh)`** — read the query. The first load shows `loadingMessage`; a refresh keeps the
   board on screen and marks the button busy. Only the newest load may paint.
-- **`refresh()`** — what the Refresh button does. After a failed refresh the next press opens the
-  Diagnostics log instead of retrying.
+- **`refresh(request?)`** — what the Refresh button does. After a failed refresh the next press opens
+  the Diagnostics log instead of retrying. A `RefreshRequest` with `discardCaches` (Ctrl+click) runs
+  the `discardCaches` option and always re-reads, even after a failed refresh.
 - **`data()`** — the answer on screen, or null before the first load lands.
 - **`refreshFailed()`** — true while the board on screen is older data a failed refresh left behind;
   `paint()` uses it to mark the refresh button failed.
@@ -43,3 +45,10 @@ newest one keeps tracking the queue.
 The one serialized queue a board sends every field edit and every drag move through, wired to the
 board's `writeField`, `reorderItem`, and `logger` services. Build exactly one per board: a move and
 an edit to the same item must never race on its revision.
+
+`discardBoardCaches.ts` → `discardBoardCaches(services, board, caches)`
+
+What every view runs for a Ctrl+click Refresh: logs the forced fresh start under the board's name,
+calls `clear()` on each board-owned cache (opened discussions, recent-note dates), then asks the
+page-wide `services.discardCachedData()` (when the composition root provides it) to forget people,
+@-mention, and shared team-configuration lookups.

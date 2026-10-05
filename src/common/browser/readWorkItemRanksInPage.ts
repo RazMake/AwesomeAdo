@@ -39,6 +39,8 @@ export function readWorkItemRanksInPage(
     credentials: "include",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify({ ids: config.ids, fields: [config.field] }),
+    // A batch POST is a read of mutable ranks; keep it uniform with every other MAIN-world read.
+    cache: "no-store",
   })
     .then((response): Promise<ReadWorkItemRanksResponse> => {
       if (!response.ok) {

@@ -112,7 +112,8 @@ export function reorderWorkItemInPage(encodedConfig: string): Promise<ReorderWor
   // Replace the child→parent link. The existing one is addressed by INDEX (JSON Patch has no way to
   // remove a link by value), which is the only reason the item has to be read first.
   function applyReparent(): Promise<ReorderWorkItemResponse> {
-    return fetch(config.relationsUrl, { credentials: "include" })
+    // A cached body would address a link index (and rev) from before the item last changed.
+    return fetch(config.relationsUrl, { credentials: "include", cache: "no-store" })
       .then((response) =>
         response.ok
           ? response.json().then((json) => patchItem(parentLinkOps(json)))

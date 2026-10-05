@@ -57,17 +57,20 @@ describe("fetchAdoTreeInPage - tree hydration", () => {
     expect(fetchMock).toHaveBeenCalledWith(WIQL_URL, {
       credentials: "include",
       headers: { Accept: "application/json" },
+      cache: "no-store",
     });
     // The query-metadata read is same-origin and credentialed too, so the folder path resolves.
     expect(fetchMock).toHaveBeenCalledWith(QUERY_URL, {
       credentials: "include",
       headers: { Accept: "application/json" },
+      cache: "no-store",
     });
     expect(fetchMock).toHaveBeenCalledWith(BATCH_URL, {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify({ ids: [1, 2, 3], fields: FIELDS }),
+      cache: "no-store",
     });
     expect(result).toEqual({
       wiql: wiqlBody,
@@ -102,7 +105,7 @@ describe("fetchAdoTreeInPage - custom WIQL", () => {
 
     await fetchAdoTreeInPage(WIQL_URL, BATCH_URL, FIELDS, QUERY_URL, customInit);
 
-    expect(fetchMock).toHaveBeenCalledWith(WIQL_URL, customInit);
+    expect(fetchMock).toHaveBeenCalledWith(WIQL_URL, { ...customInit, cache: "no-store" });
   });
 });
 
@@ -128,6 +131,7 @@ describe("fetchAdoTreeInPage - paging and flat queries", () => {
       credentials: "include",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify({ ids: [5, 7], fields: FIELDS }),
+      cache: "no-store",
     });
     expect(result).toEqual({ wiql: wiqlBody, items: [{ id: 5 }, { id: 7 }], query: QUERY_META });
   });

@@ -45,6 +45,8 @@ export function readProjectQueryLinksInPage(
       credentials: "include",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify({ ids: ids, $expand: "Relations" }),
+      // A batch POST is a read of mutable links; keep it uniform with every other MAIN-world read.
+      cache: "no-store",
     })
       .then((response) => {
         if (!response.ok) throw new Error("HTTP " + String(response.status));

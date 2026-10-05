@@ -42,6 +42,8 @@ export function fetchWorkItemNotesInPage(
         // 401, which would parse as "this item has no notes" and look like an empty discussion.
         "X-TFS-FedAuthRedirect": "Suppress",
       },
+      // Comments added elsewhere change no URL the HTTP cache keys on; a cached page hides them.
+      cache: "no-store",
     })
       .then((response) =>
         // Read as text first: the parse itself is what distinguishes a real answer from a sign-in

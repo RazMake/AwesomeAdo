@@ -1,7 +1,10 @@
 import type { OrderingPolicy } from "../../../common/ordering/ItemOrdering";
 import type { EnhancedViewContext } from "../../../common/view-common/EnhancedView";
 import type { BreadcrumbSegment } from "../../../common/view-common/control/Breadcrumbs/Breadcrumbs";
-import type { RefreshButtonHandle } from "../../../common/view-common/control/HeaderButtons/HeaderButtons";
+import type {
+  RefreshButtonHandle,
+  RefreshRequest,
+} from "../../../common/view-common/control/HeaderButtons/HeaderButtons";
 import { renderOrderingPicker } from "../../../common/view-common/control/OrderingPicker/OrderingPicker";
 import { renderViewHeader } from "../../../common/view-common/control/ViewHeader/ViewHeader";
 import { renderTagConditionFilter } from "../tag-selection/TagConditionFilter";
@@ -30,7 +33,8 @@ export interface ProjectsHeaderOptions {
   onOrderingChange(policy: OrderingPolicy): void;
   onExpandAll(): void;
   onCollapseAll(): void;
-  onRefresh(): void;
+  /** Re-reads the catalog; `request.discardCaches` is set by a Ctrl+click. */
+  onRefresh(request: RefreshRequest): void;
   /** Opens the catalog-wide menu (copy the query's URL, add a project) at the pointer. */
   onTitleContextMenu(event: MouseEvent): void;
 }

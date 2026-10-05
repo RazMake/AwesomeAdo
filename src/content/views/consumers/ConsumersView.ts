@@ -18,6 +18,7 @@ import {
   type PlannedMove,
 } from "../../../common/view-common/control/DragReorder/DragReorderController";
 import { renderEmptyState } from "../../../common/view-common/control/EmptyState/EmptyState";
+import type { RefreshRequest } from "../../../common/view-common/control/HeaderButtons/HeaderButtons";
 import {
   createItemContextMenu,
   type ItemContextMenu,
@@ -38,6 +39,7 @@ import { renderRetainedAreaPathFilter } from "../area-path-selection/retainedAre
 import { createBoardLoader } from "../board-lifecycle/boardLoader";
 import { createBoardWriteQueue } from "../board-lifecycle/boardWriteQueue";
 import { createBoardWriteStatus } from "../board-lifecycle/boardWriteStatus";
+import { discardBoardCaches } from "../board-lifecycle/discardBoardCaches";
 import { widestStatusLabelLength } from "../item-status/itemStatusBadge";
 import { dragReorderUnavailableReason } from "../project-tracking/drag-reorder/dragReorderAvailability";
 import { persistTreeMove } from "../project-tracking/drag-reorder/persistTreeMove";
@@ -725,7 +727,7 @@ function renderHeaderFilters(board: Board, loaded: LoadedConsumers): HTMLElement
 function renderHeader(
   board: Board,
   loaded: LoadedConsumers,
-  handlers: { queueStatus: HTMLElement; paint(): void; onRefresh(): void },
+  handlers: { queueStatus: HTMLElement; paint(): void; onRefresh(request: RefreshRequest): void },
 ): ViewTitleBandHandle {
   const { context, session } = board;
   const grouping = loaded.grouping;
@@ -802,7 +804,7 @@ function startConsumersView(context: DataDrivenViewContext, root: HTMLElement): 
     header = renderHeader(board, loaded, {
       queueStatus: writeStatus.render(),
       paint,
-      onRefresh: () => loader.refresh(),
+      onRefresh: (request) => loader.refresh(request),
     });
     root.replaceChildren(header.element, rowStyle, listHost);
     paintList();
@@ -820,6 +822,8 @@ function startConsumersView(context: DataDrivenViewContext, root: HTMLElement): 
     openDiagnosticsLog: context.services.openDiagnosticsLog,
     queue: board.queue,
     refreshButton: () => header?.refresh ?? null,
+    discardCaches: () =>
+      discardBoardCaches(context.services, "Consumers View", [board.session.notePanelStates]),
   });
 
   loader.load(false);

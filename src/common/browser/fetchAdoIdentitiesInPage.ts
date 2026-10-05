@@ -51,6 +51,8 @@ export function fetchAdoIdentitiesInPage(
       "X-TFS-FedAuthRedirect": "Suppress",
     },
     body: body,
+    // A search is a read of the live directory; keep it uniform with every other MAIN-world read.
+    cache: "no-store",
   })
     .then((response) =>
       // Read as text first: a failing call must not be lost to a JSON parse error, and the parse

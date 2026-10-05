@@ -149,6 +149,8 @@ describe("writeTeamConfigInPage", () => {
     await expect(writeTeamConfigInPage({ url: "item-url", text: "new" })).resolves.toEqual({
       ok: true,
     });
+    // The guarding rev must be the server's current one, never an HTTP-cached older body.
+    expect((fetchMock.mock.calls[0]?.[1] as RequestInit).cache).toBe("no-store");
     const patchRequest = fetchMock.mock.calls[1]?.[1] as RequestInit;
     expect(JSON.parse(String(patchRequest.body))).toEqual([
       { op: "test", path: "/rev", value: 7 },

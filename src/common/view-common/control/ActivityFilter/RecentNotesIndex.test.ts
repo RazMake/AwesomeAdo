@@ -263,6 +263,41 @@ describe("RecentNotesIndex — what it re-reads", () => {
   });
 });
 
+describe("RecentNotesIndex — clear", () => {
+  it("re-reads a known discussion after clear() even though its comment count is unchanged", async () => {
+    const reader = fakeReader(datesEverything);
+    const index = new RecentNotesIndex(reader, fakeLogger());
+
+    probeBoard(index, item(1, 0, [item(2, 1)]));
+    await settle();
+    index.clear();
+    expect(index.hasRecentNote(item(2, 1), WINDOW_START)).toBe(false);
+    probeBoard(index, item(1, 0, [item(2, 1)]));
+    await settle();
+
+    expect(reader.asked).toEqual([[2], [2]]);
+    expect(index.hasRecentNote(item(2, 1), WINDOW_START)).toBe(true);
+  });
+
+  it("retries a failed discussion after clear() even though its comment count is unchanged", async () => {
+    let reads = 0;
+    const reader = fakeReader((request) => {
+      reads++;
+      return reads === 1 ? { activity: [], error: "network" } : datesEverything(request);
+    });
+    const index = new RecentNotesIndex(reader, fakeLogger());
+
+    probeBoard(index, item(1, 0, [item(2, 1)]));
+    await settle();
+    index.clear();
+    probeBoard(index, item(1, 0, [item(2, 1)]));
+    await settle();
+
+    expect(reader.asked).toEqual([[2], [2]]);
+    expect(index.hasRecentNote(item(2, 1), WINDOW_START)).toBe(true);
+  });
+});
+
 describe("RecentNotesIndex — what it reports", () => {
   it("reports itself pending until the read lands, then releases its waiters", async () => {
     let release!: (result: NoteActivityResult) => void;

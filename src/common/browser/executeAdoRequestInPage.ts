@@ -34,8 +34,14 @@ export function executeAdoRequestInPage(
             .then(() => request(url, init, attempt + 1))
         : { raw: null, status: 0, error: `network after ${MAX_ATTEMPTS} attempts: ${String(error)}` },
     );
+  // Saved query definitions, folders, and team rosters change outside any revision the browser's HTTP
+  // cache can key on, so a cached answer would silently run a query's pre-edit WIQL.
   const read = (url: string): Promise<AdoPageRequestOutcome> =>
-    request(url, { credentials: "include", headers: { Accept: "application/json" } });
+    request(url, {
+      credentials: "include",
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+    });
   if (config.operation === "read") return read(config.url);
 
   const readMembers = (

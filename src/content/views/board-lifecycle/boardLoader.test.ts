@@ -105,6 +105,51 @@ describe("createBoardLoader refresh", () => {
     expect(answers).toHaveLength(2);
   });
 
+  it("discards caches and re-reads on a discard request, even right after a failed refresh", async () => {
+    const { answers, options, loader } = harness();
+    const discardCaches = vi.fn();
+    options.discardCaches = discardCaches;
+    loader.load(false);
+    answers[0]!.resolve("tree");
+    await flush();
+    loader.refresh();
+    answers[1]!.reject(new Error("offline"));
+    await flush();
+    expect(loader.refreshFailed()).toBe(true);
+
+    loader.refresh({ discardCaches: true });
+
+    expect(discardCaches).toHaveBeenCalledTimes(1);
+    expect(options.openDiagnosticsLog).not.toHaveBeenCalled();
+    expect(answers).toHaveLength(3);
+    answers[2]!.resolve("fresh");
+    await flush();
+    expect(loader.data()).toBe("fresh");
+    expect(loader.refreshFailed()).toBe(false);
+  });
+
+  it("re-reads on a discard request when the board has no caches to discard", async () => {
+    const { answers, loader } = harness();
+    loader.load(false);
+
+    loader.refresh({ discardCaches: true });
+
+    expect(answers).toHaveLength(2);
+  });
+
+  it("never discards caches on a plain refresh", () => {
+    const { answers, options, loader } = harness();
+    const discardCaches = vi.fn();
+    options.discardCaches = discardCaches;
+    loader.load(false);
+
+    loader.refresh();
+    loader.refresh({ discardCaches: false });
+
+    expect(discardCaches).not.toHaveBeenCalled();
+    expect(answers).toHaveLength(3);
+  });
+
   it("lets only the newest load paint", async () => {
     const { answers, options, loader } = harness();
     loader.load(false);

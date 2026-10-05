@@ -206,6 +206,53 @@ describe("MessagingMentionDirectory — what is worth asking again", () => {
   });
 });
 
+describe("MessagingMentionDirectory — clear", () => {
+  it("asks again about a named id once its settled answer was cleared", async () => {
+    const send = vi
+      .fn<SendIdentityNamesRequest>()
+      .mockResolvedValueOnce(named(ADA, "Ada Lovelace"))
+      .mockResolvedValueOnce(named(ADA, "Ada King"));
+    const { directory } = createDirectory(send);
+
+    await directory.resolveNames([ADA]);
+    directory.clear();
+    expect(directory.knownNames().size).toBe(0);
+    const names = await directory.resolveNames([ADA]);
+
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(names.get(ADA)).toBe("Ada King");
+  });
+
+  it("asks again about an id a completed read did not recognize once cleared", async () => {
+    const send = vi.fn(() => Promise.resolve(nothing()));
+    const { directory } = createDirectory(send);
+
+    await directory.resolveNames([ADA]);
+    directory.clear();
+    await directory.resolveNames([ADA]);
+
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+
+  it("still answers a caller whose read was in flight when clear() ran", async () => {
+    let release!: (value: ResolveAdoIdentityNamesResponse) => void;
+    const send = vi.fn(
+      () =>
+        new Promise<ResolveAdoIdentityNamesResponse>((resolve) => {
+          release = resolve;
+        }),
+    );
+    const { directory } = createDirectory(send);
+
+    const pending = directory.resolveNames([ADA]);
+    directory.clear();
+    release(named(ADA, "Ada Lovelace"));
+
+    expect((await pending).get(ADA)).toBe("Ada Lovelace");
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("MessagingMentionDirectory — what it says about a miss", () => {
   it("names the unresolved IDS, so an anonymous mention can be chased down", async () => {
     const { directory, info } = createDirectory(() => Promise.resolve(named(ADA, "Ada Lovelace")));

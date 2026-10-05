@@ -57,6 +57,12 @@ export function removeProjectQueryInPage(
     });
   };
 
+  // Both writes report a refusal the same way, so the message always names the step that failed.
+  const refused = (step: string, response: Response): RemoveProjectQueryOutcome => ({
+    ok: false,
+    error: step + ": HTTP " + String(response.status),
+  });
+
   const deleteQuery = (
     index: number,
     rev: number,
@@ -69,11 +75,7 @@ export function removeProjectQueryInPage(
         ? index === -1
           ? { ok: true }
           : unlink(index, rev, relationUrl)
-        : {
-            ok: false,
-            error:
-              "could not delete the query; its link was retained: HTTP " + String(response.status),
-          },
+        : refused("could not delete the query; its link was retained", response),
     );
 
   const unlink = (
@@ -92,10 +94,7 @@ export function removeProjectQueryInPage(
       ]),
     }).then((response) => {
       if (!response.ok) {
-        return {
-          ok: false,
-          error: "the query was deleted but could not be unlinked: HTTP " + String(response.status),
-        };
+        return refused("the query was deleted but could not be unlinked", response);
       }
       return response.json().then((body: unknown) => ({
         ok: true,
@@ -106,6 +105,8 @@ export function removeProjectQueryInPage(
   return fetch(config.relationsUrl, {
     credentials: "include",
     headers: { Accept: "application/json" },
+    // A cached body would address a link index (and rev) from before the item last changed.
+    cache: "no-store",
   })
     .then((response) =>
       response.ok

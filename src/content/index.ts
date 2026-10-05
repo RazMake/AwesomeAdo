@@ -530,6 +530,7 @@ const trackingServices: EnhancedViewServices = {
     logger.info("Board failure chip: view the errors in the diagnostics log");
     openExtensionPage({ type: OPEN_OPTIONS_MESSAGE, section: "diagnostics", errorsOnly: true });
   },
+  discardCachedData: () => discardPageCaches(),
 };
 
 const itemCollector = new ItemCollectorWidget(
@@ -669,6 +670,21 @@ const resolveSharedQuery = (url: string): void => {
     logger.error("Could not resolve the shared configuration for this query", error);
   });
 };
+
+// Hoisted so the services bundle built above can reach the page's later-wired configuration readers.
+// Re-reading both configuration sources is what lets a Ctrl+Refresh pick up a configuration the team
+// republished since this page loaded; a changed one redraws the view through the ordinary settings path.
+function discardPageCaches(): void {
+  logger.info(
+    "Ctrl+Refresh: discarding remembered identity searches, mention names and the shared " +
+      "configuration read, then re-reading the configuration",
+  );
+  userDirectory.clear();
+  mentionDirectory.clear();
+  sharedConfigResolver.invalidate();
+  pullTeamConfigForQuery(location.href);
+  resolveSharedQuery(location.href);
+}
 
 const actions: QueryMenuActions = {
   openOptions() {

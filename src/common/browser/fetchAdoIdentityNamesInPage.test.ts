@@ -49,6 +49,7 @@ describe("fetchAdoIdentityNamesInPage", () => {
     expect(url).toBe(PICKER_URL);
     expect(init.method).toBe("POST");
     expect(init.credentials).toBe("include");
+    expect(init.cache).toBe("no-store");
     expect(init.headers).toEqual({
       "Content-Type": "application/json",
       Accept: "application/json",

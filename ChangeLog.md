@@ -33,11 +33,20 @@ builds use the repository's `Major.Minor.Build` release versioning.
   requests; with consumers picked, the list drops the consumer tags. Area paths — the binding's
   **Request area paths** and the header **Area** filter — now narrow only the feature requests;
   every consumer stays listed, and each consumer card's request count reflects the filtered requests.
+- Ctrl+click (Cmd+click on macOS) **Refresh** in any enhanced view for a completely fresh start: it
+  forgets everything the page remembered — opened discussions, recent-note dates, people and
+  @-mention lookups, and the shared team configuration — and re-reads it all from Azure DevOps, even
+  when the button is showing that the last refresh failed.
 
 ### Bug Fixes
 
 - The All Projects Catalog now offers the same add commands as Project Tracking on every row — for
   example **Add deliverable** on a Feature beneath an Epic — instead of only on the top-level rows.
+- Enhanced views always show a query's current results. After a query was edited outside the
+  extension (for example to change which work item types it returns), some browsers kept showing the
+  old list in the enhanced view while Azure DevOps's own view was already up to date. Discussions,
+  re-parenting, query cleanup, people and @-mention search, backlog order, and publishing the team
+  configuration likewise always read the latest version from Azure DevOps.
 
 ## 0.17
 

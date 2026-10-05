@@ -157,7 +157,7 @@ describe("reorderWorkItemInPage - re-parenting", () => {
 
     expect(calls.map(([url]) => url)).toEqual([RELATIONS_URL, ITEM_URL, ORDER_URL]);
     // The relations read is a plain credentialed GET: no method, no body.
-    expect(calls[0]?.[1]).toEqual({ credentials: "include" });
+    expect(calls[0]?.[1]).toEqual({ credentials: "include", cache: "no-store" });
     expect(patchOps(calls)).toEqual([
       { op: "test", path: "/rev", value: 5 },
       // Index 1: the parent link's position in the relations array, the only way JSON Patch can

@@ -82,6 +82,10 @@ import {
 } from "../../../common/view-common/control/EtaBadge/EtaBadge";
 import { renderFilterPillFamilies } from "../../../common/view-common/control/FilterPill/FilterPill";
 import {
+  refreshRequestOf,
+  type RefreshRequest,
+} from "../../../common/view-common/control/HeaderButtons/HeaderButtons";
+import {
   createItemContextMenu,
   type ItemContextMenu,
   type ItemContextMenuTarget,
@@ -115,6 +119,7 @@ import { renderWriteQueueStatus } from "../../../common/view-common/control/Writ
 import { createPopupHost } from "../../../common/view-common/control/popupHost/popupHost";
 import { renderRetainedAreaPathFilter } from "../area-path-selection/retainedAreaPathFilter";
 import { createBoardWriteQueue } from "../board-lifecycle/boardWriteQueue";
+import { discardBoardCaches } from "../board-lifecycle/discardBoardCaches";
 import {
   loadInterruptAcceptanceState,
   type InterruptAcceptanceState,
@@ -3117,8 +3122,9 @@ interface RenderBoardParams {
   /**
    * Asked to re-read the board from Azure DevOps. Owned by the VIEW, not the board: a refresh
    * replaces this board with the next one, so a board cannot be the thing that survives it.
+   * The header's button passes its click's request; a command's reload passes none.
    */
-  onRefresh: () => void;
+  onRefresh: (request?: RefreshRequest) => void;
 }
 
 /**
@@ -3387,7 +3393,7 @@ function renderBoard(params: RenderBoardParams): BoardHandle {
     onRootChanged: () => onRootChanged(),
     onHeaderFilterChange: () => onHeaderFilterChange(),
   });
-  headerParts.refresh.element.onclick = () => params.onRefresh();
+  headerParts.refresh.element.onclick = (event) => params.onRefresh(refreshRequestOf(event));
   board.append(headerParts.header);
 
   const { renderTreeContent, refreshFilters } = mountBoardBody({
@@ -3689,7 +3695,7 @@ interface RenderLoadedBoardParams {
   /** The reader's own state, carried across a refresh (see `BoardSession`). */
   session: BoardSession;
   /** Asked to re-read the board; wired onto the header's refresh button. */
-  onRefresh: () => void;
+  onRefresh: (request?: RefreshRequest) => void;
 }
 
 /**
@@ -3887,7 +3893,7 @@ function startProjectTrackingBoard(context: DataDrivenViewContext, root: HTMLEle
       result,
       sprintWindow,
       session,
-      onRefresh: () => requestRefresh(),
+      onRefresh: (request) => requestRefresh(request),
     });
     if (board !== null) {
       resolveBoardMentions(services, result.roots, board.repaint);
@@ -3916,11 +3922,20 @@ function startProjectTrackingBoard(context: DataDrivenViewContext, root: HTMLEle
     board?.setRefreshFailed(true);
   };
 
-  const requestRefresh = (): void => {
+  const requestRefresh = (request?: RefreshRequest): void => {
     if (refreshing) {
       return;
     }
-    if (showingStaleBoard) {
+    if (request?.discardCaches === true) {
+      // A forced fresh start re-reads even over a failure report: the reader is not asking why the
+      // last read failed, they are asking to start again with nothing remembered.
+      showingStaleBoard = false;
+      board?.setRefreshFailed(false);
+      discardBoardCaches(services, "Project Tracking", [
+        session.notePanelStates,
+        session.recentNotes,
+      ]);
+    } else if (showingStaleBoard) {
       // The button is reporting a failed re-read, so this press is the reader asking WHY, not asking
       // again. Hand them the recorded cause and clear the report; the next press refreshes.
       showingStaleBoard = false;

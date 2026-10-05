@@ -28,6 +28,34 @@ here so every agent, teammate, and clone sees them.
   the browser's ordinary HTTP cache is not an acceptable source of truth for config pulled into
   team-shared settings.
 
+## Enhanced view rendered a query's pre-edit results (HTTP cache, again)
+
+- SYMPTOM: on one machine only, after a saved query was edited in ADO (its work item type clause
+  changed), the enhanced view kept rendering the old item list with the old types while ADO's
+  Standard View showed the new results. The extension holds no tree/query cache of its own
+  (`BoardSession` keeps only UI state; the content loaders do not memoize).
+- ROOT CAUSE: the same class as the team-config bug above. `fetchAdoTreeInPage` read the saved
+  query with a plain `GET _apis/wit/wiql/{id}` and Sprint View / the Catalog read its definition with
+  `GET queries/{id}?$expand=wiql` (`executeAdoRequestInPage`), neither with `cache: "no-store"`. The
+  URL does not change when the query does, so a browser that had cached the response replayed the
+  pre-edit id list; the batch hydration then faithfully rendered those old items.
+- FIX / RULE (now general): EVERY MAIN-world `GET` of mutable ADO state sets `cache: "no-store"` —
+  tree/WIQL reads, query definitions/folders/team members (`executeAdoRequestInPage`), metadata
+  (`fetchAdoRawInPage`), the post-move rev re-read, relation reads before a re-parent/unlink,
+  feature-crew candidate reads, and discussion/comment reads. Each adapter's test pins the init, so
+  a new read that omits it is visible in review; add the same assertion for any new `*InPage` read.
+- The rule covers POST reads too (`fetchAdoIdentitiesInPage`, `fetchAdoIdentityNamesInPage`,
+  `readProjectQueryLinksInPage`, `readWorkItemRanksInPage`) and every read that seeds a rev-guarded
+  write (`writeTeamConfigInPage` `loadRevision`, `writeWorkItemNoteInPage` `withCurrentRev`,
+  `updateWorkItemFieldInPage` `rebase`): a cached rev there is a guaranteed HTTP 412.
+- The extension's OWN page-lifetime memos are the other stale-data source: `SharedQueryConfigResolver`
+  (shared-config reads, never invalidated in content before), the user/mention directories,
+  `RecentNotesIndex`, and each board's `notePanelStates`. Ctrl+click Refresh in every view clears all
+  of them (`discardBoardCaches` → `services.discardCachedData` → `discardPageCaches` in
+  `content/index.ts`) and re-pulls team config. Add any NEW page-lifetime cache to that path. The
+  browser HTTP cache itself is not purged (that would need the `browsingData` permission); no-store
+  on every read makes it unnecessary.
+
 ## Module-level state is NOT shared with the deferred view bundles
 
 - SYMPTOM: with a work item collection active, Ctrl+click in Project Tracking (and the other

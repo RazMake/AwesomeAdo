@@ -38,8 +38,9 @@ export function findFeatureCrewInPage(
   // Shared "read JSON, degrade to null on any non-ok / failure" fetch used for both the WIQL search
   // and each candidate read, so the two paths cannot drift apart. Inline (not imported) because the
   // whole function is serialized into the ADO MAIN world.
+  // Never cached: a stale candidate body carries an outdated rev and relations.
   const getJson = (url: string, init: RequestInit): Promise<unknown> =>
-    fetch(url, init)
+    fetch(url, { ...init, cache: "no-store" })
       .then((response) => (response.ok ? response.json() : null))
       .catch(() => null);
 

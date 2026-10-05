@@ -62,6 +62,8 @@ describe("findFeatureCrewInPage - match resolution", () => {
     expect(wiqlCall).toBeDefined();
     const parsedWiql = JSON.parse((wiqlCall?.[1]?.body as string) ?? "{}") as { query: string };
     expect(parsedWiql.query).toContain("'Type''With''Quotes'");
+    // A cached candidate read would hand back an outdated rev and relations.
+    expect(fetchMock.mock.calls.every((call) => call[1]?.cache === "no-store")).toBe(true);
 
     expect(result).toEqual({ id: 100, rev: 5, description: "Test description" });
   });

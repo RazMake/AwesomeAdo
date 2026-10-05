@@ -66,6 +66,19 @@ describe("MessagingUserDirectory - search", () => {
     expect(second).toHaveLength(1);
   });
 
+  it("asks again after clear(), because the remembered answer was forgotten", async () => {
+    const send = vi.fn<SendIdentitySearchRequest>().mockResolvedValue({ raw: ADA_BODY });
+    const { directory } = makeDirectory(send);
+
+    await directory.search("ada");
+    directory.clear();
+    const again = await directory.search("ada");
+
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(send).toHaveBeenLastCalledWith({ type: SEARCH_ADO_IDENTITIES_MESSAGE, query: "ada" });
+    expect(again).toHaveLength(1);
+  });
+
   it("does not cache a failed round-trip, so a later search can still succeed", async () => {
     const send = vi
       .fn<SendIdentitySearchRequest>()

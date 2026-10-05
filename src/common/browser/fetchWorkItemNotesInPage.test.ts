@@ -14,6 +14,7 @@ const CONNECTION = { authenticatedUser: { id: "guid-one" } };
 const GET_INIT = {
   credentials: "include",
   headers: { Accept: "application/json", "X-TFS-FedAuthRedirect": "Suppress" },
+  cache: "no-store",
 };
 
 /** A response whose body is read as text, exactly as the fetcher reads it. */

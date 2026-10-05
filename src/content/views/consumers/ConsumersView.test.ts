@@ -719,6 +719,31 @@ describe("consumersView - refresh", () => {
   });
 });
 
+describe("consumersView - Ctrl+click refresh", () => {
+  const refreshButton = (root: HTMLElement): HTMLButtonElement =>
+    root.querySelector<HTMLButtonElement>(".awesomeado-consumers__refresh")!;
+
+  it("discards cached data and re-reads on a Ctrl+click, but not on a plain click", async () => {
+    const discardCachedData = vi.fn();
+    const loadTree = vi.fn(async () => ({
+      isTreeQuery: true,
+      roots: fixtureRoots(),
+      error: null,
+    }));
+    const root = await renderBoard(contextWith({ loadTree, discardCachedData }));
+
+    refreshButton(root).click();
+    await vi.waitFor(() => expect(loadTree).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(refreshButton(root).disabled).toBe(false));
+    expect(discardCachedData).not.toHaveBeenCalled();
+
+    refreshButton(root).dispatchEvent(new MouseEvent("click", { bubbles: true, ctrlKey: true }));
+
+    expect(discardCachedData).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(loadTree).toHaveBeenCalledTimes(3));
+  });
+});
+
 const requestCount = (root: HTMLElement, id: number): HTMLElement =>
   cardOf(root, id).querySelector<HTMLElement>(".awesomeado-consumers__request-count")!;
 

@@ -69,6 +69,8 @@ export function fetchAdoIdentityNamesInPage(
       properties: ["DisplayName", "Mail", "Active"],
       options: { MinResults: 1, MaxResults: 1 },
     }),
+    // A lookup is a read of the live directory; keep it uniform with every other MAIN-world read.
+    cache: "no-store",
   });
 
   const readOne = (id: string): Promise<AdoIdentityNamesOutcome> =>

@@ -30,7 +30,10 @@ describe("readWorkItemRevInPage", () => {
     expect(await readWorkItemRevInPage({ itemUrl: ITEM_URL })).toBe(14);
     // ADO's session cookies are SameSite, so the page-world call must send credentials.
     expect(calls).toEqual([
-      [ITEM_URL, { credentials: "include", headers: { Accept: "application/json" } }],
+      [
+        ITEM_URL,
+        { credentials: "include", headers: { Accept: "application/json" }, cache: "no-store" },
+      ],
     ]);
   });
 });

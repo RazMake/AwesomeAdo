@@ -25,6 +25,7 @@ import {
   type PlannedMove,
 } from "../../../common/view-common/control/DragReorder/DragReorderController";
 import { renderEmptyState } from "../../../common/view-common/control/EmptyState/EmptyState";
+import type { RefreshRequest } from "../../../common/view-common/control/HeaderButtons/HeaderButtons";
 import {
   createItemContextMenu,
   type ItemContextMenu,
@@ -45,6 +46,7 @@ import {
 import { createBoardLoader } from "../board-lifecycle/boardLoader";
 import { createBoardWriteQueue } from "../board-lifecycle/boardWriteQueue";
 import { createBoardWriteStatus } from "../board-lifecycle/boardWriteStatus";
+import { discardBoardCaches } from "../board-lifecycle/discardBoardCaches";
 import { childTypeOf, newChildSummary } from "../project-tracking/item-commands/NewChildCommands";
 import { panelFor } from "../project-tracking/item-commands/itemCommandCore";
 import {
@@ -638,7 +640,7 @@ function headerOptionsFor(params: {
   board: Board;
   loaded: LoadedProjects;
   queueStatus: HTMLElement;
-  onRefresh: () => void;
+  onRefresh: (request: RefreshRequest) => void;
 }): Parameters<typeof renderProjectsHeader>[1] {
   const { board, loaded } = params;
   const { context, session } = board;
@@ -783,7 +785,7 @@ function paintSurface(
     root: HTMLElement;
     rowStyle: HTMLStyleElement;
     queueStatus: HTMLElement;
-    onRefresh: () => void;
+    onRefresh: (request: RefreshRequest) => void;
   },
 ): { header: ProjectsHeaderHandle; listHost: HTMLElement } {
   const { context, session } = board;
@@ -862,6 +864,12 @@ function startProjectsView(context: DataDrivenViewContext, root: HTMLElement): v
     openDiagnosticsLog: context.services.openDiagnosticsLog,
     queue: board.queue,
     refreshButton: () => header?.refresh ?? null,
+    // The Favorites availability is the catalog's one remembered answer: re-asked here so a folder
+    // chosen or access granted since the last check shows up with the same press.
+    discardCaches: () => {
+      discardBoardCaches(context.services, "All Projects Catalog View", []);
+      board.favorites?.refresh();
+    },
   });
 
   const paint = (): void => {
@@ -881,7 +889,7 @@ function startProjectsView(context: DataDrivenViewContext, root: HTMLElement): v
       root,
       rowStyle,
       queueStatus: writeStatus.render(),
-      onRefresh: () => loader.refresh(),
+      onRefresh: (request) => loader.refresh(request),
     });
     header = painted.header;
     listHost = painted.listHost;

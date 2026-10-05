@@ -30,6 +30,8 @@ export function readWorkItemRevInPage(config: ReadWorkItemRevConfig): Promise<nu
   return fetch(config.itemUrl, {
     credentials: "include",
     headers: { Accept: "application/json" },
+    // A cached body would hand back the pre-move rev this read exists to replace.
+    cache: "no-store",
   })
     .then((response) => (response.ok ? response.json() : null))
     .then((json) => {

@@ -376,6 +376,8 @@ describe("updateWorkItemFieldInPage - rebasing a write whose rev went stale", ()
     // PATCH (412) → GET → PATCH. The retry carries the rev the SERVER just reported, and the
     // comment rides along in it exactly as it did in the first attempt.
     expect(fetchMock).toHaveBeenCalledTimes(3);
+    // The re-read must bypass the HTTP cache, or it could hand back the very rev that was refused.
+    expect((fetchMock.mock.calls[1] as unknown as [string, RequestInit])[1].cache).toBe("no-store");
     const retry = parsePatchBody((fetchMock.mock.calls[2] as unknown as [string, RequestInit])[1]);
     expect(retry[0]).toEqual({ op: "test", path: "/rev", value: 20 });
     expect(retry[2]).toEqual({

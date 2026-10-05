@@ -39,6 +39,8 @@ export function fetchNoteActivityInPage(config: FetchNoteActivityConfig): Promis
   const init = {
     credentials: "include" as const,
     headers: { Accept: "application/json", "X-TFS-FedAuthRedirect": "Suppress" },
+    // A cached comments page would hide notes added since, under the same URL.
+    cache: "no-store" as const,
   };
 
   // Only the FIRST failure is kept: it is what the log reports, and a lost session would otherwise

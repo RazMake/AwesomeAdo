@@ -71,18 +71,22 @@ describe("fetchAdoRawInPage - metadata", () => {
     expect(fetchMock).toHaveBeenCalledWith("teams-url&$skip=0", {
       credentials: "include",
       headers: { Accept: "application/json" },
+      cache: "no-store",
     });
     expect(fetchMock).toHaveBeenCalledWith("wit-url", {
       credentials: "include",
       headers: { Accept: "application/json" },
+      cache: "no-store",
     });
     expect(fetchMock).toHaveBeenCalledWith("fields-url", {
       credentials: "include",
       headers: { Accept: "application/json" },
+      cache: "no-store",
     });
     expect(fetchMock).toHaveBeenCalledWith("areas-url", {
       credentials: "include",
       headers: { Accept: "application/json" },
+      cache: "no-store",
     });
   });
 

@@ -5653,6 +5653,57 @@ describe("ProjectTrackingView — a refresh that fails", () => {
   });
 });
 
+describe("ProjectTrackingView — Ctrl+click refresh", () => {
+  const ctrlClickRefresh = (root: HTMLElement): void => {
+    refreshButtonOf(root).dispatchEvent(new MouseEvent("click", { bubbles: true, ctrlKey: true }));
+  };
+
+  it("discards cached data and re-reads on a Ctrl+click, but not on a plain click", async () => {
+    const discardCachedData = vi.fn();
+    const { root, treeReads } = await renderRefreshableBoard(grownProject(), {
+      discardCachedData,
+    });
+
+    await pressRefresh(root);
+    expect(treeReads()).toBe(2);
+    expect(discardCachedData).not.toHaveBeenCalled();
+
+    ctrlClickRefresh(root);
+
+    expect(discardCachedData).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(treeReads()).toBe(3));
+  });
+
+  it("re-reads instead of opening Diagnostics when Ctrl+clicked after a failed refresh", async () => {
+    const openDiagnosticsLog = vi.fn();
+    const discardCachedData = vi.fn();
+    let reads = 0;
+    const tree = epicOver([createItem({ id: 2, type: "Feature", title: "User Authentication" })]);
+    const root = await renderBoardForTree(
+      tree,
+      {},
+      {
+        openDiagnosticsLog,
+        discardCachedData,
+        loadTree: async () => {
+          reads++;
+          if (reads === 2) throw new Error("ADO said no");
+          return { isTreeQuery: true, roots: [tree], error: null };
+        },
+      },
+    );
+    await pressRefresh(root);
+    expect(refreshButtonOf(root).title).toContain("older data");
+
+    ctrlClickRefresh(root);
+
+    expect(openDiagnosticsLog).not.toHaveBeenCalled();
+    expect(discardCachedData).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(reads).toBe(3));
+    await vi.waitFor(() => expect(refreshButtonOf(root).title).not.toContain("older data"));
+  });
+});
+
 // The fake clock is 2026-07-24T12:00Z, so the binding's default 24-hour window opens at
 // 2026-07-23T12:00Z. Every fixture below is placed clearly on one side of that line.
 const AN_HOUR_AGO = "2026-07-24T11:00:00Z";

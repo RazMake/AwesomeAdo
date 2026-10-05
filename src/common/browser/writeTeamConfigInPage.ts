@@ -15,6 +15,8 @@ export function writeTeamConfigInPage(
     return fetch(config.url, {
       credentials: "include",
       headers: { Accept: "application/json", "X-TFS-FedAuthRedirect": "Suppress" },
+      // The rev and Description this read returns guard the publish; a cached body is a guaranteed 412.
+      cache: "no-store",
     })
       .then((response): Promise<unknown> => {
         if (response.ok) return response.json();
@@ -51,11 +53,7 @@ export function writeTeamConfigInPage(
         path: "/fields/System.Description",
         value: config.text,
       },
-      {
-        op: "add",
-        path: "/multilineFieldsFormat/System.Description",
-        value: "Markdown",
-      },
+      { op: "add", path: "/multilineFieldsFormat/System.Description", value: "Markdown" },
     ];
     return fetch(config.url, {
       method: "PATCH",

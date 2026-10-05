@@ -1,6 +1,7 @@
 import type { OrderingPolicy } from "../../../common/ordering/ItemOrdering";
 import type { EnhancedViewContext } from "../../../common/view-common/EnhancedView";
 import type { BreadcrumbSegment } from "../../../common/view-common/control/Breadcrumbs/Breadcrumbs";
+import type { RefreshRequest } from "../../../common/view-common/control/HeaderButtons/HeaderButtons";
 import { renderOrderingPicker } from "../../../common/view-common/control/OrderingPicker/OrderingPicker";
 import {
   renderViewHeader,
@@ -38,7 +39,8 @@ export interface ConsumersHeaderOptions {
   onExpandAll(): void;
   /** Closes open descriptions, then open discussions, then the deepest open tree level. */
   onCollapseAll(): void;
-  onRefresh(): void;
+  /** Re-reads the board; `request.discardCaches` is set by a Ctrl+click. */
+  onRefresh(request: RefreshRequest): void;
   /** Opens the board-wide menu (copy this board's link) at the pointer. */
   onTitleContextMenu(event: MouseEvent): void;
 }

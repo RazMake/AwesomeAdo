@@ -38,6 +38,7 @@ describe("executeAdoRequestInPage reads", () => {
     expect(fetchMock).toHaveBeenCalledWith(QUERY_URL, {
       credentials: "include",
       headers: { Accept: "application/json" },
+      cache: "no-store",
     });
   });
 

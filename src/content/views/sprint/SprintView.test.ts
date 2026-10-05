@@ -2821,6 +2821,53 @@ describe("Sprint View refresh", () => {
   });
 });
 
+function ctrlClick(button: HTMLElement): void {
+  button.dispatchEvent(new MouseEvent("click", { bubbles: true, ctrlKey: true }));
+}
+
+describe("Sprint View Ctrl+click refresh", () => {
+  it("discards cached data and re-reads on a Ctrl+click, but not on a plain click", async () => {
+    const discardCachedData = vi.fn();
+    const loadTree = vi
+      .fn<EnhancedViewServices["loadTree"]>()
+      .mockResolvedValue({ isTreeQuery: false, roots: defaultTree(), error: null });
+    const root = await render({ loadTree, discardCachedData });
+    const refresh = (): HTMLButtonElement =>
+      root.querySelector<HTMLButtonElement>(".awesomeado-sprint__refresh")!;
+
+    refresh().click();
+    await vi.waitFor(() => expect(loadTree).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(refresh().disabled).toBe(false));
+    expect(discardCachedData).not.toHaveBeenCalled();
+
+    ctrlClick(refresh());
+
+    expect(discardCachedData).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(loadTree).toHaveBeenCalledTimes(3));
+  });
+
+  it("re-reads instead of opening Diagnostics when Ctrl+clicked after a failed refresh", async () => {
+    const openDiagnosticsLog = vi.fn();
+    const discardCachedData = vi.fn();
+    const loadTree = vi
+      .fn<EnhancedViewServices["loadTree"]>()
+      .mockResolvedValueOnce({ isTreeQuery: false, roots: defaultTree(), error: null })
+      .mockResolvedValueOnce({ isTreeQuery: false, roots: [], error: "refresh failed" })
+      .mockResolvedValue({ isTreeQuery: false, roots: defaultTree(), error: null });
+    const root = await render({ loadTree, openDiagnosticsLog, discardCachedData });
+    const refresh = (): HTMLButtonElement =>
+      root.querySelector<HTMLButtonElement>(".awesomeado-sprint__refresh")!;
+
+    refresh().click();
+    await vi.waitFor(() => expect(refresh().style.color).toBe("var(--palette-error-text)"));
+    ctrlClick(refresh());
+
+    expect(openDiagnosticsLog).not.toHaveBeenCalled();
+    expect(discardCachedData).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(loadTree).toHaveBeenCalledTimes(3));
+  });
+});
+
 function sprintTree(prefix: "Initial" | "Next"): TrackedWorkItem[] {
   const next = prefix === "Next";
   const areaPath = next ? "Project\\Apps" : "Project\\Platform";

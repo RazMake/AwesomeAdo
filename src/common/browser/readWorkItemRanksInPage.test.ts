@@ -35,6 +35,7 @@ describe("readWorkItemRanksInPage", () => {
     expect(init?.method).toBe("POST");
     // ADO's session cookies are SameSite, so the page-world call must send credentials.
     expect(init?.credentials).toBe("include");
+    expect(init?.cache).toBe("no-store");
     expect(JSON.parse(init?.body as string)).toEqual({ ids: [1, 2], fields: [FIELD] });
   });
 

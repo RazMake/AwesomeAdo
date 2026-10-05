@@ -35,6 +35,16 @@ export class MessagingUserDirectory implements IUserDirectory {
     private readonly logger: ILogger,
   ) {}
 
+  /**
+   * Forget every remembered search, so the next one asks Azure DevOps again.
+   *
+   * The memo is right for a picker but wrong once the user explicitly asks for fresh data: a teammate
+   * who joined or was renamed since the page loaded would otherwise stay invisible until a reload.
+   */
+  clear(): void {
+    this.cache.clear();
+  }
+
   async search(query: string): Promise<DirectoryUser[]> {
     const normalized = query.trim().toLowerCase();
     // Below the minimum the background worker would refuse to build a request anyway; answering

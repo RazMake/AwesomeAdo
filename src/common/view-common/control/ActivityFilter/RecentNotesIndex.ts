@@ -46,6 +46,17 @@ export class RecentNotesIndex {
   }
 
   /**
+   * Forget every remembered discussion date and failure, so the next probe re-reads them all.
+   *
+   * A date is normally re-read only when an item's note count moves, which misses an edited or
+   * deleted-and-replaced note; an explicit "discard cached data" request must not inherit that blind spot.
+   */
+  clear(): void {
+    this.known.clear();
+    this.failures.clear();
+  }
+
+  /**
    * Reads the discussion dates of exactly `items` — no descending. The caller already knows which
    * items its filter can judge, and probing the ones it cannot spends round-trips on answers nothing
    * will ever ask for.

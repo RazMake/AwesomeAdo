@@ -27,6 +27,9 @@ export function fetchAdoTreeInPage(
   // Keep transport failures as data because this injected function has no logger of its own. The
   // content-side loader logs the stage/status after the worker returns it; swallowing it here would
   // turn a rejected batch into the indistinguishable and incorrect conclusion "query has no items".
+  // Every read bypasses the browser's HTTP cache: the saved-query GET is keyed only by its URL, so a
+  // query edited elsewhere (e.g. a changed work item type clause) would otherwise keep rendering the
+  // pre-edit result while ADO's own view shows the new one.
   // prettier-ignore
   const readJson = (
     url: string,
@@ -34,7 +37,7 @@ export function fetchAdoTreeInPage(
     stage: "wiql" | "batch",
     attempt = 1,
   ): Promise<unknown> =>
-    fetch(url, init).then(
+    fetch(url, { ...init, cache: "no-store" }).then(
       (response) => {
         const retryable = response.status === 408 || response.status === 429 || response.status >= 500;
         if (!response.ok && retryable && attempt < MAX_ATTEMPTS) {

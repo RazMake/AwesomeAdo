@@ -109,7 +109,19 @@ describe("renderViewTitleBand", () => {
     expect(options.onExpandAll).toHaveBeenCalledTimes(1);
     expect(options.onCollapseAll).toHaveBeenCalledTimes(1);
     expect(options.onRefresh).toHaveBeenCalledTimes(1);
+    expect(options.onRefresh).toHaveBeenCalledWith({ discardCaches: false });
     expect(options.onTitleContextMenu).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks Refresh to discard cached data when Ctrl or Cmd is held", () => {
+    const options = titleBandOptions();
+    const { refresh } = renderViewTitleBand(document, options);
+
+    refresh.element.dispatchEvent(new MouseEvent("click", { ctrlKey: true }));
+    refresh.element.dispatchEvent(new MouseEvent("click", { metaKey: true }));
+
+    expect(options.onRefresh).toHaveBeenNthCalledWith(1, { discardCaches: true });
+    expect(options.onRefresh).toHaveBeenNthCalledWith(2, { discardCaches: true });
   });
 });
 

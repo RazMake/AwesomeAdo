@@ -9,6 +9,7 @@ import { fetchNoteActivityInPage } from "./fetchNoteActivityInPage";
 const GET_INIT = {
   credentials: "include",
   headers: { Accept: "application/json", "X-TFS-FedAuthRedirect": "Suppress" },
+  cache: "no-store",
 };
 
 /** Requests for `count` items, addressed the way the worker builds them. */

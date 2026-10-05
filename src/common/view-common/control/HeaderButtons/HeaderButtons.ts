@@ -5,6 +5,20 @@ export interface RefreshButtonHandle {
   setFailed(failed: boolean): void;
 }
 
+/** What a click on Refresh asks the owning view for. */
+export interface RefreshRequest {
+  /**
+   * True for a Ctrl+click (Cmd+click on macOS): forget everything remembered since the page loaded
+   * and re-read it all, rather than re-reading only the board's query.
+   */
+  discardCaches: boolean;
+}
+
+/** Read a Refresh click as a plain re-read or, with Ctrl/Cmd held, a discard-everything re-read. */
+export function refreshRequestOf(event: MouseEvent): RefreshRequest {
+  return { discardCaches: event.ctrlKey || event.metaKey };
+}
+
 const BUTTON_SIZE_PX = 27.2;
 const BUTTON_BORDER_PX = 1;
 const REFRESH_GLYPH_INSET_PX = 2;
@@ -71,7 +85,8 @@ function renderRefreshIcon(doc: Document): SVGSVGElement {
   return svg;
 }
 
-const REFRESH_IDLE_LABEL = "Refresh — re-read this board from Azure DevOps";
+const REFRESH_IDLE_LABEL =
+  "Refresh — re-read this board from Azure DevOps (Ctrl+click also discards cached data)";
 const REFRESH_BUSY_LABEL = "Refreshing…";
 const REFRESH_FAILED_LABEL =
   "Couldn't refresh — this board is showing older data. Click for details.";

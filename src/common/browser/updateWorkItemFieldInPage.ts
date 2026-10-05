@@ -124,18 +124,19 @@ export function updateWorkItemFieldInPage(
     return fetch(config.updateUrl, {
       credentials: "include",
       headers: { Accept: "application/json" },
+      // The rebase compares against the item as it is NOW; a cached body would rebase onto the past.
+      cache: "no-store",
     })
       .then((response) => (response.ok ? response.json() : null))
       .then((body: { rev?: unknown; fields?: Record<string, unknown> } | null) => {
-        const rev = body?.rev;
-        if (typeof rev !== "number") return failure;
+        if (typeof body?.rev !== "number") return failure;
         // An unset field is simply ABSENT from `fields`, so absent and empty must read alike or a
         // change that clears a field could never be rebased.
-        const stored = body?.fields?.[config.field];
+        const stored = body.fields?.[config.field];
         const current = stored === undefined || stored === null ? "" : String(stored).trim();
         const expected = String(config.baseValue ?? "").trim();
         return current === expected
-          ? sendPatch(rev, false)
+          ? sendPatch(body.rev, false)
           : { ok: false, error: failure.error + " — the field changed since it was read" };
       })
       .catch(() => failure);

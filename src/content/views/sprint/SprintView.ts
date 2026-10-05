@@ -46,8 +46,10 @@ import {
   type FilterPillCounts,
 } from "../../../common/view-common/control/FilterPill/FilterPill";
 import {
+  refreshRequestOf,
   renderRefreshButton,
   type RefreshButtonHandle,
+  type RefreshRequest,
 } from "../../../common/view-common/control/HeaderButtons/HeaderButtons";
 import {
   renderHierarchyFilter,
@@ -72,6 +74,7 @@ import {
 } from "../../../common/view-common/control/ViewScaffold/ViewScaffold";
 import { renderWriteQueueStatus } from "../../../common/view-common/control/WriteQueueStatus/WriteQueueStatus";
 import type { WriteQueueStatusHandle } from "../../../common/view-common/control/WriteQueueStatus/WriteQueueStatus";
+import { discardBoardCaches } from "../board-lifecycle/discardBoardCaches";
 import {
   loadInterruptAcceptanceState,
   type InterruptAcceptanceState,
@@ -236,7 +239,8 @@ interface SprintHeaderRenderOptions {
   baseItems: readonly DisplayItem[];
   types: ReadonlyMap<string, TypeCatalogEntry>;
   repaint: () => void;
-  onRefresh: () => void;
+  /** The header's button passes its click's request; Ctrl+click asks to discard cached data. */
+  onRefresh: (request?: RefreshRequest) => void;
   onSprintChange: (name: string) => void;
   onAreaPathsChange: (paths: string[]) => void;
   onAreaPathsDismiss: () => void;
@@ -841,7 +845,7 @@ function renderHeaderStatuses(options: SprintHeaderRenderOptions): {
 } {
   const { context } = options;
   const refresh = renderRefreshButton(context.doc, "awesomeado-sprint__refresh");
-  refresh.element.addEventListener("click", options.onRefresh);
+  refresh.element.addEventListener("click", (event) => options.onRefresh(refreshRequestOf(event)));
   const queueStatus = renderWriteQueueStatus(context.doc, {
     onOpenLog: context.services.openDiagnosticsLog,
   });
@@ -1245,7 +1249,7 @@ function renderBoard(
   data: LoadedSprintData,
   session: SprintSession,
   repaint: () => void,
-  onRefresh: () => void,
+  onRefresh: (request?: RefreshRequest) => void,
   onSprintChange: (name: string) => void,
   writes: WorkItemWriteQueue,
   writeState: SprintWriteState,
@@ -1460,6 +1464,26 @@ function openSprint(
   load(name, true);
 }
 
+/**
+ * A failed refresh turns the button into a pointer at the reason; a forced fresh start (Ctrl+click)
+ * re-reads anyway, because discarding what the page remembered is exactly what might fix it.
+ */
+function runSprintRefresh(
+  context: DataDrivenViewContext,
+  session: SprintSession,
+  request: RefreshRequest | undefined,
+  previousRefreshFailed: boolean,
+  reload: () => void,
+): void {
+  const discardCaches = request?.discardCaches === true;
+  if (previousRefreshFailed && !discardCaches) {
+    context.services.openDiagnosticsLog();
+    return;
+  }
+  if (discardCaches) discardBoardCaches(context.services, "Sprint View", [session.recentNotes]);
+  reload();
+}
+
 function startSprintView(context: DataDrivenViewContext, root: HTMLElement): void {
   let session = createSession(context);
   let data: LoadedSprintData | null = null;
@@ -1492,11 +1516,6 @@ function startSprintView(context: DataDrivenViewContext, root: HTMLElement): voi
 
   const load = (sprintName: string | null, resetSession: boolean): void => {
     if (refreshing) return;
-    if (!resetSession && refreshFailed) {
-      refreshFailed = false;
-      context.services.openDiagnosticsLog();
-      return;
-    }
     if (resetSession) session = createSession(context);
     // What the board is about to show comes from Azure DevOps, so a report about an edit that never
     // landed has nothing left to warn about.
@@ -1536,8 +1555,11 @@ function startSprintView(context: DataDrivenViewContext, root: HTMLElement): voi
       });
   };
 
-  function requestRefresh(): void {
-    if (!bulkMove.isActive) load(session.sprintName, false);
+  function requestRefresh(request?: RefreshRequest): void {
+    if (bulkMove.isActive || refreshing) return;
+    const failed = refreshFailed;
+    refreshFailed = false;
+    runSprintRefresh(context, session, request, failed, () => load(session.sprintName, false));
   }
 
   function switchSprint(name: string): void {

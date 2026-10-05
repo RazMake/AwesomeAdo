@@ -41,8 +41,15 @@ export interface AdoMetadataFetchUrls {
  * async/await) avoids any transpiler helper being hoisted out of the function body.
  */
 export function fetchAdoRawInPage(urls: AdoMetadataFetchUrls): Promise<AdoRawMetadata> {
+  // Types, fields, classifications, and folders are edited in ADO without changing these URLs, so a
+  // cached answer would offer the binding form a stale catalog.
+  const READ_INIT: RequestInit = {
+    credentials: "include",
+    headers: { Accept: "application/json" },
+    cache: "no-store",
+  };
   const get = (url: string): Promise<unknown> =>
-    fetch(url, { credentials: "include", headers: { Accept: "application/json" } })
+    fetch(url, READ_INIT)
       .then((response) => (response.ok ? response.json() : null))
       .catch(() => null);
 
@@ -53,7 +60,7 @@ export function fetchAdoRawInPage(urls: AdoMetadataFetchUrls): Promise<AdoRawMet
       new Promise<void>((resolve) => setTimeout(resolve, 100 * 2 ** (attempt - 1))).then(() =>
         getWithRetry(url, attempt + 1),
       );
-    return fetch(url, { credentials: "include", headers: { Accept: "application/json" } })
+    return fetch(url, READ_INIT)
       .then((response) => {
         if (response.ok) return response.json();
         const transient =

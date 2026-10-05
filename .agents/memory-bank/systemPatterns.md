@@ -660,6 +660,13 @@ returned only to us, and **never log field values or identity**.
   **flat + lazy** descendant loading (depth/item-capped, expanded on demand per node, cached by
   `id:rev`). Descendants pulled beyond the query are surfaced as such.
 - **Refresh** on mount, on manual request, and after the write queue drains. No background polling.
+- **Every MAIN-world read sets `cache: "no-store"`** (GET and POST alike): saved-query URLs do not
+  change when the query does, so the browser HTTP cache would otherwise replay pre-edit results.
+- **Ctrl+click Refresh is the forced fresh start**: `refreshRequestOf(event)` →
+  `RefreshRequest.discardCaches` → `discardBoardCaches` clears board-owned memos and calls the
+  optional `services.discardCachedData()`, which the content root wires to clear every page-lifetime
+  memo (user/mention directories, `SharedQueryConfigResolver`) and re-pull team config. It re-reads
+  even over a failed-refresh state. Any new page-lifetime cache must join this path.
 
 ### 4. Normalized data model in `common/ado`
 

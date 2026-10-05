@@ -128,6 +128,7 @@ describe("writeWorkItemNoteInPage — the revision the note created", () => {
     expect(fetchMock).toHaveBeenNthCalledWith(2, ITEM_URL, {
       credentials: "include",
       headers: { Accept: "application/json" },
+      cache: "no-store",
     });
   });
 

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { TrackedWorkItem, TypeCatalogEntry } from "../../../common/ado/TrackedWorkItem";
+import type { CatalogFavoritesStatus } from "../../../common/browser/Favorites";
 import type {
   EnhancedViewContext,
   EnhancedViewServices,
@@ -685,6 +686,71 @@ describe("projectsView - refresh", () => {
     await vi.waitFor(() =>
       expect(root.querySelector(".awesomeado-write-queue-status")!.textContent).toBe(""),
     );
+  });
+});
+
+describe("projectsView - Ctrl+click refresh", () => {
+  const refreshButton = (root: HTMLElement): HTMLButtonElement =>
+    root.querySelector<HTMLButtonElement>(".awesomeado-projects__refresh")!;
+  const ctrlClick = (button: HTMLElement): void => {
+    button.dispatchEvent(new MouseEvent("click", { bubbles: true, ctrlKey: true }));
+  };
+  const favoritesWith = (status: () => Promise<CatalogFavoritesStatus>) => ({
+    status,
+    sync: async () => ({ syncId: "sync", removed: [] }),
+    restore: async () => ({ restored: [], failed: [] }),
+    openSettings: vi.fn(),
+  });
+
+  it("discards cached data, re-asks Favorites, and re-reads on a Ctrl+click only", async () => {
+    const discardCachedData = vi.fn();
+    const status = vi.fn(async () => ({ path: "Work", refusal: null, existing: [] }));
+    const loadTree = vi.fn(async () => ({ isTreeQuery: true, roots: FIXTURE_ROOTS, error: null }));
+    const root = await renderBoard(
+      createContext({
+        services: createServices({
+          loadTree,
+          discardCachedData,
+          catalogFavorites: favoritesWith(status),
+        }),
+      }),
+    );
+    await vi.waitFor(() => expect(status).toHaveBeenCalledOnce());
+
+    refreshButton(root).click();
+    await vi.waitFor(() => expect(loadTree).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(refreshButton(root).disabled).toBe(false));
+    expect(discardCachedData).not.toHaveBeenCalled();
+    expect(status).toHaveBeenCalledOnce();
+
+    ctrlClick(refreshButton(root));
+
+    expect(discardCachedData).toHaveBeenCalledOnce();
+    expect(status).toHaveBeenCalledTimes(2);
+    await vi.waitFor(() => expect(loadTree).toHaveBeenCalledTimes(3));
+  });
+
+  it("re-reads instead of opening Diagnostics when Ctrl+clicked after a failed refresh", async () => {
+    const openDiagnosticsLog = vi.fn();
+    const discardCachedData = vi.fn();
+    const loadTree = vi
+      .fn()
+      .mockResolvedValueOnce({ isTreeQuery: true, roots: FIXTURE_ROOTS, error: null })
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValue({ isTreeQuery: true, roots: FIXTURE_ROOTS, error: null });
+    const root = await renderBoard(
+      createContext({
+        services: createServices({ loadTree, openDiagnosticsLog, discardCachedData }),
+      }),
+    );
+    refreshButton(root).click();
+    await vi.waitFor(() => expect(refreshButton(root).title).toContain("older data"));
+
+    ctrlClick(refreshButton(root));
+
+    expect(openDiagnosticsLog).not.toHaveBeenCalled();
+    expect(discardCachedData).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(loadTree).toHaveBeenCalledTimes(3));
   });
 });
 

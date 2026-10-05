@@ -193,6 +193,16 @@ export interface EnhancedViewServices {
    * injected here rather than reached for.
    */
   openDiagnosticsLog(): void;
+  /**
+   * Forgets every page-lifetime answer the services remember — directory searches, `@`-mention
+   * names, the shared configuration read — and re-reads the shared configuration.
+   *
+   * A view calls it when the user Ctrl+clicks Refresh: the memos exist so the board feels instant,
+   * but they are exactly what keeps a renamed teammate or a republished configuration out of view
+   * until the page reloads. Optional because a services bundle with nothing remembered has nothing
+   * to discard.
+   */
+  discardCachedData?(): void;
 }
 
 /** Everything a view needs to render, injected so a view never reaches for a global (Dependency Inversion). */
