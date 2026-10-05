@@ -10,7 +10,7 @@ import {
 import { orderTrackedItems, workItemTypeDisplayColor } from "../../../common/ado/workItemTypes";
 import { resolveMentionsIn } from "../../../common/browser/MessagingMentionDirectory";
 import { replacePageSearch } from "../../../common/navigation/PageUrl";
-import type { OrderingPolicy } from "../../../common/ordering/ItemOrdering";
+import { MANUAL_ORDERING_POLICY, type OrderingPolicy } from "../../../common/ordering/ItemOrdering";
 import type { DataDrivenViewContext, EnhancedView } from "../../../common/view-common/EnhancedView";
 import { queryFolderBreadcrumbs } from "../../../common/view-common/control/Breadcrumbs/queryFolderBreadcrumbs";
 import {
@@ -27,6 +27,7 @@ import {
   modifierHighlightTracker,
   restripeVisibleRows,
 } from "../../../common/view-common/control/RowEmphasis/RowEmphasis";
+import { renderToggleButton } from "../../../common/view-common/control/ToggleButton/ToggleButton";
 import { treeRowEmphasisClasses } from "../../../common/view-common/control/TreeRow/TreeRow";
 import type { ViewTitleBandHandle } from "../../../common/view-common/control/ViewHeader/ViewHeader";
 import {
@@ -43,11 +44,26 @@ import { persistTreeMove } from "../project-tracking/drag-reorder/persistTreeMov
 import { buildViewNotesCommand } from "../project-tracking/item-commands/ItemCommands";
 import { buildUpdateParentCommand } from "../project-tracking/item-commands/UpdateParentCommand";
 import type { NotesPanelState } from "../project-tracking/notes/NotesPanel";
+import { renderTagConditionFilter } from "../tag-selection/TagConditionFilter";
+import {
+  describeTagCondition,
+  matchesTagCondition,
+  pruneTagCondition,
+  tagsInUse,
+  type TagCondition,
+} from "../tag-selection/tagCondition";
+import { readUrlTagCondition, searchWithTagCondition } from "../tag-selection/tagConditionUrl";
 
-import { renderConsumerRow, type ConsumerRowContext } from "./ConsumerRow";
+import { renderConsumerFilter } from "./ConsumerFilter";
+import { renderConsumerRow, renderRequestOnlyRow, type ConsumerRowContext } from "./ConsumerRow";
 import { renderConsumersHeader } from "./ConsumersHeader";
-import { consumersSearchWithAreaPaths, readConsumersUrlAreaPaths } from "./consumersUrlPreferences";
-import { consumerAreaPaths, consumersViewType, orderingPolicyOf } from "./consumersViewType";
+import {
+  consumersSearchWithAreaPaths,
+  consumersSearchWithConsumerIds,
+  readConsumersUrlAreaPaths,
+  readConsumersUrlConsumerIds,
+} from "./consumersUrlPreferences";
+import { consumersViewType, orderingPolicyOf, requestAreaPaths } from "./consumersViewType";
 import {
   createConsumerContactEditor,
   type ConsumerContactEditor,
@@ -57,18 +73,27 @@ import { collapseStep, expandStep } from "./treeExpansion";
 
 /** What the reader has done to the board, kept outside the DOM so a repaint cannot lose it. */
 interface ConsumersSession {
-  /** Consumers the reader closed; everything starts open, because the requests are the point. */
-  collapsedIds: Set<number>;
+  /** Consumers the reader opened; every consumer starts closed, showing only its request count. */
+  expandedIds: Set<number>;
   /** Description panels kept open while filters, ordering, or drag rebuild the list. */
   expandedDescriptionIds: Set<number>;
   /** Discussion panels kept open while filters, ordering, or drag rebuild the list. */
   expandedNoteIds: Set<number>;
   /** Discussion data cached per item so a repaint never refetches an opened panel. */
   notePanelStates: Map<number, NotesPanelState>;
-  /** The header area-path filter, seeded from the page URL so a shared link opens narrowed. */
+  /** The header area-path filter over REQUESTS, seeded from the page URL so a shared link opens narrowed. */
   selectedAreaPaths: Set<string>;
+  /** The header Consumer filter's picked consumer ids, seeded from the page URL; empty keeps all. */
+  selectedConsumerIds: Set<number>;
+  /** The header tag condition, judged on each CONSUMER's own tags; seeded from the page URL. */
+  tags: TagCondition;
   /** The ordering in force; board-local, like every other view's ordering pick (ADR-039). */
   policy: OrderingPolicy;
+  /**
+   * Whether the board shows the consumer cards rather than its default, the flat requests list.
+   * Seeded once from the reader's synced choice for this query, so it reopens the way it was left.
+   */
+  showConsumers: boolean;
 }
 
 /** Why a query cannot be drawn as consumers, phrased for the empty-state panel. */
@@ -95,7 +120,7 @@ type LoadedConsumers = GroupingOutcome & {
 interface Board {
   context: DataDrivenViewContext;
   session: ConsumersSession;
-  /** The binding's consumer area branches; empty lets every consumer through. */
+  /** The binding's request area branches; empty lets every request through. */
   configuredAreaPaths: readonly string[];
   queue: WorkItemWriteQueue;
   contactEditor: ConsumerContactEditor;
@@ -165,26 +190,39 @@ async function loadConsumers(context: DataDrivenViewContext): Promise<LoadedCons
   };
 }
 
-/** Every consumer the binding's area branches keep, before the header filter narrows them. */
-function inScopeConsumers(board: Board, grouping: TrackedWorkItem): TrackedWorkItem[] {
-  return grouping.children.filter((consumer) =>
-    isInAreaPathBranches(consumer.areaPath, board.configuredAreaPaths),
+/** Every request the binding's area branches keep, before the header Area filter narrows them. */
+function inScopeRequests(board: Board, grouping: TrackedWorkItem): TrackedWorkItem[] {
+  return grouping.children
+    .flatMap((consumer) => consumer.children)
+    .filter((request) => isInAreaPathBranches(request.areaPath, board.configuredAreaPaths));
+}
+
+/** Whether both area filters keep a request: inside a configured branch and an exact header pick. */
+function keepsRequest(board: Board, request: TrackedWorkItem): boolean {
+  return (
+    isInAreaPathBranches(request.areaPath, board.configuredAreaPaths) &&
+    isInAreaPaths(request.areaPath, board.session.selectedAreaPaths)
   );
 }
 
 /**
  * The consumers this paint draws, in the board's order.
  *
- * Only a CONSUMER is narrowed by area: the board answers "who is waiting on this team?", and a
- * consumer that is shown is shown with every request it made, wherever each request is filed.
+ * Consumers are never narrowed by area: an area path says where work is filed, not who asked for
+ * it, so the area filters narrow only the requests each consumer lists and counts.
  */
 function shownConsumers(board: Board, grouping: TrackedWorkItem): TrackedWorkItem[] {
+  const { session } = board;
+  const picked = session.selectedConsumerIds;
   return orderTrackedItems(
-    inScopeConsumers(board, grouping).filter((consumer) =>
-      isInAreaPaths(consumer.areaPath, board.session.selectedAreaPaths),
+    grouping.children.filter(
+      (consumer) =>
+        // Judged on the consumer's OWN tags in both modes: the tags describe who is asking.
+        matchesTagCondition(consumer, session.tags) &&
+        (picked.size === 0 || picked.has(consumer.id)),
     ),
     (consumer) => consumer,
-    board.session.policy,
+    session.policy,
   );
 }
 
@@ -200,47 +238,91 @@ function showMessage(context: DataDrivenViewContext, root: HTMLElement, message:
 }
 
 /**
- * Keep the page URL naming the header's area paths, so the address bar is always a shareable link
- * to exactly the board on screen.
+ * Keep the page URL naming the header's filters, so the address bar is always a shareable link to
+ * exactly the board on screen.
  */
-function writeAreaPathUrl(board: Board): void {
+function writeFilterUrl(board: Board): void {
+  const { session } = board;
   replacePageSearch(board.context.doc, (search) =>
-    consumersSearchWithAreaPaths(search, board.session.selectedAreaPaths),
+    searchWithTagCondition(
+      consumersSearchWithConsumerIds(
+        consumersSearchWithAreaPaths(search, session.selectedAreaPaths),
+        session.selectedConsumerIds,
+      ),
+      session.tags,
+    ),
   );
 }
 
 /**
- * Persist a dropped consumer or request and repaint once Azure DevOps has accepted it.
+ * Persist a request dropped in the requests-only list and repaint once Azure DevOps accepted it.
  *
- * A request handed to another consumer re-parents it under the same guarded write that ranks it;
- * its type never changes, because on this board a level is a role, not a type hierarchy.
+ * The list registers every request under the grouping item so the controller sees one level; here
+ * the move is mapped back onto the request's REAL consumer before it is written, so the write only
+ * ranks it — a drop in this list never hands a request to another consumer. The neighbours and the
+ * full sibling list stay those of the flat list, which backlog rank (one order across the whole
+ * backlog) can honour even when they belong to different consumers.
  */
 function persistMove(board: Board, loaded: LoadedConsumers | null, move: PlannedMove): void {
   const { services } = board.context;
   const team = services.currentTeam();
   const grouping = loaded?.grouping ?? null;
-  if (grouping === null || team === null) {
+  const consumer =
+    grouping?.children.find((candidate) =>
+      candidate.children.some((request) => request.id === move.id),
+    ) ?? null;
+  if (grouping === null || team === null || consumer === null) {
     services.logger.error(
-      `Consumers View move of item ${move.id} aborted: ${
-        team === null
-          ? "no team is configured, and backlog rank is per team in Azure DevOps"
-          : "the board no longer shows a grouping item"
-      }.`,
+      `Consumers View move of item ${move.id} aborted: ${moveAbortReason(team, grouping)}.`,
     );
     return;
   }
   void persistTreeMove({
     root: grouping,
-    move,
+    move: { ...move, parentId: consumer.id, currentParentId: consumer.id },
     team,
     queue: board.queue,
     logger: services.logger,
   }).then((changed) => {
-    if (!changed) return;
-    // Opened so the request is visible where it landed rather than vanishing into a closed row.
-    board.session.collapsedIds.delete(move.parentId);
-    board.paintList();
+    if (changed) board.paintList();
   });
+}
+
+/** Why a dropped request could not be persisted, for the error log. */
+function moveAbortReason(team: string | null, grouping: TrackedWorkItem | null): string {
+  if (team === null) return "no team is configured, and backlog rank is per team in Azure DevOps";
+  if (grouping === null) return "the board no longer shows a grouping item";
+  return "the request is no longer under any consumer on the board";
+}
+
+/**
+ * Why a drag cannot be honoured right now, or null when it can. Shared by the ordering glyph and the
+ * rows, so the glyph never claims a drag the rows do not offer.
+ */
+function dragUnavailableReason(board: Board, policy: OrderingPolicy): string | null {
+  if (board.session.showConsumers) {
+    return "drag to reorder is only available in the requests list; consumers keep a fixed order";
+  }
+  const teamReason = dragReorderUnavailableReason(
+    board.context.services.currentTeam(),
+    MANUAL_ORDERING_POLICY,
+  );
+  if (teamReason !== null) return teamReason;
+  return policy === MANUAL_ORDERING_POLICY
+    ? null
+    : "drag to reorder is only available under Drag-and-drop order";
+}
+
+/**
+ * Every request of every consumer — filtered out or not — in backlog-rank order, which a drop in
+ * the requests-only list is ranked against.
+ */
+function allRequestIdsByRank(grouping: TrackedWorkItem): number[] {
+  return orderTrackedItems(
+    grouping.children.flatMap((consumer) => consumer.children),
+    (request) => request,
+    MANUAL_ORDERING_POLICY,
+  ).map((request) => request.id);
 }
 
 /** The row context for one paint: the session's live state plus what the filters keep. */
@@ -250,8 +332,7 @@ function createRowContext(
   grouping: TrackedWorkItem,
 ): ConsumerRowContext {
   const { context, session } = board;
-  const draggable =
-    dragReorderUnavailableReason(context.services.currentTeam(), session.policy) === null;
+  const draggable = dragUnavailableReason(board, session.policy) === null;
   return {
     doc: context.doc,
     types: loaded.types,
@@ -261,16 +342,15 @@ function createRowContext(
     statusWidthCh: widestStatusLabelLength(grouping.children, loaded.types),
     now: () => context.services.now(),
     policy: session.policy,
-    collapsedIds: session.collapsedIds,
+    expandedIds: session.expandedIds,
     expandedDescriptionIds: session.expandedDescriptionIds,
     expandedNoteIds: session.expandedNoteIds,
     notePanelStates: session.notePanelStates,
     mentionNames: context.services.mentionDirectory.knownNames(),
     groupingId: grouping.id,
-    consumerSiblingIds: orderTrackedItems(grouping.children, (item) => item, session.policy).map(
-      (consumer) => consumer.id,
-    ),
+    requestSiblingIds: draggable ? allRequestIdsByRank(grouping) : [],
     dragReorder: draggable ? board.dragReorder : null,
+    hideConsumerTags: session.selectedConsumerIds.size > 0,
     contactEditor: board.contactEditor,
     contactRoles: contactRolesIn(grouping.children.map((consumer) => consumer.description)),
     onContextMenu: (item, event) =>
@@ -296,8 +376,37 @@ function createRowContext(
           }),
         ],
       }),
+    keepsRequest: (request) => keepsRequest(board, request),
     repaint: () => board.paintList(),
   };
+}
+
+/** The panel saying why there are no consumers to draw, or null when the filters keep some. */
+function consumersEmptyState(
+  board: Board,
+  grouping: TrackedWorkItem,
+  consumers: readonly TrackedWorkItem[],
+): HTMLElement | null {
+  const { doc } = board.context;
+  if (grouping.children.length === 0) {
+    return renderEmptyState(doc, {
+      message: "This query returned no consumers.",
+      hint: "Link consumers under the query's top-level item in Azure DevOps, then refresh this board.",
+    });
+  }
+  if (consumers.length > 0) return null;
+  return renderEmptyState(doc, {
+    message: "No consumer matches the header filters.",
+    hint: "Clear the Consumer or Tags filter to see more consumers.",
+  });
+}
+
+/** An empty list element; no gap between rows, as the alternating stripes separate the items. */
+function createList(doc: Document): HTMLElement {
+  const list = doc.createElement("div");
+  list.className = `${PREFIX}__list`;
+  list.style.cssText = "display:flex;flex-direction:column";
+  return list;
 }
 
 /** The consumers the filters keep, or the panel saying why there are none to draw. */
@@ -307,26 +416,67 @@ function renderConsumersList(
   consumers: readonly TrackedWorkItem[],
   rowContext: ConsumerRowContext,
 ): HTMLElement {
-  const { doc } = board.context;
-  if (grouping.children.length === 0) {
-    return renderEmptyState(doc, {
-      message: "This query returned no consumers.",
-      hint: "Link consumers under the query's top-level item in Azure DevOps, then refresh this board.",
-    });
-  }
-  // Only the binding can hide every consumer: the header filter offers just the areas the kept
-  // consumers sit in, so any pick from it keeps at least one of them.
-  if (consumers.length === 0) {
-    return renderEmptyState(doc, {
-      message: "None of this query's consumers sit in this board's consumer area paths.",
-      hint: "Change the consumer area paths in the query's binding, or the consumers' area in Azure DevOps, then refresh this board.",
-    });
-  }
-  const list = doc.createElement("div");
-  list.className = `${PREFIX}__list`;
-  // No gap between rows: the alternating stripes are what separates one item from the next.
-  list.style.cssText = "display:flex;flex-direction:column";
+  const empty = consumersEmptyState(board, grouping, consumers);
+  if (empty !== null) return empty;
+  const list = createList(board.context.doc);
   for (const consumer of consumers) list.append(renderConsumerRow(consumer, rowContext));
+  return list;
+}
+
+/** A shown request and the consumer that made it, which its row is tagged with. */
+interface ShownRequest {
+  request: TrackedWorkItem;
+  consumer: TrackedWorkItem;
+}
+
+/**
+ * Every shown consumer's requests as ONE list in the board's ordering — under importance, the most
+ * important request first whoever asked for it, which is the question this mode exists to answer.
+ */
+function shownRequests(board: Board, consumers: readonly TrackedWorkItem[]): ShownRequest[] {
+  return orderTrackedItems(
+    consumers.flatMap((consumer) =>
+      consumer.children
+        .filter((request) => keepsRequest(board, request))
+        .map((request) => ({ request, consumer })),
+    ),
+    (entry) => entry.request,
+    board.session.policy,
+  );
+}
+
+/** The requests-only list, or the panel saying why it has nothing to draw. */
+function renderRequestsList(
+  board: Board,
+  grouping: TrackedWorkItem,
+  consumers: readonly TrackedWorkItem[],
+  rowContext: ConsumerRowContext,
+): HTMLElement {
+  const empty = consumersEmptyState(board, grouping, consumers);
+  if (empty !== null) return empty;
+  const { doc } = board.context;
+  const requests = shownRequests(board, consumers);
+  if (requests.length === 0) {
+    // Area filters are told apart from a board that simply has no requests, since they hid them.
+    const areaFiltered =
+      board.configuredAreaPaths.length > 0 || board.session.selectedAreaPaths.size > 0;
+    return renderEmptyState(
+      doc,
+      areaFiltered
+        ? {
+            message: "No feature request of the shown consumers matches the area paths.",
+            hint: "Clear the Area filter, or change the request area paths in the query's binding.",
+          }
+        : {
+            message: "None of the shown consumers has a feature request.",
+            hint: "Press Show consumers to see the consumers, or link requests under them in Azure DevOps.",
+          },
+    );
+  }
+  const list = createList(doc);
+  for (const { request, consumer } of requests) {
+    list.append(renderRequestOnlyRow(request, consumer, rowContext));
+  }
   return list;
 }
 
@@ -339,11 +489,14 @@ function describeBoard(
   grouping: TrackedWorkItem,
   consumers: readonly TrackedWorkItem[],
 ): string {
-  const requests = consumers.reduce((sum, consumer) => sum + consumer.children.length, 0);
+  const requests = shownRequests(board, consumers).length;
   return (
     `Consumers View showing ${consumers.length} of ${grouping.children.length} consumer(s), ` +
-    `with ${requests} feature request(s): configuredAreaPaths=${board.configuredAreaPaths.length}, ` +
-    `selectedAreaPaths=${board.session.selectedAreaPaths.size}.`
+    `with ${requests} feature request(s): mode=${board.session.showConsumers ? "consumers" : "requests-only"}, ` +
+    `configuredAreaPaths=${board.configuredAreaPaths.length}, ` +
+    `selectedAreaPaths=${board.session.selectedAreaPaths.size}, ` +
+    `selectedConsumers=${board.session.selectedConsumerIds.size}, ` +
+    `tags=${describeTagCondition(board.session.tags)}.`
   );
 }
 /** The list for one paint, plus the line describing it for the diagnostics log. */
@@ -360,8 +513,9 @@ function renderBoardList(
   }
   const rowContext = createRowContext(board, loaded, loaded.grouping);
   const consumers = shownConsumers(board, loaded.grouping);
+  const renderList = board.session.showConsumers ? renderConsumersList : renderRequestsList;
   return {
-    list: renderConsumersList(board, loaded.grouping, consumers, rowContext),
+    list: renderList(board, loaded.grouping, consumers, rowContext),
     description: describeBoard(board, loaded.grouping, consumers),
   };
 }
@@ -373,17 +527,22 @@ function createBoard(
   hooks: { loaded(): LoadedConsumers | null; paintList(): void; reload(): void },
 ): Board {
   const queue = createBoardWriteQueue(context.services);
+  const search = context.doc.location?.search ?? "";
   const board: Board = {
     context,
     session: {
-      collapsedIds: new Set(),
+      expandedIds: new Set(),
       expandedDescriptionIds: new Set(),
       expandedNoteIds: new Set(),
       notePanelStates: new Map(),
-      selectedAreaPaths: new Set(readConsumersUrlAreaPaths(context.doc.location?.search ?? "")),
+      selectedAreaPaths: new Set(readConsumersUrlAreaPaths(search)),
+      selectedConsumerIds: new Set(readConsumersUrlConsumerIds(search)),
+      tags: readUrlTagCondition(search),
       policy: orderingPolicyOf(context.properties),
+      // Replaced by the reader's saved choice before the first paint; see `applySavedMode`.
+      showConsumers: false,
     },
-    configuredAreaPaths: consumerAreaPaths(context.properties),
+    configuredAreaPaths: requestAreaPaths(context.properties),
     queue,
     contactEditor: createConsumerContactEditor({
       queue,
@@ -403,8 +562,8 @@ function createBoard(
       context.doc,
       (move) => persistMove(board, hooks.loaded(), move),
       context.services.logger,
-      // Consumers stay consumers and requests stay requests: a drop may reorder a level or hand a
-      // request to another consumer, but never nest a consumer or lift a request to the top.
+      // Only the flat requests list registers rows, all at one depth: a drop reorders it and can
+      // never nest one request under another.
       { fixedDepth: true },
     ),
     paintList: hooks.paintList,
@@ -426,29 +585,140 @@ function stepExpansion(
   if (loaded.grouping === null) return;
   const { session } = board;
   const consumers = shownConsumers(board, loaded.grouping);
-  // Requests are always leaves here, so the consumers with a request are the tree's only level.
-  const levels = [consumers.filter((consumer) => consumer.children.length > 0).map(({ id }) => id)];
+  // Requests are always leaves here, so the consumers with a request are the tree's only level —
+  // and a requests-only list has no tree at all, leaving `−` only its panels to close.
+  const levels = session.showConsumers
+    ? [
+        consumers
+          .filter((consumer) => consumer.children.some((request) => keepsRequest(board, request)))
+          .map(({ id }) => id),
+      ]
+    : [];
   const step =
     direction === "expand"
       ? expandStep(session, levels)
-      : collapseStep(session, shownItemIds(consumers, session.collapsedIds), levels);
+      : collapseStep(session, shownItemIds(board, consumers), levels);
   board.context.services.logger.info(
     `Consumers View ${direction}: ${step ?? `nothing left to ${direction}`}.`,
   );
   board.paintList();
 }
 
-/** Every item on screen: the shown consumers, and the requests of each one that is open. */
-function shownItemIds(
-  consumers: readonly TrackedWorkItem[],
-  collapsedIds: ReadonlySet<number>,
-): number[] {
-  return consumers.flatMap((consumer) =>
-    collapsedIds.has(consumer.id)
-      ? [consumer.id]
-      : [consumer.id, ...consumer.children.map(({ id }) => id)],
+/**
+ * Every item on screen: every shown request in the requests-only list; otherwise the shown
+ * consumers, and the requests of each one that is open.
+ */
+function shownItemIds(board: Board, consumers: readonly TrackedWorkItem[]): number[] {
+  const { session } = board;
+  return consumers.flatMap((consumer) => {
+    const requestIds = consumer.children
+      .filter((request) => keepsRequest(board, request))
+      .map(({ id }) => id);
+    if (!session.showConsumers) return requestIds;
+    return session.expandedIds.has(consumer.id) ? [consumer.id, ...requestIds] : [consumer.id];
+  });
+}
+
+/**
+ * Read the reader's saved mode for this query. A failed read is logged and falls back to the
+ * requests list, the board's default, rather than leaving the board unpainted.
+ */
+async function readSavedMode(context: DataDrivenViewContext): Promise<boolean> {
+  const { consumersShowConsumers, logger } = context.services;
+  if (consumersShowConsumers === undefined) return false;
+  try {
+    return await consumersShowConsumers.read(context.queryId);
+  } catch (error) {
+    logger.error("Consumers View could not read the saved Show consumers choice", error);
+    return false;
+  }
+}
+
+/** The header switch between the requests list (the default) and the consumer cards. */
+function renderShowConsumersToggle(board: Board, repaint: () => void): HTMLElement {
+  const { context, session } = board;
+  return renderToggleButton(context.doc, {
+    className: `${PREFIX}__show-consumers`,
+    label: "Show consumers",
+    pressed: session.showConsumers,
+    pressedTitle: "Show only the feature requests again, as one list across every shown consumer",
+    releasedTitle: "Show the consumers, each with its feature requests",
+    onToggle: (showConsumers) => {
+      session.showConsumers = showConsumers;
+      context.services.logger.info(
+        `Consumers View Show consumers: ${showConsumers ? "on" : "off"}.`,
+      );
+      // Saved per query and synced, so this query reopens in this mode on every signed-in browser.
+      void context.services.consumersShowConsumers
+        ?.write(context.queryId, showConsumers)
+        .catch((error: unknown) => {
+          context.services.logger.error(
+            "Consumers View could not save the Show consumers choice",
+            error,
+          );
+        });
+      repaint();
+    },
+  });
+}
+
+/**
+ * Drop tags from the retained condition that no in-scope consumer wears any more, and say so: a
+ * stale tag would narrow the board by something the filter shows as unselected.
+ */
+function pruneSessionTags(board: Board, vocabulary: readonly string[]): void {
+  const pruned = pruneTagCondition(board.session.tags, vocabulary);
+  if (pruned.dropped.length === 0) return;
+  board.session.tags = pruned.condition;
+  board.context.services.logger.info(
+    `Consumers View dropped tag filter(s) no consumer wears any more: ${pruned.dropped.join(", ")}.`,
   );
 }
+
+/**
+ * The Consumer and Tags filters over the consumers, and the Area filter over the requests the
+ * binding's branches keep. Every change repaints the
+ * LIST only, so the dropdown the reader is still picking in stays open, and is logged because it
+ * silently decides how much of the query the reader sees.
+ */
+function renderHeaderFilters(board: Board, loaded: LoadedConsumers): HTMLElement[] {
+  const { context, session } = board;
+  const { logger } = context.services;
+  const consumers = loaded.grouping?.children ?? [];
+  const requests = loaded.grouping === null ? [] : inScopeRequests(board, loaded.grouping);
+  const changed = (what: string): void => {
+    logger.info(`Consumers View ${what}.`);
+    writeFilterUrl(board);
+    board.paintList();
+  };
+  const vocabulary = tagsInUse(consumers);
+  pruneSessionTags(board, vocabulary);
+  const filters = [
+    renderConsumerFilter(context.doc, {
+      consumers,
+      selection: session.selectedConsumerIds,
+      onChange: () => changed(`consumer filter: selectedCount=${session.selectedConsumerIds.size}`),
+    }),
+    renderTagConditionFilter(context.doc, {
+      tags: vocabulary,
+      condition: session.tags,
+      onChange: (condition) => {
+        session.tags = condition;
+        changed(`tag filter set to ${describeTagCondition(condition)}`);
+      },
+    }),
+    renderRetainedAreaPathFilter(context.doc, {
+      areaPaths: representedAreaPaths(requests),
+      selection: session.selectedAreaPaths,
+      onChange: (selected) => changed(`area-path filter: selectedCount=${selected.length}`),
+    }).element,
+  ];
+  // After every filter pruned what this load no longer offers, so a link naming something the
+  // board cannot show leaves an address bar describing the board actually on screen.
+  writeFilterUrl(board);
+  return filters;
+}
+
 /** The header, wired to this board's session; rebuilt only by a full paint. */
 function renderHeader(
   board: Board,
@@ -456,23 +726,6 @@ function renderHeader(
   handlers: { queueStatus: HTMLElement; paint(): void; onRefresh(): void },
 ): ViewTitleBandHandle {
   const { context, session } = board;
-  const areaPathFilter = renderRetainedAreaPathFilter(context.doc, {
-    areaPaths:
-      loaded.grouping === null
-        ? []
-        : representedAreaPaths(inScopeConsumers(board, loaded.grouping)),
-    selection: session.selectedAreaPaths,
-    onChange: (selected) => {
-      context.services.logger.info(
-        `Consumers View area-path filter: selectedCount=${selected.length}.`,
-      );
-      writeAreaPathUrl(board);
-      board.paintList();
-    },
-  });
-  // After the filter pruned paths this load no longer offers, so a link naming a path the board
-  // cannot show leaves an address bar describing the board actually on screen.
-  writeAreaPathUrl(board);
   const grouping = loaded.grouping;
   return renderConsumersHeader(context, {
     breadcrumbs: queryFolderBreadcrumbs(loaded.result.folderPath, context.doc.location?.href ?? ""),
@@ -481,12 +734,14 @@ function renderHeader(
       grouping === null ? null : loaded.types.get(grouping.type)?.color,
     ),
     policy: session.policy,
-    dragReorderUnavailable: (policy) =>
-      dragReorderUnavailableReason(context.services.currentTeam(), policy),
+    dragReorderUnavailable: (policy) => dragUnavailableReason(board, policy),
     queueStatus: handlers.queueStatus,
-    areaPathFilter: areaPathFilter.element,
+    filters: renderHeaderFilters(board, loaded),
+    // A full paint, so the ordering glyph re-states whether a drag is available in the new mode.
+    showConsumersToggle: renderShowConsumersToggle(board, handlers.paint),
     onOrderingChange: (policy) => {
       session.policy = policy;
+      context.services.logger.info(`Consumers View ordering: ${policy}.`);
       handlers.paint();
     },
     onExpandAll: () => stepExpansion(board, loaded, "expand"),
@@ -500,7 +755,6 @@ function renderHeader(
       }),
   });
 }
-
 /** The live board: header, list, and the session state both of them read and write. */
 function startConsumersView(context: DataDrivenViewContext, root: HTMLElement): void {
   let header: ViewTitleBandHandle | null = null;
@@ -529,6 +783,11 @@ function startConsumersView(context: DataDrivenViewContext, root: HTMLElement): 
     paintList,
     reload: () => loader.refresh(),
   });
+  // Read once, alongside the first load, so the query opens straight into the reader's saved mode
+  // with no flash of the other one; a later Refresh never re-applies it over a flip made since.
+  const applySavedMode = readSavedMode(context).then((showConsumers) => {
+    board.session.showConsumers = showConsumers;
+  });
   const writeStatus = createBoardWriteStatus(
     context.doc,
     board.queue,
@@ -550,7 +809,7 @@ function startConsumersView(context: DataDrivenViewContext, root: HTMLElement): 
   };
 
   const loader = createBoardLoader({
-    fetch: () => loadConsumers(context),
+    fetch: async () => (await Promise.all([loadConsumers(context), applySavedMode]))[0],
     paint,
     showMessage: (message) => showMessage(context, root, message),
     loadingMessage: "Loading consumers…",

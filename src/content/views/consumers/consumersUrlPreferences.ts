@@ -21,9 +21,36 @@ export function readConsumersUrlAreaPaths(search: string): string[] {
  * the plain query address.
  */
 export function consumersSearchWithAreaPaths(search: string, areaPaths: Iterable<string>): string {
+  return searchWithRepeated(search, AREA_PATH_PARAM, areaPaths);
+}
+
+/** Replace every value of one repeated parameter; an empty result drops the question mark too. */
+function searchWithRepeated(search: string, name: string, values: Iterable<string>): string {
   const parameters = new URLSearchParams(search);
-  parameters.delete(AREA_PATH_PARAM);
-  for (const path of areaPaths) parameters.append(AREA_PATH_PARAM, path);
+  parameters.delete(name);
+  for (const value of values) parameters.append(name, value);
   const value = parameters.toString();
   return value.length === 0 ? "" : `?${value}`;
+}
+
+/** One consumer work-item id per parameter, repeated like the area paths. */
+const CONSUMER_PARAM = "consumer";
+
+/**
+ * Read the consumers a Consumers View link narrows the board to. Anything that is not a positive
+ * whole number is ignored rather than rejected, for the same never-break-the-page reason.
+ */
+export function readConsumersUrlConsumerIds(search: string): number[] {
+  const ids = new URLSearchParams(search)
+    .getAll(CONSUMER_PARAM)
+    .map((value) => value.trim())
+    .filter((value) => /^\d+$/.test(value))
+    .map(Number)
+    .filter((id) => id > 0);
+  return [...new Set(ids)];
+}
+
+/** Rewrite a query string so it names exactly these consumers, keeping every other parameter. */
+export function consumersSearchWithConsumerIds(search: string, ids: Iterable<number>): string {
+  return searchWithRepeated(search, CONSUMER_PARAM, [...ids].map(String));
 }

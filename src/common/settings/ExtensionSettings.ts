@@ -1,5 +1,6 @@
 import { THEME_PREFERENCES, type ThemePreference } from "../view-common/themes/themes";
 
+import { normalizeConsumersShowConsumersQueryIds } from "./ConsumersShowConsumers";
 import { normalizeQueryFavoritesPaths } from "./QueryFavoritesPaths";
 import { normalizeSprintAreaPaths, type SprintAreaPaths } from "./SprintAreaPaths";
 import { reachesWorkItemType } from "./workItemHierarchy";
@@ -24,6 +25,10 @@ export interface ExtensionSettings {
   defaultView: DefaultView;
 
   queryFavoritesPaths: Record<string, string>;
+
+  /** The queries whose Consumers View opens on the consumers; every other opens on requests only. */
+  consumersShowConsumersQueryIds: string[];
+
   configurationQueryId: string;
 
   /**
@@ -253,6 +258,7 @@ export const DEFAULT_SETTINGS: ExtensionSettings = deepFreeze({
   theme: "auto",
   defaultView: "enhanced",
   queryFavoritesPaths: {},
+  consumersShowConsumersQueryIds: [],
   configurationQueryId: "",
   organization: "",
   project: "",
@@ -272,7 +278,12 @@ export const DEFAULT_SETTINGS: ExtensionSettings = deepFreeze({
  * never published to a shared configuration work item and never taken from one, so a teammate cannot
  * repaint someone else's options page or decide which view their queries open in.
  */
-export const PERSONAL_SETTING_KEYS = ["theme", "defaultView", "queryFavoritesPaths"] as const;
+export const PERSONAL_SETTING_KEYS = [
+  "theme",
+  "defaultView",
+  "queryFavoritesPaths",
+  "consumersShowConsumersQueryIds",
+] as const;
 
 export type PersonalSettingKey = (typeof PERSONAL_SETTING_KEYS)[number];
 
@@ -682,6 +693,9 @@ export function normalizeSettings(raw: unknown): ExtensionSettings {
       ? candidate.defaultView
       : DEFAULT_SETTINGS.defaultView,
     queryFavoritesPaths: normalizeQueryFavoritesPaths(candidate.queryFavoritesPaths),
+    consumersShowConsumersQueryIds: normalizeConsumersShowConsumersQueryIds(
+      candidate.consumersShowConsumersQueryIds,
+    ),
     organization: normalizeAdoName(candidate.organization),
     configurationQueryId: normalizeAdoName(candidate.configurationQueryId),
     project: normalizeAdoName(candidate.project),

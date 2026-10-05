@@ -92,6 +92,24 @@ describe("renderOrderingPicker - menu", () => {
     );
   });
 
+  it("offers only the policies a board hands it, by the board's own labels", () => {
+    const picker = renderOrderingPicker(document, {
+      policy: "eta",
+      onChange: () => undefined,
+      policies: [
+        { value: "importance", label: "Drag-and-drop order" },
+        { value: "eta", label: "By ETA" },
+      ],
+    });
+    document.body.append(picker);
+
+    expect(triggerOf(picker).title).toBe("Ordering: By ETA");
+    expect(openMenu(picker).map((row) => row.textContent)).toEqual([
+      "\u2713Drag-and-drop order",
+      "\u2713By ETA",
+    ]);
+  });
+
   it("checks only the policy in force", () => {
     const rows = openMenu(renderMounted("eta"));
 

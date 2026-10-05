@@ -18,6 +18,7 @@ interface ExtensionSettings {
   theme: Theme; // "auto" | "light" | "dark" | "blue"  (default: "auto")
   defaultView: DefaultView; // "original" | "enhanced"        (default: "enhanced")
   queryFavoritesPaths: Record<string, string>;
+  consumersShowConsumersQueryIds: string[]; // queries whose Consumers View opens on the consumers (default: [])
   organization: string; // ADO organization, "" when not set  (default: "")
   project: string; // ADO project, "" when not set       (default: "")
   currentTeam: TeamRef | null; // selected ADO team, or null       (default: null)
@@ -85,7 +86,7 @@ interface ISettingsStore {
 ### Personal settings — `ExtensionSettings.ts`
 
 `PERSONAL_SETTING_KEYS` names the settings that belong to the person rather than the team (`theme`,
-`defaultView`, `queryFavoritesPaths`), with `SharedSettings` for the rest and `withoutPersonalSettings(settings)` to drop
+`defaultView`, `queryFavoritesPaths`, `consumersShowConsumersQueryIds`), with `SharedSettings` for the rest and `withoutPersonalSettings(settings)` to drop
 them from a snapshot or a partial update. They still sync across the user's own devices — "personal"
 is not "device-local" — but they never travel to or from a shared configuration work item. See
 ADR-075.
@@ -97,6 +98,13 @@ syncing it could replace unrelated favorites. Invalid paths received through bro
 import are ignored. The map lives at
 `settings.queryFavoritesPaths`, follows the user's native browser-account sync, and round-trips in
 full configuration files. It is never placed in binding properties or team configuration.
+
+`PersonalConsumersShowConsumers` (`ConsumersShowConsumers.ts`) reads and writes one query's Consumers
+View mode through the same personal settings store: `read(queryId)` resolves whether that board opens
+on its consumers rather than the default requests-only list, and `write(queryId, showConsumers)` records the choice. Only switched-on
+queries are stored, at `settings.consumersShowConsumersQueryIds`; the list follows the user's browser
+sync and full configuration files, never binding properties or team configuration.
+`normalizeConsumersShowConsumersQueryIds(raw)` drops non-text, blank, and repeated ids.
 
 ### `LocalSettingsAccess` (interface) — `LocalSettingsAccess.ts`
 

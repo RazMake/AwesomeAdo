@@ -7,6 +7,8 @@ import {
   type ViewTitleBandHandle,
 } from "../../../common/view-common/control/ViewHeader/ViewHeader";
 
+import { CONSUMERS_ORDERING_POLICIES } from "./consumersViewType";
+
 /** What the Consumers View header shows and what pressing each of its controls means. */
 export interface ConsumersHeaderOptions {
   /** The query's parent-folder trail; an empty trail leaves only the corner. */
@@ -24,8 +26,13 @@ export interface ConsumersHeaderOptions {
    * outlives any one paint of the header.
    */
   queueStatus: HTMLElement;
-  /** The header area-path filter, built by the board over the selection it retains. */
-  areaPathFilter: HTMLElement;
+  /**
+   * The header filters, built by the board over the selections it retains, in the order they are
+   * shown (Consumer, Tags, Area).
+   */
+  filters: readonly HTMLElement[];
+  /** The switch between the requests-only list and the consumer cards, built by the board. */
+  showConsumersToggle: HTMLElement;
   onOrderingChange(policy: OrderingPolicy): void;
   /** Opens the next tree level. */
   onExpandAll(): void;
@@ -51,6 +58,7 @@ export function renderConsumersHeader(
       policy: options.policy,
       onChange: options.onOrderingChange,
       dragReorderUnavailable: options.dragReorderUnavailable,
+      policies: CONSUMERS_ORDERING_POLICIES,
     }),
     title: options.title,
     titleColor: options.titleColor,
@@ -59,9 +67,11 @@ export function renderConsumersHeader(
     collapseLabel: "Collapse open descriptions, then discussions, then one tree level",
     onExpandAll: options.onExpandAll,
     onCollapseAll: options.onCollapseAll,
-    // Area paths are the only narrowing this board has: sprints, markers, and blocked/interrupt
-    // flags describe delivery work, not a consumer's request queue.
-    filters: [options.areaPathFilter],
+    // The mode switch sits with `+` and `−` because, like them, it changes how much of the tree is
+    // drawn rather than which items qualify. Sprints, markers, and blocked/interrupt flags describe
+    // delivery work, not a consumer's request queue, so only consumer, tag, and area filters exist.
+    outlineControls: [options.showConsumersToggle],
+    filters: options.filters,
     onRefresh: options.onRefresh,
   });
 }

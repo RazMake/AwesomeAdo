@@ -417,6 +417,11 @@ const SETTINGS_RULES: readonly {
     isValid: isFavoritesFolderPathMap,
     expected: "a map of query IDs to folder paths inside Favorites bar",
   },
+  {
+    key: "consumersShowConsumersQueryIds",
+    isValid: isStringList,
+    expected: "a list of query IDs",
+  },
   { key: "project", isValid: isText, expected: "the project name as text" },
   { key: "configurationQueryId", isValid: isText, expected: "the configuration query ID as text" },
   { key: "currentTeam", isValid: isTeamRef, expected: "null, or a team with an id and a name" },

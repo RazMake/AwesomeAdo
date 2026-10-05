@@ -202,7 +202,7 @@ snapshots derived from the same stale settings value. That rule is enforced by t
 by memory (ADR-074): `ITeamPublishingSettingsStore` carries a marker a plain store lacks, the pull and
 file-import paths take the segregated `LocalSettingsAccess` instead, and `createTeamSharedSettings`
 is handed the plain store inline so no options-page name binds it.
-Theme, default view, and query Favorites paths are the exception: `PERSONAL_SETTING_KEYS` marks them as the reader's own, so
+Theme, default view, query Favorites paths, and Consumers' Show consumers query list are the exception: `PERSONAL_SETTING_KEYS` marks them as the reader's own, so
 `IPersonalSettingsStore` (the disjoint `publishesBeforeWrite: false` counterpart) backs Appearance and
 they are stripped from the published payload, from a pull, and from a shared query's overlay. They
 still sync across the user's own devices and still travel in a file export (ADR-075).
@@ -470,8 +470,17 @@ Split into component subfolders (each with its own `README.md`):
     reorder, a middle drop on a row one level up appends into it, and nothing nests or lifts. Project
     Tracking and the catalog leave it off.
   - `control/Breadcrumbs/queryFolderBreadcrumbs` and `control/ViewScaffold` → `renderViewSurface`.
-    The header is rebuilt only by a full paint (load, ordering change); filter, twisty, expand/collapse
-    and accepted moves repaint the list alone.
+    The header is rebuilt only by a full paint (load, ordering change, the Show consumers
+    switch — so the ordering glyph re-states drag availability); filter, request count,
+    expand/collapse and accepted moves repaint the list alone.
+  - `control/ToggleButton` → `renderToggleButton(doc, options)`, the shared pressed/released header
+    switch behind Project Tracking's Show only Done and Consumers' Show consumers.
+  - `content/views/tag-selection` → the tag condition (`TagCondition`, `matchesTagCondition`,
+    `pruneTagCondition`), the required/excluded tag dropdown `renderTagConditionFilter`, and the
+    `tags`/`notTags`/`tagMatch` URL contract, shared by the All Projects Catalog and Consumers.
+  - `content/views/item-eta/renderRowEtaBadge` → one row's editable ETA badge from the item type's
+    configured ETA field (null when the type has none), with optional `EtaBadge` wording, shared by
+    the catalog rows and Consumers' Needed-by badge.
   - `views/consumers/profile` reads the consumer's human-edited description in three layers — text
     and line shapes (`descriptionText`), structure (`descriptionSections`: headings, fuzzy section
     names, group labels), and people (`contactEntries`) — orchestrated by `consumerProfile`, which

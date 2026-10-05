@@ -1,4 +1,8 @@
-import { ORDERING_POLICIES, type OrderingPolicy } from "../../../ordering/ItemOrdering";
+import {
+  ORDERING_POLICIES,
+  type OrderingPolicy,
+  type OrderingPolicyOption,
+} from "../../../ordering/ItemOrdering";
 import { createPopupHost } from "../popupHost/popupHost";
 
 /** Options for rendering the ordering picker. */
@@ -23,6 +27,12 @@ export interface OrderingPickerOptions {
    * string, not a boolean); the control only presents it.
    */
   dragReorderUnavailable?(policy: OrderingPolicy): string | null;
+  /**
+   * The policies this board offers, in menu order, with the labels it names them by. Defaults to
+   * every shared policy; a board that only makes sense under some of them (or names the manual rank
+   * after its own gesture) passes its own list.
+   */
+  policies?: readonly OrderingPolicyOption[];
 }
 
 // A single glyph reads as "sorting" in every locale and needs no translation, which is what lets the
@@ -34,13 +44,13 @@ const SORT_GLYPH = "\u21C5";
 const ACTIVE_MARK = "\u2713";
 
 /** The picker's label for a policy, falling back to the raw id for one this build no longer offers. */
-function labelOf(policy: OrderingPolicy): string {
-  return ORDERING_POLICIES.find((option) => option.value === policy)?.label ?? policy;
+function labelOf(policies: readonly OrderingPolicyOption[], policy: OrderingPolicy): string {
+  return policies.find((option) => option.value === policy)?.label ?? policy;
 }
 
 /** The hover/assistive text: what the items are ordered by, plus what clicking does. */
-function describe(policy: OrderingPolicy): string {
-  return `Ordering: ${labelOf(policy)}`;
+function describe(policies: readonly OrderingPolicyOption[], policy: OrderingPolicy): string {
+  return `Ordering: ${labelOf(policies, policy)}`;
 }
 
 // How the glyph looks in each of its two states. Both colors are pinned by every theme.
@@ -64,7 +74,7 @@ interface GlyphAppearance {
 }
 
 /** One selectable policy row, marked when it is the policy currently in force. */
-function renderPolicyRow(doc: Document, option: (typeof ORDERING_POLICIES)[number]): HTMLElement {
+function renderPolicyRow(doc: Document, option: OrderingPolicyOption): HTMLElement {
   const row = doc.createElement("button");
   row.type = "button";
   row.className = "awesomeado-ordering__option";
@@ -104,6 +114,7 @@ function renderPolicyRow(doc: Document, option: (typeof ORDERING_POLICIES)[numbe
 /** The dropdown listing every policy; `close` dismisses it as soon as one is picked. */
 function buildOrderingPopup(
   doc: Document,
+  policies: readonly OrderingPolicyOption[],
   current: OrderingPolicy,
   pick: (policy: OrderingPolicy) => void,
   close: () => void,
@@ -127,7 +138,7 @@ function buildOrderingPopup(
     "z-index:1000",
   ].join(";");
 
-  for (const option of ORDERING_POLICIES) {
+  for (const option of policies) {
     const row = renderPolicyRow(doc, option);
     const isActive = option.value === current;
     row.setAttribute("aria-checked", String(isActive));
@@ -163,6 +174,7 @@ export function renderOrderingPicker(doc: Document, options: OrderingPickerOptio
   // on every open: after a pick, the check mark and the tooltip must describe the NEW policy rather
   // than freezing on the one the board started with.
   let current = options.policy;
+  const policies = options.policies ?? ORDERING_POLICIES;
 
   const root = doc.createElement("span");
   root.className = "awesomeado-ordering";
@@ -205,7 +217,9 @@ export function renderOrderingPicker(doc: Document, options: OrderingPickerOptio
     trigger.style.opacity = appearance.opacity;
     trigger.dataset.dragReorder = unavailable === null ? "available" : "unavailable";
     const description =
-      unavailable === null ? describe(current) : `${describe(current)} \u2014 ${unavailable}`;
+      unavailable === null
+        ? describe(policies, current)
+        : `${describe(policies, current)} \u2014 ${unavailable}`;
     trigger.title = description;
     trigger.setAttribute("aria-label", description);
   };
@@ -225,7 +239,7 @@ export function renderOrderingPicker(doc: Document, options: OrderingPickerOptio
     doc,
     trigger,
     mountInto: root,
-    buildPopup: (close) => buildOrderingPopup(doc, current, pick, close),
+    buildPopup: (close) => buildOrderingPopup(doc, policies, current, pick, close),
   });
 
   return root;

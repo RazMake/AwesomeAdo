@@ -112,13 +112,13 @@ This is a flattened snapshot of what exists now, not a build log.
   level 2 rows are feature requests. Consumer rows show type and title; request rows additionally
   show an editable status badge. The header shows the grouping root's title in its theme-aware ADO
   work item type color. The binding's
-  `consumerAreaPaths` (area-path-list, Sprint View's editor, labelled "Consumer area paths";
-  renamed from `requestAreaPaths` with no fallback) and the header AreaPathFilter (shared
-  `renderRetainedAreaPathFilter`, mirrored to repeated `areaPath` URL parameters and pruned to
-  offered paths) both restrict CONSUMERS only; a shown consumer lists every request. Binding paths
-  include descendants; header picks use exact case-insensitive full paths. The filter used to offer
-  request areas only, so a board with no requests had it permanently disabled. When the configured
-  paths keep no consumer, an empty state says so. Header `−` / `+` step through
+  `requestAreaPaths` (area-path-list, Sprint View's editor, labelled "Request area paths"; legacy
+  `consumerAreaPaths` read as a fallback while the new key is absent) and the header AreaPathFilter
+  (shared `renderRetainedAreaPathFilter`, mirrored to repeated `areaPath` URL parameters, offering
+  the request paths the binding keeps, pruned to offered paths) both restrict REQUESTS only;
+  consumers are never area filtered and consumer-card request counts show the filtered count.
+  Binding paths include descendants; header picks use exact case-insensitive full paths. When the
+  area filters keep no request, the requests list says so. Header `−` / `+` step through
   `treeExpansion.ts` (`collapseStep`: open descriptions → open discussions → deepest open tree
   level; `expandStep`: shallowest closed level), each step logged. Flat, empty,
   multi-root, and consumer-less queries render an empty
@@ -130,8 +130,11 @@ This is a flattened snapshot of what exists now, not a build log.
   panel and uses the type icon as the lazy Discussion toggle. Discussion authoring, revision refresh,
   and the right-click **View all notes** popup reuse Project Tracking's notes controls.
   Each consumer's card IS its one row surface: `renderTreeRowLine(..., "is-consumer")` restyled as a
-  `16px | 1fr` grid (class `__card`, own outline) holding the twisty, a `__card-head` (`?`, type
-  icon, title), and the `__profile` block in column 2; the wrapper (`__consumer`) keeps only the
+  `32px | 1fr` grid (class `__card`, own outline) holding the `__request-count` pill (a button
+  with `aria-expanded`, filled while open; an inert `is-empty` `0` span for none), a `__card-head`
+  (`?`, type icon, title), and the `__profile` block in column 2; consumers start closed
+  (`session.expandedIds`), and an accepted move opens its target consumer. The wrapper
+  (`__consumer`) keeps only the
   gap below it, then the description and notes panels, then `__children`. The card's contextmenu
   opens the consumer's menu from any point except text fields (`input, textarea, [contenteditable]`).
   `profile/consumerProfile.ts` parses Markdown, plain text, or ADO rich-text HTML for
@@ -154,6 +157,22 @@ This is a flattened snapshot of what exists now, not a build log.
   only the affected line via `consumerContactsSource.ts`; every edit repaints the list. The theme
   token `--remove-control-color` colours the bare bold × (no disc), tuned per theme for contrast on
   every row background.
+  The board opens on the requests list: one list of the shown consumers' requests ordered by the
+  board policy across consumers (`renderRequestOnlyRow`: Status, `?`, Discussion, title,
+  `__consumer-tag` TagPill hidden while consumers are picked, "Needed by {date}" / "No needed-by
+  date" `EtaBadge` wording via shared `item-eta/renderRowEtaBadge`; same item menu with Update parent
+  and View all notes; `−` closes panels only, `+` has nothing to open; its own empty state when no
+  shown consumer has a request). Under Drag-and-drop order with a team, each request registers a
+  depth-0 drag with every listed request id as siblings; `persistMove` maps the drop to the
+  request's real consumer (parentId = currentParentId) and enqueues the backlog-rank reorder. Cards
+  never drag (glyph: "consumers keep a fixed order"); By ETA disables drag. `CONSUMERS_ORDERING_POLICIES`
+  feeds OrderingPicker's `policies` option. The header's **Show consumers** switch
+  (`__show-consumers`) sits in ViewHeader `outlineControls`; the mode is the personal synced
+  per-query setting `consumersShowConsumersQueryIds` (`PersonalConsumersShowConsumers`, service
+  `consumersShowConsumers`), read once with the first load and written on each flip. Header
+  filters: Consumer (`ConsumerFilter.ts`, URL `consumer`), Tags (`tag-selection`, URL
+  `tags`/`notTags`/`tagMatch`, consumer's own tags, unworn tags pruned and logged), Area. The
+  "showing X of Y" log line carries `mode`, area counts, `selectedConsumers`, and `tags`.
   Authenticated browser validation remains pending.
 - **Sprint View** (`content/views/sprint`): accepts flat or tree queries; loads the selected
   team's complete paged member roster, recursively expanding direct and nested groups, before

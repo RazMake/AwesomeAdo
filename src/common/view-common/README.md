@@ -121,6 +121,7 @@ view — regardless of which bundle renders it — reuses the same consistent pa
 | `OrderingPicker`   | [`control/OrderingPicker`](./control/OrderingPicker/README.md)     | A discrete sort glyph naming the ordering policy in force, with a menu to change it.              |
 | `PriorityBadge`    | [`control/PriorityBadge`](./control/PriorityBadge/README.md)       | A P0-P4 chip emphasizing P0-P2 and muting later priorities, with a matching selection popup.      |
 | `TagPill`          | [`control/TagPill`](./control/TagPill/README.md)                   | A colored Feature Crew tag pill (a neutral "??" pill when untagged).                              |
+| `ToggleButton`     | [`control/ToggleButton`](./control/ToggleButton/README.md)         | A header on/off switch that stays pressed and fills with the communication color while on.        |
 | `TreeRow`          | [`control/TreeRow`](./control/TreeRow/README.md)                   | One outline-board row's twisty, type icon, title, line, wrapper, and indented branch.             |
 | `ViewHeader`       | [`control/ViewHeader`](./control/ViewHeader/README.md)             | The sticky board header: folder trail, status corner, title, outline buttons, filters, Refresh.   |
 | `WriteQueueStatus` | [`control/WriteQueueStatus`](./control/WriteQueueStatus/README.md) | A "Saving N change(s)…" spinner shown only while writes are in flight.                            |

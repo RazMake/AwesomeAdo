@@ -1,7 +1,7 @@
 /** What the board keeps open, which the header's `+` and `−` step through. */
 export interface ExpansionState {
-  /** Rows the reader closed; every expandable row starts open. */
-  collapsedIds: Set<number>;
+  /** Rows the reader opened; every expandable row starts closed. */
+  expandedIds: Set<number>;
   expandedDescriptionIds: Set<number>;
   expandedNoteIds: Set<number>;
 }
@@ -36,8 +36,8 @@ export function collapseStep(
   }
   for (let depth = levels.length - 1; depth >= 0; depth -= 1) {
     const level = levels[depth] ?? [];
-    if (level.some((id) => !state.collapsedIds.has(id))) {
-      for (const id of level) state.collapsedIds.add(id);
+    if (level.some((id) => state.expandedIds.has(id))) {
+      for (const id of level) state.expandedIds.delete(id);
       return `tree level ${depth + 1}`;
     }
   }
@@ -51,8 +51,8 @@ export function collapseStep(
  */
 export function expandStep(state: ExpansionState, levels: ExpandableLevels): ExpansionStep {
   for (const [depth, level] of levels.entries()) {
-    if (level.some((id) => state.collapsedIds.has(id))) {
-      for (const id of level) state.collapsedIds.delete(id);
+    if (level.some((id) => !state.expandedIds.has(id))) {
+      for (const id of level) state.expandedIds.add(id);
       return `tree level ${depth + 1}`;
     }
   }

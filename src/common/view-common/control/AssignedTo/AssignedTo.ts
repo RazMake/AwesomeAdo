@@ -94,10 +94,12 @@ function buildAssignedRoot(
     "gap:4px",
     "background:var(--control-background-subtle)",
     "border-radius:6px",
-    // The chip carries NO border, so to stand the same 18px tall as the (bordered) status badge it
-    // sits beside — and stay vertically centered with it on a tree row — its vertical padding (4px)
-    // absorbs the 2px the badge spends on its border. 4px top/bottom + 10px text = 18px.
-    "padding:4px 5px",
+    // A fixed 18px matches the (bordered) status badge it sits beside. The height is explicit rather
+    // than padding-derived because the children trim their line boxes to the glyphs (see below), so
+    // flex centering lands on the visible ink instead of the font's lopsided ascent/descent.
+    "box-sizing:border-box",
+    "height:18px",
+    "padding:0 5px",
   ].join(";");
 
   // The name button showing the current assignee (clickable text, no border/background).
@@ -115,6 +117,8 @@ function buildAssignedRoot(
     // not inflate the chip; this keeps the assignee chip the same height as the status badge.
     "font-size:10px",
     "line-height:1",
+    // Trim to cap height/baseline so the name's box equals its visible letters and centers exactly.
+    "text-box:trim-both cap alphabetic",
   ].join(";");
 
   root.append(nameButton);
@@ -141,12 +145,8 @@ function buildRemoveButton(
   button.title = label;
   button.setAttribute("aria-label", label);
   button.style.cssText = [
-    "display:inline-flex",
-    "align-items:center",
-    "justify-content:center",
+    "display:inline-block",
     "flex:none",
-    // As tall as the name beside it, so the larger glyph never makes the pill taller.
-    "height:12px",
     "padding:0",
     "border:none",
     "background-color:transparent",
@@ -155,6 +155,9 @@ function buildRemoveButton(
     "font-size:15px",
     "font-weight:700",
     "line-height:12px",
+    // The × glyph sits on the math axis, not the line box's middle; trimming to the ex-height box
+    // centers the visible cross with the name beside it.
+    "text-box:trim-both ex alphabetic",
     "cursor:pointer",
   ].join(";");
   button.addEventListener("click", (event) => {
@@ -629,7 +632,7 @@ function showAssignee(
       ? "var(--text-secondary-color)"
       : "var(--assigned-to-text-color, var(--text-primary-color))";
   if (clearButton !== null) {
-    clearButton.style.display = assigned === null ? "none" : "inline-flex";
+    clearButton.style.display = assigned === null ? "none" : "inline-block";
   }
   if (tagSlot === null) {
     return;

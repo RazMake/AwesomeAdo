@@ -14,10 +14,6 @@ import {
 } from "../../../common/view-common/control/AssignedTo/AssignedTo";
 import type { DragReorderController } from "../../../common/view-common/control/DragReorder/DragReorderController";
 import {
-  renderEtaBadge,
-  type EtaBadgeHandle,
-} from "../../../common/view-common/control/EtaBadge/EtaBadge";
-import {
   renderTreeChildren,
   renderTreeItemWrapper,
   renderTreeRowLine,
@@ -27,7 +23,7 @@ import {
 } from "../../../common/view-common/control/TreeRow/TreeRow";
 import { createSvgCanvas } from "../../../common/view-common/control/svgIcon/svgIcon";
 import { writeItemAssignee } from "../item-assignee/writeItemAssignee";
-import { writeItemEta } from "../item-eta/writeItemEta";
+import { renderRowEtaBadge } from "../item-eta/renderRowEtaBadge";
 
 /** Everything a row needs, grouped so a deeply nested row never reaches for view-level state. */
 export interface ProjectRowContext {
@@ -217,23 +213,13 @@ function renderRowAssignee(item: TrackedWorkItem, context: ProjectRowContext): H
  * that can never do anything.
  */
 function renderRowEta(item: TrackedWorkItem, context: ProjectRowContext): HTMLElement | null {
-  const field = context.types.get(item.type)?.etaField ?? null;
-  if (field === null) return null;
-  const badge: { handle?: EtaBadgeHandle } = {};
-  badge.handle = renderEtaBadge(context.doc, {
-    eta: item.eta,
+  return renderRowEtaBadge({
+    doc: context.doc,
+    item,
+    types: context.types,
     now: context.services.now(),
-    onChange: (eta) =>
-      writeItemEta(item, eta, field, context.queue, (committed) => badge.handle?.setEta(committed)),
+    queue: context.queue,
   });
-  // One property at a time, never `cssText`: assigning that wipes the badge's OWN inline styles,
-  // which is what took away its hand cursor and the `position:relative` its date picker is anchored
-  // to — leaving an ETA that looked and behaved as if it could not be edited.
-  badge.handle.style.flex = "0 0 auto";
-  badge.handle.style.fontSize = "11px";
-  // Pinned to the row's right edge so every level reports its date in one column down the tree.
-  badge.handle.style.marginLeft = "auto";
-  return badge.handle;
 }
 
 /**

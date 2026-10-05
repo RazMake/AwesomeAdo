@@ -36,6 +36,7 @@ while open, its menu).
 | `policy`                 | The `OrderingPolicy` items are ordered by right now; sets the tooltip and the mark.  |
 | `onChange`               | Called with the newly picked policy, immediately (pick-and-apply).                   |
 | `dragReorderUnavailable` | Optional. Why drag-to-reorder is off under a policy, or `null` when it is available. |
+| `policies`               | Optional. The `{ value, label }` policies offered, in menu order; defaults to all.   |
 
 ### Behaviour
 

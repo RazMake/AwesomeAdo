@@ -109,6 +109,7 @@ import {
   renderSprintPicker,
   type SprintPickerHandle,
 } from "../../../common/view-common/control/SprintPicker/SprintPicker";
+import { renderToggleButton } from "../../../common/view-common/control/ToggleButton/ToggleButton";
 import { renderViewScaffold } from "../../../common/view-common/control/ViewScaffold/ViewScaffold";
 import { renderWriteQueueStatus } from "../../../common/view-common/control/WriteQueueStatus/WriteQueueStatus";
 import { createPopupHost } from "../../../common/view-common/control/popupHost/popupHost";
@@ -2020,51 +2021,20 @@ function renderResolvedOnlyToggle(
   completedColumnName: string,
   onChange: () => void,
 ): HTMLButtonElement {
-  const button = context.doc.createElement("button");
-  button.type = "button";
-  button.className = "awesomeado-resolved-filter";
-  button.textContent = `Show only ${completedColumnName}`;
-  button.style.cssText = [
-    "box-sizing:border-box",
-    "height:27.2px",
-    "display:inline-flex",
-    "align-items:center",
-    "border:1px solid var(--control-border-strong)",
-    "border-radius:6px",
-    "padding:0 7px",
-    "font:inherit",
-    "font-size:12px",
-    "font-weight:600",
-    "cursor:pointer",
-  ].join(";");
-
-  const paint = (): void => {
-    button.setAttribute("aria-pressed", String(session.resolvedOnly));
-    button.title = session.resolvedOnly
-      ? "Show all items"
-      : `Show only ${completedColumnName} items`;
-    button.setAttribute("aria-label", button.title);
-    button.style.background = session.resolvedOnly
-      ? "var(--communication-background)"
-      : "transparent";
-    button.style.color = session.resolvedOnly
-      ? "var(--text-on-communication-background)"
-      : "var(--text-primary-color)";
-    button.style.borderColor = session.resolvedOnly
-      ? "var(--communication-background)"
-      : "var(--control-border-strong)";
-  };
-
-  button.addEventListener("click", () => {
-    session.resolvedOnly = !session.resolvedOnly;
-    paint();
-    context.services.logger.info(
-      `Project Tracking ${completedColumnName} filter: ${session.resolvedOnly ? `showing only ${completedColumnName} items` : "showing the normal view"}.`,
-    );
-    onChange();
+  return renderToggleButton(context.doc, {
+    className: "awesomeado-resolved-filter",
+    label: `Show only ${completedColumnName}`,
+    pressed: session.resolvedOnly,
+    pressedTitle: "Show all items",
+    releasedTitle: `Show only ${completedColumnName} items`,
+    onToggle: (pressed) => {
+      session.resolvedOnly = pressed;
+      context.services.logger.info(
+        `Project Tracking ${completedColumnName} filter: ${pressed ? `showing only ${completedColumnName} items` : "showing the normal view"}.`,
+      );
+      onChange();
+    },
   });
-  paint();
-  return button;
 }
 
 /**

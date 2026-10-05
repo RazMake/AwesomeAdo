@@ -5,9 +5,9 @@ import type {
   EnhancedViewContext,
   EnhancedViewServices,
 } from "../../../common/view-common/EnhancedView";
+import { readUrlTagCondition } from "../tag-selection/tagConditionUrl";
 
 import { projectsView } from "./ProjectsView";
-import { readProjectsUrlTagCondition } from "./projectsUrlPreferences";
 
 const TYPES: TypeCatalogEntry[] = [
   {
@@ -588,7 +588,7 @@ describe("projectsView - the tag condition as a shareable link", () => {
       .click();
     dismissPopup();
 
-    expect(readProjectsUrlTagCondition(window.location.search)).toEqual({
+    expect(readUrlTagCondition(window.location.search)).toEqual({
       required: new Set(["api"]),
       excluded: new Set(["docs"]),
       matchAll: false,
@@ -845,7 +845,7 @@ describe("projectsView - Favorites integration", () => {
       ],
       [],
     );
-    expect(readProjectsUrlTagCondition(window.location.search).required).toEqual(new Set(["api"]));
+    expect(readUrlTagCondition(window.location.search).required).toEqual(new Set(["api"]));
     expect(document.body.textContent).not.toContain("project(s) have no query");
   });
 });

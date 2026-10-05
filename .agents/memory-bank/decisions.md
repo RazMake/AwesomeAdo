@@ -1760,6 +1760,13 @@ cannot be null."` The patch that reached ADO was `{ op: "add", path: "/fields/<d
   reinterpreting them would hide consumers. A board is about one team's consumers, and a consumer's
   requests are its whole queue wherever they are filed; offering only request areas also left the
   filter disabled on boards with no requests yet.
+- Amendment (area paths filter requests again): the user reversed the consumer-scoping amendment.
+  Consumers are never filtered by area — an area path says where work is filed, not who asked for
+  it. The binding's branches (descendant-inclusive) and the header Area filter (exact, offering the
+  request paths the binding keeps) narrow requests in both modes, and a consumer card's request
+  count is the filtered count. The property is `requestAreaPaths` ("Request area paths");
+  `requestAreaPaths(properties)` falls back to the legacy `consumerAreaPaths` key only while the new
+  key is absent, so existing bindings keep their paths.
 - Amendment (loose reading, removal): descriptions are human edited, so the reader accepts many
   heading, entry, and table shapes, but stays an allowlist — a label or bold line only opens a
   section when it NAMES one, and a bare person needs a name-shaped line — so prose never becomes
@@ -1768,6 +1775,33 @@ cannot be null."` The patch that reached ADO was `{ op: "add", path: "/fields/<d
   belongs to someone else. Rich-text descriptions are no longer read line-for-line at all
   (`sourceLines` null) and say why in a tooltip. Removal deletes exactly the contact's line, with no
   confirmation: it is one guarded write and the description's history restores it.
+- Amendment (request counts and Show only requests): consumers start CLOSED, with a request-count
+  pill in the card's first column (32px, fixed so titles align) replacing the twisty; the session
+  tracks `expandedIds` instead of `collapsedIds`, and `treeExpansion` follows. A roster of many
+  consumers is read as a roster first; the count answers "how much does each want?" without opening
+  anything. A header **Show only requests** switch (the shared `control/ToggleButton`, extracted
+  from Project Tracking's Show only Done toggle so both are one control) replaces the cards with
+  every shown consumer's requests in ONE list ordered by the board's policy across consumers, each
+  tagged with its consumer (a `TagPill`, hue per consumer). Drag is off in that mode, with a reason
+  on the ordering glyph: interleaved requests give a drop no single sibling list to rank within. The
+  switch is a PERSONAL per-query setting, `consumersRequestsOnlyQueryIds` (the query ids switched
+  on), synced through `chrome.storage.sync` and full file export/import but excluded from the team
+  configuration payload — it is how one reader likes to read a board, not team configuration, and a
+  bindings property would have forced the change through the team-shared writer. The view reads it
+  once alongside the first load (so there is no flash of the other mode) and a Refresh never
+  re-applies it over a flip made since; read/write failures are logged and fall back to the cards.
+- Amendment (requests list first, ranked by drag): the modes are SWAPPED — the board opens on the
+  requests list and a **Show consumers** switch (beside `+`/`−`, ViewHeader `outlineControls`)
+  shows the cards; the setting is now `consumersShowConsumersQueryIds` (failures fall back to the
+  list). Drag lives ONLY in the requests list: the list is the reader's priority view, so every
+  listed request is one sibling run, and the drop is persisted under the request's own consumer
+  (moving between consumers is done in ADO or via Update parent). The cards keep a fixed order so a
+  roster never shuffles under the reader. Ordering is narrowed to Drag-and-drop order (importance)
+  and By ETA through OrderingPicker's `policies`; any other saved value reads as the drag order.
+  Requests show the configured ETA field as "Needed by". Consumer and Tags filters judge only the
+  consumer (its id / its OWN tags) in both modes so the two modes always agree on who is shown; the
+  tag condition, dropdown, and URL contract were extracted from Projects into
+  `content/views/tag-selection` so both boards share one implementation.
 
 ## ADR-082: Favorites sync fails closed and never removes a favorite without a way back
 

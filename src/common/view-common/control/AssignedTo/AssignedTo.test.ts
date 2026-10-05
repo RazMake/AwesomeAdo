@@ -176,7 +176,7 @@ describe("renderAssignedTo - clear assignment button", () => {
 
     expect(clear.textContent).toBe("\u00d7");
     expect(clear.getAttribute("aria-label")).toBe("Clear assigned user");
-    expect(clear.style.display).toBe("inline-flex");
+    expect(clear.style.display).toBe("inline-block");
     clear.click();
     expect(cleared).toEqual(["Alice"]);
   });
@@ -191,7 +191,7 @@ describe("renderAssignedTo - clear assignment button", () => {
 
     expect(clear.style.display).toBe("none");
     control.setUser(user);
-    expect(clear.style.display).toBe("inline-flex");
+    expect(clear.style.display).toBe("inline-block");
     control.setUser(null);
     expect(clear.style.display).toBe("none");
   });

@@ -9,14 +9,17 @@ renderer.
 
 - `consumersViewType.ts` → the view's config. `consumersViewType: ViewType` has id `"consumers"`,
   label `"Consumers View"`, and two per-query properties:
-  - `orderingPolicy` (select) — how consumers and their requests are ordered; the choices and the
-    default come from [`common/ordering`](../../../common/ordering).
-  - `consumerAreaPaths` (area-path list, optional, labelled "Consumer area paths") — the area
-    branches a **consumer** must sit in to be shown. Edited with the same list editor and
-    autocomplete as Sprint View's area paths. Left empty, every consumer is shown. Feature requests
-    are never filtered by area: a shown consumer lists all of its requests.
+  - `orderingPolicy` (select) — how consumers and their requests are ordered: **Drag-and-drop
+    order** (the backlog rank, the default) or **By ETA (past/recent - future)**.
+    `CONSUMERS_ORDERING_POLICIES` lists exactly those two; a saved value the board does not offer
+    reads as the drag order.
+  - `requestAreaPaths` (area-path list, optional, labelled "Request area paths") — the area
+    branches a **feature request** must sit in to be shown. Edited with the same list editor and
+    autocomplete as Sprint View's area paths. Left empty, every request is shown. Consumers are
+    never filtered by area. A binding saved under the former `consumerAreaPaths` key is still read
+    until the new key is saved.
 
-  `orderingPolicyOf(properties)` and `consumerAreaPaths(properties)` read those settings; use them
+  `orderingPolicyOf(properties)` and `requestAreaPaths(properties)` read those settings; use them
   instead of reading `properties[...]` directly.
 
 - `ConsumersView.ts` → `consumersView: EnhancedView` — the renderer. It is a **deferred** renderer,
@@ -24,46 +27,70 @@ renderer.
 - `ConsumersHeader.ts` → `renderConsumersHeader(context, options)` — the shared sticky
   [view header](../../../common/view-common/control/ViewHeader/README.md): folder breadcrumbs, the
   write-queue status, version, and ordering glyph on top; the root item's title in its ADO type
-  color, the staged `+` / `−` buttons, the Area filter, and Refresh below.
-- `ConsumerRow.ts` → `renderConsumerRow(consumer, context)` and `visibleRequestsOf(consumer,
-context)` — one consumer and, while open, its visible requests. Every row shows the shared
-  type-colored `?` description control and uses its type icon to open Azure DevOps Discussion;
-  request rows also show an editable Status badge. Each consumer is ONE card-shaped row surface: its
-  title line with the service identity and contacts from [`profile/`](./profile/README.md) beneath
-  it, sharing the `?`'s left edge. The description and Discussion panels open below the card, then —
-  only while the consumer is expanded — its requests, never inside the card; right-clicking
-  anywhere on the card (except inside a text field) opens the consumer's menu.
+  color, the staged `+` / `−` buttons with the **Show consumers** switch beside them, the Consumer, Tags,
+  and Area filters, and Refresh below. The ordering glyph offers only the board's two orderings.
+- `ConsumerFilter.ts` → `renderConsumerFilter(doc, { consumers, selection, onChange })` — the
+  header's Consumer dropdown, listing every consumer by title.
+- `ConsumerRow.ts` → `renderConsumerRow(consumer, context)`, `renderRequestOnlyRow(request,
+consumer, context)`, and `requestsOf(consumer, context)` — one consumer and, while open, its
+  requests; one request of the requests list (with its consumer pill and **Needed by** date); and a consumer's
+  area-filtered requests in the board's order.
+  Every row shows the shared type-colored `?` description control and uses its type icon to open
+  Azure DevOps Discussion; request rows also show an editable Status badge. Each consumer is ONE
+  card-shaped row surface: its request count, then its title line with the service identity and
+  contacts from [`profile/`](./profile/README.md) beneath it, sharing the `?`'s left edge. The
+  description and Discussion panels open below the card, then — only while the consumer is opened
+  from its count — its requests, never inside the card; right-clicking anywhere on the card (except
+  inside a text field) opens the consumer's menu.
 - `profile/` → parses a consumer's description, draws its identity and Contacts list, and writes
   contact edits back into it. See its [README](./profile/README.md).
-- `consumersUrlPreferences.ts` → `readConsumersUrlAreaPaths(search)` and
-  `consumersSearchWithAreaPaths(search, paths)` — the header filter's repeated `areaPath` URL
-  parameters.
+- `consumersUrlPreferences.ts` → `readConsumersUrlAreaPaths(search)` /
+  `consumersSearchWithAreaPaths(search, paths)` and `readConsumersUrlConsumerIds(search)` /
+  `consumersSearchWithConsumerIds(search, ids)` — the header filters' repeated `areaPath` and
+  `consumer` URL parameters. The Tags filter uses the shared `tags` / `notTags` / `tagMatch`
+  contract from [`../tag-selection`](../tag-selection/README.md).
 - `treeExpansion.ts` → `collapseStep(state, shownIds, levels)` and `expandStep(state, levels)` —
-  what one press of the header's `−` or `+` closes or opens (`ExpansionState`,
-  `ExpandableLevels`), returning an `ExpansionStep` for the diagnostics log, or null when there was
-  nothing left to do.
+  what one press of the header's `−` or `+` closes or opens (`ExpansionState`, whose `expandedIds`
+  are the rows the reader opened, and `ExpandableLevels`), returning an `ExpansionStep` for the
+  diagnostics log, or null when there was nothing left to do.
 
 ## Behaviour
 
-- **Area paths.** A **consumer** is shown only when its area path belongs to one of the configured
-  `consumerAreaPaths` branches (if any) **and** exactly matches one of the header filter's picks (if
-  any). Both comparisons ignore case. A configured parent includes descendant areas, while the live
-  header still selects represented full paths as individual lanes. A shown consumer always lists
-  every one of its feature requests, wherever they sit. When the configured paths keep no consumer,
-  the board says so under the header. Anything below a request is not part of this board.
-- **Header filter.** The Area filter offers only the areas of consumers the configured paths keep.
-  It narrows the list live, clears in one press of its lit trigger, and is mirrored to the page URL
-  so a copied link reopens the same narrowed board. A linked area the board cannot offer is dropped
-  from both the board and the URL.
+- **Request counts.** Every consumer starts closed. The first column of its card shows how many
+  feature requests it made; pressing that count opens the requests below the card (the count fills
+  while open) and pressing it again closes them. A consumer with none shows an inert `0`.
+- **Requests list (default).** The board opens on one list of every shown consumer's feature
+  requests, ordered across consumers by the board's ordering. Each is tagged with its consumer's
+  name (dropped while the Consumer filter has picks) and shows its Status, `?` description,
+  Discussion, right-click menu, and a **Needed by** date read from and edited in the request type's
+  configured ETA field (no date when the type has none).
+- **Show consumers.** The switch beside `+` / `−` replaces the list with the consumer cards. It is
+  remembered **per query** in the reader's
+  browser-synced settings (`consumersShowConsumersQueryIds`, personal and never team-shared), so the
+  query reopens in the mode it was left in on every signed-in browser; a Refresh never re-applies
+  the saved mode over a flip made since.
+- **Area paths.** Area paths narrow **feature requests only**; consumers are never filtered by area.
+  A request is shown only when its area path belongs to one of the configured `requestAreaPaths`
+  branches (if any) **and** exactly matches one of the header Area filter's picks (if any). Both
+  comparisons ignore case. A configured parent includes descendant areas, while the live header
+  selects represented full request paths as individual lanes. In consumer cards, each request count
+  shows only the requests the area filters keep. When the area filters leave no request, the
+  requests list says so under the header. Anything below a request is not part of this board.
+- **Header filters.** Consumer and Tags narrow the **consumers** live, in both modes; Area narrows
+  their **requests**. Consumer offers every consumer; Area offers the request paths the binding
+  keeps; Tags offers the consumers' own tags (requests' tags are ignored) and
+  works like the All Projects Catalog's (any/all, with exclusions). Each clears in one press of its
+  lit trigger and is mirrored to the page URL so a copied link reopens the same narrowed board; a
+  linked value the board cannot offer is dropped from both the board and the URL.
 - **`−` and `+`.** Each press of `−` closes one layer: every open description first, then every open
   Discussion, and only then the deepest tree level still open. `+` only ever opens the tree, one
-  level per press, shallowest first; it never opens a description or Discussion.
-- **Ordering and moves.** Under the importance ordering, and with a team configured, consumers can
-  be dragged to reorder them, and requests can be dragged to reorder them within a consumer or
-  handed to another consumer (dropping onto a consumer's middle appends to its requests, even when
-  it is closed or empty). The backlog rank is the same field Project Tracking and the All Projects
-  Catalog use. A consumer never nests under another and a request never becomes a consumer; a
-  moved request keeps its type. Otherwise the ordering glyph says why dragging is unavailable.
+  level per press, shallowest first; it never opens a description or Discussion. In the
+  requests list there is no tree, so `−` closes only panels and `+` has nothing to open.
+- **Ordering and moves.** Under **Drag-and-drop order**, with a team configured, requests in the
+  requests list can be dragged to rank them among all listed requests; each stays under its own
+  consumer, and its backlog rank is the same field Project Tracking and the All Projects Catalog
+  use. **By ETA** sorts by the needed-by date and turns dragging off. The consumer cards follow the
+  chosen ordering but never offer a drag. The ordering glyph says why dragging is unavailable.
 - **Query shape.** A flat query, a query with no results, a query with more than one top-level item,
   and a grouping item with no consumers each show an explanatory message under the header, with
   Refresh still available.

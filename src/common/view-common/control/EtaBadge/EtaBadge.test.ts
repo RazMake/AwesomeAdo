@@ -24,6 +24,18 @@ describe("renderEtaBadge - rendering and severity", () => {
     expect(label.style.opacity).toBe("1");
   });
 
+  it("uses the board's own wording for a set and an unset date", () => {
+    const badge = renderEtaBadge(document, {
+      eta: null,
+      now,
+      wording: { prefix: "Needed by", empty: "Not needed by a date" },
+    });
+
+    expect(badge.textContent).toBe("Not needed by a date");
+    badge.setEta("2026-08-10T00:00:00-07:00");
+    expect(badge.textContent).toContain("Needed by 08/10/2026");
+  });
+
   it("renders 'No ETA' when eta is empty string", () => {
     const badge = renderEtaBadge(document, { eta: "", now });
 

@@ -24,7 +24,20 @@ export interface EtaBadgeOptions {
    * flow, so a failed write never leaves a misleading date on screen).
    */
   onChange?: (eta: string | null) => void;
+  /**
+   * The words the date is shown with, for a board where the date means something more specific than
+   * a delivery forecast (a consumer's "Needed by"). Defaults to `ETA` and `No ETA`.
+   */
+  wording?: EtaBadgeWording;
 }
+
+/** How a badge names its date: the prefix before a set date, and the text when none is set. */
+export interface EtaBadgeWording {
+  prefix: string;
+  empty: string;
+}
+
+const DEFAULT_WORDING: EtaBadgeWording = { prefix: "ETA", empty: "No ETA" };
 
 /**
  * A rendered ETA badge plus the handle its owner uses to reflect a committed ETA change.
@@ -197,6 +210,7 @@ function buildEtaPopup(
  */
 export function renderEtaBadge(doc: Document, options: EtaBadgeOptions): EtaBadgeHandle {
   const { now, onChange } = options;
+  const wording = options.wording ?? DEFAULT_WORDING;
   const editable = typeof onChange === "function";
 
   // The currently-displayed ETA, tracked as mutable state because the popup is rebuilt each time it
@@ -235,7 +249,7 @@ export function renderEtaBadge(doc: Document, options: EtaBadgeOptions): EtaBadg
     // collapse into the primary text color and stop muting on its own.
     label.style.opacity = eta ? "1" : "0.6";
     if (!eta) {
-      textNode.textContent = "No ETA";
+      textNode.textContent = wording.empty;
       root.style.color = NO_ETA_COLOR;
       root.title = "";
       delete root.dataset.severity;
@@ -243,7 +257,7 @@ export function renderEtaBadge(doc: Document, options: EtaBadgeOptions): EtaBadg
     }
     const countdown = describeEtaCountdown(eta, now);
     const completed = currentCompletedAt !== undefined;
-    textNode.textContent = `ETA ${formatPstDate(eta)}`;
+    textNode.textContent = `${wording.prefix} ${formatPstDate(eta)}`;
     root.style.color = completed ? completedEtaColor(eta, currentCompletedAt) : countdown.color;
     root.title = countdown.text;
     root.dataset.severity = countdown.severity;

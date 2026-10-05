@@ -20,6 +20,8 @@ interface EtaBadgeOptions {
    * caller persists the choice and then reflects the committed value via the handle's `setEta`.
    */
   onChange?: (eta: string | null) => void;
+  /** The date's wording: `{ prefix, empty }`, defaulting to `ETA` / `No ETA` (e.g. `Needed by`). */
+  wording?: EtaBadgeWording;
 }
 
 interface EtaBadgeHandle extends HTMLElement {

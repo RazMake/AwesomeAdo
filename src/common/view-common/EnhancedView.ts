@@ -30,6 +30,7 @@ import type { SprintWindow } from "../ado/sprintWindow";
 import type { IQueryBindingWriter } from "../bindings/IQueryBindingWriter";
 import type { CatalogFavorites } from "../browser/Favorites";
 import type { ILogger } from "../logging/ILogger";
+import type { ConsumersShowConsumers } from "../settings/ConsumersShowConsumers";
 import type { WorkItemMarkerTags } from "../settings/ExtensionSettings";
 import type { SprintAreaPathConfigurationService } from "../settings/SprintAreaPaths";
 
@@ -87,6 +88,12 @@ export interface EnhancedViewServices {
   loadSprintWindow(): Promise<SprintWindow>;
   /** Team-shared default and per-sprint Lane-filter configuration. */
   sprintAreaPaths?: SprintAreaPathConfigurationService;
+  /**
+   * The reader's own per-query choice to open a Consumers View on its consumers rather than on the
+   * default requests-only list, synced across their browsers. Optional because only that board
+   * asks; absent, it opens on requests only and a flip lasts only as long as the board.
+   */
+  consumersShowConsumers?: ConsumersShowConsumers;
   /** Load every member of the configured team. */
   loadTeamMembers(): Promise<TeamMembersResult>;
   /** The reference clock (injected so views can compute "now" deterministically). */

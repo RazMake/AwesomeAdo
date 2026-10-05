@@ -1,14 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import type { TrackedWorkItem } from "../../../common/ado/TrackedWorkItem";
+import { isEmptyTagCondition, tagsInUse, type TagCondition } from "../tag-selection/tagCondition";
 
-import {
-  idsKeptByTagCondition,
-  isEmptyTagCondition,
-  queryWideTags,
-  tagsInUse,
-  type TagCondition,
-} from "./projectTags";
+import { idsKeptByTagCondition, queryWideTags } from "./projectTags";
 
 /** A minimal tracked item: only the fields these helpers read ever vary between cases. */
 function item(id: number, tags: string[], children: TrackedWorkItem[] = []): TrackedWorkItem {

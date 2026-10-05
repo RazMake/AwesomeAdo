@@ -1,13 +1,12 @@
 import type { OrderingPolicy } from "../../../common/ordering/ItemOrdering";
 import type { EnhancedViewContext } from "../../../common/view-common/EnhancedView";
 import type { BreadcrumbSegment } from "../../../common/view-common/control/Breadcrumbs/Breadcrumbs";
-import { renderCheckboxFilter } from "../../../common/view-common/control/CheckboxFilter/CheckboxFilter";
-import type { CheckboxFilterSelection } from "../../../common/view-common/control/CheckboxFilter/CheckboxFilter";
 import type { RefreshButtonHandle } from "../../../common/view-common/control/HeaderButtons/HeaderButtons";
 import { renderOrderingPicker } from "../../../common/view-common/control/OrderingPicker/OrderingPicker";
 import { renderViewHeader } from "../../../common/view-common/control/ViewHeader/ViewHeader";
+import { renderTagConditionFilter } from "../tag-selection/TagConditionFilter";
+import type { TagCondition } from "../tag-selection/tagCondition";
 
-import type { TagCondition } from "./projectTags";
 import { projectsViewType } from "./projectsViewType";
 
 /** What the All Projects Catalog View header shows and what pressing each of its controls means. */
@@ -27,7 +26,7 @@ export interface ProjectsHeaderOptions {
    * whenever the board repaints, and a fresh indicator would forget an in-flight or rejected write.
    */
   queueStatus: HTMLElement;
-  onTagsChange(selection: CheckboxFilterSelection): void;
+  onTagsChange(condition: TagCondition): void;
   onOrderingChange(policy: OrderingPolicy): void;
   onExpandAll(): void;
   onCollapseAll(): void;
@@ -42,38 +41,7 @@ export interface ProjectsHeaderHandle {
   refresh: RefreshButtonHandle;
 }
 
-const TAG_FILTER_CLASS_PREFIX = "awesomeado-tag-filter";
-
 const CLASS_PREFIX = "awesomeado-projects";
-
-/**
- * The tag multi-select, given a quick-search because a team's tag vocabulary is unbounded, and the
- * combining controls because "these two but not that one" is the question a catalog is actually
- * asked — a plain OR cannot narrow a board where every project wears several tags.
- *
- * Every tick narrows the board immediately: the reader is building the condition by watching what it
- * leaves behind, so waiting for the dropdown to close would make them state the whole thing blind.
- * That is only possible because the board repaints its LIST rather than the whole surface — a full
- * repaint would rebuild this header and take the open dropdown with it.
- *
- * Once a condition is active, the trigger clears it in one press instead of reopening the popup.
- * This matches the other transient header filters and leaves only one clear gesture.
- */
-function renderTagFilter(doc: Document, options: ProjectsHeaderOptions): HTMLElement {
-  const { required, excluded, matchAll } = options.tagCondition;
-  return renderCheckboxFilter(doc, {
-    label: "Tags",
-    classPrefix: TAG_FILTER_CLASS_PREFIX,
-    options: options.tags.map((tag) => ({ value: tag })),
-    selected: options.tags.filter((tag) => required.has(tag.toLowerCase())),
-    excluded: options.tags.filter((tag) => excluded.has(tag.toLowerCase())),
-    matchAll,
-    combining: true,
-    searchPlaceholder: "Search tags",
-    clearOnTriggerWhenActive: true,
-    onChange: options.onTagsChange,
-  }).element;
-}
 
 /** Build the All Projects Catalog View header; the board mounts `element` and drives `refresh`. */
 export function renderProjectsHeader(
@@ -96,7 +64,13 @@ export function renderProjectsHeader(
     collapseLabel: "Collapse every project",
     onExpandAll: options.onExpandAll,
     onCollapseAll: options.onCollapseAll,
-    filters: [renderTagFilter(doc, options)],
+    filters: [
+      renderTagConditionFilter(doc, {
+        tags: options.tags,
+        condition: options.tagCondition,
+        onChange: options.onTagsChange,
+      }),
+    ],
     onRefresh: options.onRefresh,
   });
 }

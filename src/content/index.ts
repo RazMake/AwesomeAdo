@@ -157,6 +157,7 @@ import {
 import { createLoggerFactory } from "../common/logging/createLogger";
 import { type AdoThemeResponse, isAdoThemeRequest } from "../common/navigation/AdoContext";
 import { isAdoNavigationMessage, isAdoQueryUrl } from "../common/navigation/AdoQueryRoute";
+import { PersonalConsumersShowConsumers } from "../common/settings/ConsumersShowConsumers";
 import type { ExtensionSettings } from "../common/settings/ExtensionSettings";
 import {
   DEFAULT_SETTINGS,
@@ -475,6 +476,9 @@ const trackingServices: EnhancedViewServices = {
     read: () => sprintAreaPathStore?.read() ?? Promise.resolve({ sprintAreaPaths: {} }),
     save: (sprintAreaPaths) => sprintAreaPathStore?.save(sprintAreaPaths) ?? Promise.resolve(false),
   },
+  // Straight to the reader's own synced store: the mode is personal, so it must never ride the
+  // team-shared writer that publishes to the connected configuration work item.
+  consumersShowConsumers: new PersonalConsumersShowConsumers(store),
   loadTeamMembers: () => {
     const team = latestSettings?.currentTeam ?? null;
     if (team === null || team.id.trim().length === 0) {

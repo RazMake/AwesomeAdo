@@ -1,29 +1,11 @@
 import type { TrackedWorkItem } from "../../../common/ado/TrackedWorkItem";
-
-/**
- * The condition the header's tag filter currently expresses, all keys lower-cased.
- *
- * Lower-cased because Azure DevOps treats tags case-insensitively while storing whichever spelling
- * arrived first: comparing on the spelling would split one tag into two half-answers.
- */
-export interface TagCondition {
-  /** Tags an item must carry. */
-  required: ReadonlySet<string>;
-  /** Tags an item must NOT carry. */
-  excluded: ReadonlySet<string>;
-  /** Whether EVERY required tag must be present, rather than any one of them. */
-  matchAll: boolean;
-}
-
-/** Whether the condition narrows anything at all. */
-export function isEmptyTagCondition(condition: TagCondition): boolean {
-  return condition.required.size === 0 && condition.excluded.size === 0;
-}
-
-/** The item's tags, trimmed, blank-free, and lower-cased for comparison. */
-function tagKeys(item: TrackedWorkItem): string[] {
-  return item.tags.map((tag) => tag.trim().toLowerCase()).filter((tag) => tag.length > 0);
-}
+import {
+  carriesExcludedTag,
+  carriesRequiredTags,
+  isEmptyTagCondition,
+  tagKeys,
+  type TagCondition,
+} from "../tag-selection/tagCondition";
 
 /**
  * The tags EVERY project carries — the query's own condition rather than anything about a project.
@@ -60,46 +42,6 @@ export function queryWideTagNames(roots: readonly TrackedWorkItem[]): string[] {
   const first = roots[0];
   if (shared.size === 0 || first === undefined) return [];
   return first.tags.map((tag) => tag.trim()).filter((tag) => shared.has(tag.toLowerCase()));
-}
-
-/**
- * Every distinct Azure DevOps tag worn by any loaded item, minus `excluded`, ordered
- * case-insensitively.
- *
- * Collected across the WHOLE tree rather than the top level: a tag applied to a story nobody has
- * expanded yet is exactly the tag a reader wants to narrow by, and a picker that only offered the
- * project rows' own tags would silently hide it.
- */
-export function tagsInUse(
-  items: readonly TrackedWorkItem[],
-  excluded: ReadonlySet<string> = new Set(),
-): string[] {
-  const byLowerCase = new Map<string, string>();
-  for (const item of items) {
-    for (const raw of item.tags) {
-      const tag = raw.trim();
-      const key = tag.toLowerCase();
-      // First spelling wins: ADO tags are case-insensitive, so "Security" and "security" are one tag
-      // and offering both would split a single filter into two half-answers.
-      if (tag.length > 0 && !excluded.has(key) && !byLowerCase.has(key)) byLowerCase.set(key, tag);
-    }
-  }
-  return [...byLowerCase.values()].sort((left, right) =>
-    left.localeCompare(right, undefined, { sensitivity: "base" }),
-  );
-}
-
-/** Whether an item carries every tag the condition requires, or any one of them. */
-function carriesRequiredTags(item: TrackedWorkItem, condition: TagCondition): boolean {
-  const worn = new Set(tagKeys(item));
-  return condition.matchAll
-    ? [...condition.required].every((tag) => worn.has(tag))
-    : [...condition.required].some((tag) => worn.has(tag));
-}
-
-/** Whether an item carries any tag the condition rules out. */
-function carriesExcludedTag(item: TrackedWorkItem, condition: TagCondition): boolean {
-  return tagKeys(item).some((tag) => condition.excluded.has(tag));
 }
 
 /** Add an item and everything beneath it to `into`. */

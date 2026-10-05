@@ -1,4 +1,4 @@
-import type { TagCondition } from "./projectTags";
+import type { TagCondition } from "./tagCondition";
 
 /** The tags a link requires, in the order they were listed. */
 const REQUIRED_TAGS_PARAM = "tags";
@@ -29,13 +29,13 @@ function readTags(parameters: URLSearchParams, name: string): Set<string> {
 }
 
 /**
- * Read the tag condition a catalog link asks the board to open on.
+ * Read the tag condition a board link asks the board to open on.
  *
  * Takes the search string rather than the whole URL so nothing here can throw: a filter the board
  * merely starts from must never be able to break the page it opens. Anything unrecognised simply
  * narrows nothing, which is the same board the reader gets with no link at all.
  */
-export function readProjectsUrlTagCondition(search: string): TagCondition {
+export function readUrlTagCondition(search: string): TagCondition {
   const parameters = new URLSearchParams(search);
   return {
     required: readTags(parameters, REQUIRED_TAGS_PARAM),
@@ -54,11 +54,11 @@ function applyParameter(parameters: URLSearchParams, name: string, value: string
  * Azure DevOps put there untouched.
  *
  * The tags are written as the condition keys them — lower case — because Azure DevOps matches tags
- * case-insensitively, so a link round-trips to the same board whichever spelling the projects wear.
+ * case-insensitively, so a link round-trips to the same board whichever spelling the items wear.
  * `tagMatch` is written only when something is actually required: "all of nothing" combines nothing,
  * and carrying it would put a parameter on the link that changes no board.
  */
-export function projectsSearchWithTagCondition(search: string, condition: TagCondition): string {
+export function searchWithTagCondition(search: string, condition: TagCondition): string {
   const parameters = new URLSearchParams(search);
   applyParameter(parameters, REQUIRED_TAGS_PARAM, [...condition.required].join(TAG_SEPARATOR));
   applyParameter(parameters, EXCLUDED_TAGS_PARAM, [...condition.excluded].join(TAG_SEPARATOR));

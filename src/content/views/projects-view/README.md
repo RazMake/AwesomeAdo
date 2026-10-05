@@ -56,13 +56,11 @@ view answers "what is going on across all of them?" for a query that returns **m
   `NewWorkItemValues` the caller persists.
 - `NewProjectRow.ts` → `renderNewProjectRow(options)` — the inline "add a project" row, including the
   sprint field it opens on the team's current iteration.
-- `projectTags.ts` → `tagsInUse(items, excluded?)`, `queryWideTags(roots)`, `queryWideTagNames(roots)`,
-  `idsKeptByTagCondition(roots, condition)`, `isEmptyTagCondition(condition)`, and the `TagCondition`
-  type — the tag vocabulary, the tags that are the query's own condition (lower-cased for comparison,
-  and as spelled for writing), and what a required/excluded tag condition keeps.
-- `projectsUrlPreferences.ts` → `readProjectsUrlTagCondition(search)` /
-  `projectsSearchWithTagCondition(search, condition)` — the two-way page-URL contract for the `tags`,
-  `notTags`, and `tagMatch` parameters.
+- `projectTags.ts` → `queryWideTags(roots)`, `queryWideTagNames(roots)`, and
+  `idsKeptByTagCondition(roots, condition)` — the tags that are the query's own condition
+  (lower-cased for comparison, and as spelled for writing), and which hierarchy items a tag condition
+  keeps. The condition itself, its dropdown, and its `tags` / `notTags` / `tagMatch` URL contract are
+  shared with other boards from [`../tag-selection`](../tag-selection/README.md).
 
 ## The page URL is the board's shareable filter
 

@@ -152,6 +152,9 @@ function createServices(overrides?: Partial<EnhancedViewServices>): EnhancedView
     writeField: async () => ({ ok: true, rev: 2 }),
     reorderItem: async () => ({ ok: true }),
     currentTeam: () => "team-guid",
+    // Most suites are about the consumer cards, so the harness opens there; the requests-list
+    // suites, and those about the default, pass their own saved mode.
+    consumersShowConsumers: savedMode(true),
     ...overrides,
   } as EnhancedViewServices;
 }
@@ -177,6 +180,15 @@ async function renderBoard(context: EnhancedViewContext = createContext()): Prom
   await vi.waitFor(() =>
     expect(root.querySelector(".awesomeado-consumers__header")).not.toBeNull(),
   );
+  return root;
+}
+
+/** Mount the board and open every consumer from the header, for the tests about requests. */
+async function renderOpenBoard(
+  context: EnhancedViewContext = createContext(),
+): Promise<HTMLElement> {
+  const root = await renderBoard(context);
+  root.querySelector<HTMLButtonElement>(".awesomeado-consumers__expand-all")!.click();
   return root;
 }
 
@@ -308,10 +320,16 @@ describe("consumersView - query shape", () => {
 });
 
 describe("consumersView - tree", () => {
-  it("uses the grouping item as the header and lists only its descendants as rows", async () => {
+  it("uses the grouping item as the header and lists its consumers, closed, as rows", async () => {
     const root = await renderBoard();
 
     expect(root.querySelector("h1")?.textContent).toBe("All consumers");
+    expect(titles(root)).toEqual(["Contoso", "Fabrikam", "Northwind"]);
+  });
+
+  it("opens onto only the grouping item's descendants, never anything below a request", async () => {
+    const root = await renderOpenBoard();
+
     expect(titles(root)).toEqual([
       "Contoso",
       "Export to CSV",
@@ -325,7 +343,7 @@ describe("consumersView - tree", () => {
   });
 
   it("shows Status only on requests, not on consumer nodes", async () => {
-    const root = await renderBoard();
+    const root = await renderOpenBoard();
     const request = titleOf(root, "Dark mode").closest<HTMLElement>(".awesomeado-consumers__row")!;
     const consumer = titleOf(root, "Contoso").closest<HTMLElement>(".awesomeado-consumers__row")!;
 
@@ -334,7 +352,7 @@ describe("consumersView - tree", () => {
     expect(request.children).toHaveLength(5);
     expect(consumer.querySelector(".awesomeado-status__badge")).toBeNull();
     expect([...consumer.children].map((part) => part.className)).toEqual([
-      "awesomeado-consumers__twisty",
+      "awesomeado-consumers__request-count",
       "awesomeado-consumers__card-head",
       "awesomeado-consumers__profile",
     ]);
@@ -417,7 +435,7 @@ describe("consumersView - consumer card", () => {
   });
 
   it("opens the description and discussion below the card rather than inside it", async () => {
-    const root = await renderBoard();
+    const root = await renderOpenBoard();
     const consumer = root.querySelector<HTMLElement>('[data-item-id="10"]')!;
     const card = cardOf(root, 10);
 
@@ -523,7 +541,7 @@ describe("consumersView - editing contacts", () => {
 
 describe("consumersView - item content", () => {
   it("opens every item's description from the type-colored question-mark control", async () => {
-    const root = await renderBoard();
+    const root = await renderOpenBoard();
     const consumer = root.querySelector<HTMLElement>('[data-item-id="10"]')!;
     const request = root.querySelector<HTMLElement>('[data-item-id="11"]')!;
 
@@ -558,7 +576,7 @@ describe("consumersView - item content", () => {
       currentUser: null,
       error: null,
     }));
-    const root = await renderBoard(contextWith({ noteLoader: { loadNotes } }));
+    const root = await renderOpenBoard(contextWith({ noteLoader: { loadNotes } }));
     const request = root.querySelector<HTMLElement>('[data-item-id="11"]')!;
 
     request.querySelector<HTMLButtonElement>(".awesomeado-consumers__notes-toggle")!.click();
@@ -593,41 +611,57 @@ describe("consumersView - tree controls", () => {
 });
 
 describe("consumersView - expansion", () => {
-  it("collapses and expands one consumer's requests, drawn below its card", async () => {
+  it("shows each consumer's request count on its card, and an inert zero for none", async () => {
     const root = await renderBoard();
-    const card = (): HTMLElement =>
-      titleOf(root, "Contoso").closest<HTMLElement>(".awesomeado-consumers__row")!;
-    const twisty = (): HTMLButtonElement =>
-      card().querySelector<HTMLButtonElement>(".awesomeado-consumers__twisty")!;
+    const count = (id: number): HTMLElement =>
+      cardOf(root, id).querySelector<HTMLElement>(".awesomeado-consumers__request-count")!;
+
+    expect([10, 20, 30].map((id) => count(id).textContent)).toEqual(["2", "2", "0"]);
+    expect(count(10).tagName).toBe("BUTTON");
+    expect(count(10).title).toBe("Show 2 feature requests");
+    expect(count(10).getAttribute("aria-label")).toBe("Show 2 feature requests from Contoso");
+    expect(count(30).tagName).toBe("SPAN");
+    expect(count(30).classList.contains("is-empty")).toBe(true);
+    expect(count(30).title).toBe("No feature requests");
+  });
+
+  it("opens and closes one consumer's requests from its count, drawn below its card", async () => {
+    const root = await renderBoard();
+    const card = (): HTMLElement => cardOf(root, 10);
+    const count = (): HTMLButtonElement =>
+      card().querySelector<HTMLButtonElement>(".awesomeado-consumers__request-count")!;
     const consumer = (): HTMLElement => card().parentElement!;
 
+    expect(count().getAttribute("aria-expanded")).toBe("false");
+    expect(titles(root)).not.toContain("Export to CSV");
+
+    count().click();
     // Open: the requests follow the card inside the consumer, never inside the card itself.
     const requests = consumer().querySelector(":scope > .awesomeado-consumers__children");
     expect(requests?.textContent).toContain("Export to CSV");
     expect(card().querySelector(".awesomeado-consumers__children")).toBeNull();
+    expect(count().getAttribute("aria-expanded")).toBe("true");
+    expect(count().title).toBe("Hide 2 feature requests");
+    expect(titles(root)).not.toContain("Single sign-on");
 
-    twisty().click();
+    count().click();
     expect(titles(root)).not.toContain("Export to CSV");
     expect(consumer().querySelector(".awesomeado-consumers__children")).toBeNull();
-    expect(twisty().getAttribute("aria-expanded")).toBe("false");
-
-    twisty().click();
-    expect(titles(root)).toContain("Export to CSV");
   });
 
-  it("collapses and expands every consumer from the header", async () => {
+  it("expands and collapses every consumer from the header", async () => {
     const root = await renderBoard();
-
-    root.querySelector<HTMLButtonElement>(".awesomeado-consumers__collapse-all")!.click();
-    expect(titles(root)).toEqual(["Contoso", "Fabrikam", "Northwind"]);
 
     root.querySelector<HTMLButtonElement>(".awesomeado-consumers__expand-all")!.click();
     expect(titles(root)).toHaveLength(7);
+
+    root.querySelector<HTMLButtonElement>(".awesomeado-consumers__collapse-all")!.click();
+    expect(titles(root)).toEqual(["Contoso", "Fabrikam", "Northwind"]);
   });
 
   it("collapses open descriptions, then open discussions, and only then the tree", async () => {
     const info = vi.fn();
-    const root = await renderBoard(contextWith({ logger: { info, error: () => undefined } }));
+    const root = await renderOpenBoard(contextWith({ logger: { info, error: () => undefined } }));
     const toggle = (id: number, kind: "describe" | "notes-toggle"): HTMLButtonElement =>
       root.querySelector<HTMLButtonElement>(
         `[data-item-id="${id}"] .awesomeado-consumers__${kind}`,
@@ -685,47 +719,63 @@ describe("consumersView - refresh", () => {
   });
 });
 
-describe("consumersView - configured area paths", () => {
-  it("shows only consumers in the binding's area paths, each with every one of its requests", async () => {
-    const root = await renderBoard(createContext({ properties: { consumerAreaPaths: TEAM_A } }));
+const requestCount = (root: HTMLElement, id: number): HTMLElement =>
+  cardOf(root, id).querySelector<HTMLElement>(".awesomeado-consumers__request-count")!;
 
-    expect(titles(root)).toEqual(["Contoso", "Export to CSV", "Dark mode"]);
+const requestCounts = (root: HTMLElement): (string | null)[] =>
+  [10, 20, 30].map((id) => requestCount(root, id).textContent);
+
+describe("consumersView - configured area paths", () => {
+  it("keeps every consumer but only the requests in the binding's area paths", async () => {
+    const root = await renderOpenBoard(createContext({ properties: { requestAreaPaths: TEAM_A } }));
+
+    expect(titles(root)).toEqual([
+      "Contoso",
+      "Export to CSV",
+      "Fabrikam",
+      "Single sign-on",
+      "Northwind",
+    ]);
   });
 
   it("matches configured area branches and their descendants without case", async () => {
-    const root = await renderBoard(
-      createContext({ properties: { consumerAreaPaths: "org\\team b\nOrg\\Other" } }),
+    const root = await renderOpenBoard(
+      createContext({ properties: { requestAreaPaths: "org\\team b\nOrg\\Other" } }),
     );
 
-    expect(consumerTitles(root)).toEqual(["Fabrikam", "Northwind"]);
+    expect(titles(root)).toEqual(["Contoso", "Dark mode", "Fabrikam", "Audit log", "Northwind"]);
   });
 
-  it("offers the consumers' represented areas under the configured branch", async () => {
-    const root = await renderBoard(createContext({ properties: { consumerAreaPaths: "Org" } }));
+  it("still reads the legacy consumer area paths key", async () => {
+    const root = await renderOpenBoard(
+      createContext({ properties: { consumerAreaPaths: TEAM_A } }),
+    );
+
+    expect(titles(root)).not.toContain("Dark mode");
+    expect(titles(root)).toContain("Export to CSV");
+  });
+
+  it("offers the kept requests' represented areas under the configured branch", async () => {
+    const root = await renderBoard(createContext({ properties: { requestAreaPaths: "Org" } }));
 
     openAreaFilter(root);
 
     expect(areaOptionValues()).toEqual([OTHER, TEAM_A, TEAM_B]);
   });
 
-  it("says so when the binding's area paths keep none of the consumers", async () => {
-    const root = await renderBoard(
-      createContext({ properties: { consumerAreaPaths: "Elsewhere" } }),
-    );
+  it("offers only the areas of the requests the binding keeps", async () => {
+    const root = await renderBoard(createContext({ properties: { requestAreaPaths: TEAM_A } }));
 
-    expect(emptyMessage(root)).toContain(
-      "None of this query's consumers sit in this board's consumer area paths.",
-    );
-    expect(
-      root.querySelector<HTMLButtonElement>(".awesomeado-area-filter__trigger")!.disabled,
-    ).toBe(true);
+    openAreaFilter(root);
+
+    expect(areaOptionValues()).toEqual([TEAM_A]);
   });
 
-  it("logs what it shows only when the conclusion changes", async () => {
+  it("logs what it shows, counting only the kept requests, only when it changes", async () => {
     const info = vi.fn();
     const root = await renderBoard(
       createContext({
-        properties: { consumerAreaPaths: TEAM_A },
+        properties: { requestAreaPaths: TEAM_A },
         services: createServices({ logger: { info, error: () => undefined } }),
       }),
     );
@@ -733,30 +783,107 @@ describe("consumersView - configured area paths", () => {
 
     const lines = info.mock.calls.map(([line]) => line as string);
     expect(lines.filter((line) => line.startsWith("Consumers View showing"))).toEqual([
-      "Consumers View showing 1 of 3 consumer(s), with 2 feature request(s): configuredAreaPaths=1, selectedAreaPaths=0.",
+      "Consumers View showing 3 of 3 consumer(s), with 2 feature request(s): mode=consumers, configuredAreaPaths=1, selectedAreaPaths=0, selectedConsumers=0, tags=none.",
     ]);
   });
 });
 
+describe("consumersView - area-filtered request counts", () => {
+  it("counts only the requests the binding keeps, with an inert zero", async () => {
+    const root = await renderBoard(createContext({ properties: { requestAreaPaths: TEAM_B } }));
+
+    expect(requestCounts(root)).toEqual(["1", "0", "0"]);
+    expect(requestCount(root, 10).tagName).toBe("BUTTON");
+    expect(requestCount(root, 20).tagName).toBe("SPAN");
+    expect(requestCount(root, 20).classList.contains("is-empty")).toBe(true);
+  });
+
+  it("counts only the requests the header filter keeps", async () => {
+    const root = await renderBoard();
+    openAreaFilter(root);
+    tickArea(OTHER);
+
+    expect(requestCounts(root)).toEqual(["0", "1", "0"]);
+    expect(requestCount(root, 10).classList.contains("is-empty")).toBe(true);
+  });
+
+  it("expands only the consumers that keep a request", async () => {
+    const root = await renderOpenBoard(createContext({ properties: { requestAreaPaths: TEAM_B } }));
+
+    expect(titles(root)).toEqual(["Contoso", "Dark mode", "Fabrikam", "Northwind"]);
+    expect(requestCount(root, 10).getAttribute("aria-expanded")).toBe("true");
+  });
+});
+
+describe("consumersView - area-filtered requests list", () => {
+  it("lists only the kept requests", async () => {
+    const root = await renderBoard(requestsContext({}, { requestAreaPaths: TEAM_A }));
+
+    expect(titles(root)).toEqual(["Export to CSV", "Single sign-on"]);
+  });
+
+  it("says no request matches when the binding's area paths keep none", async () => {
+    const root = await renderBoard(requestsContext({}, { requestAreaPaths: "Elsewhere" }));
+
+    expect(emptyMessage(root)).toContain(
+      "No feature request of the shown consumers matches the area paths.",
+    );
+    expect(emptyMessage(root)).toContain("Area filter");
+  });
+
+  it("says no request matches when the header filter keeps none of the shown consumers", async () => {
+    window.history.replaceState({}, "", `/?areaPath=${encodeURIComponent(OTHER)}&consumer=10`);
+
+    const root = await renderBoard(requestsContext());
+
+    expect(emptyMessage(root)).toContain(
+      "No feature request of the shown consumers matches the area paths.",
+    );
+    expect(emptyMessage(root)).not.toContain("None of the shown consumers");
+  });
+});
+
 describe("consumersView - header area filter", () => {
-  it("narrows the consumers live, keeps the dropdown open, and names the areas in the URL", async () => {
+  it("narrows the requests live, keeps the dropdown open, and names the areas in the URL", async () => {
     const info = vi.fn();
-    const root = await renderBoard(contextWith({ logger: { info, error: () => undefined } }));
+    const root = await renderOpenBoard(contextWith({ logger: { info, error: () => undefined } }));
     const header = root.querySelector(".awesomeado-consumers__header");
 
     openAreaFilter(root);
     expect(areaOptionValues()).toEqual([OTHER, TEAM_A, TEAM_B]);
     tickArea(TEAM_B);
 
-    // Fabrikam's requests are filed in Team A and Other, and are shown all the same.
-    expect(titles(root)).toEqual(["Fabrikam", "Single sign-on", "Audit log"]);
+    // Consumers stay; only Contoso keeps a request, the one filed in Team B.
+    expect(titles(root)).toEqual(["Contoso", "Dark mode", "Fabrikam", "Northwind"]);
     expect(root.querySelector(".awesomeado-consumers__header")).toBe(header);
     expect(new URLSearchParams(window.location.search).getAll("areaPath")).toEqual([TEAM_B]);
     expect(info).toHaveBeenCalledWith("Consumers View area-path filter: selectedCount=1.");
   });
 
+  it("matches picked areas exactly, not their descendants", async () => {
+    const root = await renderOpenBoard(
+      contextWith({
+        loadTree: async () => {
+          const roots = fixtureRoots();
+          roots[0]!.children[0]!.children[1]!.areaPath = `${TEAM_A}\\Sub`;
+          return { isTreeQuery: true, roots, error: null };
+        },
+      }),
+    );
+    openAreaFilter(root);
+    tickArea(TEAM_A);
+
+    expect(titles(root)).toEqual([
+      "Contoso",
+      "Export to CSV",
+      "Fabrikam",
+      "Single sign-on",
+      "Northwind",
+    ]);
+  });
+
   it("clears an active filter from its trigger in one press", async () => {
-    const root = await renderBoard();
+    const root = await renderOpenBoard();
     openAreaFilter(root);
     tickArea(TEAM_B);
     document.body.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
@@ -770,24 +897,31 @@ describe("consumersView - header area filter", () => {
   it("opens on the areas a shared link names", async () => {
     window.history.replaceState({}, "", `/?areaPath=${encodeURIComponent(TEAM_A)}`);
 
-    const root = await renderBoard();
+    const root = await renderOpenBoard();
 
-    expect(titles(root)).toEqual(["Contoso", "Export to CSV", "Dark mode"]);
+    expect(titles(root)).toEqual([
+      "Contoso",
+      "Export to CSV",
+      "Fabrikam",
+      "Single sign-on",
+      "Northwind",
+    ]);
   });
 
   it("drops a linked area the board cannot offer, from the board and from the URL", async () => {
     window.history.replaceState({}, "", "/?_a=query&areaPath=Org%5CGone");
 
-    const root = await renderBoard();
+    const root = await renderOpenBoard();
 
     expect(titles(root)).toHaveLength(7);
     expect(window.location.search).toBe("?_a=query");
   });
 });
+
 describe("consumersView - status and menus", () => {
   it("writes a picked Status and reflects it once Azure DevOps accepts it", async () => {
     const writeField = vi.fn(async () => ({ ok: true, rev: 5 }));
-    const root = await renderBoard(contextWith({ writeField }));
+    const root = await renderOpenBoard(contextWith({ writeField }));
     const row = titleOf(root, "Single sign-on").closest(".awesomeado-consumers__row")!;
 
     row.querySelector<HTMLElement>(".awesomeado-status__badge")!.click();
@@ -803,7 +937,7 @@ describe("consumersView - status and menus", () => {
   });
 
   it("opens the item menu from a row and the link menu from the title", async () => {
-    const root = await renderBoard();
+    const root = await renderOpenBoard();
 
     titleOf(root, "Audit log")
       .closest(".awesomeado-consumers__row")!
@@ -820,7 +954,7 @@ describe("consumersView - status and menus", () => {
   });
 });
 
-/** Drag `source`'s title onto `target`'s row at a height fraction: 0.1 above, 0.5 inside. */
+/** Drag `source`'s title onto `target`'s row at a height fraction: 0.1 above, 0.9 below. */
 function drag(source: HTMLElement, target: HTMLElement, fraction: number): void {
   const values = new Map<string, string>();
   const dataTransfer = {
@@ -858,117 +992,498 @@ const acceptingReorder = (order: number) =>
     rev: 9,
   }));
 
-describe("consumersView - reordering consumers", () => {
-  it("ranks a consumer dropped above another among the full consumer level", async () => {
-    const reorderItem = acceptingReorder(0);
-    const root = await renderBoard(contextWith({ reorderItem }));
+/** A saved-mode store answering `showConsumers` for every query, watched by the tests that persist it. */
+function savedMode(showConsumers: boolean): {
+  read: ReturnType<typeof vi.fn<(queryId: string) => Promise<boolean>>>;
+  write: ReturnType<typeof vi.fn<(queryId: string, showConsumers: boolean) => Promise<void>>>;
+} {
+  return {
+    read: vi.fn<(queryId: string) => Promise<boolean>>(async () => showConsumers),
+    write: vi.fn<(queryId: string, showConsumers: boolean) => Promise<void>>(async () => undefined),
+  };
+}
 
-    drag(titleOf(root, "Fabrikam"), titleOf(root, "Contoso"), 0.1);
-    await flush();
-
-    expect(reorderItem).toHaveBeenCalledWith(
-      expect.objectContaining({
-        id: 20,
-        parentId: 100,
-        currentParentId: 100,
-        previousId: 0,
-        nextId: 10,
-        siblingIds: [20, 10, 30],
-        team: "team-guid",
-      }),
-    );
-    expect(consumerTitles(root)).toEqual(["Fabrikam", "Contoso", "Northwind"]);
+/** A context opening on the requests list (the board's default), with `overrides` applied. */
+const requestsContext = (
+  overrides: Partial<EnhancedViewServices> = {},
+  properties: Record<string, string> = {},
+): EnhancedViewContext =>
+  createContext({
+    properties,
+    services: createServices({ consumersShowConsumers: savedMode(false), ...overrides }),
   });
 
-  it("never nests a consumer inside another", async () => {
-    const reorderItem = acceptingReorder(0);
-    const root = await renderBoard(contextWith({ reorderItem }));
+const showConsumersToggle = (root: HTMLElement): HTMLButtonElement =>
+  root.querySelector<HTMLButtonElement>(".awesomeado-consumers__show-consumers")!;
 
-    drag(titleOf(root, "Fabrikam"), titleOf(root, "Northwind"), 0.5);
-    await flush();
+const consumerTags = (root: HTMLElement): (string | null)[] =>
+  [...root.querySelectorAll(".awesomeado-consumers__consumer-tag")].map((tag) => tag.textContent);
 
-    expect(reorderItem).toHaveBeenCalledWith(expect.objectContaining({ id: 20, parentId: 100 }));
+const boardLines = (info: ReturnType<typeof vi.fn>): string[] =>
+  info.mock.calls
+    .map(([line]) => line as string)
+    .filter((line) => line.startsWith("Consumers View showing"));
+
+const draggable = (root: HTMLElement): boolean[] =>
+  [...root.querySelectorAll<HTMLElement>(".awesomeado-consumers__title")].map(
+    (title) => title.draggable,
+  );
+
+const orderingGlyph = (root: HTMLElement): string | null | undefined =>
+  root.querySelector(".awesomeado-ordering__trigger")?.getAttribute("title");
+
+const pickOrdering = (root: HTMLElement, label: string): void => {
+  root.querySelector<HTMLButtonElement>(".awesomeado-ordering__trigger")!.click();
+  [...document.querySelectorAll<HTMLElement>(".awesomeado-ordering__option")]
+    .find((option) => option.textContent?.includes(label))!
+    .click();
+};
+
+const IMPORTANCE_ORDERED_REQUESTS = ["Export to CSV", "Dark mode", "Single sign-on", "Audit log"];
+
+const BOARD_LINE_TAIL =
+  "configuredAreaPaths=0, selectedAreaPaths=0, selectedConsumers=0, tags=none.";
+
+describe("consumersView - the requests list by default", () => {
+  it("opens on the requests list with Show consumers beside + and −, released", async () => {
+    const preference = savedMode(false);
+    const root = await renderBoard(contextWith({ consumersShowConsumers: preference }));
+    const toggle = showConsumersToggle(root);
+
+    expect(toggle.textContent).toBe("Show consumers");
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+    // Sits with the outline buttons rather than among the filters.
+    expect(toggle.previousElementSibling?.className).toContain("collapse-all");
+    expect(preference.read).toHaveBeenCalledWith("query-1");
+    expect(titles(root)).toEqual(IMPORTANCE_ORDERED_REQUESTS);
+    expect(root.querySelector(".awesomeado-consumers__row.is-consumer")).toBeNull();
+  });
+
+  it("opens on the requests list when no saved-mode store exists", async () => {
+    const root = await renderBoard(contextWith({ consumersShowConsumers: undefined }));
+
+    expect(titles(root)).toEqual(IMPORTANCE_ORDERED_REQUESTS);
+  });
+
+  it("tags each request with its consumer", async () => {
+    const root = await renderBoard(requestsContext());
+
+    expect(consumerTags(root)).toEqual(["Contoso", "Contoso", "Fabrikam", "Fabrikam"]);
+    expect(root.textContent).not.toContain("Hidden grandchild");
+    expect(root.querySelector<HTMLElement>(".awesomeado-consumers__consumer-tag")?.title).toBe(
+      "Requested by Contoso",
+    );
+  });
+
+  it("saves the choice for this query and logs each flip", async () => {
+    const info = vi.fn();
+    const preference = savedMode(false);
+    const root = await renderBoard(
+      contextWith({ consumersShowConsumers: preference, logger: { info, error: () => undefined } }),
+    );
+
+    showConsumersToggle(root).click();
+    expect(preference.write).toHaveBeenLastCalledWith("query-1", true);
+    expect(showConsumersToggle(root).getAttribute("aria-pressed")).toBe("true");
+    expect(consumerTitles(root)).toEqual(["Contoso", "Fabrikam", "Northwind"]);
+
+    showConsumersToggle(root).click();
+    expect(preference.write).toHaveBeenLastCalledWith("query-1", false);
+    expect(info).toHaveBeenCalledWith("Consumers View Show consumers: on.");
+    expect(info).toHaveBeenCalledWith("Consumers View Show consumers: off.");
+    expect(boardLines(info)).toEqual([
+      `Consumers View showing 3 of 3 consumer(s), with 4 feature request(s): mode=requests-only, ${BOARD_LINE_TAIL}`,
+      `Consumers View showing 3 of 3 consumer(s), with 4 feature request(s): mode=consumers, ${BOARD_LINE_TAIL}`,
+      `Consumers View showing 3 of 3 consumer(s), with 4 feature request(s): mode=requests-only, ${BOARD_LINE_TAIL}`,
+    ]);
   });
 });
 
-describe("consumersView - moving requests", () => {
-  it("re-orders a request within its consumer", async () => {
-    const reorderItem = acceptingReorder(10);
-    const root = await renderBoard(contextWith({ reorderItem }));
+describe("consumersView - opening in the saved mode", () => {
+  it("opens straight into the consumers when that is what was saved for the query", async () => {
+    const root = await renderBoard(contextWith({ consumersShowConsumers: savedMode(true) }));
 
-    drag(titleOf(root, "Dark mode"), titleOf(root, "Export to CSV"), 0.1);
-    await flush();
-
-    expect(reorderItem).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 12, parentId: 10, currentParentId: 10, nextId: 11 }),
-    );
-    expect(titles(root).slice(0, 3)).toEqual(["Contoso", "Dark mode", "Export to CSV"]);
+    expect(showConsumersToggle(root).getAttribute("aria-pressed")).toBe("true");
+    expect(consumerTitles(root)).toHaveLength(3);
   });
 
-  it("hands a request to another consumer, even a closed or empty one, keeping its type", async () => {
-    const reorderItem = acceptingReorder(40);
-    const root = await renderBoard(contextWith({ reorderItem }));
+  it("keeps a flip made since across Refresh, reading the saved mode only once", async () => {
+    const preference = savedMode(true);
+    const loadTree = vi.fn(async () => ({
+      isTreeQuery: true,
+      roots: fixtureRoots(),
+      error: null,
+    }));
+    const root = await renderBoard(contextWith({ consumersShowConsumers: preference, loadTree }));
 
-    drag(titleOf(root, "Audit log"), titleOf(root, "Northwind"), 0.5);
+    showConsumersToggle(root).click();
+    root.querySelector<HTMLButtonElement>(".awesomeado-consumers__refresh")!.click();
+    await vi.waitFor(() => expect(loadTree).toHaveBeenCalledTimes(2));
+    await flush();
+
+    expect(showConsumersToggle(root).getAttribute("aria-pressed")).toBe("false");
+    expect(titles(root)).toEqual(IMPORTANCE_ORDERED_REQUESTS);
+    expect(preference.read).toHaveBeenCalledTimes(1);
+  });
+
+  it("logs a saved mode it cannot read, and shows the requests list", async () => {
+    const error = vi.fn();
+    const failure = new Error("storage unavailable");
+    const root = await renderBoard(
+      contextWith({
+        consumersShowConsumers: {
+          read: async () => Promise.reject(failure),
+          write: async () => {},
+        },
+        logger: { info: () => undefined, error },
+      }),
+    );
+
+    expect(showConsumersToggle(root).getAttribute("aria-pressed")).toBe("false");
+    expect(titles(root)).toEqual(IMPORTANCE_ORDERED_REQUESTS);
+    expect(error).toHaveBeenCalledWith(
+      "Consumers View could not read the saved Show consumers choice",
+      failure,
+    );
+  });
+
+  it("logs a choice it cannot save, keeping the board the reader asked for", async () => {
+    const error = vi.fn();
+    const failure = new Error("quota exceeded");
+    const root = await renderBoard(
+      contextWith({
+        consumersShowConsumers: {
+          read: async () => false,
+          write: async () => Promise.reject(failure),
+        },
+        logger: { info: () => undefined, error },
+      }),
+    );
+
+    showConsumersToggle(root).click();
+    await flush();
+
+    expect(error).toHaveBeenCalledWith(
+      "Consumers View could not save the Show consumers choice",
+      failure,
+    );
+    expect(consumerTitles(root)).toHaveLength(3);
+  });
+});
+
+describe("consumersView - requests-list rows", () => {
+  it("gives each request its Status, description, Discussion, and item menu", async () => {
+    const root = await renderBoard(requestsContext());
+    const request = root.querySelector<HTMLElement>('[data-item-id="11"]')!;
+    const row = request.querySelector<HTMLElement>(".awesomeado-consumers__row")!;
+
+    expect(row.querySelector(".awesomeado-status__badge")).not.toBeNull();
+    expect(row.querySelector(".awesomeado-consumers__notes-toggle")).not.toBeNull();
+    row.querySelector<HTMLButtonElement>(".awesomeado-consumers__describe")!.click();
+    expect(
+      request.querySelector(":scope > .awesomeado-consumers__description")?.textContent,
+    ).toContain("Export request description.");
+
+    row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+    const commands = [...root.querySelectorAll(".awesomeado-item-menu__command")].map(
+      (command) => command.textContent,
+    );
+    expect(commands).toEqual(
+      expect.arrayContaining(["Update parent", "View all notes", "Copy Item ID"]),
+    );
+  });
+
+  it("steps the header's minus through the panels only, with nothing for plus to open", async () => {
+    const info = vi.fn();
+    const root = await renderBoard(requestsContext({ logger: { info, error: () => undefined } }));
+    const press = (control: "collapse-all" | "expand-all"): void =>
+      root.querySelector<HTMLButtonElement>(`.awesomeado-consumers__${control}`)!.click();
+    root
+      .querySelector<HTMLButtonElement>('[data-item-id="11"] .awesomeado-consumers__describe')!
+      .click();
+    root
+      .querySelector<HTMLButtonElement>('[data-item-id="21"] .awesomeado-consumers__notes-toggle')!
+      .click();
+
+    press("collapse-all");
+    press("collapse-all");
+    press("collapse-all");
+    press("expand-all");
+
+    expect(info).toHaveBeenCalledWith("Consumers View collapse: descriptions.");
+    expect(info).toHaveBeenCalledWith("Consumers View collapse: discussions.");
+    expect(info).toHaveBeenCalledWith("Consumers View collapse: nothing left to collapse.");
+    expect(info).toHaveBeenCalledWith("Consumers View expand: nothing left to expand.");
+    expect(titles(root)).toEqual(IMPORTANCE_ORDERED_REQUESTS);
+  });
+
+  it("says so when none of the shown consumers has a request and no area filter is active", async () => {
+    window.history.replaceState({}, "", "/?consumer=30");
+
+    const root = await renderBoard(requestsContext());
+
+    expect(emptyMessage(root)).toContain("None of the shown consumers has a feature request.");
+    expect(emptyMessage(root)).toContain("Press Show consumers");
+  });
+
+  it("explains a query with no consumers just as the consumer cards do", async () => {
+    const root = await renderBoard(
+      requestsContext({
+        loadTree: async () => ({ isTreeQuery: true, roots: [item({ id: 100 })], error: null }),
+      }),
+    );
+
+    expect(emptyMessage(root)).toContain("This query returned no consumers.");
+  });
+});
+
+/** The fixture with a needed-by date on one request, under a Request type that declares the field. */
+const ETA_FIELD = "Microsoft.VSTS.Scheduling.TargetDate";
+const etaServices = (writeField = vi.fn(async () => ({ ok: true, rev: 2 }))) => ({
+  writeField,
+  getTypes: () =>
+    TYPES.map((entry) => (entry.name === "Request" ? { ...entry, etaField: ETA_FIELD } : entry)),
+  loadTree: async () => {
+    const roots = fixtureRoots();
+    roots[0]!.children[0]!.children[0]!.eta = "2026-08-10T12:00:00Z";
+    return { isTreeQuery: true, roots, error: null };
+  },
+});
+
+const etaBadges = (root: HTMLElement): (string | null)[] =>
+  [...root.querySelectorAll(".awesomeado-eta__label")].map((label) => label.textContent);
+
+describe("consumersView - needed-by dates", () => {
+  it("shows each request's ETA as the date it is Needed by", async () => {
+    const root = await renderBoard(requestsContext(etaServices()));
+
+    expect(etaBadges(root)).toEqual([
+      "Needed by 08/10/2026",
+      "No needed-by date",
+      "No needed-by date",
+      "No needed-by date",
+    ]);
+  });
+
+  it("shows no date for a request type that declares no ETA field", async () => {
+    const root = await renderBoard(requestsContext());
+
+    expect(root.querySelector(".awesomeado-eta__label")).toBeNull();
+  });
+
+  it("orders the requests by the date they are needed by under By ETA", async () => {
+    const root = await renderBoard(requestsContext(etaServices(), { orderingPolicy: "eta" }));
+
+    expect(titles(root)[0]).toBe("Export to CSV");
+    expect(draggable(root).some(Boolean)).toBe(false);
+    expect(orderingGlyph(root)).toContain("only available under Drag-and-drop order");
+  });
+});
+
+describe("consumersView - reordering requests", () => {
+  it("ranks a dropped request among every request, keeping it under its own consumer", async () => {
+    const reorderItem = acceptingReorder(0);
+    const root = await renderBoard(requestsContext({ reorderItem }));
+
+    expect(draggable(root).every(Boolean)).toBe(true);
+    drag(titleOf(root, "Audit log"), titleOf(root, "Export to CSV"), 0.1);
     await flush();
 
     const request = reorderItem.mock.calls[0]![0] as Record<string, unknown>;
-    expect(request).toMatchObject({ id: 22, parentId: 30, currentParentId: 20, siblingIds: [22] });
+    expect(request).toMatchObject({
+      id: 22,
+      parentId: 20,
+      currentParentId: 20,
+      previousId: 0,
+      nextId: 11,
+      siblingIds: [22, 11, 12, 21],
+      team: "team-guid",
+    });
     expect(request.type).toBeUndefined();
-    expect(titles(root).slice(-2)).toEqual(["Northwind", "Audit log"]);
+    expect(titles(root)).toEqual(["Audit log", "Export to CSV", "Dark mode", "Single sign-on"]);
   });
 
-  it("never lifts a request up to the consumer level", async () => {
-    const reorderItem = acceptingReorder(0);
-    const root = await renderBoard(contextWith({ reorderItem }));
-
-    drag(titleOf(root, "Audit log"), titleOf(root, "Contoso"), 0.1);
-    await flush();
-
-    expect(reorderItem).not.toHaveBeenCalled();
-  });
-
-  it("leaves the tree as it was when Azure DevOps refuses the move", async () => {
+  it("leaves the list as it was when Azure DevOps refuses the move", async () => {
     const reorderItem = vi.fn(async () => ({ ok: false, error: "nope" }));
-    const root = await renderBoard(contextWith({ reorderItem }));
+    const root = await renderBoard(requestsContext({ reorderItem }));
 
-    drag(titleOf(root, "Audit log"), titleOf(root, "Northwind"), 0.5);
+    drag(titleOf(root, "Audit log"), titleOf(root, "Export to CSV"), 0.1);
     await flush();
 
-    expect(titles(root).slice(-2)).toEqual(["Audit log", "Northwind"]);
+    expect(titles(root)).toEqual(IMPORTANCE_ORDERED_REQUESTS);
+  });
+
+  it("offers only the drag order and the ETA order on the glyph", async () => {
+    const root = await renderBoard(requestsContext());
+
+    root.querySelector<HTMLButtonElement>(".awesomeado-ordering__trigger")!.click();
+    expect(
+      [...document.querySelectorAll(".awesomeado-ordering__option")].map((row) => row.textContent),
+    ).toEqual(["\u2713Drag-and-drop order", "\u2713By ETA (past/recent - future)"]);
+  });
+
+  it("turns dragging off under By ETA and back on under Drag-and-drop order", async () => {
+    const info = vi.fn();
+    const root = await renderBoard(requestsContext({ logger: { info, error: () => undefined } }));
+
+    pickOrdering(root, "By ETA");
+    expect(draggable(root).some(Boolean)).toBe(false);
+
+    pickOrdering(root, "Drag-and-drop order");
+    expect(draggable(root).every(Boolean)).toBe(true);
+    expect(info).toHaveBeenCalledWith("Consumers View ordering: eta.");
   });
 });
 
 describe("consumersView - when dragging is unavailable", () => {
-  const draggable = (root: HTMLElement): boolean[] =>
-    [...root.querySelectorAll<HTMLElement>(".awesomeado-consumers__title")].map(
-      (title) => title.draggable,
-    );
+  it("never offers a drag on the consumer cards, and says why on the ordering glyph", async () => {
+    const root = await renderOpenBoard();
+
+    expect(draggable(root).some(Boolean)).toBe(false);
+    expect(orderingGlyph(root)).toContain("consumers keep a fixed order");
+  });
 
   it("offers no drag handle without a team, and says why on the ordering glyph", async () => {
-    const root = await renderBoard(contextWith({ currentTeam: () => null }));
+    const root = await renderBoard(requestsContext({ currentTeam: () => null }));
 
     expect(draggable(root).some(Boolean)).toBe(false);
-    expect(root.querySelector(".awesomeado-ordering__trigger")?.getAttribute("title")).toContain(
-      "needs a team",
+    expect(orderingGlyph(root)).toContain("needs a team");
+  });
+
+  it("logs and declines a drop that lands after the team was cleared", async () => {
+    let team: string | null = "team-guid";
+    const error = vi.fn();
+    const reorderItem = acceptingReorder(0);
+    const root = await renderBoard(
+      requestsContext({ currentTeam: () => team, reorderItem, logger: { info: () => {}, error } }),
     );
+
+    team = null;
+    drag(titleOf(root, "Audit log"), titleOf(root, "Export to CSV"), 0.1);
+    await flush();
+
+    expect(reorderItem).not.toHaveBeenCalled();
+    expect(error).toHaveBeenCalledWith(expect.stringContaining("no team is configured"));
+  });
+});
+
+/** The fixture with tags on the consumers (and one on a request, which the filter must ignore). */
+const taggedServices = () => ({
+  loadTree: async () => {
+    const roots = fixtureRoots();
+    const [contoso, fabrikam, northwind] = roots[0]!.children;
+    contoso!.tags = ["Gold"];
+    fabrikam!.tags = ["Silver"];
+    northwind!.tags = ["Gold"];
+    contoso!.children[0]!.tags = ["Bronze"];
+    return { isTreeQuery: true, roots, error: null };
+  },
+});
+
+const tagOptionValues = (): string[] =>
+  [...document.querySelectorAll(".awesomeado-tag-filter__option input")].map(
+    (input) => (input as HTMLInputElement).value,
+  );
+
+const tickTag = (root: HTMLElement, tag: string): void => {
+  root.querySelector<HTMLButtonElement>(".awesomeado-tag-filter__trigger")!.click();
+  [...document.querySelectorAll<HTMLInputElement>(".awesomeado-tag-filter__option input")]
+    .find((input) => input.value === tag)!
+    .click();
+};
+
+describe("consumersView - tag filter", () => {
+  it("offers only the consumers' own tags", async () => {
+    const root = await renderBoard(requestsContext(taggedServices()));
+
+    root.querySelector<HTMLButtonElement>(".awesomeado-tag-filter__trigger")!.click();
+    expect(tagOptionValues()).toEqual(["Gold", "Silver"]);
   });
 
-  it("offers no drag handle while ordered by anything but importance", async () => {
-    const root = await renderBoard(createContext({ properties: { orderingPolicy: "title" } }));
+  it("keeps the requests of the consumers whose tags match, live, and names it in the URL", async () => {
+    const info = vi.fn();
+    const root = await renderBoard(
+      requestsContext({ ...taggedServices(), logger: { info, error: () => undefined } }),
+    );
 
-    expect(draggable(root).some(Boolean)).toBe(false);
-    expect(consumerTitles(root)).toEqual(["Contoso", "Fabrikam", "Northwind"]);
+    tickTag(root, "Silver");
+
+    expect(titles(root)).toEqual(["Single sign-on", "Audit log"]);
+    expect(document.querySelector(".awesomeado-tag-filter__popup")).not.toBeNull();
+    expect(new URLSearchParams(window.location.search).get("tags")).toBe("silver");
+    expect(info).toHaveBeenCalledWith("Consumers View tag filter set to any of [silver].");
   });
 
-  it("re-orders by a policy picked on the glyph, then offers dragging again under importance", async () => {
-    const root = await renderBoard(createContext({ properties: { orderingPolicy: "title" } }));
+  it("narrows the consumer cards the same way", async () => {
+    const root = await renderBoard(contextWith(taggedServices()));
 
-    root.querySelector<HTMLButtonElement>(".awesomeado-ordering__trigger")!.click();
-    [...document.querySelectorAll<HTMLElement>(".awesomeado-ordering__option")]
-      .find((option) => option.textContent?.includes("Importance"))!
-      .click();
+    tickTag(root, "Gold");
 
-    expect(draggable(root).every(Boolean)).toBe(true);
+    expect(consumerTitles(root)).toEqual(["Contoso", "Northwind"]);
+  });
+
+  it("opens on the condition a shared link names, dropping tags no consumer wears", async () => {
+    window.history.replaceState({}, "", "/?tags=gold,bronze&notTags=silver");
+    const info = vi.fn();
+
+    const root = await renderBoard(
+      contextWith({ ...taggedServices(), logger: { info, error: () => undefined } }),
+    );
+
+    expect(consumerTitles(root)).toEqual(["Contoso", "Northwind"]);
+    expect(info).toHaveBeenCalledWith(
+      "Consumers View dropped tag filter(s) no consumer wears any more: bronze.",
+    );
+    expect(new URLSearchParams(window.location.search).get("tags")).toBe("gold");
+  });
+
+  it("explains a board the header filters emptied", async () => {
+    window.history.replaceState({}, "", "/?tags=gold&notTags=gold");
+
+    const root = await renderBoard(contextWith(taggedServices()));
+
+    expect(emptyMessage(root)).toContain("No consumer matches the header filters.");
+  });
+});
+
+const consumerOptionLabels = (): (string | null)[] =>
+  [...document.querySelectorAll(".awesomeado-consumer-filter__option")].map(
+    (row) => row.textContent,
+  );
+
+const tickConsumer = (root: HTMLElement, id: number): void => {
+  root.querySelector<HTMLButtonElement>(".awesomeado-consumer-filter__trigger")!.click();
+  [...document.querySelectorAll<HTMLInputElement>(".awesomeado-consumer-filter__option input")]
+    .find((input) => input.value === String(id))!
+    .click();
+};
+
+describe("consumersView - consumer filter", () => {
+  it("offers every consumer by title, whatever the request area paths", async () => {
+    const root = await renderBoard(requestsContext({}, { requestAreaPaths: TEAM_A }));
+
+    root.querySelector<HTMLButtonElement>(".awesomeado-consumer-filter__trigger")!.click();
+    expect(consumerOptionLabels()).toEqual(["Contoso", "Fabrikam", "Northwind"]);
+  });
+
+  it("lists only the picked consumers' requests, without the consumer pills", async () => {
+    const info = vi.fn();
+    const root = await renderBoard(requestsContext({ logger: { info, error: () => undefined } }));
+
+    tickConsumer(root, 20);
+
+    expect(titles(root)).toEqual(["Single sign-on", "Audit log"]);
+    expect(consumerTags(root)).toEqual([]);
+    expect(window.location.search).toBe("?consumer=20");
+    expect(info).toHaveBeenCalledWith("Consumers View consumer filter: selectedCount=1.");
+  });
+
+  it("opens on the consumers a shared link names, dropping any it cannot offer", async () => {
+    window.history.replaceState({}, "", "/?consumer=10&consumer=999");
+
+    const root = await renderBoard(contextWith({}));
+
+    expect(consumerTitles(root)).toEqual(["Contoso"]);
+    expect(window.location.search).toBe("?consumer=10");
   });
 });

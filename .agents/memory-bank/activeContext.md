@@ -12,19 +12,28 @@ AwesomeADO is feature-complete for its current scope:
 - Per-query enhanced-view bindings sync through browser storage and support Sprint, Project Tracking,
   All Projects Catalog, Consumers, and the original ADO view.
 - Consumers View (ADR-081) hides a tree query's grouping root and lists consumers with their feature
-  requests. Binding `consumerAreaPaths` ("Consumer area paths", renamed from `requestAreaPaths` with
-  no fallback) keeps consumers in each configured area branch and its descendants; the URL-synced
-  header Area filter then narrows CONSUMERS by represented full path. Requests are never area
-  filtered. Header `−` closes open descriptions, then discussions, then the deepest open tree level;
+  requests. Binding `requestAreaPaths` ("Request area paths"; legacy `consumerAreaPaths` read as a
+  fallback while the new key is absent) keeps REQUESTS in each configured area branch and its
+  descendants, and the URL-synced header Area filter narrows requests by exact full path; consumers
+  are never area filtered and consumer-card request counts show the filtered count. The Consumer
+  (`consumer` param) and Tags (shared `content/views/tag-selection`, judged on the consumer's OWN
+  tags) filters narrow CONSUMERS in both modes.
+  Header `−` closes open descriptions, then discussions, then the deepest open tree level;
   `+` opens one tree level (`treeExpansion.ts`). Consumer rows omit
-  Status editing while request rows retain it. A fixed-depth drag reorders consumers and
-  reorders/moves requests with Project Tracking's backlog rank. Its header represents the hidden root
+  Status editing while request rows retain it. Ordering offers only Drag-and-drop order (importance)
+  and By ETA. Only the requests list drags (flat, every request ranked against all listed requests,
+  persisted under its own consumer with Project Tracking's backlog rank); cards never drag. Its header represents the hidden root
   with that item's title and theme-aware ADO type color. Every displayed item has the shared
   type-colored description control and lazy Discussion panel; right-click **View all notes** opens
   the complete discussion with the shared note editor.
-  Each consumer is one grid-laid card row (`__row.is-consumer.__card`: twisty column, then the title
-  line over the description-parsed identity and Contacts list, so the `?` and the details share a
-  left edge); its description and Discussion panels open below the card. Contacts are assignee
+  Each consumer is one grid-laid card row (`__row.is-consumer.__card`: request-count column, then
+  the title line over the description-parsed identity and Contacts list, so the `?` and the details
+  share a left edge); consumers start closed and the count pill opens/closes their requests; its
+  description and Discussion panels open below the card. The board OPENS on the requests list
+  (policy-ordered, consumer pill unless the Consumer filter has picks, "Needed by" ETA badge via
+  shared `item-eta/renderRowEtaBadge`); the **Show consumers** switch (shared `ToggleButton`, in
+  ViewHeader `outlineControls` beside `+`/`−`) shows the cards and is remembered per query in the
+  personal synced setting `consumersShowConsumersQueryIds` (not team-shared). Contacts are assignee
   pills led by a red remove ×, with the role as the tag, editable in place and written back into the
   description. The description reader is deliberately loose (`descriptionText` / `descriptionSections`
   / `contactEntries`); only `own-line` contacts in Markdown are editable, and rich text shows a

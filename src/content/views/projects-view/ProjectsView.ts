@@ -47,6 +47,13 @@ import { createBoardWriteQueue } from "../board-lifecycle/boardWriteQueue";
 import { createBoardWriteStatus } from "../board-lifecycle/boardWriteStatus";
 import { childTypeOf, newChildSummary } from "../project-tracking/item-commands/NewChildCommands";
 import { panelFor } from "../project-tracking/item-commands/itemCommandCore";
+import {
+  describeTagCondition,
+  pruneTagCondition,
+  tagsInUse,
+  type TagCondition,
+} from "../tag-selection/tagCondition";
+import { readUrlTagCondition, searchWithTagCondition } from "../tag-selection/tagConditionUrl";
 
 import { CatalogFavoritesAvailability } from "./CatalogFavoritesAvailability";
 import { renderNewProjectRow } from "./NewProjectRow";
@@ -56,18 +63,7 @@ import { renderProjectRow, visibleChildrenOf, type ProjectRowContext } from "./P
 import { renderProjectsFavoritesPanel } from "./ProjectsFavoritesPanel";
 import { renderProjectsHeader, type ProjectsHeaderHandle } from "./ProjectsHeader";
 import { buildProjectsTitleCommands } from "./ProjectsTitleMenu";
-import {
-  idsKeptByTagCondition,
-  isEmptyTagCondition,
-  queryWideTagNames,
-  queryWideTags,
-  tagsInUse,
-  type TagCondition,
-} from "./projectTags";
-import {
-  projectsSearchWithTagCondition,
-  readProjectsUrlTagCondition,
-} from "./projectsUrlPreferences";
+import { idsKeptByTagCondition, queryWideTagNames, queryWideTags } from "./projectTags";
 import {
   configuredNewProjectAreaPath,
   configuredNewProjectTags,
@@ -172,6 +168,8 @@ async function loadProjects(context: DataDrivenViewContext): Promise<LoadedProje
   const queryTag = configuredTag ?? parseQueryTagFilter(definition.wiql);
   const hiddenTags =
     queryTag === null ? queryWideTags(result.roots) : new Set([queryTag.toLowerCase()]);
+  // Collected across the WHOLE tree rather than the top level: a tag applied to a story nobody has
+  // expanded yet is exactly the tag a reader wants to narrow by.
   const items = flattenWorkItems(result.roots);
   const queries = await loadQueryLinks(context, items);
   return {
@@ -250,34 +248,21 @@ function visibleProjectCount(data: LoadedProjects, session: ProjectsSession): nu
 }
 
 /**
- * Drop condition tags the tree no longer wears, and say so.
- *
- * The vocabulary moves under the reader: a refresh can return items that were re-tagged in Azure
- * DevOps, and a right-click command here can clear the last copy of a tag outright. Keeping the
- * stale condition would narrow the board by a tag the filter itself — which only ever offers tags
- * that exist — showed nothing selected for, so the reader would be looking at a short list with no
- * visible cause.
+ * Drop condition tags the tree no longer wears, and say so: a right-click command here can clear
+ * the last copy of a tag outright, and a refresh can return re-tagged items.
  */
-function pruneTagCondition(
+function pruneSessionTags(
   context: DataDrivenViewContext,
   session: ProjectsSession,
   available: readonly string[],
 ): void {
-  const offered = new Set(available.map((tag) => tag.toLowerCase()));
-  const stale = (tags: ReadonlySet<string>): string[] =>
-    [...tags].filter((tag) => !offered.has(tag));
-  const dropped = [...stale(session.tags.required), ...stale(session.tags.excluded)];
-  if (dropped.length === 0) return;
-  session.tags = {
-    required: new Set([...session.tags.required].filter((tag) => offered.has(tag))),
-    excluded: new Set([...session.tags.excluded].filter((tag) => offered.has(tag))),
-    matchAll: session.tags.matchAll,
-  };
+  const pruned = pruneTagCondition(session.tags, available);
+  if (pruned.dropped.length === 0) return;
+  session.tags = pruned.condition;
   context.services.logger.info(
-    `All Projects Catalog View dropped tag filter(s) no longer present in the query: ${dropped.join(", ")}`,
+    `All Projects Catalog View dropped tag filter(s) no longer present in the query: ${pruned.dropped.join(", ")}`,
   );
 }
-
 /** Build the scrolling list of projects, or the panel that explains why there is nothing to list. */
 function renderProjectsList(
   context: DataDrivenViewContext,
@@ -639,27 +624,12 @@ function applyRanks(
   }
 }
 
-/** The condition in one log-readable phrase, so a diagnostics reader can reconstruct the board. */
-function describeTagCondition(condition: TagCondition): string {
-  if (isEmptyTagCondition(condition)) return "none";
-  const parts: string[] = [];
-  if (condition.required.size > 0) {
-    parts.push(
-      `${condition.matchAll ? "all of" : "any of"} [${[...condition.required].join(", ")}]`,
-    );
-  }
-  if (condition.excluded.size > 0) {
-    parts.push(`none of [${[...condition.excluded].join(", ")}]`);
-  }
-  return parts.join(" and ");
-}
-
 /**
  * Keep the page URL naming the tag condition the board is narrowed by, so the address bar is always
  * a shareable link to exactly what the reader is looking at.
  */
 function writeTagConditionUrl(context: DataDrivenViewContext, condition: TagCondition): void {
-  replacePageSearch(context.doc, (search) => projectsSearchWithTagCondition(search, condition));
+  replacePageSearch(context.doc, (search) => searchWithTagCondition(search, condition));
 }
 
 /** Everything the header's controls do, gathered so one paint hands them over in one object. */
@@ -681,12 +651,8 @@ function headerOptionsFor(params: {
       session.policy = policy;
       board.paint();
     },
-    onTagsChange: (selection) => {
-      session.tags = {
-        required: new Set(selection.included.map((tag) => tag.toLowerCase())),
-        excluded: new Set(selection.excluded.map((tag) => tag.toLowerCase())),
-        matchAll: selection.matchAll,
-      };
+    onTagsChange: (condition) => {
+      session.tags = condition;
       writeTagConditionUrl(context, session.tags);
       // The LIST only: the reader is watching what each tick leaves behind, and a full repaint would
       // rebuild the header and close the dropdown they are still composing in.
@@ -852,7 +818,7 @@ function startProjectsView(context: DataDrivenViewContext, root: HTMLElement): v
     expandedIds: new Set(),
     // Opened on whatever the link asks for, so a shared address lands on the same narrowed board its
     // sender was looking at. A link that asks for nothing is the unfiltered catalog.
-    tags: readProjectsUrlTagCondition(context.doc.location?.search ?? ""),
+    tags: readUrlTagCondition(context.doc.location?.search ?? ""),
     policy: orderingPolicyOf(context.properties),
     addingProject: false,
     addingChildOf: null,
@@ -903,7 +869,7 @@ function startProjectsView(context: DataDrivenViewContext, root: HTMLElement): v
     // in place, and a filter still offering the load-time vocabulary would keep narrowing the board
     // by a tag nothing wears any more — with no way for the reader to see, let alone clear, it.
     loaded.tags = tagsInUse(flattenWorkItems(loaded.result.roots), loaded.hiddenTags);
-    pruneTagCondition(context, session, loaded.tags);
+    pruneSessionTags(context, session, loaded.tags);
     // After the prune, so a link naming a tag this query does not wear leaves an address bar that
     // still describes the board on screen rather than the one the sender thought they were sharing.
     writeTagConditionUrl(context, session.tags);

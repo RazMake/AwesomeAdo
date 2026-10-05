@@ -104,22 +104,28 @@ describe("VIEW_TYPES per-view properties", () => {
 });
 
 describe("VIEW_TYPES Consumers View properties", () => {
-  it("gives Consumers View its ordering and consumer area-path settings", () => {
+  it("gives Consumers View its ordering and request area-path settings", () => {
     const consumers = getViewType("consumers");
     const sprint = getViewType("sprint");
     const byKey = new Map(consumers?.properties.map((property) => [property.key, property]));
 
     expect(consumers?.properties.map((property) => property.key)).toEqual([
       "orderingPolicy",
-      "consumerAreaPaths",
+      "requestAreaPaths",
     ]);
-    expect(byKey.get("orderingPolicy")).toEqual(
-      sprint?.properties.find((property) => property.key === "orderingPolicy"),
-    );
+    // Same binding key as the other boards, narrowed to the two orderings this board offers.
+    expect(byKey.get("orderingPolicy")).toMatchObject({
+      key: sprint?.properties.find((property) => property.key === "orderingPolicy")?.key,
+      defaultValue: "importance",
+      options: [
+        { value: "importance", label: "Drag-and-drop order" },
+        { value: "eta", label: "By ETA (past/recent - future)" },
+      ],
+    });
     // Edited exactly like Sprint View's area paths: the same list editor with autocomplete.
-    expect(byKey.get("consumerAreaPaths")).toMatchObject({
+    expect(byKey.get("requestAreaPaths")).toMatchObject({
       kind: "area-path-list",
-      label: "Consumer area paths",
+      label: "Request area paths",
       required: false,
     });
   });

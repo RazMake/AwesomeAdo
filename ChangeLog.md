@@ -14,6 +14,17 @@ builds use the repository's `Major.Minor.Build` release versioning.
 - Assigned users can be cleared directly from assignee chips in every enhanced view, and tag-enabled
   assignee chips offer a **??** choice that clears the current tag. Assigned names now use brighter
   primary text in every view.
+- Consumers View now opens on one list of every shown consumer's feature requests, each tagged with
+  its consumer and showing its **Needed by** date (your configured ETA field), Status, description,
+  Discussion, and right-click menu. Drag requests to rank them (saved to the backlog order like
+  Project Tracking), or pick **By ETA** from the top-right ordering glyph to sort by date instead.
+  The **Show consumers** button beside `+` / `−` switches to the consumer cards, which start closed
+  with their request count (press it to show that consumer's requests) and keep a fixed order; the
+  choice is remembered per query and synced across your browsers. New **Consumer** and **Tags**
+  header filters (in the page URL, like Area) narrow the consumers in both modes and show only their
+  requests; with consumers picked, the list drops the consumer tags. Area paths — the binding's
+  **Request area paths** and the header **Area** filter — now narrow only the feature requests;
+  every consumer stays listed, and each consumer card's request count reflects the filtered requests.
 
 ### Bug Fixes
 

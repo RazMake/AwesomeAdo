@@ -6,6 +6,7 @@ import type { OrderingPolicy } from "../../../common/ordering/ItemOrdering";
 import type { EnhancedViewServices } from "../../../common/view-common/EnhancedView";
 import type { DragReorderController } from "../../../common/view-common/control/DragReorder/DragReorderController";
 import { renderItemDetailsPanel } from "../../../common/view-common/control/ItemDetails/ItemDetails";
+import { renderTagPill } from "../../../common/view-common/control/TagPill/TagPill";
 import {
   renderTreeChildren,
   renderTreeItemWrapper,
@@ -13,6 +14,7 @@ import {
   renderTreeTitle,
   renderTreeTwisty,
 } from "../../../common/view-common/control/TreeRow/TreeRow";
+import { renderRowEtaBadge } from "../item-eta/renderRowEtaBadge";
 import { renderItemStatusBadge } from "../item-status/itemStatusBadge";
 import { renderItemNotesToggle } from "../project-tracking/notes/ItemNotesToggle";
 import { createNotesPanelState, type NotesPanelState } from "../project-tracking/notes/NotesPanel";
@@ -34,28 +36,45 @@ export interface ConsumerRowContext {
   statusWidthCh: number;
   now(): Date;
   policy: OrderingPolicy;
-  /** Consumers the reader closed. Rows start open: the requests are what this board is read for. */
-  collapsedIds: Set<number>;
+  /**
+   * Consumers the reader opened. Every consumer starts closed, its request count standing in for the
+   * list, so a long consumer roster reads as a roster first.
+   */
+  expandedIds: Set<number>;
   expandedDescriptionIds: Set<number>;
   expandedNoteIds: Set<number>;
   notePanelStates: Map<number, NotesPanelState>;
   mentionNames: ReadonlyMap<string, string>;
-  /** The hidden grouping item every consumer is a child of, and so the parent a consumer drop names. */
+  /**
+   * The hidden grouping item every consumer is a child of. The requests-only list registers every
+   * request under it, so the whole list reads as ONE level to the drag controller; the board maps
+   * a drop back onto the request's real consumer before persisting it.
+   */
   groupingId: number;
   /**
-   * Every consumer in the board's order, including any the area filters hide. A drop is ranked
-   * against the full level rather than what is on screen: ranking against only the visible
-   * consumers would place one relative to whatever the filter happened to leave, so clearing the
-   * filter afterwards would reveal it somewhere nobody dropped it.
+   * Every request of every consumer in backlog-rank order, including any the filters hide. A drop is
+   * ranked against the full list rather than what is on screen: ranking against only the visible
+   * requests would place one relative to whatever the filters happened to leave, so clearing them
+   * afterwards would reveal it somewhere nobody dropped it.
    */
-  consumerSiblingIds: readonly number[];
-  /** Present only while a manual drag can be honoured (importance ordering, a configured team). */
+  requestSiblingIds: readonly number[];
+  /**
+   * Present only while a manual drag can be honoured: the requests-only list, ordered by hand, with
+   * a configured team. The consumer cards never offer it — their order is fixed.
+   */
   dragReorder: DragReorderController | null;
+  /**
+   * Whether the requests-only list leaves out the consumer pill: once the reader filtered to the
+   * consumers they care about, naming them on every row is noise.
+   */
+  hideConsumerTags: boolean;
   /** Writes a card's contact edits back into the consumer's description. */
   contactEditor: ConsumerContactEditor;
   /** Every role already given to a contact on this board, offered when a role is picked. */
   contactRoles: readonly string[];
   onContextMenu(item: TrackedWorkItem, event: MouseEvent): void;
+  /** Whether the area filters (binding and header) keep a request; consumers are never filtered. */
+  keepsRequest(request: TrackedWorkItem): boolean;
   /** Rebuild the list after an expand/collapse, so open/closed state lives outside the DOM. */
   repaint(): void;
 }
@@ -63,11 +82,19 @@ export interface ConsumerRowContext {
 const PREFIX = "awesomeado-consumers";
 
 /**
- * Every request a consumer made, in the board's ordering policy. Requests are never filtered: once
- * a consumer is on the board, all of what it asked for is.
+ * The requests of a consumer the area filters keep, in the board's ordering policy. Area paths
+ * describe where the work is filed, which says nothing about who asked for it, so only requests
+ * are narrowed and the consumer stays on the board.
  */
-export function requestsOf(consumer: TrackedWorkItem, policy: OrderingPolicy): TrackedWorkItem[] {
-  return orderTrackedItems(consumer.children, (request) => request, policy);
+export function requestsOf(
+  consumer: TrackedWorkItem,
+  context: Pick<ConsumerRowContext, "policy" | "keepsRequest">,
+): TrackedWorkItem[] {
+  return orderTrackedItems(
+    consumer.children.filter((request) => context.keepsRequest(request)),
+    (request) => request,
+    context.policy,
+  );
 }
 
 /** What every row draws besides its twisty: the two toggles, the title, and the panels they open. */
@@ -149,42 +176,107 @@ function bindItemMenu(
   });
 }
 
-/** The consumer's twisty, or a same-width spacer when no request is left to open onto. */
-function renderConsumerTwisty(
+/** The pill's frame, shared by the live count and the inert zero so every card's column lines up. */
+const REQUEST_COUNT_STYLE = [
+  "box-sizing:border-box",
+  "justify-self:center",
+  "min-width:22px",
+  "height:20px",
+  "padding:0 6px",
+  "border-radius:10px",
+  "font:inherit",
+  "font-size:11px",
+  "font-weight:600",
+  "line-height:18px",
+  "text-align:center",
+].join(";");
+
+/**
+ * How many feature requests the consumer made, in the card's first column, where a twisty would
+ * otherwise sit: the number answers "how much does this consumer want?" before anything is opened,
+ * and pressing it opens or closes exactly those requests. Filled while open, so an open card is
+ * recognisable from the column alone.
+ */
+function renderRequestCount(
   consumer: TrackedWorkItem,
+  count: number,
   context: ConsumerRowContext,
-  expandable: boolean,
+  expanded: boolean,
 ): HTMLElement {
-  const expanded = !context.collapsedIds.has(consumer.id);
-  return renderTreeTwisty(
-    context.doc,
-    PREFIX,
-    consumer,
-    expandable
-      ? {
-          expanded,
-          onToggle: () => {
-            if (expanded) context.collapsedIds.add(consumer.id);
-            else context.collapsedIds.delete(consumer.id);
-            context.repaint();
-          },
-        }
-      : null,
-  );
+  const { doc } = context;
+  if (count === 0) {
+    const none = doc.createElement("span");
+    none.className = `${PREFIX}__request-count is-empty`;
+    none.textContent = "0";
+    none.title = "No feature requests";
+    none.style.cssText = `${REQUEST_COUNT_STYLE};border:1px solid transparent;color:var(--text-secondary-color)`;
+    return none;
+  }
+  const button = doc.createElement("button");
+  button.type = "button";
+  button.className = `${PREFIX}__request-count`;
+  button.textContent = String(count);
+  button.title = `${expanded ? "Hide" : "Show"} ${count} feature request${count === 1 ? "" : "s"}`;
+  button.setAttribute("aria-label", `${button.title} from ${consumer.title}`);
+  button.setAttribute("aria-expanded", String(expanded));
+  button.style.cssText = [
+    REQUEST_COUNT_STYLE,
+    "cursor:pointer",
+    expanded
+      ? "border:1px solid var(--communication-background)"
+      : "border:1px solid var(--control-border-strong)",
+    expanded ? "background:var(--communication-background)" : "background:transparent",
+    expanded ? "color:var(--text-on-communication-background)" : "color:var(--text-primary-color)",
+  ].join(";");
+  button.addEventListener("click", () => {
+    if (expanded) context.expandedIds.delete(consumer.id);
+    else context.expandedIds.add(consumer.id);
+    context.repaint();
+  });
+  return button;
 }
 
-/** One feature request beneath its consumer; requests are always leaves on this board. */
-function renderRequestRow(
+/**
+ * The consumer a request was made by, as a small tag after the request's title — the only place a
+ * requests-only list can say whose request it is. Colored per consumer, so one consumer's requests
+ * read as a set wherever the ordering scatters them.
+ */
+function renderConsumerTag(doc: Document, consumer: TrackedWorkItem): HTMLElement {
+  const tag = renderTagPill(doc, { tag: consumer.title });
+  tag.classList.add(`${PREFIX}__consumer-tag`);
+  tag.title = `Requested by ${consumer.title}`;
+  // The request's title is what the row is about, so a long consumer name is the one to clip.
+  tag.style.display = "inline-block";
+  tag.style.maxWidth = "16em";
+  tag.style.overflow = "hidden";
+  tag.style.textOverflow = "ellipsis";
+  tag.style.flex = "0 0 auto";
+  return tag;
+}
+
+/** A request's line and the panels it opens, before the caller decides where the line sits. */
+interface RequestParts {
+  line: HTMLElement;
+  wrapper: HTMLElement;
+  /** The title, which is also the drag handle wherever a request can be dragged. */
+  handle: HTMLElement;
+}
+
+/**
+ * One feature request: Status, the `?` and Discussion toggles, and the title, with its panels
+ * unfolding beneath. `lead` and `trail` are what tells the tree's request from the requests-only
+ * list's — the tree's indent spacer before, the consumer tag after.
+ */
+function renderRequestParts(
   request: TrackedWorkItem,
-  consumer: TrackedWorkItem,
-  siblingIds: readonly number[],
   context: ConsumerRowContext,
-): HTMLElement {
+  extras: { lead: readonly HTMLElement[]; trail: readonly HTMLElement[] },
+): RequestParts {
   const { doc } = context;
   const parts = renderItemParts(request, context);
   const line = renderTreeRowLine(doc, PREFIX, null);
   line.append(
-    renderTreeTwisty(doc, PREFIX, request, null),
+    ...extras.lead,
     renderItemStatusBadge({
       doc,
       item: request,
@@ -197,34 +289,75 @@ function renderRequestRow(
     parts.describe,
     parts.notesToggle,
     parts.title,
+    ...extras.trail,
   );
   bindItemMenu(line, request, context);
   const wrapper = renderTreeItemWrapper(doc, PREFIX, request, line);
+  wrapper.classList.add(`${PREFIX}__request`);
   wrapper.append(parts.description, parts.notes);
+  return { line, wrapper, handle: parts.title };
+}
+
+/** What the date on a request means on this board: when its consumer needs it. */
+const NEEDED_BY_WORDING = { prefix: "Needed by", empty: "No needed-by date" };
+
+/**
+ * One request in the requests-only list: the same row as in the tree, tagged with the consumer that
+ * made it (unless the consumer filter already says whose it is) and the date it is needed by.
+ *
+ * Draggable as one flat list: backlog rank is a single order across the whole backlog, so ranking a
+ * request between two others that belong to different consumers is still a well-defined placement.
+ */
+export function renderRequestOnlyRow(
+  request: TrackedWorkItem,
+  consumer: TrackedWorkItem,
+  context: ConsumerRowContext,
+): HTMLElement {
+  const { doc } = context;
+  const trail: HTMLElement[] = [];
+  if (!context.hideConsumerTags) trail.push(renderConsumerTag(doc, consumer));
+  const eta = renderRowEtaBadge({
+    doc,
+    item: request,
+    types: context.types,
+    now: context.now(),
+    queue: context.queue,
+    wording: NEEDED_BY_WORDING,
+  });
+  if (eta !== null) trail.push(eta);
+  const { line, wrapper, handle } = renderRequestParts(request, context, { lead: [], trail });
   context.dragReorder?.register({
     id: request.id,
-    depth: 1,
-    // Anything below a request is not part of this board, so nothing is carried along visibly.
+    depth: 0,
     hasChildren: false,
-    parentId: consumer.id,
+    parentId: context.groupingId,
     destinationType: null,
-    siblingIds,
-    handle: parts.title,
+    siblingIds: context.requestSiblingIds,
+    handle,
     row: line,
     wrapper,
   });
   return wrapper;
 }
 
+/** One feature request beneath its consumer; requests are always leaves on this board. */
+function renderRequestRow(request: TrackedWorkItem, context: ConsumerRowContext): HTMLElement {
+  return renderRequestParts(request, context, {
+    lead: [renderTreeTwisty(context.doc, PREFIX, request, null)],
+    trail: [],
+  }).wrapper;
+}
+
 /**
- * The consumer's ONE row surface, laid out as a grid: the twisty keeps a column of its own, and the
- * title's line and everything the description says about the consumer share the second — so the
- * `?` and the service details start at the same left edge, and the stripe and hover light the whole
- * record at once instead of line by line.
+ * The consumer's ONE row surface, laid out as a grid: the request count keeps a column of its own,
+ * wide enough for three digits so every card's title starts at the same place, and the title's line
+ * and everything the description says about the consumer share the second — so the `?` and the
+ * service details start at the same left edge, and the stripe and hover light the whole record at
+ * once instead of line by line.
  */
 const CARD_LAYOUT: ReadonlyArray<readonly [string, string]> = [
   ["display", "grid"],
-  ["grid-template-columns", "16px minmax(0, 1fr)"],
+  ["grid-template-columns", "32px minmax(0, 1fr)"],
   ["column-gap", "8px"],
   ["row-gap", "4px"],
   ["align-items", "center"],
@@ -254,7 +387,7 @@ function contactEditingFor(consumer: TrackedWorkItem, context: ConsumerRowContex
 function renderConsumerCard(
   consumer: TrackedWorkItem,
   context: ConsumerRowContext,
-  twisty: HTMLElement,
+  requestCount: HTMLElement,
   parts: ItemParts,
 ): HTMLElement {
   const { doc } = context;
@@ -265,7 +398,7 @@ function renderConsumerCard(
   head.className = `${PREFIX}__card-head`;
   head.style.cssText = "display:flex;align-items:center;gap:8px;min-width:0";
   head.append(parts.describe, parts.notesToggle, parts.title);
-  card.append(twisty, head);
+  card.append(requestCount, head);
   const profile = renderConsumerProfileLines(
     doc,
     readConsumerProfile(consumer.description, { mentionNames: context.mentionNames }),
@@ -278,22 +411,20 @@ function renderConsumerCard(
 }
 
 /**
- * One consumer and, while open, every request it asked for.
- *
- * A consumer with no request is still drawn: it is the row a request has to be dragged onto to be
- * handed to them.
+ * One consumer and, while open, every request it asked for. Nothing here is draggable: the cards
+ * show who asked for what, in a fixed order; requests are ranked in the requests-only list.
  */
 export function renderConsumerRow(
   consumer: TrackedWorkItem,
   context: ConsumerRowContext,
 ): HTMLElement {
-  const requests = requestsOf(consumer, context.policy);
-  const expanded = requests.length > 0 && !context.collapsedIds.has(consumer.id);
+  const requests = requestsOf(consumer, context);
+  const expanded = requests.length > 0 && context.expandedIds.has(consumer.id);
   const parts = renderItemParts(consumer, context);
   const card = renderConsumerCard(
     consumer,
     context,
-    renderConsumerTwisty(consumer, context, requests.length > 0),
+    renderRequestCount(consumer, requests.length, context, expanded),
     parts,
   );
   const wrapper = renderTreeItemWrapper(context.doc, PREFIX, consumer, card);
@@ -302,25 +433,10 @@ export function renderConsumerRow(
   // next consumer's card.
   wrapper.style.marginBottom = "6px";
   wrapper.append(parts.description, parts.notes);
-  const siblingIds = requests.map((request) => request.id);
-  context.dragReorder?.register({
-    id: consumer.id,
-    depth: 0,
-    hasChildren: consumer.children.length > 0,
-    parentId: context.groupingId,
-    destinationType: null,
-    siblingIds: context.consumerSiblingIds,
-    // A request dropped onto the middle of a consumer — open, closed, or empty — joins the end of
-    // that consumer's requests.
-    childDestination: { siblingIds },
-    handle: parts.title,
-    row: card,
-    wrapper,
-  });
   if (expanded) {
     const children = renderTreeChildren(context.doc, PREFIX);
     for (const request of requests) {
-      children.append(renderRequestRow(request, consumer, siblingIds, context));
+      children.append(renderRequestRow(request, context));
     }
     wrapper.append(children);
   }

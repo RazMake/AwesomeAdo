@@ -43,6 +43,7 @@ so every header lines up and reads the same.
 | `onTitleContextMenu(event)`        | Opens the board-wide menu from the heading                         |
 | `expandLabel`, `collapseLabel`     | Tooltips for the `+` (`__expand-all`) and `−` (`__collapse-all`)   |
 | `onExpandAll()`, `onCollapseAll()` | Outline button handlers                                            |
+| `outlineControls`                  | Optional mode controls placed right after the `+` / `−` buttons    |
 | `filters`                          | Narrowing controls placed, in order, in `__filters` before Refresh |
 | `onRefresh()`                      | Handler for the `__refresh` button at the far right                |
 

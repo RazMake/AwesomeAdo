@@ -36,6 +36,11 @@ export interface ViewTitleBandOptions {
   collapseLabel: string;
   onExpandAll(): void;
   onCollapseAll(): void;
+  /**
+   * Controls that change how much of the board is laid out (a mode switch), placed right after the
+   * `+` and `−` buttons because they answer the same "how much am I looking at?" question.
+   */
+  outlineControls?: readonly HTMLElement[];
   /** The narrowing controls, left to right, immediately before Refresh at the far right. */
   filters: readonly HTMLElement[];
   onRefresh(): void;
@@ -187,7 +192,13 @@ export function renderViewTitleBand(
   }
   filters.append(refresh.element);
 
-  band.append(title, expand, collapse, filters);
+  band.append(title, expand, collapse);
+  for (const control of options.outlineControls ?? []) {
+    control.style.flex = "0 0 auto";
+    control.style.whiteSpace = "nowrap";
+    band.append(control);
+  }
+  band.append(filters);
   return { element: band, refresh };
 }
 
