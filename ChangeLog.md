@@ -5,6 +5,8 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ## Next Version
 
+## 0.18
+
 ### New Features
 
 - Every enhanced view's item right-click menu offers **Update parent**: enter (or paste — a copied
