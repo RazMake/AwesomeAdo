@@ -11,6 +11,7 @@ import { renderNewItemRow } from "../../common/view-common/control/NewItemRow/Ne
 const row = renderNewItemRow({
   doc,
   typeName: "Feature",
+  itemName: "deliverable", // the noun of the command that opened the row
   iconUrl: typeEntry?.icon ?? null,
   color: workItemTypeDisplayColor(typeEntry?.color),
   summary: 'Created as a Feature under "Payments", in area Fabrikam\\Core.',
@@ -21,7 +22,8 @@ const row = renderNewItemRow({
 
 | Option     | Meaning                                                                                  |
 | ---------- | ---------------------------------------------------------------------------------------- |
-| `typeName` | The type the item is created as. Names the button (`Add Feature`) and the placeholder.   |
+| `typeName` | The type the item is created as, carried by the row's type icon.                         |
+| `itemName` | What the opening command calls the item. Names the button (`Add deliverable`) and hint.  |
 | `iconUrl`  | The type's ADO icon, or `null` for the neutral glyph.                                    |
 | `color`    | The type's color, already resolved to a CSS color by the caller.                         |
 | `summary`  | The one line stating what is decided for the reader — parent, tags, area, iteration.     |

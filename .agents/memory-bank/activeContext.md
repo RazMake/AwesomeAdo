@@ -59,10 +59,13 @@ AwesomeADO is feature-complete for its current scope:
   page-lifetime memos and re-reads (Runtime Principles §3 in `systemPatterns.md`).
 - Editable assignee chips in every enhanced view expose a leading clear-assignment ×, hidden while
   unassigned. Tag editors always offer the neutral `??` pill to clear the current tag.
-- Project Tracking create commands are level-named (`newChildOfferFor`): the work level is the last
-  non-Primary-work planning type in config order (**New work identified**), its parent types offer
-  **New deliverable**, every type above offers **New project**; the title offers **Add deliverable**
-  (also the All Projects Catalog project-row label).
+- Create commands are level-named by one function (`newChildOfferFor`) in Project Tracking and the
+  All Projects Catalog: the root offers **Add deliverable** (Project `rootKind`) or **Add project**
+  (Objective); the work level — the last non-Primary-work planning type in config order — offers
+  **New work identified**; planning types between offer **Add deliverable**. The inline box they
+  open is named by the command's noun (`newChildItemName` → `NewItemRow.itemName`: "Add
+  deliverable" / "Add project" / "Add work"), never the ADO type; the type stays on the icon and
+  summary. The catalog title's **Add new project** row uses "project" the same way.
 - Project Tracking verifies accepted backlog reorders against the requested sibling interval and
   directly corrects mixed-type or unranked levels when ADO's team endpoint did not place the item.
 - Project Tracking accepts center-row drops into configured parents, even empty or collapsed ones,

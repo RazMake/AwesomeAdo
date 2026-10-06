@@ -6415,6 +6415,10 @@ function completionButton(root: HTMLElement, label: string): HTMLButtonElement {
 const newItemRow = (root: HTMLElement): HTMLElement | null =>
   root.querySelector<HTMLElement>(".awesomeado-new-item");
 
+/** The labels of the open box's buttons, in the order the reader sees them. */
+const buttonLabels = (row: HTMLElement): string[] =>
+  [...row.querySelectorAll("button")].map((button) => button.textContent?.trim() ?? "");
+
 /** Types `title` into the open box and submits it. */
 function submitNewItem(root: HTMLElement, title: string): void {
   const row = newItemRow(root);
@@ -6483,6 +6487,8 @@ describe("ProjectTrackingView — adding a milestone from the title", () => {
     expect(tree.firstElementChild?.classList.contains("awesomeado-new-item")).toBe(true);
     // The Epic's first configured child type is what a milestone is on this board.
     expect(newItemRow(root)?.textContent).toContain("Created as a Feature under Platform");
+    // Named as the command named it, never by the type the process will create it as.
+    expect(buttonLabels(newItemRow(root)!)).toEqual(["Add deliverable", "Cancel"]);
   });
 
   it("refuses to re-open a box that is already asking for a title", async () => {
@@ -6588,6 +6594,7 @@ describe("ProjectTrackingView — recording newly identified work", () => {
     const children = root.querySelector(".awesomeado-tracking__children")!;
     expect(children.firstElementChild?.classList.contains("awesomeado-new-item")).toBe(true);
     expect(newItemRow(root)?.textContent).toContain("Created as a Story under User Authentication");
+    expect(buttonLabels(newItemRow(root)!)).toEqual(["Add work", "Cancel"]);
   });
 
   it("creates the work under that item, inheriting its area and sprint", async () => {

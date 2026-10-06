@@ -71,11 +71,11 @@ afterEach(() => {
 });
 
 describe("renderNewProjectRow", () => {
-  it("asks for the title and the sprint, naming the type it will create", () => {
+  it("asks for the title and the sprint, naming a project as the title command does", () => {
     const row = mount();
 
-    expect(input(row).placeholder).toBe("New Epic title");
-    expect(button(row, "Add Epic")).toBeTruthy();
+    expect(input(row).placeholder).toBe("New project title");
+    expect(button(row, "Add project")).toBeTruthy();
     expect(sprintTrigger(row)).toBeTruthy();
   });
 
@@ -121,7 +121,7 @@ describe("renderNewProjectRow", () => {
 
     input(row).value = "Payments";
     input(row).dispatchEvent(new Event("input", { bubbles: true }));
-    button(row, "Add Epic").click();
+    button(row, "Add project").click();
 
     await vi.waitFor(() =>
       expect(onSubmit).toHaveBeenCalledWith("Payments", "Fabrikam\\Sprint 10"),

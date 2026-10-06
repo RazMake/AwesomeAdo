@@ -47,6 +47,8 @@ export function renderNewProjectRow(options: NewProjectRowOptions): HTMLElement 
   const row = renderNewItemRow({
     doc: options.doc,
     typeName: options.typeName,
+    // Named as the title command names it ("Add new project"), not by the configured top type.
+    itemName: "project",
     iconUrl: options.typeEntry?.icon ?? null,
     color: workItemTypeDisplayColor(options.typeEntry?.color),
     summary: creationSummary(options),

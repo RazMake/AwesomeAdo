@@ -397,3 +397,45 @@ describe("TeamConfigSynchronizer publish", () => {
     expect(harness.settingsStore.read).not.toHaveBeenCalled();
   });
 });
+
+describe("TeamConfigSynchronizer pull change detection", () => {
+  it("treats a snapshot that differs only in key order as unchanged", async () => {
+    const published: QueryBindings = {
+      zeta: { view: "sprint", properties: { weeks: "2", lane: "a" } },
+      alpha: { view: "consumers", properties: {} },
+    };
+    // Browser storage returns maps with sorted keys, unlike the published payload's order.
+    const stored: QueryBindings = {
+      alpha: { view: "consumers", properties: {} },
+      zeta: { view: "sprint", properties: { lane: "a", weeks: "2" } },
+    };
+    const harness = makeHarness(42, stored);
+    vi.mocked(harness.reader.read).mockResolvedValue({
+      ok: true,
+      text: exportConfig(DEFAULT_SETTINGS, published),
+    });
+
+    await expect(harness.synchronizer.pull()).resolves.toEqual({
+      status: "unchanged",
+      workItemId: 42,
+      bindingCount: 2,
+    });
+    expect(harness.settingsStore.applyLocally).not.toHaveBeenCalled();
+    expect(harness.bindingStore.replaceAll).not.toHaveBeenCalled();
+  });
+
+  it("still applies a snapshot whose list order changed", async () => {
+    const harness = makeHarness(42, bindings);
+    const reordered = {
+      ...DEFAULT_SETTINGS,
+      boardColumns: [...DEFAULT_SETTINGS.boardColumns].reverse(),
+    };
+    vi.mocked(harness.reader.read).mockResolvedValue({
+      ok: true,
+      text: exportConfig(reordered, bindings),
+    });
+
+    await expect(harness.synchronizer.pull()).resolves.toMatchObject({ status: "updated" });
+    expect(harness.settingsStore.applyLocally).toHaveBeenCalledOnce();
+  });
+});

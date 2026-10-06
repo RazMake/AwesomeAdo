@@ -7,8 +7,17 @@ const MAX_TITLE_LENGTH = 255;
 /** What the inline "add an item" row needs to describe the item it is about to create. */
 export interface NewItemRowOptions {
   doc: Document;
-  /** The work item type the new item is created as, named on the button and in the placeholder. */
+  /** The work item type the new item is created as, carried by the row's type icon. */
   typeName: string;
+  /**
+   * What the item being added is called by the command that opened this row ("deliverable",
+   * "project"), named on the button and in the placeholder.
+   *
+   * Separate from `typeName` because a command names the item by its role on the surface while the
+   * process names it by type: a button reading "Add User Story" under a command reading "Add
+   * deliverable" makes the reader wonder whether they are about to create the thing they asked for.
+   */
+  itemName: string;
   /** That type's ADO icon, or null for the neutral glyph. */
   iconUrl: string | null;
   /** The type's color, already resolved to a CSS color by the caller; null leaves it neutral. */
@@ -69,10 +78,10 @@ export function renderNewItemRow(options: NewItemRowOptions): HTMLElement {
 
   const editor = renderTextEditor(doc, {
     initialText: "",
-    submitLabel: `Add ${options.typeName}`,
+    submitLabel: `Add ${options.itemName}`,
     singleLine: true,
     maxLength: MAX_TITLE_LENGTH,
-    placeholder: `New ${options.typeName} title`,
+    placeholder: `New ${options.itemName} title`,
     onSubmit: options.onSubmit,
     onCancel: options.onCancel,
   });

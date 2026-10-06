@@ -6,6 +6,7 @@ import {
   buildNewChildCommand,
   childTypeOf,
   newChildItem,
+  newChildItemName,
   newChildOfferFor,
   newChildSummary,
   newChildTypeOf,
@@ -134,6 +135,17 @@ describe("newChildOfferFor", () => {
   it("creates the promised type, else the parent's default child", () => {
     expect(newChildTypeOf(itemOf({ type: "Portfolio" }), LEVELED)).toBe("Initiative");
     expect(newChildTypeOf(itemOf({ type: "Story" }), LEVELED)).toBe("Task");
+  });
+
+  it("names the new item as its command does, falling back to the type with no command", () => {
+    const nameOn = (type: string, types = LEVELED) => newChildItemName(itemOf({ type }), types);
+
+    expect(nameOn("Portfolio", withRootKind("project"))).toBe("deliverable");
+    expect(nameOn("Portfolio", withRootKind("objective"))).toBe("project");
+    expect(nameOn("Epic")).toBe("deliverable");
+    expect(nameOn("Feature")).toBe("work");
+    expect(nameOn("Story")).toBe("Task");
+    expect(nameOn("Task")).toBeNull();
   });
 });
 describe("buildNewChildCommand", () => {

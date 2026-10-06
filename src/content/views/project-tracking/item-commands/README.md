@@ -83,7 +83,9 @@ board-specific destinations:
   **New work identified** (creating its first Primary-work child, else its first child); every
   planning type between the two offers **Add deliverable** (creating the child on the way down);
   Primary work and the types below it offer nothing. `newChildTypeOf` is the type the inline box
-  creates — the offer's type, else `childTypeOf`. The file also exports `childTypeOf`,
+  creates — the offer's type, else `childTypeOf` — and `newChildItemName` is what that box calls it
+  on its button and placeholder: the command's noun (`deliverable`, `project`, `work`), else the
+  child type. The file also exports `childTypeOf`,
   `primaryChildTypeOf` (the first child
   type under a row that IS the team's delivery, so a command promising work cannot create planning),
   `newChildSummary` (the line stating

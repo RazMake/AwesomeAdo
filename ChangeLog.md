@@ -42,11 +42,19 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 - The All Projects Catalog now offers the same add commands as Project Tracking on every row — for
   example **Add deliverable** on a Feature beneath an Epic — instead of only on the top-level rows.
+- The box an add command opens now names the new item the same way the command does — **Add
+  deliverable**, **Add project**, or **Add work** for **New work identified** — instead of by its
+  work item type (such as "Add User Story"), in the All Projects Catalog and Project Tracking. The
+  box's description still says which type the item is created as, and a nested row's box now
+  creates the same type the command promises.
 - Enhanced views always show a query's current results. After a query was edited outside the
   extension (for example to change which work item types it returns), some browsers kept showing the
   old list in the enhanced view while Azure DevOps's own view was already up to date. Discussions,
   re-parenting, query cleanup, people and @-mention search, backlog order, and publishing the team
   configuration likewise always read the latest version from Azure DevOps.
+- Loading or refreshing a query no longer re-saves an unchanged team configuration every time.
+  Those repeated saves could exhaust the browser's sync write limit, after which picking up team
+  configuration changes failed with **Could not pull team configuration**.
 
 ## 0.17
 

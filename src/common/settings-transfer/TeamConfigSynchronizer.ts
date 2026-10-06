@@ -148,7 +148,7 @@ export class TeamConfigSynchronizer {
       if ((await this.sourceStore.read()) !== workItemId) {
         return this.performPull();
       }
-      if (nextText === exportCompactConfig(currentSettings, currentBindings)) {
+      if (sameConfiguration(nextText, exportCompactConfig(currentSettings, currentBindings))) {
         return { status: "unchanged", workItemId, bindingCount };
       }
       await Promise.all([
@@ -167,6 +167,30 @@ export class TeamConfigSynchronizer {
       return { status: "failed", workItemId, error: describeError(error) };
     }
   }
+}
+
+/**
+ * Browser storage hands maps back with their keys sorted, while the team payload keeps the order it
+ * was published in, so a plain text comparison saw a change on every pull and rewrote the synced
+ * stores each time — enough page loads exhaust the browser's sync write quota.
+ */
+function sameConfiguration(left: string, right: string): boolean {
+  return canonicalJson(JSON.parse(left)) === canonicalJson(JSON.parse(right));
+}
+
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalJson).join(",")}]`;
+  }
+  if (typeof value === "object" && value !== null) {
+    const entries = Object.keys(value)
+      .sort()
+      .map(
+        (key) => `${JSON.stringify(key)}:${canonicalJson((value as Record<string, unknown>)[key])}`,
+      );
+    return `{${entries.join(",")}}`;
+  }
+  return JSON.stringify(value);
 }
 
 function describeError(error: unknown): string {

@@ -47,7 +47,11 @@ import { createBoardLoader } from "../board-lifecycle/boardLoader";
 import { createBoardWriteQueue } from "../board-lifecycle/boardWriteQueue";
 import { createBoardWriteStatus } from "../board-lifecycle/boardWriteStatus";
 import { discardBoardCaches } from "../board-lifecycle/discardBoardCaches";
-import { childTypeOf, newChildSummary } from "../project-tracking/item-commands/NewChildCommands";
+import {
+  newChildItemName,
+  newChildSummary,
+  newChildTypeOf,
+} from "../project-tracking/item-commands/NewChildCommands";
 import { panelFor } from "../project-tracking/item-commands/itemCommandCore";
 import {
   describeTagCondition,
@@ -711,12 +715,13 @@ function newChildRowFor(
   parent: TrackedWorkItem,
 ): HTMLElement | null {
   const { context, session } = board;
-  const type = childTypeOf(parent, loaded.types);
+  const type = newChildTypeOf(parent, loaded.types);
   if (type === null) return null;
   const entry = loaded.types.get(type);
   return renderNewItemRow({
     doc: context.doc,
     typeName: type,
+    itemName: newChildItemName(parent, loaded.types) ?? type,
     iconUrl: entry?.icon ?? null,
     color: workItemTypeDisplayColor(entry?.color),
     summary: newChildSummary(parent, type),

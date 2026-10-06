@@ -95,6 +95,26 @@ function offerOf(label: NewChildLabel, childType: string | undefined): NewChildO
   return childType === undefined ? null : { label, childType };
 }
 
+/** The item each command adds, as the box it opens names it on its button and placeholder. */
+const ITEM_NAME_OF: Record<NewChildLabel, string> = {
+  "Add deliverable": "deliverable",
+  "Add project": "project",
+  "New work identified": "work",
+};
+
+/**
+ * What the box adding a child under `parent` calls the new item: the noun of the command that opened
+ * it, so "Add deliverable" opens a box whose button also adds a deliverable. Falls back to the child
+ * type only on a level that offers no named command, where the type is the only name there is.
+ */
+export function newChildItemName(
+  parent: TrackedWorkItem,
+  types: ReadonlyMap<string, TypeCatalogEntry>,
+): string | null {
+  const offer = newChildOfferFor(parent, types);
+  return offer === null ? childTypeOf(parent, types) : ITEM_NAME_OF[offer.label];
+}
+
 /**
  * The type a child added under `parent` is created as on a board offering the leveled commands:
  * the type its row command promises, else the parent's default child type.

@@ -56,6 +56,23 @@ here so every agent, teammate, and clone sees them.
   browser HTTP cache itself is not purged (that would need the `browsingData` permission); no-store
   on every read makes it unnecessary.
 
+## Team-config pull rewrote synced storage on every load (sync write quota)
+
+- SYMPTOM: `Could not pull team configuration` with `This request exceeds the
+MAX_WRITE_OPERATIONS_PER_MINUTE quota.` after a few quick reloads / Ctrl+Refreshes; every healthy
+  pull also logged `Settings saved: …` + `Replaced all query bindings` + `Pulled team configuration`
+  although nothing had changed.
+- ROOT CAUSE: `TeamConfigSynchronizer` compared `exportCompactConfig` TEXT. `chrome.storage` returns
+  objects with keys SORTED (Chromium stores them as sorted dictionaries) while the published payload
+  keeps its own key order, and `normalizeBindings` preserves input order — so the strings never
+  matched and each pull rewrote both synced stores (chrome.storage.sync: 120 writes/min, 1800/hour).
+  Fakes in tests preserve insertion order, which is why no test caught it.
+- FIX / RULE: compare configurations by canonical (recursively key-sorted) JSON
+  (`sameConfiguration`); array order still counts. Never decide "changed" by comparing serialized
+  text of data that has round-tripped through `chrome.storage`.
+- Also seen in the same session: after a rebuild, an unreloaded extension (stale service worker +
+  fresh content scripts) produced transient, unreproducible view failures; reload the extension.
+
 ## Module-level state is NOT shared with the deferred view bundles
 
 - SYMPTOM: with a work item collection active, Ctrl+click in Project Tracking (and the other

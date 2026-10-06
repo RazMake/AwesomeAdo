@@ -147,6 +147,7 @@ import { buildMarkerCommands } from "./item-commands/MarkerCommands";
 import {
   buildNewChildCommand,
   newChildItem,
+  newChildItemName,
   newChildOfferFor,
   newChildSummary,
   newChildTypeOf,
@@ -1048,6 +1049,7 @@ function newChildRow(parent: TrackedWorkItem, ctx: NewChildContext): HTMLElement
   return renderNewItemRow({
     doc: ctx.doc,
     typeName: type,
+    itemName: newChildItemName(parent, ctx.typeMap) ?? type,
     iconUrl: entry?.icon ?? null,
     color: workItemTypeDisplayColor(entry?.color),
     summary: newChildSummary(parent, type),

@@ -6,6 +6,7 @@ function mount(overrides: Partial<NewItemRowOptions> = {}): HTMLElement {
   const row = renderNewItemRow({
     doc: document,
     typeName: "Feature",
+    itemName: "deliverable",
     iconUrl: "feature.svg",
     color: "#ff6b6b",
     summary: 'Created as a Feature under "Payments".',
@@ -36,11 +37,12 @@ afterEach(() => {
 });
 
 describe("renderNewItemRow", () => {
-  it("asks only for the title, naming the type it will create", () => {
+  it("asks only for the title, naming the item as the command that opened it does", () => {
     const row = mount();
 
-    expect(input(row).placeholder).toBe("New Feature title");
-    expect(button(row, "Add Feature")).toBeTruthy();
+    expect(input(row).placeholder).toBe("New deliverable title");
+    expect(button(row, "Add deliverable")).toBeTruthy();
+    expect(row.textContent).not.toContain("Add Feature");
   });
 
   it("states the caller's sentence about everything it is not asking for", () => {
@@ -61,7 +63,7 @@ describe("renderNewItemRow", () => {
 
     input(row).value = "Phase 1";
     input(row).dispatchEvent(new Event("input", { bubbles: true }));
-    button(row, "Add Feature").click();
+    button(row, "Add deliverable").click();
 
     await vi.waitFor(() => expect(onSubmit).toHaveBeenCalledWith("Phase 1"));
   });

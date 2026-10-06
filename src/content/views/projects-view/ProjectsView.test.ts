@@ -1202,6 +1202,8 @@ describe("projectsView - adding a milestone", () => {
 
     // The Epic's first configured child type is what a milestone is on this catalog.
     expect(milestoneBox(root)?.textContent).toContain("Created as a Story under Reporting");
+    // Its button repeats the command's name rather than the type it will be created as.
+    expect(milestoneBox(root)?.querySelector("button")?.textContent).toBe("Add deliverable");
     // The project was closed: opening it is what lets the reader see the box they asked for.
     expect(titles(root)).toContain("Weekly export");
   });
