@@ -163,13 +163,42 @@ describe("ItemCollectorWidget visibility", () => {
 });
 
 describe("ItemCollectorWidget Ctrl+click", () => {
-  it("toggles the clicked work item and spends the click", () => {
+  it("adds the clicked work item once, spends the click, and bursts only on an addition", () => {
+    const animate = vi.fn(() => ({ onfinish: null, oncancel: null }));
+    HTMLElement.prototype.animate = animate as unknown as HTMLElement["animate"];
     collection.start();
     const first = ctrlClick(row);
     expect(first.defaultPrevented).toBe(true);
     expect(count()).toBe("1");
+    const burst = document.querySelector<HTMLElement>(".awesomeado-item-collector__added-burst")!;
+    expect(burst.querySelector("img")!.getAttribute("src")).toBe(FEATURE_TYPE.icon);
+    expect(burst.getAttribute("aria-hidden")).toBe("true");
+    expect(parseInt(burst.style.left, 10)).toBeGreaterThan(0);
+    const animation = animate.mock.results[0]!.value as { onfinish: () => void };
+    animation.onfinish();
+    expect(burst.isConnected).toBe(false);
+
+    const second = ctrlClick(row);
+    expect(second.defaultPrevented).toBe(true);
+    expect(count()).toBe("1");
+    expect(animate).toHaveBeenCalledTimes(1);
+    delete (HTMLElement.prototype as Partial<HTMLElement>).animate;
+  });
+
+  it("skips the burst without animation support and only fades it under reduced motion", () => {
+    collection.start();
     ctrlClick(row);
-    expect(count()).toBe("0");
+    expect(document.querySelector(".awesomeado-item-collector__added-burst")).toBeNull();
+    collection.remove(7);
+    const animate = vi.fn(() => ({ onfinish: null, oncancel: null }));
+    HTMLElement.prototype.animate = animate as unknown as HTMLElement["animate"];
+    window.matchMedia = (() => ({ matches: true })) as unknown as typeof window.matchMedia;
+    ctrlClick(row);
+    expect(count()).toBe("1");
+    const frames = (animate.mock.calls[0] as unknown as [Keyframe[]])[0];
+    expect(frames.every((frame) => !String(frame.transform).includes("rotate"))).toBe(true);
+    delete (window as Partial<Window>).matchMedia;
+    delete (HTMLElement.prototype as Partial<HTMLElement>).animate;
   });
 
   it("leaves plain clicks, other buttons, and clicks on itself alone", () => {
@@ -319,6 +348,60 @@ describe("ItemCollectorWidget dialog", () => {
     expect(dialog()).not.toBeNull();
     dialog()!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     expect(dialog()).toBeNull();
+
+    button.click();
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    expect(dialog()).toBeNull();
+    expect(collection.isActive).toBe(true);
+  });
+
+  it("copies ids and urls from its buttons, disabled while empty", async () => {
+    collection.start();
+    root()!.querySelector<HTMLButtonElement>(".awesomeado-item-collector__button")!.click();
+    const copyIds = dialog()!.querySelector<HTMLButtonElement>(
+      ".awesomeado-item-collector__dialog-copy-ids",
+    )!;
+    const copyUrls = dialog()!.querySelector<HTMLButtonElement>(
+      ".awesomeado-item-collector__dialog-copy-urls",
+    )!;
+    expect(copyIds.disabled).toBe(true);
+    expect(copyUrls.disabled).toBe(true);
+
+    ctrlClick(row);
+    expect(copyIds.disabled).toBe(false);
+    copyIds.click();
+    await settle();
+    expect(writeText).toHaveBeenCalledWith("7");
+    vi.stubGlobal("ClipboardItem", undefined);
+    copyUrls.click();
+    await settle();
+    expect(writeText).toHaveBeenCalledWith(`#7 Feature Ship it - ${URL_7}`);
+  });
+});
+
+describe("ItemCollectorWidget Escape", () => {
+  it("ends the collection on Escape when no list is open, unless already handled", () => {
+    collection.start();
+    const handled = new KeyboardEvent("keydown", {
+      key: "Escape",
+      bubbles: true,
+      cancelable: true,
+    });
+    handled.preventDefault();
+    document.body.dispatchEvent(handled);
+    expect(collection.isActive).toBe(true);
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    expect(collection.isActive).toBe(false);
+    expect(root()).toBeNull();
+  });
+});
+
+describe("ItemCollectorWidget start placement", () => {
+  it("appears beside the last pointer press when a collection starts", () => {
+    document.body.dispatchEvent(pointerEvent("pointerdown", 100, 120));
+    collection.start();
+    expect(root()!.style.left).toBe("116px");
+    expect(root()!.style.top).toBe("136px");
   });
 });
 

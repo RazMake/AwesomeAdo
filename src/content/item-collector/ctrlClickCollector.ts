@@ -6,8 +6,25 @@ import {
 /** Detaches the Ctrl+click listener. */
 export type DisposeCtrlClickCollector = () => void;
 
+/** Reports a Ctrl+click that added an item, so the widget can confirm it at the pointer. */
+export interface CtrlClickAddedHook {
+  countItems: () => number;
+  celebrate: (x: number, y: number) => void;
+}
+
+// A grown count is the only proof the probe added something rather than hit a collected item.
+function celebrateIfAdded(
+  hook: CtrlClickAddedHook | undefined,
+  before: number | undefined,
+  event: MouseEvent,
+): void {
+  if (hook && before !== undefined && hook.countItems() > before) {
+    hook.celebrate(event.clientX, event.clientY);
+  }
+}
+
 /**
- * Turns a Ctrl+click (Cmd+click on macOS) on a work item into "toggle it in the collection".
+ * Turns a Ctrl+click (Cmd+click on macOS) on a work item into "add it to the collection".
  *
  * Every view already resolves which item lies under the pointer in its right-click wiring, so the
  * click is replayed as a marked `contextmenu` on the same element instead of teaching each view a
@@ -19,6 +36,7 @@ export type DisposeCtrlClickCollector = () => void;
 export function attachCtrlClickCollector(
   doc: Document,
   ignoreWithin: () => Element | null,
+  onAdded?: CtrlClickAddedHook,
 ): DisposeCtrlClickCollector {
   const onClick = (event: MouseEvent): void => {
     if (event.button !== 0 || !(event.ctrlKey || event.metaKey)) return;
@@ -27,6 +45,7 @@ export function attachCtrlClickCollector(
     if (view === null || !(target instanceof view.Element)) return;
     // The collector's own button and dialog are never collected.
     if (ignoreWithin()?.contains(target) === true) return;
+    const before = onAdded?.countItems();
     const probe = new view.MouseEvent("contextmenu", {
       bubbles: true,
       cancelable: true,
@@ -39,6 +58,7 @@ export function attachCtrlClickCollector(
     if (wasCollectProbeHandled(probe)) {
       event.preventDefault();
       event.stopPropagation();
+      celebrateIfAdded(onAdded, before, event);
     }
   };
   doc.addEventListener("click", onClick, true);

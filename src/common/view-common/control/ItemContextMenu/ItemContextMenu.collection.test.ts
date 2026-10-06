@@ -77,6 +77,20 @@ describe("createItemContextMenu collection command", () => {
     expect(collection.isActive).toBe(false);
   });
 
+  it("offers Collect current item above End collection while collecting", () => {
+    collection.start();
+    menu.openAt(rightClick(), ITEM);
+    expect(labels().slice(-2)).toEqual(["Collect current item", "End collection"]);
+    clickCommand("Collect current item");
+    expect(collection.items().map((item) => item.id)).toEqual([42]);
+
+    menu.openAt(rightClick(), ITEM);
+    expect(labels().slice(-2)).toEqual(["Remove current item", "End collection"]);
+    clickCommand("Remove current item");
+    expect(collection.items()).toEqual([]);
+    expect(collection.isActive).toBe(true);
+  });
+
   it("omits the command on a target that is not a work item", () => {
     menu.openAt(rightClick(), { id: 0, url: URL, standardCommands: ["copy-url"] });
     expect(labels()).toEqual(["Copy ADO Url"]);
@@ -90,7 +104,7 @@ describe("createItemContextMenu collection command", () => {
 });
 
 describe("createItemContextMenu collection probes", () => {
-  it("toggles the item on a Ctrl+click probe instead of opening", () => {
+  it("adds the item on a Ctrl+click probe instead of opening, never removing it", () => {
     collection.start();
     const event = probe();
     menu.openAt(event, ITEM);
@@ -98,8 +112,10 @@ describe("createItemContextMenu collection probes", () => {
     expect(wasCollectProbeHandled(event)).toBe(true);
     expect(collection.items()).toEqual([{ id: 42, title: "Ship it", type: "Feature", url: URL }]);
 
-    menu.openAt(probe(), ITEM);
-    expect(collection.items()).toEqual([]);
+    const again = probe();
+    menu.openAt(again, ITEM);
+    expect(wasCollectProbeHandled(again)).toBe(true);
+    expect(collection.items()).toHaveLength(1);
   });
 
   it("swallows a probe without collecting while no collection runs", () => {

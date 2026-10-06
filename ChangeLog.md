@@ -15,13 +15,17 @@ builds use the repository's `Major.Minor.Build` release versioning.
   assignee chips offer a **??** choice that clears the current tag. Assigned names now use brighter
   primary text in every view, and the name and its × sit vertically centered in the chip.
 - Collect work items across every enhanced view: right-click any item and pick **Start collecting
-  work items** to collect it, then Ctrl+click more items to add or remove them — even after switching
-  to another query. A collection keeps running across views, tabs, page reloads, and your other
+  work items** to collect it, then Ctrl+click more items to add them (the item's type icon pops up beside the pointer to confirm each
+  addition; already-collected items stay put) — even after switching
+  to another query. While collecting, an item's right-click menu offers **Collect current item** or,
+  for an item already collected, **Remove current item**. A collection
+  keeps running across views, tabs, page reloads, and your other
   signed-in browsers, so you can start it in one place and finish it in another; ending it anywhere
-  ends it everywhere. A floating counter shows how many are collected: left-click it to view the
-  collected items (open any item by its `#id` or remove it with its red ×), right-click it to copy
-  IDs, copy ADO links, or end collection, and drag it anywhere convenient. Its position is remembered
-  across sessions and synced across browsers.
+  ends it everywhere. A floating counter appears right beside where you started collecting and shows
+  how many are collected: left-click it to view the collected items (open any item by its `#id`,
+  remove it with its red ×, use **Copy IDs** / **Copy URLs**, and press Escape to close), right-click
+  it to copy IDs, copy ADO links, or end collection (Escape also ends it when the list is closed), and drag it anywhere convenient. Its position is
+  remembered across sessions and synced across browsers.
 - Consumers View now opens on one list of every shown consumer's feature requests, each tagged with
   its consumer and showing its **Needed by** date (your configured ETA field), Status, description,
   Discussion, and right-click menu. Drag requests to rank them (saved to the backlog order like

@@ -21,7 +21,8 @@ widget.applyTheme(settings.theme);
   **End collection**. Copying is disabled while nothing is collected.
 - Dragging the counter moves it within the viewport. Its relative position is browser-synced, so it
   remains useful on different display sizes and follows the user across devices.
-- While active, Ctrl+click (Cmd+click) on any work item toggles it in the collection.
+- While active, Ctrl+click (Cmd+click) on any work item adds it to the collection (never removes it)
+  and pops the added item's type icon beside the pointer for each new addition (`showAddedBurst`).
 - `applyTheme(theme)` pins the AwesomeADO palette, since the widget lives outside the view host.
 - `dispose()` stops following the collection and removes everything.
 

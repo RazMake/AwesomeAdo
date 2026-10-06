@@ -43,8 +43,10 @@ row.addEventListener("contextmenu", (event) => {
 - **`logger: ILogger`** — Records a clipboard write that never landed.
 - **`collection?: IItemCollection`** — The shared work item collection
   (`EnhancedViewServices.itemCollection`). When given, work item targets get **Start collecting
-  work items** (starts a collection holding that item) / **End collection** after the standard commands, and a Ctrl+click collection probe
-  (see `common/item-collection`) toggles the item instead of opening the menu.
+  work items** (starts a collection holding that item) / **End collection** after the standard
+  commands; while collecting, **Collect current item** / **Remove current item** sits above End
+  collection. A Ctrl+click collection probe (see `common/item-collection`) adds the item (never
+  removes it) instead of opening the menu.
 
 ### `ItemContextMenu`
 

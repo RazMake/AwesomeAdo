@@ -108,15 +108,12 @@ export interface ItemContextMenuOptions {
   logger: ILogger;
   /**
    * The reader's work item collection. When given, work item targets offer Start collecting / End
-   * collection beside the standard commands, and a Ctrl+click probe toggles the item in it.
+   * collection beside the standard commands, and a Ctrl+click probe adds the item to it.
    */
   collection?: IItemCollection;
 }
 
-/** Answers a Ctrl+click probe: toggles the work item in the collection instead of opening the menu.
- * A target that is not a work item (a view title) still swallows the probe — a probe never opens a
- * menu — but leaves the click unspent so it keeps its ordinary meaning.
- */
+/** What the collection records for a work item target. */
 function collectedItemFor(
   target: ItemContextMenuTarget,
   workItem: NonNullable<ItemContextMenuTarget["workItem"]>,
@@ -124,7 +121,7 @@ function collectedItemFor(
   return { id: target.id, title: workItem.title, type: workItem.type, url: target.url };
 }
 
-/** Answers a Ctrl+click probe: toggles the work item in the collection instead of opening the menu.
+/** Answers a Ctrl+click probe: adds the work item to the collection instead of opening the menu.
  * A target that is not a work item (a view title) still swallows the probe — a probe never opens a
  * menu — but leaves the click unspent so it keeps its ordinary meaning.
  */
@@ -135,7 +132,8 @@ function collectFromProbe(
 ): void {
   if (collection?.isActive !== true || target.workItem === undefined) return;
   markCollectProbeHandled(event);
-  collection.toggle(collectedItemFor(target, target.workItem));
+  // Add-only: a stray Ctrl+click on an already-collected item must not silently drop it.
+  if (!collection.has(target.id)) collection.toggle(collectedItemFor(target, target.workItem));
 }
 
 /** A shared, single-instance context menu that any number of rows can open. */
@@ -154,6 +152,8 @@ const COPY_URL_LABEL = "Copy ADO Url";
 const OPEN_LABEL = "Open in ADO";
 const START_COLLECTING_LABEL = "Start collecting work items";
 const END_COLLECTION_LABEL = "End collection";
+const COLLECT_CURRENT_LABEL = "Collect current item";
+const REMOVE_CURRENT_LABEL = "Remove current item";
 
 /** What an inert URL command tells the reader when it is hovered. */
 const NO_URL_REASON = "This page's address does not resolve to an Azure DevOps project.";
@@ -338,15 +338,30 @@ function renderStandardCommands(
   });
   if (collection !== undefined && target.workItem !== undefined) {
     const item = collectedItemFor(target, target.workItem);
+    if (collection.isActive) rows.push(renderCollectCurrentCommand(doc, collection, item, close));
     rows.push(renderCollectionCommand(doc, collection, item, close));
   }
   return rows;
 }
 
-/**
- * Starts a collection, or — while one runs — ends it. Items are added by Ctrl+click, not from here,
- * so the one menu slot only ever controls the collection's lifetime.
- */
+/** Adds the right-clicked item to the running collection, or removes it when already collected. */
+function renderCollectCurrentCommand(
+  doc: Document,
+  collection: IItemCollection,
+  clickedItem: CollectedItem,
+  close: () => void,
+): HTMLButtonElement {
+  const collected = collection.has(clickedItem.id);
+  const row = renderCommandRow(doc, collected ? REMOVE_CURRENT_LABEL : COLLECT_CURRENT_LABEL);
+  row.addEventListener("click", () => {
+    if (collected) collection.remove(clickedItem.id);
+    else collection.toggle(clickedItem);
+    close();
+  });
+  return row;
+}
+
+/** Starts a collection, or — while one runs — ends it. */
 function renderCollectionCommand(
   doc: Document,
   collection: IItemCollection,

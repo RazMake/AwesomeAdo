@@ -9,6 +9,8 @@ export interface CollectedItemsDialogOptions {
   /** Resolves a work item type's name to its catalog entry, for the type icon. */
   resolveType: (type: string) => TypeCatalogEntry | undefined;
   onClose: () => void;
+  onCopyIds: () => void;
+  onCopyUrls: () => void;
 }
 
 /** The open dialog plus the hook that repaints its list after the collection changes. */
@@ -56,11 +58,20 @@ export function renderCollectedItemsDialog(
   const list = doc.createElement("div");
   list.className = `${PREFIX}-list`;
   list.style.cssText = "overflow:auto;padding:4px 12px 12px";
-  dialog.append(renderHeader(doc, heading, options.onClose), list);
+  const copyIds = renderActionButton(doc, "Copy IDs", "copy-ids", options.onCopyIds);
+  const copyUrls = renderActionButton(doc, "Copy URLs", "copy-urls", options.onCopyUrls);
+  const actions = doc.createElement("div");
+  actions.className = `${PREFIX}-actions`;
+  actions.style.cssText =
+    "display:flex;gap:8px;padding:8px 12px;border-top:1px solid var(--control-border-strong)";
+  actions.append(copyIds, copyUrls);
+  dialog.append(renderHeader(doc, heading, options.onClose), list, actions);
 
   const refresh = (): void => {
     const items = options.collection.items();
     heading.textContent = `Collected work items (${items.length})`;
+    copyIds.disabled = items.length === 0;
+    copyUrls.disabled = items.length === 0;
     list.replaceChildren(
       ...(items.length === 0
         ? [renderEmpty(doc)]
@@ -101,6 +112,29 @@ function renderHeader(doc: Document, heading: HTMLElement, onClose: () => void):
   close.addEventListener("click", onClose);
   header.append(heading, close);
   return header;
+}
+
+function renderActionButton(
+  doc: Document,
+  label: string,
+  name: string,
+  onClick: () => void,
+): HTMLButtonElement {
+  const button = doc.createElement("button");
+  button.type = "button";
+  button.className = `${PREFIX}-${name}`;
+  button.textContent = label;
+  button.style.cssText = [
+    "padding:4px 10px",
+    "border:1px solid var(--control-border-strong)",
+    "border-radius:6px",
+    "background:transparent",
+    "color:var(--text-primary-color)",
+    "font:inherit",
+    "cursor:pointer",
+  ].join(";");
+  button.addEventListener("click", onClick);
+  return button;
 }
 
 function renderEmpty(doc: Document): HTMLElement {

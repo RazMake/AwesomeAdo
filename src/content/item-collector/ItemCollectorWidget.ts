@@ -1,4 +1,5 @@
 import type { TypeCatalogEntry } from "../../common/ado/TrackedWorkItem";
+import { workItemTypeDisplayColor } from "../../common/ado/workItemTypes";
 import type { IItemCollection } from "../../common/item-collection/ItemCollection";
 import {
   formatCollectedIds,
@@ -11,6 +12,7 @@ import type {
   RelativeViewportPosition,
   Theme,
 } from "../../common/settings/ExtensionSettings";
+import { renderItemTypeIcon } from "../../common/view-common/control/ItemTypeIcon/ItemTypeIcon";
 import {
   createPopupHost,
   type PopupHost,
@@ -21,6 +23,7 @@ import { resolveTheme } from "../../common/view-common/themes/themes";
 import { detectAdoTheme } from "../ado-probe/AdoThemeProbe";
 
 import { renderCollectedItemsDialog, type CollectedItemsDialog } from "./CollectedItemsDialog";
+import { showAddedBurst } from "./addedBurst";
 import { attachCtrlClickCollector, type DisposeCtrlClickCollector } from "./ctrlClickCollector";
 
 const ROOT_ID = "awesomeado-item-collector";
@@ -28,6 +31,7 @@ const PREFIX = "awesomeado-item-collector";
 // Above the enhanced-view overlay (1000) but one below the item context menu, which may open over it.
 const COLLECTOR_Z_INDEX = "2147483646";
 const DRAG_THRESHOLD = 4;
+const NEAR_POINTER_OFFSET_PX = 16;
 
 /** One command in the collector's own menu. */
 interface CollectorCommand {
@@ -80,8 +84,16 @@ export class ItemCollectorWidget {
     private readonly persistPosition: (position: RelativeViewportPosition) => Promise<void>,
   ) {
     this.unsubscribe = collection.subscribe(() => this.sync());
+    // Capture phase: menus stop propagation, and the point must be known before the collection starts.
+    doc.addEventListener("pointerdown", this.rememberPointer, true);
     this.sync();
   }
+
+  private lastPointer: { x: number; y: number } | undefined;
+
+  private readonly rememberPointer = (event: PointerEvent): void => {
+    this.lastPointer = { x: event.clientX, y: event.clientY };
+  };
 
   /** Apply the selected AwesomeADO theme; the widget lives outside the themed view host. */
   applyTheme(theme: Theme): void {
@@ -98,6 +110,7 @@ export class ItemCollectorWidget {
   /** Stop following the collection and release everything (page teardown). */
   dispose(): void {
     this.unsubscribe();
+    this.doc.removeEventListener("pointerdown", this.rememberPointer, true);
     this.release();
   }
 
@@ -147,11 +160,31 @@ export class ItemCollectorWidget {
     button.addEventListener("pointerdown", this.handlePointerDown);
     this.attach();
     this.placeAtSavedPosition();
+    this.placeNearLastPointer();
     this.doc.defaultView?.addEventListener("resize", this.placeAtSavedPosition);
     // ADO re-renders its page and drops foreign nodes; put the counter back whenever that happens.
     this.observer = new MutationObserver(() => this.attach());
     this.observer.observe(this.doc.documentElement, { childList: true, subtree: true });
-    this.detachCtrlClick = attachCtrlClickCollector(this.doc, () => this.root ?? null);
+    this.detachCtrlClick = attachCtrlClickCollector(this.doc, () => this.root ?? null, {
+      countItems: () => this.collection.items().length,
+      celebrate: (x, y) => this.celebrateAddition(x, y),
+    });
+    this.doc.addEventListener("keydown", this.handleEscape);
+  }
+
+  /** The collection keeps insertion order, so the item a Ctrl+click just added is the last one. */
+  private celebrateAddition(x: number, y: number): void {
+    const added = this.collection.items().at(-1);
+    if (!added) return;
+    const entry = this.resolveType(added.type);
+    const color = workItemTypeDisplayColor(entry?.color);
+    const icon = renderItemTypeIcon(this.doc, {
+      iconUrl: entry?.icon ?? null,
+      color,
+      typeName: added.type,
+      title: "",
+    }).element;
+    showAddedBurst(this.doc, x, y, { icon, color });
   }
 
   private attach(): void {
@@ -162,6 +195,7 @@ export class ItemCollectorWidget {
 
   private release(): void {
     this.stopDrag();
+    this.doc.removeEventListener("keydown", this.handleEscape);
     this.doc.defaultView?.removeEventListener("resize", this.placeAtSavedPosition);
     this.detachCtrlClick?.();
     this.detachCtrlClick = undefined;
@@ -169,7 +203,7 @@ export class ItemCollectorWidget {
     this.observer = undefined;
     this.menu?.close();
     this.menu = undefined;
-    this.dialog = undefined;
+    this.closeDialog();
     this.root?.remove();
     this.root = undefined;
     this.button = undefined;
@@ -235,16 +269,24 @@ export class ItemCollectorWidget {
       {
         label: "Copy all Ids to clipboard",
         disabledReason: empty,
-        run: () => void this.copy("ids", formatCollectedIds(items)),
+        run: () => void this.copyIds(),
       },
       {
         label: "Copy all ADO links to clipboard",
         disabledReason: empty,
-        run: () =>
-          void this.copy("links", formatCollectedLinksText(items), formatCollectedLinksHtml(items)),
+        run: () => void this.copyUrls(),
       },
       { label: "End collection", disabledReason: null, run: () => this.collection.end() },
     ];
+  }
+
+  private copyIds(): Promise<void> {
+    return this.copy("ids", formatCollectedIds(this.collection.items()));
+  }
+
+  private copyUrls(): Promise<void> {
+    const items = this.collection.items();
+    return this.copy("links", formatCollectedLinksText(items), formatCollectedLinksHtml(items));
   }
 
   private openDialog(): void {
@@ -253,9 +295,8 @@ export class ItemCollectorWidget {
       collection: this.collection,
       resolveType: this.resolveType,
       onClose: () => this.closeDialog(),
-    });
-    dialog.element.addEventListener("keydown", (event) => {
-      if (event.key === "Escape") this.closeDialog();
+      onCopyIds: () => void this.copyIds(),
+      onCopyUrls: () => void this.copyUrls(),
     });
     this.dialog = dialog;
     this.root.append(dialog.element);
@@ -265,6 +306,20 @@ export class ItemCollectorWidget {
     this.dialog?.element.remove();
     this.dialog = undefined;
   }
+
+  /**
+   * Document-level because neither the counter nor the dialog holds focus. Escape peels one layer:
+   * an open list closes first, so a reader dismissing it does not lose the collection too.
+   */
+  private readonly handleEscape = (event: KeyboardEvent): void => {
+    if (event.key !== "Escape" || event.defaultPrevented) return;
+    if (this.dialog) {
+      this.closeDialog();
+      return;
+    }
+    this.logger.info("Ended the work item collection from the Escape key.");
+    this.collection.end();
+  };
 
   private readonly handleClick = (): void => {
     if (this.suppressNextClick) {
@@ -348,6 +403,30 @@ export class ItemCollectorWidget {
     this.doc.removeEventListener("pointermove", this.handlePointerMove);
     this.doc.removeEventListener("pointerup", this.handlePointerUp);
     this.doc.removeEventListener("pointercancel", this.handlePointerCancel);
+  }
+
+  /**
+   * A collection starts from a click far from the saved corner; appearing beside that click shows the
+   * reader the counter exists. Not persisted — the saved spot returns on resize or the next drag.
+   */
+  private placeNearLastPointer(): void {
+    const root = this.root;
+    const button = this.button;
+    const view = this.doc.defaultView;
+    const point = this.lastPointer;
+    if (!root || !button || !view || !point) return;
+    const rect = button.getBoundingClientRect();
+    const left = clamp(
+      point.x + NEAR_POINTER_OFFSET_PX,
+      0,
+      Math.max(0, view.innerWidth - rect.width),
+    );
+    const top = clamp(
+      point.y + NEAR_POINTER_OFFSET_PX,
+      0,
+      Math.max(0, view.innerHeight - rect.height),
+    );
+    setFixedPosition(root, left, top);
   }
 
   private readonly placeAtSavedPosition = (): void => {
