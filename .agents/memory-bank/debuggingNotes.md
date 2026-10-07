@@ -2004,6 +2004,9 @@ reviewing any test here.
   `title.style.lineHeight`) degrades to `expect("").toBe("")` when both regress. Pin the literal.
 - A settle gate must observe the NEW state (picker value / new item ids), not merely "not the loading
   text" — any error banner or the previous render satisfies the negative form.
+- NEVER format jsdom objects (`File`, `Blob`, elements) into an `it.each` title with `%o`/`%j`. The
+  worker crashes serializing the title over IPC with `RangeError: Invalid typed array length` in
+  `node:internal/child_process`, and the stack names no test. Use a plain string label column.
 
 ## "No response from the worker" almost always means a STALE service worker, not a broken call
 

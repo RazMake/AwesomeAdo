@@ -26,13 +26,13 @@ row.append(
 
 `renderMarkerReasonsPill(options)` returns the pill wrapped in its own positioned shell.
 
-| Option          | Meaning                                                                                        |
-| --------------- | ---------------------------------------------------------------------------------------------- |
-| `item`          | The work item the pill belongs to; its discussion is what the popup reads.                     |
-| `marker`        | Which recognized condition the pill stands for — decides its wording and its color.            |
-| `tags`          | That marker's configured Azure DevOps **tag** and **comment token**.                           |
-| `notesSinceIso` | Start of the binding's **Updates window (weeks)**; accepted Interrupt reasons bypass it.       |
-| `services`      | The narrow notes slice of `EnhancedViewServices` (read/write, mentions, marker tags, logging). |
+| Option          | Meaning                                                                                                      |
+| --------------- | ------------------------------------------------------------------------------------------------------------ |
+| `item`          | The work item the pill belongs to; its discussion is what the popup reads.                                   |
+| `marker`        | Which recognized condition the pill stands for — decides its wording and its color.                          |
+| `tags`          | That marker's configured Azure DevOps **tag** and **comment token**.                                         |
+| `notesSinceIso` | Start of the binding's **Updates window (weeks)**; accepted Interrupt reasons bypass it.                     |
+| `services`      | The narrow notes slice of `EnhancedViewServices` (read/write, mentions, image upload, marker tags, logging). |
 
 ## Behaviour
 

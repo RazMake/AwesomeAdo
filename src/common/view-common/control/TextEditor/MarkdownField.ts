@@ -4,6 +4,12 @@ import {
   type MentionSuggestions,
   type TextEditorMentionOptions,
 } from "./MentionSuggestions";
+import {
+  createImageStatus,
+  createPastedImages,
+  type PastedImages,
+  type TextEditorImageOptions,
+} from "./PastedImages";
 import { FIELD_TEXT_STYLE } from "./fieldMetrics";
 
 /** How the field is shaped, what it opens on, and who it offers to mention. */
@@ -20,6 +26,8 @@ export interface MarkdownFieldOptions {
   placeholder?: string;
   /** Enables typed `@` identity suggestions. Ignored for a one-line field. */
   mentions?: TextEditorMentionOptions;
+  /** Enables pasting images, stored in Azure DevOps and embedded. Ignored for a one-line field. */
+  images?: TextEditorImageOptions;
   /** Called after every keystroke, so an owner can re-evaluate what the text now allows. */
   onInput?(): void;
 }
@@ -32,6 +40,18 @@ export interface MarkdownFieldHandle {
   input: HTMLInputElement | HTMLTextAreaElement;
   /** The text as ADO must STORE it: each shown name back in its `@<id>` reference form. */
   storedText(): string;
+  /**
+   * Whether a pasted image is still uploading. Its placeholder is in the text until it finishes, so
+   * an owner must not save the value meanwhile; `onInput` fires again when each upload ends.
+   */
+  uploadingImages(): boolean;
+  /**
+   * The value is being saved: a true result keeps the images pasted so far. Images are uploaded the
+   * moment they are pasted, so without this they would be removed again when the field unmounts.
+   */
+  trackSave(save: Promise<boolean>): void;
+  /** The edit was abandoned: remove the images it uploaded from Azure DevOps (best effort). */
+  discardImages(): void;
 }
 
 /** The hints each shape carries, naming the keyboard shortcuts the field actually honours. */
@@ -63,14 +83,26 @@ export function renderMarkdownField(
   shell.append(input);
 
   const mentions = createMentionSupport(doc, shell, input, options, singleLine);
-  wireFieldEvents(input, singleLine, mentions, options.onInput);
+  const images = createImageSupport(doc, input, options, singleLine);
+  wireFieldEvents(input, singleLine, { mentions, images: images?.pasted ?? null }, options.onInput);
+  let element: HTMLElement = shell;
+  if (images !== null) {
+    // The status line sits BELOW the shell rather than in it: every layer in the shell is stretched
+    // to the shell's height, and a taller shell would let them run past the bottom of the field.
+    element = doc.createElement("div");
+    element.style.minWidth = "0";
+    element.append(shell, images.status);
+  }
 
   return {
-    element: shell,
+    element,
     input,
     // The box shows each mention as the person's NAME; what ADO stores has to be the identity
     // reference behind it, so the two are swapped back at the moment of reading.
     storedText: () => mentions?.suggestions.toStoredText(input.value) ?? input.value,
+    uploadingImages: () => images?.pasted.uploading() ?? false,
+    trackSave: (save) => images?.pasted.trackSave(save),
+    discardImages: () => images?.pasted.discard(),
   };
 }
 
@@ -80,12 +112,25 @@ interface MentionSupport {
   highlight: MentionHighlight;
 }
 
+/** The image paste handling and the line it reports failures on, for a field that offers it. */
+interface ImageSupport {
+  pasted: PastedImages;
+  status: HTMLElement;
+}
+
+/** What the field's own events feed besides the owner's `onInput`. */
+interface FieldSupport {
+  mentions: MentionSupport | null;
+  images: PastedImages | null;
+}
+
 function wireFieldEvents(
   input: HTMLInputElement | HTMLTextAreaElement,
   singleLine: boolean,
-  mentions: MentionSupport | null,
+  support: FieldSupport,
   onInput: (() => void) | undefined,
 ): void {
+  const { mentions, images } = support;
   (input as HTMLElement).addEventListener("keydown", (event) => {
     if (
       mentions?.suggestions.handleKeydown(event) === true ||
@@ -97,15 +142,34 @@ function wireFieldEvents(
     }
   });
   if (!singleLine) {
-    (input as HTMLTextAreaElement).addEventListener("paste", (event) =>
-      pasteMarkdownLink(event, input),
-    );
+    (input as HTMLTextAreaElement).addEventListener("paste", (event) => {
+      if (images?.handlePaste(event) !== true) {
+        pasteMarkdownLink(event, input);
+      }
+    });
   }
   input.addEventListener("input", () => {
     mentions?.suggestions.refresh();
     mentions?.highlight.refresh();
     onInput?.();
   });
+}
+
+/** The image paste support for a multi-line field whose owner supplied somewhere to store images. */
+function createImageSupport(
+  doc: Document,
+  input: HTMLInputElement | HTMLTextAreaElement,
+  options: MarkdownFieldOptions,
+  singleLine: boolean,
+): ImageSupport | null {
+  if (singleLine || options.images === undefined) {
+    return null;
+  }
+  const status = createImageStatus(doc);
+  return {
+    pasted: createPastedImages(input as HTMLTextAreaElement, status, options.images),
+    status,
+  };
 }
 
 /**

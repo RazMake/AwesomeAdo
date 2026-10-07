@@ -8,6 +8,7 @@ import {
   markerLabel,
 } from "../../../../common/view-common/control/MarkerPill/MarkerPill";
 import type { TextEditorMentionOptions } from "../../../../common/view-common/control/TextEditor/MentionSuggestions";
+import type { TextEditorImageOptions } from "../../../../common/view-common/control/TextEditor/PastedImages";
 import { renderTextEditor } from "../../../../common/view-common/control/TextEditor/TextEditor";
 
 import { withMarkerComment } from "./markerNotes";
@@ -26,6 +27,8 @@ export interface NoteRowOptions {
   marker?: WorkItemMarker;
   /** Identity search used when this note opens for editing. */
   mentions: TextEditorMentionOptions;
+  /** Where images pasted into a correction are stored. */
+  images: TextEditorImageOptions;
   /** The signed-in reader; only their own notes offer the edit affordance. */
   currentUser: NoteAuthor | null;
   /**
@@ -223,6 +226,7 @@ function openEditor(doc: Document, trigger: HTMLElement, options: NoteRowOptions
     // budget the author is held to is the one their own words actually have.
     maxLength: MAX_NOTE_LENGTH - withMarkerComment("", prefix).length,
     mentions: { ...options.mentions, mentionNames: options.mentionNames },
+    images: options.images,
     onSubmit: (text) => options.onEdit(withMarkerComment(text, prefix)),
     onCancel: close,
   });

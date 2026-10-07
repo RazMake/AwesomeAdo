@@ -1,3 +1,4 @@
+import type { IAttachmentUploader } from "../../../../common/ado/IAttachmentUploader";
 import type { IMentionDirectory } from "../../../../common/ado/IMentionDirectory";
 import type { IUserDirectory } from "../../../../common/ado/IUserDirectory";
 import type { IWorkItemNoteLoader } from "../../../../common/ado/IWorkItemNoteLoader";
@@ -21,6 +22,8 @@ import {
 export interface NotesPanelServices {
   noteLoader: IWorkItemNoteLoader;
   noteWriter: IWorkItemNoteWriter;
+  /** Stores images pasted into a note or a correction, so they can be embedded in it. */
+  attachmentUploader: IAttachmentUploader;
   /**
    * Resolves the identity GUIDs the notes' `@`-mentions are stored as.
    *
@@ -146,6 +149,7 @@ export function renderNotesPanel(options: NotesPanelOptions): NotesPanelHandle {
       logger: services.logger,
       mentionNames: services.mentionDirectory.knownNames(),
     },
+    images: { uploader: services.attachmentUploader, logger: services.logger },
     onSubmit: (text) => submitNote(options, state, null, text).then((ok) => finish(ok, render)),
   });
 
@@ -224,6 +228,10 @@ function renderRows(
       mentionNames: options.services.mentionDirectory.knownNames(),
       mentions: {
         userDirectory: options.services.userDirectory,
+        logger: options.services.logger,
+      },
+      images: {
+        uploader: options.services.attachmentUploader,
         logger: options.services.logger,
       },
       onEdit: (text) =>

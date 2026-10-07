@@ -65,7 +65,9 @@ AwesomeADO is feature-complete for its current scope:
   **New work identified**; planning types between offer **Add deliverable**. The inline box they
   open is named by the command's noun (`newChildItemName` → `NewItemRow.itemName`: "Add
   deliverable" / "Add project" / "Add work"), never the ADO type; the type stays on the icon and
-  summary. The catalog title's **Add new project** row uses "project" the same way.
+  summary. The catalog title's **Add new project** row uses "project" the same way. Newly created
+  Primary work uses the sprint selected in the current view, falling back to the team's current
+  sprint when the view has no selection; planning items continue to inherit the parent's iteration.
 - Project Tracking verifies accepted backlog reorders against the requested sibling interval and
   directly corrects mixed-type or unranked levels when ADO's team endpoint did not place the item.
 - Project Tracking accepts center-row drops into configured parents, even empty or collapsed ones,
@@ -135,6 +137,13 @@ AwesomeADO is feature-complete for its current scope:
   viewport position is a personal synced setting. The collection itself is mirrored through the
   synced `itemCollection` key (`ItemCollectionSync`), so it continues across tabs, reloads and
   devices; ending it anywhere ends it everywhere. Authenticated browser validation pending.
+- Every multi-line Markdown editor (descriptions, notes, marker reasons, new work item form) takes
+  pasted images through the shared `TextEditor`/`MarkdownField` `images` option: uploaded as ADO
+  attachments via the worker bridge and embedded as `![name](url)`; Save/Create waits on
+  `uploadingImages()`. `EnhancedViewServices.attachmentUploader` is required. An abandoned edit
+  (Cancel/Esc, or the field leaving the DOM with no save in flight) best-effort DELETEs its uploads
+  (`7.2-preview.4`); a save resolving true keeps them; only failed clean-ups are logged.
+  Authenticated browser validation (including DELETE permissions) pending.
 - User-visible decisions and failures are source-tagged in the bounded diagnostics log; every caught
   runtime exception is logged with its original value.
 - The complete quality gate remains coverage ≥ 85%, zero lint warnings, formatting, typecheck,

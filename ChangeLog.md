@@ -5,6 +5,21 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ## Next Version
 
+### New Features
+
+- Pasting an image (such as a screenshot) into a description, a note, a marker reason, or the new
+  work item form now works in every enhanced view: the image is saved to Azure DevOps and embedded
+  just as ADO's own editor does, and **Save**/**Create** waits until the image has finished saving.
+  If you cancel or close the edit without saving, the pasted images are removed from Azure DevOps
+  again.
+- Newly added Primary work starts in the sprint selected in the current view; views without a sprint
+  selection use the team's current sprint.
+
+### Bug Fixes
+
+- The new work item form keeps **Create** disabled until the item has been created, so typing while
+  it is being created can no longer enable a second click that creates a duplicate.
+
 ## 0.19
 
 ### New Features

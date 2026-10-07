@@ -7,6 +7,7 @@
  * they never pull a renderer (and its DOM code) into their bundle.
  */
 
+import type { IAttachmentUploader } from "../ado/IAttachmentUploader";
 import type { IFeatureCrewWriter } from "../ado/IFeatureCrewWriter";
 import type { IInterruptAcceptanceReader } from "../ado/IInterruptAcceptanceReader";
 import type { IMentionDirectory } from "../ado/IMentionDirectory";
@@ -141,6 +142,11 @@ export interface EnhancedViewServices {
    * offer the second.
    */
   noteWriter: IWorkItemNoteWriter;
+  /**
+   * Stores a pasted image as a work item attachment so a Markdown editor can embed it. Shared by
+   * every editor in every view, so pasting a screenshot behaves the same wherever the editor opens.
+   */
+  attachmentUploader: IAttachmentUploader;
   /**
    * Writes a single work item field back to Azure DevOps (e.g. `System.State` or a type's ETA date
    * field), using the item's last-known rev as an optimistic-concurrency guard. The write is atomic

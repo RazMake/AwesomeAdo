@@ -70,6 +70,7 @@ function mountPill(
       },
       markerTags: () => markerTags,
       logger: { info: vi.fn(), error: vi.fn() },
+      attachmentUploader: { upload: vi.fn(), discard: vi.fn() },
     },
   });
   document.body.append(element);

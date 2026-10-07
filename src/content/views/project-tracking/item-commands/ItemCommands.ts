@@ -142,6 +142,10 @@ function updateDescriptionCommand(options: ItemCommandTarget): ItemContextMenuCo
             logger: options.services.logger,
             mentionNames: options.services.mentionDirectory.knownNames(),
           },
+          images: {
+            uploader: options.services.attachmentUploader,
+            logger: options.services.logger,
+          },
           // A description is allowed not to exist, unlike a title, so an empty box is a real answer.
           allowEmpty: true,
           onSubmit: (text) =>

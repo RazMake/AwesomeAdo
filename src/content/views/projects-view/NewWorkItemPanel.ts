@@ -89,20 +89,38 @@ export function renderNewWorkItemPanel(options: NewWorkItemPanelOptions): HTMLEl
   const create = renderActionButton(doc, "Create", true);
   const cancel = renderActionButton(doc, "Cancel", false);
   const interrupt = renderInterruptSection(options, () => refreshCreate());
+  // Any field's input event re-evaluates Create, including the one a pasted image fires when it
+  // lands; without this flag that would re-enable Create mid-create and let a second click create
+  // a duplicate item.
+  let submitting = false;
 
   const refreshCreate = (): void => {
-    create.disabled = title.value.trim().length === 0 || !interrupt.isComplete();
+    // A pasted image still uploading has only a placeholder in the text, which must not be created.
+    create.disabled =
+      submitting ||
+      title.value.trim().length === 0 ||
+      description.uploadingImages() ||
+      !interrupt.isComplete();
   };
   title.addEventListener("input", refreshCreate);
+  description.input.addEventListener("input", refreshCreate);
   refreshCreate();
 
   create.addEventListener("click", () => {
+    submitting = true;
     void submit({ options, title, description, assignee, area, iteration, interrupt }, failure, [
       create,
       cancel,
-    ]).then(refreshCreate);
+    ]).then(() => {
+      submitting = false;
+      refreshCreate();
+    });
   });
-  cancel.addEventListener("click", options.onCancel);
+  cancel.addEventListener("click", () => {
+    description.discardImages();
+    interrupt.discardImages();
+    options.onCancel();
+  });
 
   form.append(
     labelled(doc, "Title", title),
@@ -138,7 +156,7 @@ async function submit(
 ): Promise<void> {
   failure.style.display = "none";
   for (const button of buttons) button.disabled = true;
-  const created = await controls.options.onCreate({
+  const creation = controls.options.onCreate({
     title: controls.title.value.trim(),
     description: controls.description.storedText(),
     assignedTo: controls.assignee.value(),
@@ -147,6 +165,9 @@ async function submit(
     tags: controls.interrupt.tags(),
     comment: controls.interrupt.comment(),
   });
+  controls.description.trackSave(creation);
+  controls.interrupt.trackSave(creation);
+  const created = await creation;
   for (const button of buttons) button.disabled = false;
   if (created) return;
   // The caller keeps the form mounted on failure, so it says so rather than leaving the reader
@@ -198,7 +219,7 @@ interface NoteFieldSpec {
  *
  * The shared Markdown field rather than a bare textarea: what is written here is read back on the
  * boards through the same renderer as anything written in Azure DevOps, so the bold/italic
- * shortcuts, the pasted link and the `@` mentions have to work here too. A plain box that merely
+ * shortcuts, the pasted link and image, and the `@` mentions have to work here too. A plain box that merely
  * CLAIMED Markdown support would leave an author's `@name` as literal text nobody is ever notified
  * about.
  */
@@ -214,6 +235,7 @@ function renderNoteField(
       userDirectory: options.services.userDirectory,
       logger: options.services.logger,
     },
+    images: { uploader: options.services.attachmentUploader, logger: options.services.logger },
   });
   field.element.classList.add(`awesomeado-new-work-item__${spec.name}-field`);
   field.input.classList.add(`awesomeado-new-work-item__${spec.name}`);
@@ -367,6 +389,10 @@ interface InterruptSection {
   isComplete(): boolean;
   tags(): string[];
   comment(): string | null;
+  /** The item is being created; the reason's pasted images are kept only if it is written too. */
+  trackSave(creation: Promise<boolean>): void;
+  /** The form was cancelled: remove the images pasted into the reason. */
+  discardImages(): void;
 }
 
 /**
@@ -433,9 +459,16 @@ function renderInterruptSection(
   const isAccepted = (): boolean => flag.isOn() && accepted.box.checked;
   return {
     element: section,
-    isComplete: () => !isAccepted() || reason.input.value.trim().length > 0,
+    isComplete: () =>
+      !isAccepted() || (reason.input.value.trim().length > 0 && !reason.uploadingImages()),
     tags: () => (flag.isOn() ? withWorkItemTag([], tags.tag) : []),
     comment: () => (isAccepted() ? `${tags.commentTag} ${reason.storedText().trim()}` : null),
+    // A reason left behind an unaccepted flag is never written, so its images are not kept either.
+    trackSave: (creation) => {
+      const written = isAccepted();
+      reason.trackSave(creation.then((created) => created && written));
+    },
+    discardImages: () => reason.discardImages(),
   };
 }
 

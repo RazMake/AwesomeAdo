@@ -1077,3 +1077,59 @@ comment as a `System.History` field delta. Each page runs through the existing r
 `executeAdoRequestInPage` MAIN-world read.
 `MessagingInterruptAcceptanceReader` applies the shared timestamp predicate, preserves partial
 results, and logs counts only.
+
+## Uploading a pasted image (work item attachment)
+
+A Markdown editor with `images` enabled stores each pasted image as an Azure DevOps attachment
+before embedding it. Same pattern again: the content script names WHAT to store, and the worker
+builds WHERE from the sender's own tab URL (`buildAttachmentUploadUrl`) and runs the credentialed
+`POST` in the tab's MAIN world. An image pasted into an edit that is then abandoned is removed again
+the same way, through a credentialed `DELETE` (see `discardAttachmentInPage`).
+
+### `AttachmentUploadRequest.ts` — the content→background message contract
+
+- `UPLOAD_ATTACHMENT_MESSAGE` / `UploadAttachmentMessage` (`{ type, fileName, contentBase64 }`) — the
+  bytes travel as base64 because neither the message bus nor `executeScript` arguments can carry a
+  `Blob`.
+- `UploadAttachmentResponse` (`{ ok, raw?, error? }`) — ADO's `{ id, url }` reply, parsed on the
+  content side.
+- `UploadAttachmentConfig` (`{ url, contentBase64 }`) — what the worker hands the injected upload.
+- `uploadAttachmentMessageProblem(value)` — the reason a message is unusable (blank or over-long
+  `fileName`, missing, oversized or non-base64 content), or `null`. Reasons name sizes, never content.
+- `DISCARD_ATTACHMENT_MESSAGE` / `DiscardAttachmentMessage` (`{ type, attachmentId }`) and
+  `DiscardAttachmentResponse` (`{ ok, error? }`) — the clean-up request; the worker builds the URL
+  from the sender's tab (`buildAttachmentDiscardUrl`). `discardAttachmentMessageProblem(value)` refuses
+  anything whose `attachmentId` is not an attachment GUID.
+
+### `MessagingAttachmentUploader` (class)
+
+The `IAttachmentUploader` implementation the editors depend on. It refuses a file over
+`MAX_ATTACHMENT_UPLOAD_BYTES` before encoding it, base64-encodes the rest in bounded chunks (one
+spread of a multi-megabyte screenshot overflows the stack), sends it through the injected
+`SendAttachmentUploadRequest`, and turns the reply into an embeddable URL with
+`parseUploadedAttachmentUrl` (plus the attachment `id` from `parseUploadedAttachmentId`). `discard(id)`
+sends the clean-up request through the injected `SendAttachmentDiscardRequest` and logs only a
+failure. It never throws, and never logs a file's content.
+
+```typescript
+const uploader = new MessagingAttachmentUploader(
+  sendAttachmentUploadRequest,
+  sendAttachmentDiscardRequest,
+  logger,
+);
+const { ok, url, id, error } = await uploader.upload({ fileName: "image.png", content: blob });
+// …the edit was cancelled:
+if (id !== undefined) await uploader.discard(id);
+```
+
+### `discardAttachmentInPage(url)`
+
+The self-contained function the worker injects to `DELETE` one attachment with the page's own
+session. Resolves `{ ok: true }`, `{ ok: false, error: "HTTP n" }`, or the network error; never
+rejects.
+
+### `uploadAttachmentInPage(config)`
+
+The self-contained function the worker injects. It decodes the base64 back to raw bytes, so ADO
+stores the image itself rather than its text, and `POST`s them as `application/octet-stream` with the
+page's credentials. Like every injected function it references only its parameter and page globals.

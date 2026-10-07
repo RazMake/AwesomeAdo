@@ -25,6 +25,7 @@ const describe = renderTextEditor(document, {
   submitLabel: "Save",
   allowEmpty: true,
   mentions: { userDirectory: services.userDirectory, logger: services.logger },
+  images: { uploader: services.attachmentUploader, logger: services.logger },
   onSubmit: (text) => persistDescription(text),
   onCancel: () => closeSurface(),
 });
@@ -43,6 +44,7 @@ const describe = renderTextEditor(document, {
 | `rows`        | Lines the multi-line box opens at (default 3). Ignored for a one-line field.                                 |
 | `placeholder` | Hint text; omitted uses the hint matching the shape.                                                         |
 | `mentions`    | `{ userDirectory, logger, mentionNames? }` enables typed `@` identity suggestions in a multi-line field.     |
+| `images`      | `{ uploader, logger }` stores pasted images in Azure DevOps and embeds them, in a multi-line field.          |
 | `allowEmpty`  | Whether submitting nothing is meaningful. Default `false` (the empty field is inert); `true` lets it clear.  |
 | `onSubmit`    | `(text) => Promise<boolean>` — resolve `true` to close, `false` to keep the editor open with the text in it. |
 | `onCancel`    | Abandon the edit and put the surface back as it was.                                                         |
@@ -58,6 +60,19 @@ panels, so their Set/Cancel pair matches the editor's.
 - **Markdown.** `Ctrl`/`Cmd`+`B` wraps the selection in `**`; with no selection it inserts `****`
   with the caret between them. `Ctrl`/`Cmd`+`I` does the same with `_`. Pasting one HTTP(S) URL
   inserts `[](url)` and leaves the caret in the empty label.
+- **Pasted images.** In an image-enabled field, pasting a picture (a screenshot, a copied image
+  file) uploads it as an Azure DevOps work item attachment and embeds it as `![name](url)` — what
+  ADO's own editor stores. A `![Uploading image N…]()` placeholder marks the spot while the upload
+  runs, so the author can keep typing; the finished link replaces exactly that placeholder. Deleting
+  the placeholder abandons that image. A failed upload removes its placeholder and says
+  _"Image not uploaded: …"_ under the box. A clipboard that also carries text (an Office copy) pastes
+  the text, as before. **Save** and `Ctrl`/`Cmd`+`Enter` wait until every upload has finished.
+- **Abandoned images are cleaned up.** Because an image is stored the moment it is pasted, an edit
+  that ends without saving removes its images from Azure DevOps again (best effort): **Cancel**,
+  `Esc`, or the editor simply leaving the page (a dismissed menu, a collapsed list, a navigation).
+  A save that resolves `true` keeps them, even though it typically unmounts the editor first; one
+  that resolves `false` keeps them only while the editor stays to be saved again. An image whose
+  placeholder was deleted before it landed is removed at once. Only a failed clean-up is logged.
 - **Mentions.** In a mention-enabled field, `@` after the start of the field, a space, `.`, `/`, `\`,
   or Tab opens an identity list with no second search box. The text after `@` is the query; Up/Down
   changes the highlighted person and Enter inserts them. The list opens
@@ -103,10 +118,17 @@ row.append(description.element);
 create({ description: description.storedText() });
 ```
 
-`element` is the shell to mount (the box plus its mention layers), `input` is the box itself — for
-focus and for the owner's own key handling — and `storedText()` returns the text **as ADO must store
-it**, with each shown name back in its `@<id>` reference form. `onInput` fires after every keystroke
-so an owner can re-evaluate what the text now allows.
+`element` is the shell to mount (the box plus its mention layers and, with `images`, the upload
+status line beneath it), `input` is the box itself — for focus and for the owner's own key handling —
+and `storedText()` returns the text **as ADO must store it**, with each shown name back in its
+`@<id>` reference form. `onInput` fires after every keystroke and after each pasted image lands, so
+an owner can re-evaluate what the text now allows. `uploadingImages()` is `true` while a pasted image
+is still on its way; an owner with its own commit button must hold it until this is `false`.
+
+An owner with its own commit and cancel buttons also owns the image clean-up decision:
+`trackSave(promise)` hands it the save (a `true` result keeps the images pasted so far), and
+`discardImages()` removes them when the author cancels. Without a `trackSave`, the field leaving the
+page is taken as an abandoned edit. Both are no-ops on a field without `images`.
 
 A key the field consumes (picking a mention, applying a Markdown shortcut) is stopped before any
 listener the owner added afterwards can see it, so a form's own Enter or Escape handling never fires

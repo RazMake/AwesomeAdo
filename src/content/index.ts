@@ -34,6 +34,12 @@ import {
   type LoadQueryTreeResponse,
 } from "../common/browser/AdoTreeRequest";
 import {
+  type DiscardAttachmentMessage,
+  type DiscardAttachmentResponse,
+  type UploadAttachmentMessage,
+  type UploadAttachmentResponse,
+} from "../common/browser/AttachmentUploadRequest";
+import {
   requestCatalogFavoritesStatus,
   sendCatalogFavorites,
   sendCatalogFavoritesRestore,
@@ -55,6 +61,11 @@ import {
   type ReadInterruptAcceptanceMessage,
   type ReadInterruptAcceptanceResponse,
 } from "../common/browser/InterruptAcceptanceRequest";
+import {
+  MessagingAttachmentUploader,
+  type SendAttachmentDiscardRequest,
+  type SendAttachmentUploadRequest,
+} from "../common/browser/MessagingAttachmentUploader";
 import {
   MessagingCurrentUserReader,
   type SendCurrentUserRequest,
@@ -387,6 +398,22 @@ const noteWriter = new MessagingWorkItemNoteWriter(
   loggers.forSource("content/views"),
 );
 
+// A pasted image is uploaded through the worker for the same reason a note is written through it.
+// One uploader serves every Markdown editor, so pasting behaves the same in every view.
+const sendAttachmentUploadRequest: SendAttachmentUploadRequest = (message) =>
+  chrome.runtime.sendMessage<UploadAttachmentMessage, UploadAttachmentResponse | undefined>(
+    message,
+  );
+const sendAttachmentDiscardRequest: SendAttachmentDiscardRequest = (message) =>
+  chrome.runtime.sendMessage<DiscardAttachmentMessage, DiscardAttachmentResponse | undefined>(
+    message,
+  );
+const attachmentUploader = new MessagingAttachmentUploader(
+  sendAttachmentUploadRequest,
+  sendAttachmentDiscardRequest,
+  loggers.forSource("common/browser"),
+);
+
 // Adding a project and giving it its own tracking query are ADO writes like every other one here:
 // the isolated content world cannot reach the credentialed REST API, so both message the background
 // worker, which builds every URL from this tab and runs the MAIN-world request.
@@ -453,6 +480,7 @@ const trackingServices: EnhancedViewServices = {
   noteActivity,
   interruptAcceptance,
   noteWriter,
+  attachmentUploader,
   userDirectory,
   mentionDirectory,
   currentUser: viewCurrentUserReader,

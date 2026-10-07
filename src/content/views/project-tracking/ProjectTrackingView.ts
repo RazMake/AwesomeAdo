@@ -148,6 +148,7 @@ import {
   buildNewChildCommand,
   newChildItem,
   newChildItemName,
+  newChildIterationPath,
   newChildOfferFor,
   newChildSummary,
   newChildTypeOf,
@@ -1021,6 +1022,8 @@ interface NewChildContext {
   context: DataDrivenViewContext;
   typeMap: Map<string, TypeCatalogEntry>;
   session: BoardSession;
+  sprintWindow: SprintWindow;
+  selectedSprintName: () => string | null;
   queue: WorkItemWriteQueue;
   repaint: () => void;
 }
@@ -1046,13 +1049,14 @@ function newChildRow(parent: TrackedWorkItem, ctx: NewChildContext): HTMLElement
   const type = newChildTypeOf(parent, ctx.typeMap);
   if (type === null) return null;
   const entry = ctx.typeMap.get(type);
+  const iterationPath = iterationPathForNewChild(parent, type, ctx);
   return renderNewItemRow({
     doc: ctx.doc,
     typeName: type,
     itemName: newChildItemName(parent, ctx.typeMap) ?? type,
     iconUrl: entry?.icon ?? null,
     color: workItemTypeDisplayColor(entry?.color),
-    summary: newChildSummary(parent, type),
+    summary: newChildSummary(parent, type, iterationPath),
     onSubmit: (title) => addChildItem(parent, type, title, ctx),
     onCancel: () => {
       ctx.session.addingChildOf = null;
@@ -1075,14 +1079,14 @@ async function addChildItem(
   ctx: NewChildContext,
 ): Promise<boolean> {
   const { services } = ctx.context;
+  const iterationPath = iterationPathForNewChild(parent, type, ctx);
   const result = await services.createWorkItem.create({
     type,
     title,
     tags: [],
-    // Inherited, not asked: work identified under an item belongs to the same area and sprint as the
-    // item it was identified from until someone deliberately moves it.
+    // Area stays with the planning item; primary work follows the board's live sprint selection.
     areaPath: parent.areaPath,
-    iterationPath: parent.iterationPath,
+    iterationPath,
     parentId: parent.id,
   });
   if (!result.ok || result.id === undefined) return false;
@@ -1110,6 +1114,20 @@ async function addChildItem(
   ctx.repaint();
   rankChildFirst(created, parent, siblingIds, ctx);
   return true;
+}
+
+function iterationPathForNewChild(
+  parent: TrackedWorkItem,
+  type: string,
+  ctx: NewChildContext,
+): string | null {
+  return newChildIterationPath(
+    parent,
+    type,
+    ctx.typeMap,
+    ctx.sprintWindow,
+    ctx.selectedSprintName(),
+  );
 }
 
 /**
@@ -2516,6 +2534,8 @@ function createBoardTreeRenderer(params: BoardTreeRendererParams): () => void {
     context: params.context,
     typeMap: params.typeMap,
     session: params.session,
+    sprintWindow: params.sprintWindow,
+    selectedSprintName: () => sprintPickerHandle.selectedSprint(),
     queue: params.fieldWrites,
     repaint: () => params.repaintBoard(),
   });

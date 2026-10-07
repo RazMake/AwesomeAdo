@@ -297,6 +297,16 @@ former as a decision.
   attachment's **bare id** (`4f76001f-…?fileName=image.png`); this turns that into
   `{collectionBase}/_apis/wit/attachments/{id}?fileName=…&api-version=7.1`, the request ADO's own UI
   makes. Org-scoped, so it also works on pages that name no project.
+- `buildAttachmentUploadUrl(pageHref, fileName)` — the project-scoped
+  `_apis/wit/attachments?fileName=…&uploadType=Simple&api-version=7.1` endpoint a pasted image is
+  POSTed to, or `null` off an ADO project page.
+- `parseUploadedAttachmentUrl(raw, fileName)` — the embeddable URL from an upload reply (`https` only,
+  otherwise `null`), with `?fileName=` appended exactly as ADO's own editor embeds it.
+- `parseUploadedAttachmentId(raw)` — the attachment GUID from an upload reply, or `null`; what an
+  unsaved image is later removed by.
+- `buildAttachmentDiscardUrl(pageHref, attachmentId)` — the project-scoped
+  `_apis/wit/attachments/{id}?api-version=7.2-preview.4` DELETE endpoint, or `null` off an ADO project
+  page or for an id that is not a GUID (`ATTACHMENT_ID`), so nothing else can ever be deleted.
 
 ### `fetchAdoTree.ts`
 
@@ -611,6 +621,20 @@ The normalized model for a work item **note** — one entry in its Azure DevOps 
   as a conflict with the note the same person just wrote.
 - `IWorkItemNoteWriter` — `addNote` / `editNote`. Kept separate from the loader (Interface
   Segregation): showing notes and authoring them are different capabilities.
+
+### `IAttachmentUploader.ts`
+
+- `AttachmentUploadRequest` — `{ fileName, content: Blob }`; `AttachmentUploadResult` —
+  `{ ok, url?, id?, error? }`, where `url` is ready to embed as `![fileName](url)` and `id` is what
+  `discard` removes it by.
+- `IAttachmentUploader` — `upload(request)`; never throws, a refusal comes back as `ok: false` with a
+  short reason the editor shows. The uploaded attachment is not linked to any item: like ADO's own
+  editor, the Markdown that embeds it is what keeps it.
+- `discard(attachmentId)` — best-effort permanent removal of an upload whose edit was abandoned;
+  resolves `true` when removed, never throws, and logs only a failure. Call it only for an upload
+  this session made and no saved value embeds.
+- `MAX_ATTACHMENT_UPLOAD_BYTES` (20 MiB) and `MAX_ATTACHMENT_FILE_NAME_LENGTH` (255) — the limits
+  enforced before any bytes cross the extension's message channel.
 
 ### `INoteActivityReader.ts` + `fetchNoteActivity.ts`
 

@@ -8,6 +8,7 @@ import { buildAdoQueryDefinitionUrl } from "../common/ado/QueryDefinition";
 import { buildAdoIterationsUrl } from "../common/ado/TeamIteration";
 import { buildAdoTeamMembersRequest, expandTeamMembers } from "../common/ado/TeamMembers";
 import { IMPORTANCE_FIELD } from "../common/ado/adoApi";
+import { buildAttachmentDiscardUrl, buildAttachmentUploadUrl } from "../common/ado/adoAttachment";
 import {
   buildCreateWorkItemPatch,
   buildCreateWorkItemUrl,
@@ -107,6 +108,17 @@ import {
   type LoadQueryTreeMessage,
   type LoadQueryTreeResponse,
 } from "../common/browser/AdoTreeRequest";
+import {
+  DISCARD_ATTACHMENT_MESSAGE,
+  discardAttachmentMessageProblem,
+  UPLOAD_ATTACHMENT_MESSAGE,
+  uploadAttachmentMessageProblem,
+  type DiscardAttachmentMessage,
+  type DiscardAttachmentResponse,
+  type UploadAttachmentConfig,
+  type UploadAttachmentMessage,
+  type UploadAttachmentResponse,
+} from "../common/browser/AttachmentUploadRequest";
 import { CatalogFavoritesHandler } from "../common/browser/CatalogFavoritesHandler";
 import {
   type CatalogFavoritesRequest,
@@ -212,6 +224,7 @@ import {
   createWorkItemInPage,
   type CreateWorkItemOutcome,
 } from "../common/browser/createWorkItemInPage";
+import { discardAttachmentInPage } from "../common/browser/discardAttachmentInPage";
 import {
   executeAdoRequestInPage,
   type AdoPageRequestOutcome,
@@ -242,6 +255,7 @@ import {
 } from "../common/browser/reorderWorkItemInPage";
 import { tabRequestListener } from "../common/browser/tabRequestListener";
 import { updateWorkItemFieldInPage } from "../common/browser/updateWorkItemFieldInPage";
+import { uploadAttachmentInPage } from "../common/browser/uploadAttachmentInPage";
 import { writeTeamConfigInPage } from "../common/browser/writeTeamConfigInPage";
 import { writeWorkItemNoteInPage } from "../common/browser/writeWorkItemNoteInPage";
 import { writeWorkItemRanksInPage } from "../common/browser/writeWorkItemRanksInPage";
@@ -1807,6 +1821,122 @@ chrome.runtime.onMessage.addListener(
       response: { ok: false, error: "no sender tab" },
     }),
     serve: writeWorkItemNote,
+  }),
+);
+
+// A pasted image is stored as an attachment before any editor embeds it, exactly as ADO's own editors
+// do. The upload URL is built from the SENDER's tab, so the content side can name a file and its
+// bytes but never where they are sent. Only sizes are logged, never the content (AGENTS.md §9).
+const uploadAttachment = async (
+  message: UploadAttachmentMessage,
+  tabId: number,
+  tabUrl: string,
+): Promise<UploadAttachmentResponse> => {
+  const url = buildAttachmentUploadUrl(tabUrl, message.fileName);
+  if (url === null) {
+    logger.info("Attachment upload skipped: tab is not a project-scoped ADO URL.");
+    return { ok: false, error: "not a project-scoped ADO URL" };
+  }
+  const config: UploadAttachmentConfig = { url, contentBase64: message.contentBase64 };
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: "MAIN",
+      func: uploadAttachmentInPage,
+      args: [config],
+    });
+    const result = firstScriptResult(results) as UploadAttachmentResponse | null;
+    if (result === null) {
+      logger.error("Attachment upload returned no result.");
+      return { ok: false, error: "no result" };
+    }
+    if (!result.ok) {
+      logger.error(`Attachment upload failed: ${result.error ?? "unknown"}.`);
+    } else {
+      logger.info("Attachment upload accepted by Azure DevOps.");
+    }
+    return result;
+  } catch (error) {
+    // Injection fails on a closed/navigated/restricted tab; report the failure.
+    logger.error("Could not upload an attachment", error);
+    return { ok: false, error: "exception" };
+  }
+};
+
+chrome.runtime.onMessage.addListener(
+  tabRequestListener<UploadAttachmentMessage, UploadAttachmentResponse>(logger, {
+    claims: (message) => claimsMessageType(message, UPLOAD_ATTACHMENT_MESSAGE),
+    malformed: (message) => {
+      const problem = uploadAttachmentMessageProblem(message);
+      return problem === null
+        ? null
+        : {
+            log: `Rejected a malformed attachment upload request: ${problem}.`,
+            response: { ok: false, error: `malformed request: ${problem}` },
+          };
+    },
+    announce: (message) =>
+      `Attachment upload requested (${message.contentBase64.length} base64 characters).`,
+    unscriptable: () => ({
+      log: "Cannot upload an attachment: message has no sender tab.",
+      response: { ok: false, error: "no sender tab" },
+    }),
+    serve: uploadAttachment,
+  }),
+);
+
+// An editor abandoned with pasted images still unsaved hands their ids back for a best-effort delete.
+// Same trust boundary as the upload: the content side names only the id, and the URL is built from
+// the SENDER's tab. Only a failure is logged — the editor's abandonment is not itself an event.
+const discardAttachment = async (
+  message: DiscardAttachmentMessage,
+  tabId: number,
+  tabUrl: string,
+): Promise<DiscardAttachmentResponse> => {
+  const url = buildAttachmentDiscardUrl(tabUrl, message.attachmentId);
+  if (url === null) {
+    logger.error("Attachment clean-up skipped: tab is not a project-scoped ADO URL.");
+    return { ok: false, error: "not a project-scoped ADO URL" };
+  }
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: "MAIN",
+      func: discardAttachmentInPage,
+      args: [url],
+    });
+    const result = firstScriptResult(results) as DiscardAttachmentResponse | null;
+    if (result === null) {
+      logger.error("Attachment clean-up returned no result.");
+      return { ok: false, error: "no result" };
+    }
+    if (!result.ok) {
+      logger.error(`Attachment clean-up failed: ${result.error ?? "unknown"}.`);
+    }
+    return result;
+  } catch (error) {
+    logger.error("Could not clean up an attachment", error);
+    return { ok: false, error: "exception" };
+  }
+};
+
+chrome.runtime.onMessage.addListener(
+  tabRequestListener<DiscardAttachmentMessage, DiscardAttachmentResponse>(logger, {
+    claims: (message) => claimsMessageType(message, DISCARD_ATTACHMENT_MESSAGE),
+    malformed: (message) => {
+      const problem = discardAttachmentMessageProblem(message);
+      return problem === null
+        ? null
+        : {
+            log: `Rejected a malformed attachment clean-up request: ${problem}.`,
+            response: { ok: false, error: `malformed request: ${problem}` },
+          };
+    },
+    unscriptable: () => ({
+      log: "Cannot clean up an attachment: message has no sender tab.",
+      response: { ok: false, error: "no sender tab" },
+    }),
+    serve: discardAttachment,
   }),
 );
 

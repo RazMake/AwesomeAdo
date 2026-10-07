@@ -47,6 +47,10 @@ function renderRow(
       },
       logger: { info: vi.fn(), error: vi.fn() },
     },
+    images: {
+      uploader: { upload: vi.fn(), discard: vi.fn() },
+      logger: { info: vi.fn(), error: vi.fn() },
+    },
     onEdit,
   });
   return { row, onEdit };

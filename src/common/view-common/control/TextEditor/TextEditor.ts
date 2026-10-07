@@ -1,5 +1,6 @@
 import { MULTILINE_HINT, SINGLE_LINE_HINT, renderMarkdownField } from "./MarkdownField";
 import type { TextEditorMentionOptions } from "./MentionSuggestions";
+import type { TextEditorImageOptions } from "./PastedImages";
 
 /** What the editor starts with, how it is shaped, and what it does with what the author types. */
 export interface TextEditorOptions {
@@ -24,6 +25,11 @@ export interface TextEditorOptions {
   placeholder?: string;
   /** Enables typed `@` identity suggestions for a Markdown field. Ignored for a one-line field. */
   mentions?: TextEditorMentionOptions;
+  /**
+   * Enables pasting images into a Markdown field: each is stored in Azure DevOps as an attachment
+   * and embedded, and Save waits until every upload has finished. Ignored for a one-line field.
+   */
+  images?: TextEditorImageOptions;
   /**
    * Whether submitting nothing is meaningful. False (the default) makes the empty field inert, which
    * is right for a value that must exist; true lets an author CLEAR one that need not.
@@ -66,9 +72,13 @@ export function renderTextEditor(doc: Document, options: TextEditorOptions): HTM
   buttons.append(submit, cancel, failure);
 
   let saving = false;
+  // Nothing is saved while a pasted image is uploading: its placeholder would be stored instead.
+  const canSave = (): boolean =>
+    !saving &&
+    !field.uploadingImages() &&
+    (options.allowEmpty === true || field.input.value.trim().length > 0);
   const refreshSubmit = (): void => {
-    const hasRequiredText = options.allowEmpty === true || field.input.value.trim().length > 0;
-    submit.disabled = saving || !hasRequiredText;
+    submit.disabled = !canSave();
   };
 
   const field = renderMarkdownField(doc, {
@@ -78,20 +88,23 @@ export function renderTextEditor(doc: Document, options: TextEditorOptions): HTM
     rows: options.rows,
     placeholder: options.placeholder ?? (singleLine ? SINGLE_LINE_HINT : MULTILINE_HINT),
     mentions: options.mentions,
+    images: options.images,
     onInput: () => refreshSubmit(),
   });
   root.append(field.element, buttons);
   refreshSubmit();
 
   const save = (): void => {
-    if (saving || (field.input.value.trim().length === 0 && options.allowEmpty !== true)) {
+    if (!canSave()) {
       return;
     }
     saving = true;
     refreshSubmit();
     cancel.disabled = true;
     failure.style.display = "none";
-    void options.onSubmit(field.storedText().trim()).then((saved) => {
+    const pending = options.onSubmit(field.storedText().trim());
+    field.trackSave(pending);
+    void pending.then((saved) => {
       saving = false;
       if (saved) {
         return;
@@ -111,7 +124,10 @@ export function renderTextEditor(doc: Document, options: TextEditorOptions): HTM
     cancel,
     singleLine,
     save,
-    onCancel: options.onCancel,
+    onCancel: () => {
+      field.discardImages();
+      options.onCancel();
+    },
   });
 
   return root;

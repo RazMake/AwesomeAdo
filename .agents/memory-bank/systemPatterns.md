@@ -649,6 +649,29 @@ manifest `world:"MAIN"` bridge content script that owns the fetcher. Security is
 "fetch any URL" proxy — that would let a malicious page exfiltrate via our session), responses
 returned only to us, and **never log field values or identity**.
 
+Pasted images follow the same worker→MAIN-world route (`awesomeado:upload-attachment`): the content
+side base64-encodes the clipboard blob (≤ 20 MiB, chunked), the worker builds the project-scoped
+`_apis/wit/attachments` URL from the sender's tab, and the injected function decodes and POSTs raw
+bytes. The editor (`TextEditor/PastedImages.ts`) inserts a `![Uploading image N…]()` placeholder,
+replaces exactly that text with `![name](url?fileName=name)` when the upload lands (dropping the
+image if the author deleted the placeholder), and the owner's Save/Create waits on
+`uploadingImages()`. The attachment is deliberately NOT linked as an `AttachedFile` relation — ADO's
+own editor relies on the embedding Markdown alone. Images are taken only when the clipboard carries
+no plain text, so Office copies (text + picture) still paste as text.
+
+Because the upload happens at paste time, the field's upload ledger (`createUploadLedger` in
+`PastedImages.ts`) owns every id it embedded until a save keeps it, and removes them again
+(`awesomeado:discard-attachment` → worker-built project-scoped DELETE, preview API `7.2-preview.4`,
+GUID-validated on both sides) when the edit is abandoned. Abandonment is Cancel/Esc **or** the input
+leaving the DOM (a `MutationObserver` on the document root, started on the first paste): menu panels
+close on outside click and lists unmount composers without ever calling the editor's cancel. A save
+in flight defers the decision to its result, because a successful `onSubmit` typically unmounts the
+editor before it resolves. Owners with their own buttons (`NewWorkItemPanel`) call `trackSave` /
+`discardImages`; the acceptance reason's images are kept only if the reason is actually written.
+Images whose embed text the author deleted before a successful save are NOT cleaned up — the
+Markdown may have been copied elsewhere. No worker-side registry: the content side only discards ids
+from its own upload replies.
+
 ### 3. Reads
 
 - Each view **declares its data needs** (fields + relation needs); a shared loader resolves the

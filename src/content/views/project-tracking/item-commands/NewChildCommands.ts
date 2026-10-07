@@ -1,5 +1,6 @@
 import type { TrackedWorkItem, TypeCatalogEntry } from "../../../../common/ado/TrackedWorkItem";
 import { hydrateTrackedWorkItem } from "../../../../common/ado/fetchAdoTree";
+import type { SprintWindow } from "../../../../common/ado/sprintWindow";
 import { primaryWorkAncestors, primaryWorkTypes } from "../../../../common/ado/workItemTypes";
 import type { ItemContextMenuCommand } from "../../../../common/view-common/control/ItemContextMenu/ItemContextMenu";
 
@@ -156,14 +157,37 @@ function refusal(options: NewChildCommandOptions): string | null {
   return options.adding ? "The box asking for the title is already open." : null;
 }
 
+/**
+ * The iteration a new child starts in.
+ *
+ * Planning items inherit their parent's iteration. Primary work instead follows the sprint chosen
+ * in the view, falling back to the team's current sprint when the view has no selection.
+ */
+export function newChildIterationPath(
+  parent: TrackedWorkItem,
+  typeName: string,
+  types: ReadonlyMap<string, TypeCatalogEntry>,
+  sprintWindow: SprintWindow,
+  selectedSprintName: string | null,
+): string | null {
+  if (types.get(typeName)?.isPrimaryWork !== true) return parent.iterationPath;
+  const selected = sprintWindow.entries.find((entry) => entry.name === selectedSprintName);
+  const current = sprintWindow.entries.find((entry) => entry.name === sprintWindow.currentName);
+  return (selected ?? current)?.path ?? parent.iterationPath;
+}
+
 /** The one line stating everything about the new item the reader is not being asked to type. */
-export function newChildSummary(parent: TrackedWorkItem, typeName: string): string {
+export function newChildSummary(
+  parent: TrackedWorkItem,
+  typeName: string,
+  iterationPath: string | null = parent.iterationPath,
+): string {
   const parts = [`under ${parent.title}`];
   if (parent.areaPath !== null) {
     parts.push(`in area ${parent.areaPath}`);
   }
-  if (parent.iterationPath !== null) {
-    parts.push(`in iteration ${parent.iterationPath}`);
+  if (iterationPath !== null) {
+    parts.push(`in iteration ${iterationPath}`);
   }
   return `Created as a ${typeName} ${parts.join(", ")}.`;
 }

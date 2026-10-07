@@ -88,14 +88,15 @@ board-specific destinations:
   child type. The file also exports `childTypeOf`,
   `primaryChildTypeOf` (the first child
   type under a row that IS the team's delivery, so a command promising work cannot create planning),
-  `newChildSummary` (the line stating
+  `newChildIterationPath` (the selected view sprint for Primary work, the current sprint when no
+  sprint is selected, and the parent's iteration for planning work), `newChildSummary` (the line stating
   what the reader is not being asked to type) and `newChildItem` (the in-memory item the created one
   is shown as, ranked ahead of its level).
 
 | Option          | Meaning                                                                                                                                                                              |
 | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `item`          | The item the commands act on. **Mutated in place** on a successful write, like every row control.                                                                                    |
-| `services`      | `EnhancedViewServices` — the note loader/writer, the mention directory, the marker tags, the logger.                                                                                 |
+| `services`      | `EnhancedViewServices` — the note loader/writer, the mention directory, the attachment uploader, the marker tags, the logger.                                                        |
 | `queue`         | The board's single `WorkItemWriteQueue`, so these edits cannot race the row controls on `System.Rev`.                                                                                |
 | `onChanged`     | Repaints the board, so a changed title, sprint or flag shows without a re-read.                                                                                                      |
 | `sprintWindow`  | (editing commands) The team's sprint window; the move submenu is built from its current and future entries.                                                                          |

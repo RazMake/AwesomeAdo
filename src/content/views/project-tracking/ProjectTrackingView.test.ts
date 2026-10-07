@@ -112,6 +112,10 @@ function createFakeServices(overrides?: Partial<EnhancedViewServices>): Enhanced
       addNote: async () => ({ ok: true }),
       editNote: async () => ({ ok: true }),
     },
+    attachmentUploader: {
+      upload: async () => ({ ok: false, error: "not in tests" }),
+      discard: async () => true,
+    },
     userDirectory: {
       search: async () => [],
       resolve: async () => null,
@@ -6597,9 +6601,12 @@ describe("ProjectTrackingView — recording newly identified work", () => {
     expect(buttonLabels(newItemRow(root)!)).toEqual(["Add work", "Cancel"]);
   });
 
-  it("creates the work under that item, inheriting its area and sprint", async () => {
+  it("creates the work under that item in its area and the sprint selected in the view", async () => {
     const { root, created } = await renderCreatingBoard();
     await turnSprintFilterOff(root);
+    const sprint = root.querySelector<HTMLSelectElement>(".awesomeado-sprint-picker__select")!;
+    sprint.value = "Sprint 2";
+    sprint.dispatchEvent(new Event("change"));
 
     rightClick(root.querySelector(".awesomeado-tracking__row")!);
     commandNamed(root, "New work identified").click();
@@ -6612,7 +6619,7 @@ describe("ProjectTrackingView — recording newly identified work", () => {
           title: "Password reset",
           tags: [],
           areaPath: "Project\\Platform\\API",
-          iterationPath: "Project\\Sprint 1",
+          iterationPath: "Project\\Sprint 2",
           parentId: 2,
         },
       ]),

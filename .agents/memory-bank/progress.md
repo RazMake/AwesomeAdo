@@ -36,7 +36,9 @@ This is a flattened snapshot of what exists now, not a build log.
   when at least one child row survives the active filters. Accepted drag reorders are
   checked against their requested sibling interval; mixed work-item types and unranked neighbours
   are corrected through the direct-rank fallback when ADO's team backlog endpoint leaves them out of
-  place. Center-row drops now return items inside configured parents, even empty or collapsed ones,
+  place. New Primary work starts in the view's selected sprint, or the team's current sprint when
+  the view has no selection; new planning items still inherit their parent's iteration. Center-row
+  drops now return items inside configured parents, even empty or collapsed ones,
   append after the full child list, and convert to the appropriate child type through the existing
   revision-aware move queue. Edge ordering, one-level moves, and leaf-only demotion are preserved.
   A framed Done toggle immediately before Assigned To fills blue while active, keeps every
@@ -300,6 +302,13 @@ This is a flattened snapshot of what exists now, not a build log.
   string), `createLoggerFactory` / `createLogging` composition. Diagnostics decisions log their
   signals and conclusion; stores log saves by name only. The Diagnostics view filters sources through
   a searchable multi-select dropdown (`MultiSelectFilter`).
+- **Pasted images** (`common/view-common/control/TextEditor/PastedImages.ts`, `IAttachmentUploader`,
+  `MessagingAttachmentUploader` + `uploadAttachmentInPage` bridge): every multi-line Markdown editor
+  (descriptions, notes and corrections, marker reasons, new work item description/acceptance
+  reason) uploads pasted images as ADO attachments and embeds them; Save/Create waits on in-flight
+  uploads. Single-line editors (titles, tags) take no images. Cancelled/abandoned edits remove their
+  uploads again through `IAttachmentUploader.discard` (`discardAttachmentInPage` DELETE bridge).
+  Authenticated browser validation pending.
 - **Icons**: toolbar/action icons, options header icon, and the SVG button icon.
 - **Quality gate**: `pnpm verify` green — Prettier, ESLint, TypeScript, jscpd, `scripts/*` tests,
   Vitest with ≥ 85% coverage on `src/**`, and workflow schema validation.

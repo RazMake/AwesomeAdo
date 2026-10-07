@@ -7,6 +7,7 @@ import {
   childTypeOf,
   newChildItem,
   newChildItemName,
+  newChildIterationPath,
   newChildOfferFor,
   newChildSummary,
   newChildTypeOf,
@@ -191,6 +192,50 @@ describe("newChildSummary", () => {
     const bare = itemOf({ type: "Feature", areaPath: null, iterationPath: null });
 
     expect(newChildSummary(bare, "Story")).toBe("Created as a Story under User Authentication.");
+  });
+
+  it("states an explicitly selected sprint instead of the parent's iteration", () => {
+    expect(newChildSummary(itemOf({ type: "Feature" }), "Story", "Project\\Sprint 2")).toContain(
+      "in iteration Project\\Sprint 2",
+    );
+  });
+});
+
+describe("newChildIterationPath", () => {
+  const window = {
+    entries: [
+      {
+        path: "Project\\Sprint 1",
+        name: "Sprint 1",
+        label: "Current - Sprint 1",
+        relation: "current" as const,
+      },
+      {
+        path: "Project\\Sprint 2",
+        name: "Sprint 2",
+        label: "Next - Sprint 2",
+        relation: "future" as const,
+      },
+    ],
+    currentName: "Sprint 1",
+  };
+
+  it("uses the selected view sprint for primary work", () => {
+    expect(
+      newChildIterationPath(itemOf({ type: "Feature" }), "Story", TYPES, window, "Sprint 2"),
+    ).toBe("Project\\Sprint 2");
+  });
+
+  it("uses the current sprint when the view has no sprint selection", () => {
+    expect(newChildIterationPath(itemOf({ type: "Feature" }), "Story", TYPES, window, null)).toBe(
+      "Project\\Sprint 1",
+    );
+  });
+
+  it("keeps planning work in its parent's iteration", () => {
+    expect(
+      newChildIterationPath(itemOf({ type: "Epic" }), "Feature", TYPES, window, "Sprint 2"),
+    ).toBe("Project\\Sprint 1");
   });
 });
 

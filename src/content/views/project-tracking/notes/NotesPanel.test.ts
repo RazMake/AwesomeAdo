@@ -76,6 +76,9 @@ function mountPanel(
   const knownMentions = overrides.mentionNames ?? new Map<string, string>();
   const resolveNames = vi.fn(() => Promise.resolve(knownMentions));
   const onItemRevision = vi.fn();
+  const upload = vi.fn(() =>
+    Promise.resolve({ ok: true, url: "https://dev.azure.com/org/_apis/wit/attachments/a1" }),
+  );
   const handle = renderNotesPanel({
     doc: document,
     workItemId: WORK_ITEM_ID,
@@ -90,13 +93,24 @@ function mountPanel(
       },
       markerTags: () => normalizeMarkerTags(undefined),
       logger: { info, error },
+      attachmentUploader: { upload, discard: vi.fn(() => Promise.resolve(true)) },
     },
     state: overrides.state,
     showAllInWindow: overrides.showAllInWindow,
     onlyCommentPrefix: overrides.onlyCommentPrefix,
     onItemRevision,
   });
-  return { handle, loadNotes, addNote, editNote, resolveNames, onItemRevision, info, error };
+  return {
+    handle,
+    loadNotes,
+    addNote,
+    editNote,
+    resolveNames,
+    onItemRevision,
+    info,
+    error,
+    upload,
+  };
 }
 
 /** The note rows the panel is currently showing. */
@@ -504,5 +518,55 @@ describe("renderNotesPanel — correcting a note", () => {
     });
     expect(rowsOf(handle)[0]?.textContent).not.toContain("[BLOCKED]");
     expect(rowsOf(handle)[0]?.querySelector(".awesomeado-note__marker")).not.toBeNull();
+  });
+});
+
+/** Paste one screenshot into `field`; jsdom has no real clipboard. */
+function pasteImage(field: HTMLTextAreaElement): void {
+  const image = new File([new Uint8Array([1])], "image.png", { type: "image/png" });
+  const event = new Event("paste", { bubbles: true, cancelable: true });
+  Object.defineProperty(event, "clipboardData", {
+    value: {
+      getData: () => "",
+      items: [{ kind: "file", type: image.type, getAsFile: () => image }],
+    },
+  });
+  field.dispatchEvent(event);
+}
+
+describe("renderNotesPanel — pasting an image", () => {
+  const EMBEDDED = "![image.png](https://dev.azure.com/org/_apis/wit/attachments/a1)";
+
+  it("stores an image pasted into a new note and posts it embedded", async () => {
+    const { handle, addNote, upload } = mountPanel();
+    await expand(handle);
+    buttonLabelled(handle.element, "+\u00A0Add note").click();
+    const field = handle.element.querySelector<HTMLTextAreaElement>(
+      ".awesomeado-text-editor__input",
+    )!;
+
+    pasteImage(field);
+    await flush();
+    buttonLabelled(handle.element, "Add").click();
+    await flush();
+
+    expect(upload).toHaveBeenCalledWith({ fileName: "image.png", content: expect.any(File) });
+    expect(addNote).toHaveBeenCalledWith({ workItemId: WORK_ITEM_ID, text: EMBEDDED });
+  });
+
+  it("stores an image pasted into a correction the same way", async () => {
+    const note = createNote({ id: 5, text: "" });
+    const { handle, editNote, upload } = mountPanel({ notes: [note], currentUser: READER });
+    await expand(handle);
+    const row = rowsOf(handle)[0]!;
+    buttonLabelled(row, READER.displayName).click();
+
+    pasteImage(row.querySelector<HTMLTextAreaElement>(".awesomeado-text-editor__input")!);
+    await flush();
+    buttonLabelled(row, "Save").click();
+    await flush();
+
+    expect(upload).toHaveBeenCalledTimes(1);
+    expect(editNote).toHaveBeenCalledWith({ workItemId: WORK_ITEM_ID, noteId: 5, text: EMBEDDED });
   });
 });

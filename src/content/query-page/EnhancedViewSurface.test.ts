@@ -318,6 +318,10 @@ function fakeServices(): EnhancedViewServices {
       addNote: () => Promise.resolve({ ok: true }),
       editNote: () => Promise.resolve({ ok: true }),
     },
+    attachmentUploader: {
+      upload: () => Promise.resolve({ ok: false, error: "not in tests" }),
+      discard: () => Promise.resolve(true),
+    },
     userDirectory: { search: () => Promise.resolve([]), resolve: () => Promise.resolve(null) },
     mentionDirectory: {
       resolveNames: () => Promise.resolve(new Map<string, string>()),

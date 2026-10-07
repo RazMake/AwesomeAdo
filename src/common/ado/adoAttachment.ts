@@ -1,7 +1,8 @@
 import { parseAdoContext } from "../navigation/AdoContext";
 
 import { ADO_API_VERSION } from "./adoApi";
-import { adoCollectionBaseUrl } from "./fetchAdoMetadata";
+import { adoCollectionBaseUrl, resolveAdoProjectContext } from "./fetchAdoMetadata";
+import { asRecord, nonEmptyString } from "./rawJson";
 
 /**
  * How Azure DevOps refers to an image embedded in a note or a description: the attachment's GUID on
@@ -33,6 +34,12 @@ const ATTACHMENT_PATH_SEGMENT = /\/([0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12})
  * rewriting it would break a URL that was already correct.
  */
 const ADO_AREA_SEGMENT = /\/_/;
+
+/** An attachment id on its own, as an upload answers with and a delete takes. */
+export const ATTACHMENT_ID = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
+
+/** The api-version Azure DevOps offers the attachment delete under; it exists only as a preview. */
+const ATTACHMENT_DELETE_API_VERSION = "7.2-preview.4";
 
 /**
  * The REST URL an attachment reference embedded in ADO rich text must be fetched from, or null when
@@ -78,6 +85,81 @@ function locateAttachment(
     return null;
   }
   return { href: resolved.href, id: match[1] ?? "", query: resolved.search };
+}
+
+/**
+ * The URL a new attachment is uploaded to, or null when `href` is not a project-scoped ADO location.
+ *
+ * Project-scoped, like the request ADO's own editors make when a screenshot is pasted: the project
+ * is what the attachment's storage and permissions are charged to. `uploadType=Simple` sends the
+ * whole file in one request, which is what a pasted image is.
+ */
+export function buildAttachmentUploadUrl(href: string, fileName: string): string | null {
+  const resolved = resolveAdoProjectContext(href);
+  if (resolved === null) {
+    return null;
+  }
+  const name = encodeURIComponent(fileName);
+  return (
+    `${resolved.base}/${resolved.project}/_apis/wit/attachments` +
+    `?fileName=${name}&uploadType=Simple&api-version=${ADO_API_VERSION}`
+  );
+}
+
+/**
+ * The URL Azure DevOps answered an upload with, carrying the file's name, or null when the body does
+ * not carry a URL.
+ *
+ * That URL — not one rebuilt from the id — is what gets embedded, because it is the reference ADO's
+ * own editors embed, so a description authored here reads the same when opened in ADO. The name is
+ * added the way ADO adds it: it is what makes the attachment come back typed as an image rather than
+ * as an opaque download.
+ */
+export function parseUploadedAttachmentUrl(raw: unknown, fileName: string): string | null {
+  const url = nonEmptyString(asRecord(raw)?.["url"]);
+  if (url === null) {
+    return null;
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== "https:") {
+    return null;
+  }
+  parsed.searchParams.set("fileName", fileName);
+  return parsed.href;
+}
+
+/**
+ * The id Azure DevOps filed an upload under, or null when the body does not carry a well-formed one.
+ *
+ * Validated here because it is later handed back to a permanent DELETE: anything that is not a GUID
+ * must never reach one.
+ */
+export function parseUploadedAttachmentId(raw: unknown): string | null {
+  const id = nonEmptyString(asRecord(raw)?.["id"]);
+  return id !== null && ATTACHMENT_ID.test(id) ? id : null;
+}
+
+/**
+ * The URL an unsaved upload is removed through, or null when `href` is not a project-scoped ADO
+ * location or `attachmentId` is not a GUID.
+ *
+ * Scoped to the same project the upload was charged to (see `buildAttachmentUploadUrl`). The delete
+ * is only offered from a preview API version, so it carries its own rather than `ADO_API_VERSION`.
+ */
+export function buildAttachmentDiscardUrl(href: string, attachmentId: string): string | null {
+  const resolved = resolveAdoProjectContext(href);
+  if (resolved === null || !ATTACHMENT_ID.test(attachmentId)) {
+    return null;
+  }
+  return (
+    `${resolved.base}/${resolved.project}/_apis/wit/attachments/${attachmentId}` +
+    `?api-version=${ATTACHMENT_DELETE_API_VERSION}`
+  );
 }
 
 /** The org-scoped REST request for one attachment id, or null when `contextHref` is not ADO. */

@@ -167,6 +167,10 @@ function services(overrides: Partial<EnhancedViewServices> = {}): EnhancedViewSe
       addNote: async () => ({ ok: true }),
       editNote: async () => ({ ok: true }),
     },
+    attachmentUploader: {
+      upload: async () => ({ ok: false, error: "not in tests" }),
+      discard: async () => true,
+    },
     userDirectory: { search: async () => [], resolve: async () => null },
     mentionDirectory: {
       resolveNames: async () => new Map<string, string>(),

@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { buildAdoAttachmentUrl } from "./adoAttachment";
+import {
+  buildAdoAttachmentUrl,
+  buildAttachmentDiscardUrl,
+  buildAttachmentUploadUrl,
+  parseUploadedAttachmentId,
+  parseUploadedAttachmentUrl,
+} from "./adoAttachment";
 
 const HOSTED_PAGE = "https://dev.azure.com/contoso/proj/_queries/query/q1";
 const LEGACY_PAGE = "https://contoso.visualstudio.com/proj/_queries/query/q1";
@@ -96,5 +102,77 @@ describe("buildAdoAttachmentUrl — what it refuses to treat as an attachment", 
 
   it("refuses to build anything when the page is not an ADO location", () => {
     expect(buildAdoAttachmentUrl("https://example.com/board", ATTACHMENT)).toBeNull();
+  });
+});
+
+describe("buildAttachmentUploadUrl — where a pasted image is stored", () => {
+  it("addresses the page's project and sends the whole file in one request", () => {
+    expect(buildAttachmentUploadUrl(HOSTED_PAGE, "my shot.png")).toBe(
+      "https://dev.azure.com/contoso/proj/_apis/wit/attachments" +
+        "?fileName=my%20shot.png&uploadType=Simple&api-version=7.1",
+    );
+  });
+
+  it("resolves the organization from the host on a legacy visualstudio.com page", () => {
+    expect(buildAttachmentUploadUrl(LEGACY_PAGE, "image.png")).toBe(
+      "https://contoso.visualstudio.com/proj/_apis/wit/attachments" +
+        "?fileName=image.png&uploadType=Simple&api-version=7.1",
+    );
+  });
+
+  it("refuses a page that names no project", () => {
+    expect(buildAttachmentUploadUrl("https://dev.azure.com/contoso", "image.png")).toBeNull();
+    expect(buildAttachmentUploadUrl("https://example.com/proj/_queries", "image.png")).toBeNull();
+  });
+});
+
+describe("parseUploadedAttachmentUrl — what an uploaded image is embedded as", () => {
+  const STORED = `https://dev.azure.com/contoso/0b1c/_apis/wit/attachments/${ATTACHMENT}`;
+
+  it("names the file on ADO's own URL, the way ADO's editors embed it", () => {
+    expect(parseUploadedAttachmentUrl({ id: ATTACHMENT, url: STORED }, "my shot.png")).toBe(
+      `${STORED}?fileName=my+shot.png`,
+    );
+  });
+
+  it.each([
+    ["no body", null],
+    ["no url", { id: ATTACHMENT }],
+    ["a blank url", { url: " " }],
+    ["an unparseable url", { url: "not a url" }],
+    ["a url that is not https", { url: "http://dev.azure.com/contoso/_apis/wit/attachments/a" }],
+  ])("refuses %s", (_case, raw) => {
+    expect(parseUploadedAttachmentUrl(raw, "image.png")).toBeNull();
+  });
+});
+
+describe("parseUploadedAttachmentId — what an unsaved image is later removed by", () => {
+  it("returns the GUID Azure DevOps assigned", () => {
+    expect(parseUploadedAttachmentId({ id: ATTACHMENT, url: "x" })).toBe(ATTACHMENT);
+  });
+
+  it.each([
+    ["no reply", undefined],
+    ["a reply with no id", { url: "x" }],
+    ["an id that is not a GUID", { id: "../../projects" }],
+  ])("returns null for %s", (_case, raw) => {
+    expect(parseUploadedAttachmentId(raw)).toBeNull();
+  });
+});
+
+describe("buildAttachmentDiscardUrl — where an unsaved image is removed", () => {
+  it("addresses the attachment in the page's project through the delete API", () => {
+    expect(buildAttachmentDiscardUrl(HOSTED_PAGE, ATTACHMENT)).toBe(
+      `https://dev.azure.com/contoso/proj/_apis/wit/attachments/${ATTACHMENT}` +
+        "?api-version=7.2-preview.4",
+    );
+  });
+
+  it("refuses a page that names no project", () => {
+    expect(buildAttachmentDiscardUrl("https://dev.azure.com/contoso", ATTACHMENT)).toBeNull();
+  });
+
+  it("refuses an id that is not a GUID, so nothing else can be deleted", () => {
+    expect(buildAttachmentDiscardUrl(HOSTED_PAGE, "a1/../../x")).toBeNull();
   });
 });

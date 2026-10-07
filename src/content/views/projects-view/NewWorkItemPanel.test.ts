@@ -65,6 +65,10 @@ function services(overrides?: Partial<EnhancedViewServices>): EnhancedViewServic
       interrupt: { tag: "Interrupt", commentTag: "[ACCEPTED]" },
     }),
     logger: { info: () => undefined, error: () => undefined },
+    attachmentUploader: {
+      upload: async () => ({ ok: false, error: "not in tests" }),
+      discard: async () => true,
+    },
     ...overrides,
   } as EnhancedViewServices;
 }
@@ -249,6 +253,24 @@ describe("renderNewWorkItemPanel - creating", () => {
     expect(create(form).disabled).toBe(false);
   });
 
+  it("keeps Create disabled while a create is in flight, whatever is typed meanwhile", async () => {
+    const { form, onCreate } = await mount();
+    let finish!: (created: boolean) => void;
+    onCreate.mockReturnValue(new Promise((resolve) => (finish = resolve)));
+    const title = field<HTMLInputElement>(form, "title");
+    title.value = "Retry on decline";
+    title.dispatchEvent(new Event("input"));
+
+    create(form).click();
+    type(form, "description", "Still typing.");
+    title.dispatchEvent(new Event("input"));
+    expect(create(form).disabled).toBe(true);
+
+    finish(false);
+    await vi.waitFor(() => expect(create(form).disabled).toBe(false));
+    expect(onCreate).toHaveBeenCalledTimes(1);
+  });
+
   it("abandons the form on Cancel without creating anything", async () => {
     const { form, onCreate, onCancel } = await mount();
 
@@ -349,5 +371,138 @@ describe("renderNewWorkItemPanel - the interrupt flag", () => {
     expect(interruptPill(form).disabled).toBe(true);
     expect(interruptPill(form).title).toContain("No Azure DevOps tag is configured");
     expect(field<HTMLInputElement>(form, "accepted").disabled).toBe(true);
+  });
+});
+
+/** An uploader whose single upload the test settles by hand, so the in-flight state is visible. */
+function heldUploader() {
+  let settle!: (url: string) => void;
+  const upload = vi.fn(
+    () =>
+      new Promise<{ ok: boolean; url: string; id: string }>((resolve) => {
+        settle = (url) => resolve({ ok: true, url, id: ATTACHMENT_ID });
+      }),
+  );
+  const discard = vi.fn(async () => true);
+  return { attachmentUploader: { upload, discard }, discard, settle: (url: string) => settle(url) };
+}
+
+const ATTACHMENT_ID = "0f8fad5b-d9cb-469f-a165-70867728950e";
+
+/** Paste one screenshot into the form's `name` box; jsdom has no real clipboard. */
+function pasteImage(form: HTMLElement, name: string): void {
+  const image = new File([new Uint8Array([1])], "image.png", { type: "image/png" });
+  const event = new Event("paste", { bubbles: true, cancelable: true });
+  Object.defineProperty(event, "clipboardData", {
+    value: {
+      getData: () => "",
+      items: [{ kind: "file", type: image.type, getAsFile: () => image }],
+    },
+  });
+  field<HTMLTextAreaElement>(form, name).dispatchEvent(event);
+}
+
+describe("renderNewWorkItemPanel - pasting an image", () => {
+  const URL_ = "https://dev.azure.com/org/_apis/wit/attachments/a1";
+
+  it("holds Create until a pasted description image is stored, then creates it embedded", async () => {
+    const held = heldUploader();
+    const { form, onCreate } = await mount({ attachmentUploader: held.attachmentUploader });
+    const title = field<HTMLInputElement>(form, "title");
+    title.value = "Retry on decline";
+    title.dispatchEvent(new Event("input"));
+
+    pasteImage(form, "description");
+    expect(create(form).disabled).toBe(true);
+
+    held.settle(URL_);
+    await vi.waitFor(() => expect(create(form).disabled).toBe(false));
+    create(form).click();
+
+    await vi.waitFor(() => expect(onCreate).toHaveBeenCalled());
+    expect(onCreate.mock.calls[0]?.[0].description).toBe(`![image.png](${URL_})`);
+  });
+
+  it("holds Create while an accepted interrupt's reason is still uploading an image", async () => {
+    const held = heldUploader();
+    const { form, onCreate } = await mount({ attachmentUploader: held.attachmentUploader });
+    const title = field<HTMLInputElement>(form, "title");
+    title.value = "Retry on decline";
+    title.dispatchEvent(new Event("input"));
+    tickInterrupt(form);
+    tickAccepted(form);
+
+    pasteImage(form, "reason");
+    expect(create(form).disabled).toBe(true);
+
+    held.settle(URL_);
+    await vi.waitFor(() => expect(create(form).disabled).toBe(false));
+    create(form).click();
+
+    await vi.waitFor(() => expect(onCreate).toHaveBeenCalled());
+    expect(onCreate.mock.calls[0]?.[0].comment).toBe(`[ACCEPTED] ![image.png](${URL_})`);
+  });
+});
+
+describe("renderNewWorkItemPanel - cleaning up pasted images", () => {
+  const URL_ = "https://dev.azure.com/org/_apis/wit/attachments/a1";
+
+  /** A form whose description already embeds one stored image. */
+  async function formWithDescriptionImage() {
+    const held = heldUploader();
+    const mounted = await mount({ attachmentUploader: held.attachmentUploader });
+    pasteImage(mounted.form, "description");
+    held.settle(URL_);
+    await vi.waitFor(() =>
+      expect(field<HTMLTextAreaElement>(mounted.form, "description").value).toContain(URL_),
+    );
+    return { ...mounted, held };
+  }
+
+  it("removes a pasted description image when the form is cancelled", async () => {
+    const { form, onCancel, held } = await formWithDescriptionImage();
+
+    field<HTMLButtonElement>(form, "cancel").click();
+
+    expect(held.discard).toHaveBeenCalledExactlyOnceWith(ATTACHMENT_ID);
+    expect(onCancel).toHaveBeenCalled();
+  });
+
+  it("keeps a pasted description image once the item is created", async () => {
+    const { form, onCreate, held } = await formWithDescriptionImage();
+    onCreate.mockImplementation(async () => {
+      form.remove();
+      return true;
+    });
+    type(form, "title", "Retry on decline");
+
+    create(form).click();
+    await vi.waitFor(() => expect(onCreate).toHaveBeenCalled());
+    await Promise.resolve();
+
+    expect(held.discard).not.toHaveBeenCalled();
+  });
+
+  it("removes a reason image left behind an unaccepted interrupt when the item is created", async () => {
+    const held = heldUploader();
+    const { form, onCreate } = await mount({ attachmentUploader: held.attachmentUploader });
+    onCreate.mockImplementation(async () => {
+      form.remove();
+      return true;
+    });
+    tickInterrupt(form);
+    tickAccepted(form);
+    pasteImage(form, "reason");
+    held.settle(URL_);
+    await vi.waitFor(() =>
+      expect(field<HTMLTextAreaElement>(form, "reason").value).toContain(URL_),
+    );
+    tickAccepted(form);
+    type(form, "title", "Retry on decline");
+
+    create(form).click();
+
+    await vi.waitFor(() => expect(held.discard).toHaveBeenCalledWith(ATTACHMENT_ID));
+    expect(onCreate.mock.calls[0]?.[0].comment).toBeNull();
   });
 });
