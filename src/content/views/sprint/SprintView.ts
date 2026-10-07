@@ -12,7 +12,7 @@ import { filterTreeForSprintRoster, wiqlForSprint } from "../../../common/ado/sp
 import type { SprintWindow, SprintWindowEntry } from "../../../common/ado/sprintWindow";
 import {
   primaryFilterEligibility,
-  primaryWorkAncestors,
+  primaryWorkTypes,
   workItemTypeColor,
 } from "../../../common/ado/workItemTypes";
 import { replacePageSearch } from "../../../common/navigation/PageUrl";
@@ -96,6 +96,7 @@ import {
 import {
   sprintDefaultAreaPaths,
   sprintOrderingPolicy,
+  sprintProjectFilterIncludesDeliverables,
   sprintRecentChangesHours,
   sprintViewType,
 } from "./sprintViewType";
@@ -473,11 +474,16 @@ function hierarchyOptions(
   items: readonly DisplayItem[],
   shownItems: readonly DisplayItem[],
   types: ReadonlyMap<string, TypeCatalogEntry>,
+  includeDeliverables: boolean,
 ): HierarchyFilterOption[] {
-  const parentIds = new Set(shownItems.flatMap(({ ancestorIds }) => ancestorIds));
-  const projectTypes = primaryWorkAncestors([...types.values()]);
+  const candidateIds = new Set(shownItems.flatMap(({ ancestorIds }) => ancestorIds));
+  const catalog = [...types.values()];
+  const projectTypes = sprintProjectTypes(catalog);
+  const offeredTypes = includeDeliverables
+    ? new Set([...projectTypes, ...sprintDeliverableTypes(catalog)])
+    : projectTypes;
   return items
-    .filter(({ item }) => parentIds.has(item.id) && projectTypes.has(item.type))
+    .filter(({ item }) => candidateIds.has(item.id) && offeredTypes.has(item.type))
     .map(({ item, depth }) => {
       const type = types.get(item.type);
       return {
@@ -490,6 +496,69 @@ function hierarchyOptions(
         depth,
       };
     });
+}
+
+function sprintDeliverableTypes(types: readonly TypeCatalogEntry[]): ReadonlySet<string> {
+  const primaryTypes = primaryWorkTypes(types);
+  const markedProjects = types.filter((type) => type.rootKind === "project");
+  if (markedProjects.length > 0) {
+    const directChildren = new Set(markedProjects.flatMap((type) => type.children ?? []));
+    return new Set(
+      types
+        .filter((type) => directChildren.has(type.name) && !primaryTypes.has(type.name))
+        .map((type) => type.name),
+    );
+  }
+  return new Set(
+    types
+      .filter(
+        (type) =>
+          !primaryTypes.has(type.name) &&
+          type.children?.some((child) => primaryTypes.has(child)) === true,
+      )
+      .map((type) => type.name),
+  );
+}
+
+function sprintProjectTypes(types: readonly TypeCatalogEntry[]): ReadonlySet<string> {
+  const markedProjects = types.filter((type) => type.rootKind === "project");
+  const projectTargets =
+    markedProjects.length > 0
+      ? new Set(markedProjects.map((type) => type.name))
+      : parentsOf(types, sprintDeliverableTypes(types));
+  return new Set([...projectTargets, ...ancestorTypesOf(types, projectTargets)]);
+}
+
+function parentsOf(
+  types: readonly TypeCatalogEntry[],
+  childTypes: ReadonlySet<string>,
+): ReadonlySet<string> {
+  return new Set(
+    types
+      .filter((type) => type.children?.some((child) => childTypes.has(child)) === true)
+      .map((type) => type.name),
+  );
+}
+
+function ancestorTypesOf(
+  types: readonly TypeCatalogEntry[],
+  targets: ReadonlySet<string>,
+): ReadonlySet<string> {
+  const ancestors = new Set<string>();
+  let frontier = new Set(targets);
+  while (frontier.size > 0) {
+    frontier = new Set(
+      types
+        .filter(
+          (type) =>
+            !ancestors.has(type.name) &&
+            type.children?.some((child) => frontier.has(child)) === true,
+        )
+        .map((type) => type.name),
+    );
+    for (const type of frontier) ancestors.add(type);
+  }
+  return ancestors;
 }
 
 function normalizeProjectSelection(
@@ -1229,7 +1298,12 @@ function sprintBoardSelection(
     context,
     session,
   );
-  const projectOptions = hierarchyOptions(allItems, shownWithoutProject, types);
+  const projectOptions = hierarchyOptions(
+    allItems,
+    shownWithoutProject,
+    types,
+    sprintProjectFilterIncludesDeliverables(context.properties),
+  );
   normalizeProjectSelection(projectOptions, session);
   const base = baseQueue(filterItems, session);
   return {

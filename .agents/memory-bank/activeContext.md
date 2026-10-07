@@ -82,7 +82,11 @@ AwesomeADO is feature-complete for its current scope:
   active filter.
 - Sprint View clears Lane, Project, person, marker, and activity filters from one pills-row command;
   right-clicking its Unassigned person pill instead excludes unassigned work and draws a
-  bottom-left-to-top-right diagonal in the selected outline color.
+  bottom-left-to-top-right diagonal in the selected outline color. Its per-query
+  `projectFilterDepth` binding defaults to `projects` (the planning chain through an explicitly
+  marked Project type, or otherwise the parent level above deliverables); `deliverables` also offers
+  a marked Project type's direct non-Primary children, or, with no marked Project, the closest
+  non-Primary parents above Primary work. Primary work and implementation details remain excluded.
 - Sprint View synchronizes its horizontally scrolled card grids without transformed ancestors, so
   card popups that escape a clipped lane remain correctly anchored to the viewport.
 - Sprint parent cards show a Sub-items completed/total badge for primary descendants in the selected

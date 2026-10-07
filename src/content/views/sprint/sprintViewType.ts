@@ -26,6 +26,19 @@ const defaultAreaPathsProperty: ViewTypeProperty = {
   hint: "Add the default area paths for the team one at a time. Each area path edit box offers autocomplete suggestions that match any part of the path. These defaults are used only when a sprint has no saved Lane selection.",
 };
 
+const projectFilterDepthProperty: ViewTypeProperty = {
+  key: "projectFilterDepth",
+  label: "Projects dropdown depth",
+  required: false,
+  kind: "select",
+  options: [
+    { value: "projects", label: "Show Projects Only" },
+    { value: "deliverables", label: "Show Projects and their Deliverables" },
+  ],
+  defaultValue: "projects",
+  hint: "Controls whether the Project filter stops at projects or also includes their non-Primary deliverable level.",
+};
+
 /**
  * The Sprint View's configuration: presents a query's work grouped by sprint (iteration).
  *
@@ -35,7 +48,12 @@ const defaultAreaPathsProperty: ViewTypeProperty = {
 export const sprintViewType: ViewType = {
   id: "sprint",
   label: "Sprint View",
-  properties: [orderingPolicyProperty, recentChangesWindowHoursProperty, defaultAreaPathsProperty],
+  properties: [
+    orderingPolicyProperty,
+    recentChangesWindowHoursProperty,
+    defaultAreaPathsProperty,
+    projectFilterDepthProperty,
+  ],
 };
 
 /** Full Lane paths used when the selected sprint has no team-shared selection yet. */
@@ -50,5 +68,17 @@ export function sprintRecentChangesHours(properties: Record<string, string>): nu
       recentChangesWindowHoursProperty,
       properties[recentChangesWindowHoursProperty.key],
     ),
+  );
+}
+
+/** Whether the Project filter may include each project's closest deliverable level. */
+export function sprintProjectFilterIncludesDeliverables(
+  properties: Record<string, string>,
+): boolean {
+  return (
+    resolveViewTypePropertyValue(
+      projectFilterDepthProperty,
+      properties[projectFilterDepthProperty.key],
+    ) === "deliverables"
   );
 }

@@ -5,6 +5,13 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ## Next Version
 
+### New Features
+
+- Sprint View bindings can choose whether the Project dropdown shows only each project's parent
+  chain or also includes its deliverables — the direct child level of a type marked as Project, or
+  otherwise the closest planning level above Primary work; existing and new bindings default to
+  **Show Projects Only**.
+
 ## 0.18
 
 ### New Features

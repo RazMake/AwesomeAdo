@@ -8,7 +8,8 @@ Lane selection.
 ## Public API
 
 - `sprintViewType.ts` -> `sprintViewType: ViewType` - id `"sprint"`, label `"Sprint View"`, and the
-  per-query ordering policy, recent-activity window in hours, and default Lane area paths.
+  per-query ordering policy, recent-activity window in hours, default Lane area paths, and Project
+  dropdown depth.
 - `SprintView.ts` -> `sprintView: EnhancedView` - loads the original WIQL and configured team's
   members before executing the sprint-adjusted query; renders the sprint, Lane, Project, refresh, write-queue, team,
   marker, and recent-activity controls; and shows the filtered card table.
@@ -122,9 +123,14 @@ past sprints and prune older completed records when possible. Only lanes survivi
 planning item and all direct or recursive descendants that belong to the selected sprint. Clicking
 the active Project button clears that selection without opening the popup; clicking it again opens
 the project choices.
-The popup puts each work-item type icon before its title, colors options by type, expands toward the
-window margin for long titles, and offers title search that keeps a matching item's parent chain
-visible.
+The binding's **Projects dropdown depth** chooses whether the popup stops after the planning chain
+through each project (the default) or also offers the deliverables beneath those projects. When a
+type is explicitly marked as **Project**, its direct non-Primary child level is the deliverable
+level. Otherwise, deliverables are the closest non-Primary parents of Primary work and their parent
+level is treated as the project level. Primary work and its implementation details are never
+offered. The popup puts each work-item type icon before its title, colors options by type, expands
+toward the window margin for long titles, and offers title search that keeps a matching item's
+parent chain visible.
 The header's top-right ordering indicator uses the shared Project Tracking picker. Backlog rank is
 the default; title and ETA choices apply immediately to cards and descendant popup rows for the
 current session.

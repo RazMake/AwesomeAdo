@@ -1102,6 +1102,13 @@ Markdown` in one `/rev`-guarded JSON Patch. A 412 causes one reread and one retr
   color and raw title into the shared hierarchy control. That control searches titles by
   case-insensitive substring while retaining each match's visible ancestor stack, and expands toward
   the viewport margin before truncating labels with a full-text tooltip.
+- Amendment: each Sprint View binding can set `projectFilterDepth`. An explicit
+  `rootKind: "project"` type defines the project level and its direct non-Primary child types define
+  the deliverable level. When no Project type is marked, the closest non-Primary parents of Primary
+  work are deliverables and their parent level is the project level. The default `projects` preserves
+  the eligible ancestor chain through that project level; `deliverables` extends it through the
+  deliverable level. Primary work and types below it are never Project filter options. Stored unknown
+  values resolve to the default so older or newer binding data cannot silently broaden the dropdown.
 - Amendment: A planning-context item with no Primary work anywhere beneath it is judged by the
   filters in its own right instead of waiting for delivery below it to speak for it, and the pass
   tells the caller which of the two it is judging (`FilterSubject`) so a filter that cannot speak to

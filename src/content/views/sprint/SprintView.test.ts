@@ -7,7 +7,12 @@ import type { EnhancedViewServices } from "../../../common/view-common/EnhancedV
 
 import { sprintView } from "./SprintView";
 import { readSprintUrlPreferences } from "./sprintUrlPreferences";
-import { sprintDefaultAreaPaths, sprintOrderingPolicy, sprintViewType } from "./sprintViewType";
+import {
+  sprintDefaultAreaPaths,
+  sprintOrderingPolicy,
+  sprintProjectFilterIncludesDeliverables,
+  sprintViewType,
+} from "./sprintViewType";
 
 const STORY_DISPLAY_COLOR =
   "light-dark(#0078d4, color-mix(in srgb, #0078d4 75%, var(--text-primary-color)))";
@@ -292,6 +297,16 @@ describe("Sprint View ordering configuration", () => {
       }),
     ).toEqual(["Project\\Apps", "Project\\Platform"]);
     expect(sprintViewType.properties[2]?.key).toBe("defaultAreaPaths");
+  });
+
+  it("defaults the Projects dropdown to projects and accepts the deliverables depth", () => {
+    expect(sprintProjectFilterIncludesDeliverables({})).toBe(false);
+    expect(sprintProjectFilterIncludesDeliverables({ projectFilterDepth: "deliverables" })).toBe(
+      true,
+    );
+    expect(sprintProjectFilterIncludesDeliverables({ projectFilterDepth: "retired-depth" })).toBe(
+      false,
+    );
   });
 });
 
@@ -2280,7 +2295,7 @@ describe("Sprint View filters", () => {
       [...root.querySelectorAll<HTMLElement>(".awesomeado-hierarchy-filter__option")].map(
         (option) => option.dataset.itemId,
       ),
-    ).toEqual(["", "1", "2", "3"]);
+    ).toEqual(["", "1", "2"]);
   });
 
   it("offers only leaf area paths as Lanes", async () => {
@@ -2650,6 +2665,23 @@ describe("Sprint View shared Lane reloads", () => {
   });
 });
 
+function projectFilterTypes(): ReturnType<EnhancedViewServices["getTypes"]> {
+  const base = services().getTypes()[0]!;
+  return [
+    { ...base, name: "Epic", color: "112233", isPrimaryWork: false, children: ["Feature"] },
+    {
+      ...base,
+      name: "Feature",
+      color: "445566",
+      isPrimaryWork: false,
+      children: ["Story"],
+      rootKind: "project",
+    },
+    { ...base, name: "Story", isPrimaryWork: true, children: ["Task"] },
+    { ...base, name: "Task", isPrimaryWork: false, children: [] },
+  ];
+}
+
 describe("Sprint View Project filter", () => {
   it("offers only configured parents of primary work that lead to shown sprint items", async () => {
     const shownChild = item(4, "Shown child", { type: "Task" });
@@ -2682,17 +2714,7 @@ describe("Sprint View Project filter", () => {
     ];
     const root = await render({
       loadTree: async () => ({ isTreeQuery: true, roots, error: null }),
-      getTypes: () => [
-        { ...services().getTypes()[0]!, name: "Epic", color: "112233", children: ["Feature"] },
-        { ...services().getTypes()[0]!, name: "Feature", color: "445566", children: ["Story"] },
-        {
-          ...services().getTypes()[0]!,
-          name: "Story",
-          isPrimaryWork: true,
-          children: ["Task"],
-        },
-        { ...services().getTypes()[0]!, name: "Task", isPrimaryWork: false, children: [] },
-      ],
+      getTypes: projectFilterTypes,
     });
 
     root.querySelector<HTMLButtonElement>(".awesomeado-hierarchy-filter__trigger")!.click();
@@ -2921,8 +2943,19 @@ async function renderSprintSwitch() {
     loadQueryDefinition,
     loadTeamMembers,
     getTypes: () => [
-      { ...services().getTypes()[0]!, name: "Epic", children: ["Feature"] },
-      { ...services().getTypes()[0]!, name: "Feature", children: ["Story"] },
+      {
+        ...services().getTypes()[0]!,
+        name: "Epic",
+        isPrimaryWork: false,
+        children: ["Feature"],
+      },
+      {
+        ...services().getTypes()[0]!,
+        name: "Feature",
+        isPrimaryWork: false,
+        children: ["Story"],
+        rootKind: "project",
+      },
       { ...services().getTypes()[0]!, name: "Story", isPrimaryWork: true, children: [] },
     ],
   });
@@ -3035,8 +3068,19 @@ describe("Sprint View team-filtered options", () => {
         error: null,
       }),
       getTypes: () => [
-        { ...services().getTypes()[0]!, name: "Epic", children: ["Feature"] },
-        { ...services().getTypes()[0]!, name: "Feature", children: ["Story"] },
+        {
+          ...services().getTypes()[0]!,
+          name: "Epic",
+          isPrimaryWork: false,
+          children: ["Feature"],
+        },
+        {
+          ...services().getTypes()[0]!,
+          name: "Feature",
+          isPrimaryWork: false,
+          children: ["Story"],
+          rootKind: "project",
+        },
         {
           ...services().getTypes()[0]!,
           name: "Story",
@@ -3063,6 +3107,106 @@ describe("Sprint View team-filtered options", () => {
     expect(projects).not.toEqual(
       expect.arrayContaining([expect.stringContaining("Excluded project")]),
     );
+  });
+});
+
+describe("Sprint View Project dropdown depth", () => {
+  it("uses a marked top-level project's direct children as deliverables", async () => {
+    const task = item(4, "Implementation task", { type: "Task" });
+    const story = item(3, "Project deliverable", { children: [task] });
+    const roots = [
+      item(1, "Portfolio", {
+        type: "Epic",
+        children: [item(2, "Project", { type: "Feature", children: [story] })],
+      }),
+    ];
+    const overrides: Partial<EnhancedViewServices> = {
+      loadTree: async () => ({ isTreeQuery: true, roots, error: null }),
+      getTypes: () => [
+        {
+          ...services().getTypes()[0]!,
+          name: "Epic",
+          isPrimaryWork: false,
+          children: ["Feature"],
+          rootKind: "project",
+        },
+        {
+          ...services().getTypes()[0]!,
+          name: "Feature",
+          isPrimaryWork: false,
+          children: ["Story"],
+        },
+        { ...services().getTypes()[0]!, name: "Story", children: ["Task"] },
+        { ...services().getTypes()[0]!, name: "Task", isPrimaryWork: false, children: [] },
+      ],
+    };
+
+    const projectsOnly = await render(overrides);
+    projectsOnly.querySelector<HTMLButtonElement>(".awesomeado-hierarchy-filter__trigger")!.click();
+    expect(
+      [...projectsOnly.querySelectorAll<HTMLElement>(".awesomeado-hierarchy-filter__option")].map(
+        (option) => option.textContent,
+      ),
+    ).toEqual(["All projects", "Portfolio"]);
+
+    document.body.replaceChildren();
+    const withDeliverables = await render(overrides, { projectFilterDepth: "deliverables" });
+    withDeliverables
+      .querySelector<HTMLButtonElement>(".awesomeado-hierarchy-filter__trigger")!
+      .click();
+    expect(
+      [
+        ...withDeliverables.querySelectorAll<HTMLElement>(".awesomeado-hierarchy-filter__option"),
+      ].map((option) => option.textContent),
+    ).toEqual(["All projects", "Portfolio", "Project"]);
+  });
+});
+
+describe("Sprint View explicit Project cutoff", () => {
+  it("stops at the explicitly marked project type", async () => {
+    const roots = [
+      item(1, "Portfolio", {
+        type: "Epic",
+        children: [
+          item(2, "Marked project", {
+            type: "Feature",
+            children: [
+              item(3, "Project deliverable", {
+                type: "Capability",
+                children: [item(4, "Primary work")],
+              }),
+            ],
+          }),
+        ],
+      }),
+    ];
+    const root = await render({
+      loadTree: async () => ({ isTreeQuery: true, roots, error: null }),
+      getTypes: () => [
+        { ...services().getTypes()[0]!, name: "Epic", isPrimaryWork: false, children: ["Feature"] },
+        {
+          ...services().getTypes()[0]!,
+          name: "Feature",
+          isPrimaryWork: false,
+          children: ["Capability"],
+          rootKind: "project",
+        },
+        {
+          ...services().getTypes()[0]!,
+          name: "Capability",
+          isPrimaryWork: false,
+          children: ["Story"],
+        },
+        { ...services().getTypes()[0]!, name: "Story", children: [] },
+      ],
+    });
+
+    root.querySelector<HTMLButtonElement>(".awesomeado-hierarchy-filter__trigger")!.click();
+    expect(
+      [...root.querySelectorAll<HTMLElement>(".awesomeado-hierarchy-filter__option")].map(
+        (option) => option.textContent,
+      ),
+    ).toEqual(["All projects", "Portfolio", "Marked project"]);
   });
 });
 

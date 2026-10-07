@@ -214,8 +214,13 @@ This is a flattened snapshot of what exists now, not a build log.
   resolved slot between visible cards, survives upward reversal through gaps, and appends to an empty
   destination with title highlight only. One serialized action coordinates state and rank; same-cell
   moves use an insertion line, while cross-lane drops are rejected. Lane choices include only represented leaf area paths. Project
-  choices are limited to planning-parent types above Primary work on ancestor chains of currently
-  eligible sprint work, prefixed by type icons, colored by type with stronger themed contrast, and searchable by title without dropping matching parents.
+  choices default to planning-parent types above Primary work on ancestor chains of currently
+  eligible sprint work, stopping at the explicitly marked Project type or otherwise at the parent
+  level above deliverables. The binding's `projectFilterDepth=deliverables` option also includes a
+  marked Project type's direct non-Primary children; when no Project is marked, it includes the
+  closest non-Primary parents of Primary work. Primary work and implementation-detail descendants
+  remain excluded. Choices are prefixed by type icons, colored by type with stronger themed contrast,
+  and searchable by title without dropping matching parents.
   Across Sprint, Project Tracking, and All Projects Catalog, direct work-item type colors keep ADO's
   hue on light schemes and lift toward the active foreground on dark schemes; long labels use
   available viewport width before truncating. Team and

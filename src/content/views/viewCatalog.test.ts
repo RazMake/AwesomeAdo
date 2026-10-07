@@ -62,7 +62,7 @@ describe("VIEW_TYPES per-view properties", () => {
     expect(byKey.get("hours")).toMatchObject({ kind: "number", defaultValue: "24", min: 1 });
   });
 
-  it("gives Sprint View ordering, recent-change, and default Lane settings", () => {
+  it("gives Sprint View ordering, recent-change, Lane, and Project depth settings", () => {
     const sprint = getViewType("sprint");
     const tracking = getViewType("projectTracking");
     const sprintByKey = new Map(sprint?.properties.map((property) => [property.key, property]));
@@ -71,6 +71,7 @@ describe("VIEW_TYPES per-view properties", () => {
       "orderingPolicy",
       "hours",
       "defaultAreaPaths",
+      "projectFilterDepth",
     ]);
     expect(sprintByKey.get("orderingPolicy")).toEqual(trackingByKey.get("orderingPolicy"));
     expect(sprintByKey.get("hours")).toMatchObject({
@@ -82,6 +83,14 @@ describe("VIEW_TYPES per-view properties", () => {
       kind: "area-path-list",
       label: "Default Area Paths for the team",
       hint: "Add the default area paths for the team one at a time. Each area path edit box offers autocomplete suggestions that match any part of the path. These defaults are used only when a sprint has no saved Lane selection.",
+    });
+    expect(sprintByKey.get("projectFilterDepth")).toMatchObject({
+      kind: "select",
+      defaultValue: "projects",
+      options: [
+        { value: "projects", label: "Show Projects Only" },
+        { value: "deliverables", label: "Show Projects and their Deliverables" },
+      ],
     });
   });
 
