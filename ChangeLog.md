@@ -5,6 +5,8 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ## Next Version
 
+## 0.20
+
 ### New Features
 
 - Pasting an image (such as a screenshot) into a description, a note, a marker reason, or the new
