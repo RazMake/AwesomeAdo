@@ -5,6 +5,8 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ## Next Version
 
+## 0.19
+
 ### New Features
 
 - Sprint View bindings can choose whether the Project dropdown shows only each project's parent
