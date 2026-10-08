@@ -12,6 +12,11 @@ beneath the three every item menu carries (Copy Item ID / Copy ADO Url / Open in
 | **Change area path**       | A submenu of the board's other area paths, writing `System.AreaPath`                                                       |
 | **View all notes**         | The item's complete discussion — read, correct, add                                                                        |
 
+`buildCustomTagCommands(options)` adds the shared **Add custom tag** and **Clear custom tag**
+submenus used by the All Projects Catalog and Consumers View. It offers the view's existing tag
+vocabulary before a free-text entry, excludes caller-protected tags from removal, and writes the
+complete `System.Tags` value through the same guarded queue as every other item edit.
+
 Under a **second** rule, the marker flags (`buildMarkerCommands`), offered on **Primary work** only —
 planning items and implementation details never show them:
 

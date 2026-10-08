@@ -89,6 +89,9 @@ Prose describing what the consumer does.
 - `M1`: Sundar Kameswaran (_skamesw_)
 ```
 
+This is also exactly the shape [`../creation`](../creation/README.md) writes for a consumer created
+from the board, so a new consumer's card reads its identity at once and its contacts are editable.
+
 Descriptions are edited by people, so the reader is deliberately loose. Text around the template,
 reordered sections, and small variations in how an entry is written are all expected:
 

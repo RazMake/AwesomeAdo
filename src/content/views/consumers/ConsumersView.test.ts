@@ -975,7 +975,7 @@ describe("consumersView - status and menus", () => {
     ).toBe(true);
 
     root.querySelector("h1")!.dispatchEvent(new MouseEvent("contextmenu", { cancelable: true }));
-    expect(root.querySelectorAll(".awesomeado-item-menu__command")).toHaveLength(1);
+    expect([...menuLabels(root)].sort()).toEqual(["Add new consumer", "Copy ADO Url"]);
   });
 });
 
@@ -1510,5 +1510,281 @@ describe("consumersView - consumer filter", () => {
 
     expect(consumerTitles(root)).toEqual(["Contoso"]);
     expect(window.location.search).toBe("?consumer=10");
+  });
+});
+
+const menuLabels = (root: HTMLElement): (string | null)[] =>
+  [...root.querySelectorAll(".awesomeado-item-menu__command")].map(
+    (command) => command.textContent,
+  );
+
+const runCommand = (root: HTMLElement, label: string): void => {
+  [...root.querySelectorAll<HTMLButtonElement>(".awesomeado-item-menu__command")]
+    .find((command) => command.textContent === label)!
+    .click();
+};
+
+const commandLabel = (command: HTMLButtonElement): string =>
+  (command.textContent ?? "").replace("\u203A", "").trim();
+
+const menuCommand = (root: HTMLElement, label: string): HTMLButtonElement => {
+  const command = [
+    ...root.querySelectorAll<HTMLButtonElement>(".awesomeado-item-menu__command"),
+  ].find((candidate) => commandLabel(candidate) === label);
+  if (command === undefined) throw new Error(`Missing menu command "${label}".`);
+  return command;
+};
+
+const openSubmenu = (root: HTMLElement, label: string): string[] => {
+  const host = menuCommand(root, label).closest(".awesomeado-item-menu__submenu-host");
+  host?.dispatchEvent(new MouseEvent("mouseenter"));
+  return [
+    ...(host?.querySelectorAll<HTMLButtonElement>(
+      ".awesomeado-item-menu__submenu .awesomeado-item-menu__command",
+    ) ?? []),
+  ].map(commandLabel);
+};
+
+const runSubmenuCommand = (root: HTMLElement, parent: string, label: string): void => {
+  const host = menuCommand(root, parent).closest(".awesomeado-item-menu__submenu-host");
+  const command = [
+    ...(host?.querySelectorAll<HTMLButtonElement>(
+      ".awesomeado-item-menu__submenu .awesomeado-item-menu__command",
+    ) ?? []),
+  ].find((candidate) => commandLabel(candidate) === label);
+  if (command === undefined) throw new Error(`Missing submenu command "${label}".`);
+  command.click();
+};
+
+const typeInto = (scope: ParentNode, selector: string, text: string): void => {
+  const field = scope.querySelector<HTMLInputElement | HTMLTextAreaElement>(selector)!;
+  field.value = text;
+  field.dispatchEvent(new Event("input", { bubbles: true }));
+};
+
+const CLIENT_ID = "0f8fad5b-d9cb-469f-a165-70867728950e";
+
+const creatingServices = () => {
+  const create = vi.fn(async () => ({ ok: true, id: 40, rev: 1 }));
+  const loadTree = vi.fn(async () => ({ isTreeQuery: true, roots: fixtureRoots(), error: null }));
+  return { create, loadTree, services: { createWorkItem: { create }, loadTree } };
+};
+
+describe("consumersView - consumer tags", () => {
+  it("shows a consumer's own tags as pills after its name, and never a request's", async () => {
+    const root = await renderOpenBoard(contextWith(taggedServices()));
+
+    const pills = (scope: ParentNode): (string | null)[] =>
+      [...scope.querySelectorAll(".awesomeado-consumers__consumer-item-tag")].map(
+        (pill) => pill.textContent,
+      );
+    expect(pills(cardOf(root, 10).querySelector(".awesomeado-consumers__card-head")!)).toEqual([
+      "Gold",
+    ]);
+    expect(pills(cardOf(root, 20))).toEqual(["Silver"]);
+    expect(pills(titleOf(root, "Export to CSV").closest(".awesomeado-consumers__row")!)).toEqual(
+      [],
+    );
+    expect(pills(root)).toHaveLength(3);
+  });
+
+  it("offers custom tag commands on consumers, but not on their requests", async () => {
+    const root = await renderOpenBoard(contextWith(taggedServices()));
+
+    cardOf(root, 10).dispatchEvent(
+      new MouseEvent("contextmenu", { bubbles: true, cancelable: true }),
+    );
+    expect(menuLabels(root)).toEqual(
+      expect.arrayContaining(["Add custom tag\u203A", "Clear custom tag\u203A"]),
+    );
+
+    titleOf(root, "Audit log")
+      .closest(".awesomeado-consumers__row")!
+      .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+    expect(menuLabels(root)).not.toEqual(
+      expect.arrayContaining(["Add custom tag\u203A", "Clear custom tag\u203A"]),
+    );
+  });
+
+  it("adds a tag from the consumer vocabulary and clears an existing tag", async () => {
+    const writeField = vi.fn(async () => ({ ok: true, rev: 2 }));
+    const root = await renderOpenBoard(contextWith({ ...taggedServices(), writeField }));
+
+    cardOf(root, 10).dispatchEvent(
+      new MouseEvent("contextmenu", { bubbles: true, cancelable: true }),
+    );
+    expect(openSubmenu(root, "Add custom tag")).toEqual(["New tag…", "Silver"]);
+    runSubmenuCommand(root, "Add custom tag", "Silver");
+
+    await vi.waitFor(() =>
+      expect(writeField).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 10,
+          field: "System.Tags",
+          value: "Gold; Silver",
+          baseValue: "Gold",
+        }),
+      ),
+    );
+    expect(cardOf(root, 10).textContent).toContain("Silver");
+
+    cardOf(root, 10).dispatchEvent(
+      new MouseEvent("contextmenu", { bubbles: true, cancelable: true }),
+    );
+    expect(openSubmenu(root, "Clear custom tag")).toEqual(["Gold", "Silver"]);
+    runSubmenuCommand(root, "Clear custom tag", "Gold");
+
+    await vi.waitFor(() =>
+      expect(writeField).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          id: 10,
+          field: "System.Tags",
+          value: "Silver",
+          baseValue: "Gold; Silver",
+        }),
+      ),
+    );
+    expect(cardOf(root, 10).textContent).not.toContain("Gold");
+  });
+});
+
+describe("consumersView - loaded tag vocabulary", () => {
+  it("suggests only consumer tags despite filters, excluding parent and request tags", async () => {
+    window.history.replaceState({}, "", "/?consumer=10");
+    const roots = fixtureRoots();
+    roots[0]!.tags = ["Root tag"];
+    const [contoso, fabrikam, northwind] = roots[0]!.children;
+    contoso!.tags = ["Gold"];
+    contoso!.children[0]!.tags = ["Bronze"];
+    contoso!.children[0]!.children[0]!.tags = ["Hidden tag"];
+    fabrikam!.tags = ["Silver"];
+    northwind!.tags = ["silver", "Gold"];
+    const writeField = vi.fn(async () => ({ ok: true, rev: 2 }));
+    const root = await renderBoard(
+      contextWith({
+        loadTree: async () => ({ isTreeQuery: true, roots, error: null }),
+        writeField,
+      }),
+    );
+
+    cardOf(root, 10).dispatchEvent(
+      new MouseEvent("contextmenu", { bubbles: true, cancelable: true }),
+    );
+    expect(openSubmenu(root, "Add custom tag")).toEqual(["New tag…", "Silver"]);
+    runSubmenuCommand(root, "Add custom tag", "Silver");
+
+    await vi.waitFor(() =>
+      expect(writeField).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 10,
+          field: "System.Tags",
+          value: "Gold; Silver",
+          baseValue: "Gold",
+        }),
+      ),
+    );
+  });
+});
+
+describe("consumersView - creation commands", () => {
+  it("offers Add new request on a consumer, but not on a request; never Add new consumer", async () => {
+    const root = await renderOpenBoard();
+
+    cardOf(root, 10).dispatchEvent(
+      new MouseEvent("contextmenu", { bubbles: true, cancelable: true }),
+    );
+    expect(menuLabels(root)).toContain("Add new request");
+    expect(menuLabels(root)).not.toContain("Add new consumer");
+
+    titleOf(root, "Audit log")
+      .closest(".awesomeado-consumers__row")!
+      .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+    expect(menuLabels(root)).not.toContain("Add new request");
+    expect(menuLabels(root)).not.toContain("Add new consumer");
+  });
+
+  it("adds a consumer under the grouping item from the title, then re-reads the query", async () => {
+    const { create, loadTree, services } = creatingServices();
+    const root = await renderBoard(contextWith(services));
+
+    root.querySelector("h1")!.dispatchEvent(new MouseEvent("contextmenu", { cancelable: true }));
+    runCommand(root, "Add new consumer");
+    const form = root.querySelector<HTMLElement>(".awesomeado-new-consumer")!;
+    expect(form.closest(".awesomeado-item-command__panel")?.textContent).toContain(
+      "Parent: All consumers",
+    );
+    typeInto(form, ".awesomeado-new-consumer__service-name", "Woodgrove");
+    typeInto(form, ".awesomeado-new-consumer__client-id", CLIENT_ID);
+    form.querySelector<HTMLButtonElement>(".awesomeado-new-consumer__add")!.click();
+
+    await vi.waitFor(() => expect(loadTree).toHaveBeenCalledTimes(2));
+    expect(create).toHaveBeenCalledWith({
+      type: "Consumer",
+      title: "Woodgrove",
+      tags: [],
+      areaPath: null,
+      iterationPath: null,
+      description: expect.stringContaining(`- **ClientId**: \`${CLIENT_ID}\``),
+      parentId: 100,
+    });
+    expect(root.querySelector(".awesomeado-new-consumer")).toBeNull();
+  });
+
+  it("adds a request under the right-clicked consumer, with its needed-by date", async () => {
+    const { create, loadTree, services } = creatingServices();
+    const root = await renderOpenBoard(
+      contextWith({ ...services, getTypes: etaServices().getTypes }),
+    );
+
+    cardOf(root, 10).dispatchEvent(
+      new MouseEvent("contextmenu", { bubbles: true, cancelable: true }),
+    );
+    runCommand(root, "Add new request");
+    const form = root.querySelector<HTMLElement>(".awesomeado-new-request")!;
+    typeInto(form, ".awesomeado-new-request__title", "Bulk export");
+    typeInto(form, ".awesomeado-new-request__target-date", "2026-09-01");
+    form.querySelector<HTMLButtonElement>(".awesomeado-new-request__add")!.click();
+
+    await vi.waitFor(() => expect(loadTree).toHaveBeenCalledTimes(2));
+    expect(create).toHaveBeenCalledWith({
+      type: "Request",
+      title: "Bulk export",
+      tags: [],
+      areaPath: TEAM_A,
+      iterationPath: null,
+      description: "",
+      parentId: 10,
+      extraFields: { [ETA_FIELD]: "2026-09-01T12:00:00Z" },
+    });
+  });
+});
+
+const addConsumerButton = (root: HTMLElement): HTMLButtonElement =>
+  root.querySelector<HTMLButtonElement>(".awesomeado-consumers__add-consumer")!;
+
+describe("consumersView - Add Consumer button", () => {
+  it("sits beside Show consumers, disabled until the consumers are shown", async () => {
+    const root = await renderBoard(requestsContext());
+
+    expect(addConsumerButton(root).previousElementSibling).toBe(showConsumersToggle(root));
+    expect(addConsumerButton(root).disabled).toBe(true);
+    expect(addConsumerButton(root).title).toBe("Turn on Show consumers to add a consumer");
+
+    showConsumersToggle(root).click();
+    expect(addConsumerButton(root).disabled).toBe(false);
+
+    showConsumersToggle(root).click();
+    expect(addConsumerButton(root).disabled).toBe(true);
+  });
+
+  it("opens the Add new consumer form under the grouping item", async () => {
+    const root = await renderOpenBoard();
+
+    addConsumerButton(root).click();
+
+    const form = root.querySelector<HTMLElement>(".awesomeado-new-consumer")!;
+    expect(form.closest(".awesomeado-item-command__panel")?.textContent).toContain(
+      "Parent: All consumers",
+    );
   });
 });

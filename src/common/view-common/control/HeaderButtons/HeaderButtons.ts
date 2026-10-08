@@ -60,6 +60,62 @@ export function renderHeaderButton(
   return button;
 }
 
+/** What a worded header action is called and says. */
+export interface HeaderTextButtonOptions {
+  className: string;
+  /** The visible wording. */
+  label: string;
+}
+
+/**
+ * Build one worded header action, sized to the header's other controls so buttons, toggles,
+ * filters, and pickers share one line height. Drawn released: an owner that fills it (a pressed
+ * toggle) sets its own background, text, and border colors.
+ */
+export function renderHeaderTextButton(
+  doc: Document,
+  options: HeaderTextButtonOptions,
+): HTMLButtonElement {
+  const button = doc.createElement("button");
+  button.type = "button";
+  button.className = options.className;
+  button.textContent = options.label;
+  button.style.cssText = [
+    "box-sizing:border-box",
+    `height:${BUTTON_SIZE_PX}px`,
+    "display:inline-flex",
+    "flex:0 0 auto",
+    "align-items:center",
+    `border:${BUTTON_BORDER_PX}px solid var(--control-border-strong)`,
+    "border-radius:6px",
+    "padding:0 7px",
+    "background:transparent",
+    "color:var(--text-primary-color)",
+    "font:inherit",
+    "font-size:12px",
+    "font-weight:600",
+    "white-space:nowrap",
+    "cursor:pointer",
+  ].join(";");
+  return button;
+}
+
+/**
+ * Enable a header action, or disable it with `reason` as its tooltip. Dimmed as well as inert,
+ * because a disabled button that still looks pressable reads as a broken one.
+ */
+export function setHeaderButtonAvailability(
+  button: HTMLButtonElement,
+  reason: string | null,
+  enabledTitle: string,
+): void {
+  button.disabled = reason !== null;
+  button.title = reason ?? enabledTitle;
+  button.setAttribute("aria-label", button.title);
+  button.style.opacity = reason === null ? "1" : "0.5";
+  button.style.cursor = reason === null ? "pointer" : "default";
+}
+
 /** Draw the refresh glyph so its ink stays centered independently of platform fonts. */
 function renderRefreshIcon(doc: Document): SVGSVGElement {
   const size = BUTTON_SIZE_PX - 2 * (BUTTON_BORDER_PX + REFRESH_GLYPH_INSET_PX);

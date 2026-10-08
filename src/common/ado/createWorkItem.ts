@@ -64,7 +64,27 @@ export interface NewWorkItem {
    * if the second write fails.
    */
   parentId?: number | null;
+  /**
+   * Any further plain fields, by reference name, the item is born with — e.g. the date a request is
+   * needed by.
+   *
+   * In the creation patch for the same reason as everything above: a view that orders or badges by
+   * such a field would otherwise show the new item without it, or keep doing so if the follow-up
+   * write fails. Blank values are skipped, and a field this patch already writes is never overridden.
+   */
+  extraFields?: Readonly<Record<string, string>> | null;
 }
+
+/** The fields the patch writes from named properties, which `extraFields` may never override. */
+const NAMED_FIELDS: ReadonlySet<string> = new Set([
+  TITLE_FIELD,
+  TAGS_FIELD,
+  AREA_PATH_FIELD,
+  ITERATION_PATH_FIELD,
+  ASSIGNED_TO_FIELD,
+  DESCRIPTION_FIELD,
+  HISTORY_FIELD,
+]);
 
 /**
  * Build the REST URL that creates a work item of `type`, or null when `href` is not a
@@ -134,6 +154,9 @@ export function buildCreateWorkItemPatch(
   addField(ASSIGNED_TO_FIELD, item.assignedTo);
   addMarkdownField(DESCRIPTION_FIELD, item.description);
   addMarkdownField(HISTORY_FIELD, item.comment);
+  for (const [field, value] of Object.entries(item.extraFields ?? {})) {
+    if (!NAMED_FIELDS.has(field)) addField(field, value);
+  }
 
   if (parentUrl) {
     operations.push({

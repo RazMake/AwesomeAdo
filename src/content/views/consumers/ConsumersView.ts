@@ -43,6 +43,7 @@ import { discardBoardCaches } from "../board-lifecycle/discardBoardCaches";
 import { widestStatusLabelLength } from "../item-status/itemStatusBadge";
 import { dragReorderUnavailableReason } from "../project-tracking/drag-reorder/dragReorderAvailability";
 import { persistTreeMove } from "../project-tracking/drag-reorder/persistTreeMove";
+import { buildCustomTagCommands } from "../project-tracking/item-commands/CustomTagCommands";
 import { buildViewNotesCommand } from "../project-tracking/item-commands/ItemCommands";
 import { buildUpdateParentCommand } from "../project-tracking/item-commands/UpdateParentCommand";
 import type { NotesPanelState } from "../project-tracking/notes/NotesPanel";
@@ -66,6 +67,12 @@ import {
   readConsumersUrlConsumerIds,
 } from "./consumersUrlPreferences";
 import { consumersViewType, orderingPolicyOf, requestAreaPaths } from "./consumersViewType";
+import { renderAddConsumerButton } from "./creation/AddConsumerButton";
+import {
+  buildAddConsumerCommand,
+  consumerCreationCommands,
+  type ConsumerCreationContext,
+} from "./creation/creationCommands";
 import {
   createConsumerContactEditor,
   type ConsumerContactEditor,
@@ -327,6 +334,22 @@ function allRequestIdsByRank(grouping: TrackedWorkItem): number[] {
   ).map((request) => request.id);
 }
 
+/** What the Add new consumer / Add new request commands need from this board and load. */
+function creationContext(
+  board: Board,
+  loaded: LoadedConsumers,
+  grouping: TrackedWorkItem,
+): ConsumerCreationContext {
+  return {
+    doc: board.context.doc,
+    services: board.context.services,
+    grouping,
+    types: loaded.types,
+    configuredAreaPaths: board.configuredAreaPaths,
+    onCreated: board.reload,
+  };
+}
+
 /** The row context for one paint: the session's live state plus what the filters keep. */
 function createRowContext(
   board: Board,
@@ -377,6 +400,22 @@ function createRowContext(
             queue: board.queue,
             onChanged: board.paintList,
           }),
+          ...(grouping.children.includes(item)
+            ? buildCustomTagCommands({
+                doc: context.doc,
+                item,
+                services: context.services,
+                queue: board.queue,
+                onChanged: board.paintList,
+                knownTags: tagsInUse(grouping.children),
+                protectedTags: new Set(),
+                itemKind: "Consumer",
+                noRemovableTagsReason: "This consumer carries no custom tag to clear.",
+              })
+            : []),
+          ...(grouping.children.includes(item)
+            ? consumerCreationCommands(creationContext(board, loaded, grouping), item)
+            : []),
         ],
       }),
     keepsRequest: (request) => keepsRequest(board, request),
@@ -731,6 +770,8 @@ function renderHeader(
 ): ViewTitleBandHandle {
   const { context, session } = board;
   const grouping = loaded.grouping;
+  const addConsumer =
+    grouping === null ? null : buildAddConsumerCommand(creationContext(board, loaded, grouping));
   return renderConsumersHeader(context, {
     breadcrumbs: queryFolderBreadcrumbs(loaded.result.folderPath, context.doc.location?.href ?? ""),
     title: grouping?.title ?? consumersViewType.label,
@@ -743,6 +784,13 @@ function renderHeader(
     filters: renderHeaderFilters(board, loaded),
     // A full paint, so the ordering glyph re-states whether a drag is available in the new mode.
     showConsumersToggle: renderShowConsumersToggle(board, handlers.paint),
+    addConsumerButton: renderAddConsumerButton({
+      doc: context.doc,
+      className: `${PREFIX}__add-consumer`,
+      showConsumers: session.showConsumers,
+      command: addConsumer,
+      openPanel: (button, command) => board.contextMenu.openPanel(button, command),
+    }),
     onOrderingChange: (policy) => {
       session.policy = policy;
       context.services.logger.info(`Consumers View ordering: ${policy}.`);
@@ -756,6 +804,7 @@ function renderHeader(
         id: 0,
         url: context.doc.location?.href ?? null,
         standardCommands: ["copy-url"],
+        commands: addConsumer === null ? [] : [addConsumer],
       }),
   });
 }

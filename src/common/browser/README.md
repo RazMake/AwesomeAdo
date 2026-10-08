@@ -869,7 +869,9 @@ have succeeded would leave a duplicate item behind — far worse than reporting 
 
 The worker builds **both** URLs in the patch — the create endpoint and the parent link — from the
 sender tab's own trusted address, so a content script can name a parent id but never the
-organization that id resolves against.
+organization that id resolves against. `CreateWorkItemRequest.extraFields` (a create's further plain
+fields, e.g. a needed-by date) is validated in the worker as at most eight entries keyed by field
+reference names, each a bounded string, so a message cannot smuggle arbitrary patch paths.
 
 ### The project tracking-query trio
 

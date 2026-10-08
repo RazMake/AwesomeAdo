@@ -27,7 +27,8 @@ renderer.
 - `ConsumersHeader.ts` → `renderConsumersHeader(context, options)` — the shared sticky
   [view header](../../../common/view-common/control/ViewHeader/README.md): folder breadcrumbs, the
   write-queue status, version, and ordering glyph on top; the root item's title in its ADO type
-  color, the staged `+` / `−` buttons with the **Show consumers** switch beside them, the Consumer, Tags,
+  color, the staged `+` / `−` buttons with the **Show consumers** switch and **Add Consumer** button
+  beside them, the Consumer, Tags,
   and Area filters, and Refresh below. The ordering glyph offers only the board's two orderings.
 - `ConsumerFilter.ts` → `renderConsumerFilter(doc, { consumers, selection, onChange })` — the
   header's Consumer dropdown, listing every consumer by title.
@@ -41,9 +42,15 @@ consumer, context)`, and `requestsOf(consumer, context)` — one consumer and, w
   contacts from [`profile/`](./profile/README.md) beneath it, sharing the `?`'s left edge. The
   description and Discussion panels open below the card, then — only while the consumer is opened
   from its count — its requests, never inside the card; right-clicking anywhere on the card (except
-  inside a text field) opens the consumer's menu.
+  inside a text field) opens the consumer's menu. That menu can add a tag already used by any loaded
+  consumer (including filtered-out consumers), add a new custom tag, or clear one of the consumer's
+  current tags. Suggestions exclude tags found only on the parent Epic or requests, ignore casing,
+  and retain the existing spelling. Request menus do not offer consumer tagging.
 - `profile/` → parses a consumer's description, draws its identity and Contacts list, and writes
   contact edits back into it. See its [README](./profile/README.md).
+- `creation/` → the **Add new consumer** / **Add new request** menu commands, the header's
+  **Add Consumer** button, and their forms. See
+  its [README](./creation/README.md).
 - `consumersUrlPreferences.ts` → `readConsumersUrlAreaPaths(search)` /
   `consumersSearchWithAreaPaths(search, paths)` and `readConsumersUrlConsumerIds(search)` /
   `consumersSearchWithConsumerIds(search, ids)` — the header filters' repeated `areaPath` and
@@ -112,6 +119,14 @@ consumer, context)`, and `requestsOf(consumer, context)` — one consumer and, w
   description's contacts are shown read-only, with a tooltip saying the description has to be
   Markdown to be editable; so is a contact that shares its line, sits in a table, or is written
   outside the Contacts section. The card is a single outlined row, so its stripe and hover cover the
-  whole record.
+  whole record. The consumer's own Azure DevOps tags follow its name as pills; requests never show
+  theirs.
+- **Adding consumers and requests.** Right-clicking the header title offers **Add new consumer**;
+  right-clicking a consumer card offers **Add new request**. The header's
+  **Add Consumer** button, beside **Show consumers**, opens the same consumer form beneath itself;
+  it is disabled, saying why, until the consumer cards are shown. Each form is
+  centered (see [`creation/`](./creation/README.md)) and, once Azure DevOps has created the
+  item, re-read the query so it appears wherever the query places it. A command is disabled, saying
+  why, when the board cannot tell which work item type to create.
 - There are no sprint, blocked, interrupt, or marker filters: those describe delivery work, not a
   consumer's request queue.

@@ -5,6 +5,18 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ## Next Version
 
+### New Features
+
+- Consumers View shows each consumer's own tags as pills after its name and lets you add or clear
+  those tags from the consumer's right-click menu, with suggestions from every loaded consumer to
+  reuse existing spellings. It also lets you add to the
+  board without leaving it: **Add new consumer** (on the view title's
+  right-click menu, and the **Add Consumer** button beside **Show consumers**, enabled while the
+  consumers are shown) asks for the service name, a unique ClientId, the scenario, any number of
+  details, and contacts whose aliases are filled in from the Azure DevOps directory as you type
+  their names; **Add new request** (on a consumer's right-click menu) asks for a title, a Markdown
+  description, and the date it is needed by. Each field's guidance shows inside it until you type.
+
 ## 0.20
 
 ### New Features

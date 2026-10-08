@@ -32,6 +32,13 @@ interface EtaBadgeHandle extends HTMLElement {
 }
 
 function renderEtaBadge(doc: Document, options: EtaBadgeOptions): EtaBadgeHandle;
+
+/**
+ * The ETA value a picked calendar day (`YYYY-MM-DD`, as a date input states it) is stored as: noon
+ * UTC, so the day reads the same in every time zone. For a creation form that asks for the date
+ * itself and must store it exactly as the badge would.
+ */
+function etaValueOfPickedDate(picked: string): string;
 ```
 
 ## Behavior

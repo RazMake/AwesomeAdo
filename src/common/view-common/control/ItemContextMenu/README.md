@@ -52,6 +52,9 @@ row.addEventListener("contextmenu", (event) => {
 
 - **`openAt(event: MouseEvent, target: ItemContextMenuTarget): void`** — Opens the menu at the
   pointer, replacing whatever was open. Suppresses the browser's own menu and stops the event.
+- **`openPanel(trigger: HTMLElement, command: ItemContextMenuCommand): void`** — Opens `command`'s
+  panel directly, anchored beneath `trigger`, with no menu first — for a header button that is
+  itself the command. Replaces whatever was open; does nothing for a command without a panel.
 - **`close(): void`** — Closes the menu if open (idempotent).
 
 ### `ItemContextMenuTarget`

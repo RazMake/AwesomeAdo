@@ -17,7 +17,11 @@ AwesomeADO is feature-complete for its current scope:
   descendants, and the URL-synced header Area filter narrows requests by exact full path; consumers
   are never area filtered and consumer-card request counts show the filtered count. The Consumer
   (`consumer` param) and Tags (shared `content/views/tag-selection`, judged on the consumer's OWN
-  tags) filters narrow CONSUMERS in both modes.
+  tags) filters narrow CONSUMERS in both modes. Consumer right-click menus add existing or new
+  custom tags and clear current tags through the shared guarded tag-command path. Suggestions
+  include all loaded consumers, even filtered-out ones, but not tags found only on the parent Epic
+  or requests. They are deduplicated ignoring casing with the existing spelling retained; request
+  menus do not offer consumer tagging.
   Header `−` closes open descriptions, then discussions, then the deepest open tree level;
   `+` opens one tree level (`treeExpansion.ts`). Consumer rows omit
   Status editing while request rows retain it. Ordering offers only Drag-and-drop order (importance)
@@ -39,8 +43,13 @@ AwesomeADO is feature-complete for its current scope:
   / `contactEntries`); only `own-line` contacts in Markdown are editable, and rich text shows a
   "has to be Markdown to be editable" tooltip. Scenario and details are parsed only.
   Tree boards share `renderViewHeader`, TreeRow, item-status, board-lifecycle
-  (loader/write-status/write-queue), retained area filter, and `persistTreeMove`. Authenticated
-  browser validation of the Consumers View remains pending.
+  (loader/write-status/write-queue), retained area filter, and `persistTreeMove`. Consumer cards
+  show the consumer's own tags as pills after the title. **Add new consumer** (title
+  menu, and the header **Add Consumer** button beside Show consumers, enabled only in consumers
+  mode) and **Add new request** (consumer menu) open `consumers/creation` forms on the shared
+  `control/FormLayout` (guidance as in-field ghost text + tooltip); a consumer's description is written in the profile reader's template shape
+  (ClientId must be a unique GUID), and a request's needed-by date rides the single create patch
+  (`createWorkItem` `extraFields`). Authenticated browser validation of the Consumers View remains pending.
 - The content runtime is SPA-aware, route-gates heavy work, lazy-loads large view renderers, and uses
   background-to-MAIN-world bridges for credentialed Azure DevOps operations.
 - Shared view controls, normalized ADO models, ordering, settings, bindings, navigation, logging, and

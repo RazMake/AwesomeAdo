@@ -3,6 +3,14 @@ import { withWorkItemTag } from "../../../common/ado/workItemTags";
 import type { EnhancedViewServices } from "../../../common/view-common/EnhancedView";
 import { shortestUniqueAreaPathLabels } from "../../../common/view-common/control/AreaPathFilter/AreaPathFilter";
 import { renderAssignedTo } from "../../../common/view-common/control/AssignedTo/AssignedTo";
+import {
+  renderFormActions,
+  renderFormButton,
+  renderFormFailureLine,
+  renderFormRow,
+  renderFormTextField,
+  submitForm,
+} from "../../../common/view-common/control/FormLayout/FormLayout";
 import { renderMarkerPill } from "../../../common/view-common/control/MarkerPill/MarkerPill";
 import {
   renderSelectField,
@@ -21,10 +29,8 @@ const MAX_TITLE_LENGTH = 255;
 /** The separator Azure DevOps builds every classification path out of. */
 const PATH_SEPARATOR = "\\";
 
-/** One shared declaration list for every text field, so the form cannot look like two forms. */
-const FIELD_STYLE =
-  "box-sizing:border-box;width:100%;padding:4px 6px;border:1px solid var(--control-border-strong);" +
-  "border-radius:4px;background:transparent;color:var(--text-primary-color);font:inherit;font-size:12px";
+/** The class every element of this form carries. */
+const CLASS_PREFIX = "awesomeado-new-work-item";
 
 /** Everything the reader decided, in the shape the creation takes. */
 export interface NewWorkItemValues {
@@ -74,7 +80,11 @@ export function renderNewWorkItemPanel(options: NewWorkItemPanelOptions): HTMLEl
   form.className = "awesomeado-new-work-item";
   form.style.cssText = "display:flex;flex-direction:column;gap:8px;min-width:0";
 
-  const title = renderTextField(doc, `New ${options.typeName} title`, MAX_TITLE_LENGTH);
+  const title = renderFormTextField(doc, {
+    className: `${CLASS_PREFIX}__title`,
+    placeholder: `New ${options.typeName} title`,
+    maxLength: MAX_TITLE_LENGTH,
+  });
   const description = renderNoteField(options, {
     name: "description",
     caption: "Description",
@@ -84,10 +94,10 @@ export function renderNewWorkItemPanel(options: NewWorkItemPanelOptions): HTMLEl
   const assignee = renderAssigneeField(options);
   const area = renderAreaField(options);
   const iteration = renderIterationField(options);
-  const failure = renderFailureLine(doc);
+  const failure = renderFormFailureLine(doc, CLASS_PREFIX);
 
-  const create = renderActionButton(doc, "Create", true);
-  const cancel = renderActionButton(doc, "Cancel", false);
+  const create = renderFormButton(doc, CLASS_PREFIX, "Create", true);
+  const cancel = renderFormButton(doc, CLASS_PREFIX, "Cancel", false);
   const interrupt = renderInterruptSection(options, () => refreshCreate());
   // Any field's input event re-evaluates Create, including the one a pasted image fires when it
   // lands; without this flag that would re-enable Create mid-create and let a second click create
@@ -129,7 +139,7 @@ export function renderNewWorkItemPanel(options: NewWorkItemPanelOptions): HTMLEl
     labelled(doc, "Area path", area.element),
     labelled(doc, "Sprint", iteration.element),
     interrupt.element,
-    renderActions(doc, create, cancel, failure),
+    renderFormActions(doc, CLASS_PREFIX, [create, cancel], failure),
   );
   // Focused once the element is in the document, so the command that opened the form leaves the
   // caret in the one field nothing can be created without.
@@ -154,26 +164,20 @@ async function submit(
   failure: HTMLElement,
   buttons: HTMLButtonElement[],
 ): Promise<void> {
-  failure.style.display = "none";
-  for (const button of buttons) button.disabled = true;
-  const creation = controls.options.onCreate({
-    title: controls.title.value.trim(),
-    description: controls.description.storedText(),
-    assignedTo: controls.assignee.value(),
-    areaPath: emptyToNull(controls.area.value()),
-    iterationPath: emptyToNull(controls.iteration.value()),
-    tags: controls.interrupt.tags(),
-    comment: controls.interrupt.comment(),
+  await submitForm(buttons, failure, () => {
+    const creation = controls.options.onCreate({
+      title: controls.title.value.trim(),
+      description: controls.description.storedText(),
+      assignedTo: controls.assignee.value(),
+      areaPath: emptyToNull(controls.area.value()),
+      iterationPath: emptyToNull(controls.iteration.value()),
+      tags: controls.interrupt.tags(),
+      comment: controls.interrupt.comment(),
+    });
+    controls.description.trackSave(creation);
+    controls.interrupt.trackSave(creation);
+    return creation;
   });
-  controls.description.trackSave(creation);
-  controls.interrupt.trackSave(creation);
-  const created = await creation;
-  for (const button of buttons) button.disabled = false;
-  if (created) return;
-  // The caller keeps the form mounted on failure, so it says so rather than leaving the reader
-  // looking at everything they typed behind buttons that appeared to do nothing.
-  failure.textContent = "Not created — see the diagnostics log.";
-  failure.style.display = "inline";
 }
 
 function emptyToNull(value: string): string | null {
@@ -182,25 +186,7 @@ function emptyToNull(value: string): string | null {
 
 /** One labelled row: the field's name, then the control that answers it. */
 function labelled(doc: Document, caption: string, control: HTMLElement): HTMLElement {
-  const row = doc.createElement("div");
-  row.className = "awesomeado-new-work-item__row";
-  row.style.cssText = "display:flex;flex-direction:column;gap:2px;min-width:0";
-  const name = doc.createElement("span");
-  name.textContent = caption;
-  name.style.cssText = "font-size:11px;font-weight:600;color:var(--text-secondary-color)";
-  row.append(name, control);
-  control.setAttribute("aria-label", caption);
-  return row;
-}
-
-function renderTextField(doc: Document, placeholder: string, maxLength: number): HTMLInputElement {
-  const field = doc.createElement("input");
-  field.type = "text";
-  field.className = "awesomeado-new-work-item__title";
-  field.placeholder = placeholder;
-  field.maxLength = maxLength;
-  field.style.cssText = FIELD_STYLE;
-  return field;
+  return renderFormRow(doc, { classPrefix: CLASS_PREFIX, caption, control });
 }
 
 /** What one of the form's authored values is called, how tall it opens, and what it asks for. */
@@ -243,45 +229,6 @@ function renderNoteField(
   // name itself or it is announced as an unnamed edit field.
   field.input.setAttribute("aria-label", spec.caption);
   return field;
-}
-
-function renderFailureLine(doc: Document): HTMLElement {
-  const failure = doc.createElement("span");
-  failure.className = "awesomeado-new-work-item__error";
-  failure.style.cssText = "display:none;font-size:11px;color:var(--error)";
-  return failure;
-}
-
-function renderActionButton(doc: Document, label: string, primary: boolean): HTMLButtonElement {
-  const button = doc.createElement("button");
-  button.type = "button";
-  button.className = `awesomeado-new-work-item__${label.toLowerCase()}`;
-  button.textContent = label;
-  button.style.cssText = [
-    "border:1px solid var(--control-border-strong)",
-    "border-radius:4px",
-    "padding:3px 12px",
-    "font:inherit",
-    "font-size:12px",
-    "cursor:pointer",
-    primary
-      ? "background:var(--communication-background);color:var(--text-on-communication-background)"
-      : "background:transparent;color:var(--text-primary-color)",
-  ].join(";");
-  return button;
-}
-
-function renderActions(
-  doc: Document,
-  create: HTMLButtonElement,
-  cancel: HTMLButtonElement,
-  failure: HTMLElement,
-): HTMLElement {
-  const actions = doc.createElement("div");
-  actions.className = "awesomeado-new-work-item__actions";
-  actions.style.cssText = "display:flex;align-items:center;gap:6px";
-  actions.append(create, cancel, failure);
-  return actions;
 }
 
 /** The assignee chip plus the sign-in address a successful pick writes. */

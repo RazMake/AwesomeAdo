@@ -39,6 +39,7 @@ describe("MessagingWorkItemCreator", () => {
       description: null,
       comment: null,
       parentId: null,
+      extraFields: null,
     });
     expect(result).toEqual({ ok: true, id: 42, rev: 1 });
     // The title is never logged: the diagnostics log is exported with bug reports.
@@ -51,6 +52,17 @@ describe("MessagingWorkItemCreator", () => {
     await new MessagingWorkItemCreator(send, logger()).create({ ...NEW_ITEM, parentId: 7 });
 
     expect(send).toHaveBeenCalledWith(expect.objectContaining({ parentId: 7 }));
+  });
+
+  it("carries further fields as a copy the caller can no longer change", async () => {
+    const send = vi.fn(async () => ({ ok: true, id: 42, rev: 1 })) as SendCreateWorkItemRequest;
+    const extraFields = { "Microsoft.VSTS.Scheduling.TargetDate": "2025-03-01T12:00:00Z" };
+
+    await new MessagingWorkItemCreator(send, logger()).create({ ...NEW_ITEM, extraFields });
+
+    const sent = vi.mocked(send).mock.calls[0]![0];
+    expect(sent.extraFields).toEqual(extraFields);
+    expect(sent.extraFields).not.toBe(extraFields);
   });
 
   it("carries the assignee, description and reason a form filled in", async () => {

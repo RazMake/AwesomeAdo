@@ -175,7 +175,27 @@ This is a flattened snapshot of what exists now, not a build log.
   filters: Consumer (`ConsumerFilter.ts`, URL `consumer`), Tags (`tag-selection`, URL
   `tags`/`notTags`/`tagMatch`, consumer's own tags, unworn tags pruned and logged), Area. The
   "showing X of Y" log line carries `mode`, area counts, `selectedConsumers`, and `tags`.
-  Authenticated browser validation remains pending.
+  Consumer cards show the consumer's own tags (`renderOwnTags`, TagPill `__consumer-item-tag`) in
+  `__card-head` after the title. Their right-click menu reuses `buildCustomTagCommands` to add from
+  all loaded consumers' vocabulary via `tagsInUse(grouping.children)`, add a new tag,
+  or clear a current tag; parent and request tags are not suggested, and request menus omit those
+  commands.
+  `creation/` adds **Add new consumer** (title menu only)
+  and **Add new request** (consumer menu, first with a separator) as centered 640px panels built on
+  shared `control/FormLayout` (`bindFormSubmission` keeps Add disabled with a tooltip reason and
+  during the write; field guidance is placeholder + tooltip via `renderFormTextField` `help`, the
+  date picker's is tooltip only). The header's **Add Consumer** (`creation/AddConsumerButton`,
+  `HeaderButtons.renderHeaderTextButton` / `setHeaderButtonAvailability`) sits after the Show
+  consumers toggle, is disabled in requests mode (re-rendered on the toggle's full paint), and opens
+  the same command's panel under itself through `ItemContextMenu.openPanel`. The consumer form (Service Name, ClientId — required GUID unique against
+  existing descriptions, Scenario Markdown, Details and Contacts `RepeatableRows` with red ×,
+  contact names resolved through the user directory after 300 ms, one match fills the alias,
+  several list inline) writes `formatNewConsumerDescription` (the profile reader's template shape)
+  under the grouping item. The request form (Title, Markdown Description with images, Target date)
+  creates under the consumer with the ETA folded into the same create patch via
+  `createWorkItem` `extraFields`; the date is disabled when the type has no ETA field. Types and
+  area default from siblings (`creationDefaults.ts`); success re-reads the query; failures keep the
+  form. Authenticated browser validation remains pending.
 - **Sprint View** (`content/views/sprint`): accepts flat or tree queries; loads the selected
   team's complete paged member roster, recursively expanding direct and nested groups, before
   executing an offset-adjusted copy of the original WIQL;

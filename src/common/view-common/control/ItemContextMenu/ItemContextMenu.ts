@@ -143,6 +143,12 @@ export interface ItemContextMenu {
    * browser's own menu and stops the event, so the INNERMOST row under the pointer wins.
    */
   openAt(event: MouseEvent, target: ItemContextMenuTarget): void;
+  /**
+   * Opens `command`'s panel straight away beneath `trigger` — a header button offering what a menu
+   * command offers — on the same surface, with the same dismissal, as picking it from a menu. A
+   * command without a panel opens nothing.
+   */
+  openPanel(trigger: HTMLElement, command: ItemContextMenuCommand): void;
   /** Closes the menu if open (idempotent). */
   close(): void;
 }
@@ -385,15 +391,8 @@ function renderCollectionCommand(
   return row;
 }
 
-/** Builds the menu surface and its three commands. */
-function buildMenu(
-  doc: Document,
-  target: ItemContextMenuTarget,
-  close: () => void,
-  logger: ILogger,
-  panelBounds?: () => Element | null,
-  collection?: IItemCollection,
-): HTMLElement {
+/** The empty menu surface, anchored under the pointer or trigger and themed like every popup. */
+function renderMenuSurface(doc: Document): HTMLElement {
   const menu = doc.createElement("div");
   menu.className = "awesomeado-item-menu";
   menu.setAttribute("role", "menu");
@@ -420,6 +419,19 @@ function buildMenu(
   ].join(";");
   // Right-clicking the menu itself must not hand the browser's own menu back over the top of it.
   menu.addEventListener("contextmenu", (event) => event.preventDefault());
+  return menu;
+}
+
+/** Builds the menu surface and its three commands. */
+function buildMenu(
+  doc: Document,
+  target: ItemContextMenuTarget,
+  close: () => void,
+  logger: ILogger,
+  panelBounds?: () => Element | null,
+  collection?: IItemCollection,
+): HTMLElement {
+  const menu = renderMenuSurface(doc);
 
   const commands = doc.createElement("div");
   commands.className = "awesomeado-item-menu__commands";
@@ -984,26 +996,14 @@ export function createItemContextMenu(options: ItemContextMenuOptions): ItemCont
     host = null;
   };
 
-  const openAt = (event: MouseEvent, target: ItemContextMenuTarget): void => {
-    // Replace the browser's menu rather than compete with it, and let the innermost row under the
-    // pointer win: a rolled-up child row lives INSIDE its parent's row, so without stopping the event
-    // the parent's listener would fire second and overwrite the child's menu with its own.
-    event.preventDefault();
-    event.stopPropagation();
-    if (isCollectProbe(event)) {
-      collectFromProbe(event, target, collection);
-      return;
-    }
+  const show = (
+    point: { left: number; top: number },
+    buildPopup: (dismiss: () => void) => HTMLElement,
+    onOpened?: (popup: HTMLElement) => void,
+  ): void => {
     close();
-
-    if (target.url === null) {
-      logger.info(
-        `Item ${target.id} context menu: URL commands inert — the page address does not resolve to an ADO project.`,
-      );
-    }
-
-    anchor.style.left = `${event.clientX}px`;
-    anchor.style.top = `${event.clientY}px`;
+    anchor.style.left = `${point.left}px`;
+    anchor.style.top = `${point.top}px`;
     mountInto.append(anchor);
 
     host = createPopupHost({
@@ -1017,10 +1017,45 @@ export function createItemContextMenu(options: ItemContextMenuOptions): ItemCont
       // what they are typing — taking the whole menu with it would close the discussion they opened
       // the editor from. A second Escape, with nothing left editing, still dismisses the menu.
       dismissOnFieldEscape: false,
-      buildPopup: (dismiss) => buildMenu(doc, target, dismiss, logger, panelBounds, collection),
+      buildPopup,
+      onOpened,
     });
     host.toggle();
   };
 
-  return { openAt, close };
+  const openAt = (event: MouseEvent, target: ItemContextMenuTarget): void => {
+    // Replace the browser's menu rather than compete with it, and let the innermost row under the
+    // pointer win: a rolled-up child row lives INSIDE its parent's row, so without stopping the event
+    // the parent's listener would fire second and overwrite the child's menu with its own.
+    event.preventDefault();
+    event.stopPropagation();
+    if (isCollectProbe(event)) {
+      collectFromProbe(event, target, collection);
+      return;
+    }
+
+    if (target.url === null) {
+      logger.info(
+        `Item ${target.id} context menu: URL commands inert — the page address does not resolve to an ADO project.`,
+      );
+    }
+
+    show({ left: event.clientX, top: event.clientY }, (dismiss) =>
+      buildMenu(doc, target, dismiss, logger, panelBounds, collection),
+    );
+  };
+
+  const openPanel = (trigger: HTMLElement, command: ItemContextMenuCommand): void => {
+    if (command.panel === undefined) return;
+    const bounds = trigger.getBoundingClientRect();
+    // The panel is swapped in only once the surface is mounted, exactly as a picked command's is,
+    // so it is measured and kept on screen against its real size.
+    show(
+      { left: bounds.left, top: bounds.bottom },
+      () => renderMenuSurface(doc),
+      (menu) => openCommandPanel(doc, command, menu, close, panelBounds),
+    );
+  };
+
+  return { openAt, openPanel, close };
 }

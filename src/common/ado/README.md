@@ -492,7 +492,9 @@ is guarded by that item's revision, while creation has neither.
   nothing returns — and permanently so if the second write fails. The description and the reason ride
   with their `/multilineFieldsFormat/<field>` = `Markdown` op, so what an author typed is stored as
   what they typed rather than HTML-encoded. Empty optional values are omitted rather than written
-  blank.
+  blank. `NewWorkItem.extraFields` adds further plain fields by reference name (e.g. a request's
+  needed-by date) to the same patch; a key that names one of the dedicated fields above is ignored,
+  so it can never contradict them.
 - `parseCreatedWorkItem(raw)` — `{ id, rev }`, or `null` when ADO reported no usable id.
 - `IWorkItemCreator` / `WorkItemCreateResult` — the contract views depend on.
 

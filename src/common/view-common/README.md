@@ -114,6 +114,7 @@ view — regardless of which bundle renders it — reuses the same consistent pa
 | `DateLabel`        | [`control/DateLabel`](./control/DateLabel/README.md)               | A `MM/DD/YYYY` PST date label with a full-timestamp hover tooltip.                                |
 | `EmptyState`       | [`control/EmptyState`](./control/EmptyState/README.md)             | The "every item is filtered out" panel a view shows in place of its list.                         |
 | `EtaBadge`         | [`control/EtaBadge`](./control/EtaBadge/README.md)                 | An ETA date badge with severity color, a countdown tooltip, and an optional editable date picker. |
+| `FormLayout`       | [`control/FormLayout`](./control/FormLayout/README.md)             | Creation-form rows with visible help, text boxes, Add/Cancel, failure line, and a red remove ×.   |
 | `ItemTypeIcon`     | [`control/ItemTypeIcon`](./control/ItemTypeIcon/README.md)         | The ADO work item type icon, sized to the title it precedes, colored/drained and loud/receded.    |
 | `MarkdownText`     | [`control/MarkdownText`](./control/MarkdownText/README.md)         | Author-written content (descriptions, notes) rendered as safe DOM, with images and @-mentions.    |
 | `MarkerPill`       | [`control/MarkerPill`](./control/MarkerPill/README.md)             | A fixed-color pill for a recognized condition (blocked, blocked by another team, interrupt).      |

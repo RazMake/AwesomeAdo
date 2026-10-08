@@ -1978,6 +1978,7 @@ const createWorkItem = async (
               assignedTo: message.assignedTo,
               description: message.description,
               comment: message.comment,
+              extraFields: message.extraFields,
             },
             parentUrl,
           ),

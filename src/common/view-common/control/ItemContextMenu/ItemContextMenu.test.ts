@@ -577,3 +577,60 @@ describe("createItemContextMenu submenus", () => {
     expect(flyout()).toBeNull();
   });
 });
+
+describe("createItemContextMenu openPanel", () => {
+  function trigger(): HTMLButtonElement {
+    const button = document.createElement("button");
+    button.getBoundingClientRect = () =>
+      ({ top: 10, left: 120, right: 200, bottom: 37, width: 80, height: 27 }) as DOMRect;
+    document.body.append(button);
+    return button;
+  }
+
+  it("opens the command's panel straight away beneath the trigger, with no command rows", () => {
+    const panel = document.createElement("div");
+    panel.className = "test-panel";
+
+    menu.openPanel(trigger(), { label: "Add", panel: () => panel });
+
+    const anchor = mount.querySelector<HTMLElement>(".awesomeado-item-menu__anchor")!;
+    expect(anchor.style.left).toBe("120px");
+    expect(anchor.style.top).toBe("37px");
+    expect(mount.querySelector(".awesomeado-item-menu__panel")?.firstElementChild).toBe(panel);
+    expect(commands()).toHaveLength(0);
+  });
+
+  it("centres a panel that asked for it, and lets the panel close the surface", () => {
+    let closePanel: () => void = () => undefined;
+
+    menu.openPanel(trigger(), {
+      label: "Add",
+      centerPanel: true,
+      panel: (close) => {
+        closePanel = close;
+        return document.createElement("div");
+      },
+    });
+
+    const surface = mount.querySelector<HTMLElement>(".awesomeado-item-menu")!;
+    expect(surface.style.position).toBe("fixed");
+    expect(surface.style.transform).toBe("translate(-50%, -50%)");
+    closePanel();
+    expect(mount.querySelector(".awesomeado-item-menu")).toBeNull();
+  });
+
+  it("replaces an open menu", () => {
+    openMenu();
+
+    menu.openPanel(trigger(), { label: "Add", panel: () => document.createElement("div") });
+
+    expect(commands()).toHaveLength(0);
+    expect(mount.querySelectorAll(".awesomeado-item-menu")).toHaveLength(1);
+  });
+
+  it("opens nothing for a command without a panel", () => {
+    menu.openPanel(trigger(), { label: "Rename", run: vi.fn() });
+
+    expect(mount.querySelector(".awesomeado-item-menu")).toBeNull();
+  });
+});

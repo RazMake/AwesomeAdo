@@ -146,6 +146,30 @@ describe("buildCreateWorkItemPatch - what a form filled in", () => {
 
     expect(patch).toEqual([{ op: "add", path: "/fields/System.Title", value: "Card capture" }]);
   });
+
+  it("writes further named fields in the same document, skipping blanks and named fields", () => {
+    const patch = buildCreateWorkItemPatch({
+      type: "Story",
+      title: "Card capture",
+      tags: [],
+      areaPath: null,
+      iterationPath: null,
+      extraFields: {
+        "Microsoft.VSTS.Scheduling.TargetDate": "2025-03-01T12:00:00Z",
+        "Custom.Empty": "  ",
+        "System.Title": "Hijacked",
+      },
+    });
+
+    expect(patch).toEqual([
+      { op: "add", path: "/fields/System.Title", value: "Card capture" },
+      {
+        op: "add",
+        path: "/fields/Microsoft.VSTS.Scheduling.TargetDate",
+        value: "2025-03-01T12:00:00Z",
+      },
+    ]);
+  });
 });
 
 describe("parseCreatedWorkItem", () => {

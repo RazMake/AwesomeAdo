@@ -1,6 +1,8 @@
 import type { WorkItemCreateResult } from "../ado/IWorkItemCreator";
 import type { NewWorkItem } from "../ado/createWorkItem";
 
+import { isFieldReferenceName } from "./WorkItemFieldRequest";
+
 /**
  * The content→background message contract for creating one work item.
  *
@@ -36,6 +38,10 @@ const MAX_IDENTITY_LENGTH = 256;
 /** Author-written prose — a description, or the reason an item was raised. */
 const MAX_PROSE_LENGTH = 32768;
 
+/** A bound on the plain fields one creation may add beyond its named ones, and on each value. */
+const MAX_EXTRA_FIELDS = 8;
+const MAX_EXTRA_FIELD_LENGTH = 1024;
+
 function isBoundedText(value: unknown, max: number): value is string {
   return typeof value === "string" && value.trim().length > 0 && value.length <= max;
 }
@@ -66,6 +72,25 @@ function isParentId(value: unknown): value is number | null | undefined {
   );
 }
 
+/**
+ * Further fields by reference name. Each key is shape-checked because the worker concatenates it
+ * into a JSON Pointer of a credentialed patch (see `isFieldReferenceName`).
+ */
+function isExtraFieldMap(value: unknown): boolean {
+  if (value === undefined || value === null) return true;
+  if (typeof value !== "object" || Array.isArray(value)) return false;
+  const entries = Object.entries(value as Record<string, unknown>);
+  return (
+    entries.length <= MAX_EXTRA_FIELDS &&
+    entries.every(
+      ([field, text]) =>
+        isFieldReferenceName(field) &&
+        typeof text === "string" &&
+        text.length <= MAX_EXTRA_FIELD_LENGTH,
+    )
+  );
+}
+
 /** Where the item is filed: its tags and the two classification paths. */
 function hasValidFiling(candidate: Partial<CreateWorkItemMessage>): boolean {
   return (
@@ -80,7 +105,8 @@ function hasValidDetail(candidate: Partial<CreateWorkItemMessage>): boolean {
   return (
     isOptionalText(candidate.assignedTo, MAX_IDENTITY_LENGTH) &&
     isOptionalText(candidate.description, MAX_PROSE_LENGTH) &&
-    isOptionalText(candidate.comment, MAX_PROSE_LENGTH)
+    isOptionalText(candidate.comment, MAX_PROSE_LENGTH) &&
+    isExtraFieldMap(candidate.extraFields)
   );
 }
 

@@ -101,3 +101,25 @@ describe("isCreateWorkItemMessage", () => {
     expect(isCreateWorkItemMessage(message({ comment: 7 }))).toBe(false);
   });
 });
+
+describe("isCreateWorkItemMessage — further fields", () => {
+  it("accepts further fields by reference name, absent or filled in", () => {
+    const targetDate = { "Microsoft.VSTS.Scheduling.TargetDate": "2025-03-01T12:00:00Z" };
+
+    expect(isCreateWorkItemMessage(message({ extraFields: targetDate }))).toBe(true);
+    expect(isCreateWorkItemMessage(message({ extraFields: null }))).toBe(true);
+  });
+
+  it("refuses further fields that could escape the patch pointer or the bounds", () => {
+    const many = Object.fromEntries(Array.from({ length: 9 }, (_, i) => [`Custom.F${i}`, "x"]));
+
+    expect(isCreateWorkItemMessage(message({ extraFields: { "/fields/x": "1" } }))).toBe(false);
+    expect(isCreateWorkItemMessage(message({ extraFields: { "Custom.A": 7 } }))).toBe(false);
+    expect(
+      isCreateWorkItemMessage(message({ extraFields: { "Custom.A": "x".repeat(1025) } })),
+    ).toBe(false);
+    expect(isCreateWorkItemMessage(message({ extraFields: many }))).toBe(false);
+    expect(isCreateWorkItemMessage(message({ extraFields: ["Custom.A"] }))).toBe(false);
+    expect(isCreateWorkItemMessage(message({ extraFields: "Custom.A" }))).toBe(false);
+  });
+});

@@ -86,6 +86,14 @@ const CLEAR_HOVER_BACKGROUND = "var(--control-background-hover)";
 const PICKER_STYLE_ID = "awesomeado-eta-picker-style";
 
 /**
+ * The ETA value a date picker's `yyyy-mm-dd` answer is stored as: noon UTC of that calendar day,
+ * so it renders back as the same date in PST (midnight UTC would fall on the previous PST day).
+ */
+export function etaValueOfPickedDate(picked: string): string {
+  return `${picked}T12:00:00Z`;
+}
+
+/**
  * Give the date field's calendar button a hand cursor.
  *
  * The browser draws that button as a UA pseudo-element whose own stylesheet pins `cursor:default`,
@@ -160,7 +168,7 @@ function buildEtaPopup(
     }
     // Store noon UTC of the picked calendar day so the value renders as that same date in PST
     // (midnight UTC would fall on the previous PST day and shift the date the user just picked).
-    onChange?.(`${picked}T12:00:00Z`);
+    onChange?.(etaValueOfPickedDate(picked));
     close();
   });
   popup.append(input);

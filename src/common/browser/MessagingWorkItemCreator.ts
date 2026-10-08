@@ -27,6 +27,7 @@ function requestFor(item: NewWorkItem): CreateWorkItemMessage {
     description: item.description ?? null,
     comment: item.comment ?? null,
     parentId: item.parentId ?? null,
+    extraFields: item.extraFields ? { ...item.extraFields } : null,
   };
 }
 

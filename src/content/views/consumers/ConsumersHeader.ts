@@ -34,6 +34,8 @@ export interface ConsumersHeaderOptions {
   filters: readonly HTMLElement[];
   /** The switch between the requests-only list and the consumer cards, built by the board. */
   showConsumersToggle: HTMLElement;
+  /** The Add Consumer button, shown beside the switch whose mode decides whether it is enabled. */
+  addConsumerButton: HTMLElement;
   onOrderingChange(policy: OrderingPolicy): void;
   /** Opens the next tree level. */
   onExpandAll(): void;
@@ -72,7 +74,7 @@ export function renderConsumersHeader(
     // The mode switch sits with `+` and `−` because, like them, it changes how much of the tree is
     // drawn rather than which items qualify. Sprints, markers, and blocked/interrupt flags describe
     // delivery work, not a consumer's request queue, so only consumer, tag, and area filters exist.
-    outlineControls: [options.showConsumersToggle],
+    outlineControls: [options.showConsumersToggle, options.addConsumerButton],
     filters: options.filters,
     onRefresh: options.onRefresh,
   });

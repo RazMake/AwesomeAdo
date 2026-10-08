@@ -380,6 +380,20 @@ function contactEditingFor(consumer: TrackedWorkItem, context: ConsumerRowContex
 }
 
 /**
+ * The consumer's own Azure DevOps tags, as pills after its name. Only a consumer shows them: they
+ * are what the header's Tags filter judges consumers by, so seeing them on the card explains why a
+ * consumer was kept or hidden, while a request's tags would only crowd the line the reader ranks by.
+ */
+function renderOwnTags(doc: Document, consumer: TrackedWorkItem): HTMLElement[] {
+  return consumer.tags.map((tag) => {
+    const pill = renderTagPill(doc, { tag });
+    pill.classList.add(`${PREFIX}__consumer-item-tag`);
+    pill.style.flex = "0 0 auto";
+    return pill;
+  });
+}
+
+/**
  * The consumer's card: its title line and, directly beneath, the service it is and the people behind
  * it — what the row IS, not something the reader has to open. The panels the `?` and the type icon
  * open are NOT part of it; they unfold below the card rather than stretching it.
@@ -397,7 +411,7 @@ function renderConsumerCard(
   const head = doc.createElement("div");
   head.className = `${PREFIX}__card-head`;
   head.style.cssText = "display:flex;align-items:center;gap:8px;min-width:0";
-  head.append(parts.describe, parts.notesToggle, parts.title);
+  head.append(parts.describe, parts.notesToggle, parts.title, ...renderOwnTags(doc, consumer));
   card.append(requestCount, head);
   const profile = renderConsumerProfileLines(
     doc,
