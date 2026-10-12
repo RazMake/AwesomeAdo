@@ -64,7 +64,9 @@ describe("MessagingWorkItemCreator", () => {
     expect(sent.extraFields).toEqual(extraFields);
     expect(sent.extraFields).not.toBe(extraFields);
   });
+});
 
+describe("MessagingWorkItemCreator - details and failures", () => {
   it("carries the assignee, description and reason a form filled in", async () => {
     const send = vi.fn(async () => ({ ok: true, id: 42, rev: 1 })) as SendCreateWorkItemRequest;
 

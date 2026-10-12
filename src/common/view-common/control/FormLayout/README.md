@@ -45,11 +45,14 @@ function renderFormActions(
   failure: HTMLElement,
 ): HTMLElement;
 
-/** One submission: buttons inert meanwhile, "Not created — see the diagnostics log." on false. */
+/**
+ * One submission: buttons inert meanwhile. `false` uses the standard failure text; a
+ * `FormSubmissionResult` can name a partial failure and mark retrying unsafe.
+ */
 function submitForm(
   buttons: readonly HTMLButtonElement[],
   failure: HTMLElement,
-  submit: () => Promise<boolean>,
+  submit: () => Promise<FormSubmissionResult>,
 ): Promise<boolean>;
 
 /**
@@ -61,7 +64,7 @@ function bindFormSubmission(options: {
   cancel: HTMLButtonElement;
   failure: HTMLElement;
   problem(): string | null;
-  run(): Promise<boolean>;
+  run(): Promise<FormSubmissionResult>;
   onCancel(): void;
 }): { refresh(): void };
 
@@ -99,4 +102,6 @@ form.append(
 ```
 
 The owner keeps the form mounted when `run` resolves `false`, so everything typed survives another
-attempt.
+attempt. Return `{ accepted: false, failureMessage, retryable: false }` when part of the operation
+already succeeded: the specific message remains visible and the submit button stays locked so the
+reader cannot create a duplicate.

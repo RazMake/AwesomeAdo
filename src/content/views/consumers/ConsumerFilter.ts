@@ -28,7 +28,8 @@ export function renderConsumerFilter(doc: Document, options: ConsumerFilterOptio
     left.title.localeCompare(right.title, undefined, { sensitivity: "base" }),
   );
   return renderCheckboxFilter(doc, {
-    label: "Consumer",
+    label: "By name",
+    fixedTitle: "Filter by consumer name",
     classPrefix: "awesomeado-consumer-filter",
     options: byTitle.map((consumer) => ({ value: String(consumer.id), label: consumer.title })),
     selected: [...selection].map(String),

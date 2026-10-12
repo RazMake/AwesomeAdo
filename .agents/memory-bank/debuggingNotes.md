@@ -2145,3 +2145,27 @@ fetch(
   `.debug-profiles/edge-nodebug/Default/Secure Preferences`; open
   `chrome-extension://<id>/options/options.html` over CDP and evaluate `chrome.runtime.reload()`
   there (the worker may be asleep and absent from `/json/list`), then reload the ADO tab.
+
+## Consumers request status changes ADO rejects as "not in the list of supported values"
+
+- SYMPTOM: New → Needs Clarification (and later → Done) failed with HTTP 400, `invalidListValue` on
+  `System.State`.
+- ACTUAL ROOT CAUSE (verified live on item 7996900): the request was a **User Story** while the
+  mapping table had only a fixed **Task** row, so the type-keyed lookup missed and the bare status
+  label (`Done`, `Needs Clarification`) was written — a state the type does not have. The org's
+  User Story transitions were fully connected, so routing was not the issue. FIX: a request whose
+  type has no row uses the table's first row (`RequestStateMapping.fallback`), and the fixed row is
+  now **User Story** (the editor carries a saved Task row over into it).
+- ADO also reports that error for a state that is not an allowed transition from the item's
+  CURRENT state (the allowed list is per current state). Filtering the picker (by catalog or by
+  board column) was rejected by the developer: it emptied the popup and blocked legitimate changes.
+- Never filter. `changeItemState` reads the type's transition graph and writes the shortest
+  allowed route hop by hop. To debug a stuck change, look for the `content/views` info line
+  `cannot go from "A" to "B" directly; writing "X" → "B"`, `no "<type>" route from …` (target state
+  absent on the type — check the mapping), or the `Could not read "<type>" state transitions`
+  error (then it fell back to a direct write).
+- To inspect a live item: over CDP 9222, `Runtime.evaluate` in the ADO tab a credentialed fetch of
+  `_apis/wit/workitems/{id}` and `_apis/wit/workitemtypes/{type}`; the binding's mapping is in
+  `chrome.storage.sync["bindings.queries"]` (read it from an opened options page target).
+- The transition body is `transitions: {"<from>": [{to, actions}], "": [...]}`; `""` is creation
+  and is ignored.

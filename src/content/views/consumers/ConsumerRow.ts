@@ -15,25 +15,27 @@ import {
   renderTreeTwisty,
 } from "../../../common/view-common/control/TreeRow/TreeRow";
 import { renderRowEtaBadge } from "../item-eta/renderRowEtaBadge";
-import { renderItemStatusBadge } from "../item-status/itemStatusBadge";
 import { renderItemNotesToggle } from "../project-tracking/notes/ItemNotesToggle";
 import { createNotesPanelState, type NotesPanelState } from "../project-tracking/notes/NotesPanel";
 
+import { renderRequestStatusBadge } from "./RequestStatusBadge";
+import { consumerRequests, openConsumerQuestions } from "./pendingQuestions";
 import type { ConsumerContactEditor } from "./profile/ConsumerContactEditor";
 import { renderConsumerProfileLines, type ContactEditing } from "./profile/ConsumerProfileLines";
 import { readConsumerProfile } from "./profile/consumerProfile";
+import type { RequestStateMapping } from "./requestStates";
 
 /** What one paint of the consumer list hands every row it builds. */
 export interface ConsumerRowContext {
   doc: Document;
   types: ReadonlyMap<string, TypeCatalogEntry>;
-  /** The team's global board-column order, which colors every Status badge. */
-  boardColumns: readonly string[];
   /** The board's one serialized write queue, shared by Status edits and drag moves. */
   queue: WorkItemWriteQueue;
   services: EnhancedViewServices;
-  /** One badge width for the whole board, so every Status lines up down the list. */
-  statusWidthCh: number;
+  /** The binding's per-type ADO state mapping for the fixed Consumers request statuses. */
+  requestStateMapping: RequestStateMapping;
+  /** One request-status width for the whole board, so every badge lines up down the list. */
+  requestStateWidthCh: number;
   now(): Date;
   policy: OrderingPolicy;
   /**
@@ -91,7 +93,7 @@ export function requestsOf(
   context: Pick<ConsumerRowContext, "policy" | "keepsRequest">,
 ): TrackedWorkItem[] {
   return orderTrackedItems(
-    consumer.children.filter((request) => context.keepsRequest(request)),
+    consumerRequests(consumer).filter((request) => context.keepsRequest(request)),
     (request) => request,
     context.policy,
   );
@@ -195,23 +197,16 @@ const REQUEST_COUNT_STYLE = [
  * How many feature requests the consumer made, in the card's first column, where a twisty would
  * otherwise sit: the number answers "how much does this consumer want?" before anything is opened,
  * and pressing it opens or closes exactly those requests. Filled while open, so an open card is
- * recognisable from the column alone.
+ * recognisable from the column alone. An empty consumer has no count control.
  */
 function renderRequestCount(
   consumer: TrackedWorkItem,
   count: number,
   context: ConsumerRowContext,
   expanded: boolean,
-): HTMLElement {
+): HTMLElement | null {
   const { doc } = context;
-  if (count === 0) {
-    const none = doc.createElement("span");
-    none.className = `${PREFIX}__request-count is-empty`;
-    none.textContent = "0";
-    none.title = "No feature requests";
-    none.style.cssText = `${REQUEST_COUNT_STYLE};border:1px solid transparent;color:var(--text-secondary-color)`;
-    return none;
-  }
+  if (count === 0) return null;
   const button = doc.createElement("button");
   button.type = "button";
   button.className = `${PREFIX}__request-count`;
@@ -277,14 +272,16 @@ function renderRequestParts(
   const line = renderTreeRowLine(doc, PREFIX, null);
   line.append(
     ...extras.lead,
-    renderItemStatusBadge({
+    renderRequestStatusBadge({
       doc,
       item: request,
-      entry: context.types.get(request.type),
-      boardColumns: context.boardColumns,
+      mapping: context.requestStateMapping,
       queue: context.queue,
-      minWidthCh: context.statusWidthCh,
+      transitions: context.services.stateTransitions,
+      logger: context.services.logger,
+      minWidthCh: context.requestStateWidthCh,
       now: () => context.now(),
+      onCommitted: context.repaint,
     }),
     parts.describe,
     parts.notesToggle,
@@ -393,6 +390,28 @@ function renderOwnTags(doc: Document, consumer: TrackedWorkItem): HTMLElement[] 
   });
 }
 
+/** The tracked-question count stays distinct from ordinary tags without adding noise at zero. */
+function renderOpenQuestionsBadge(doc: Document, consumer: TrackedWorkItem): HTMLElement | null {
+  const count = openConsumerQuestions(consumer).length;
+  if (count === 0) return null;
+  const badge = doc.createElement("span");
+  badge.className = `${PREFIX}__open-questions`;
+  badge.textContent = `Open questions: ${count}`;
+  badge.title = `${count} Pending Questions task${count === 1 ? "" : "s"} still open`;
+  badge.style.cssText = [
+    "flex:0 0 auto",
+    "padding:1px 7px",
+    "border:1px solid var(--status-yellow-border)",
+    "border-radius:10px",
+    "background:var(--status-yellow-background)",
+    "color:var(--status-yellow-foreground)",
+    "font-size:11px",
+    "font-weight:600",
+    "line-height:18px",
+  ].join(";");
+  return badge;
+}
+
 /**
  * The consumer's card: its title line and, directly beneath, the service it is and the people behind
  * it — what the row IS, not something the reader has to open. The panels the `?` and the type icon
@@ -401,7 +420,7 @@ function renderOwnTags(doc: Document, consumer: TrackedWorkItem): HTMLElement[] 
 function renderConsumerCard(
   consumer: TrackedWorkItem,
   context: ConsumerRowContext,
-  requestCount: HTMLElement,
+  requestCount: HTMLElement | null,
   parts: ItemParts,
 ): HTMLElement {
   const { doc } = context;
@@ -411,8 +430,17 @@ function renderConsumerCard(
   const head = doc.createElement("div");
   head.className = `${PREFIX}__card-head`;
   head.style.cssText = "display:flex;align-items:center;gap:8px;min-width:0";
-  head.append(parts.describe, parts.notesToggle, parts.title, ...renderOwnTags(doc, consumer));
-  card.append(requestCount, head);
+  if (requestCount === null) head.style.gridColumn = "2";
+  const questionsBadge = renderOpenQuestionsBadge(doc, consumer);
+  head.append(
+    parts.describe,
+    parts.notesToggle,
+    parts.title,
+    ...renderOwnTags(doc, consumer),
+    ...(questionsBadge === null ? [] : [questionsBadge]),
+  );
+  if (requestCount !== null) card.append(requestCount);
+  card.append(head);
   const profile = renderConsumerProfileLines(
     doc,
     readConsumerProfile(consumer.description, { mentionNames: context.mentionNames }),

@@ -1786,7 +1786,8 @@ cannot be null."` The patch that reached ADO was `{ op: "add", path: "/fields/<d
   pill in the card's first column (32px, fixed so titles align) replacing the twisty; the session
   tracks `expandedIds` instead of `collapsedIds`, and `treeExpansion` follows. A roster of many
   consumers is read as a roster first; the count answers "how much does each want?" without opening
-  anything. A header **Show only requests** switch (the shared `control/ToggleButton`, extracted
+  anything, and is omitted when the count is zero. A header **Show only requests** switch (the shared
+  `control/ToggleButton`, extracted
   from Project Tracking's Show only Done toggle so both are one control) replaces the cards with
   every shown consumer's requests in ONE list ordered by the board's policy across consumers, each
   tagged with its consumer (a `TagPill`, hue per consumer). Drag is off in that mode, with a reason
@@ -1809,6 +1810,53 @@ cannot be null."` The patch that reached ADO was `{ op: "add", path: "/fields/<d
   consumer (its id / its OWN tags) in both modes so the two modes always agree on who is shown; the
   tag condition, dropdown, and URL contract were extracted from Projects into
   `content/views/tag-selection` so both boards share one implementation.
+- Amendment (Pending Questions storage and answer filter): each new consumer gets a User Story named
+  Pending Questions with the standard question-tracking description, the `PendingQuestions` tag,
+  the consumer's Area, and iteration `O365 Core`; it is born as the consumer Feature's hierarchy
+  child. Test Case / Shared Steps links and titles are deliberately ignored. Every direct User Story
+  child carrying the tag is storage, so multiple stores are supported; all are excluded with their
+  descendants from requests, counts, ordering, drag and request defaults. Their Task children are
+  aggregated, with Closed, Resolved, and Removed discarded, into the yellow **Open questions: N**
+  card badge; an empty aggregate renders no badge. Consumer contacts now share a wrapping row.
+  Consumer creation remains two server creates because the hierarchy child needs the first item's
+  id; if the second fails, the form names the partial result and locks Add rather than allowing a
+  duplicate first item.
+- Amendment (request states and consumer qualification): Consumers View owns a fixed semantic state
+  model — New (gray), Needs Clarification (yellow), Accepted (blue), and Rejected (red) — while each
+  query binding maps one or more raw ADO states to each semantic value. The first raw value is the
+  write target, unmapped values remain visible, and the ordinary binding properties automatically
+  travel through full and team-shared configuration. This view-specific model deliberately does not
+  reuse the delivery-board column mapping because a consumer request has different semantics. The
+  old card-only Waiting toggle is replaced by a right-side, non-persisted, single-select filter
+  available in both modes: Waiting tests the active-question aggregate, Untriaged tests New, and
+  Committed tests Accepted. State conditions inspect only area-visible requests, but a qualifying
+  consumer retains all of its visible requests.
+- Amendment (request-state mapping table): the four free-text, comma-separated mapping properties
+  are replaced by one `requestStateMapping` property of the new `state-mapping` ViewType kind, a
+  JSON list of `{type, states: {statusId: string[]}}` rows (`common/view-common/StateMapping.ts`).
+  The options binding form edits it with `StateMappingTableEditor`, which reuses the Azure DevOps
+  tab's table markup, CSS, and pickers so the two mappings look and behave identically while the
+  semantics stay view-specific. The rows are fixed by the view through
+  `ViewTypeProperty.stateRowTypes` (Consumers: exactly one User Story row — requests are User
+  Stories; it was first a Task row, and the binding editor carries a saved row of an unlisted type
+  into a fixed row that has none, so the rename kept existing mappings; no
+  add/remove/type picker). A request whose type has no row of its own (Consumers requests are
+  usually User Stories, not Tasks) uses the table's first row — the row names the type its state
+  chips were picked from, not a type filter. Only an empty table, or an empty cell, targets the ADO
+  state named exactly like the status. A fifth status, Done (green), follows Rejected.
+  Status columns travel on
+  `ViewTypeProperty.stateColumns` so options never imports the view module.
+- Amendment (any-to-any request state changes, developer direction): the status picker is NEVER
+  filtered and never derives targets from the delivery-board columns. ADO's `invalidListValue` 400
+  on `System.State` also means "not an allowed transition from the current state", so the request
+  badge reads the work item type's `transitions` (`_apis/wit/workitemtypes/{type}`, through a
+  sender-tab worker read) and writes the shortest allowed route — intermediaries, then the mapped
+  target (first cell state that is reachable). This is a deliberate exception to the one-patch rule
+  (ADR-030 / batch-work-item-writes): ADO validates each State change against the revision it
+  starts from, so each hop is its own guarded revision and the next is enqueued only after the
+  previous rev folded into the model. A failed later hop leaves the item in the intermediary state,
+  which the badge shows and the log records. Missing transitions or no route fall back to one
+  direct write so ADO's own error is surfaced.
 
 ## ADR-082: Favorites sync fails closed and never removes a favorite without a way back
 

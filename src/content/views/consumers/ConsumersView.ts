@@ -18,7 +18,10 @@ import {
   type PlannedMove,
 } from "../../../common/view-common/control/DragReorder/DragReorderController";
 import { renderEmptyState } from "../../../common/view-common/control/EmptyState/EmptyState";
-import type { RefreshRequest } from "../../../common/view-common/control/HeaderButtons/HeaderButtons";
+import {
+  type RefreshRequest,
+  renderHeaderTextButton,
+} from "../../../common/view-common/control/HeaderButtons/HeaderButtons";
 import {
   createItemContextMenu,
   type ItemContextMenu,
@@ -28,7 +31,6 @@ import {
   modifierHighlightTracker,
   restripeVisibleRows,
 } from "../../../common/view-common/control/RowEmphasis/RowEmphasis";
-import { renderToggleButton } from "../../../common/view-common/control/ToggleButton/ToggleButton";
 import { treeRowEmphasisClasses } from "../../../common/view-common/control/TreeRow/TreeRow";
 import type { ViewTitleBandHandle } from "../../../common/view-common/control/ViewHeader/ViewHeader";
 import {
@@ -40,7 +42,6 @@ import { createBoardLoader } from "../board-lifecycle/boardLoader";
 import { createBoardWriteQueue } from "../board-lifecycle/boardWriteQueue";
 import { createBoardWriteStatus } from "../board-lifecycle/boardWriteStatus";
 import { discardBoardCaches } from "../board-lifecycle/discardBoardCaches";
-import { widestStatusLabelLength } from "../item-status/itemStatusBadge";
 import { dragReorderUnavailableReason } from "../project-tracking/drag-reorder/dragReorderAvailability";
 import { persistTreeMove } from "../project-tracking/drag-reorder/persistTreeMove";
 import { buildCustomTagCommands } from "../project-tracking/item-commands/CustomTagCommands";
@@ -57,6 +58,7 @@ import {
 } from "../tag-selection/tagCondition";
 import { readUrlTagCondition, searchWithTagCondition } from "../tag-selection/tagConditionUrl";
 
+import { renderConsumerConditionFilter, type ConsumerCondition } from "./ConsumerConditionFilter";
 import { renderConsumerFilter } from "./ConsumerFilter";
 import { renderConsumerRow, renderRequestOnlyRow, type ConsumerRowContext } from "./ConsumerRow";
 import { renderConsumersHeader } from "./ConsumersHeader";
@@ -73,11 +75,18 @@ import {
   consumerCreationCommands,
   type ConsumerCreationContext,
 } from "./creation/creationCommands";
+import { consumerRequests, hasActivePendingQuestions } from "./pendingQuestions";
 import {
   createConsumerContactEditor,
   type ConsumerContactEditor,
 } from "./profile/ConsumerContactEditor";
 import { contactRolesIn } from "./profile/consumerProfile";
+import {
+  requestHasState,
+  requestStateMapping,
+  widestRequestStateLabelLength,
+  type RequestStateMapping,
+} from "./requestStates";
 import { collapseStep, expandStep } from "./treeExpansion";
 
 /** What the reader has done to the board, kept outside the DOM so a repaint cannot lose it. */
@@ -103,6 +112,8 @@ interface ConsumersSession {
    * Seeded once from the reader's synced choice for this query, so it reopens the way it was left.
    */
   showConsumers: boolean;
+  /** The one right-side condition narrowing consumers; "all" keeps every other filter match. */
+  consumerCondition: ConsumerCondition;
 }
 
 /** Why a query cannot be drawn as consumers, phrased for the empty-state panel. */
@@ -122,7 +133,6 @@ type GroupingOutcome =
 type LoadedConsumers = GroupingOutcome & {
   result: WorkItemTreeResult;
   types: Map<string, TypeCatalogEntry>;
-  boardColumns: string[];
 };
 
 /** The live board, so a row or a command can reach what it has to change. */
@@ -131,6 +141,8 @@ interface Board {
   session: ConsumersSession;
   /** The binding's request area branches; empty lets every request through. */
   configuredAreaPaths: readonly string[];
+  /** The binding's per-type ADO states mapped onto the four fixed request statuses. */
+  requestStates: RequestStateMapping;
   queue: WorkItemWriteQueue;
   contactEditor: ConsumerContactEditor;
   contextMenu: ItemContextMenu;
@@ -194,7 +206,6 @@ async function loadConsumers(context: DataDrivenViewContext): Promise<LoadedCons
   return {
     result,
     types: new Map(context.services.getTypes().map((entry) => [entry.name, entry])),
-    boardColumns: context.services.getBoardColumns(),
     ...groupingOf(result),
   };
 }
@@ -202,7 +213,7 @@ async function loadConsumers(context: DataDrivenViewContext): Promise<LoadedCons
 /** Every request the binding's area branches keep, before the header Area filter narrows them. */
 function inScopeRequests(board: Board, grouping: TrackedWorkItem): TrackedWorkItem[] {
   return grouping.children
-    .flatMap((consumer) => consumer.children)
+    .flatMap(consumerRequests)
     .filter((request) => isInAreaPathBranches(request.areaPath, board.configuredAreaPaths));
 }
 
@@ -228,11 +239,23 @@ function shownConsumers(board: Board, grouping: TrackedWorkItem): TrackedWorkIte
       (consumer) =>
         // Judged on the consumer's OWN tags in both modes: the tags describe who is asking.
         matchesTagCondition(consumer, session.tags) &&
-        (picked.size === 0 || picked.has(consumer.id)),
+        (picked.size === 0 || picked.has(consumer.id)) &&
+        matchesConsumerCondition(board, consumer),
     ),
     (consumer) => consumer,
     session.policy,
   );
+}
+
+function matchesConsumerCondition(board: Board, consumer: TrackedWorkItem): boolean {
+  const condition = board.session.consumerCondition;
+  // The By state filter only exists in consumers mode; the requests list never answers to it.
+  if (condition === "all" || !board.session.showConsumers) return true;
+  if (condition === "waitingForAnswers") return hasActivePendingQuestions(consumer);
+  const state = condition === "untriagedRequests" ? "new" : "accepted";
+  return consumerRequests(consumer)
+    .filter((request) => keepsRequest(board, request))
+    .some((request) => requestHasState(request, state, board.requestStates));
 }
 
 /** Replace the surface with the shared placeholder shell (loading, or a first load that failed). */
@@ -328,7 +351,7 @@ function dragUnavailableReason(board: Board, policy: OrderingPolicy): string | n
  */
 function allRequestIdsByRank(grouping: TrackedWorkItem): number[] {
   return orderTrackedItems(
-    grouping.children.flatMap((consumer) => consumer.children),
+    grouping.children.flatMap(consumerRequests),
     (request) => request,
     MANUAL_ORDERING_POLICY,
   ).map((request) => request.id);
@@ -361,10 +384,13 @@ function createRowContext(
   return {
     doc: context.doc,
     types: loaded.types,
-    boardColumns: loaded.boardColumns,
     queue: board.queue,
     services: context.services,
-    statusWidthCh: widestStatusLabelLength(grouping.children, loaded.types),
+    requestStateMapping: board.requestStates,
+    requestStateWidthCh: widestRequestStateLabelLength(
+      grouping.children.flatMap(consumerRequests),
+      board.requestStates,
+    ),
     now: () => context.services.now(),
     policy: session.policy,
     expandedIds: session.expandedIds,
@@ -439,7 +465,10 @@ function consumersEmptyState(
   if (consumers.length > 0) return null;
   return renderEmptyState(doc, {
     message: "No consumer matches the header filters.",
-    hint: "Clear the Consumer or Tags filter to see more consumers.",
+    hint:
+      board.session.consumerCondition === "all" || !board.session.showConsumers
+        ? "Clear the By name or Tags filter to see more consumers."
+        : "Clear By state, By name, or Tags to see more consumers.",
   });
 }
 
@@ -478,7 +507,7 @@ interface ShownRequest {
 function shownRequests(board: Board, consumers: readonly TrackedWorkItem[]): ShownRequest[] {
   return orderTrackedItems(
     consumers.flatMap((consumer) =>
-      consumer.children
+      consumerRequests(consumer)
         .filter((request) => keepsRequest(board, request))
         .map((request) => ({ request, consumer })),
     ),
@@ -511,7 +540,7 @@ function renderRequestsList(
           }
         : {
             message: "None of the shown consumers has a feature request.",
-            hint: "Press Show consumers to see the consumers, or link requests under them in Azure DevOps.",
+            hint: "Press View consumers to see the consumers, or link requests under them in Azure DevOps.",
           },
     );
   }
@@ -538,7 +567,8 @@ function describeBoard(
     `configuredAreaPaths=${board.configuredAreaPaths.length}, ` +
     `selectedAreaPaths=${board.session.selectedAreaPaths.size}, ` +
     `selectedConsumers=${board.session.selectedConsumerIds.size}, ` +
-    `tags=${describeTagCondition(board.session.tags)}.`
+    `tags=${describeTagCondition(board.session.tags)}, ` +
+    `consumerCondition=${board.session.consumerCondition}.`
   );
 }
 /** The list for one paint, plus the line describing it for the diagnostics log. */
@@ -583,8 +613,10 @@ function createBoard(
       policy: orderingPolicyOf(context.properties),
       // Replaced by the reader's saved choice before the first paint; see `applySavedMode`.
       showConsumers: false,
+      consumerCondition: "all",
     },
     configuredAreaPaths: requestAreaPaths(context.properties),
+    requestStates: requestStateMapping(context.properties),
     queue,
     contactEditor: createConsumerContactEditor({
       queue,
@@ -633,7 +665,9 @@ function stepExpansion(
   const levels = session.showConsumers
     ? [
         consumers
-          .filter((consumer) => consumer.children.some((request) => keepsRequest(board, request)))
+          .filter((consumer) =>
+            consumerRequests(consumer).some((request) => keepsRequest(board, request)),
+          )
           .map(({ id }) => id),
       ]
     : [];
@@ -654,7 +688,7 @@ function stepExpansion(
 function shownItemIds(board: Board, consumers: readonly TrackedWorkItem[]): number[] {
   const { session } = board;
   return consumers.flatMap((consumer) => {
-    const requestIds = consumer.children
+    const requestIds = consumerRequests(consumer)
       .filter((request) => keepsRequest(board, request))
       .map(({ id }) => id);
     if (!session.showConsumers) return requestIds;
@@ -677,32 +711,40 @@ async function readSavedMode(context: DataDrivenViewContext): Promise<boolean> {
   }
 }
 
-/** The header switch between the requests list (the default) and the consumer cards. */
+/**
+ * The header switch between the requests list (the default) and the consumer cards. Worded as the
+ * mode it leads to and always filled, darker while showing the consumers, so the label alone says
+ * what a press does and no tooltip is needed.
+ */
 function renderShowConsumersToggle(board: Board, repaint: () => void): HTMLElement {
   const { context, session } = board;
-  return renderToggleButton(context.doc, {
+  const button = renderHeaderTextButton(context.doc, {
     className: `${PREFIX}__show-consumers`,
-    label: "Show consumers",
-    pressed: session.showConsumers,
-    pressedTitle: "Show only the feature requests again, as one list across every shown consumer",
-    releasedTitle: "Show the consumers, each with its feature requests",
-    onToggle: (showConsumers) => {
-      session.showConsumers = showConsumers;
-      context.services.logger.info(
-        `Consumers View Show consumers: ${showConsumers ? "on" : "off"}.`,
-      );
-      // Saved per query and synced, so this query reopens in this mode on every signed-in browser.
-      void context.services.consumersShowConsumers
-        ?.write(context.queryId, showConsumers)
-        .catch((error: unknown) => {
-          context.services.logger.error(
-            "Consumers View could not save the Show consumers choice",
-            error,
-          );
-        });
-      repaint();
-    },
+    label: session.showConsumers ? "View requests" : "View consumers",
   });
+  const fill = session.showConsumers
+    ? "color-mix(in srgb, var(--communication-background) 65%, black)"
+    : "var(--communication-background)";
+  button.setAttribute("aria-pressed", String(session.showConsumers));
+  button.style.background = fill;
+  button.style.borderColor = fill;
+  button.style.color = "var(--text-on-communication-background)";
+  button.addEventListener("click", () => {
+    const showConsumers = !session.showConsumers;
+    session.showConsumers = showConsumers;
+    context.services.logger.info(`Consumers View Show consumers: ${showConsumers ? "on" : "off"}.`);
+    // Saved per query and synced, so this query reopens in this mode on every signed-in browser.
+    void context.services.consumersShowConsumers
+      ?.write(context.queryId, showConsumers)
+      .catch((error: unknown) => {
+        context.services.logger.error(
+          "Consumers View could not save the Show consumers choice",
+          error,
+        );
+      });
+    repaint();
+  });
+  return button;
 }
 
 /**
@@ -742,6 +784,17 @@ function renderHeaderFilters(board: Board, loaded: LoadedConsumers): HTMLElement
       selection: session.selectedConsumerIds,
       onChange: () => changed(`consumer filter: selectedCount=${session.selectedConsumerIds.size}`),
     }),
+    ...(session.showConsumers
+      ? [
+          renderConsumerConditionFilter(context.doc, {
+            condition: session.consumerCondition,
+            onChange: (condition) => {
+              session.consumerCondition = condition;
+              changed(`by-state filter: ${condition}`);
+            },
+          }),
+        ]
+      : []),
     renderTagConditionFilter(context.doc, {
       tags: vocabulary,
       condition: session.tags,

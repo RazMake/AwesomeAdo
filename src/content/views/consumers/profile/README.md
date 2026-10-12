@@ -35,7 +35,8 @@ the Consumers View card draws them on, and the contact edits it writes back into
   pill (`??` when it has none); the alias is only in the pill's tooltip. `editing` (`ContactEditing`)
   supplies the people directory, the board's roles, and the `onAdd` / `onReplace` / `onRoleChange` /
   `onRemove` requests the pills and the Contacts `+` make. The role editor's add field reads
-  "Add new role". The Contacts heading is always shown. A
+  "Add new role". Contact pills share one row and wrap onto following rows only when the card runs
+  out of horizontal space. The Contacts heading is always shown. A
   rich-text description shows its contacts read-only, with no ×, and the whole section's tooltip is
   `RICH_TEXT_CONTACTS_REASON` ("The description has to be Markdown to be editable."). A contact in
   any shape but `own-line` is read-only too, with its `SHARED_CONTACT_REASONS` entry in its tooltip.

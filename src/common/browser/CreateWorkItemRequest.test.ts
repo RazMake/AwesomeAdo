@@ -35,7 +35,9 @@ describe("isCreateWorkItemMessage", () => {
     expect(isCreateWorkItemMessage(message({ parentId: null }))).toBe(true);
     expect(isCreateWorkItemMessage(message())).toBe(true);
   });
+});
 
+describe("isCreateWorkItemMessage - invalid basics", () => {
   it("refuses a parent that is not a real work item id", () => {
     expect(isCreateWorkItemMessage(message({ parentId: 0 }))).toBe(false);
     expect(isCreateWorkItemMessage(message({ parentId: -1 }))).toBe(false);

@@ -481,12 +481,29 @@ Split into component subfolders (each with its own `README.md`):
   - `content/views/item-eta/renderRowEtaBadge` → one row's editable ETA badge from the item type's
     configured ETA field (null when the type has none), with optional `EtaBadge` wording, shared by
     the catalog rows and Consumers' Needed-by badge.
+  - `views/consumers/requestStates` and `RequestStatusBadge` → Consumers View's own fixed semantic
+    request-state palette and editable control. One `state-mapping` binding property maps the fixed
+    User Story row's raw ADO states to New, Needs Clarification, Accepted, Rejected, and Done;
+    the first chip in a cell is the preferred write target (later chips are fallback targets). A
+    request whose type has no row of its own uses the table's first row; empty cells target the
+    same-name raw state. Every status is always offered; `RequestStatusBadge`
+    delegates to `item-status/changeItemState`, which reads the type's ADO transition graph
+    (`common/ado/WorkItemStateTransitions`, via the `stateTransitions` view service and the
+    worker's `awesomeado:load-state-transitions` read) and writes the BFS-shortest route hop by
+    hop, one guarded revision each. The options form edits every `state-mapping` property with
+    `options/query-bindings/StateMappingTableEditor` (Azure DevOps tab table styling)
+    and parses it only via `common/view-common/StateMapping`.
+    `ConsumerConditionFilter` wraps the shared checkbox popup as a single-select qualification
+    filter without adding another filter-control implementation.
   - `views/consumers/profile` reads the consumer's human-edited description in three layers — text
     and line shapes (`descriptionText`), structure (`descriptionSections`: headings, fuzzy section
     names, group labels), and people (`contactEntries`) — orchestrated by `consumerProfile`, which
     also records each contact's line and `ContactShape`. Writers (`consumerContactsSource`) touch
     only `own-line` contacts and only their one line, so everything the reader tolerated survives an
     edit untouched.
+  - `views/consumers/pendingQuestions` recognizes every direct User Story child carrying the
+    `PendingQuestions` tag, ignores Test Case / Shared Steps links and titles, and aggregates the
+    active Task children across all matching stories.
 
 ### `src/options`
 

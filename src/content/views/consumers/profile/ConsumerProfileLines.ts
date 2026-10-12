@@ -124,7 +124,7 @@ function renderIdentityLine(doc: Document, profile: ConsumerProfile): HTMLElemen
   return line;
 }
 
-/** The Contacts heading with its add button, over one contact pill per line. */
+/** The Contacts heading with its add button, over wrapping contact pills. */
 function renderContacts(
   doc: Document,
   contacts: readonly ConsumerContact[],
@@ -148,8 +148,9 @@ function renderContacts(
     list.className = `${PREFIX}__contact-list`;
     list.style.cssText = [
       "display:flex",
-      "flex-direction:column",
-      "align-items:flex-start",
+      "flex-direction:row",
+      "align-items:center",
+      "flex-wrap:wrap",
       "gap:3px",
       "margin:0",
       "padding:0",

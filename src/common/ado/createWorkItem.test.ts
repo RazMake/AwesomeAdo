@@ -96,7 +96,9 @@ describe("buildCreateWorkItemPatch", () => {
     expect(buildCreateWorkItemPatch({ ...unparented, iterationPath: null })).toHaveLength(1);
     expect(buildCreateWorkItemPatch({ ...unparented, iterationPath: null }, null)).toHaveLength(1);
   });
+});
 
+describe("buildCreateWorkItemPatch - optional values", () => {
   it("treats whitespace-only classification paths as absent", () => {
     const patch = buildCreateWorkItemPatch({
       type: "Epic",

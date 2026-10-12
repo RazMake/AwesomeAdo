@@ -1,5 +1,6 @@
 import type { TrackedWorkItem, TypeCatalogEntry } from "../../../../common/ado/TrackedWorkItem";
 import { isInAreaPathBranches } from "../../../../common/ado/workItemAreaPaths";
+import { consumerRequests } from "../pendingQuestions";
 import { parseConsumerProfile } from "../profile/consumerProfile";
 
 /** The value seen most often, the first one seen winning a tie; null when there are none. */
@@ -48,8 +49,10 @@ export function newRequestType(
   types: ReadonlyMap<string, TypeCatalogEntry>,
 ): string | null {
   return (
-    mostCommon(consumer.children.map((request) => request.type)) ??
-    mostCommon(grouping.children.flatMap((other) => other.children.map((item) => item.type))) ??
+    mostCommon(consumerRequests(consumer).map((request) => request.type)) ??
+    mostCommon(
+      grouping.children.flatMap((other) => consumerRequests(other).map((item) => item.type)),
+    ) ??
     configuredChildType(consumer, types)
   );
 }
@@ -69,8 +72,8 @@ export function newRequestAreaPath(
       .filter((request) => isInAreaPathBranches(request.areaPath, configuredAreaPaths))
       .map((request) => request.areaPath);
   return (
-    mostCommon(kept(consumer.children)) ??
-    mostCommon(kept(grouping.children.flatMap((other) => other.children))) ??
+    mostCommon(kept(consumerRequests(consumer))) ??
+    mostCommon(kept(grouping.children.flatMap(consumerRequests))) ??
     configuredAreaPaths[0] ??
     consumer.areaPath
   );

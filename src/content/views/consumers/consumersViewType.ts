@@ -11,6 +11,8 @@ import {
   type ViewTypeProperty,
 } from "../../../common/view-common/ViewType";
 
+import { requestStateMappingProperty } from "./requestStates";
+
 /**
  * The only orders a consumers board offers: the hand-made drag order (stored as backlog rank, so
  * "importance" under the hood) or the date each request is needed by. Alphabetical order answers no
@@ -54,7 +56,7 @@ const LEGACY_AREA_PATHS_KEY = "consumerAreaPaths";
 export const consumersViewType: ViewType = {
   id: "consumers",
   label: "Consumers View",
-  properties: [consumersOrderingProperty, requestAreaPathsProperty],
+  properties: [consumersOrderingProperty, requestAreaPathsProperty, requestStateMappingProperty],
 };
 
 /** The area branches a feature request must sit in to be shown; empty shows every request. */

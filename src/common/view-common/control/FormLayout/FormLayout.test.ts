@@ -9,6 +9,7 @@ import {
   renderFormRow,
   renderFormTextField,
   submitForm,
+  type FormSubmissionResult,
 } from "./FormLayout";
 
 const PREFIX = "test-form";
@@ -169,7 +170,7 @@ describe("submitForm", () => {
 });
 
 /** A submit/cancel pair bound to a problem the test controls. */
-function boundForm(run: () => Promise<boolean>) {
+function boundForm(run: () => Promise<FormSubmissionResult>) {
   const submit = renderFormButton(document, PREFIX, "Add", true);
   const cancel = renderFormButton(document, PREFIX, "Cancel", false);
   const failure = renderFormFailureLine(document, PREFIX);
@@ -249,6 +250,25 @@ describe("bindFormSubmission — in flight", () => {
     expect(form.failure.textContent).toBe(NOT_CREATED);
     expect(form.submit.disabled).toBe(true);
     expect(form.submit.title).toBe("Provide a title.");
+  });
+
+  it("shows a specific partial-failure message and prevents an unsafe retry", async () => {
+    const run = vi.fn(async () => ({
+      accepted: false,
+      failureMessage: "The first item was created; the related item was not.",
+      retryable: false,
+    }));
+    const form = boundForm(run);
+    form.state.problem = null;
+    form.binding.refresh();
+
+    form.submit.click();
+    await settle();
+    form.submit.click();
+
+    expect(form.failure.textContent).toBe("The first item was created; the related item was not.");
+    expect(form.submit.disabled).toBe(true);
+    expect(run).toHaveBeenCalledTimes(1);
   });
 });
 

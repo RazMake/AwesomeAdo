@@ -5,6 +5,28 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ## Next Version
 
+### New Features
+
+- Consumers View lays contacts out across wrapping rows, and while showing consumers a **By state**
+  filter keeps only consumers **Waiting for answers**, **With untriaged requests**, or **With
+  committed requests** — pick one, press the lit button to clear it, and its tooltip names what is
+  being shown; the requests list is never narrowed by it. The **Consumer** filter is now **By name**,
+  and the mode button reads **View consumers** or **View requests**, always blue (darker while
+  showing consumers). Request states are mapped in the view settings with the same table as
+  the Azure DevOps tab — the **User Story** type's ADO states placed under the fixed **New**, **Needs
+  Clarification**, **Accepted**, **Rejected**, and **Done** columns — and keep those choices'
+  colors, with the mapping included in shared configuration. Every request state is always offered
+  and a request can be moved from any state to any other, whatever its work item type: the mapping
+  applies to every request, and when the Azure DevOps process does not
+  allow the change directly, the request is moved through the required intermediary states for you,
+  and a status left unmapped writes the state named like it. Consumer
+  cards show a yellow **Open questions** count aggregated across every
+  `PendingQuestions` User Story child whenever at least one question remains open. Those stories and
+  all of their question tasks stay out of both view modes, with Closed, Resolved, and Removed tasks
+  excluded from the count. Every new consumer automatically gets a tagged Pending Questions child
+  in the same area and the **O365 Core** iteration. Consumer cards omit both the feature-request and
+  open-question badges when their corresponding count is zero.
+
 ## 0.21
 
 ### New Features

@@ -1,9 +1,16 @@
+import type { WorkItemCreateResult } from "../../../../common/ado/IWorkItemCreator";
 import type { TrackedWorkItem, TypeCatalogEntry } from "../../../../common/ado/TrackedWorkItem";
 import type { NewWorkItem } from "../../../../common/ado/createWorkItem";
 import type { EnhancedViewServices } from "../../../../common/view-common/EnhancedView";
 import { etaValueOfPickedDate } from "../../../../common/view-common/control/EtaBadge/EtaBadge";
+import type { FormSubmissionResult } from "../../../../common/view-common/control/FormLayout/FormLayout";
 import type { ItemContextMenuCommand } from "../../../../common/view-common/control/ItemContextMenu/ItemContextMenu";
 import { panelFor } from "../../project-tracking/item-commands/itemCommandCore";
+import {
+  PENDING_QUESTIONS_DESCRIPTION,
+  PENDING_QUESTIONS_TAG,
+  PENDING_QUESTIONS_TITLE,
+} from "../pendingQuestions";
 
 import { renderNewConsumerForm } from "./NewConsumerForm";
 import { renderNewRequestForm, type NewRequestValues } from "./NewRequestForm";
@@ -36,47 +43,56 @@ const NO_CONSUMER_TYPE =
   "No work item type is known for consumers: add the first consumer in Azure DevOps.";
 const NO_REQUEST_TYPE =
   "No work item type is known for requests: add the first request in Azure DevOps.";
+const PENDING_QUESTIONS_TYPE = "User Story";
+const PENDING_QUESTIONS_ITERATION = "O365 Core";
+const PENDING_QUESTIONS_FAILURE =
+  "The consumer was created, but its Pending Questions story was not. Close this form and add the story in Azure DevOps; see Diagnostics for details.";
+
+function placementOf(item: NewWorkItem): string {
+  if (item.parentId !== null && item.parentId !== undefined) return `under ${item.parentId}`;
+  return "without a parent";
+}
 
 /**
- * Create one item and re-read the board on success.
+ * Create one item.
  *
  * Only the type, ids and paths are logged: the title and description routinely name a customer, and
  * the diagnostics log travels with bug reports (AGENTS.md §9).
  */
-async function createChild(
+async function createItem(
   context: ConsumerCreationContext,
-  kind: "consumer" | "request",
+  kind: "consumer" | "request" | "Pending Questions story",
   item: NewWorkItem,
-): Promise<boolean> {
+): Promise<WorkItemCreateResult | null> {
   const { logger } = context.services;
+  const placement = placementOf(item);
   try {
     const result = await context.services.createWorkItem.create(item);
     if (!result.ok) {
       logger.error(
-        `Consumers View could not add a ${kind} (${item.type}) under ${item.parentId ?? "?"}: ` +
+        `Consumers View could not add a ${kind} (${item.type}) ${placement}: ` +
           `${result.error ?? "no reason given"}.`,
       );
-      return false;
+      return null;
     }
     logger.info(
-      `Consumers View added ${kind} ${result.id ?? "?"} (${item.type}) under ${item.parentId ?? "?"} ` +
+      `Consumers View added ${kind} ${result.id ?? "?"} (${item.type}) ${placement} ` +
         `in area "${item.areaPath ?? "(default)"}".`,
     );
+    return result;
   } catch (error) {
-    logger.error(`Consumers View failed to add a ${kind} under ${item.parentId ?? "?"}`, error);
-    return false;
+    logger.error(`Consumers View failed to add a ${kind} ${placement}`, error);
+    return null;
   }
-  context.onCreated();
-  return true;
 }
 
-function createConsumer(
+async function createConsumer(
   context: ConsumerCreationContext,
   type: string,
   values: NewConsumerValues,
-): Promise<boolean> {
+): Promise<FormSubmissionResult> {
   const { grouping } = context;
-  return createChild(context, "consumer", {
+  const consumer = await createItem(context, "consumer", {
     type,
     title: values.serviceName,
     tags: [],
@@ -85,6 +101,25 @@ function createConsumer(
     description: formatNewConsumerDescription(values),
     parentId: grouping.id,
   });
+  if (consumer === null) return false;
+  if (consumer.id === undefined) {
+    context.services.logger.error(
+      "Consumers View created a consumer but received no id, so Pending Questions could not be added.",
+    );
+    return { accepted: false, failureMessage: PENDING_QUESTIONS_FAILURE, retryable: false };
+  }
+  const pendingQuestions = await createItem(context, "Pending Questions story", {
+    type: PENDING_QUESTIONS_TYPE,
+    title: PENDING_QUESTIONS_TITLE,
+    tags: [PENDING_QUESTIONS_TAG],
+    areaPath: grouping.areaPath,
+    iterationPath: PENDING_QUESTIONS_ITERATION,
+    description: PENDING_QUESTIONS_DESCRIPTION,
+    parentId: consumer.id,
+  });
+  return pendingQuestions === null
+    ? { accepted: false, failureMessage: PENDING_QUESTIONS_FAILURE, retryable: false }
+    : true;
 }
 
 function createRequest(
@@ -94,7 +129,7 @@ function createRequest(
   values: NewRequestValues,
 ): Promise<boolean> {
   const etaField = context.types.get(type)?.etaField ?? null;
-  return createChild(context, "request", {
+  return createItem(context, "request", {
     type,
     title: values.title,
     tags: [],
@@ -106,7 +141,7 @@ function createRequest(
       etaField !== null && values.targetDate !== null
         ? { [etaField]: etaValueOfPickedDate(values.targetDate) }
         : null,
-  });
+  }).then((result) => result !== null);
 }
 
 /** Close the menu once the item exists; a refusal leaves the form open with everything typed. */
@@ -125,8 +160,13 @@ export function buildAddConsumerCommand(context: ConsumerCreationContext): ItemC
   return {
     label,
     centerPanel: true,
-    panel: (close) =>
-      panelFor(
+    panel: (close) => {
+      let reloadOnClose = false;
+      const closeAndReload = (): void => {
+        close();
+        if (reloadOnClose) context.onCreated();
+      };
+      return panelFor(
         context.doc,
         context.grouping,
         { withTitle: true, titlePrefix: "Parent", widthPx: FORM_WIDTH_PX },
@@ -137,11 +177,22 @@ export function buildAddConsumerCommand(context: ConsumerCreationContext): ItemC
             logger: context.services.logger,
             calledService: calledServiceName(context.grouping),
             knownClientIds: knownClientIds(context.grouping),
-            onSubmit: (values) => closingOnSuccess(createConsumer(context, type, values), close),
-            onCancel: close,
+            onSubmit: async (values) => {
+              const result = await createConsumer(context, type, values);
+              const accepted = typeof result === "boolean" ? result : result.accepted;
+              if (accepted) {
+                context.onCreated();
+                close();
+              } else if (typeof result !== "boolean" && !result.retryable) {
+                reloadOnClose = true;
+              }
+              return result;
+            },
+            onCancel: closeAndReload,
           }),
         ],
-      ),
+      );
+    },
   };
 }
 
@@ -171,7 +222,13 @@ export function buildAddRequestCommand(
             targetDateUnavailable:
               etaField === null ? `${type} has no ETA field configured.` : null,
             onSubmit: (values) =>
-              closingOnSuccess(createRequest(context, consumer, type, values), close),
+              closingOnSuccess(
+                createRequest(context, consumer, type, values).then((created) => {
+                  if (created) context.onCreated();
+                  return created;
+                }),
+                close,
+              ),
             onCancel: close,
           }),
         ],

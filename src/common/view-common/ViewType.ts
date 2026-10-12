@@ -9,7 +9,8 @@
  */
 
 /** How a view property is entered on the binding form and validated before it is stored. */
-export type ViewTypePropertyKind = "text" | "area-path-list" | "number" | "select" | "autocomplete";
+export type ViewTypePropertyKind =
+  "text" | "area-path-list" | "number" | "select" | "autocomplete" | "state-mapping";
 
 /**
  * The Azure DevOps vocabulary an `autocomplete` property suggests from.
@@ -53,6 +54,17 @@ export interface ViewTypeProperty {
   kind?: ViewTypePropertyKind;
   /** The choices offered by a `select` property, in the order they appear; ignored otherwise. */
   options?: readonly ViewTypeOption[];
+  /**
+   * The fixed status columns a `state-mapping` property routes each work item type's ADO states
+   * into: `value` is the stable id stored in the mapping, `label` the column heading. Ignored
+   * otherwise.
+   */
+  stateColumns?: readonly ViewTypeOption[];
+  /**
+   * The work item types a `state-mapping` property maps, one table row each. The rows are fixed by
+   * the view, never added or removed by the user. Ignored otherwise.
+   */
+  stateRowTypes?: readonly string[];
   /** Where an `autocomplete` property's suggestions come from; ignored for every other kind. */
   suggestions?: ViewTypeSuggestionSource;
   /** What the form seeds this property from when the binding stores no value of its own. */

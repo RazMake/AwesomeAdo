@@ -536,6 +536,18 @@ stale or stopped background worker, while the worker distinguishes malformed req
 tab locations, missing injection results, injection exceptions, exhausted network retries, invalid
 JSON, and HTTP failures. Request arrival and outcome are logged without recording the WIQL body.
 
+## Reading a work item type's state transitions
+
+`AdoStateTransitionsRequest` (`LOAD_STATE_TRANSITIONS_MESSAGE`, `{ type, workItemType }` →
+`{ raw, status, error? }`, with `isLoadStateTransitionsMessage` /
+`loadStateTransitionsMessageProblem`) asks the worker to read
+`{project}/_apis/wit/workitemtypes/{type}` from the sender's own tab through the same closed page
+read as the query definition. `MessagingStateTransitionsReader` implements
+`IWorkItemStateTransitionsReader` from `common/ado` on the content side: it returns the parsed
+transition map, or `null` (with an error log naming the type) when the worker, the tab, or ADO could
+not supply one. It is deliberately unmemoized — it runs once per user state change, so a process
+edit is picked up without a reload.
+
 ## Searching Azure DevOps for people
 
 An assignee picker resolves names against ADO's own identity directory. That read is credentialed
@@ -867,11 +879,11 @@ than being parented by a second write. It is the one injected write here that is
 every read retries because a repeated GET costs nothing, whereas repeating a POST that may already
 have succeeded would leave a duplicate item behind — far worse than reporting the error.
 
-The worker builds **both** URLs in the patch — the create endpoint and the parent link — from the
-sender tab's own trusted address, so a content script can name a parent id but never the
-organization that id resolves against. `CreateWorkItemRequest.extraFields` (a create's further plain
-fields, e.g. a needed-by date) is validated in the worker as at most eight entries keyed by field
-reference names, each a bounded string, so a message cannot smuggle arbitrary patch paths.
+The worker builds every URL in the patch — the create endpoint and parent link — from the sender
+tab's own trusted address, so a content script can name a parent id but never the organization that
+id resolves against. `CreateWorkItemRequest.extraFields` (a create's further plain fields, e.g. a
+needed-by date) is validated in the worker as at most eight entries keyed by field reference names,
+each a bounded string, so a message cannot smuggle arbitrary patch paths.
 
 ### The project tracking-query trio
 

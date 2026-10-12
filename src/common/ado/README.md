@@ -486,7 +486,7 @@ is guarded by that item's revision, while creation has neither.
 - `parseWorkItemId(text)` (`workItemIdText.ts`) — reads a work item id from a work item URL or from a
   bare number wrapped in spaces, dashes, or `[]` `()` `{}`; `null` for anything else.
 - `buildCreateWorkItemPatch(item, parentUrl?)` — title, tags, area path, iteration path, assignee,
-  description, the reason it was raised **and the parent link** in **one** JSON Patch. They must not
+  description, the reason it was raised, and the parent link in **one** JSON Patch. They must not
   be separate writes: the query or tree that is about to show the item selects on exactly those
   values, so an item created first and tagged (or parented) second exists for a moment as something
   nothing returns — and permanently so if the second write fails. The description and the reason ride
@@ -667,6 +667,21 @@ because tagging as accepted may write both in one revision. Failed items are ret
 never treated as unaccepted. `fetchInterruptAcceptance.ts` builds the sender-project-scoped,
 `$skip`-paged work-item updates URL plus the newest-first Discussion URL and owns
 request/page/marker length guards.
+
+### `WorkItemStateTransitions.ts`
+
+Azure DevOps rejects a `System.State` change its process does not allow from the current state with
+the same "not in the list of supported values" error it uses for an unknown state. This module lets a
+view route such a change through the states the process requires instead.
+
+- `WorkItemStateTransitions` — lowercased from-state → allowed to-state names, in ADO's order.
+- `IWorkItemStateTransitionsReader` — `load(workItemType)`; resolves `null` when unavailable.
+- `buildWorkItemTypeUrl(href, type)` — the project-scoped work item type URL, or `null` off a project
+  page or for a blank type.
+- `parseWorkItemStateTransitions(raw)` — the type body's `transitions`, ignoring the creation
+  (`""`) entry; `null` when there are none.
+- `stateTransitionRoute(transitions, from, to)` — the shortest allowed path as the states to write in
+  order (intermediaries, then `to`); `[]` when already there, `null` when unreachable.
 
 ## Usage guidance
 

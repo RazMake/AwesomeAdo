@@ -487,6 +487,7 @@ if (
       resolveCurrentQueryId: () => adoTabReader.readCurrentQueryId(),
       resolveSuggestions: async (source) =>
         suggestionsFromMetadata((await readAdoMetadata()) ?? null, source),
+      resolveWorkItemTypes: async () => (await readAdoMetadata())?.workItemTypes ?? [],
       resolveRootFolders: async () => queryFoldersFromMetadata((await readAdoMetadata()) ?? null),
       resolveFolderChildren: (folderPath) => queryFolderReader.readChildFolders(folderPath),
       resolveDerivedValues: async (id) => {

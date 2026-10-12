@@ -7,6 +7,7 @@ import {
   renderFormFailureLine,
   renderFormRow,
   renderFormTextField,
+  type FormSubmissionResult,
 } from "../../../../common/view-common/control/FormLayout/FormLayout";
 import { renderMarkdownField } from "../../../../common/view-common/control/TextEditor/MarkdownField";
 
@@ -43,8 +44,8 @@ export interface NewConsumerFormOptions {
   calledService: string;
   /** The client ids existing consumers already state, lowercased; a new one may not repeat them. */
   knownClientIds: ReadonlySet<string>;
-  /** Creates the consumer; resolving false keeps the form open with everything typed. */
-  onSubmit(values: NewConsumerValues): Promise<boolean>;
+  /** Creates the consumer and its question store; a non-retryable refusal locks Add. */
+  onSubmit(values: NewConsumerValues): Promise<FormSubmissionResult>;
   onCancel(): void;
 }
 

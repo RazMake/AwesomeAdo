@@ -118,7 +118,8 @@ This is a flattened snapshot of what exists now, not a build log.
   `consumerAreaPaths` read as a fallback while the new key is absent) and the header AreaPathFilter
   (shared `renderRetainedAreaPathFilter`, mirrored to repeated `areaPath` URL parameters, offering
   the request paths the binding keeps, pruned to offered paths) both restrict REQUESTS only;
-  consumers are never area filtered and consumer-card request counts show the filtered count.
+  consumers are never area filtered and consumer-card request counts show the filtered count only
+  when it is nonzero.
   Binding paths include descendants; header picks use exact case-insensitive full paths. When the
   area filters keep no request, the requests list says so. Header `−` / `+` step through
   `treeExpansion.ts` (`collapseStep`: open descriptions → open discussions → deepest open tree
@@ -133,8 +134,8 @@ This is a flattened snapshot of what exists now, not a build log.
   and the right-click **View all notes** popup reuse Project Tracking's notes controls.
   Each consumer's card IS its one row surface: `renderTreeRowLine(..., "is-consumer")` restyled as a
   `32px | 1fr` grid (class `__card`, own outline) holding the `__request-count` pill (a button
-  with `aria-expanded`, filled while open; an inert `is-empty` `0` span for none), a `__card-head`
-  (`?`, type icon, title), and the `__profile` block in column 2; consumers start closed
+  with `aria-expanded`, filled while open and omitted for zero), a `__card-head` (`?`, type icon,
+  title), and the `__profile` block in column 2; consumers start closed
   (`session.expandedIds`), and an accepted move opens its target consumer. The wrapper
   (`__consumer`) keeps only the
   gap below it, then the description and notes panels, then `__children`. The card's contextmenu
@@ -149,7 +150,7 @@ This is a flattened snapshot of what exists now, not a build log.
   group roles), and `contactEntries.ts` (roles before/after names, emails, mail links, `@<guid>`
   mentions named via the mention directory, `;` and marked comma splits, placeholder/prose
   rejection). `ConsumerProfileLines.ts` always draws the Contacts section (section tooltip
-  `RICH_TEXT_CONTACTS_REASON` for rich text) and a stacked `ul` of shared AssignedTo pills (red ×
+  `RICH_TEXT_CONTACTS_REASON` for rich text) and a wrapping `ul` of shared AssignedTo pills (red ×
   via `onRemove`, role = tag, alias = tooltip, primary text + outline) with a Contacts `+`
   (`attachPeoplePicker`); non-own-line contacts are read-only with a per-shape reason. The role
   editor offers `DEFAULT_CONTACT_ROLES` (M1, M2, M3, DEV, PM) before the board's other roles
@@ -173,8 +174,26 @@ This is a flattened snapshot of what exists now, not a build log.
   per-query setting `consumersShowConsumersQueryIds` (`PersonalConsumersShowConsumers`, service
   `consumersShowConsumers`), read once with the first load and written on each flip. Header
   filters: Consumer (`ConsumerFilter.ts`, URL `consumer`), Tags (`tag-selection`, URL
-  `tags`/`notTags`/`tagMatch`, consumer's own tags, unworn tags pruned and logged), Area. The
-  "showing X of Y" log line carries `mode`, area counts, `selectedConsumers`, and `tags`.
+  `tags`/`notTags`/`tagMatch`, consumer's own tags, unworn tags pruned and logged), Area, and a
+  non-persisted single-select `ConsumerConditionFilter` in both modes. Its Waiting option tests the
+  active-question aggregate; Untriaged and Committed test the visible requests against the binding's
+  New and Accepted mappings while retaining every visible request for a qualifying consumer. The
+  "showing X of Y" log line carries `mode`, area counts, `selectedConsumers`, `tags`, and
+  `consumerCondition`. `requestStates.ts` maps each request's ADO state, through the fixed User Story row
+  of the `requestStateMapping` table (a type without its own row — requests are usually User
+  Stories — uses the table's first row; only an empty table or empty cell uses the same-name state), to
+  the fixed New (gray), Needs Clarification (yellow), Accepted (blue), Rejected (red), and Done
+  (green) model; `RequestStatusBadge` always offers all five, routes the change through
+  `item-status/changeItemState` (intermediary hops from the type's ADO transitions, read by
+  `MessagingStateTransitionsReader` over the `awesomeado:load-state-transitions` worker bridge),
+  and leaves unmapped states
+  visible in neutral styling. Authenticated validation of the transition read is pending. The mapping property lives on the query binding and is edited in the
+  options binding form by `StateMappingTableEditor` (the ADO tab's table), so full and team-shared
+  configuration preserve it. `pendingQuestions.ts` ignores Test Case /
+  Shared Steps links and titles, excludes every matching story and all its question tasks from
+  request rows, counts, ordering, drag, and creation defaults, and aggregates active Tasks across
+  all matching stories into the card's yellow **Open questions: N** badge, omitted when the
+  aggregate is empty.
   Consumer cards show the consumer's own tags (`renderOwnTags`, TagPill `__consumer-item-tag`) in
   `__card-head` after the title. Their right-click menu reuses `buildCustomTagCommands` to add from
   all loaded consumers' vocabulary via `tagsInUse(grouping.children)`, add a new tag,
@@ -191,7 +210,10 @@ This is a flattened snapshot of what exists now, not a build log.
   existing descriptions, Scenario Markdown, Details and Contacts `RepeatableRows` with red ×,
   contact names resolved through the user directory after 300 ms, one match fills the alias,
   several list inline) writes `formatNewConsumerDescription` (the profile reader's template shape)
-  under the grouping item. The request form (Title, Markdown Description with images, Target date)
+  under the grouping item, then creates the standard Pending Questions User Story as a
+  `PendingQuestions`-tagged hierarchy child in the consumer's Area and the `O365 Core` iteration. A
+  partial second-create failure is shown and locks Add so it cannot create a duplicate consumer.
+  The request form (Title, Markdown Description with images, Target date)
   creates under the consumer with the ETA folded into the same create patch via
   `createWorkItem` `extraFields`; the date is disabled when the type has no ETA field. Types and
   area default from siblings (`creationDefaults.ts`); success re-reads the query; failures keep the

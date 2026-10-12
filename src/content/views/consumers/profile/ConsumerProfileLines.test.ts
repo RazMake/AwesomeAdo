@@ -142,6 +142,8 @@ describe("renderConsumerProfileLines - contact list", () => {
       ),
     ).toEqual(["Sundar Kameswaran", "Jane Doe"]);
     expect(block.textContent).not.toContain("skamesw");
+    expect((list as HTMLElement).style.flexDirection).toBe("row");
+    expect((list as HTMLElement).style.flexWrap).toBe("wrap");
   });
 
   it("keeps the alias in the pill's tooltip", () => {

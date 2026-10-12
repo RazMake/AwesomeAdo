@@ -5,6 +5,11 @@ import type { TrackedWorkItem, TypeCatalogEntry } from "../../../../common/ado/T
 import type { NewWorkItem } from "../../../../common/ado/createWorkItem";
 import type { EnhancedViewServices } from "../../../../common/view-common/EnhancedView";
 import type { ItemContextMenuCommand } from "../../../../common/view-common/control/ItemContextMenu/ItemContextMenu";
+import {
+  PENDING_QUESTIONS_DESCRIPTION,
+  PENDING_QUESTIONS_TAG,
+  PENDING_QUESTIONS_TITLE,
+} from "../pendingQuestions";
 
 import {
   buildAddConsumerCommand,
@@ -191,7 +196,7 @@ describe("buildAddConsumerCommand — creating", () => {
 
     await addConsumer(panel);
 
-    expect(create).toHaveBeenCalledWith({
+    expect(create).toHaveBeenNthCalledWith(1, {
       type: "Consumer",
       title: "Fabrikam",
       tags: [],
@@ -206,24 +211,69 @@ describe("buildAddConsumerCommand — creating", () => {
       }),
       parentId: 1,
     });
+    expect(create).toHaveBeenNthCalledWith(2, {
+      type: "User Story",
+      title: PENDING_QUESTIONS_TITLE,
+      tags: [PENDING_QUESTIONS_TAG],
+      areaPath: "Org\\Billing",
+      iterationPath: "O365 Core",
+      description: PENDING_QUESTIONS_DESCRIPTION,
+      parentId: 42,
+    });
     expect(logger.info).toHaveBeenCalledWith(
       'Consumers View added consumer 42 (Consumer) under 1 in area "Org\\Billing".',
     );
     expect(onCreated).toHaveBeenCalledTimes(1);
     expect(close).toHaveBeenCalledTimes(1);
   });
+});
 
-  it("logs a created item with no id or area with placeholders", async () => {
+describe("buildAddConsumerCommand — Pending Questions", () => {
+  it("prevents a duplicate retry when ADO creates the consumer but returns no id", async () => {
     const { grouping } = board();
-    const { context, create, logger } = harness({ ...grouping, areaPath: null });
+    const { context, create, logger, onCreated } = harness({ ...grouping, areaPath: null });
     create.mockResolvedValue({ ok: true });
-    const { panel } = openPanel(buildAddConsumerCommand(context));
+    const { panel, close } = openPanel(buildAddConsumerCommand(context));
 
     await addConsumer(panel);
 
     expect(logger.info).toHaveBeenCalledWith(
       'Consumers View added consumer ? (Consumer) under 1 in area "(default)".',
     );
+    expect(logger.error).toHaveBeenCalledWith(
+      "Consumers View created a consumer but received no id, so Pending Questions could not be added.",
+    );
+    expect(control(panel, ".awesomeado-new-consumer__error").textContent).toContain(
+      "The consumer was created, but its Pending Questions story was not.",
+    );
+    expect(control<HTMLButtonElement>(panel, ".awesomeado-new-consumer__add").disabled).toBe(true);
+    expect(onCreated).not.toHaveBeenCalled();
+
+    control<HTMLButtonElement>(panel, ".awesomeado-new-consumer__cancel").click();
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(onCreated).toHaveBeenCalledTimes(1);
+  });
+
+  it("surfaces a Pending Questions failure without allowing another consumer to be created", async () => {
+    const { context, create, logger, onCreated } = harness(board().grouping);
+    create
+      .mockResolvedValueOnce({ ok: true, id: 42 })
+      .mockResolvedValueOnce({ ok: false, error: "relation refused" });
+    const { panel, close } = openPanel(buildAddConsumerCommand(context));
+
+    await addConsumer(panel);
+    control<HTMLButtonElement>(panel, ".awesomeado-new-consumer__add").click();
+    await settle();
+
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(logger.error).toHaveBeenCalledWith(
+      "Consumers View could not add a Pending Questions story (User Story) under 42: relation refused.",
+    );
+    expect(control(panel, ".awesomeado-new-consumer__error").textContent).toContain(
+      "The consumer was created, but its Pending Questions story was not.",
+    );
+    expect(close).not.toHaveBeenCalled();
+    expect(onCreated).not.toHaveBeenCalled();
   });
 });
 

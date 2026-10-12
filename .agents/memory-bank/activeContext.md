@@ -15,16 +15,34 @@ AwesomeADO is feature-complete for its current scope:
   requests. Binding `requestAreaPaths` ("Request area paths"; legacy `consumerAreaPaths` read as a
   fallback while the new key is absent) keeps REQUESTS in each configured area branch and its
   descendants, and the URL-synced header Area filter narrows requests by exact full path; consumers
-  are never area filtered and consumer-card request counts show the filtered count. The Consumer
+  are never area filtered and consumer-card request counts show the filtered count only when it is
+  nonzero. The Consumer
   (`consumer` param) and Tags (shared `content/views/tag-selection`, judged on the consumer's OWN
-  tags) filters narrow CONSUMERS in both modes. Consumer right-click menus add existing or new
+  tags) filters narrow CONSUMERS in both modes. A non-persisted, pick-one **By state** filter
+  (CheckboxFilter `singleSelect` + `clearOnTriggerWhenActive`) is rendered and applied ONLY in
+  consumers mode: **Waiting for answers** keeps consumers with an active
+  aggregated question, **With untriaged requests** keeps those with a visible request mapped to
+  New, and **With committed requests** keeps those with one mapped to Accepted. Raw ADO request
+  states are mapped per binding to fixed New (gray), Needs Clarification (yellow), Accepted (blue),
+  Rejected (red), and Done (green) controls through one `requestStateMapping` `state-mapping`
+  property, edited in the binding form with the Azure DevOps tab's table (one fixed User Story row —
+  `stateRowTypes`, not user-configurable — column per status, ordered chips; the first chip is
+  written); a request of another type uses that row, an empty cell writes the same-name state, and
+  the property travels through team-shared
+  configuration. Every matching story is
+  excluded with its tasks from request rows, counts, ordering, drag, and creation defaults, while
+  Tasks outside Closed, Resolved, and Removed across all matching stories are aggregated into the
+  card's yellow **Open questions: N** badge; cards with no open questions omit the badge. Test Case
+  / Shared Steps links and story titles are ignored. Consumer right-click menus add existing or new
   custom tags and clear current tags through the shared guarded tag-command path. Suggestions
   include all loaded consumers, even filtered-out ones, but not tags found only on the parent Epic
   or requests. They are deduplicated ignoring casing with the existing spelling retained; request
   menus do not offer consumer tagging.
   Header `−` closes open descriptions, then discussions, then the deepest open tree level;
   `+` opens one tree level (`treeExpansion.ts`). Consumer rows omit
-  Status editing while request rows retain it. Ordering offers only Drag-and-drop order (importance)
+  Status editing while request rows retain it; the request status always offers every state and
+  routes a change ADO forbids directly through intermediary states from the type's transition map
+  (`item-status/changeItemState`). Ordering offers only Drag-and-drop order (importance)
   and By ETA. Only the requests list drags (flat, every request ranked against all listed requests,
   persisted under its own consumer with Project Tracking's backlog rank); cards never drag. Its header represents the hidden root
   with that item's title and theme-aware ADO type color. Every displayed item has the shared
@@ -35,11 +53,15 @@ AwesomeADO is feature-complete for its current scope:
   share a left edge); consumers start closed and the count pill opens/closes their requests; its
   description and Discussion panels open below the card. The board OPENS on the requests list
   (policy-ordered, consumer pill unless the Consumer filter has picks, "Needed by" ETA badge via
-  shared `item-eta/renderRowEtaBadge`); the **Show consumers** switch (shared `ToggleButton`, in
+  shared `item-eta/renderRowEtaBadge`); the **View consumers / View requests** button (plain
+  header text button, always communication-blue, darker in consumers mode, no tooltip; in
   ViewHeader `outlineControls` beside `+`/`−`) shows the cards and is remembered per query in the
   personal synced setting `consumersShowConsumersQueryIds` (not team-shared). Contacts are assignee
   pills led by a red remove ×, with the role as the tag, editable in place and written back into the
-  description. The description reader is deliberately loose (`descriptionText` / `descriptionSections`
+  description; contact pills share a row and wrap when space runs out. Creating a consumer also
+  creates its standard Pending Questions User Story as a `PendingQuestions`-tagged hierarchy child,
+  using the consumer's Area and the `O365 Core` iteration. A partial second-create failure is shown
+  in the form and locks Add so retrying cannot duplicate the consumer. The description reader is deliberately loose (`descriptionText` / `descriptionSections`
   / `contactEntries`); only `own-line` contacts in Markdown are editable, and rich text shows a
   "has to be Markdown to be editable" tooltip. Scenario and details are parsed only.
   Tree boards share `renderViewHeader`, TreeRow, item-status, board-lifecycle

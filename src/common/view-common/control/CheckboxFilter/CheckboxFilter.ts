@@ -65,6 +65,12 @@ export interface CheckboxFilterOptions {
    */
   clearOnTriggerWhenActive?: boolean;
   /**
+   * Turns the popup into a plain pick-one menu: no checkboxes, no heading, and a pick replaces the
+   * selection and closes the popup. While a value is picked the trigger's tooltip is that option's
+   * `title`, so the button says what it is narrowing to. Ignores `combining`.
+   */
+  singleSelect?: boolean;
+  /**
    * The class-name stem every element of this instance is marked with (e.g. `awesomeado-tag-filter`).
    *
    * Per-instance rather than fixed because each filter is a distinct thing on screen: sharing one
@@ -144,13 +150,14 @@ function paintTrigger(
   count: HTMLElement,
   selection: CheckboxFilterSelection,
   label: string,
-  fixedTitle: string | undefined,
+  title: (summary: string) => string,
+  showCount: boolean,
 ): void {
   const selectedCount = selection.included.length + selection.excluded.length;
   const active = selectedCount > 0;
   const summary = filterSummary(label, selection);
   trigger.setAttribute("aria-pressed", String(active));
-  trigger.title = fixedTitle ?? summary;
+  trigger.title = title(summary);
   // The accessible name keeps naming the current condition even when the tooltip is fixed, because
   // the count badge beside it cannot tell a required value from an excluded one.
   trigger.setAttribute("aria-label", summary);
@@ -164,7 +171,7 @@ function paintTrigger(
   count.textContent = String(selectedCount);
   // Inline `display` outranks the browser's `[hidden]` rule, so drive this explicitly rather than
   // leaving an inactive zero badge visible beside the label.
-  count.style.display = active ? "inline-flex" : "none";
+  count.style.display = active && showCount ? "inline-flex" : "none";
 }
 
 /** Paint the per-row "must NOT have" toggle, which reads as a warning only while it is on. */
@@ -309,6 +316,10 @@ interface PopupParams {
   combining: boolean;
   /** Whether the heading carries its own Clear, or the trigger is the only way to empty it. */
   clearInPopup: boolean;
+  /** Pick-one menu rows with no heading; see `CheckboxFilterOptions.singleSelect`. */
+  singleSelect: boolean;
+  /** Replaces the whole selection with one picked value (single-select only). */
+  pick(value: string): void;
   /** Records the state the reader put one value in and reports the new condition. */
   set(value: string, state: OptionState): void;
   /** Flips between requiring any ticked value and requiring all of them. */
@@ -387,6 +398,66 @@ function stateOf(state: FilterState, value: string): OptionState {
   return state.excluded.has(value) ? "exclude" : "neutral";
 }
 
+/** One pick-one menu row: the whole row is the control, and the current pick reads as bold. */
+function renderPickRow(
+  doc: Document,
+  option: CheckboxFilterOption,
+  classPrefix: string,
+  picked: boolean,
+  onPick: () => void,
+): HTMLElement {
+  const row = doc.createElement("div");
+  row.className = `${classPrefix}__option`;
+  row.setAttribute("role", "menuitemradio");
+  row.setAttribute("aria-checked", String(picked));
+  row.tabIndex = 0;
+  row.title = option.title ?? option.label ?? option.value;
+  row.textContent = option.label ?? option.value;
+  row.style.cssText = [
+    "padding:6px 8px",
+    "border-radius:4px",
+    "white-space:nowrap",
+    "cursor:pointer",
+    `font-weight:${picked ? "600" : "normal"}`,
+  ].join(";");
+  row.addEventListener("click", onPick);
+  row.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      onPick();
+    }
+  });
+  row.addEventListener("mouseenter", () => {
+    row.style.background = "var(--control-background-hover)";
+  });
+  row.addEventListener("mouseleave", () => {
+    row.style.background = "transparent";
+  });
+  return row;
+}
+
+/** One list row in whichever shape the popup was asked for. */
+function renderListRow(params: PopupParams, option: CheckboxFilterOption, onChange: () => void) {
+  if (params.singleSelect) {
+    return renderPickRow(
+      params.doc,
+      option,
+      params.classPrefix,
+      params.state.included.has(option.value),
+      () => params.pick(option.value),
+    );
+  }
+  return renderOptionRow(params.doc, option, {
+    classPrefix: params.classPrefix,
+    combining: params.combining,
+    state: stateOf(params.state, option.value),
+    onChange: (next) => {
+      params.set(option.value, next);
+      onChange();
+    },
+  });
+}
+
 /** Build the lazily-mounted checkbox popup. */
 function renderPopup(params: PopupParams): HTMLElement {
   const { doc, classPrefix } = params;
@@ -412,26 +483,20 @@ function renderPopup(params: PopupParams): HTMLElement {
     "z-index:1000",
   ].join(";");
 
-  const [heading, clear] = renderHeading(params);
+  const [heading, clear] = params.singleSelect ? [null, null] : renderHeading(params);
 
   const list = doc.createElement("div");
   list.className = `${classPrefix}__list`;
   list.style.cssText = "display:flex;flex-direction:column;max-height:280px;overflow:auto";
   const rows = params.options.map((option) => {
-    const row = renderOptionRow(doc, option, {
-      classPrefix,
-      combining: params.combining,
-      state: stateOf(params.state, option.value),
-      onChange: (next) => {
-        params.set(option.value, next);
-        if (clear !== null) clear.disabled = conditionSize(params.state) === 0;
-      },
+    const row = renderListRow(params, option, () => {
+      if (clear !== null) clear.disabled = conditionSize(params.state) === 0;
     });
     list.append(row);
     return { option, row };
   });
 
-  popup.append(heading);
+  if (heading !== null) popup.append(heading);
   if (params.searchPlaceholder !== undefined) {
     // Filter by the visible label AND the underlying value: a shortened label hides the very text a
     // reader who knows the full value would type.
@@ -526,6 +591,48 @@ function initialState(
   return state;
 }
 
+/** Make `value` the whole condition, as a pick-one menu does. */
+function setOnly(state: FilterState, value: string): void {
+  state.included = new Set([value]);
+  state.excluded.clear();
+}
+
+/** The popup's per-row and match-mode edits, each reported through `changed`. */
+function conditionMutators(
+  state: FilterState,
+  changed: () => void,
+): Pick<PopupParams, "set" | "setMatchAll"> {
+  return {
+    set: (value, next) => {
+      state.included.delete(value);
+      state.excluded.delete(value);
+      if (next === "include") state.included.add(value);
+      if (next === "exclude") state.excluded.add(value);
+      changed();
+    },
+    setMatchAll: (matchAll) => {
+      state.matchAll = matchAll;
+      changed();
+    },
+  };
+}
+
+/** How the trigger's tooltip is worded from the condition summary, per the caller's options. */
+function triggerTitle(
+  options: CheckboxFilterOptions,
+  known: ReadonlyMap<string, CheckboxFilterOption>,
+  state: FilterState,
+): (summary: string) => string {
+  return (summary) => {
+    if (options.singleSelect === true) {
+      const [picked] = state.included;
+      const option = picked === undefined ? undefined : known.get(picked);
+      if (option !== undefined) return option.title ?? option.label ?? option.value;
+    }
+    return options.fixedTitle ?? summary;
+  };
+}
+
 /**
  * Render a button-sized filter that opens a themed multi-select of checkboxes.
  *
@@ -551,7 +658,10 @@ export function renderCheckboxFilter(
     excluded: values.filter((value) => state.excluded.has(value)),
     matchAll: state.matchAll,
   });
-  const repaint = (): void => paintTrigger(trigger, count, selection(), label, options.fixedTitle);
+  const singleSelect = options.singleSelect === true;
+  const titleOf = triggerTitle(options, known, state);
+  const repaint = (): void =>
+    paintTrigger(trigger, count, selection(), label, titleOf, !singleSelect);
   const changed = (): void => {
     repaint();
     options.onChange?.(selection());
@@ -582,17 +692,13 @@ export function renderCheckboxFilter(
         // The trigger already empties the condition in one press, so repeating it here would be a
         // second control for one gesture.
         clearInPopup: options.clearOnTriggerWhenActive !== true,
+        singleSelect,
         searchPlaceholder: options.searchPlaceholder,
-        set: (value, next) => {
-          state.included.delete(value);
-          state.excluded.delete(value);
-          if (next === "include") state.included.add(value);
-          if (next === "exclude") state.excluded.add(value);
+        ...conditionMutators(state, changed),
+        pick: (value) => {
+          setOnly(state, value);
           changed();
-        },
-        setMatchAll: (matchAll) => {
-          state.matchAll = matchAll;
-          changed();
+          popupHost.close();
         },
         clear: () => {
           clearCondition();

@@ -24,6 +24,43 @@ export interface ItemStatusBadgeOptions {
   onCommitted?(): void;
 }
 
+export interface PersistItemStateOptions {
+  item: TrackedWorkItem;
+  queue: WorkItemWriteQueue;
+  state: string;
+  now(): Date;
+  onAccepted(): void;
+}
+
+/** Persists one raw ADO state and reflects it only after the guarded write is accepted. */
+export function persistItemState(options: PersistItemStateOptions): void {
+  const { item } = options;
+  void options.queue
+    .enqueue({
+      id: item.id,
+      currentRev: () => item.rev,
+      field: "System.State",
+      value: options.state,
+    })
+    .then((result) => {
+      if (!result.ok || result.rev === undefined) return;
+      reflectAcceptedState(item, options.state, result.rev, options.now);
+      options.onAccepted();
+    });
+}
+
+/** Fold an accepted State write into the model, so the next guarded write carries its rev. */
+export function reflectAcceptedState(
+  item: TrackedWorkItem,
+  state: string,
+  rev: number,
+  now: () => Date,
+): void {
+  item.state = state;
+  item.rev = rev;
+  item.stateChangeDate = now().toISOString();
+}
+
 /**
  * The item's application Status — its mapped board-column label, never the raw ADO State — as an
  * editable badge offering every column its type maps.
@@ -50,21 +87,16 @@ export function renderItemStatusBadge(options: ItemStatusBadgeOptions): StatusBa
     editable: true,
     minWidthCh: options.minWidthCh,
     onChange: (primaryState, column) => {
-      void queue
-        .enqueue({
-          id: item.id,
-          currentRev: () => item.rev,
-          field: "System.State",
-          value: primaryState,
-        })
-        .then((result) => {
-          if (!result.ok || result.rev === undefined) return;
-          item.state = primaryState;
-          item.rev = result.rev;
-          item.stateChangeDate = options.now().toISOString();
+      persistItemState({
+        item,
+        queue,
+        state: primaryState,
+        now: options.now,
+        onAccepted: () => {
           badge.setStatus(column, boardColumnOrdinal(column, boardColumns));
           options.onCommitted?.();
-        });
+        },
+      });
     },
   });
   return badge;

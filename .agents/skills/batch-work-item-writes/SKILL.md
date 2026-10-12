@@ -162,6 +162,14 @@ bisected one at a time against a real item.
 - A new **positional** parameter on anything passed to `executeScript` as `func`.
 - A write failing with no HTTP status in the message — that is the injection being rejected, not ADO.
 
+## The one exception: routing a State change through intermediary states
+
+ADO validates a `System.State` change against the revision it starts from, so two State values can
+never share one patch. When the process forbids the direct change, `item-status/changeItemState`
+writes each hop of the transition route as its own guarded revision and enqueues the next only after
+the previous rev has folded into the model (ADR-081 amendment). Do not copy that pattern for
+anything else: every other field, tag, and comment still rides one patch.
+
 ## Related
 
 - [`src/common/ado/WorkItemWriteQueue/README.md`](../../../src/common/ado/WorkItemWriteQueue/README.md)

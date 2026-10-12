@@ -26,6 +26,7 @@ import type { WorkItemTreeResult } from "../ado/IWorkItemTreeLoader";
 import type { QueryDefinitionResult } from "../ado/QueryDefinition";
 import type { TeamMembersResult } from "../ado/TeamMembers";
 import type { TypeCatalogEntry } from "../ado/TrackedWorkItem";
+import type { IWorkItemStateTransitionsReader } from "../ado/WorkItemStateTransitions";
 import type { ICurrentUserReader } from "../ado/currentUser";
 import type { SprintWindow } from "../ado/sprintWindow";
 import type { IQueryBindingWriter } from "../bindings/IQueryBindingWriter";
@@ -154,6 +155,12 @@ export interface EnhancedViewServices {
    * can retry after refetching or report the stale-rev conflict to the user.
    */
   writeField(request: WorkItemFieldWriteRequest): Promise<WorkItemFieldWriteResult>;
+  /**
+   * Reads which State changes a work item type's process allows, so a Status change ADO refuses as a
+   * direct jump can be routed through the intermediary States instead. Optional: without it a view
+   * writes the chosen State directly.
+   */
+  stateTransitions?: IWorkItemStateTransitionsReader;
   /**
    * Moves a work item to a new position among its siblings and, when it changed, under a new parent
    * — the persistence behind drag-reordering a tree view. Azure DevOps owns the rank arithmetic, so

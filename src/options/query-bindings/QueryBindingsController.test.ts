@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { AdoQueryFolder } from "../../common/ado/AdoMetadata";
+import type { AdoQueryFolder, AdoWorkItemType } from "../../common/ado/AdoMetadata";
 import type { IQueryBindingStore } from "../../common/bindings/IQueryBindingStore";
 import type { QueryBinding, QueryBindings } from "../../common/bindings/QueryBinding";
 import { DEFAULT_SETTINGS } from "../../common/settings/ExtensionSettings";
@@ -1441,5 +1441,107 @@ describe("QueryBindingsController shared query configuration card", () => {
     expect(elements.deleteButton.textContent).toBe("Delete");
     expect(elements.sharedNotice.hidden).toBe(true);
     expect(propInput("orderField")).not.toBeNull();
+  });
+});
+
+const STATE_VIEWS: readonly ViewType[] = [
+  {
+    id: "consumers",
+    label: "Consumers View",
+    properties: [
+      {
+        key: "requestStateMapping",
+        label: "Request states",
+        required: false,
+        kind: "state-mapping",
+        hint: "Map each request type's states.",
+        stateRowTypes: ["Request"],
+        stateColumns: [
+          { value: "new", label: "New" },
+          { value: "done", label: "Done" },
+        ],
+      },
+    ],
+  },
+];
+const TYPES: AdoWorkItemType[] = [
+  { name: "Request", color: "", icon: "", states: ["Proposed", "Closed"], dateFields: [] },
+];
+const STORED = JSON.stringify([{ type: "Request", states: { new: ["Proposed"] } }]);
+
+const stateController = (
+  store: FakeStore,
+  resolveWorkItemTypes: () => Promise<readonly AdoWorkItemType[]>,
+  sharedQueries?: SharedQueryAccess,
+) =>
+  new QueryBindingsController(
+    store as unknown as IQueryBindingStore,
+    elements,
+    reportError as unknown as (error: unknown) => void,
+    { viewTypes: STATE_VIEWS, resolveWorkItemTypes, sharedQueries },
+  );
+
+describe("view property kinds — state-mapping tables", () => {
+  it("edits the mapping as a full-width table and saves it as one property", async () => {
+    const store = makeStore({
+      [GUID_A]: { view: "consumers", properties: { requestStateMapping: STORED }, name: "Alpha" },
+    });
+    await stateController(store, async () => TYPES).init(GUID_A, "Alpha");
+    // Work item types arrive after the form is drawn, like the other suggestion vocabularies.
+    await settle();
+    const editor = elements.properties.querySelector<HTMLElement>(".state-mapping-editor")!;
+
+    expect(editor.parentElement?.classList.contains("field--full")).toBe(true);
+    expect(editor.querySelector(".field__hint")?.textContent).toBe(
+      "Map each request type's states.",
+    );
+    const picker = editor.querySelector<HTMLInputElement>('input[data-cell="0:done"]')!;
+    picker.value = "Closed";
+    picker.dispatchEvent(new Event("change"));
+    await settle();
+
+    expect(store.bind).toHaveBeenCalledWith(GUID_A, {
+      view: "consumers",
+      properties: {
+        requestStateMapping: JSON.stringify([
+          { type: "Request", states: { new: ["Proposed"], done: ["Closed"] } },
+        ]),
+      },
+      name: "Alpha",
+    });
+  });
+
+  it("reports a failed work item type read and still shows the stored mapping", async () => {
+    const store = makeStore({
+      [GUID_A]: { view: "consumers", properties: { requestStateMapping: STORED }, name: "Alpha" },
+    });
+    await stateController(store, async () => {
+      throw new Error("offline");
+    }).init(GUID_A, "Alpha");
+
+    expect(reportError).toHaveBeenCalled();
+    expect(elements.properties.querySelector(".wit-state")?.textContent).toContain("Proposed");
+  });
+});
+
+describe("view property kinds — shared state-mapping tables", () => {
+  it("summarizes a shared mapping read-only", async () => {
+    const shared = sharedAccess(
+      { [GUID_B]: 42 },
+      {
+        [GUID_B]: {
+          view: "consumers",
+          properties: { requestStateMapping: STORED },
+          name: "Their board",
+        },
+      },
+    );
+    await stateController(
+      makeStore(),
+      async () => TYPES,
+      shared as unknown as SharedQueryAccess,
+    ).init(GUID_B, null);
+
+    expect(readOnlyValues()).toEqual(["Request: New = Proposed"]);
   });
 });

@@ -29,7 +29,9 @@ A view is deliberately split into two contracts so the options page never bundle
 
 - `ViewType` — a view's id, label, and the `ViewTypeProperty[]` a binding must satisfy.
 - `ViewTypeProperty`, `ViewTypePropertyKind`, `ViewTypeOption` — the per-property shape (text /
-  number / select / autocomplete / area-path-list, defaults, bounds, hint).
+  number / select / autocomplete / area-path-list / state-mapping, defaults, bounds, hint). A
+  `state-mapping` property lists its fixed status columns in `stateColumns` and its fixed work item
+  type rows in `stateRowTypes`.
 - `ViewTypeSuggestionSource` — the Azure DevOps vocabulary an `autocomplete` property offers
   (`area-paths`, `iteration-paths`, `query-folders`); the form resolves the values.
 - `ViewTypeDerivedSource` / `ViewTypeDerivedValues` — what a property may be pre-filled from off the
@@ -42,6 +44,16 @@ A view is deliberately split into two contracts so the options page never bundle
 
 Both the options binding form and settings import/export depend only on this contract, never on a
 renderer.
+
+### `StateMapping.ts` — the `state-mapping` value
+
+- `StateMappingRow` — one work item type and, per status column id, its ADO states in priority
+  order (the first is the state written back).
+- `parseStateMapping(raw)` — reads the stored JSON value; anything malformed reads as no rows, a
+  repeated type keeps its first row, and a state repeated within a row keeps its first column.
+- `serializeStateMapping(rows)` — the stored value; empty cells and rows mapping nothing are
+  dropped, and nothing left stores `""`.
+- `describeStateMapping(raw, columns)` — a one-line read-only summary for the options form.
 
 ### `EnhancedView.ts` — the renderer contract
 

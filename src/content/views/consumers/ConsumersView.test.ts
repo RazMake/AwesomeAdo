@@ -9,6 +9,7 @@ import type {
 } from "../../../common/view-common/EnhancedView";
 
 import { consumersView } from "./ConsumersView";
+import { PENDING_QUESTIONS_TAG } from "./pendingQuestions";
 
 const COLUMNS = [
   { column: "New", states: ["New"] },
@@ -25,6 +26,19 @@ const TYPES: TypeCatalogEntry[] = [
 const TEAM_A = "Org\\Team A";
 const TEAM_B = "Org\\Team B";
 const OTHER = "Org\\Other";
+const REQUEST_STATE_PROPERTIES = {
+  requestStateMapping: JSON.stringify([
+    {
+      type: "Request",
+      states: {
+        new: ["New"],
+        needsClarification: ["Needs Info"],
+        accepted: ["Active"],
+        rejected: ["Closed"],
+      },
+    },
+  ]),
+};
 
 /** A tracked item carrying only what the board paints; each fixture overrides what it is about. */
 function item(overrides: Partial<TrackedWorkItem> & { id: number }): TrackedWorkItem {
@@ -77,6 +91,7 @@ function fixtureRoots(): TrackedWorkItem[] {
             item({
               id: 11,
               title: "Export to CSV",
+              state: "New",
               description: "Export request description.",
               noteCount: 1,
               areaPath: TEAM_A,
@@ -124,6 +139,47 @@ function profiledRoots(): TrackedWorkItem[] {
   ];
 }
 
+/** Consumers carrying tagged question stores in different completion states. */
+function pendingQuestionsRoots(): TrackedWorkItem[] {
+  const roots = fixtureRoots();
+  const [contoso, fabrikam] = roots[0]!.children;
+  contoso!.children.push(
+    item({
+      id: 91,
+      type: "User Story",
+      title: "Renamed question store",
+      tags: [PENDING_QUESTIONS_TAG],
+      children: [
+        item({ id: 911, type: "Task", title: "Who owns export?", state: "Active" }),
+        item({ id: 912, type: "Task", title: "Answered question", state: "Closed" }),
+      ],
+    }),
+    item({
+      id: 93,
+      type: "User Story",
+      title: "Second question store",
+      tags: [PENDING_QUESTIONS_TAG.toLowerCase()],
+      children: [
+        item({ id: 931, type: "Task", title: "Who owns import?", state: "New" }),
+        item({ id: 932, type: "Task", title: "Discarded question", state: "Removed" }),
+      ],
+    }),
+  );
+  fabrikam!.children.push(
+    item({
+      id: 92,
+      type: "User Story",
+      title: "Pending Questions",
+      tags: [PENDING_QUESTIONS_TAG],
+      children: [
+        item({ id: 921, type: "Task", title: "Resolved question", state: "Resolved" }),
+        item({ id: 922, type: "Task", title: "Removed question", state: "Removed" }),
+      ],
+    }),
+  );
+  return roots;
+}
+
 /** Only the services this view reaches for. */
 function createServices(overrides?: Partial<EnhancedViewServices>): EnhancedViewServices {
   return {
@@ -160,12 +216,13 @@ function createServices(overrides?: Partial<EnhancedViewServices>): EnhancedView
 }
 
 function createContext(overrides?: Partial<EnhancedViewContext>): EnhancedViewContext {
+  const { properties, ...rest } = overrides ?? {};
   return {
     doc: document,
     queryId: "query-1",
-    properties: {},
+    properties: { ...REQUEST_STATE_PROPERTIES, ...properties },
     services: createServices(),
-    ...overrides,
+    ...rest,
   };
 }
 
@@ -347,7 +404,7 @@ describe("consumersView - tree", () => {
     const request = titleOf(root, "Dark mode").closest<HTMLElement>(".awesomeado-consumers__row")!;
     const consumer = titleOf(root, "Contoso").closest<HTMLElement>(".awesomeado-consumers__row")!;
 
-    expect(request.querySelector(".awesomeado-status__badge")?.textContent).toContain("Done");
+    expect(request.querySelector(".awesomeado-status__badge")?.textContent).toContain("Rejected");
     expect(request.querySelector(".awesomeado-consumers__twisty")).toBeNull();
     expect(request.children).toHaveLength(5);
     expect(consumer.querySelector(".awesomeado-status__badge")).toBeNull();
@@ -611,18 +668,20 @@ describe("consumersView - tree controls", () => {
 });
 
 describe("consumersView - expansion", () => {
-  it("shows each consumer's request count on its card, and an inert zero for none", async () => {
+  it("shows positive request counts and omits the badge when there are none", async () => {
     const root = await renderBoard();
-    const count = (id: number): HTMLElement =>
-      cardOf(root, id).querySelector<HTMLElement>(".awesomeado-consumers__request-count")!;
+    const count = (id: number): HTMLElement | null =>
+      cardOf(root, id).querySelector<HTMLElement>(".awesomeado-consumers__request-count");
 
-    expect([10, 20, 30].map((id) => count(id).textContent)).toEqual(["2", "2", "0"]);
-    expect(count(10).tagName).toBe("BUTTON");
-    expect(count(10).title).toBe("Show 2 feature requests");
-    expect(count(10).getAttribute("aria-label")).toBe("Show 2 feature requests from Contoso");
-    expect(count(30).tagName).toBe("SPAN");
-    expect(count(30).classList.contains("is-empty")).toBe(true);
-    expect(count(30).title).toBe("No feature requests");
+    expect([10, 20, 30].map((id) => count(id)?.textContent ?? null)).toEqual(["2", "2", null]);
+    expect(count(10)?.tagName).toBe("BUTTON");
+    expect(count(10)?.title).toBe("Show 2 feature requests");
+    expect(count(10)?.getAttribute("aria-label")).toBe("Show 2 feature requests from Contoso");
+    expect(count(30)).toBeNull();
+    expect(
+      cardOf(root, 30).querySelector<HTMLElement>(".awesomeado-consumers__card-head")?.style
+        .gridColumn,
+    ).toBe("2");
   });
 
   it("opens and closes one consumer's requests from its count, drawn below its card", async () => {
@@ -744,11 +803,11 @@ describe("consumersView - Ctrl+click refresh", () => {
   });
 });
 
-const requestCount = (root: HTMLElement, id: number): HTMLElement =>
-  cardOf(root, id).querySelector<HTMLElement>(".awesomeado-consumers__request-count")!;
+const requestCount = (root: HTMLElement, id: number): HTMLElement | null =>
+  cardOf(root, id).querySelector<HTMLElement>(".awesomeado-consumers__request-count");
 
 const requestCounts = (root: HTMLElement): (string | null)[] =>
-  [10, 20, 30].map((id) => requestCount(root, id).textContent);
+  [10, 20, 30].map((id) => requestCount(root, id)?.textContent ?? null);
 
 describe("consumersView - configured area paths", () => {
   it("keeps every consumer but only the requests in the binding's area paths", async () => {
@@ -808,19 +867,18 @@ describe("consumersView - configured area paths", () => {
 
     const lines = info.mock.calls.map(([line]) => line as string);
     expect(lines.filter((line) => line.startsWith("Consumers View showing"))).toEqual([
-      "Consumers View showing 3 of 3 consumer(s), with 2 feature request(s): mode=consumers, configuredAreaPaths=1, selectedAreaPaths=0, selectedConsumers=0, tags=none.",
+      "Consumers View showing 3 of 3 consumer(s), with 2 feature request(s): mode=consumers, configuredAreaPaths=1, selectedAreaPaths=0, selectedConsumers=0, tags=none, consumerCondition=all.",
     ]);
   });
 });
 
 describe("consumersView - area-filtered request counts", () => {
-  it("counts only the requests the binding keeps, with an inert zero", async () => {
+  it("counts only the requests the binding keeps and omits empty badges", async () => {
     const root = await renderBoard(createContext({ properties: { requestAreaPaths: TEAM_B } }));
 
-    expect(requestCounts(root)).toEqual(["1", "0", "0"]);
-    expect(requestCount(root, 10).tagName).toBe("BUTTON");
-    expect(requestCount(root, 20).tagName).toBe("SPAN");
-    expect(requestCount(root, 20).classList.contains("is-empty")).toBe(true);
+    expect(requestCounts(root)).toEqual(["1", null, null]);
+    expect(requestCount(root, 10)?.tagName).toBe("BUTTON");
+    expect(requestCount(root, 20)).toBeNull();
   });
 
   it("counts only the requests the header filter keeps", async () => {
@@ -828,15 +886,15 @@ describe("consumersView - area-filtered request counts", () => {
     openAreaFilter(root);
     tickArea(OTHER);
 
-    expect(requestCounts(root)).toEqual(["0", "1", "0"]);
-    expect(requestCount(root, 10).classList.contains("is-empty")).toBe(true);
+    expect(requestCounts(root)).toEqual([null, "1", null]);
+    expect(requestCount(root, 10)).toBeNull();
   });
 
   it("expands only the consumers that keep a request", async () => {
     const root = await renderOpenBoard(createContext({ properties: { requestAreaPaths: TEAM_B } }));
 
     expect(titles(root)).toEqual(["Contoso", "Dark mode", "Fabrikam", "Northwind"]);
-    expect(requestCount(root, 10).getAttribute("aria-expanded")).toBe("true");
+    expect(requestCount(root, 10)?.getAttribute("aria-expanded")).toBe("true");
   });
 });
 
@@ -951,14 +1009,14 @@ describe("consumersView - status and menus", () => {
 
     row.querySelector<HTMLElement>(".awesomeado-status__badge")!.click();
     [...document.querySelectorAll<HTMLButtonElement>(".awesomeado-status__row")]
-      .find((option) => option.textContent === "Done")!
+      .find((option) => option.textContent === "Rejected")!
       .click();
     await flush();
 
     expect(writeField).toHaveBeenCalledWith(
       expect.objectContaining({ id: 21, field: "System.State", value: "Closed", rev: 1 }),
     );
-    expect(row.querySelector(".awesomeado-status__badge")?.textContent).toContain("Done");
+    expect(row.querySelector(".awesomeado-status__badge")?.textContent).toContain("Rejected");
   });
 
   it("opens the item menu from a row and the link menu from the title", async () => {
@@ -1034,12 +1092,22 @@ const requestsContext = (
   properties: Record<string, string> = {},
 ): EnhancedViewContext =>
   createContext({
-    properties,
+    properties: { ...REQUEST_STATE_PROPERTIES, ...properties },
     services: createServices({ consumersShowConsumers: savedMode(false), ...overrides }),
   });
 
 const showConsumersToggle = (root: HTMLElement): HTMLButtonElement =>
   root.querySelector<HTMLButtonElement>(".awesomeado-consumers__show-consumers")!;
+
+const consumerConditionTrigger = (root: HTMLElement): HTMLButtonElement =>
+  root.querySelector<HTMLButtonElement>(".awesomeado-consumer-condition-filter__trigger")!;
+
+const pickConsumerCondition = (root: HTMLElement, label: string): void => {
+  consumerConditionTrigger(root).click();
+  [...document.querySelectorAll<HTMLElement>(".awesomeado-consumer-condition-filter__option")]
+    .find((row) => row.textContent?.includes(label))!
+    .click();
+};
 
 const consumerTags = (root: HTMLElement): (string | null)[] =>
   [...root.querySelectorAll(".awesomeado-consumers__consumer-tag")].map((tag) => tag.textContent);
@@ -1067,21 +1135,27 @@ const pickOrdering = (root: HTMLElement, label: string): void => {
 const IMPORTANCE_ORDERED_REQUESTS = ["Export to CSV", "Dark mode", "Single sign-on", "Audit log"];
 
 const BOARD_LINE_TAIL =
-  "configuredAreaPaths=0, selectedAreaPaths=0, selectedConsumers=0, tags=none.";
+  "configuredAreaPaths=0, selectedAreaPaths=0, selectedConsumers=0, tags=none, consumerCondition=all.";
 
 describe("consumersView - the requests list by default", () => {
-  it("opens on the requests list with Show consumers beside + and −, released", async () => {
+  it("opens on the requests list with View consumers beside + and −, and no By state filter", async () => {
     const preference = savedMode(false);
     const root = await renderBoard(contextWith({ consumersShowConsumers: preference }));
     const toggle = showConsumersToggle(root);
 
-    expect(toggle.textContent).toBe("Show consumers");
+    expect(toggle.textContent).toBe("View consumers");
+    expect(toggle.title).toBe("");
+    expect(toggle.style.background).toBe("var(--communication-background)");
     expect(toggle.getAttribute("aria-pressed")).toBe("false");
     // Sits with the outline buttons rather than among the filters.
     expect(toggle.previousElementSibling?.className).toContain("collapse-all");
     expect(preference.read).toHaveBeenCalledWith("query-1");
     expect(titles(root)).toEqual(IMPORTANCE_ORDERED_REQUESTS);
     expect(root.querySelector(".awesomeado-consumers__row.is-consumer")).toBeNull();
+    expect(root.querySelector(".awesomeado-consumer-condition-filter__trigger")).toBeNull();
+    expect(root.querySelector(".awesomeado-consumer-filter__trigger")?.textContent).toContain(
+      "By name",
+    );
   });
 
   it("opens on the requests list when no saved-mode store exists", async () => {
@@ -1129,9 +1203,130 @@ describe("consumersView - opening in the saved mode", () => {
     const root = await renderBoard(contextWith({ consumersShowConsumers: savedMode(true) }));
 
     expect(showConsumersToggle(root).getAttribute("aria-pressed")).toBe("true");
+    expect(showConsumersToggle(root).textContent).toBe("View requests");
+    expect(showConsumersToggle(root).style.background).toContain("color-mix");
     expect(consumerTitles(root)).toHaveLength(3);
+    expect(consumerConditionTrigger(root).textContent).toContain("By state");
+    expect(consumerConditionTrigger(root).closest(".awesomeado-consumers__filters")).not.toBeNull();
+  });
+});
+
+describe("consumersView - request-status filter", () => {
+  it("shows only consumers with active question tasks under Waiting for answers", async () => {
+    const info = vi.fn();
+    const root = await renderBoard(
+      contextWith({
+        consumersShowConsumers: savedMode(true),
+        loadTree: async () => ({
+          isTreeQuery: true,
+          roots: pendingQuestionsRoots(),
+          error: null,
+        }),
+        logger: { info, error: () => undefined },
+      }),
+    );
+
+    pickConsumerCondition(root, "Waiting for answers");
+
+    expect(consumerTitles(root)).toEqual(["Contoso"]);
+    const badge = root.querySelector<HTMLElement>(".awesomeado-consumers__open-questions")!;
+    expect(badge.textContent).toBe("Open questions: 2");
+    expect(badge.style.background).toBe("var(--status-yellow-background)");
+    expect(badge.getAttribute("style")).toContain("var(--status-yellow-border)");
+    expect(badge.style.color).toBe("var(--status-yellow-foreground)");
+    expect(consumerConditionTrigger(root).getAttribute("aria-pressed")).toBe("true");
+    expect(consumerConditionTrigger(root).title).toBe("Consumers waiting for answers");
+    expect(document.querySelector(".awesomeado-consumer-condition-filter__popup")).toBeNull();
+    expect(info).toHaveBeenCalledWith("Consumers View by-state filter: waitingForAnswers.");
+
+    consumerConditionTrigger(root).click();
+    expect(consumerConditionTrigger(root).getAttribute("aria-pressed")).toBe("false");
+    expect(consumerTitles(root)).toHaveLength(3);
+    expect(info).toHaveBeenCalledWith("Consumers View by-state filter: all.");
   });
 
+  it("offers plain pick-one rows with no heading or Clear", async () => {
+    const root = await renderOpenBoard(contextWith({}));
+
+    consumerConditionTrigger(root).click();
+    const popup = document.querySelector(".awesomeado-consumer-condition-filter__popup")!;
+    expect(popup.querySelector("input")).toBeNull();
+    expect(popup.querySelector("strong")).toBeNull();
+    expect(popup.querySelector(".awesomeado-consumer-condition-filter__clear")).toBeNull();
+  });
+
+  it("leaves the requests list unfiltered after switching to it", async () => {
+    const root = await renderBoard(
+      contextWith({
+        consumersShowConsumers: savedMode(true),
+        loadTree: async () => ({
+          isTreeQuery: true,
+          roots: pendingQuestionsRoots(),
+          error: null,
+        }),
+      }),
+    );
+
+    pickConsumerCondition(root, "Waiting for answers");
+    showConsumersToggle(root).click();
+    expect(titles(root)).toEqual(IMPORTANCE_ORDERED_REQUESTS);
+    expect(root.querySelector(".awesomeado-consumer-condition-filter__trigger")).toBeNull();
+    showConsumersToggle(root).click();
+
+    expect(consumerTitles(root)).toEqual(["Contoso"]);
+    expect(consumerConditionTrigger(root).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("filters consumers by untriaged or committed request states from the binding mapping", async () => {
+    const root = await renderOpenBoard(contextWith({}));
+
+    pickConsumerCondition(root, "With untriaged requests");
+    expect(consumerConditionTrigger(root).title).toBe("Consumers with untriaged requests");
+    expect(consumerTitles(root)).toEqual(["Contoso"]);
+
+    consumerConditionTrigger(root).click();
+    pickConsumerCondition(root, "With committed requests");
+    expect(consumerTitles(root)).toEqual(["Fabrikam"]);
+  });
+});
+
+describe("consumersView - pending question request exclusion", () => {
+  it("never shows any tagged question story or its tasks as requests", async () => {
+    const services = {
+      loadTree: async () => ({
+        isTreeQuery: true,
+        roots: pendingQuestionsRoots(),
+        error: null,
+      }),
+    };
+    const requests = await renderBoard(requestsContext(services));
+
+    expect(titles(requests)).toEqual(IMPORTANCE_ORDERED_REQUESTS);
+    expect(requests.textContent).not.toContain("Renamed question store");
+    requests.remove();
+
+    const consumers = await renderOpenBoard(contextWith(services));
+    expect(titles(consumers)).toEqual([
+      "Contoso",
+      "Export to CSV",
+      "Dark mode",
+      "Fabrikam",
+      "Single sign-on",
+      "Audit log",
+      "Northwind",
+    ]);
+    expect(consumers.textContent).not.toContain("Who owns export?");
+    expect(consumers.textContent).not.toContain("Who owns import?");
+    expect(
+      [...consumers.querySelectorAll(".awesomeado-consumers__open-questions")].map(
+        (badge) => badge.textContent,
+      ),
+    ).toEqual(["Open questions: 2"]);
+    expect(consumers.textContent).not.toContain("Open questions: 0");
+  });
+});
+
+describe("consumersView - saved mode lifecycle", () => {
   it("keeps a flip made since across Refresh, reading the saved mode only once", async () => {
     const preference = savedMode(true);
     const loadTree = vi.fn(async () => ({
@@ -1248,7 +1443,7 @@ describe("consumersView - requests-list rows", () => {
     const root = await renderBoard(requestsContext());
 
     expect(emptyMessage(root)).toContain("None of the shown consumers has a feature request.");
-    expect(emptyMessage(root)).toContain("Press Show consumers");
+    expect(emptyMessage(root)).toContain("Press View consumers");
   });
 
   it("explains a query with no consumers just as the consumer cards do", async () => {
@@ -1768,7 +1963,7 @@ describe("consumersView - Add Consumer button", () => {
 
     expect(addConsumerButton(root).previousElementSibling).toBe(showConsumersToggle(root));
     expect(addConsumerButton(root).disabled).toBe(true);
-    expect(addConsumerButton(root).title).toBe("Turn on Show consumers to add a consumer");
+    expect(addConsumerButton(root).title).toBe("Press View consumers to add a consumer");
 
     showConsumersToggle(root).click();
     expect(addConsumerButton(root).disabled).toBe(false);

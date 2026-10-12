@@ -32,6 +32,9 @@ and empty-list behaviour cannot drift apart.
   - `clearOnTriggerWhenActive` — makes the trigger clear the condition rather than open the popup
     while anything is chosen, and drops the popup's own **Clear**. Off by default: it costs the
     reader the ability to adjust a live condition without rebuilding it.
+  - `singleSelect` — a pick-one menu instead: no checkboxes, heading, or count badge; a pick
+    replaces the selection and closes the popup, and while a value is picked the trigger's tooltip
+    is that option's `title`. `combining` is ignored.
   - `classPrefix` — the class-name stem for this instance (`awesomeado-tag-filter`), so a view's
     selectors can tell one filter from another.
   - `searchPlaceholder` — omit for a short list; supplying it adds the quick-search box.

@@ -129,20 +129,36 @@ export function renderFormActions(
 export async function submitForm(
   buttons: readonly HTMLButtonElement[],
   failure: HTMLElement,
-  submit: () => Promise<boolean>,
+  submit: () => Promise<FormSubmissionResult>,
 ): Promise<boolean> {
   hideFormFailure(failure);
   for (const button of buttons) button.disabled = true;
-  let accepted: boolean;
+  let result: FormSubmissionResult;
   try {
-    accepted = await submit();
+    result = await submit();
   } finally {
     // An owner that throws instead of resolving false must not leave the form locked.
     for (const button of buttons) button.disabled = false;
   }
-  if (!accepted) showFormFailure(failure, NOT_CREATED_MESSAGE);
+  const accepted = typeof result === "boolean" ? result : result.accepted;
+  if (!accepted) {
+    showFormFailure(
+      failure,
+      typeof result === "boolean" ? NOT_CREATED_MESSAGE : result.failureMessage,
+    );
+  }
   return accepted;
 }
+
+/** A refusal that can name a partial outcome and prevent an unsafe retry. */
+export type FormSubmissionResult =
+  | boolean
+  | {
+      accepted: boolean;
+      failureMessage: string;
+      /** False when repeating the same form action would create a duplicate or compound a failure. */
+      retryable: boolean;
+    };
 
 /** What `bindFormSubmission` wires together. */
 export interface FormSubmissionOptions {
@@ -152,7 +168,7 @@ export interface FormSubmissionOptions {
   /** Why the form cannot be submitted yet — shown as the submit button's tooltip — or null. */
   problem(): string | null;
   /** Hands the answers to the owner; resolving false keeps the form open. */
-  run(): Promise<boolean>;
+  run(): Promise<FormSubmissionResult>;
   onCancel(): void;
 }
 
@@ -164,14 +180,19 @@ export interface FormSubmissionOptions {
  */
 export function bindFormSubmission(options: FormSubmissionOptions): { refresh(): void } {
   let submitting = false;
+  let locked = false;
   const refresh = (): void => {
     const problem = options.problem();
-    options.submit.disabled = submitting || problem !== null;
+    options.submit.disabled = submitting || locked || problem !== null;
     options.submit.title = problem ?? "";
   };
   options.submit.addEventListener("click", () => {
     submitting = true;
-    void submitForm([options.submit, options.cancel], options.failure, options.run).finally(() => {
+    void submitForm([options.submit, options.cancel], options.failure, async () => {
+      const result = await options.run();
+      if (typeof result !== "boolean" && !result.accepted && !result.retryable) locked = true;
+      return result;
+    }).finally(() => {
       submitting = false;
       refresh();
     });

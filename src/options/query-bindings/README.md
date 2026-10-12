@@ -67,8 +67,8 @@ This component does not log; it surfaces failures through the options page's sha
 - **`QueryBindingsController`** — drives both layouts against the synced query-binding store: in add
   mode it saves a new binding from the view picker; in edit mode it switches the selected query and
   view, renders one control per property of the selected view — text, a select, a range-bounded
-  whole-number field, an autocomplete over live Azure DevOps values, or the area-path list editor —
-  seeded from the binding or the property's
+  whole-number field, an autocomplete over live Azure DevOps values, the area-path list editor, or
+  the state-mapping table — seeded from the binding or the property's
   default with numbers forced back into range as you leave the field, storing each committed change
   at once. Its in-memory
   binding map is the form's working copy and is what a save writes back, so **`reload()`** re-reads
@@ -86,7 +86,9 @@ This component does not log; it surfaces failures through the options page's sha
 - **Suggestions** — the area-path and iteration-path vocabularies come from one broad credentialed
   Azure DevOps read, so the form deliberately does **not** wait for it: it opens with empty lists and
   every rendered control is refreshed when the values land. Waiting was what made this tab look like
-  it never loaded.
+  it never loaded. The project's work item types and their states (for state-mapping tables) arrive
+  the same way through the optional `resolveWorkItemTypes` collaborator; a failed read is reported
+  and leaves the stored mapping visible.
 - **Saved-query folders load a folder at a time** — see `QueryFolderVocabulary.ts` below. The folder
   control shows a spinner inside its own trailing edge, and exposes `aria-busy`, whenever a folder is
   being read; it stays editable throughout, and a suggestion clipped to the textbox width exposes its
@@ -127,6 +129,17 @@ This component does not log; it surfaces failures through the options page's sha
   screen; typed custom paths remain valid, and duplicates are ignored case-insensitively. Add is
   disabled while its textbox is blank, action buttons sit immediately after their textboxes, and the
   property description sits between the Add row and the editable rows.
+
+### `StateMappingTableEditor.ts`
+
+- **`StateMappingTableEditor`** — edits a `state-mapping` property with the same table, chips, and
+  styling as the Azure DevOps tab's work-item-type state mapping: one fixed row per `stateRowTypes`
+  entry (shown with its type icon and color; the user cannot add, remove, or change rows), one
+  column per `stateColumns` status, and each cell holding that type's ADO states as chips. `+` opens
+  a state picker offering only states not yet placed in the row; the first chip is the state
+  written back, and chips reorder by dragging within their cell. The constructor takes the shape
+  as `{ columns, rowTypes }`; `value` is the serialized mapping, `setWorkItemTypes(types)` supplies
+  the icons, colors, and states once they are read, and `dispose()` detaches it.
 
 ## Usage guidance
 

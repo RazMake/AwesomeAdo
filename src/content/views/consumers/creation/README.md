@@ -1,7 +1,7 @@
 # `content/views/consumers/creation`
 
 The Consumers View's **Add new consumer** and **Add new request** commands: the right-click menu
-entries, the forms they open, and how the answers become one new Azure DevOps work item each.
+entries, the forms they open, and how the answers become Azure DevOps work items.
 
 ## Public API
 
@@ -18,7 +18,9 @@ entries, the forms they open, and how the answers become one new Azure DevOps wo
 
   Each opens a centered panel naming the parent it creates under. A successful creation closes the
   menu and calls `onCreated`; a refused one keeps the form, with everything typed, and says so. A
-  command is disabled with a reason when no work item type can be chosen.
+  command is disabled with a reason when no work item type can be chosen. If the consumer succeeds
+  but its question store fails, the form names that partial failure and locks Add so retrying cannot
+  create a duplicate consumer; closing the panel then reloads the board.
 
 - `AddConsumerButton.ts` → `renderAddConsumerButton({ doc, className, showConsumers, command,
 openPanel })`: the header's **Add Consumer** button, opening the **Add new consumer** form beneath
@@ -56,7 +58,9 @@ openPanel })`: the header's **Add Consumer** button, opening the **Add new consu
 ## What is created
 
 - **Consumer** — under the grouping item, in its area and iteration, titled with the service name,
-  with the formatted description.
+  with the formatted description. Once its id is known, creation also adds a **User Story** titled
+  **Pending Questions** as its child, tagged `PendingQuestions`, in the consumer's area and the
+  **O365 Core** iteration, with the standard question-tracking description.
 - **Request** — under the consumer, in its iteration and `newRequestAreaPath`, with the typed
   description and, when picked, the target date stored in the request type's ETA field — all in the
   one creation patch.

@@ -1,7 +1,9 @@
+import type { AdoWorkItemType } from "../../common/ado/AdoMetadata";
 import type { IQueryBindingStore } from "../../common/bindings/IQueryBindingStore";
 import type { QueryBinding, QueryBindings } from "../../common/bindings/QueryBinding";
 import type { SharedQueryConfigResolver } from "../../common/settings-transfer/SharedQueryConfigResolver";
 import type { SharedQuerySourceStore } from "../../common/settings-transfer/SharedQuerySourceStore";
+import { describeStateMapping } from "../../common/view-common/StateMapping";
 import {
   resolveViewTypePropertyValue,
   viewTypePropertyKind,
@@ -21,6 +23,7 @@ import {
   type ReadFolderChildren,
   type ReadRootFolders,
 } from "./QueryFolderVocabulary";
+import { StateMappingTableEditor } from "./StateMappingTableEditor";
 import type { MetadataSuggestionSource } from "./suggestionSources";
 
 /** The Query Bindings tab's elements. Passed in so the controller stays DOM-agnostic and testable. */
@@ -79,6 +82,8 @@ export interface QueryBindingsOptions {
   resolveCurrentQueryId?: CurrentQueryIdResolver;
   /** Loads the Azure DevOps vocabulary one autocomplete source suggests from. */
   resolveSuggestions?: (source: MetadataSuggestionSource) => Promise<readonly string[]>;
+  /** Loads the project's work item types and their states, for state-mapping tables. */
+  resolveWorkItemTypes?: () => Promise<readonly AdoWorkItemType[]>;
   /** Loads the saved-query folders the folder picker starts from, in one read. */
   resolveRootFolders?: ReadRootFolders;
   /** Lists the folders nested inside one saved-query folder, read only when the user asks for it. */
@@ -157,6 +162,8 @@ export class QueryBindingsController {
     source: MetadataSuggestionSource,
   ) => Promise<readonly string[]>;
   private readonly resolveDerivedValues: (queryId: string) => Promise<ViewTypeDerivedValues>;
+  private readonly resolveWorkItemTypes: () => Promise<readonly AdoWorkItemType[]>;
+  private workItemTypes: readonly AdoWorkItemType[] = [];
   private readonly publishBindings: (bindings: QueryBindings) => Promise<void>;
   private readonly sharedQueries: SharedQueryAccess | undefined;
   private suggestions = new Map<MetadataSuggestionSource, readonly string[]>();
@@ -180,6 +187,7 @@ export class QueryBindingsController {
     this.resolveCurrentQueryId = options.resolveCurrentQueryId ?? (async () => null);
     this.resolveSuggestions = options.resolveSuggestions ?? (async () => []);
     this.resolveDerivedValues = options.resolveDerivedValues ?? (async () => ({}));
+    this.resolveWorkItemTypes = options.resolveWorkItemTypes ?? (async () => []);
     this.publishBindings = options.publishBindings ?? (async () => {});
     this.sharedQueries = options.sharedQueries;
     this.folders = new QueryFolderVocabulary({
@@ -216,9 +224,22 @@ export class QueryBindingsController {
 
   /** Fill every rendered suggestion list once the project's vocabularies have been read. */
   private async loadSuggestions(): Promise<void> {
-    this.suggestions = await this.readSuggestions();
+    [this.suggestions, this.workItemTypes] = await Promise.all([
+      this.readSuggestions(),
+      this.readWorkItemTypes(),
+    ]);
     this.suggestionsLoading = false;
     this.refreshPropertyControls();
+  }
+
+  private async readWorkItemTypes(): Promise<readonly AdoWorkItemType[]> {
+    try {
+      return await this.resolveWorkItemTypes();
+    } catch (error: unknown) {
+      // State tables then offer nothing to pick; the stored mapping stays intact and editable.
+      this.recordError(error);
+      return [];
+    }
   }
 
   /** Re-read every live control's vocabulary and busy state, after either lands or changes. */
@@ -607,9 +628,11 @@ export class QueryBindingsController {
   ): HTMLElement {
     const setting = doc.createElement("div");
     setting.className = "setting";
-    const isAreaPathList = viewTypePropertyKind(property) === "area-path-list";
-    const field = doc.createElement(isAreaPathList ? "div" : "label");
-    field.className = isAreaPathList ? "field field--full" : "field";
+    const kind = viewTypePropertyKind(property);
+    // Editors that lay out their own description need the full row and print the hint themselves.
+    const isWideEditor = kind === "area-path-list" || kind === "state-mapping";
+    const field = doc.createElement(isWideEditor ? "div" : "label");
+    field.className = isWideEditor ? "field field--full" : "field";
     const label = doc.createElement("span");
     label.className = "field__label";
     label.textContent = property.required ? `${property.label} (required)` : property.label;
@@ -617,7 +640,7 @@ export class QueryBindingsController {
     field.append(label, control.element);
     setting.append(field);
     this.propertyInputs.set(property.key, control);
-    if (!isAreaPathList && property.hint !== undefined) {
+    if (!isWideEditor && property.hint !== undefined) {
       const hint = doc.createElement("p");
       hint.className = "field__hint";
       hint.textContent = property.hint;
@@ -646,19 +669,10 @@ export class QueryBindingsController {
       return this.createAutocompleteControl(doc, property, value);
     }
     if (kind === "area-path-list") {
-      const editor = new AreaPathListEditor(
-        doc,
-        value,
-        this.suggestionsFor("area-paths"),
-        propertyDescription(property),
-        () => this.commit(),
-      );
-      return {
-        element: editor.root,
-        read: () => editor.value,
-        refreshSuggestions: () => editor.setSuggestions(this.suggestionsFor("area-paths")),
-        dispose: () => editor.dispose(),
-      };
+      return this.createAreaPathListControl(doc, property, value);
+    }
+    if (kind === "state-mapping") {
+      return this.createStateMappingControl(doc, property, value);
     }
     if (kind === "number") {
       return this.createNumberControl(doc, property, value);
@@ -668,6 +682,47 @@ export class QueryBindingsController {
     input.dataset.propertyKey = property.key;
     input.value = value;
     return this.editableControl(input);
+  }
+
+  private createAreaPathListControl(
+    doc: Document,
+    property: ViewTypeProperty,
+    value: string,
+  ): PropertyControl {
+    const editor = new AreaPathListEditor(
+      doc,
+      value,
+      this.suggestionsFor("area-paths"),
+      propertyDescription(property),
+      () => this.commit(),
+    );
+    return {
+      element: editor.root,
+      read: () => editor.value,
+      refreshSuggestions: () => editor.setSuggestions(this.suggestionsFor("area-paths")),
+      dispose: () => editor.dispose(),
+    };
+  }
+
+  private createStateMappingControl(
+    doc: Document,
+    property: ViewTypeProperty,
+    value: string,
+  ): PropertyControl {
+    const editor = new StateMappingTableEditor(
+      doc,
+      value,
+      { columns: property.stateColumns ?? [], rowTypes: property.stateRowTypes ?? [] },
+      propertyDescription(property),
+      () => this.commit(),
+    );
+    editor.setWorkItemTypes(this.workItemTypes);
+    return {
+      element: editor.root,
+      read: () => editor.value,
+      refreshSuggestions: () => editor.setWorkItemTypes(this.workItemTypes),
+      dispose: () => editor.dispose(),
+    };
   }
 
   private createSelectControl(
@@ -1116,6 +1171,9 @@ function describePropertyValue(property: ViewTypeProperty, stored: string | unde
   if (kind === "area-path-list") {
     const paths = value.split(/\r?\n/).filter((path) => path.trim().length > 0);
     return paths.length === 0 ? "None" : paths.join(", ");
+  }
+  if (kind === "state-mapping") {
+    return describeStateMapping(value, property.stateColumns ?? []);
   }
   return value.length === 0 ? "Not set" : value;
 }

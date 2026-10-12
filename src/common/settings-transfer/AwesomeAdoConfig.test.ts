@@ -37,6 +37,10 @@ const sampleSettings: ExtensionSettings = {
   },
 };
 
+const CONSUMER_STATE_MAPPING = JSON.stringify([
+  { type: "Feature", states: { new: ["Proposed"], accepted: ["Committed", "Active"] } },
+]);
+
 const sampleBindings: QueryBindings = {
   "11111111-1111-1111-1111-111111111111": {
     view: "sprint",
@@ -47,6 +51,11 @@ const sampleBindings: QueryBindings = {
     view: "projectTracking",
     properties: { orderingPolicy: "importance", weeks: "4" },
     name: "Roadmap",
+  },
+  "44444444-4444-4444-4444-444444444444": {
+    view: "consumers",
+    properties: { requestStateMapping: CONSUMER_STATE_MAPPING },
+    name: "Consumer Requests",
   },
 };
 
@@ -70,6 +79,14 @@ describe("shared configuration query", () => {
       expect(imported.problems).toEqual([]);
     },
   );
+
+  it("round-trips Consumers request-state mappings through the shared payload", () => {
+    const imported = importConfig(exportCompactConfig(sampleSettings, sampleBindings));
+
+    expect(imported.enhancedQueries["44444444-4444-4444-4444-444444444444"]?.properties).toEqual({
+      requestStateMapping: CONSUMER_STATE_MAPPING,
+    });
+  });
 });
 
 describe("exportConnectionConfig", () => {

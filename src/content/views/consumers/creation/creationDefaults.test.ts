@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { TrackedWorkItem, TypeCatalogEntry } from "../../../../common/ado/TrackedWorkItem";
+import { PENDING_QUESTIONS_TAG } from "../pendingQuestions";
 
 import {
   calledServiceName,
@@ -99,6 +100,25 @@ describe("newRequestType", () => {
     const grouping = item({ id: 1, type: "Group", children: [consumer, other] });
 
     expect(newRequestType(grouping, consumer, TYPES)).toBe("Story");
+  });
+
+  it("does not treat a tagged Pending Questions story as a request default", () => {
+    const pending = item({
+      id: 20,
+      type: "User Story",
+      tags: [PENDING_QUESTIONS_TAG],
+      areaPath: OTHER,
+    });
+    const consumer = item({ id: 2, type: "Consumer", children: [pending] });
+    const other = item({
+      id: 3,
+      type: "Consumer",
+      children: [item({ id: 30, type: "Bug", areaPath: TEAM_A })],
+    });
+    const grouping = item({ id: 1, type: "Group", children: [consumer, other] });
+
+    expect(newRequestType(grouping, consumer, TYPES)).toBe("Bug");
+    expect(newRequestAreaPath(grouping, consumer, [])).toBe(TEAM_A);
   });
 
   it("falls back to the consumer type's configured child type", () => {

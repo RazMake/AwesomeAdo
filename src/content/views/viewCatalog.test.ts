@@ -121,6 +121,7 @@ describe("VIEW_TYPES Consumers View properties", () => {
     expect(consumers?.properties.map((property) => property.key)).toEqual([
       "orderingPolicy",
       "requestAreaPaths",
+      "requestStateMapping",
     ]);
     // Same binding key as the other boards, narrowed to the two orderings this board offers.
     expect(byKey.get("orderingPolicy")).toMatchObject({
@@ -135,6 +136,10 @@ describe("VIEW_TYPES Consumers View properties", () => {
     expect(byKey.get("requestAreaPaths")).toMatchObject({
       kind: "area-path-list",
       label: "Request area paths",
+      required: false,
+    });
+    expect(byKey.get("requestStateMapping")).toMatchObject({
+      kind: "state-mapping",
       required: false,
     });
   });

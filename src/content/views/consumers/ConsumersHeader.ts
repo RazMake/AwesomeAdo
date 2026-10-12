@@ -71,9 +71,8 @@ export function renderConsumersHeader(
     collapseLabel: "Collapse open descriptions, then discussions, then one tree level",
     onExpandAll: options.onExpandAll,
     onCollapseAll: options.onCollapseAll,
-    // The mode switch sits with `+` and `−` because, like them, it changes how much of the tree is
-    // drawn rather than which items qualify. Sprints, markers, and blocked/interrupt flags describe
-    // delivery work, not a consumer's request queue, so only consumer, tag, and area filters exist.
+    // The mode switch sits with `+` and `−` because it changes how much of the tree is drawn.
+    // Conditions that decide which consumers qualify belong in the right-side filter row.
     outlineControls: [options.showConsumersToggle, options.addConsumerButton],
     filters: options.filters,
     onRefresh: options.onRefresh,

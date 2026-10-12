@@ -7,6 +7,7 @@ import {
 import { buildAdoQueryDefinitionUrl } from "../common/ado/QueryDefinition";
 import { buildAdoIterationsUrl } from "../common/ado/TeamIteration";
 import { buildAdoTeamMembersRequest, expandTeamMembers } from "../common/ado/TeamMembers";
+import { buildWorkItemTypeUrl } from "../common/ado/WorkItemStateTransitions";
 import { IMPORTANCE_FIELD } from "../common/ado/adoApi";
 import { buildAttachmentDiscardUrl, buildAttachmentUploadUrl } from "../common/ado/adoAttachment";
 import {
@@ -95,6 +96,13 @@ import {
   type LoadQueryDefinitionMessage,
   type LoadQueryDefinitionResponse,
 } from "../common/browser/AdoQueryDefinitionRequest";
+import {
+  isLoadStateTransitionsMessage,
+  LOAD_STATE_TRANSITIONS_MESSAGE,
+  loadStateTransitionsMessageProblem,
+  type LoadStateTransitionsMessage,
+  type LoadStateTransitionsResponse,
+} from "../common/browser/AdoStateTransitionsRequest";
 import { AdoTeamGroupMembersLoader } from "../common/browser/AdoTeamGroupMembersLoader";
 import {
   isLoadTeamMembersMessage,
@@ -575,35 +583,43 @@ const lookupTeamGroupInPage = async (
   return firstScriptResult(results) as AdoIdentitySearchOutcome | undefined;
 };
 
-const loadQueryDefinition = async (
-  message: LoadQueryDefinitionMessage,
+// The single-URL project reads differ only in the URL and what they read, so the outcome logging and
+// the "injection threw" reply live here once instead of drifting apart per handler.
+const readProjectUrlInPage = async (
   tabId: number,
-  tabUrl: string,
-): Promise<LoadQueryDefinitionResponse> => {
-  const queryUrl = buildAdoQueryDefinitionUrl(tabUrl, message.queryId);
-  if (queryUrl === null) {
+  url: string | null,
+  what: string,
+): Promise<AdoPageRequestOutcome> => {
+  if (url === null) {
     const error = "sender tab URL is not a supported project-scoped ADO location";
-    logger.error(`Could not build query-definition URL for ${message.queryId}: ${error}.`);
+    logger.error(`Could not build the ${what} URL: ${error}.`);
     return { raw: null, status: 0, error };
   }
   try {
-    const outcome = await readInPage(tabId, queryUrl);
+    const outcome = await readInPage(tabId, url);
     if (outcome.raw === null) {
-      logger.error(
-        `Query-definition read failed for ${message.queryId}: ${outcome.error ?? `HTTP ${outcome.status}`}.`,
-      );
+      logger.error(`Read of ${what} failed: ${outcome.error ?? `HTTP ${outcome.status}`}.`);
     } else {
-      logger.info(
-        `Query-definition read completed for ${message.queryId} (HTTP ${outcome.status}).`,
-      );
+      logger.info(`Read of ${what} completed (HTTP ${outcome.status}).`);
     }
     return outcome;
   } catch (error) {
-    logger.error(`Could not load query definition for ${message.queryId}`, error);
+    logger.error(`Could not read ${what}`, error);
     const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
     return { raw: null, status: 0, error: `injection failed: ${detail}` };
   }
 };
+
+const loadQueryDefinition = (
+  message: LoadQueryDefinitionMessage,
+  tabId: number,
+  tabUrl: string,
+): Promise<LoadQueryDefinitionResponse> =>
+  readProjectUrlInPage(
+    tabId,
+    buildAdoQueryDefinitionUrl(tabUrl, message.queryId),
+    `query definition ${message.queryId}`,
+  );
 
 chrome.runtime.onMessage.addListener(
   tabRequestListener<LoadQueryDefinitionMessage, LoadQueryDefinitionResponse>(logger, {
@@ -623,6 +639,33 @@ chrome.runtime.onMessage.addListener(
       response: { raw: null, status: 0 },
     }),
     serve: loadQueryDefinition,
+  }),
+);
+
+// A Status change may need intermediary States the process requires, and only the type's
+// transition map says which; the type name is the only thing the content side contributes.
+chrome.runtime.onMessage.addListener(
+  tabRequestListener<LoadStateTransitionsMessage, LoadStateTransitionsResponse>(logger, {
+    claims: (message) => claimsMessageType(message, LOAD_STATE_TRANSITIONS_MESSAGE),
+    malformed: (message) => {
+      const problem = loadStateTransitionsMessageProblem(message);
+      return problem === null && isLoadStateTransitionsMessage(message)
+        ? null
+        : {
+            log: `State-transitions request rejected: ${problem ?? "invalid message"}.`,
+            response: { raw: null, status: 0, error: problem ?? "invalid message" },
+          };
+    },
+    unscriptable: (message) => ({
+      log: `Cannot load "${message.workItemType}" state transitions: message has no sender tab.`,
+      response: { raw: null, status: 0, error: "no supported sender tab" },
+    }),
+    serve: (message, tabId, tabUrl) =>
+      readProjectUrlInPage(
+        tabId,
+        buildWorkItemTypeUrl(tabUrl, message.workItemType),
+        `"${message.workItemType}" state transitions`,
+      ),
   }),
 );
 
@@ -1940,6 +1983,14 @@ chrome.runtime.onMessage.addListener(
   }),
 );
 
+function resolveCreateParent(
+  tabUrl: string,
+  parentId: CreateWorkItemMessage["parentId"],
+): string | null {
+  if (parentId === undefined || parentId === null) return null;
+  return buildParentLinkUrl(tabUrl, parentId);
+}
+
 // The "add a project" / "add a child item" commands. The initial fields come from the
 // content side; the endpoint is built here from the SENDER's own trusted tab URL, so this stays a
 // closed "create one work item in the project on screen" operation.
@@ -1956,10 +2007,7 @@ const createWorkItem = async (
   }
   // Built from the trusted tab URL too, so a content script can name a parent id but never the
   // organization the link resolves against.
-  const parentUrl =
-    message.parentId === undefined || message.parentId === null
-      ? null
-      : buildParentLinkUrl(tabUrl, message.parentId);
+  const parentUrl = resolveCreateParent(tabUrl, message.parentId);
   try {
     const results = await chrome.scripting.executeScript({
       target: { tabId },

@@ -25,6 +25,10 @@ import {
   type LoadQueryDefinitionMessage,
   type LoadQueryDefinitionResponse,
 } from "../common/browser/AdoQueryDefinitionRequest";
+import type {
+  LoadStateTransitionsMessage,
+  LoadStateTransitionsResponse,
+} from "../common/browser/AdoStateTransitionsRequest";
 import {
   type LoadTeamMembersMessage,
   type LoadTeamMembersResponse,
@@ -94,6 +98,7 @@ import {
   MessagingQueryDefinitionLoader,
   type SendQueryDefinitionRequest,
 } from "../common/browser/MessagingQueryDefinitionLoader";
+import { MessagingStateTransitionsReader } from "../common/browser/MessagingStateTransitionsReader";
 import {
   MessagingTeamConfigReader,
   type SendTeamConfigRequest,
@@ -274,6 +279,14 @@ const sendQueryDefinitionRequest: SendQueryDefinitionRequest = (message) =>
   );
 const queryDefinitionLoader = new MessagingQueryDefinitionLoader(
   sendQueryDefinitionRequest,
+  loggers.forSource("content/views"),
+);
+const stateTransitionsReader = new MessagingStateTransitionsReader(
+  (message) =>
+    chrome.runtime.sendMessage<
+      LoadStateTransitionsMessage,
+      LoadStateTransitionsResponse | undefined
+    >(message),
   loggers.forSource("content/views"),
 );
 
@@ -531,6 +544,7 @@ const trackingServices: EnhancedViewServices = {
   now: () => new Date(),
   logger: loggers.forSource("content/views"),
   writeField: (request) => workItemFieldWriter.writeField(request),
+  stateTransitions: stateTransitionsReader,
   reorderItem: (request) => workItemReorderWriter.reorder(request),
   createWorkItem: workItemCreator,
   projectQueries: projectQueryService,

@@ -5,7 +5,7 @@ import {
 import type { ItemContextMenuCommand } from "../../../../common/view-common/control/ItemContextMenu/ItemContextMenu";
 
 const ENABLED_TITLE = "Add a new consumer to this board";
-export const REQUESTS_MODE_REASON = "Turn on Show consumers to add a consumer";
+export const REQUESTS_MODE_REASON = "Press View consumers to add a consumer";
 export const NO_GROUPING_REASON = "This query has no top item to add consumers under";
 
 export interface AddConsumerButtonOptions {

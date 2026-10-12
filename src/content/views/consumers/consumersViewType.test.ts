@@ -44,7 +44,15 @@ describe("consumersViewType", () => {
     expect(consumersViewType.properties.map((property) => property.key)).toEqual([
       "orderingPolicy",
       "requestAreaPaths",
+      "requestStateMapping",
     ]);
+  });
+
+  it("maps request states through one per-type state table", () => {
+    expect(consumersViewType.properties[2]).toMatchObject({
+      label: "Request states",
+      kind: "state-mapping",
+    });
   });
 });
 
