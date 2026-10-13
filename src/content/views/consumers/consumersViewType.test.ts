@@ -45,6 +45,7 @@ describe("consumersViewType", () => {
       "orderingPolicy",
       "requestAreaPaths",
       "requestStateMapping",
+      "questionStateMapping",
     ]);
   });
 

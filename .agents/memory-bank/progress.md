@@ -193,7 +193,8 @@ This is a flattened snapshot of what exists now, not a build log.
   Shared Steps links and titles, excludes every matching story and all its question tasks from
   request rows, counts, ordering, drag, and creation defaults, and aggregates active Tasks across
   all matching stories into the card's yellow **Open questions: N** badge, omitted when the
-  aggregate is empty.
+  aggregate is empty. The badge toggles those Task rows beneath the consumer and participates as
+  the second tree level in the header `+` / `−` controls.
   Consumer cards show the consumer's own tags (`renderOwnTags`, TagPill `__consumer-item-tag`) in
   `__card-head` after the title. Their right-click menu reuses `buildCustomTagCommands` to add from
   all loaded consumers' vocabulary via `tagsInUse(grouping.children)`, add a new tag,
@@ -216,8 +217,9 @@ This is a flattened snapshot of what exists now, not a build log.
   The request form (Title, Markdown Description with images, Target date)
   creates under the consumer with the ETA folded into the same create patch via
   `createWorkItem` `extraFields`; the date is disabled when the type has no ETA field. Types and
-  area default from siblings (`creationDefaults.ts`); success re-reads the query; failures keep the
-  form. Authenticated browser validation remains pending.
+  area default from siblings (`creationDefaults.ts`); a blank description is refused in the form
+  with "All requests must have a description." and no write attempt; success re-reads the query;
+  failures keep the form. Authenticated browser validation remains pending.
 - **Sprint View** (`content/views/sprint`): accepts flat or tree queries; loads the selected
   team's complete paged member roster, recursively expanding direct and nested groups, before
   executing an offset-adjusted copy of the original WIQL;

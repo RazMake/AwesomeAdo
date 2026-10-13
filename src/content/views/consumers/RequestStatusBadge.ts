@@ -8,12 +8,13 @@ import {
 } from "../../../common/view-common/control/StatusBadge/StatusBadge";
 import { changeItemState } from "../item-status/changeItemState";
 
-import { mappedRequestState, requestStatesFor, type RequestStateMapping } from "./requestStates";
+import { fixedStatesFor, mappedFixedState, type FixedStateMapping } from "./fixedStatuses";
 
 export interface RequestStatusBadgeOptions {
   doc: Document;
   item: TrackedWorkItem;
-  mapping: RequestStateMapping;
+  /** Request or question statuses: any fixed-status table the binding maps onto ADO states. */
+  mapping: FixedStateMapping;
   queue: WorkItemWriteQueue;
   /** The type's allowed State changes, used to route a change ADO refuses as a direct jump. */
   transitions: IWorkItemStateTransitionsReader | undefined;
@@ -24,15 +25,15 @@ export interface RequestStatusBadgeOptions {
 }
 
 /**
- * The Consumers View's fixed request-status control, backed by the binding's ADO-state map.
+ * The Consumers View's fixed request- and question-status control, backed by the binding's ADO-state map.
  *
  * Every status is always offered: a change the process does not allow directly is routed through
  * its intermediary States, so the reader picks the outcome and never the path.
  */
 export function renderRequestStatusBadge(options: RequestStatusBadgeOptions): StatusBadgeHandle {
   const { item, mapping } = options;
-  const statuses = requestStatesFor(item, mapping);
-  const current = mappedRequestState(item, mapping);
+  const statuses = fixedStatesFor(item, mapping);
+  const current = mappedFixedState(item, mapping);
 
   const badge = renderStatusBadge(options.doc, {
     state: current?.label ?? item.state,
@@ -48,7 +49,7 @@ export function renderRequestStatusBadge(options: RequestStatusBadgeOptions): St
       const selected = statuses.find((status) => status.label === label);
       if (selected === undefined) return;
       const showReached = (): void => {
-        const reached = mappedRequestState(item, mapping);
+        const reached = mappedFixedState(item, mapping);
         badge.setStatus(reached?.label ?? item.state, reached?.ordinal);
         options.onCommitted();
       };

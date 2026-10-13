@@ -140,20 +140,36 @@ describe("renderNewRequestForm — submitting", () => {
   it("hands a null date to the owner when none was picked", async () => {
     const view = form();
     type(view.title, "Raise the quota");
+    type(view.description, "A complete request.");
 
     view.add.click();
     await settle();
 
     expect(view.submit).toHaveBeenCalledWith({
       title: "Raise the quota",
-      description: "",
+      description: "A complete request.",
       targetDate: null,
     });
+  });
+
+  it("requires a description and explains the refusal without asking the owner to create", async () => {
+    const view = form();
+    type(view.title, "Raise the quota");
+    type(view.description, "   ");
+
+    view.add.click();
+    await settle();
+
+    expect(view.submit).not.toHaveBeenCalled();
+    expect(view.failure.textContent).toBe("All requests must have a description.");
+    expect(view.failure.style.display).toBe("inline");
+    expect(view.add.disabled).toBe(false);
   });
 
   it("keeps the form and says so when the owner could not create the request", async () => {
     const view = form({ onSubmit: async () => false });
     type(view.title, "Raise the quota");
+    type(view.description, "A complete request.");
 
     view.add.click();
     await settle();

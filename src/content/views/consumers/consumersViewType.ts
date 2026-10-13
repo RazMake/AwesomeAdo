@@ -11,6 +11,7 @@ import {
   type ViewTypeProperty,
 } from "../../../common/view-common/ViewType";
 
+import { questionStateMappingProperty } from "./questionStates";
 import { requestStateMappingProperty } from "./requestStates";
 
 /**
@@ -56,7 +57,12 @@ const LEGACY_AREA_PATHS_KEY = "consumerAreaPaths";
 export const consumersViewType: ViewType = {
   id: "consumers",
   label: "Consumers View",
-  properties: [consumersOrderingProperty, requestAreaPathsProperty, requestStateMappingProperty],
+  properties: [
+    consumersOrderingProperty,
+    requestAreaPathsProperty,
+    requestStateMappingProperty,
+    questionStateMappingProperty,
+  ],
 };
 
 /** The area branches a feature request must sit in to be shown; empty shows every request. */

@@ -1,6 +1,8 @@
 import type { TrackedWorkItem } from "../../../common/ado/TrackedWorkItem";
 import { hasWorkItemTag } from "../../../common/ado/workItemTags";
 
+import { isOpenQuestion, questionStateMapping, type QuestionStateMapping } from "./questionStates";
+
 export const PENDING_QUESTIONS_TITLE = "Pending Questions";
 export const PENDING_QUESTIONS_TAG = "PendingQuestions";
 
@@ -17,26 +19,43 @@ export function isPendingQuestionsStory(item: TrackedWorkItem): boolean {
   );
 }
 
+/** Every question-storage story directly under a consumer, including legacy renamed stories. */
+export function pendingQuestionsStories(consumer: TrackedWorkItem): TrackedWorkItem[] {
+  return consumer.children.filter(isPendingQuestionsStory);
+}
+
 /** Real feature requests, excluding every tagged story used only to hold questions. */
 export function consumerRequests(consumer: TrackedWorkItem): TrackedWorkItem[] {
   return consumer.children.filter((item) => !isPendingQuestionsStory(item));
 }
 
-const TERMINAL_QUESTION_STATES = new Set(["closed", "resolved", "removed"]);
+/** The story new questions go under: the newest (highest id) when a consumer has several. */
+export function latestPendingQuestionsStory(consumer: TrackedWorkItem): TrackedWorkItem | null {
+  return pendingQuestionsStories(consumer).reduce<TrackedWorkItem | null>(
+    (latest, story) => (latest === null || story.id > latest.id ? story : latest),
+    null,
+  );
+}
+
+const UNMAPPED_QUESTION_STATES = questionStateMapping({});
 
 /** Active Task children aggregated from every Pending Questions story under the consumer. */
-export function openConsumerQuestions(consumer: TrackedWorkItem): TrackedWorkItem[] {
-  return consumer.children
-    .filter(isPendingQuestionsStory)
+export function openConsumerQuestions(
+  consumer: TrackedWorkItem,
+  mapping: QuestionStateMapping = UNMAPPED_QUESTION_STATES,
+): TrackedWorkItem[] {
+  return pendingQuestionsStories(consumer)
     .flatMap((story) => story.children)
     .filter(
       (question) =>
-        question.type.trim().toLowerCase() === "task" &&
-        !TERMINAL_QUESTION_STATES.has(question.state.trim().toLowerCase()),
+        question.type.trim().toLowerCase() === "task" && isOpenQuestion(question, mapping),
     );
 }
 
 /** Whether at least one tracked question still needs an answer. */
-export function hasActivePendingQuestions(consumer: TrackedWorkItem): boolean {
-  return openConsumerQuestions(consumer).length > 0;
+export function hasActivePendingQuestions(
+  consumer: TrackedWorkItem,
+  mapping: QuestionStateMapping = UNMAPPED_QUESTION_STATES,
+): boolean {
+  return openConsumerQuestions(consumer, mapping).length > 0;
 }

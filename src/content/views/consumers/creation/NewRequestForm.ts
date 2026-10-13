@@ -2,29 +2,21 @@ import type { IAttachmentUploader } from "../../../../common/ado/IAttachmentUplo
 import type { IUserDirectory } from "../../../../common/ado/IUserDirectory";
 import type { ILogger } from "../../../../common/logging/ILogger";
 import {
-  bindFormSubmission,
   FORM_FIELD_STYLE,
-  renderFormActions,
-  renderFormButton,
-  renderFormFailureLine,
   renderFormRow,
-  renderFormTextField,
+  type FormSubmissionResult,
 } from "../../../../common/view-common/control/FormLayout/FormLayout";
-import { renderMarkdownField } from "../../../../common/view-common/control/TextEditor/MarkdownField";
+
+import { renderTitledDescriptionForm, type TitledDescriptionValues } from "./TitledDescriptionForm";
 
 const PREFIX = "awesomeado-new-request";
-
-/** The longest work item title Azure DevOps accepts. */
-const TITLE_MAX_LENGTH = 255;
+const DESCRIPTION_REQUIRED_MESSAGE = "All requests must have a description.";
 
 export const REQUEST_TITLE_HELP = "Provide a short descriptive text for the request";
 export const TARGET_DATE_HELP = "When this request is needed by";
 
 /** Everything the Add new request form asked for. */
-export interface NewRequestValues {
-  title: string;
-  /** Markdown, with mentions in their stored `@<id>` form. */
-  description: string;
+export interface NewRequestValues extends TitledDescriptionValues {
   /** The picked day as the date input states it (`YYYY-MM-DD`), or null when none was picked. */
   targetDate: string | null;
 }
@@ -55,72 +47,35 @@ function renderTargetDate(doc: Document, unavailable: string | null): HTMLInputE
 /**
  * The Add new request form: a title, a Markdown description and the date the request is needed by.
  *
- * The description is the shared Markdown field so pasted images and `@` mentions behave exactly as
- * they do everywhere else; its images are kept when the request is created and removed from Azure
- * DevOps when the form is cancelled. The date stays disabled, saying why, when the request type has
- * no configured ETA field to hold it.
+ * The date stays disabled, saying why, when the request type has no configured ETA field to hold it.
  */
 export function renderNewRequestForm(options: NewRequestFormOptions): HTMLElement {
-  const { doc, logger } = options;
-  const form = doc.createElement("div");
-  form.className = PREFIX;
-  form.style.cssText =
-    "display:flex;flex-direction:column;gap:8px;min-width:0;max-height:70vh;overflow-y:auto";
-  let refresh = (): void => {};
-  const title = renderFormTextField(doc, {
-    className: `${PREFIX}__title`,
-    help: REQUEST_TITLE_HELP,
-    maxLength: TITLE_MAX_LENGTH,
-  });
-  title.addEventListener("input", () => refresh());
-  const description = renderMarkdownField(doc, {
-    initialText: "",
-    rows: 6,
-    placeholder: "Markdown supported.",
-    mentions: { userDirectory: options.userDirectory, logger },
-    images: { uploader: options.attachmentUploader, logger },
-    onInput: () => refresh(),
-  });
-  description.input.classList.add(`${PREFIX}__description`);
+  const { doc } = options;
   const targetDate = renderTargetDate(doc, options.targetDateUnavailable);
-  const submit = renderFormButton(doc, PREFIX, "Add", true);
-  const cancel = renderFormButton(doc, PREFIX, "Cancel", false);
-  const failure = renderFormFailureLine(doc, PREFIX);
-  ({ refresh } = bindFormSubmission({
-    submit,
-    cancel,
-    failure,
-    problem: () => {
-      if (title.value.trim().length === 0) return "Provide a title.";
-      return description.uploadingImages()
-        ? "Wait for the pasted image to finish uploading."
-        : null;
-    },
-    run: () => {
-      const creation = options.onSubmit({
-        title: title.value.trim(),
-        description: description.storedText(),
+  return renderTitledDescriptionForm({
+    doc,
+    userDirectory: options.userDirectory,
+    attachmentUploader: options.attachmentUploader,
+    logger: options.logger,
+    classPrefix: PREFIX,
+    titleHelp: REQUEST_TITLE_HELP,
+    descriptionHelp: "Markdown supported.",
+    extraRows: [
+      renderFormRow(doc, { classPrefix: PREFIX, caption: "Target date", control: targetDate }),
+    ],
+    onSubmit: (values): Promise<FormSubmissionResult> => {
+      if (values.description.trim().length === 0) {
+        return Promise.resolve({
+          accepted: false,
+          failureMessage: DESCRIPTION_REQUIRED_MESSAGE,
+          retryable: true,
+        });
+      }
+      return options.onSubmit({
+        ...values,
         targetDate: targetDate.value.length > 0 ? targetDate.value : null,
       });
-      description.trackSave(creation);
-      return creation;
     },
-    onCancel: () => {
-      description.discardImages();
-      options.onCancel();
-    },
-  }));
-  form.append(
-    renderFormRow(doc, { classPrefix: PREFIX, caption: "Title", control: title }),
-    renderFormRow(doc, {
-      classPrefix: PREFIX,
-      caption: "Description",
-      control: description.element,
-    }),
-    renderFormRow(doc, { classPrefix: PREFIX, caption: "Target date", control: targetDate }),
-    renderFormActions(doc, PREFIX, [submit, cancel], failure),
-  );
-  description.input.setAttribute("aria-label", "Description");
-  queueMicrotask(() => title.focus());
-  return form;
+    onCancel: options.onCancel,
+  });
 }

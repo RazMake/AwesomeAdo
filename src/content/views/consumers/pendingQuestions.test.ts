@@ -7,6 +7,7 @@ import {
   consumerRequests,
   hasActivePendingQuestions,
   isPendingQuestionsStory,
+  latestPendingQuestionsStory,
   openConsumerQuestions,
 } from "./pendingQuestions";
 
@@ -122,5 +123,20 @@ describe("Pending Questions identification", () => {
         }),
       ),
     ).toBe(false);
+  });
+});
+
+describe("latestPendingQuestionsStory", () => {
+  it("picks the tagged story with the highest id, ignoring requests and untagged stories", () => {
+    const consumer = item(1, {
+      type: "Consumer",
+      children: [pending(30), item(99, { type: "User Story" }), pending(45), item(50), pending(12)],
+    });
+
+    expect(latestPendingQuestionsStory(consumer)?.id).toBe(45);
+  });
+
+  it("is null when the consumer has no Pending Questions story", () => {
+    expect(latestPendingQuestionsStory(item(1, { children: [item(2)] }))).toBeNull();
   });
 });

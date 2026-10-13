@@ -13,6 +13,7 @@ import {
 
 import {
   buildAddConsumerCommand,
+  buildAddQuestionCommand,
   buildAddRequestCommand,
   consumerCreationCommands,
   type ConsumerCreationContext,
@@ -329,6 +330,7 @@ const ETA_TYPES: ReadonlyMap<string, TypeCatalogEntry> = new Map([
 /** Fill the request form's title (and date, when given) and click Add. */
 async function addRequest(panel: HTMLElement, date: string | null): Promise<void> {
   type(control(panel, ".awesomeado-new-request__title"), "Raise the quota");
+  type(control(panel, ".awesomeado-new-request__description"), "Increase the service quota.");
   if (date !== null) {
     control<HTMLInputElement>(panel, ".awesomeado-new-request__target-date").value = date;
   }
@@ -386,7 +388,7 @@ describe("buildAddRequestCommand — creating", () => {
       tags: [],
       areaPath: "Org\\Team A",
       iterationPath: "Org\\Sprint 7",
-      description: "",
+      description: "Increase the service quota.",
       parentId: 2,
       extraFields: { "Custom.NeededBy": "2026-11-01T12:00:00Z" },
     });
@@ -419,13 +421,138 @@ describe("buildAddRequestCommand — creating", () => {
 });
 
 describe("consumerCreationCommands", () => {
-  it("offers only Add new request, opening a new group", () => {
+  it("offers Add new request, opening a new group, then Add new question in that group", () => {
     const { grouping, consumer } = board();
     const { context } = harness(grouping);
 
     const commands = consumerCreationCommands(context, consumer);
 
-    expect(commands.map((command) => command.label)).toEqual(["Add new request"]);
+    expect(commands.map((command) => command.label)).toEqual([
+      "Add new request",
+      "Add new question",
+    ]);
     expect(commands[0]?.separatorBefore).toBe(true);
+    expect(commands[1]?.separatorBefore).toBeUndefined();
+  });
+});
+
+function questionStory(id: number): TrackedWorkItem {
+  return item({
+    id,
+    type: "User Story",
+    title: PENDING_QUESTIONS_TITLE,
+    tags: [PENDING_QUESTIONS_TAG],
+    areaPath: `Org\\Questions ${id}`,
+    iterationPath: "Org\\O365 Core",
+  });
+}
+
+/** A consumer holding two Pending Questions stories, so the newest one must be picked. */
+function questionBoard(): { grouping: TrackedWorkItem; consumer: TrackedWorkItem } {
+  const { grouping, consumer } = board();
+  consumer.children.push(questionStory(70), questionStory(85));
+  return { grouping, consumer };
+}
+
+/** Fill the question form's title and description and click Add. */
+async function addQuestion(panel: HTMLElement): Promise<void> {
+  type(control(panel, ".awesomeado-new-question__title"), "  Which regions?  ");
+  type(control(panel, ".awesomeado-new-question__description"), "Needed for **EU** rollout");
+  control<HTMLButtonElement>(panel, ".awesomeado-new-question__add").click();
+  await settle();
+}
+
+describe("buildAddQuestionCommand — availability", () => {
+  it("is disabled, saying why, when the consumer has no Pending Questions story", () => {
+    const { grouping, consumer } = board();
+    const { context } = harness(grouping);
+
+    expect(buildAddQuestionCommand(context, consumer)).toEqual({
+      label: "Add new question",
+      disabledReason: `This consumer has no "${PENDING_QUESTIONS_TITLE}" User Story tagged ${PENDING_QUESTIONS_TAG} to hold questions.`,
+    });
+  });
+
+  it("opens a centered form headed by the consumer, with ghost-text guidance", () => {
+    const { grouping, consumer } = questionBoard();
+    const { context } = harness(grouping);
+
+    const command = buildAddQuestionCommand(context, consumer);
+    const { panel } = openPanel(command);
+
+    expect(command.centerPanel).toBe(true);
+    expect(panel.textContent).toContain("Consumer: Contoso");
+    expect(control<HTMLInputElement>(panel, ".awesomeado-new-question__title").placeholder).toBe(
+      "Type a short version of the question",
+    );
+    expect(
+      control<HTMLTextAreaElement>(panel, ".awesomeado-new-question__description").placeholder,
+    ).toBe("Add details if any to help the team answer the question");
+    expect(panel.querySelector(".awesomeado-new-question__target-date")).toBeNull();
+  });
+
+  it("keeps Add disabled until a title is typed", () => {
+    const { grouping, consumer } = questionBoard();
+    const { context } = harness(grouping);
+    const { panel } = openPanel(buildAddQuestionCommand(context, consumer));
+
+    const add = control<HTMLButtonElement>(panel, ".awesomeado-new-question__add");
+    expect(add.disabled).toBe(true);
+    type(control(panel, ".awesomeado-new-question__title"), "Why?");
+    expect(add.disabled).toBe(false);
+  });
+});
+
+describe("buildAddQuestionCommand — creating", () => {
+  it("creates a Task under the newest Pending Questions story, in that story's area", async () => {
+    const { grouping, consumer } = questionBoard();
+    const { context, create, logger, onCreated } = harness(grouping);
+    const { panel, close } = openPanel(buildAddQuestionCommand(context, consumer));
+
+    await addQuestion(panel);
+
+    expect(create).toHaveBeenCalledWith({
+      type: "Task",
+      title: "Which regions?",
+      tags: [],
+      areaPath: "Org\\Questions 85",
+      iterationPath: "Org\\O365 Core",
+      description: "Needed for **EU** rollout",
+      parentId: 85,
+    });
+    expect(logger.info).toHaveBeenCalledWith(
+      'Consumers View added question 42 (Task) under 85 in area "Org\\Questions 85".',
+    );
+    expect(onCreated).toHaveBeenCalledTimes(1);
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the form open, logging why, when the question is refused", async () => {
+    const { grouping, consumer } = questionBoard();
+    const { context, create, logger, onCreated } = harness(grouping);
+    create.mockResolvedValue({ ok: false, error: "denied" });
+    const { panel, close } = openPanel(buildAddQuestionCommand(context, consumer));
+
+    await addQuestion(panel);
+
+    expect(logger.error).toHaveBeenCalledWith(
+      "Consumers View could not add a question (Task) under 85: denied.",
+    );
+    expect(onCreated).not.toHaveBeenCalled();
+    expect(close).not.toHaveBeenCalled();
+    expect(control<HTMLInputElement>(panel, ".awesomeado-new-question__title").value).toBe(
+      "  Which regions?  ",
+    );
+  });
+
+  it("closes without creating anything when cancelled", () => {
+    const { grouping, consumer } = questionBoard();
+    const { context, create } = harness(grouping);
+    const { panel, close } = openPanel(buildAddQuestionCommand(context, consumer));
+
+    control<HTMLButtonElement>(panel, ".awesomeado-new-question__cancel").click();
+
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(create).not.toHaveBeenCalled();
   });
 });

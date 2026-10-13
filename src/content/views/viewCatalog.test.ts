@@ -122,6 +122,7 @@ describe("VIEW_TYPES Consumers View properties", () => {
       "orderingPolicy",
       "requestAreaPaths",
       "requestStateMapping",
+      "questionStateMapping",
     ]);
     // Same binding key as the other boards, narrowed to the two orderings this board offers.
     expect(byKey.get("orderingPolicy")).toMatchObject({

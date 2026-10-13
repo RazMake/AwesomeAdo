@@ -10,7 +10,10 @@ builds use the repository's `Major.Minor.Build` release versioning.
 - Consumers View lays contacts out across wrapping rows, and while showing consumers a **By state**
   filter keeps only consumers **Waiting for answers**, **With untriaged requests**, or **With
   committed requests** — pick one, press the lit button to clear it, and its tooltip names what is
-  being shown; the requests list is never narrowed by it. The **Consumer** filter is now **By name**,
+  being shown; the requests list is never narrowed by it. While showing the requests list, its own
+  **By state** filter keeps only requests in the ticked request states, and each state also has a
+  **NOT** button to leave that state out (for example, New or Accepted but not Rejected); press the
+  lit button to clear it, and consumer cards are not affected. The **Consumer** filter is now **By name**,
   and the mode button reads **View consumers** or **View requests**, always blue (darker while
   showing consumers). Request states are mapped in the view settings with the same table as
   the Azure DevOps tab — the **User Story** type's ADO states placed under the fixed **New**, **Needs
@@ -24,8 +27,21 @@ builds use the repository's `Major.Minor.Build` release versioning.
   `PendingQuestions` User Story child whenever at least one question remains open. Those stories and
   all of their question tasks stay out of both view modes, with Closed, Resolved, and Removed tasks
   excluded from the count. Every new consumer automatically gets a tagged Pending Questions child
-  in the same area and the **O365 Core** iteration. Consumer cards omit both the feature-request and
-  open-question badges when their corresponding count is zero.
+  in the same area and the **O365 Core** iteration. A consumer's right-click menu also offers **Add
+  new question**, right below **Add new request**: it asks for a short question and optional
+  Markdown details, and files them as a Task under the consumer's newest Pending Questions story.
+  Consumer cards omit both the feature-request and
+  open-question badges when their corresponding count is zero. The Open questions pill uses a hand
+  cursor and opens or closes the active question tasks from every Pending Questions story; the
+  view's `+` and `−` buttons include those question lists as their second tree level. Each
+  question shows an editable status — **Open**, **In Progress**, **Answered**, or **Removed** —
+  mapped from Task states in the view settings with the same table as request states; Answered and
+  Removed questions no longer count as open.
+
+### Bug Fixes
+
+- Adding a request without a description now explains that every request needs one instead of
+  pointing to an empty diagnostics log.
 
 ## 0.21
 

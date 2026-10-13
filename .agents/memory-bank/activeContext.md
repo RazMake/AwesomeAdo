@@ -18,11 +18,17 @@ AwesomeADO is feature-complete for its current scope:
   are never area filtered and consumer-card request counts show the filtered count only when it is
   nonzero. The Consumer
   (`consumer` param) and Tags (shared `content/views/tag-selection`, judged on the consumer's OWN
-  tags) filters narrow CONSUMERS in both modes. A non-persisted, pick-one **By state** filter
+  tags) filters narrow CONSUMERS in both modes. Add new request refuses a blank Markdown description
+  in place with the actionable requirement instead of attempting a write and pointing to
+  Diagnostics. A non-persisted, pick-one **By state** filter
   (CheckboxFilter `singleSelect` + `clearOnTriggerWhenActive`) is rendered and applied ONLY in
   consumers mode: **Waiting for answers** keeps consumers with an active
   aggregated question, **With untriaged requests** keeps those with a visible request mapped to
-  New, and **With committed requests** keeps those with one mapped to Accepted. Raw ADO request
+  New, and **With committed requests** keeps those with one mapped to Accepted. In requests mode
+  only, a separate session-only **By state** filter (`RequestStateFilter`, CheckboxFilter
+  `combining` + `exclusiveValues`) keeps requests in any ticked fixed request state and drops those
+  marked NOT; it never touches consumer cards or counts (`listsRequest`), is logged as
+  `requestStates=` in the board line, and is not URL-synced. Raw ADO request
   states are mapped per binding to fixed New (gray), Needs Clarification (yellow), Accepted (blue),
   Rejected (red), and Done (green) controls through one `requestStateMapping` `state-mapping`
   property, edited in the binding form with the Azure DevOps tab's table (one fixed User Story row —
@@ -42,7 +48,9 @@ AwesomeADO is feature-complete for its current scope:
   `+` opens one tree level (`treeExpansion.ts`). Consumer rows omit
   Status editing while request rows retain it; the request status always offers every state and
   routes a change ADO forbids directly through intermediary states from the type's transition map
-  (`item-status/changeItemState`). Ordering offers only Drag-and-drop order (importance)
+  (`item-status/changeItemState`). Open question rows carry the same badge over a separate
+  `questionStateMapping` Task table (Open/In Progress/Answered/Removed, generic `fixedStatuses.ts`);
+  mapped Answered/Removed questions are no longer open. Ordering offers only Drag-and-drop order (importance)
   and By ETA. Only the requests list drags (flat, every request ranked against all listed requests,
   persisted under its own consumer with Project Tracking's backlog rank); cards never drag. Its header represents the hidden root
   with that item's title and theme-aware ADO type color. Every displayed item has the shared
@@ -71,7 +79,12 @@ AwesomeADO is feature-complete for its current scope:
   mode) and **Add new request** (consumer menu) open `consumers/creation` forms on the shared
   `control/FormLayout` (guidance as in-field ghost text + tooltip); a consumer's description is written in the profile reader's template shape
   (ClientId must be a unique GUID), and a request's needed-by date rides the single create patch
-  (`createWorkItem` `extraFields`). Authenticated browser validation of the Consumers View remains pending.
+  (`createWorkItem` `extraFields`). **Add new question** (consumer menu, right below Add new
+  request) files a Task under the highest-id `PendingQuestions` story in that story's
+  area/iteration; request and question forms share `creation/TitledDescriptionForm`. The **Open
+  questions** pill toggles the active Task list aggregated from every Pending Questions story and
+  participates as the second tree level in the header `+` / `−` controls.
+  Authenticated browser validation of the Consumers View remains pending.
 - The content runtime is SPA-aware, route-gates heavy work, lazy-loads large view renderers, and uses
   background-to-MAIN-world bridges for credentialed Azure DevOps operations.
 - Shared view controls, normalized ADO models, ordering, settings, bindings, navigation, logging, and

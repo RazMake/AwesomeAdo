@@ -10,9 +10,11 @@ import {
   PENDING_QUESTIONS_DESCRIPTION,
   PENDING_QUESTIONS_TAG,
   PENDING_QUESTIONS_TITLE,
+  latestPendingQuestionsStory,
 } from "../pendingQuestions";
 
 import { renderNewConsumerForm } from "./NewConsumerForm";
+import { renderNewQuestionForm, type NewQuestionValues } from "./NewQuestionForm";
 import { renderNewRequestForm, type NewRequestValues } from "./NewRequestForm";
 import {
   calledServiceName,
@@ -43,7 +45,9 @@ const NO_CONSUMER_TYPE =
   "No work item type is known for consumers: add the first consumer in Azure DevOps.";
 const NO_REQUEST_TYPE =
   "No work item type is known for requests: add the first request in Azure DevOps.";
+const NO_PENDING_QUESTIONS_STORY = `This consumer has no "${PENDING_QUESTIONS_TITLE}" User Story tagged ${PENDING_QUESTIONS_TAG} to hold questions.`;
 const PENDING_QUESTIONS_TYPE = "User Story";
+const QUESTION_TYPE = "Task";
 const PENDING_QUESTIONS_ITERATION = "O365 Core";
 const PENDING_QUESTIONS_FAILURE =
   "The consumer was created, but its Pending Questions story was not. Close this form and add the story in Azure DevOps; see Diagnostics for details.";
@@ -61,7 +65,7 @@ function placementOf(item: NewWorkItem): string {
  */
 async function createItem(
   context: ConsumerCreationContext,
-  kind: "consumer" | "request" | "Pending Questions story",
+  kind: "consumer" | "request" | "question" | "Pending Questions story",
   item: NewWorkItem,
 ): Promise<WorkItemCreateResult | null> {
   const { logger } = context.services;
@@ -144,10 +148,37 @@ function createRequest(
   }).then((result) => result !== null);
 }
 
-/** Close the menu once the item exists; a refusal leaves the form open with everything typed. */
-function closingOnSuccess(creation: Promise<boolean>, close: () => void): Promise<boolean> {
+/** A question is a Task filed where its Pending Questions story is, so it lands on that team's board. */
+function createQuestion(
+  context: ConsumerCreationContext,
+  story: TrackedWorkItem,
+  values: NewQuestionValues,
+): Promise<boolean> {
+  return createItem(context, "question", {
+    type: QUESTION_TYPE,
+    title: values.title,
+    tags: [],
+    areaPath: story.areaPath,
+    iterationPath: story.iterationPath,
+    description: values.description,
+    parentId: story.id,
+  }).then((result) => result !== null);
+}
+
+/**
+ * Close the menu and re-read the board once the item exists; a refusal leaves the form open with
+ * everything typed.
+ */
+function closingOnSuccess(
+  context: ConsumerCreationContext,
+  creation: Promise<boolean>,
+  close: () => void,
+): Promise<boolean> {
   return creation.then((created) => {
-    if (created) close();
+    if (created) {
+      context.onCreated();
+      close();
+    }
     return created;
   });
 }
@@ -222,13 +253,38 @@ export function buildAddRequestCommand(
             targetDateUnavailable:
               etaField === null ? `${type} has no ETA field configured.` : null,
             onSubmit: (values) =>
-              closingOnSuccess(
-                createRequest(context, consumer, type, values).then((created) => {
-                  if (created) context.onCreated();
-                  return created;
-                }),
-                close,
-              ),
+              closingOnSuccess(context, createRequest(context, consumer, type, values), close),
+            onCancel: close,
+          }),
+        ],
+      ),
+  };
+}
+
+/** "Add new question": a Task under the consumer's newest Pending Questions story. */
+export function buildAddQuestionCommand(
+  context: ConsumerCreationContext,
+  consumer: TrackedWorkItem,
+): ItemContextMenuCommand {
+  const label = "Add new question";
+  const story = latestPendingQuestionsStory(consumer);
+  if (story === null) return { label, disabledReason: NO_PENDING_QUESTIONS_STORY };
+  return {
+    label,
+    centerPanel: true,
+    panel: (close) =>
+      panelFor(
+        context.doc,
+        consumer,
+        { withTitle: true, titlePrefix: "Consumer", widthPx: FORM_WIDTH_PX },
+        [
+          renderNewQuestionForm({
+            doc: context.doc,
+            userDirectory: context.services.userDirectory,
+            attachmentUploader: context.services.attachmentUploader,
+            logger: context.services.logger,
+            onSubmit: (values) =>
+              closingOnSuccess(context, createQuestion(context, story, values), close),
             onCancel: close,
           }),
         ],
@@ -241,5 +297,8 @@ export function consumerCreationCommands(
   context: ConsumerCreationContext,
   consumer: TrackedWorkItem,
 ): ItemContextMenuCommand[] {
-  return [{ ...buildAddRequestCommand(context, consumer), separatorBefore: true }];
+  return [
+    { ...buildAddRequestCommand(context, consumer), separatorBefore: true },
+    buildAddQuestionCommand(context, consumer),
+  ];
 }

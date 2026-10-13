@@ -57,6 +57,11 @@ export interface CheckboxFilterOptions {
    */
   combining?: boolean;
   /**
+   * For values an item can hold only one of (a workflow state): hides the Any/All switch, because
+   * "all of" can never match and the ticked values are plainly alternatives. Needs `combining`.
+   */
+  exclusiveValues?: boolean;
+  /**
    * Makes the trigger clear the condition instead of opening the popup while anything is chosen.
    *
    * Opt-in, because it costs the reader the ability to ADJUST a live condition without rebuilding
@@ -314,6 +319,8 @@ interface PopupParams {
   classPrefix: string;
   searchPlaceholder: string | undefined;
   combining: boolean;
+  /** Whether the Any/All switch is offered; off when the values exclude each other. */
+  matchModeSwitch: boolean;
   /** Whether the heading carries its own Clear, or the trigger is the only way to empty it. */
   clearInPopup: boolean;
   /** Pick-one menu rows with no heading; see `CheckboxFilterOptions.singleSelect`. */
@@ -370,7 +377,7 @@ function renderHeading(params: PopupParams): [HTMLElement, HTMLButtonElement | n
   const title = doc.createElement("strong");
   title.textContent = params.label;
   heading.append(title);
-  if (params.combining) heading.append(renderMatchModeToggle(params));
+  if (params.combining && params.matchModeSwitch) heading.append(renderMatchModeToggle(params));
   if (!params.clearInPopup) return [heading, null];
 
   const clear = doc.createElement("button");
@@ -689,6 +696,7 @@ export function renderCheckboxFilter(
         label,
         classPrefix,
         combining,
+        matchModeSwitch: options.exclusiveValues !== true,
         // The trigger already empties the condition in one press, so repeating it here would be a
         // second control for one gesture.
         clearInPopup: options.clearOnTriggerWhenActive !== true,

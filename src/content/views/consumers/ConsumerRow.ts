@@ -19,10 +19,16 @@ import { renderItemNotesToggle } from "../project-tracking/notes/ItemNotesToggle
 import { createNotesPanelState, type NotesPanelState } from "../project-tracking/notes/NotesPanel";
 
 import { renderRequestStatusBadge } from "./RequestStatusBadge";
-import { consumerRequests, openConsumerQuestions } from "./pendingQuestions";
+import type { FixedStateMapping } from "./fixedStatuses";
+import {
+  consumerRequests,
+  openConsumerQuestions,
+  pendingQuestionsStories,
+} from "./pendingQuestions";
 import type { ConsumerContactEditor } from "./profile/ConsumerContactEditor";
 import { renderConsumerProfileLines, type ContactEditing } from "./profile/ConsumerProfileLines";
 import { readConsumerProfile } from "./profile/consumerProfile";
+import type { QuestionStateMapping } from "./questionStates";
 import type { RequestStateMapping } from "./requestStates";
 
 /** What one paint of the consumer list hands every row it builds. */
@@ -36,6 +42,10 @@ export interface ConsumerRowContext {
   requestStateMapping: RequestStateMapping;
   /** One request-status width for the whole board, so every badge lines up down the list. */
   requestStateWidthCh: number;
+  /** The binding's ADO state mapping for the fixed question statuses. */
+  questionStateMapping: QuestionStateMapping;
+  /** One question-status width for the whole board. */
+  questionStateWidthCh: number;
   now(): Date;
   policy: OrderingPolicy;
   /**
@@ -257,6 +267,25 @@ interface RequestParts {
   handle: HTMLElement;
 }
 
+/** The editable fixed-status badge, for either a request or a question. */
+function renderStatus(
+  item: TrackedWorkItem,
+  mapping: FixedStateMapping,
+  minWidthCh: number,
+  context: ConsumerRowContext,
+): HTMLElement {
+  return renderRequestStatusBadge({
+    doc: context.doc,
+    item,
+    mapping,
+    queue: context.queue,
+    transitions: context.services.stateTransitions,
+    logger: context.services.logger,
+    minWidthCh,
+    now: () => context.now(),
+    onCommitted: context.repaint,
+  });
+}
 /**
  * One feature request: Status, the `?` and Discussion toggles, and the title, with its panels
  * unfolding beneath. `lead` and `trail` are what tells the tree's request from the requests-only
@@ -272,17 +301,7 @@ function renderRequestParts(
   const line = renderTreeRowLine(doc, PREFIX, null);
   line.append(
     ...extras.lead,
-    renderRequestStatusBadge({
-      doc,
-      item: request,
-      mapping: context.requestStateMapping,
-      queue: context.queue,
-      transitions: context.services.stateTransitions,
-      logger: context.services.logger,
-      minWidthCh: context.requestStateWidthCh,
-      now: () => context.now(),
-      onCommitted: context.repaint,
-    }),
+    renderStatus(request, context.requestStateMapping, context.requestStateWidthCh, context),
     parts.describe,
     parts.notesToggle,
     parts.title,
@@ -391,13 +410,21 @@ function renderOwnTags(doc: Document, consumer: TrackedWorkItem): HTMLElement[] 
 }
 
 /** The tracked-question count stays distinct from ordinary tags without adding noise at zero. */
-function renderOpenQuestionsBadge(doc: Document, consumer: TrackedWorkItem): HTMLElement | null {
-  const count = openConsumerQuestions(consumer).length;
+function renderOpenQuestionsBadge(
+  doc: Document,
+  consumer: TrackedWorkItem,
+  context: ConsumerRowContext,
+  expanded: boolean,
+): HTMLElement | null {
+  const questions = openConsumerQuestions(consumer, context.questionStateMapping);
+  const count = questions.length;
   if (count === 0) return null;
-  const badge = doc.createElement("span");
+  const badge = doc.createElement("button");
+  badge.type = "button";
   badge.className = `${PREFIX}__open-questions`;
   badge.textContent = `Open questions: ${count}`;
-  badge.title = `${count} Pending Questions task${count === 1 ? "" : "s"} still open`;
+  badge.title = `${expanded ? "Hide" : "Show"} ${count} open question${count === 1 ? "" : "s"}`;
+  badge.setAttribute("aria-expanded", String(expanded));
   badge.style.cssText = [
     "flex:0 0 auto",
     "padding:1px 7px",
@@ -408,7 +435,18 @@ function renderOpenQuestionsBadge(doc: Document, consumer: TrackedWorkItem): HTM
     "font-size:11px",
     "font-weight:600",
     "line-height:18px",
+    "font-family:inherit",
+    "cursor:pointer",
   ].join(";");
+  badge.addEventListener("click", () => {
+    const storyIds = pendingQuestionsStories(consumer).map(({ id }) => id);
+    if (expanded) {
+      for (const id of storyIds) context.expandedIds.delete(id);
+    } else {
+      for (const id of storyIds) context.expandedIds.add(id);
+    }
+    context.repaint();
+  });
   return badge;
 }
 
@@ -421,6 +459,7 @@ function renderConsumerCard(
   consumer: TrackedWorkItem,
   context: ConsumerRowContext,
   requestCount: HTMLElement | null,
+  questionsExpanded: boolean,
   parts: ItemParts,
 ): HTMLElement {
   const { doc } = context;
@@ -431,7 +470,7 @@ function renderConsumerCard(
   head.className = `${PREFIX}__card-head`;
   head.style.cssText = "display:flex;align-items:center;gap:8px;min-width:0";
   if (requestCount === null) head.style.gridColumn = "2";
-  const questionsBadge = renderOpenQuestionsBadge(doc, consumer);
+  const questionsBadge = renderOpenQuestionsBadge(doc, consumer, context, questionsExpanded);
   head.append(
     parts.describe,
     parts.notesToggle,
@@ -452,6 +491,24 @@ function renderConsumerCard(
   return card;
 }
 
+/** One open question Task, with its own fixed question statuses rather than the request ones. */
+function renderQuestionRow(question: TrackedWorkItem, context: ConsumerRowContext): HTMLElement {
+  const parts = renderItemParts(question, context);
+  const line = renderTreeRowLine(context.doc, PREFIX, null);
+  line.append(
+    renderTreeTwisty(context.doc, PREFIX, question, null),
+    renderStatus(question, context.questionStateMapping, context.questionStateWidthCh, context),
+    parts.describe,
+    parts.notesToggle,
+    parts.title,
+  );
+  bindItemMenu(line, question, context);
+  const wrapper = renderTreeItemWrapper(context.doc, PREFIX, question, line);
+  wrapper.classList.add(`${PREFIX}__question`);
+  wrapper.append(parts.description, parts.notes);
+  return wrapper;
+}
+
 /**
  * One consumer and, while open, every request it asked for. Nothing here is draggable: the cards
  * show who asked for what, in a fixed order; requests are ranked in the requests-only list.
@@ -462,11 +519,15 @@ export function renderConsumerRow(
 ): HTMLElement {
   const requests = requestsOf(consumer, context);
   const expanded = requests.length > 0 && context.expandedIds.has(consumer.id);
+  const questionStoryIds = pendingQuestionsStories(consumer).map(({ id }) => id);
+  const questionsExpanded =
+    questionStoryIds.length > 0 && questionStoryIds.every((id) => context.expandedIds.has(id));
   const parts = renderItemParts(consumer, context);
   const card = renderConsumerCard(
     consumer,
     context,
     renderRequestCount(consumer, requests.length, context, expanded),
+    questionsExpanded,
     parts,
   );
   const wrapper = renderTreeItemWrapper(context.doc, PREFIX, consumer, card);
@@ -481,6 +542,14 @@ export function renderConsumerRow(
       children.append(renderRequestRow(request, context));
     }
     wrapper.append(children);
+  }
+  if (questionsExpanded) {
+    const questions = renderTreeChildren(context.doc, PREFIX);
+    questions.classList.add(`${PREFIX}__questions`);
+    for (const question of openConsumerQuestions(consumer, context.questionStateMapping)) {
+      questions.append(renderQuestionRow(question, context));
+    }
+    wrapper.append(questions);
   }
   return wrapper;
 }

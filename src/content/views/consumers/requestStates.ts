@@ -1,20 +1,20 @@
 import type { TrackedWorkItem } from "../../../common/ado/TrackedWorkItem";
-import { parseStateMapping, type StateMappingRow } from "../../../common/view-common/StateMapping";
 import type { ViewTypeProperty } from "../../../common/view-common/ViewType";
+
+import {
+  fixedStateMapping,
+  fixedStatesFor,
+  mappedFixedState,
+  widestFixedStateLabelLength,
+  type FixedStateMapping,
+  type FixedStateMappingEntry,
+  type FixedStatus,
+} from "./fixedStatuses";
 
 export type RequestStateId = "new" | "needsClarification" | "accepted" | "rejected" | "done";
 
-interface RequestStatus {
-  id: RequestStateId;
-  label: string;
-  /** The settings-table heading, which also says what the status means. */
-  heading: string;
-  /** StatusBadge palette position: gray, blue, yellow, green, or red. */
-  ordinal: number;
-}
-
 /** The fixed statuses, in the order the settings table and the status picker show them. */
-const REQUEST_STATUSES: readonly RequestStatus[] = [
+export const REQUEST_STATUSES: readonly FixedStatus<RequestStateId>[] = [
   { id: "new", label: "New", heading: "New (Untriaged)", ordinal: 0 },
   {
     id: "needsClarification",
@@ -48,80 +48,19 @@ export const requestStateMappingProperty: ViewTypeProperty = {
     "moved through the intermediary states its process requires.",
 };
 
-export interface RequestStateMappingEntry {
-  id: RequestStateId;
-  label: string;
-  ordinal: number;
-  adoStates: readonly string[];
-  /** The state written when this status is picked. */
-  primaryState: string;
-}
-
-/** The binding's per-type mapping; an opaque value read through the helpers below. */
-export interface RequestStateMapping {
-  readonly byType: ReadonlyMap<string, readonly RequestStateMappingEntry[]>;
-  /** The table's first row, for requests whose type has no row of its own. */
-  readonly fallback: readonly RequestStateMappingEntry[];
-}
-
-/**
- * A status whose cell is empty (or whose type has no row) uses the ADO state named exactly like it,
- * so every status always has a state to write and an unconfigured board still works.
- */
-function entriesFor(row: StateMappingRow | undefined): readonly RequestStateMappingEntry[] {
-  return REQUEST_STATUSES.map((status) => {
-    const mapped = row?.states[status.id] ?? [];
-    const adoStates = mapped.length > 0 ? mapped : [status.label];
-    return {
-      id: status.id,
-      label: status.label,
-      ordinal: status.ordinal,
-      adoStates,
-      primaryState: adoStates[0]!,
-    };
-  });
-}
-
-const UNMAPPED_TYPE_ENTRIES = entriesFor(undefined);
-
-function typeKey(type: string): string {
-  return type.trim().toLowerCase();
-}
+export type RequestStateMappingEntry = FixedStateMappingEntry<RequestStateId>;
+export type RequestStateMapping = FixedStateMapping<RequestStateId>;
 
 /** Resolve the binding's table into the per-type mapping the board reads. */
 export function requestStateMapping(properties: Record<string, string>): RequestStateMapping {
-  const rows = parseStateMapping(properties[REQUEST_STATE_MAPPING_KEY] ?? "");
-  return {
-    byType: new Map(rows.map((row) => [typeKey(row.type), entriesFor(row)])),
-    fallback: rows.length > 0 ? entriesFor(rows[0]) : UNMAPPED_TYPE_ENTRIES,
-  };
+  return fixedStateMapping(REQUEST_STATUSES, REQUEST_STATE_MAPPING_KEY, properties);
 }
 
-/**
- * The fixed statuses as they apply to this item's work item type. The table's row is named after
- * the type whose states it was picked from, but requests can be of any type (often User Stories), so
- * a request without a row of its own uses the table's row rather than the bare status labels, which
- * are rarely real ADO states.
- */
-export function requestStatesFor(
-  item: TrackedWorkItem,
-  mapping: RequestStateMapping,
-): readonly RequestStateMappingEntry[] {
-  return mapping.byType.get(typeKey(item.type)) ?? mapping.fallback;
-}
+/** Requests can be of any type; one without a row of its own uses the table's first row. */
+export const requestStatesFor = fixedStatesFor<RequestStateId>;
 
 /** The fixed Consumers status an item's raw ADO state maps to, or null when it is unmapped. */
-export function mappedRequestState(
-  item: TrackedWorkItem,
-  mapping: RequestStateMapping,
-): RequestStateMappingEntry | null {
-  const raw = item.state.trim().toLowerCase();
-  return (
-    requestStatesFor(item, mapping).find((state) =>
-      state.adoStates.some((candidate) => candidate.trim().toLowerCase() === raw),
-    ) ?? null
-  );
-}
+export const mappedRequestState = mappedFixedState<RequestStateId>;
 
 export function requestHasState(
   item: TrackedWorkItem,
@@ -131,15 +70,45 @@ export function requestHasState(
   return mappedRequestState(item, mapping)?.id === state;
 }
 
-/** One width for every request badge, including an unmapped raw state that remains visible. */
-export function widestRequestStateLabelLength(
-  requests: readonly TrackedWorkItem[],
-  mapping: RequestStateMapping,
-): number {
-  return Math.max(
-    ...REQUEST_STATUSES.map(({ label }) => label.length),
-    ...requests.map(
-      (request) => mappedRequestState(request, mapping)?.label.length ?? request.state.length,
-    ),
-  );
+/**
+ * The request-state condition the requests list can be narrowed by. A request has exactly one
+ * state, so `required` lists alternatives (any one qualifies) rather than a set to hold together.
+ */
+export interface RequestStateCondition {
+  required: ReadonlySet<RequestStateId>;
+  excluded: ReadonlySet<RequestStateId>;
 }
+
+export const NO_REQUEST_STATE_CONDITION: RequestStateCondition = {
+  required: new Set(),
+  excluded: new Set(),
+};
+
+export function isRequestStateConditionActive(condition: RequestStateCondition): boolean {
+  return condition.required.size > 0 || condition.excluded.size > 0;
+}
+
+/**
+ * Whether a request passes the condition. A request whose raw state maps to no status has no
+ * state to require, so it is hidden by any required state but is not excluded by an exclusion.
+ */
+export function matchesRequestStateCondition(
+  item: TrackedWorkItem,
+  condition: RequestStateCondition,
+  mapping: RequestStateMapping,
+): boolean {
+  const state = mappedRequestState(item, mapping)?.id ?? null;
+  if (condition.required.size > 0 && (state === null || !condition.required.has(state))) {
+    return false;
+  }
+  return state === null || !condition.excluded.has(state);
+}
+
+/** The condition in one log-readable phrase. */
+export function describeRequestStateCondition(condition: RequestStateCondition): string {
+  if (!isRequestStateConditionActive(condition)) return "none";
+  return `any of [${[...condition.required].join(",")}], none of [${[...condition.excluded].join(",")}]`;
+}
+
+/** One width for every request badge, including an unmapped raw state that remains visible. */
+export const widestRequestStateLabelLength = widestFixedStateLabelLength<RequestStateId>;

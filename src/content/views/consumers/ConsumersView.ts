@@ -62,6 +62,7 @@ import { renderConsumerConditionFilter, type ConsumerCondition } from "./Consume
 import { renderConsumerFilter } from "./ConsumerFilter";
 import { renderConsumerRow, renderRequestOnlyRow, type ConsumerRowContext } from "./ConsumerRow";
 import { renderConsumersHeader } from "./ConsumersHeader";
+import { renderRequestStateFilter } from "./RequestStateFilter";
 import {
   consumersSearchWithAreaPaths,
   consumersSearchWithConsumerIds,
@@ -75,16 +76,31 @@ import {
   consumerCreationCommands,
   type ConsumerCreationContext,
 } from "./creation/creationCommands";
-import { consumerRequests, hasActivePendingQuestions } from "./pendingQuestions";
+import {
+  consumerRequests,
+  hasActivePendingQuestions,
+  openConsumerQuestions,
+  pendingQuestionsStories,
+} from "./pendingQuestions";
 import {
   createConsumerContactEditor,
   type ConsumerContactEditor,
 } from "./profile/ConsumerContactEditor";
 import { contactRolesIn } from "./profile/consumerProfile";
 import {
+  questionStateMapping,
+  widestQuestionStateLabelLength,
+  type QuestionStateMapping,
+} from "./questionStates";
+import {
+  describeRequestStateCondition,
+  isRequestStateConditionActive,
+  matchesRequestStateCondition,
+  NO_REQUEST_STATE_CONDITION,
   requestHasState,
   requestStateMapping,
   widestRequestStateLabelLength,
+  type RequestStateCondition,
   type RequestStateMapping,
 } from "./requestStates";
 import { collapseStep, expandStep } from "./treeExpansion";
@@ -114,6 +130,8 @@ interface ConsumersSession {
   showConsumers: boolean;
   /** The one right-side condition narrowing consumers; "all" keeps every other filter match. */
   consumerCondition: ConsumerCondition;
+  /** The requests list's state condition; only read, and only offered, outside consumers mode. */
+  requestStateCondition: RequestStateCondition;
 }
 
 /** Why a query cannot be drawn as consumers, phrased for the empty-state panel. */
@@ -143,6 +161,7 @@ interface Board {
   configuredAreaPaths: readonly string[];
   /** The binding's per-type ADO states mapped onto the four fixed request statuses. */
   requestStates: RequestStateMapping;
+  questionStates: QuestionStateMapping;
   queue: WorkItemWriteQueue;
   contactEditor: ConsumerContactEditor;
   contextMenu: ItemContextMenu;
@@ -226,6 +245,22 @@ function keepsRequest(board: Board, request: TrackedWorkItem): boolean {
 }
 
 /**
+ * Whether the requests list (or, in consumers mode, the consumer's open list) draws a request: the
+ * area filters plus, in the requests-only list alone, the By state condition.
+ */
+function listsRequest(board: Board, request: TrackedWorkItem): boolean {
+  return (
+    keepsRequest(board, request) &&
+    (board.session.showConsumers ||
+      matchesRequestStateCondition(
+        request,
+        board.session.requestStateCondition,
+        board.requestStates,
+      ))
+  );
+}
+
+/**
  * The consumers this paint draws, in the board's order.
  *
  * Consumers are never narrowed by area: an area path says where work is filed, not who asked for
@@ -251,7 +286,8 @@ function matchesConsumerCondition(board: Board, consumer: TrackedWorkItem): bool
   const condition = board.session.consumerCondition;
   // The By state filter only exists in consumers mode; the requests list never answers to it.
   if (condition === "all" || !board.session.showConsumers) return true;
-  if (condition === "waitingForAnswers") return hasActivePendingQuestions(consumer);
+  if (condition === "waitingForAnswers")
+    return hasActivePendingQuestions(consumer, board.questionStates);
   const state = condition === "untriagedRequests" ? "new" : "accepted";
   return consumerRequests(consumer)
     .filter((request) => keepsRequest(board, request))
@@ -373,6 +409,23 @@ function creationContext(
   };
 }
 
+/** One badge width per status kind, so every request (and every question) badge lines up. */
+function statusWidths(
+  board: Board,
+  grouping: TrackedWorkItem,
+): { requestStateWidthCh: number; questionStateWidthCh: number } {
+  const questions = grouping.children.flatMap((consumer) =>
+    openConsumerQuestions(consumer, board.questionStates),
+  );
+  return {
+    requestStateWidthCh: widestRequestStateLabelLength(
+      grouping.children.flatMap(consumerRequests),
+      board.requestStates,
+    ),
+    questionStateWidthCh: widestQuestionStateLabelLength(questions, board.questionStates),
+  };
+}
+
 /** The row context for one paint: the session's live state plus what the filters keep. */
 function createRowContext(
   board: Board,
@@ -387,10 +440,8 @@ function createRowContext(
     queue: board.queue,
     services: context.services,
     requestStateMapping: board.requestStates,
-    requestStateWidthCh: widestRequestStateLabelLength(
-      grouping.children.flatMap(consumerRequests),
-      board.requestStates,
-    ),
+    ...statusWidths(board, grouping),
+    questionStateMapping: board.questionStates,
     now: () => context.services.now(),
     policy: session.policy,
     expandedIds: session.expandedIds,
@@ -508,7 +559,7 @@ function shownRequests(board: Board, consumers: readonly TrackedWorkItem[]): Sho
   return orderTrackedItems(
     consumers.flatMap((consumer) =>
       consumerRequests(consumer)
-        .filter((request) => keepsRequest(board, request))
+        .filter((request) => listsRequest(board, request))
         .map((request) => ({ request, consumer })),
     ),
     (entry) => entry.request,
@@ -528,6 +579,12 @@ function renderRequestsList(
   const { doc } = board.context;
   const requests = shownRequests(board, consumers);
   if (requests.length === 0) {
+    if (isRequestStateConditionActive(board.session.requestStateCondition)) {
+      return renderEmptyState(doc, {
+        message: "No feature request matches the By state filter.",
+        hint: "Clear By state, or change the other header filters, to see more requests.",
+      });
+    }
     // Area filters are told apart from a board that simply has no requests, since they hid them.
     const areaFiltered =
       board.configuredAreaPaths.length > 0 || board.session.selectedAreaPaths.size > 0;
@@ -568,7 +625,8 @@ function describeBoard(
     `selectedAreaPaths=${board.session.selectedAreaPaths.size}, ` +
     `selectedConsumers=${board.session.selectedConsumerIds.size}, ` +
     `tags=${describeTagCondition(board.session.tags)}, ` +
-    `consumerCondition=${board.session.consumerCondition}.`
+    `consumerCondition=${board.session.consumerCondition}, ` +
+    `requestStates=${describeRequestStateCondition(board.session.requestStateCondition)}.`
   );
 }
 /** The list for one paint, plus the line describing it for the diagnostics log. */
@@ -614,9 +672,11 @@ function createBoard(
       // Replaced by the reader's saved choice before the first paint; see `applySavedMode`.
       showConsumers: false,
       consumerCondition: "all",
+      requestStateCondition: NO_REQUEST_STATE_CONDITION,
     },
     configuredAreaPaths: requestAreaPaths(context.properties),
     requestStates: requestStateMapping(context.properties),
+    questionStates: questionStateMapping(context.properties),
     queue,
     contactEditor: createConsumerContactEditor({
       queue,
@@ -660,8 +720,8 @@ function stepExpansion(
   if (loaded.grouping === null) return;
   const { session } = board;
   const consumers = shownConsumers(board, loaded.grouping);
-  // Requests are always leaves here, so the consumers with a request are the tree's only level —
-  // and a requests-only list has no tree at all, leaving `−` only its panels to close.
+  // Question tasks are aggregated beneath each consumer rather than exposing their storage stories,
+  // so those story ids form the second expansion level without becoming visible rows themselves.
   const levels = session.showConsumers
     ? [
         consumers
@@ -669,6 +729,7 @@ function stepExpansion(
             consumerRequests(consumer).some((request) => keepsRequest(board, request)),
           )
           .map(({ id }) => id),
+        consumers.flatMap((consumer) => pendingQuestionsStories(consumer).map(({ id }) => id)),
       ]
     : [];
   const step =
@@ -689,10 +750,15 @@ function shownItemIds(board: Board, consumers: readonly TrackedWorkItem[]): numb
   const { session } = board;
   return consumers.flatMap((consumer) => {
     const requestIds = consumerRequests(consumer)
-      .filter((request) => keepsRequest(board, request))
+      .filter((request) => listsRequest(board, request))
       .map(({ id }) => id);
     if (!session.showConsumers) return requestIds;
-    return session.expandedIds.has(consumer.id) ? [consumer.id, ...requestIds] : [consumer.id];
+    const shownRequests = session.expandedIds.has(consumer.id) ? requestIds : [];
+    const stories = pendingQuestionsStories(consumer);
+    const shownQuestions = stories.every(({ id }) => session.expandedIds.has(id))
+      ? openConsumerQuestions(consumer, board.questionStates).map(({ id }) => id)
+      : [];
+    return [consumer.id, ...shownRequests, ...shownQuestions];
   });
 }
 
@@ -794,7 +860,15 @@ function renderHeaderFilters(board: Board, loaded: LoadedConsumers): HTMLElement
             },
           }),
         ]
-      : []),
+      : [
+          renderRequestStateFilter(context.doc, {
+            condition: session.requestStateCondition,
+            onChange: (condition) => {
+              session.requestStateCondition = condition;
+              changed(`request by-state filter: ${describeRequestStateCondition(condition)}`);
+            },
+          }),
+        ]),
     renderTagConditionFilter(context.doc, {
       tags: vocabulary,
       condition: session.tags,

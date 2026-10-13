@@ -3,12 +3,17 @@ import { describe, expect, it } from "vitest";
 import type { TrackedWorkItem } from "../../../common/ado/TrackedWorkItem";
 
 import {
+  describeRequestStateCondition,
+  isRequestStateConditionActive,
   mappedRequestState,
+  matchesRequestStateCondition,
+  NO_REQUEST_STATE_CONDITION,
   requestHasState,
   requestStateMapping,
   requestStateMappingProperty,
   requestStatesFor,
   widestRequestStateLabelLength,
+  type RequestStateId,
 } from "./requestStates";
 
 function item(state: string, type = "User Story"): TrackedWorkItem {
@@ -120,6 +125,50 @@ describe("requestStateMapping", () => {
     );
     expect(widestRequestStateLabelLength([item("New")], mapping)).toBe(
       "Needs Clarification".length,
+    );
+  });
+});
+
+describe("matchesRequestStateCondition", () => {
+  const mapping = requestStateMapping({});
+  const condition = (required: RequestStateId[], excluded: RequestStateId[] = []) => ({
+    required: new Set(required),
+    excluded: new Set(excluded),
+  });
+  const passes = (state: string, ...args: Parameters<typeof condition>): boolean =>
+    matchesRequestStateCondition(item(state), condition(...args), mapping);
+
+  it("keeps everything when nothing is chosen", () => {
+    expect(isRequestStateConditionActive(NO_REQUEST_STATE_CONDITION)).toBe(false);
+    expect(passes("Done", [])).toBe(true);
+    expect(passes("Custom review", [])).toBe(true);
+  });
+
+  it("keeps a request in any one required state", () => {
+    expect(passes("New", ["new", "accepted"])).toBe(true);
+    expect(passes("Accepted", ["new", "accepted"])).toBe(true);
+    expect(passes("Done", ["new", "accepted"])).toBe(false);
+  });
+
+  it("drops an excluded state and keeps the rest", () => {
+    expect(passes("Rejected", [], ["rejected"])).toBe(false);
+    expect(passes("New", [], ["rejected"])).toBe(true);
+  });
+
+  it("combines required and excluded states", () => {
+    expect(passes("New", ["new", "accepted"], ["accepted"])).toBe(true);
+    expect(passes("Accepted", ["new", "accepted"], ["accepted"])).toBe(false);
+  });
+
+  it("hides an unmapped state from a required condition but not from an exclusion", () => {
+    expect(passes("Custom review", ["new"])).toBe(false);
+    expect(passes("Custom review", [], ["new"])).toBe(true);
+  });
+
+  it("describes the condition for the diagnostics log", () => {
+    expect(describeRequestStateCondition(NO_REQUEST_STATE_CONDITION)).toBe("none");
+    expect(describeRequestStateCondition(condition(["new", "done"], ["rejected"]))).toBe(
+      "any of [new,done], none of [rejected]",
     );
   });
 });

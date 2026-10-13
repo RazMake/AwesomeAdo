@@ -155,6 +155,14 @@ describe("renderCheckboxFilter - combining", () => {
     expect(handle.selection()).toEqual({ included: [], excluded: [], matchAll: false });
   });
 
+  it("hides the match-mode switch but keeps the exclusions for mutually exclusive values", () => {
+    const { handle } = mount({ combining: true, exclusiveValues: true });
+    open(handle);
+
+    expect(handle.element.querySelector(`.${PREFIX}__match-mode`)).toBeNull();
+    expect(excludeToggles(handle)).toHaveLength(2);
+  });
+
   it("ignores a seeded exclusion and match mode the caller did not enable combining for", () => {
     const { handle } = mount({ excluded: ["api"], matchAll: true });
 

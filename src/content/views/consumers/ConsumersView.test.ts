@@ -867,7 +867,7 @@ describe("consumersView - configured area paths", () => {
 
     const lines = info.mock.calls.map(([line]) => line as string);
     expect(lines.filter((line) => line.startsWith("Consumers View showing"))).toEqual([
-      "Consumers View showing 3 of 3 consumer(s), with 2 feature request(s): mode=consumers, configuredAreaPaths=1, selectedAreaPaths=0, selectedConsumers=0, tags=none, consumerCondition=all.",
+      "Consumers View showing 3 of 3 consumer(s), with 2 feature request(s): mode=consumers, configuredAreaPaths=1, selectedAreaPaths=0, selectedConsumers=0, tags=none, consumerCondition=all, requestStates=none.",
     ]);
   });
 });
@@ -1135,7 +1135,7 @@ const pickOrdering = (root: HTMLElement, label: string): void => {
 const IMPORTANCE_ORDERED_REQUESTS = ["Export to CSV", "Dark mode", "Single sign-on", "Audit log"];
 
 const BOARD_LINE_TAIL =
-  "configuredAreaPaths=0, selectedAreaPaths=0, selectedConsumers=0, tags=none, consumerCondition=all.";
+  "configuredAreaPaths=0, selectedAreaPaths=0, selectedConsumers=0, tags=none, consumerCondition=all, requestStates=none.";
 
 describe("consumersView - the requests list by default", () => {
   it("opens on the requests list with View consumers beside + and −, and no By state filter", async () => {
@@ -1323,6 +1323,71 @@ describe("consumersView - pending question request exclusion", () => {
       ),
     ).toEqual(["Open questions: 2"]);
     expect(consumers.textContent).not.toContain("Open questions: 0");
+  });
+});
+
+describe("consumersView - expanding pending questions", () => {
+  it("toggles every open question from the badge and shows a hand cursor", async () => {
+    const root = await renderOpenBoard(
+      contextWith({
+        loadTree: async () => ({
+          isTreeQuery: true,
+          roots: pendingQuestionsRoots(),
+          error: null,
+        }),
+      }),
+    );
+    const badge = root.querySelector<HTMLButtonElement>(".awesomeado-consumers__open-questions")!;
+
+    expect(badge.style.cursor).toBe("pointer");
+    expect(badge.getAttribute("aria-expanded")).toBe("false");
+    expect(root.querySelector(".awesomeado-consumers__questions")).toBeNull();
+
+    badge.click();
+    expect(
+      root
+        .querySelector<HTMLButtonElement>(".awesomeado-consumers__open-questions")!
+        .getAttribute("aria-expanded"),
+    ).toBe("true");
+    expect(
+      [...root.querySelectorAll(".awesomeado-consumers__question")].map(
+        (row) => row.querySelector(".awesomeado-consumers__title")?.textContent,
+      ),
+    ).toEqual(["Who owns export?", "Who owns import?"]);
+    expect(root.textContent).not.toContain("Answered question");
+    expect(
+      root.querySelectorAll(".awesomeado-consumers__question .awesomeado-status__badge"),
+    ).toHaveLength(2);
+
+    root.querySelector<HTMLButtonElement>(".awesomeado-consumers__open-questions")!.click();
+    expect(root.querySelector(".awesomeado-consumers__questions")).toBeNull();
+  });
+
+  it("opens and closes question lists as the second header tree level", async () => {
+    const info = vi.fn();
+    const root = await renderBoard(
+      contextWith({
+        loadTree: async () => ({
+          isTreeQuery: true,
+          roots: pendingQuestionsRoots(),
+          error: null,
+        }),
+        logger: { info, error: () => undefined },
+      }),
+    );
+    const expand = (): void =>
+      root.querySelector<HTMLButtonElement>(".awesomeado-consumers__expand-all")!.click();
+    const collapse = (): void =>
+      root.querySelector<HTMLButtonElement>(".awesomeado-consumers__collapse-all")!.click();
+
+    expand();
+    expect(root.querySelectorAll(".awesomeado-consumers__question")).toHaveLength(0);
+    expand();
+    expect(root.querySelectorAll(".awesomeado-consumers__question")).toHaveLength(2);
+    collapse();
+    expect(root.querySelectorAll(".awesomeado-consumers__question")).toHaveLength(0);
+    expect(info).toHaveBeenCalledWith("Consumers View expand: tree level 2.");
+    expect(info).toHaveBeenCalledWith("Consumers View collapse: tree level 2.");
   });
 });
 
@@ -1612,6 +1677,109 @@ const tickTag = (root: HTMLElement, tag: string): void => {
     .click();
 };
 
+const requestStateTrigger = (root: HTMLElement): HTMLButtonElement =>
+  root.querySelector<HTMLButtonElement>(".awesomeado-request-state-filter__trigger")!;
+
+const requestStateRow = (value: string): HTMLElement =>
+  [...document.querySelectorAll<HTMLInputElement>(".awesomeado-request-state-filter__option input")]
+    .find((input) => input.value === value)!
+    .closest<HTMLElement>(".awesomeado-request-state-filter__option")!;
+
+/** Opens the filter when it is closed, then ticks a state or marks it NOT wanted. */
+const chooseRequestState = (root: HTMLElement, value: string, mode: "tick" | "not"): void => {
+  if (document.querySelector(".awesomeado-request-state-filter__popup") === null) {
+    requestStateTrigger(root).click();
+  }
+  const row = requestStateRow(value);
+  if (mode === "tick") row.querySelector<HTMLInputElement>("input")!.click();
+  else row.querySelector<HTMLButtonElement>(".awesomeado-request-state-filter__exclude")!.click();
+};
+
+describe("consumersView - requests By state filter", () => {
+  it("is offered on the requests list only, with a NOT button per state and no Any/All switch", async () => {
+    const root = await renderBoard(requestsContext());
+
+    expect(requestStateTrigger(root).textContent).toContain("By state");
+    expect(requestStateTrigger(root).closest(".awesomeado-consumers__filters")).not.toBeNull();
+    requestStateTrigger(root).click();
+    expect(
+      [...document.querySelectorAll(".awesomeado-request-state-filter__option")].map(
+        (row) => row.querySelector("input")!.value,
+      ),
+    ).toEqual(["new", "needsClarification", "accepted", "rejected", "done"]);
+    expect(document.querySelectorAll(".awesomeado-request-state-filter__exclude")).toHaveLength(5);
+    expect(document.querySelector(".awesomeado-request-state-filter__match-mode")).toBeNull();
+
+    showConsumersToggle(root).click();
+    expect(root.querySelector(".awesomeado-request-state-filter__trigger")).toBeNull();
+    expect(consumerConditionTrigger(root).textContent).toContain("By state");
+  });
+
+  it("keeps only the requests in any ticked state, live, and logs the condition", async () => {
+    const info = vi.fn();
+    const root = await renderBoard(requestsContext({ logger: { info, error: () => undefined } }));
+
+    chooseRequestState(root, "new", "tick");
+    expect(titles(root)).toEqual(["Export to CSV"]);
+    chooseRequestState(root, "accepted", "tick");
+
+    expect(titles(root)).toEqual(["Export to CSV", "Single sign-on", "Audit log"]);
+    expect(document.querySelector(".awesomeado-request-state-filter__popup")).not.toBeNull();
+    expect(info).toHaveBeenCalledWith(
+      "Consumers View request by-state filter: any of [new,accepted], none of [].",
+    );
+    expect(boardLines(info).at(-1)).toContain("requestStates=any of [new,accepted], none of []");
+  });
+
+  it("drops the states marked NOT and keeps the others", async () => {
+    const root = await renderBoard(requestsContext());
+
+    chooseRequestState(root, "accepted", "not");
+
+    expect(titles(root)).toEqual(["Export to CSV", "Dark mode"]);
+    expect(requestStateTrigger(root).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("combines ticked states with a NOT state", async () => {
+    const root = await renderBoard(requestsContext());
+
+    chooseRequestState(root, "new", "tick");
+    chooseRequestState(root, "accepted", "tick");
+    chooseRequestState(root, "accepted", "not");
+
+    expect(titles(root)).toEqual(["Export to CSV"]);
+  });
+
+  it("clears the condition in one press of the trigger", async () => {
+    const root = await renderBoard(requestsContext());
+    chooseRequestState(root, "done", "tick");
+    expect(emptyMessage(root)).toContain("No feature request matches the By state filter.");
+
+    requestStateTrigger(root).click();
+    requestStateTrigger(root).click();
+
+    expect(titles(root)).toEqual(IMPORTANCE_ORDERED_REQUESTS);
+  });
+
+  it("leaves the consumer cards and their request counts alone", async () => {
+    const root = await renderBoard(requestsContext());
+    chooseRequestState(root, "rejected", "not");
+
+    showConsumersToggle(root).click();
+
+    expect(consumerTitles(root)).toEqual(["Contoso", "Fabrikam", "Northwind"]);
+    expect(requestCounts(root)).toEqual(["2", "2", null]);
+  });
+
+  it("limits what the header − button has to close to the listed requests", async () => {
+    const root = await renderBoard(requestsContext());
+    chooseRequestState(root, "new", "tick");
+    root.querySelector<HTMLButtonElement>(".awesomeado-consumers__collapse-all")!.click();
+
+    expect(titles(root)).toEqual(["Export to CSV"]);
+  });
+});
+
 describe("consumersView - tag filter", () => {
   it("offers only the consumers' own tags", async () => {
     const root = await renderBoard(requestsContext(taggedServices()));
@@ -1889,12 +2057,14 @@ describe("consumersView - creation commands", () => {
       new MouseEvent("contextmenu", { bubbles: true, cancelable: true }),
     );
     expect(menuLabels(root)).toContain("Add new request");
+    expect(menuLabels(root)).toContain("Add new question");
     expect(menuLabels(root)).not.toContain("Add new consumer");
 
     titleOf(root, "Audit log")
       .closest(".awesomeado-consumers__row")!
       .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
     expect(menuLabels(root)).not.toContain("Add new request");
+    expect(menuLabels(root)).not.toContain("Add new question");
     expect(menuLabels(root)).not.toContain("Add new consumer");
   });
 
@@ -1937,6 +2107,7 @@ describe("consumersView - creation commands", () => {
     runCommand(root, "Add new request");
     const form = root.querySelector<HTMLElement>(".awesomeado-new-request")!;
     typeInto(form, ".awesomeado-new-request__title", "Bulk export");
+    typeInto(form, ".awesomeado-new-request__description", "Export all customer records.");
     typeInto(form, ".awesomeado-new-request__target-date", "2026-09-01");
     form.querySelector<HTMLButtonElement>(".awesomeado-new-request__add")!.click();
 
@@ -1947,7 +2118,7 @@ describe("consumersView - creation commands", () => {
       tags: [],
       areaPath: TEAM_A,
       iterationPath: null,
-      description: "",
+      description: "Export all customer records.",
       parentId: 10,
       extraFields: { [ETA_FIELD]: "2026-09-01T12:00:00Z" },
     });

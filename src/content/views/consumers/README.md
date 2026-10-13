@@ -29,6 +29,9 @@ renderer.
     table has a row named after its own type. An
     empty cell writes the ADO state named exactly like the request state. Every request state is
     always offered. The binding property is included in shared configuration.
+  - `questionStateMapping` (state-mapping table, optional, labelled "Question states") — the same
+    table with one fixed **Task** row, mapping question Tasks onto **Open** (gray), **In Progress**
+    (blue), **Answered** (green), and **Removed** (red).
 
   `orderingPolicyOf(properties)`, `requestAreaPaths(properties)`, and
   `requestStateMapping(properties)` read those settings; use them instead of reading
@@ -41,11 +44,17 @@ mapping)` resolve one request through its own type's row.
   [view header](../../../common/view-common/control/ViewHeader/README.md): folder breadcrumbs, the
   write-queue status, version, and ordering glyph on top; the root item's title in its ADO type
   color, the staged `+` / `−` buttons with the **View consumers** / **View requests** button and
-  **Add Consumer** button beside them, then the By name, By state (consumers mode only), Tags, and
+  **Add Consumer** button beside them, then the By name, By state (a consumer condition in
+  consumers mode; a request-state condition in requests mode), Tags, and
   Area filters plus Refresh
   below. The ordering glyph offers only the board's two orderings.
 - `ConsumerConditionFilter.ts` → `renderConsumerConditionFilter(doc, options)` — the **By state**
   pick-one filter for consumers with open questions, untriaged requests, or committed requests.
+- `RequestStateFilter.ts` → `renderRequestStateFilter(doc, { condition, onChange })` — the requests
+  list's **By state** multi-select over the five fixed request states, each with a **NOT** button.
+  Ticked states are alternatives (a request has one state); excluded states are removed;
+  `requestStates.ts` holds `matchesRequestStateCondition`. The condition is session-only, applies
+  to the requests list alone, and an unmapped raw state fails a ticked condition but survives a NOT.
 - `requestStates.ts` → resolves the binding's ADO state mappings into the fixed request state
   model: **New** (gray), **Needs Clarification** (yellow), **Accepted** (blue), **Rejected**
   (red), and **Done** (green).
@@ -72,12 +81,13 @@ consumer, context)`, and `requestsOf(consumer, context)` — one consumer and, w
   and retain the existing spelling. Request menus do not offer consumer tagging.
 - `profile/` → parses a consumer's description, draws its identity and Contacts list, and writes
   contact edits back into it. See its [README](./profile/README.md).
-- `creation/` → the **Add new consumer** / **Add new request** menu commands, the header's
-  **Add Consumer** button, and their forms. See
+- `creation/` → the **Add new consumer** / **Add new request** / **Add new question** menu
+  commands, the header's **Add Consumer** button, and their forms. See
   its [README](./creation/README.md).
 - `pendingQuestions.ts` → the `PendingQuestions` tag, the standard Pending Questions title and
   description, `consumerRequests(consumer)` (which excludes every tagged User Story child),
-  `openConsumerQuestions(consumer)` (active Task children aggregated across those stories), and
+  `openConsumerQuestions(consumer)` (active Task children aggregated across those stories),
+  `latestPendingQuestionsStory(consumer)` (the highest-id story, where new questions go), and
   `hasActivePendingQuestions(consumer)`.
 - `consumersUrlPreferences.ts` → `readConsumersUrlAreaPaths(search)` /
   `consumersSearchWithAreaPaths(search, paths)` and `readConsumersUrlConsumerIds(search)` /
@@ -125,6 +135,9 @@ consumer, context)`, and `requestsOf(consumer, context)` — one consumer and, w
   state it stopped in and the failure is logged. If the type's transitions cannot be read, the
   target is written directly. An unmapped raw state remains visible with neutral styling so
   configuration mistakes do not hide status information.
+- **Question states.** Open question rows show the same editable status badge, using the binding's
+  question table. Mapped **Answered** and **Removed** questions are no longer open; an unmapped
+  state counts as closed only when it is Closed, Resolved, or Removed.
 - **Pending Questions storage.** Every direct User Story child carrying the `PendingQuestions` tag
   is question storage, not a feature request. All such stories and their Task children are omitted
   from both view modes, request counts, ordering, and request-creation defaults; Test Case / Shared
@@ -177,7 +190,8 @@ consumer, context)`, and `requestsOf(consumer, context)` — one consumer and, w
   whole record. The consumer's own Azure DevOps tags follow its name as pills; requests never show
   theirs.
 - **Adding consumers and requests.** Right-clicking the header title offers **Add new consumer**;
-  right-clicking a consumer card offers **Add new request**. The header's
+  right-clicking a consumer card offers **Add new request** and, right below it, **Add new
+  question** (disabled, saying why, when the consumer has no Pending Questions story). The header's
   **Add Consumer** button, beside **Show consumers**, opens the same consumer form beneath itself;
   it is disabled, saying why, until the consumer cards are shown. Each form is
   centered (see [`creation/`](./creation/README.md)) and, once Azure DevOps has created the

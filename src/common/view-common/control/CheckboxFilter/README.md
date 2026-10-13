@@ -29,6 +29,8 @@ and empty-list behaviour cannot drift apart.
   - `matchAll` — start the required values AND-ed rather than OR-ed.
   - `combining` — adds the per-row **not** toggle and the `Any`/`All` switch. Off by default, so
     `excluded` and `matchAll` are ignored unless it is set.
+  - `exclusiveValues` — with `combining`, hides the `Any`/`All` switch for values an item can hold
+    only one of (a workflow state), where the ticked values are plainly alternatives.
   - `clearOnTriggerWhenActive` — makes the trigger clear the condition rather than open the popup
     while anything is chosen, and drops the popup's own **Clear**. Off by default: it costs the
     reader the ability to adjust a live condition without rebuilding it.

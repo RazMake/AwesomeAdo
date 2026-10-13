@@ -1,7 +1,8 @@
 # `content/views/consumers/creation`
 
-The Consumers View's **Add new consumer** and **Add new request** commands: the right-click menu
-entries, the forms they open, and how the answers become Azure DevOps work items.
+The Consumers View's **Add new consumer**, **Add new request** and **Add new question** commands:
+the right-click menu entries, the forms they open, and how the answers become Azure DevOps work
+items.
 
 ## Public API
 
@@ -12,9 +13,11 @@ entries, the forms they open, and how the answers become Azure DevOps work items
   - `buildAddConsumerCommand(context)` — **Add new consumer**: a consumer under the grouping item.
     Used on the header title's menu.
   - `buildAddRequestCommand(context, consumer)` — **Add new request**: a request under `consumer`.
-  - `consumerCreationCommands(context, consumer)` — **Add new request** for a consumer card's
-    menu, opening a new menu group. New consumers are added from the title menu or the header's
-    **Add Consumer** button, never from a consumer.
+  - `buildAddQuestionCommand(context, consumer)` — **Add new question**: a Task under the
+    consumer's newest (highest-id) Pending Questions story; disabled, saying why, when it has none.
+  - `consumerCreationCommands(context, consumer)` — **Add new request** then **Add new question**
+    for a consumer card's menu, opening a new menu group. New consumers are added from the title
+    menu or the header's **Add Consumer** button, never from a consumer.
 
   Each opens a centered panel naming the parent it creates under. A successful creation closes the
   menu and calls `onCreated`; a refused one keeps the form, with everything typed, and says so. A
@@ -34,8 +37,14 @@ openPanel })`: the header's **Add Consumer** button, opening the **Add new consu
   states, and while a detail or contact is only half filled. `clientIdProblem(clientId, known)`
   states why a ClientId cannot be used.
 - `NewRequestForm.ts` → `renderNewRequestForm(options)`: Title, Description (the shared Markdown
-  field, with mentions and pasted images), and Target date. The date is disabled, saying why, when
-  the request type has no configured ETA field.
+  field, with mentions and pasted images), and Target date. Every request requires a non-blank
+  description; the form says so in place without attempting creation. The date is disabled, saying
+  why, when the request type has no configured ETA field.
+- `NewQuestionForm.ts` → `renderNewQuestionForm(options)`: Title ("Type a short version of the
+  question") and an optional Markdown Description ("Add details if any to help the team answer the
+  question").
+- `TitledDescriptionForm.ts` → `renderTitledDescriptionForm(options)`: the shared Title + Markdown
+  Description + Add / Cancel form both of the above build on, with optional extra rows.
 - `ContactNameField.ts` → `renderContactNameField(options)`: a contact's name, looked up in the
   Azure DevOps directory once typing pauses (`CONTACT_LOOKUP_DELAY_MS`). One match resolves at once;
   several are listed beneath the box to pick from.
@@ -64,6 +73,8 @@ openPanel })`: the header's **Add Consumer** button, opening the **Add new consu
 - **Request** — under the consumer, in its iteration and `newRequestAreaPath`, with the typed
   description and, when picked, the target date stored in the request type's ETA field — all in the
   one creation patch.
+- **Question** — a **Task** under the consumer's Pending Questions story (the highest id when there
+  are several), in that story's area and iteration, with the typed title and Markdown description.
 
 Only types, ids and area paths are logged; titles and descriptions are not.
 
