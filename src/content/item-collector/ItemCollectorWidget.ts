@@ -18,9 +18,7 @@ import {
   type PopupHost,
 } from "../../common/view-common/control/popupHost/popupHost";
 import { createSvgCanvas } from "../../common/view-common/control/svgIcon/svgIcon";
-import { THEME_COLOR_VARIABLES } from "../../common/view-common/themes/ThemeDefinition";
-import { resolveTheme } from "../../common/view-common/themes/themes";
-import { detectAdoTheme } from "../ado-probe/AdoThemeProbe";
+import { applyContentTheme } from "../content-theme/applyContentTheme";
 
 import { renderCollectedItemsDialog, type CollectedItemsDialog } from "./CollectedItemsDialog";
 import { showAddedBurst } from "./addedBurst";
@@ -475,14 +473,7 @@ export class ItemCollectorWidget {
 
   private applyThemeToRoot(): void {
     if (!this.root) return;
-    const resolved = resolveTheme(
-      this.theme,
-      this.theme === "auto" ? detectAdoTheme(this.doc) : null,
-    );
-    THEME_COLOR_VARIABLES.forEach((variable) =>
-      this.root?.style.setProperty(variable, resolved.colors[variable]),
-    );
-    this.root.style.setProperty("color-scheme", resolved.colorScheme);
+    applyContentTheme(this.root, this.theme, this.doc);
   }
 }
 

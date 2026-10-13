@@ -1,5 +1,7 @@
 import { TeamMembershipReader } from "../common/ado/TeamMembership";
+import { resolveAdoOrganizationBase } from "../common/ado/fetchAdoMetadata";
 import { buildSprintWindow } from "../common/ado/sprintWindow";
+import { isAdoSessionMessage } from "../common/ado-session/AdoSessionMessage";
 import {
   OPEN_BINDING_SETTINGS_MESSAGE,
   OPEN_OPTIONS_MESSAGE,
@@ -206,6 +208,7 @@ import {
 } from "./query-binding/QueryBindingController";
 import { EnhancedViewSurface } from "./query-page/EnhancedViewSurface";
 import { QueryPageController } from "./query-page/QueryPageController";
+import { SessionExpiredBanner } from "./session-banner/SessionExpiredBanner";
 import {
   SharedQueryController,
   type SharedQueryConfiguration,
@@ -583,6 +586,17 @@ const itemCollector = new ItemCollectorWidget(
   (position) => store.write({ itemCollectorPosition: position }),
 );
 
+// Shown when the background worker found this tab's ADO sign-in expired and could not renew it
+// silently. Sign-in opens in a new tab so this page — and any edit waiting in it — stays as it is.
+const sessionBanner = new SessionExpiredBanner(
+  document,
+  () => {
+    const organization = resolveAdoOrganizationBase(location.href);
+    window.open(organization === null ? location.href : `${organization}/`, "_blank", "noopener");
+  },
+  loggers.forSource("content/session-banner"),
+);
+
 // The in-session view choice lives here, in memory only: switching a query between its enhanced view
 // and ADO's standard page is deliberately not persisted, so a reopened browser returns every query
 // to the configured default view (see content/active-view). Shared by the page controller (to decide
@@ -683,6 +697,7 @@ const applyConfiguration = (): void => {
     controller.applySettings(settings);
     bindingMenu.applyTheme(settings.theme);
     itemCollector.applyTheme(settings.theme);
+    sessionBanner.applyTheme(settings.theme);
     itemCollector.applyPosition(settings.itemCollectorPosition);
     // The menu's check marks resolve a bound query's default presentation from this same setting.
     bindingController.applyDefaultView(settings.defaultView);
@@ -804,6 +819,14 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) =
     bindingController.navigate(message.url);
     pullTeamConfigForQuery(message.url);
     resolveSharedQuery(message.url);
+    return;
+  }
+  if (isAdoSessionMessage(message)) {
+    if (message.signedIn) {
+      sessionBanner.hide();
+    } else {
+      sessionBanner.show();
+    }
     return;
   }
   // The options page asks this ADO tab which theme it is rendering so it can resolve "auto".

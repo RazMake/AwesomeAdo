@@ -489,6 +489,15 @@ list is small and unpaged) and returns the raw body, or `null` on any non-ok/thr
 is built by `buildAdoIterationsUrl` (in `common/ado/TeamIteration`) from the sender's own trusted tab
 URL, keeping the worker a closed "read this team's iterations" operation.
 
+### `probeAdoSessionInPage(url)` — `probeAdoSessionInPage.ts`
+
+The self-contained function the background worker's `AdoSessionGuard` injects to check whether the
+tab's Azure DevOps sign-in is still valid. It reads `ConnectionData` with
+`X-TFS-FedAuthRedirect: Suppress` and `redirect: "manual"`, so an expired session answers 401 or an
+opaque redirect instead of an HTML sign-in page, and resolves (never rejects) to
+`{ status, body, error? }` for `classifyAdoSessionProbe` in `common/ado-session`. Build the URL with
+`buildAdoSessionProbeUrl`. It is the only injection that bypasses the guard.
+
 ## Loading a team's members
 
 Sprint View loads every configured team member through the same content -> background -> MAIN-world

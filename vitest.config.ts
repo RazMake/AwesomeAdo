@@ -6,6 +6,8 @@ const domTestFiles = [
   "src/content/ado-probe/**/*.test.ts",
   "src/content/query-binding/**/*.test.ts",
   "src/content/item-collector/**/*.test.ts",
+  "src/content/content-theme/**/*.test.ts",
+  "src/content/session-banner/**/*.test.ts",
   "src/content/views/**/*.test.ts",
   "src/content/query-page/EnhancedViewSurface.test.ts",
   "src/common/ado/createWorkItem.test.ts",

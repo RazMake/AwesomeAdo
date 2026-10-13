@@ -689,6 +689,21 @@ Images whose embed text the author deleted before a successful save are NOT clea
 Markdown may have been copied elsewhere. No worker-side registry: the content side only discards ids
 from its own upload replies.
 
+#### Every injection checks the ADO sign-in first (ADR-083)
+
+The bridge carries no token: requests ride the tab's ADO session cookie, which ADO lets expire while
+a tab stays open. `src/background/index.ts` therefore routes **every** MAIN-world injection through
+`executeInPage`, which awaits `AdoSessionGuard.ensureSignedIn(tabId)` (`common/ado-session`) before
+`chrome.scripting.executeScript`. Never call `chrome.scripting.executeScript` directly for an ADO
+request — the only exception is the guard's own `ConnectionData` probe (`probeAdoSessionInPage`,
+`X-TFS-FedAuthRedirect: Suppress`, `redirect: "manual"`). The guard confirms per organization for
+30 s, shares one in-flight check across tabs, treats network/5xx/429 answers as `unknown` (proceed,
+never renew), and on `expired` opens an inactive `${org}/` tab beside the caller, polls the probe for
+up to 15 s, always closes it, and backs off renewal for 120 s after a failure. Tabs it reported
+expired get `awesomeado:ado-session` `{signedIn:false}` (content shows `SessionExpiredBanner`) and
+`{signedIn:true}` once any later check succeeds. Options-page readers that inject into ADO tabs are
+not routed through the guard.
+
 ### 3. Reads
 
 - Each view **declares its data needs** (fields + relation needs); a shared loader resolves the

@@ -1,8 +1,6 @@
 import type { Theme } from "../../common/settings/ExtensionSettings";
 import type { EnhancedView, EnhancedViewServices } from "../../common/view-common/EnhancedView";
-import { THEME_COLOR_VARIABLES } from "../../common/view-common/themes/ThemeDefinition";
-import { resolveTheme } from "../../common/view-common/themes/themes";
-import { detectAdoTheme } from "../ado-probe/AdoThemeProbe";
+import { applyContentTheme } from "../content-theme/applyContentTheme";
 import { enhancedViewRegistry, type EnhancedViewRegistry } from "../views/enhancedViewRegistry";
 
 const STYLE_ID = "awesomeado-enhanced-view-style";
@@ -170,16 +168,9 @@ export class EnhancedViewSurface {
     if (!this.host) {
       return;
     }
-    const adoTheme = this.theme === "auto" ? detectAdoTheme(this.doc) : null;
-    const resolved = resolveTheme(this.theme, adoTheme);
-    for (const variable of THEME_COLOR_VARIABLES) {
-      this.host.style.setProperty(variable, resolved.colors[variable]);
-    }
-    // Widgets the browser draws itself — the ETA picker's calendar popup and its indicator glyph,
-    // scrollbars — read `color-scheme`, not our tokens, so a dark view opened a stark white calendar
-    // with a barely-visible button. Declaring the scheme on the host fixes all of them at once
-    // because color-scheme inherits.
-    this.host.style.setProperty("color-scheme", resolved.colorScheme);
+    // The helper also declares `color-scheme`: without it the ETA picker's calendar popup opened
+    // stark white inside a dark view.
+    applyContentTheme(this.host, this.theme, this.doc);
   }
 
   private restore(): void {

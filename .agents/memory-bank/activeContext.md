@@ -190,6 +190,10 @@ AwesomeADO is feature-complete for its current scope:
   Authenticated browser validation (including DELETE permissions) pending.
 - User-visible decisions and failures are source-tagged in the bounded diagnostics log; every caught
   runtime exception is logged with its original value.
+- Every background MAIN-world injection goes through `executeInPage`, which first checks the tab's
+  ADO sign-in (`common/ado-session`), renews an expired session silently in an inactive tab, or
+  makes the content script show the **Sign in** banner (`content/session-banner`); see ADR-083.
+  Authenticated browser validation pending.
 - The complete quality gate remains coverage ≥ 85%, zero lint warnings, formatting, typecheck,
   duplication, script tests, and workflow validation.
 

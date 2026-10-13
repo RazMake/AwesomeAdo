@@ -1,7 +1,5 @@
 import type { Theme } from "../../common/settings/ExtensionSettings";
-import { THEME_COLOR_VARIABLES } from "../../common/view-common/themes/ThemeDefinition";
-import { resolveTheme } from "../../common/view-common/themes/themes";
-import { detectAdoTheme } from "../ado-probe/AdoThemeProbe";
+import { applyContentTheme } from "../content-theme/applyContentTheme";
 
 /** A selectable row in the popup menu. */
 export interface MenuItem {
@@ -166,12 +164,7 @@ export class BindingMenu {
     if (!this.menu) {
       return;
     }
-    const adoTheme = this.theme === "auto" ? detectAdoTheme(this.doc) : null;
-    const resolved = resolveTheme(this.theme, adoTheme);
-    for (const variable of THEME_COLOR_VARIABLES) {
-      this.menu.style.setProperty(variable, resolved.colors[variable]);
-    }
-    this.menu.style.setProperty("color-scheme", resolved.colorScheme);
+    applyContentTheme(this.menu, this.theme, this.doc);
   }
 
   private position(): void {

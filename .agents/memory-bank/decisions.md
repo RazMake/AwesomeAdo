@@ -1895,3 +1895,24 @@ cannot be null."` The patch that reached ADO was `{ op: "add", path: "/fields/<d
   syncing right after a grant without a reload, whether store updates (like unpacked reloads, which
   were observed to) drop the earlier install-time grant, and restoring non-HTTP bookmarks. The
   **Allow Favorites access** button restores access either way.
+
+## ADR-083: Check the ADO sign-in before every page-world request; never replay a write
+
+- Context: views left open for hours began failing every refresh and save. The extension holds no
+  token; every request is a MAIN-world `fetch` with `credentials: "include"`, and ADO's session
+  (Entra token lifetime / Conditional Access sign-in frequency) expires underneath the open tab.
+  Without `X-TFS-FedAuthRedirect: Suppress` the failure surfaces as HTTP 0, a CORS/network error, or
+  "invalid JSON" from a 200/203 HTML sign-in page, so nothing pointed at sign-in.
+- Decision: a pre-flight check, not retry-after-failure. The background worker's `executeInPage`
+  awaits `AdoSessionGuard.ensureSignedIn` before every injection, so reads and writes are protected
+  identically and a write is never replayed (a replay could double-apply a non-idempotent patch).
+- Decision: only proof of expiry renews — a 401, a redirect, a 2xx non-JSON body, or JSON naming no
+  or the anonymous identity. Network, throttling and server errors are `unknown` and proceed.
+- Decision: renewal is a silent SSO round trip in an inactive tab next to the caller, polled for up
+  to 15 s and always closed; failure shows an in-page banner whose **Sign in** opens the organization
+  in a new tab so the current page (and any unsaved edit) survives. A 120 s cooldown prevents a
+  renewal-tab storm while the user is genuinely signed out.
+- Consequence: confirmation is cached for 30 s, so a session expiring inside that window fails one
+  request normally (writes roll back as before). The first request after expiry may wait up to 15 s.
+  Options-page readers are not guarded. ADO's exact anonymous `ConnectionData` shape and silent SSO
+  in an inactive tab still need authenticated validation.

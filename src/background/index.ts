@@ -18,6 +18,7 @@ import {
 } from "../common/ado/createWorkItem";
 import { buildAdoConnectionDataUrl } from "../common/ado/currentUser";
 import { buildAdoIdentitySearchRequest } from "../common/ado/fetchAdoIdentities";
+import { resolveAdoOrganizationBase } from "../common/ado/fetchAdoMetadata";
 import {
   buildAdoTreeUrls,
   buildWorkItemUpdateUrl,
@@ -64,6 +65,15 @@ import {
   buildWorkItemsOrderUrl,
   PARENT_LINK_TYPE,
 } from "../common/ado/reorderWorkItems";
+import { AdoSessionGuard } from "../common/ado-session/AdoSessionGuard";
+import {
+  ADO_SESSION_MESSAGE,
+  type AdoSessionMessage,
+} from "../common/ado-session/AdoSessionMessage";
+import {
+  buildAdoSessionProbeUrl,
+  type AdoSessionProbeOutcome,
+} from "../common/ado-session/AdoSessionProbe";
 import {
   bindingSettingsPath,
   isOpenBindingSettingsMessage,
@@ -252,6 +262,7 @@ import { fetchTeamConfigInPage } from "../common/browser/fetchTeamConfigInPage";
 import { fetchWorkItemNotesInPage } from "../common/browser/fetchWorkItemNotesInPage";
 import { findFeatureCrewInPage } from "../common/browser/findFeatureCrewInPage";
 import { encodeInjectedConfig } from "../common/browser/injectedConfig";
+import { probeAdoSessionInPage } from "../common/browser/probeAdoSessionInPage";
 import { readInterruptAcceptance as readInterruptAcceptancePages } from "../common/browser/readInterruptAcceptance";
 import { readProjectQueryLinksInPage } from "../common/browser/readProjectQueryLinksInPage";
 import { readWorkItemRanksInPage } from "../common/browser/readWorkItemRanksInPage";
@@ -273,6 +284,66 @@ import { PersonalQueryFavoritesPaths } from "../common/settings/QueryFavoritesPa
 import { createSettingsStore } from "../common/settings/createSettingsStore";
 
 const logger = createLoggerFactory().forSource("background");
+
+// Every request below rides the ADO page's session cookie, which Azure DevOps lets expire while a
+// tab stays open. Routing every MAIN-world injection through `executeInPage` checks (and, when it
+// has expired, silently renews) that sign-in first, so a long-open view keeps working.
+const sessionLogger = createLoggerFactory().forSource("common/ado-session");
+const sessionGuard = new AdoSessionGuard({
+  organizationOf: async (tabId) => {
+    const tab = await chrome.tabs.get(tabId);
+    return tab.url === undefined ? null : resolveAdoOrganizationBase(tab.url);
+  },
+  probe: async (tabId, organizationBase): Promise<AdoSessionProbeOutcome> => {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: "MAIN",
+      func: probeAdoSessionInPage,
+      args: [buildAdoSessionProbeUrl(organizationBase)],
+    });
+    return (
+      (firstScriptResult(results) as AdoSessionProbeOutcome | null) ?? {
+        status: 0,
+        body: null,
+        error: "MAIN-world injection returned no result",
+      }
+    );
+  },
+  openRenewalTab: async (sourceTabId, organizationBase) => {
+    const source = await chrome.tabs.get(sourceTabId);
+    // Inactive and next to the tab that needs it, so the reader is not pulled away from their work.
+    const renewal = await chrome.tabs.create({
+      url: `${organizationBase}/`,
+      active: false,
+      windowId: source.windowId,
+      index: source.index + 1,
+      openerTabId: sourceTabId,
+    });
+    return {
+      close: async () => {
+        if (renewal.id !== undefined) {
+          await chrome.tabs.remove(renewal.id);
+        }
+      },
+    };
+  },
+  notify: (tabId, signedIn) => {
+    const message: AdoSessionMessage = { type: ADO_SESSION_MESSAGE, signedIn };
+    chrome.tabs.sendMessage(tabId, message).catch((error: unknown) => {
+      sessionLogger.error(`Could not tell tab ${tabId} about its Azure DevOps sign-in`, error);
+    });
+  },
+  now: () => Date.now(),
+  wait: (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
+  logger: sessionLogger,
+});
+
+const executeInPage = async <Args extends unknown[], Result>(
+  injection: chrome.scripting.ScriptInjection<Args, Result>,
+): Promise<chrome.scripting.InjectionResult<chrome.scripting.Awaited<Result>>[]> => {
+  await sessionGuard.ensureSignedIn(injection.target.tabId);
+  return chrome.scripting.executeScript(injection);
+};
 
 const favoritesLogger = createLoggerFactory().forSource("common/browser");
 const favoritesHandler = new CatalogFavoritesHandler({
@@ -463,7 +534,7 @@ const loadQueryTree = async (
             headers: { "Content-Type": "application/json", Accept: "application/json" },
             body: JSON.stringify({ query: message.wiql }),
           };
-    const results = await chrome.scripting.executeScript({
+    const results = await executeInPage({
       target: { tabId },
       world: "MAIN",
       func: fetchAdoTreeInPage,
@@ -507,7 +578,7 @@ const writeTeamConfig = async (
     return { ok: false, error: "no supported sender tab" };
   }
   try {
-    const results = await chrome.scripting.executeScript({
+    const results = await executeInPage({
       target: { tabId },
       world: "MAIN",
       func: writeTeamConfigInPage,
@@ -554,7 +625,7 @@ chrome.runtime.onMessage.addListener(
 // "read this URL as the signed-in user", so the injection shape and the "injection produced nothing"
 // outcome are written once instead of once per operation.
 const readInPage = async (tabId: number, url: string): Promise<AdoPageRequestOutcome> => {
-  const results = await chrome.scripting.executeScript({
+  const results = await executeInPage({
     target: { tabId },
     world: "MAIN",
     func: executeAdoRequestInPage,
@@ -574,7 +645,7 @@ const lookupTeamGroupInPage = async (
   identityPickerUrl: string,
   body: string,
 ): Promise<AdoIdentitySearchOutcome | undefined> => {
-  const results = await chrome.scripting.executeScript({
+  const results = await executeInPage({
     target: { tabId },
     world: "MAIN",
     func: fetchAdoIdentitiesInPage,
@@ -688,7 +759,7 @@ const loadTeamIterations = async (
     return { raw: null };
   }
   try {
-    const results = await chrome.scripting.executeScript({
+    const results = await executeInPage({
       target: { tabId },
       world: "MAIN",
       func: fetchAdoIterationsInPage,
@@ -745,7 +816,7 @@ const loadTeamMembers = async (
     return { raw: null, status: 0, error: "unsupported sender tab location" };
   }
   try {
-    const results = await chrome.scripting.executeScript({
+    const results = await executeInPage({
       target: { tabId },
       world: "MAIN",
       func: executeAdoRequestInPage,
@@ -868,7 +939,7 @@ const searchAdoIdentities = async (
     return { raw: null };
   }
   try {
-    const results = await chrome.scripting.executeScript({
+    const results = await executeInPage({
       target: { tabId },
       world: "MAIN",
       func: fetchAdoIdentitiesInPage,
@@ -934,7 +1005,7 @@ const resolveAdoIdentityNames = async (
     );
   }
   try {
-    const results = await chrome.scripting.executeScript({
+    const results = await executeInPage({
       target: { tabId },
       world: "MAIN",
       func: fetchAdoIdentityNamesInPage,
@@ -998,7 +1069,7 @@ const reconcileFeatureCrew = async (
     return { ok: false, changed: false, error: "not a project-scoped ADO URL" };
   }
   try {
-    const findResults = await chrome.scripting.executeScript({
+    const findResults = await executeInPage({
       target: { tabId },
       world: "MAIN",
       func: findFeatureCrewInPage,
@@ -1022,7 +1093,7 @@ const reconcileFeatureCrew = async (
     }
 
     const applyConfig = buildFeatureCrewApplyConfig(found, urls, roster.description);
-    const applyResults = await chrome.scripting.executeScript({
+    const applyResults = await executeInPage({
       target: { tabId },
       world: "MAIN",
       func: applyFeatureCrewInPage,
@@ -1074,7 +1145,7 @@ const readTeamConfig = async (
     return { ok: false, error: "not a supported ADO URL" };
   }
   try {
-    const results = await chrome.scripting.executeScript({
+    const results = await executeInPage({
       target: { tabId },
       world: "MAIN",
       func: fetchTeamConfigInPage,
@@ -1158,7 +1229,7 @@ const updateWorkItemField = async (
       comment: message.comment,
       baseValue: message.baseValue,
     };
-    const results = await chrome.scripting.executeScript({
+    const results = await executeInPage({
       target: { tabId },
       world: "MAIN",
       func: updateWorkItemFieldInPage,
@@ -1238,7 +1309,7 @@ const reorderWorkItem = async (
     preparedState = preparation;
     const preparedMessage = preparation.message;
     const preparedConfig = { ...config, rev: preparedMessage.rev };
-    const results = await chrome.scripting.executeScript({
+    const results = await executeInPage({
       target: { tabId },
       world: "MAIN",
       func: reorderWorkItemInPage,
@@ -1437,9 +1508,9 @@ function runInTab<TConfig, TResult>(
   func: (config: TConfig) => Promise<TResult>,
   config: TConfig,
 ): Promise<TResult | undefined> {
-  return chrome.scripting
-    .executeScript({ target: { tabId }, world: "MAIN", func, args: [config] })
-    .then((results) => results[0]?.result as TResult | undefined);
+  return executeInPage({ target: { tabId }, world: "MAIN", func, args: [config] }).then(
+    (results) => results[0]?.result as TResult | undefined,
+  );
 }
 
 /** One page of the level's current ranks, or null when the read did not come back. */
@@ -1574,7 +1645,7 @@ const loadWorkItemNotes = async (
     return { raw: null, error: "not a project-scoped ADO URL" };
   }
   try {
-    const results = await chrome.scripting.executeScript({
+    const results = await executeInPage({
       target: { tabId },
       world: "MAIN",
       func: fetchWorkItemNotesInPage,
@@ -1702,7 +1773,7 @@ const readNoteActivity = async (
     return { raw: null, error: "not a project-scoped ADO URL" };
   }
   try {
-    const results = await chrome.scripting.executeScript({
+    const results = await executeInPage({
       target: { tabId },
       world: "MAIN",
       func: fetchNoteActivityInPage,
@@ -1818,7 +1889,7 @@ const writeWorkItemNote = async (
     return { ok: false, error: "not a project-scoped ADO URL" };
   }
   try {
-    const results = await chrome.scripting.executeScript({
+    const results = await executeInPage({
       target: { tabId },
       world: "MAIN",
       func: writeWorkItemNoteInPage,
@@ -1882,7 +1953,7 @@ const uploadAttachment = async (
   }
   const config: UploadAttachmentConfig = { url, contentBase64: message.contentBase64 };
   try {
-    const results = await chrome.scripting.executeScript({
+    const results = await executeInPage({
       target: { tabId },
       world: "MAIN",
       func: uploadAttachmentInPage,
@@ -1942,7 +2013,7 @@ const discardAttachment = async (
     return { ok: false, error: "not a project-scoped ADO URL" };
   }
   try {
-    const results = await chrome.scripting.executeScript({
+    const results = await executeInPage({
       target: { tabId },
       world: "MAIN",
       func: discardAttachmentInPage,
@@ -2009,7 +2080,7 @@ const createWorkItem = async (
   // organization the link resolves against.
   const parentUrl = resolveCreateParent(tabUrl, message.parentId);
   try {
-    const results = await chrome.scripting.executeScript({
+    const results = await executeInPage({
       target: { tabId },
       world: "MAIN",
       func: createWorkItemInPage,
@@ -2112,7 +2183,7 @@ const readProjectQueryLinks = (
     return Promise.resolve({ ok: false, error: NOT_A_PROJECT_TAB });
   }
   return runProjectQueryInjection("read-links", () =>
-    chrome.scripting.executeScript({
+    executeInPage({
       target: { tabId },
       world: "MAIN",
       func: readProjectQueryLinksInPage,
@@ -2141,7 +2212,7 @@ const createProjectQuery = (
     return Promise.resolve({ ok: false, error: NOT_A_PROJECT_TAB });
   }
   return runProjectQueryInjection("create", () =>
-    chrome.scripting.executeScript({
+    executeInPage({
       target: { tabId },
       world: "MAIN",
       func: createProjectQueryInPage,
@@ -2186,7 +2257,7 @@ const removeProjectQuery = (
     return Promise.resolve({ ok: false, error: NOT_A_PROJECT_TAB });
   }
   return runProjectQueryInjection("remove", () =>
-    chrome.scripting.executeScript({
+    executeInPage({
       target: { tabId },
       world: "MAIN",
       func: removeProjectQueryInPage,

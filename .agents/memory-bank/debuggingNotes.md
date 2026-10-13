@@ -2169,3 +2169,20 @@ fetch(
   `chrome.storage.sync["bindings.queries"]` (read it from an opened options page target).
 - The transition body is `transitions: {"<from>": [{to, actions}], "": [...]}`; `""` is creation
   and is ignored.
+
+## Long-open views stop refreshing/saving: ADO sign-in expired (not a token we own)
+
+- SYMPTOM: after hours in one tab, every refresh/save fails with HTTP 0, a CORS/"Failed to fetch"
+  network error, or "invalid JSON" (a 200/203 HTML sign-in page). Reloading the page "fixes" it.
+- ROOT CAUSE: the extension holds no token. Every request is a MAIN-world `fetch` with
+  `credentials: "include"`, and ADO's session cookie expires (Entra token lifetime / Conditional
+  Access sign-in frequency). Requests without `X-TFS-FedAuthRedirect: Suppress` get redirected to
+  `login.microsoftonline.com`, which the cross-origin fetch cannot follow.
+- FIX (ADR-083): `executeInPage` → `AdoSessionGuard` probes `_apis/ConnectionData` first and renews
+  silently in an inactive tab, else shows the **Sign in** banner. In the Diagnostics log, filter
+  source `common/ado-session` for its "Renewing…", "Renewed…" and sign-in check lines.
+- Do not confuse with a STALE service worker after an extension reload ("No response from the
+  worker", above) — that one says nothing about sign-in and needs a page reload.
+- Live check over CDP: in the ADO tab, `fetch(org + "/_apis/ConnectionData?api-version=7.1-preview.1",
+{credentials:"include", headers:{"X-TFS-FedAuthRedirect":"Suppress"}, redirect:"manual"})` — a
+  401/opaque redirect or a non-JSON body means expired; `authenticatedUser.id` means signed in.

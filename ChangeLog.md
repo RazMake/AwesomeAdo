@@ -45,6 +45,10 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 - Adding a request without a description now explains that every request needs one instead of
   pointing to an empty diagnostics log.
+- Views left open for a long time no longer start failing to refresh or save once your Azure
+  DevOps sign-in expires: AwesomeADO checks your sign-in before talking to Azure DevOps and renews
+  it quietly in a background tab, or, when that is not possible, shows a banner with a **Sign in**
+  button so you can sign in again and carry on in the same page.
 
 ## 0.21
 
