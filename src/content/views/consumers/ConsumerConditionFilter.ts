@@ -8,6 +8,13 @@ export interface ConsumerConditionFilterOptions {
   onChange(condition: ConsumerCondition): void;
 }
 
+/** Every condition a link may name besides "all", which is the absence of the parameter. */
+export const CONSUMER_CONDITIONS: readonly Exclude<ConsumerCondition, "all">[] = [
+  "waitingForAnswers",
+  "untriagedRequests",
+  "committedRequests",
+];
+
 const OPTIONS: readonly {
   value: Exclude<ConsumerCondition, "all">;
   label: string;

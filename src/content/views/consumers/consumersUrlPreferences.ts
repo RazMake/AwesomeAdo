@@ -1,3 +1,6 @@
+import { CONSUMER_CONDITIONS, type ConsumerCondition } from "./ConsumerConditionFilter";
+import { REQUEST_STATUSES, type RequestStateCondition, type RequestStateId } from "./requestStates";
+
 /** One full area path per parameter, repeated, so no separator can split a path in half. */
 const AREA_PATH_PARAM = "areaPath";
 
@@ -53,4 +56,75 @@ export function readConsumersUrlConsumerIds(search: string): number[] {
 /** Rewrite a query string so it names exactly these consumers, keeping every other parameter. */
 export function consumersSearchWithConsumerIds(search: string, ids: Iterable<number>): string {
   return searchWithRepeated(search, CONSUMER_PARAM, [...ids].map(String));
+}
+
+const MODE_PARAM = "mode";
+const CONSUMERS_MODE = "consumers";
+const REQUESTS_MODE = "requests";
+
+/**
+ * Read which mode a link opens in: true for the consumer cards, false for the requests list, null
+ * when the link does not say (the reader's saved choice then applies).
+ */
+export function readConsumersUrlMode(search: string): boolean | null {
+  const mode = new URLSearchParams(search).get(MODE_PARAM)?.trim();
+  if (mode === CONSUMERS_MODE) return true;
+  if (mode === REQUESTS_MODE) return false;
+  return null;
+}
+
+/** Rewrite a query string so it names the mode on screen, keeping every other parameter. */
+export function consumersSearchWithMode(search: string, showConsumers: boolean): string {
+  const parameters = new URLSearchParams(search);
+  parameters.set(MODE_PARAM, showConsumers ? CONSUMERS_MODE : REQUESTS_MODE);
+  return `?${parameters.toString()}`;
+}
+
+const CONSUMER_CONDITION_PARAM = "consumerState";
+
+/** Read the consumers' By state condition; an unknown value is ignored, meaning "all". */
+export function readConsumersUrlCondition(search: string): ConsumerCondition {
+  const value = new URLSearchParams(search).get(CONSUMER_CONDITION_PARAM)?.trim();
+  return CONSUMER_CONDITIONS.find((condition) => condition === value) ?? "all";
+}
+
+/** Rewrite a query string so it names this By state condition; "all" drops the parameter. */
+export function consumersSearchWithCondition(search: string, condition: ConsumerCondition): string {
+  return searchWithRepeated(
+    search,
+    CONSUMER_CONDITION_PARAM,
+    condition === "all" ? [] : [condition],
+  );
+}
+
+const REQUEST_STATE_PARAM = "requestState";
+const REQUEST_STATE_EXCLUDED_PARAM = "requestStateNot";
+
+function readRequestStates(search: string, name: string): Set<RequestStateId> {
+  const known = new Set<string>(REQUEST_STATUSES.map(({ id }) => id));
+  const values = new URLSearchParams(search)
+    .getAll(name)
+    .map((value) => value.trim())
+    .filter((value) => known.has(value));
+  return new Set(values as RequestStateId[]);
+}
+
+/** Read the requests list's By state condition; unknown states are ignored. */
+export function readConsumersUrlRequestStates(search: string): RequestStateCondition {
+  return {
+    required: readRequestStates(search, REQUEST_STATE_PARAM),
+    excluded: readRequestStates(search, REQUEST_STATE_EXCLUDED_PARAM),
+  };
+}
+
+/** Rewrite a query string so it names this request By state condition. */
+export function consumersSearchWithRequestStates(
+  search: string,
+  condition: RequestStateCondition,
+): string {
+  return searchWithRepeated(
+    searchWithRepeated(search, REQUEST_STATE_PARAM, condition.required),
+    REQUEST_STATE_EXCLUDED_PARAM,
+    condition.excluded,
+  );
 }

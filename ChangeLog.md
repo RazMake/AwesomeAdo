@@ -7,6 +7,9 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ### New Features
 
+- Consumers View links now carry the current mode (consumers or requests) and every header filter,
+  including both **By state** filters, so a bookmark reopens the exact board; in the requests list
+  the header `+` opens request descriptions, then discussions, just as `−` closes them.
 - Consumers View lays contacts out across wrapping rows, and while showing consumers a **By state**
   filter keeps only consumers **Waiting for answers**, **With untriaged requests**, or **With
   committed requests** — pick one, press the lit button to clear it, and its tooltip names what is

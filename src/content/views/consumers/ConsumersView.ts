@@ -65,9 +65,15 @@ import { renderConsumersHeader } from "./ConsumersHeader";
 import { renderRequestStateFilter } from "./RequestStateFilter";
 import {
   consumersSearchWithAreaPaths,
+  consumersSearchWithCondition,
   consumersSearchWithConsumerIds,
+  consumersSearchWithMode,
+  consumersSearchWithRequestStates,
   readConsumersUrlAreaPaths,
+  readConsumersUrlCondition,
   readConsumersUrlConsumerIds,
+  readConsumersUrlMode,
+  readConsumersUrlRequestStates,
 } from "./consumersUrlPreferences";
 import { consumersViewType, orderingPolicyOf, requestAreaPaths } from "./consumersViewType";
 import { renderAddConsumerButton } from "./creation/AddConsumerButton";
@@ -96,14 +102,13 @@ import {
   describeRequestStateCondition,
   isRequestStateConditionActive,
   matchesRequestStateCondition,
-  NO_REQUEST_STATE_CONDITION,
   requestHasState,
   requestStateMapping,
   widestRequestStateLabelLength,
   type RequestStateCondition,
   type RequestStateMapping,
 } from "./requestStates";
-import { collapseStep, expandStep } from "./treeExpansion";
+import { collapseStep, expandPanelsStep, expandStep } from "./treeExpansion";
 
 /** What the reader has done to the board, kept outside the DOM so a repaint cannot lose it. */
 interface ConsumersSession {
@@ -312,12 +317,21 @@ function showMessage(context: DataDrivenViewContext, root: HTMLElement, message:
 function writeFilterUrl(board: Board): void {
   const { session } = board;
   replacePageSearch(board.context.doc, (search) =>
-    searchWithTagCondition(
-      consumersSearchWithConsumerIds(
-        consumersSearchWithAreaPaths(search, session.selectedAreaPaths),
-        session.selectedConsumerIds,
+    consumersSearchWithRequestStates(
+      consumersSearchWithCondition(
+        consumersSearchWithMode(
+          searchWithTagCondition(
+            consumersSearchWithConsumerIds(
+              consumersSearchWithAreaPaths(search, session.selectedAreaPaths),
+              session.selectedConsumerIds,
+            ),
+            session.tags,
+          ),
+          session.showConsumers,
+        ),
+        session.consumerCondition,
       ),
-      session.tags,
+      session.requestStateCondition,
     ),
   );
 }
@@ -669,10 +683,10 @@ function createBoard(
       selectedConsumerIds: new Set(readConsumersUrlConsumerIds(search)),
       tags: readUrlTagCondition(search),
       policy: orderingPolicyOf(context.properties),
-      // Replaced by the reader's saved choice before the first paint; see `applySavedMode`.
-      showConsumers: false,
-      consumerCondition: "all",
-      requestStateCondition: NO_REQUEST_STATE_CONDITION,
+      // The link's mode, when it names one, is applied before the first paint; see `applySavedMode`.
+      showConsumers: readConsumersUrlMode(search) ?? false,
+      consumerCondition: readConsumersUrlCondition(search),
+      requestStateCondition: readConsumersUrlRequestStates(search),
     },
     configuredAreaPaths: requestAreaPaths(context.properties),
     requestStates: requestStateMapping(context.properties),
@@ -733,9 +747,11 @@ function stepExpansion(
       ]
     : [];
   const step =
-    direction === "expand"
-      ? expandStep(session, levels)
-      : collapseStep(session, shownItemIds(board, consumers), levels);
+    direction === "collapse"
+      ? collapseStep(session, shownItemIds(board, consumers), levels)
+      : session.showConsumers
+        ? expandStep(session, levels)
+        : expandPanelsStep(session, shownItemIds(board, consumers));
   board.context.services.logger.info(
     `Consumers View ${direction}: ${step ?? `nothing left to ${direction}`}.`,
   );
@@ -963,11 +979,15 @@ function startConsumersView(context: DataDrivenViewContext, root: HTMLElement): 
     paintList,
     reload: () => loader.refresh(),
   });
-  // Read once, alongside the first load, so the query opens straight into the reader's saved mode
-  // with no flash of the other one; a later Refresh never re-applies it over a flip made since.
-  const applySavedMode = readSavedMode(context).then((showConsumers) => {
-    board.session.showConsumers = showConsumers;
-  });
+  // Read once, alongside the first load, so the query opens straight into the link's mode or else
+  // the reader's saved one, with no flash of the other; a later Refresh never re-applies it over a
+  // flip made since.
+  const applySavedMode =
+    readConsumersUrlMode(context.doc.location?.search ?? "") === null
+      ? readSavedMode(context).then((showConsumers) => {
+          board.session.showConsumers = showConsumers;
+        })
+      : Promise.resolve();
   const writeStatus = createBoardWriteStatus(
     context.doc,
     board.queue,

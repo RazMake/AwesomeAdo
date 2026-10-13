@@ -974,7 +974,7 @@ describe("consumersView - header area filter", () => {
     openAreaFilter(root);
 
     expect(titles(root)).toHaveLength(7);
-    expect(window.location.search).toBe("");
+    expect(window.location.search).toBe("?mode=consumers");
   });
 
   it("opens on the areas a shared link names", async () => {
@@ -997,7 +997,7 @@ describe("consumersView - header area filter", () => {
     const root = await renderOpenBoard();
 
     expect(titles(root)).toHaveLength(7);
-    expect(window.location.search).toBe("?_a=query");
+    expect(window.location.search).toBe("?_a=query&mode=consumers");
   });
 });
 
@@ -1304,6 +1304,7 @@ describe("consumersView - pending question request exclusion", () => {
     expect(titles(requests)).toEqual(IMPORTANCE_ORDERED_REQUESTS);
     expect(requests.textContent).not.toContain("Renamed question store");
     requests.remove();
+    window.history.replaceState({}, "", "/");
 
     const consumers = await renderOpenBoard(contextWith(services));
     expect(titles(consumers)).toEqual([
@@ -1478,7 +1479,7 @@ describe("consumersView - requests-list rows", () => {
     );
   });
 
-  it("steps the header's minus through the panels only, with nothing for plus to open", async () => {
+  it("steps the header's minus and plus through the panels of a flat list", async () => {
     const info = vi.fn();
     const root = await renderBoard(requestsContext({ logger: { info, error: () => undefined } }));
     const press = (control: "collapse-all" | "expand-all"): void =>
@@ -1494,12 +1495,33 @@ describe("consumersView - requests-list rows", () => {
     press("collapse-all");
     press("collapse-all");
     press("expand-all");
+    press("expand-all");
+    press("expand-all");
 
     expect(info).toHaveBeenCalledWith("Consumers View collapse: descriptions.");
     expect(info).toHaveBeenCalledWith("Consumers View collapse: discussions.");
     expect(info).toHaveBeenCalledWith("Consumers View collapse: nothing left to collapse.");
+    expect(info).toHaveBeenCalledWith("Consumers View expand: descriptions.");
+    expect(info).toHaveBeenCalledWith("Consumers View expand: discussions.");
     expect(info).toHaveBeenCalledWith("Consumers View expand: nothing left to expand.");
     expect(titles(root)).toEqual(IMPORTANCE_ORDERED_REQUESTS);
+  });
+
+  it("writes the mode and both By state filters into the URL and reads them back", async () => {
+    window.history.replaceState({}, "", "/?mode=consumers&consumerState=waitingForAnswers");
+    await renderBoard(contextWith({}));
+
+    const url = new URLSearchParams(window.location.search);
+    expect(url.get("mode")).toBe("consumers");
+    expect(url.get("consumerState")).toBe("waitingForAnswers");
+
+    window.history.replaceState({}, "", "/?mode=requests&requestState=new&requestStateNot=done");
+    await renderBoard(contextWith({}));
+
+    const requestUrl = new URLSearchParams(window.location.search);
+    expect(requestUrl.get("mode")).toBe("requests");
+    expect(requestUrl.getAll("requestState")).toEqual(["new"]);
+    expect(requestUrl.getAll("requestStateNot")).toEqual(["done"]);
   });
 
   it("says so when none of the shown consumers has a request and no area filter is active", async () => {
@@ -1862,7 +1884,7 @@ describe("consumersView - consumer filter", () => {
 
     expect(titles(root)).toEqual(["Single sign-on", "Audit log"]);
     expect(consumerTags(root)).toEqual([]);
-    expect(window.location.search).toBe("?consumer=20");
+    expect(window.location.search).toBe("?mode=requests&consumer=20");
     expect(info).toHaveBeenCalledWith("Consumers View consumer filter: selectedCount=1.");
   });
 
@@ -1872,7 +1894,7 @@ describe("consumersView - consumer filter", () => {
     const root = await renderBoard(contextWith({}));
 
     expect(consumerTitles(root)).toEqual(["Contoso"]);
-    expect(window.location.search).toBe("?consumer=10");
+    expect(window.location.search).toBe("?consumer=10&mode=consumers");
   });
 });
 

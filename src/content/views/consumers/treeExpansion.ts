@@ -58,3 +58,23 @@ export function expandStep(state: ExpansionState, levels: ExpandableLevels): Exp
   }
   return null;
 }
+
+/**
+ * One press of `+` on a flat list, which has no tree level to open: open the descriptions, else the
+ * discussions, of the items on screen. This mirrors `collapseStep` in reverse, so `+` and `−`
+ * walk the same two panel layers in opposite directions.
+ */
+export function expandPanelsStep(
+  state: ExpansionState,
+  shownIds: readonly number[],
+): ExpansionStep {
+  if (shownIds.some((id) => !state.expandedDescriptionIds.has(id))) {
+    for (const id of shownIds) state.expandedDescriptionIds.add(id);
+    return "descriptions";
+  }
+  if (shownIds.some((id) => !state.expandedNoteIds.has(id))) {
+    for (const id of shownIds) state.expandedNoteIds.add(id);
+    return "discussions";
+  }
+  return null;
+}
