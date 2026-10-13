@@ -5,6 +5,8 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ## Next Version
 
+## 0.22
+
 ### New Features
 
 - Consumers View links now carry the current mode (consumers or requests) and every header filter,
