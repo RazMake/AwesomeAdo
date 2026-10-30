@@ -40,7 +40,9 @@ view answers "what is going on across all of them?" for a query that returns **m
   immediately left of Refresh in the rightmost title-band group. `options`
   carries the mounted write-queue indicator and `onTitleContextMenu`, which the title raises. At
   narrow widths its bands wrap complete controls onto additional lines rather than compressing
-  button labels.
+  button labels. Each `+` press opens one tree level, shallowest first; each `−` press closes one
+  level, deepest first. The controls act on the tag-filtered tree, preserve other levels' state,
+  and do nothing when there is no further level to open or close.
 - `ProjectRow.ts` → `renderProjectRow(item, context, depth)` — one row and, when open, its children.
   The row context supplies `onContextMenu`, `newChildRow` (the inline "add a milestone" box when it
   belongs under that row), the optional `dragReorder` controller, the full `projectSiblingIds` a drop

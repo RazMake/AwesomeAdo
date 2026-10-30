@@ -6,8 +6,7 @@ export interface ExpansionState {
   expandedNoteIds: Set<number>;
 }
 
-/** The expandable rows on screen, one list per tree level, top level first. */
-export type ExpandableLevels = readonly (readonly number[])[];
+export type { ExpandableLevels } from "../../../common/view-common/treeExpansion";
 
 /** What one press opened or closed, for the diagnostics log; null when nothing was left to do. */
 export type ExpansionStep = "descriptions" | "discussions" | `tree level ${number}` | null;
@@ -34,14 +33,8 @@ export function collapseStep(
     state.expandedNoteIds.clear();
     return "discussions";
   }
-  for (let depth = levels.length - 1; depth >= 0; depth -= 1) {
-    const level = levels[depth] ?? [];
-    if (level.some((id) => state.expandedIds.has(id))) {
-      for (const id of level) state.expandedIds.delete(id);
-      return `tree level ${depth + 1}`;
-    }
-  }
-  return null;
+  const depth = stepTreeExpansion(state.expandedIds, levels, false);
+  return depth === null ? null : `tree level ${depth + 1}`;
 }
 
 /**
@@ -50,13 +43,8 @@ export function collapseStep(
  * asks for.
  */
 export function expandStep(state: ExpansionState, levels: ExpandableLevels): ExpansionStep {
-  for (const [depth, level] of levels.entries()) {
-    if (level.some((id) => !state.expandedIds.has(id))) {
-      for (const id of level) state.expandedIds.add(id);
-      return `tree level ${depth + 1}`;
-    }
-  }
-  return null;
+  const depth = stepTreeExpansion(state.expandedIds, levels, true);
+  return depth === null ? null : `tree level ${depth + 1}`;
 }
 
 /**
@@ -78,3 +66,7 @@ export function expandPanelsStep(
   }
   return null;
 }
+import {
+  stepTreeExpansion,
+  type ExpandableLevels,
+} from "../../../common/view-common/treeExpansion";

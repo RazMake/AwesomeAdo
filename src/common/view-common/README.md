@@ -1,7 +1,7 @@
 # `common/view-common`
 
-The **contracts** that define what an enhanced view is. These are pure abstractions — no DOM, no
-`chrome.*`, zero runtime cost — so both the options page and the content surface can depend on them
+The **contracts and pure state helpers** that define what an enhanced view is. These have no DOM,
+`chrome.*`, or renderer dependencies, so both the options page and the content surface can use them
 (Dependency Inversion) without either bundle pulling in the other's code.
 
 The **one exception** is [`control/`](#control--the-shared-view-controls): the shared, theme-aware
@@ -54,6 +54,14 @@ renderer.
 - `serializeStateMapping(rows)` — the stored value; empty cells and rows mapping nothing are
   dropped, and nothing left stores `""`.
 - `describeStateMapping(raw, columns)` — a one-line read-only summary for the options form.
+
+### `treeExpansion.ts` — one-level outline state
+
+- `ExpandableLevels` groups expandable row ids by hierarchy depth, shallowest first. Callers omit
+  rows hidden by filters and rows without visible children.
+- `stepTreeExpansion(expandedIds, levels, expanded)` updates the supplied set at one depth:
+  shallowest not fully open for expansion, deepest still open for collapse. Other depths and ids
+  outside `levels` are untouched. It returns the zero-based depth changed, or `null` at a boundary.
 
 ### `EnhancedView.ts` — the renderer contract
 

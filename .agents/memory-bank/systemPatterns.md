@@ -446,6 +446,10 @@ Split into component subfolders (each with its own `README.md`):
   paint while the project list has a host of its own, so the tag condition applies as it is built:
   a full repaint would rebuild the header and take the open dropdown with it. Project Tracking already
   worked that way — its header is outside every tree pass — which is why its filters were always live.
+  Catalog header outline controls also repaint only the list, retaining lazy child rendering.
+  Catalog and Consumers share the DOM-free `common/view-common/treeExpansion` helper: callers
+  supply filter-retained expandable ids by depth, and each press changes only the shallowest
+  not-fully-open or deepest open level. Consumers retains its own panel-priority behavior.
   `views/consumers` is the **Consumers View** (ADR-081): a two-level tree board (consumers →
   feature requests) under an undrawn grouping root. It is assembled almost entirely from the
   cross-view tree-board kit that the Consumers work extracted so every tree view looks and behaves

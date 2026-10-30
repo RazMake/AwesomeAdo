@@ -154,6 +154,18 @@ async function renderBoard(context: EnhancedViewContext = createContext()): Prom
 const titles = (root: HTMLElement): (string | null)[] =>
   [...root.querySelectorAll(".awesomeado-projects__title")].map((title) => title.textContent);
 
+const clickOutline = (root: HTMLElement, action: "expand" | "collapse"): void => {
+  root.querySelector<HTMLButtonElement>(`.awesomeado-projects__${action}-all`)!.click();
+};
+
+const clickTwisty = (root: HTMLElement, id: number): void => {
+  root
+    .querySelector<HTMLButtonElement>(
+      `.awesomeado-projects__item[data-item-id="${id}"] .awesomeado-projects__twisty`,
+    )!
+    .click();
+};
+
 /** The filter rows now carry an exclusion toggle, so the value is read off the checkbox itself. */
 const tagOptions = (root: HTMLElement): HTMLElement[] => [
   ...root.querySelectorAll<HTMLElement>(".awesomeado-tag-filter__option"),
@@ -386,10 +398,41 @@ describe("projectsView - expanding", () => {
     expect(titles(root)).toEqual(["Payments", "Reporting"]);
   });
 
-  it("opens every level at once from the header, and closes them all again", async () => {
+  it("opens one level per header click and closes one level at a time in reverse order", async () => {
     const root = await renderBoard();
+    const collapsed = ["Payments", "Reporting"];
+    const projects = ["Payments", "Card capture", "Reporting", "Weekly export"];
+    const deliverables = [
+      "Payments",
+      "Card capture",
+      "Retry on decline",
+      "Reporting",
+      "Weekly export",
+    ];
 
-    root.querySelector<HTMLButtonElement>(".awesomeado-projects__expand-all")!.click();
+    expect(titles(root)).toEqual(collapsed);
+    clickOutline(root, "collapse");
+    expect(titles(root)).toEqual(collapsed);
+    clickOutline(root, "expand");
+    expect(titles(root)).toEqual(projects);
+    clickOutline(root, "expand");
+    expect(titles(root)).toEqual(deliverables);
+    clickOutline(root, "expand");
+    expect(titles(root)).toEqual(deliverables);
+    clickOutline(root, "collapse");
+    expect(titles(root)).toEqual(projects);
+    clickOutline(root, "collapse");
+    expect(titles(root)).toEqual(collapsed);
+    clickOutline(root, "collapse");
+    expect(titles(root)).toEqual(collapsed);
+  });
+
+  it("fills the shallowest partly closed level and collapses the deepest open one", async () => {
+    const root = await renderBoard();
+    clickTwisty(root, 1);
+    clickTwisty(root, 2);
+
+    clickOutline(root, "expand");
     expect(titles(root)).toEqual([
       "Payments",
       "Card capture",
@@ -398,20 +441,114 @@ describe("projectsView - expanding", () => {
       "Weekly export",
     ]);
 
-    root.querySelector<HTMLButtonElement>(".awesomeado-projects__collapse-all")!.click();
+    clickOutline(root, "collapse");
+    expect(titles(root)).toEqual(["Payments", "Card capture", "Reporting", "Weekly export"]);
+    clickOutline(root, "collapse");
     expect(titles(root)).toEqual(["Payments", "Reporting"]);
   });
 
   it("gives a childless project no twisty to press", async () => {
     const root = await renderBoard();
 
-    root.querySelector<HTMLButtonElement>(".awesomeado-projects__expand-all")!.click();
+    clickOutline(root, "expand");
+    clickOutline(root, "expand");
     const leaf = [...root.querySelectorAll<HTMLElement>(".awesomeado-projects__item")].find(
       (candidate) => candidate.dataset.itemId === "3",
     )!;
 
     expect(leaf.querySelector(".awesomeado-projects__twisty")).toBeNull();
     expect(leaf.querySelector(".awesomeado-projects__twisty-spacer")).not.toBeNull();
+  });
+});
+
+describe("projectsView - filtered outline", () => {
+  it("leaves tag-filtered branches closed when stepping through the shown tree", async () => {
+    const root = await renderBoard();
+    clickTagOption(root, "Docs");
+
+    clickOutline(root, "expand");
+    expect(titles(root)).toEqual(["Reporting", "Weekly export"]);
+    clickOutline(root, "expand");
+    expect(titles(root)).toEqual(["Reporting", "Weekly export"]);
+
+    openTagFilter(root);
+    expect(titles(root)).toEqual(["Payments", "Reporting", "Weekly export"]);
+    clickOutline(root, "expand");
+    expect(titles(root)).toEqual(["Payments", "Card capture", "Reporting", "Weekly export"]);
+  });
+
+  it("collapses the shown level without spending clicks on hidden branches or losing their state", async () => {
+    const root = await renderBoard();
+    clickTwisty(root, 1);
+    clickTwisty(root, 2);
+    clickTagOption(root, "Docs");
+    clickOutline(root, "expand");
+
+    clickOutline(root, "collapse");
+    expect(titles(root)).toEqual(["Reporting"]);
+    openTagFilter(root);
+    expect(titles(root)).toEqual(["Payments", "Card capture", "Retry on decline", "Reporting"]);
+  });
+});
+
+describe("projectsView - outline state", () => {
+  it("logs each changed level without repeating a boundary decision", async () => {
+    const info = vi.fn();
+    const root = await renderBoard(
+      createContext({ services: createServices({ logger: { info, error: vi.fn() } }) }),
+    );
+    info.mockClear();
+
+    clickOutline(root, "collapse");
+    clickOutline(root, "expand");
+    clickOutline(root, "expand");
+    clickOutline(root, "expand");
+    clickOutline(root, "collapse");
+    clickOutline(root, "collapse");
+    clickOutline(root, "collapse");
+
+    expect(info.mock.calls.map(([message]) => message)).toEqual([
+      expect.stringContaining("expanded tree level 1"),
+      expect.stringContaining("expanded tree level 2"),
+      expect.stringContaining("collapsed tree level 2"),
+      expect.stringContaining("collapsed tree level 1"),
+    ]);
+  });
+
+  it("retains the chosen level across a header repaint and refresh", async () => {
+    const loadTree = vi.fn(async () => ({
+      isTreeQuery: true,
+      roots: fixtureRoots(),
+      error: null,
+    }));
+    const root = await renderBoard(createContext({ services: createServices({ loadTree }) }));
+    clickOutline(root, "expand");
+
+    root.querySelector<HTMLButtonElement>(".awesomeado-ordering__trigger")!.click();
+    root
+      .querySelector<HTMLButtonElement>(".awesomeado-ordering__option[data-policy='title']")!
+      .click();
+    expect(titles(root)).toEqual(["Payments", "Card capture", "Reporting", "Weekly export"]);
+
+    root.querySelector<HTMLButtonElement>(".awesomeado-projects__refresh")!.click();
+    await vi.waitFor(() => {
+      expect(loadTree).toHaveBeenCalledTimes(2);
+      expect(root.querySelector(".awesomeado-projects__header")).not.toBeNull();
+    });
+    expect(titles(root)).toEqual(["Payments", "Card capture", "Reporting", "Weekly export"]);
+    clickOutline(root, "expand");
+    expect(titles(root)).toContain("Retry on decline");
+  });
+
+  it("names the one-level action in both header tooltips", async () => {
+    const root = await renderBoard();
+
+    expect(root.querySelector<HTMLButtonElement>(".awesomeado-projects__expand-all")!.title).toBe(
+      "Expand one tree level",
+    );
+    expect(root.querySelector<HTMLButtonElement>(".awesomeado-projects__collapse-all")!.title).toBe(
+      "Collapse one tree level",
+    );
   });
 });
 

@@ -158,6 +158,10 @@ AwesomeADO is feature-complete for its current scope:
   offer Clear project query; the removal service deletes before unlinking and retains links on
   deletion failure. Clear-query progress/errors remain visible; hyperlink matching ignores trailing
   slashes and casing while the unlink guard uses the exact stored URL.
+- All Projects Catalog header `+` opens the shallowest not-fully-open tree level and `−` closes
+  the deepest open level, one per press, within the tag-filtered tree. Other levels and filtered-out
+  branches retain their state. Catalog and Consumers share the pure
+  `common/view-common/treeExpansion` step helper; Catalog still builds child DOM lazily.
 - All Projects Catalog syncs filtered project query links and a final filtered-catalog link into a
   personal Favorites destination below the browser bar. The binding editor warns that sync replaces
   the folder's favorites, never stores the bar root or malformed paths, and stays disabled (a saved

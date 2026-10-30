@@ -65,12 +65,16 @@ This is a flattened snapshot of what exists now, not a build log.
   Child DOM is built only while a row is open, and open/closed state lives outside the DOM so
   it survives repaints and in-place refreshes. Its sticky header carries the query breadcrumbs, a
   board-local ordering picker in the top-right corner,
-  expand-all/collapse-all, refresh, and a searchable tag filter listing every tag worn anywhere in
+  one-level expand/collapse, refresh, and a searchable tag filter listing every tag worn anywhere in
   the tree except the ones every project carries (the query's own condition). The filter builds a
   condition: required tags combined Any/All, plus excluded tags that rule out every project
   containing them anywhere beneath. Required matches keep their ancestors and subtree. The
   vocabulary is re-derived on every paint and the condition pruned (and logged) when a tag leaves the
   tree; pressing the lit Tags trigger clears the whole condition, and the popup carries no Clear.
+  Header `+` opens the shallowest level with a closed branch; `−` closes the deepest open level,
+  preserving other depths and filtered-out branches. Repeated boundary clicks are inert, and the
+  chosen depth survives header repaints and refreshes; deterministic regression coverage includes
+  mixed branch states and tag-filtered stepping.
   **Create Project Query** is offered on every row; **Mark completed** on projects only.
   **Add work item** (`projects-view/NewWorkItemPanel`) is offered only on the LOWEST planning level
   (`primaryChildTypeOf`): a centred form headed `Parent: <title>`, asking for a title, a Markdown

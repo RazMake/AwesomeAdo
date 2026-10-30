@@ -43,6 +43,7 @@ import {
   renderViewScaffold,
   renderViewSurface,
 } from "../../../common/view-common/control/ViewScaffold/ViewScaffold";
+import { stepTreeExpansion } from "../../../common/view-common/treeExpansion";
 import { createBoardLoader } from "../board-lifecycle/boardLoader";
 import { createBoardWriteQueue } from "../board-lifecycle/boardWriteQueue";
 import { createBoardWriteStatus } from "../board-lifecycle/boardWriteStatus";
@@ -227,17 +228,37 @@ function showMessage(context: EnhancedViewContext, root: HTMLElement, message: s
   );
 }
 
-/** Every id in the tree, so expand-all opens branches the reader has never rendered. */
-function allItemIds(roots: readonly TrackedWorkItem[]): number[] {
-  return flattenWorkItems(roots).map((item) => item.id);
-}
-
 /** The projects (the query's top-level items) the tag filter keeps, in the binding's order. */
 function visibleProjects(data: LoadedProjects, rowContext: ProjectRowContext): TrackedWorkItem[] {
   const kept = rowContext.keptIds;
   const roots =
     kept === null ? data.result.roots : data.result.roots.filter((root) => kept.has(root.id));
   return orderTrackedItems(roots, (root) => root, rowContext.policy);
+}
+
+function expandableLevels(data: LoadedProjects, rowContext: ProjectRowContext): number[][] {
+  const levels: number[][] = [];
+  let items = visibleProjects(data, rowContext);
+  while (items.length > 0) {
+    const branches = items
+      .map((item) => ({ item, children: visibleChildrenOf(item, rowContext) }))
+      .filter(({ children }) => children.length > 0);
+    if (branches.length === 0) break;
+    levels.push(branches.map(({ item }) => item.id));
+    items = branches.flatMap(({ children }) => children);
+  }
+  return levels;
+}
+
+function stepOutline(board: Board, data: LoadedProjects, expanded: boolean): void {
+  const levels = expandableLevels(data, createRowContext(board, data));
+  const depth = stepTreeExpansion(board.session.expandedIds, levels, expanded);
+  if (depth === null) return;
+  board.context.services.logger.info(
+    `All Projects Catalog View ${expanded ? "expanded" : "collapsed"} tree level ${depth + 1} ` +
+      `with tag filter ${describeTagCondition(board.session.tags)}.`,
+  );
+  board.paintList();
 }
 
 /** The ids the current tag condition keeps, or `null` when it narrows nothing and all are kept. */
@@ -673,14 +694,8 @@ function headerOptionsFor(params: {
       );
       board.paintList();
     },
-    onExpandAll: () => {
-      for (const id of allItemIds(loaded.result.roots)) session.expandedIds.add(id);
-      board.paint();
-    },
-    onCollapseAll: () => {
-      session.expandedIds.clear();
-      board.paint();
-    },
+    onExpandAll: () => stepOutline(board, loaded, true),
+    onCollapseAll: () => stepOutline(board, loaded, false),
     onRefresh: params.onRefresh,
     onTitleContextMenu: (event) => board.contextMenu.openAt(event, titleMenuTarget(board, loaded)),
   };

@@ -5,6 +5,11 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ## Next Version
 
+### Bug Fixes
+
+- Projects Catalog's `+` and `−` buttons now expand or collapse one tree level per click, like
+  Project Tracking, instead of opening or closing the entire tree at once.
+
 ## 0.22
 
 ### New Features

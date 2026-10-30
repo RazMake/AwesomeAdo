@@ -64,8 +64,8 @@ export function renderProjectsHeader(
     }),
     title: projectsViewType.label,
     onTitleContextMenu: options.onTitleContextMenu,
-    expandLabel: "Expand every project",
-    collapseLabel: "Collapse every project",
+    expandLabel: "Expand one tree level",
+    collapseLabel: "Collapse one tree level",
     onExpandAll: options.onExpandAll,
     onCollapseAll: options.onCollapseAll,
     filters: [
