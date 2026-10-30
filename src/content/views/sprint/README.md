@@ -52,7 +52,9 @@ replace the history entry rather than pushing one, so Back never walks through f
 every parameter ADO put in the URL is left untouched.
 
 Right-clicking the **Sprint View** title always offers **Copy ADO Url** and **Reset lanes to
-default**. Reset replaces the selected sprint's saved team-shared Lane paths with the query binding's
+default**. Lanes match area paths exactly: a parent path such as `Project\A` is a lane of its own and
+never includes work in `Project\A\b`, so parents and children can be configured and selected side by
+side; the Lanes filter lists child paths indented under their parent. Reset replaces the selected sprint's saved team-shared Lane paths with the query binding's
 defaults and repaints; it is disabled when no defaults are configured. Only a selected **past** sprint
 also offers **Move all (non DONE) items to**, with the current and future iterations as destinations.
 The title uses a context-menu cursor without a tooltip, and DONE is rendered as a theme-aware green

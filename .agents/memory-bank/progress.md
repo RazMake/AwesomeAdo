@@ -263,7 +263,8 @@ This is a flattened snapshot of what exists now, not a build log.
   above the sticky backdrop frames the destination title; backlog-rank mode shows an in-place shadow at the
   resolved slot between visible cards, survives upward reversal through gaps, and appends to an empty
   destination with title highlight only. One serialized action coordinates state and rank; same-cell
-  moves use an insertion line, while cross-lane drops are rejected. Lane choices include only represented leaf area paths. Project
+  moves use an insertion line, while cross-lane drops are rejected. Lane choices include every represented area path, parents included,
+  each matching only its exact path and listed nested under its represented parent. Project
   choices default to planning-parent types above Primary work on ancestor chains of currently
   eligible sprint work, stopping at the explicitly marked Project type or otherwise at the parent
   level above deliverables. The binding's `projectFilterDepth=deliverables` option also includes a

@@ -5,6 +5,12 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 ## Next Version
 
+### New Features
+
+- Sprint View Lanes can now be parent area paths as well as leaf ones. Each lane matches its exact
+  area path only, so choosing `A` and `A\b` shows work in `A` and `A\b` but not in `A\d`, and the
+  Lanes filter lists child paths indented under their parent so the hierarchy is visible.
+
 ### Bug Fixes
 
 - Projects Catalog's `+` and `−` buttons now expand or collapse one tree level per click, like

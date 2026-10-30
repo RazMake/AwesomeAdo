@@ -105,25 +105,67 @@ export function shortestUniqueAreaPathLabels(
   );
 }
 
+/** One offered path in display order, nested under the closest offered path it sits beneath. */
+export interface AreaPathHierarchyEntry {
+  path: string;
+  depth: number;
+}
+
+/**
+ * Order the offered paths so each one follows the closest other offered path it sits beneath.
+ *
+ * Only offered paths take part: an un-offered intermediate node adds no row, so `A` and `A\x\b`
+ * still nest one level apart. Siblings and roots keep the caller's order. Azure DevOps paths are
+ * case-insensitive, so nesting is too.
+ */
+export function areaPathHierarchy(areaPaths: readonly string[]): AreaPathHierarchyEntry[] {
+  const paths = uniqueAreaPaths(areaPaths);
+  const keys = new Map(paths.map((path) => [path, path.toLocaleLowerCase()] as const));
+  const childrenOf = new Map<string | null, string[]>();
+  for (const path of paths) {
+    const key = keys.get(path)!;
+    const parent =
+      paths
+        .filter((other) => key.startsWith(`${keys.get(other)!}${PATH_SEPARATOR}`))
+        .sort((left, right) => right.length - left.length)[0] ?? null;
+    childrenOf.set(parent, [...(childrenOf.get(parent) ?? []), path]);
+  }
+  const ordered: AreaPathHierarchyEntry[] = [];
+  const visit = (parent: string | null, depth: number): void => {
+    for (const path of childrenOf.get(parent) ?? []) {
+      ordered.push({ path, depth });
+      visit(path, depth + 1);
+    }
+  };
+  visit(null, 0);
+  return ordered;
+}
+
 /**
  * Render a button-sized area-path filter that opens a themed full-path multi-select.
  *
  * The caller exchanges full Azure DevOps paths with the control. Labels are display-only shortest
  * unique suffixes, so filtering never depends on an abbreviated or ambiguous value. No quick-search
  * is offered: a path list is already collapsed to the shortest suffix that distinguishes it, which
- * is the text a reader would have typed.
+ * is the text a reader would have typed. When a parent path is offered beside its descendants, the
+ * descendants are listed indented under it, because a short leaf label alone hides the hierarchy.
  */
 export function renderAreaPathFilter(
   doc: Document,
   options: AreaPathFilterOptions,
 ): AreaPathFilterHandle {
-  const paths = uniqueAreaPaths(options.areaPaths);
-  const labels = shortestUniqueAreaPathLabels(paths);
+  const hierarchy = areaPathHierarchy(options.areaPaths);
+  const labels = shortestUniqueAreaPathLabels(hierarchy.map(({ path }) => path));
   const filter = renderCheckboxFilter(doc, {
     label: options.label?.trim() || "Area",
     fixedTitle: options.fixedTitle,
     classPrefix: CLASS_PREFIX,
-    options: paths.map((path) => ({ value: path, label: labels.get(path) ?? path, title: path })),
+    options: hierarchy.map(({ path, depth }) => ({
+      value: path,
+      label: labels.get(path) ?? path,
+      title: path,
+      depth,
+    })),
     selected: options.selectedAreaPaths,
     clearOnTriggerWhenActive: options.clearOnTriggerWhenActive,
     // An item lives at exactly one area path, so the condition can only ever be "one of these":

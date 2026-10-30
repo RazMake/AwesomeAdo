@@ -9,6 +9,25 @@ export interface CheckboxFilterOption {
   label?: string;
   /** The row's tooltip, for a label that had to be shortened. Defaults to the label. */
   title?: string;
+  /**
+   * How far the row is nested under an earlier offered value; absent or 0 for a top-level row.
+   *
+   * Presentational only: picking a nested row never implies its parent, nor the reverse.
+   */
+  depth?: number;
+}
+
+const NESTING_INDENT_PX = 16;
+
+/** Left padding that shows a row's nesting while keeping top-level rows at the usual inset. */
+function rowPadding(option: CheckboxFilterOption): string {
+  const depth = Math.max(option.depth ?? 0, 0);
+  return `padding:6px 8px 6px ${8 + depth * NESTING_INDENT_PX}px`;
+}
+
+/** Expose a nested row's depth to styling and tests; top-level rows carry nothing. */
+function markDepth(row: HTMLElement, option: CheckboxFilterOption): void {
+  if ((option.depth ?? 0) > 0) row.dataset.depth = String(option.depth);
 }
 
 /**
@@ -232,11 +251,12 @@ function renderOptionRow(
   const row = doc.createElement("div");
   row.className = `${params.classPrefix}__option`;
   row.title = option.title ?? option.label ?? option.value;
+  markDepth(row, option);
   row.style.cssText = [
     "display:flex",
     "align-items:center",
     "gap:8px",
-    "padding:6px 8px",
+    rowPadding(option),
     "border-radius:4px",
     "white-space:nowrap",
   ].join(";");
@@ -420,8 +440,9 @@ function renderPickRow(
   row.tabIndex = 0;
   row.title = option.title ?? option.label ?? option.value;
   row.textContent = option.label ?? option.value;
+  markDepth(row, option);
   row.style.cssText = [
-    "padding:6px 8px",
+    rowPadding(option),
     "border-radius:4px",
     "white-space:nowrap",
     "cursor:pointer",

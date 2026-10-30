@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { renderAreaPathFilter, shortestUniqueAreaPathLabels } from "./AreaPathFilter";
+import {
+  areaPathHierarchy,
+  renderAreaPathFilter,
+  shortestUniqueAreaPathLabels,
+} from "./AreaPathFilter";
 
 afterEach(() => {
   document.body.replaceChildren();
@@ -42,6 +46,27 @@ describe("shortestUniqueAreaPathLabels", () => {
   });
 });
 
+describe("areaPathHierarchy", () => {
+  it("nests each path under its closest offered ancestor, keeping caller order otherwise", () => {
+    expect(areaPathHierarchy(["A\\b", "B\\a", "A", "A\\x\\c", "B"])).toEqual([
+      { path: "A", depth: 0 },
+      { path: "A\\b", depth: 1 },
+      { path: "A\\x\\c", depth: 1 },
+      { path: "B", depth: 0 },
+      { path: "B\\a", depth: 1 },
+    ]);
+  });
+
+  it("nests ignoring casing and never treats a name prefix as a parent", () => {
+    expect(areaPathHierarchy(["a", "A\\b", "AB", "A\\b\\c"])).toEqual([
+      { path: "a", depth: 0 },
+      { path: "A\\b", depth: 1 },
+      { path: "A\\b\\c", depth: 2 },
+      { path: "AB", depth: 0 },
+    ]);
+  });
+});
+
 function openFilter(paths = ["Project\\Platform\\API", "Project\\Commerce\\API"]) {
   const onChange = vi.fn();
   const handle = renderAreaPathFilter(document, { areaPaths: paths, onChange });
@@ -51,6 +76,27 @@ function openFilter(paths = ["Project\\Platform\\API", "Project\\Commerce\\API"]
 }
 
 describe("renderAreaPathFilter - popup", () => {
+  it("lists offered descendants indented under their offered parent", () => {
+    openFilter(["Project\\A\\b", "Project\\B", "Project\\A"]);
+
+    const rows = [...document.querySelectorAll<HTMLElement>(".awesomeado-area-filter__option")];
+    expect(rows.map((row) => [row.title, row.dataset.depth ?? "0", row.textContent])).toEqual([
+      ["Project\\B", "0", "B"],
+      ["Project\\A", "0", "A"],
+      ["Project\\A\\b", "1", "b"],
+    ]);
+    expect(rows[2]!.style.paddingLeft).toBe("24px");
+    expect(rows[1]!.style.paddingLeft).toBe("8px");
+  });
+
+  it("selects a parent path without implying its descendants", () => {
+    const { handle, onChange } = openFilter(["Project\\A", "Project\\A\\b"]);
+
+    document.querySelector<HTMLInputElement>('input[value="Project\\\\A"]')!.click();
+
+    expect(onChange).toHaveBeenLastCalledWith(["Project\\A"]);
+    expect(handle.selectedAreaPaths()).toEqual(["Project\\A"]);
+  });
   it("can present the same full-path selector as Lane", () => {
     const handle = renderAreaPathFilter(document, {
       label: "Lane",

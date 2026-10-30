@@ -11,9 +11,10 @@ and empty-list behaviour cannot drift apart.
 ## Public API
 
 - `renderCheckboxFilter(doc, options): CheckboxFilterHandle`
-- `CheckboxFilterOption` — `{ value, label?, title? }`. `value` is what the caller filters by and is
-  always exchanged in full; `label` is display-only (use it for a shortened form) and `title` is the
-  row's tooltip.
+- `CheckboxFilterOption` — `{ value, label?, title?, depth? }`. `value` is what the caller filters by
+  and is always exchanged in full; `label` is display-only (use it for a shortened form) and `title`
+  is the row's tooltip. `depth` indents the row under an earlier one to show hierarchy; it is
+  display-only and never links the rows' selections.
 - `CheckboxFilterSelection` — `{ included, excluded, matchAll }`. The three parts are AND-ed: every
   excluded value must be absent, and the included ones must be present either all together
   (`matchAll`) or one at a time.

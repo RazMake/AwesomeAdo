@@ -2302,23 +2302,37 @@ describe("Sprint View filters", () => {
     ).toEqual(["", "1", "2"]);
   });
 
-  it("offers only leaf area paths as Lanes", async () => {
+  it("offers parent and child area paths as Lanes, nested, each matching only its exact path", async () => {
     const roots = [
-      item(1, "Project root", { areaPath: "Project" }),
-      item(2, "Platform root", { areaPath: "Project\\Platform" }),
-      item(3, "Platform API", { areaPath: "Project\\Platform\\API" }),
-      item(4, "Apps", { areaPath: "Project\\Apps" }),
+      item(1, "In A", { areaPath: "Project\\A" }),
+      item(2, "In A b", { areaPath: "Project\\A\\b" }),
+      item(3, "In A c", { areaPath: "Project\\A\\c" }),
+      item(4, "In A d", { areaPath: "Project\\A\\d" }),
+      item(5, "In B", { areaPath: "Project\\B" }),
+      item(6, "In B a", { areaPath: "Project\\B\\a" }),
     ];
-    const root = await render({
-      loadTree: async () => ({ isTreeQuery: false, roots, error: null }),
-    });
-
-    root.querySelector<HTMLButtonElement>(".awesomeado-area-filter__trigger")!.click();
-    const lanes = [...root.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')].map(
-      (input) => input.value,
+    const root = await render(
+      { loadTree: async () => ({ isTreeQuery: false, roots, error: null }) },
+      { defaultAreaPaths: "Project\\A\nProject\\A\\b\nProject\\A\\c" },
     );
 
-    expect(lanes).toEqual(["Project\\Apps", "Project\\Platform\\API"]);
+    const shownIds = new Set(
+      [...root.querySelectorAll<HTMLElement>("[data-item-id]")].map((row) => row.dataset.itemId),
+    );
+    expect([...shownIds].sort()).toEqual(["1", "2", "3"]);
+
+    root.querySelector<HTMLButtonElement>(".awesomeado-area-filter__trigger")!.click();
+    const lanes = [...root.querySelectorAll<HTMLElement>(".awesomeado-area-filter__option")].map(
+      (row) => [row.title, row.dataset.depth ?? "0"],
+    );
+    expect(lanes).toEqual([
+      ["Project\\A", "0"],
+      ["Project\\A\\b", "1"],
+      ["Project\\A\\c", "1"],
+      ["Project\\A\\d", "1"],
+      ["Project\\B", "0"],
+      ["Project\\B\\a", "1"],
+    ]);
   });
 });
 

@@ -415,8 +415,10 @@ Split into component subfolders (each with its own `README.md`):
   line. Derived sorts disable reorder but not state changes; card controls
   cannot initiate a drag. Lane and Project
   options are derived only from that retained tree. Sprint changes replace the whole DOM and session,
-  resetting all filters and re-deriving Lane/Project options. Its Lane filter offers only
-  represented leaf area paths, excluding any represented ancestor path. Member and Unassigned pill
+  resetting all filters and re-deriving Lane/Project options. Its Lane filter offers every
+  represented area path, parents included; matching is exact (a parent lane never includes its
+  descendants), and the shared AreaPathFilter nests offered descendants under an offered parent
+  (`areaPathHierarchy`, CheckboxFilter option `depth`). Member and Unassigned pill
   counts include only Primary work, and every pill counter
   exposes its semantic label and value on hover. Its shared sprint picker
   omits the optional filter toggle, keeping the view intrinsically scoped to one sprint; Project

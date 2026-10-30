@@ -9,6 +9,10 @@ suffix: a unique path renders as `API`; two paths ending in `API` expand only as
 as `Platform › API` and `Commerce › API`. Each row's tooltip retains the full path. No quick-search
 is offered: the labels are already collapsed to the text a reader would have typed.
 
+When an offered path sits beneath another offered path, it is listed indented under that parent
+(`areaPathHierarchy` computes the order and depth); roots and siblings keep the caller's order.
+Nesting is display-only: selecting a parent never selects or implies its descendants.
+
 ## Usage
 
 ```typescript

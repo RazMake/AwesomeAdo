@@ -581,13 +581,6 @@ function distinctAreaPaths(items: readonly DisplayItem[]): string[] {
   ].sort((left, right) => left.localeCompare(right));
 }
 
-function areaPathsOf(items: readonly DisplayItem[]): string[] {
-  const paths = distinctAreaPaths(items);
-  // The Lane filter matches a path exactly, so an ancestor that has represented descendants would
-  // offer a lane showing nothing.
-  return paths.filter((path) => !paths.some((other) => other.startsWith(`${path}\\`)));
-}
-
 /**
  * Where "Change area path" may move an item: every configured default, whether or not this sprint
  * loaded anything in it, plus every path the loaded Primary work sits in.
@@ -1269,7 +1262,8 @@ function sprintBoardCollections(context: DataDrivenViewContext, data: LoadedSpri
   return {
     allItems,
     filterItems,
-    areaPaths: areaPathsOf(filterItems),
+    // Lanes match exactly, so a represented parent path is a lane of its own beside its children.
+    areaPaths: distinctAreaPaths(filterItems),
     assignableAreaPaths: areaPathsForAssignment(
       filterItems,
       sprintDefaultAreaPaths(context.properties),
