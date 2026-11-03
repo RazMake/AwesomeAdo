@@ -8,13 +8,23 @@ import {
   type SprintBulkMoveCandidate,
   type SprintBulkMoveProgress,
 } from "./SprintBulkMove";
-import { buildSprintBulkMovePlan, renderSprintBulkMoveDialog } from "./SprintBulkMoveDialog";
+import { renderSprintBulkMoveDialog } from "./SprintBulkMoveDialog";
+import {
+  buildSprintBulkMovePlan,
+  selectSprintBulkMoveCandidates,
+  sprintBulkMoveAssignees,
+  unassignedInSelection,
+  type SprintBulkMovePlan,
+  type SprintBulkMoveSelection,
+} from "./SprintBulkMovePlan";
 
 export interface SprintBulkMoveRequest {
   source: SprintWindowEntry;
   destination: SprintWindowEntry;
   visibleItems: readonly TrackedWorkItem[];
   types: readonly TypeCatalogEntry[];
+  /** The user's board-column titles, in board order, so the dialog names columns as the board does. */
+  boardColumns: readonly string[];
   loadRoots(): Promise<readonly TrackedWorkItem[]>;
   onSettled(): void;
 }
@@ -84,13 +94,13 @@ export class SprintBulkMoveController {
   open(request: SprintBulkMoveRequest): void {
     if (this.active) return;
     const typeMap = new Map(request.types.map((type) => [type.name, type]));
-    const plan = buildSprintBulkMovePlan(request.visibleItems, typeMap);
+    const plan = buildSprintBulkMovePlan(request.visibleItems, typeMap, request.boardColumns);
     this.options.mountInto.querySelector(".awesomeado-sprint__bulk-dialog-overlay")?.remove();
     this.options.mountInto.append(
       renderSprintBulkMoveDialog(this.options.doc, {
         destinationLabel: request.destination.label,
         plan,
-        onConfirm: () => this.start(request, plan.candidates),
+        onConfirm: (selection) => this.confirm(request, plan, selection),
         onCancel: () => undefined,
       }),
     );
@@ -102,9 +112,30 @@ export class SprintBulkMoveController {
     this.paintStatus();
   }
 
+  /**
+   * Records what the reader narrowed the move to, so "why did this card stay behind?" is answerable
+   * from the log. Columns are logged by board position and assignees by count: column titles are
+   * the user's own setting values and assignees are identities, neither of which belongs in the log.
+   */
+  private confirm(
+    request: SprintBulkMoveRequest,
+    plan: SprintBulkMovePlan,
+    selection: SprintBulkMoveSelection,
+  ): void {
+    const candidates = selectSprintBulkMoveCandidates(plan, selection);
+    this.options.logger.info(
+      `Sprint bulk move confirmed: items=${candidates.length} of ${plan.candidates.length}, ` +
+        `columns=[${[...selection.columns].sort((left, right) => left - right).join(", ")}], ` +
+        `assignees=${selection.assignees.size} of ${sprintBulkMoveAssignees(plan).length}, ` +
+        `unassignedExcluded=${unassignedInSelection(plan, selection)}.`,
+    );
+    this.start(request, candidates, selection.columns);
+  }
+
   private start(
     request: SprintBulkMoveRequest,
     candidates: readonly SprintBulkMoveCandidate[],
+    columns: ReadonlySet<number>,
   ): void {
     if (this.active || candidates.length === 0) return;
     this.active = true;
@@ -119,7 +150,7 @@ export class SprintBulkMoveController {
     };
     this.releaseGuards = installGuards(this.options.doc, () => this.cancel());
     this.paintStatus();
-    void this.execute(request, candidates).finally(() => {
+    void this.execute(request, candidates, columns).finally(() => {
       this.active = false;
       this.releaseGuards();
       this.releaseGuards = (): void => undefined;
@@ -130,6 +161,7 @@ export class SprintBulkMoveController {
   private async execute(
     request: SprintBulkMoveRequest,
     candidates: readonly SprintBulkMoveCandidate[],
+    columns: ReadonlySet<number>,
   ): Promise<void> {
     try {
       await runSprintBulkMove({
@@ -137,6 +169,7 @@ export class SprintBulkMoveController {
         destinationPath: request.destination.path,
         destinationName: request.destination.name,
         candidates,
+        columns,
         types: request.types,
         loadRoots: request.loadRoots,
         writes: this.options.writes,

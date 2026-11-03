@@ -10,6 +10,7 @@ import { SprintBulkMoveController, type SprintBulkMoveRequest } from "./SprintBu
 
 const SOURCE = "Project\\Sprint 1";
 const DESTINATION = "Project\\Sprint 2";
+const BOARD = ["Queue", "Active", "Waiting", "Done"];
 
 function sprint(path: string, relation: SprintWindowEntry["relation"]): SprintWindowEntry {
   return { path, name: path, label: path, relation };
@@ -97,6 +98,7 @@ function harness(failedWrites = 0): Harness {
     destination: sprint(DESTINATION, "future"),
     visibleItems: items,
     types: types(),
+    boardColumns: BOARD,
     loadRoots: async () => items,
     onSettled: () => markSettled(),
   };
@@ -174,5 +176,55 @@ describe("SprintBulkMoveController status controls", () => {
 
     releaseWrite();
     await settled;
+  });
+});
+
+describe("SprintBulkMoveController confirmation", () => {
+  beforeEach(() => {
+    document.body.replaceChildren();
+  });
+
+  it("moves only the confirmed selection and logs it without identities", async () => {
+    const enqueue = vi.fn<(request: QueuedFieldWrite) => Promise<WorkItemFieldWriteResult>>(
+      async () => ({ ok: true, rev: 2 }),
+    );
+    const logger: ILogger = { info: vi.fn(), error: vi.fn() };
+    const mountInto = document.createElement("div");
+    document.body.append(mountInto);
+    const controller = new SprintBulkMoveController({
+      doc: document,
+      mountInto,
+      writes: { enqueue },
+      logger,
+      openDiagnosticsLog: vi.fn(),
+    });
+    const bob = Object.assign(item(2), {
+      assignedTo: { displayName: "Bob", uniqueName: "bob@example.com", imageUrl: null },
+    });
+    const items = [item(1), bob];
+    const settled = new Promise<void>((onSettled) =>
+      controller.open({
+        source: sprint(SOURCE, "past"),
+        destination: sprint(DESTINATION, "future"),
+        visibleItems: items,
+        types: types(),
+        boardColumns: BOARD,
+        loadRoots: async () => items,
+        onSettled,
+      }),
+    );
+    const bobChoice = [
+      ...mountInto.querySelectorAll<HTMLLabelElement>(".awesomeado-sprint__bulk-dialog-assignee"),
+    ].find((choice) => choice.querySelector("span")?.textContent === "Bob")!;
+
+    bobChoice.querySelector("input")!.click();
+    mountInto.querySelector<HTMLButtonElement>(".awesomeado-sprint__bulk-dialog-confirm")!.click();
+    await settled;
+
+    expect(enqueue.mock.calls.map(([request]) => request.id)).toEqual([1]);
+    expect(logger.info).toHaveBeenCalledWith(
+      "Sprint bulk move confirmed: items=1 of 2, columns=[0, 1, 2], assignees=1 of 2, unassignedExcluded=0.",
+    );
+    expect(JSON.stringify(vi.mocked(logger.info).mock.calls)).not.toMatch(/alice|bob/i);
   });
 });

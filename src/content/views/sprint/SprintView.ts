@@ -1050,7 +1050,7 @@ function bulkMoveLabel(doc: Document): Node[] {
     "font-weight:700",
     "line-height:1.5",
   ].join(";");
-  return [doc.createTextNode("Move all (non "), done, doc.createTextNode(") items to")];
+  return [doc.createTextNode("Move (non "), done, doc.createTextNode(") items to")];
 }
 
 function moveAllCommands(params: {
@@ -1085,7 +1085,7 @@ function sprintTitleMenuTarget(params: {
   ];
   if (source?.relation === "past") {
     commands.push({
-      label: "Move all non-DONE items to",
+      label: "Move non-DONE items to",
       renderLabel: bulkMoveLabel,
       separatorBefore: true,
       disabledReason:
@@ -1417,6 +1417,7 @@ function createBulkMoveRequest(
     destination,
     visibleItems,
     types: context.services.getTypes(),
+    boardColumns: context.services.getBoardColumns(),
     loadRoots: async () => {
       if ((context.doc.location?.href ?? "") !== operationHref) {
         throw new Error("The Azure DevOps page changed during the bulk move.");

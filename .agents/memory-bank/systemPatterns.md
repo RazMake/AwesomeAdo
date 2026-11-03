@@ -383,8 +383,10 @@ Split into component subfolders (each with its own `README.md`):
   shared `AssignedTo` control occupy the top corners in both card sizes, while the shared `?` details
   control and Priority chip remain available in either size. Priority is read-only while Done is
   compact and editable after expansion. The title right-click menu copies the query URL and, only for
-  a past sprint, moves a confirmed snapshot of visible, assigned, non-Done Primary-work cards to a
-  current/future iteration. The dialog summarizes by Lane and assignee; Lane display reuses
+  a past sprint, moves a confirmed snapshot of visible, assigned Primary-work cards to a
+  current/future iteration. The dialog narrows that snapshot by ticked board column (Done is shown
+  disabled) and ticked assignee — pure selection logic in `SprintBulkMovePlan.ts`, DOM in
+  `SprintBulkMoveDialog.ts` — and summarizes the result by Lane; Lane display reuses
   `shortestUniqueAreaPathLabels` so leaves expand through parents only when they collide. The operation never widens
   beyond those IDs and atomically guards State, Area Path, and Assigned To before each iteration write.
   Card and child menus reuse Project

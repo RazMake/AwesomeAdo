@@ -135,6 +135,10 @@ AwesomeADO is feature-complete for its current scope:
   non-Primary parents above Primary work. Primary work and implementation details remain excluded.
 - Sprint View synchronizes its horizontally scrolled card grids without transformed ancestors, so
   card popups that escape a clipped lane remain correctly anchored to the viewport.
+- Sprint View's past-sprint **Move (non DONE) items to** confirmation narrows the move by ticked
+  board columns (Done shown, never selectable, and re-enforced at run time) and ticked assignees,
+  all ticked by default, with cross-filtered live counts (ADR-062 amendment). Authenticated browser
+  validation pending.
 - Sprint parent cards show a Sub-items completed/total badge for primary descendants in the selected
   sprint, indexed from roster-eligible items before interactive filters. The popup labels hidden
   cards and scrolls to visible ones with an immediate theme-colored outline held for 2.4 seconds,

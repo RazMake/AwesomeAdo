@@ -25,8 +25,11 @@ Lane selection.
   the query's clickable parent-folder breadcrumb trail at the top. Sprint selection stays beside the
   title; Lane, Project, and Refresh form the rightmost action group. At narrow widths the header
   wraps complete controls onto additional lines instead of compressing their labels.
-- `SprintBulkMoveDialog.ts` -> `buildSprintBulkMovePlan` / `renderSprintBulkMoveDialog` - snapshots
-  eligible visible cards and confirms their Lane/assignee summary before any write begins.
+- `SprintBulkMovePlan.ts` -> `buildSprintBulkMovePlan` / `defaultSprintBulkMoveSelection` /
+  `selectSprintBulkMoveCandidates` - snapshots the visible cards in every movable board column and
+  narrows that snapshot to the columns and assignees the reader keeps ticked.
+- `SprintBulkMoveDialog.ts` -> `renderSprintBulkMoveDialog` - lets the reader choose source columns
+  and assignees with live counts, and confirms the resulting Lane summary before any write begins.
 - `SprintBulkMoveController.ts` -> `SprintBulkMoveController` - owns confirmation, progress,
   cancellation, interaction/unload guards, and the final refresh.
 - `SprintBulkMove.ts` -> `runSprintBulkMove` - revalidates only confirmed IDs and executes their
@@ -56,19 +59,27 @@ default**. Lanes match area paths exactly: a parent path such as `Project\A` is 
 never includes work in `Project\A\b`, so parents and children can be configured and selected side by
 side; the Lanes filter lists child paths indented under their parent. Reset replaces the selected sprint's saved team-shared Lane paths with the query binding's
 defaults and repaints; it is disabled when no defaults are configured. Only a selected **past** sprint
-also offers **Move all (non DONE) items to**, with the current and future iterations as destinations.
+also offers **Move (non DONE) items to**, with the current and future iterations as destinations.
 The title uses a context-menu cursor without a tooltip, and DONE is rendered as a theme-aware green
 chip in the command label.
 
 Choosing a destination opens a confirmation dialog for the exact card set visible under the current
-Lane, Project, person, marker, and activity filters. It summarizes eligible cards by Lane and by
-assignee. Lane names use the filter dropdown's shortest unique suffixes: normally the leaf alone,
-expanding through parents only until colliding leaves differ. Only assigned, non-Done Primary-work cards enter the immutable operation snapshot;
-unassigned visible cards are counted as excluded, filtered-out cards and implementation-detail
-children never enter it, and later query arrivals are never added. During execution each snapshot ID
-is freshly read and guarded atomically by its State, Area Path, and Assigned To values before its
-`System.IterationPath` changes. A card that became Done, unassigned, reassigned, or moved Lane is
-skipped. Transient failures retry three times with backoff; a conflict returns to a fresh validation
+Lane, Project, person, marker, and activity filters. **From columns** lists the board's own column
+titles; every column before Done starts ticked, and Done is shown disabled because Done work is
+never moved. **Assignees** lists every person with an eligible card, all ticked, with **All** /
+**None** shortcuts. Each column count says how many cards of the ticked assignees sit in that
+column, and each assignee count says how many of that person's cards sit in the ticked columns. The
+title, the **By lane** summary, and the confirm button follow the selection; confirm is disabled
+when nothing would move. Lane names use the filter dropdown's shortest unique suffixes: normally the
+leaf alone, expanding through parents only until colliding leaves differ. Only assigned Primary-work
+cards in a ticked column and of a ticked assignee enter the immutable operation snapshot; unassigned
+visible cards in the ticked columns are counted as excluded, filtered-out cards and
+implementation-detail children never enter it, and later query arrivals are never added. During
+execution each snapshot ID is freshly read and guarded atomically by its State, Area Path, and
+Assigned To values before its `System.IterationPath` changes. A card that left the ticked columns
+(including one that became Done), became unassigned, was reassigned, or moved Lane is skipped; one
+that moved between two ticked columns still moves. Transient failures retry three times with
+backoff; a conflict returns to a fresh validation
 pass, up to three times per card before that card is reported as failed, bounded overall to 100
 passes and 10,000 confirmed items. Refresh, sprint/filter actions, and other
 page interactions are blocked while the operation runs; leaving the page warns, Escape or **Cancel**

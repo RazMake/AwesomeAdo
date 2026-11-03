@@ -7,7 +7,8 @@ const ITERATION_PATH_FIELD = "System.IterationPath";
 const STATE_FIELD = "System.State";
 const AREA_PATH_FIELD = "System.AreaPath";
 const ASSIGNED_TO_FIELD = "System.AssignedTo";
-const DONE_COLUMN_ORDINAL = 3;
+/** The board column completed work sits in; a bulk move never takes work from it or beyond it. */
+export const SPRINT_DONE_COLUMN = 3;
 const DEFAULT_MAX_PASSES = 100;
 const DEFAULT_MAX_ITEMS = 10_000;
 const TRANSIENT_RETRIES = 3;
@@ -28,6 +29,8 @@ export interface SprintBulkMoveProgress {
 
 export interface SprintBulkMoveCandidate {
   id: number;
+  /** The board column the card was in when the dialog opened. */
+  column: number;
   areaPath: string | null;
   assigneeValue: string;
   assigneeLabel: string;
@@ -38,6 +41,8 @@ export interface SprintBulkMoveOptions {
   destinationPath: string;
   destinationName: string;
   candidates: readonly SprintBulkMoveCandidate[];
+  /** The board columns the user chose to move work from; work found in any other column is skipped. */
+  columns: ReadonlySet<number>;
   types: readonly TypeCatalogEntry[];
   loadRoots(): Promise<readonly TrackedWorkItem[]>;
   writes: Pick<WorkItemWriteQueue, "enqueue">;
@@ -66,19 +71,22 @@ export function sprintItemStateOrdinal(item: TrackedWorkItem, type: TypeCatalogE
   );
 }
 
+/** Done is refused even if a caller passes it: completed work stays in the sprint it finished in. */
+export function isSprintBulkMovableColumn(ordinal: number, columns: ReadonlySet<number>): boolean {
+  return ordinal >= 0 && ordinal < SPRINT_DONE_COLUMN && columns.has(ordinal);
+}
+
 function isStillEligible(
   item: TrackedWorkItem,
   candidate: SprintBulkMoveCandidate,
   type: TypeCatalogEntry | undefined,
-  sourcePath: string,
+  options: Pick<SprintBulkMoveOptions, "sourcePath" | "columns">,
 ): boolean {
   if (type?.isPrimaryWork !== true) return false;
-  const ordinal = sprintItemStateOrdinal(item, type);
   const assignee = item.assignedTo === null ? null : identityFieldValue(item.assignedTo);
   return (
-    item.iterationPath === sourcePath &&
-    ordinal >= 0 &&
-    ordinal < DONE_COLUMN_ORDINAL &&
+    item.iterationPath === options.sourcePath &&
+    isSprintBulkMovableColumn(sprintItemStateOrdinal(item, type), options.columns) &&
     item.areaPath === candidate.areaPath &&
     assignee === candidate.assigneeValue
   );
@@ -86,20 +94,17 @@ function isStillEligible(
 
 function candidateItems(
   roots: readonly TrackedWorkItem[],
-  candidates: ReadonlyMap<number, SprintBulkMoveCandidate>,
-  remainingIds: ReadonlySet<number>,
-  sourcePath: string,
-  types: readonly TypeCatalogEntry[],
-  skippedIds: Set<number>,
+  state: BulkMoveRunState,
+  options: SprintBulkMoveOptions,
 ): TrackedWorkItem[] {
-  const typeByName = new Map(types.map((type) => [type.name, type]));
+  const typeByName = new Map(options.types.map((type) => [type.name, type]));
   return flattenUnique(roots).filter((item) => {
-    if (!remainingIds.has(item.id)) return false;
-    const candidate = candidates.get(item.id);
+    if (!state.remainingIds.has(item.id)) return false;
+    const candidate = state.candidates.get(item.id);
     const type = typeByName.get(item.type);
     if (candidate === undefined) return false;
-    const stillEligible = isStillEligible(item, candidate, type, sourcePath);
-    if (!stillEligible) skippedIds.add(item.id);
+    const stillEligible = isStillEligible(item, candidate, type, options);
+    if (!stillEligible) state.skippedIds.add(item.id);
     return stillEligible;
   });
 }
@@ -209,14 +214,7 @@ function candidatesForPass(
   for (const id of state.remainingIds) {
     if (!presentIds.has(id)) state.skippedIds.add(id);
   }
-  const eligible = candidateItems(
-    roots,
-    state.candidates,
-    state.remainingIds,
-    options.sourcePath,
-    options.types,
-    state.skippedIds,
-  );
+  const eligible = candidateItems(roots, state, options);
   for (const id of state.skippedIds) state.remainingIds.delete(id);
   return eligible;
 }

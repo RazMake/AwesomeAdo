@@ -1116,7 +1116,7 @@ function openBulkConfirmation(root: HTMLElement): HTMLElement {
   expect(titleRows.map((row) => row.getAttribute("aria-label") ?? row.textContent)).toEqual([
     "Copy ADO Url",
     "Reset lanes to default",
-    "Move all non-DONE items to",
+    "Move non-DONE items to",
   ]);
   const done = titleRows[2]!.querySelector("span") as HTMLElement;
   expect(done.textContent).toBe("DONE");
@@ -1130,15 +1130,38 @@ function openBulkConfirmation(root: HTMLElement): HTMLElement {
   return root.querySelector<HTMLElement>(".awesomeado-sprint__bulk-dialog")!;
 }
 
+function bulkChoices(dialog: HTMLElement, kind: "column" | "assignee"): HTMLLabelElement[] {
+  return [...dialog.querySelectorAll<HTMLLabelElement>(`.awesomeado-sprint__bulk-dialog-${kind}`)];
+}
+
+function tickBulkChoice(dialog: HTMLElement, kind: "column" | "assignee", name: string): void {
+  bulkChoices(dialog, kind)
+    .find((choice) => choice.querySelector("span")?.textContent === name)!
+    .querySelector("input")!
+    .click();
+}
+
 function confirmBulkDialog(dialog: HTMLElement): void {
   expect(dialog.textContent).toContain("Move 2 visible item(s)?");
-  expect(dialog.querySelector("section")?.textContent).toBe("By laneApps1Platform1");
-  expect(dialog.querySelectorAll("section")[1]?.textContent).toBe("By assigneeAlice1Bob1");
+  expect(dialog.querySelector(".awesomeado-sprint__bulk-dialog-lanes")?.textContent).toBe(
+    "By laneApps1Platform1",
+  );
+  // Columns carry the user's own board titles; Done is listed but has no count to move.
+  expect(bulkChoices(dialog, "column").map((choice) => choice.textContent)).toEqual([
+    "Queue2",
+    "Active0",
+    "Waiting0",
+    "Done",
+  ]);
+  expect(bulkChoices(dialog, "assignee").map((choice) => choice.textContent)).toEqual([
+    "Alice1",
+    "Bob1",
+  ]);
   expect(dialog.textContent).toContain("1 visible unassigned item(s) excluded.");
   dialog.querySelector<HTMLButtonElement>(".awesomeado-sprint__bulk-dialog-confirm")!.click();
 }
 
-function pastSprintMove(id: number, areaPath: string, assignee: string) {
+function pastSprintMove(id: number, areaPath: string, assignee: string, state = "New") {
   return {
     id,
     rev: 1,
@@ -1146,7 +1169,7 @@ function pastSprintMove(id: number, areaPath: string, assignee: string) {
     value: "Project\\Sprint 2",
     baseValue: "Project\\Sprint 0",
     preconditions: [
-      { field: "System.State", value: "New" },
+      { field: "System.State", value: state },
       { field: "System.AreaPath", value: areaPath },
       { field: "System.AssignedTo", value: assignee },
     ],
@@ -1194,11 +1217,49 @@ async function verifyPastSprintBulkMove(): Promise<void> {
   expect(writeField).not.toHaveBeenCalledWith(expect.objectContaining({ id: 3 }));
 }
 
+async function verifyNarrowedBulkMove(): Promise<void> {
+  const writeField = vi
+    .fn<EnhancedViewServices["writeField"]>()
+    .mockResolvedValue({ ok: true, rev: 2 });
+  const past = { iterationPath: "Project\\Sprint 0", sprintName: "Sprint 0" };
+  const roots = [
+    item(1, "Queued", past),
+    item(2, "Active", { state: "Active", ...past }),
+    item(3, "Bob's active", { state: "Active", assignedTo: user("Bob"), ...past }),
+    item(4, "Waiting", { state: "Waiting", ...past }),
+  ];
+  const root = await render({
+    loadTree: async () => ({ isTreeQuery: false, roots, error: null }),
+    loadSprintWindow: async () => bulkMoveSprintWindow(),
+    writeField,
+  });
+  await selectSprint(root, "Sprint 0", [1, 2, 3, 4]);
+  const dialog = openBulkConfirmation(root);
+
+  tickBulkChoice(dialog, "column", "Queue");
+  tickBulkChoice(dialog, "assignee", "Bob");
+  expect(dialog.textContent).toContain("Move 2 visible item(s)?");
+  dialog.querySelector<HTMLButtonElement>(".awesomeado-sprint__bulk-dialog-confirm")!.click();
+  await vi.waitFor(() => expect(writeField).toHaveBeenCalledTimes(2));
+  await settleQueuedWrites();
+
+  // The Queue card and Bob's card stay behind; only Alice's Active and Waiting work moves.
+  const alice = "Alice <alice@example.com>";
+  expect(
+    writeField.mock.calls.map(([request]) => request).sort((left, right) => left.id - right.id),
+  ).toEqual([
+    pastSprintMove(2, "Project\\Platform", alice, "Active"),
+    pastSprintMove(4, "Project\\Platform", alice, "Waiting"),
+  ]);
+}
+
 describe("Sprint View title context menu", () => {
   it(
     "offers bulk move only for a past sprint, guarding each non-Done assigned item and excluding unassigned work",
     verifyPastSprintBulkMove,
   );
+
+  it("moves only the board columns and assignees the reader leaves ticked", verifyNarrowedBulkMove);
 
   it("replaces the selected sprint's saved lanes with configured defaults", async () => {
     const save = vi.fn(async () => true);

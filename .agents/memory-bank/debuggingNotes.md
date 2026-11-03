@@ -370,11 +370,13 @@ permissible range: Parameter Name: depth, Acceptable Range: 0 to 2"`. `getWithRe
 - RISK: re-running the source WIQL and reapplying whatever filters happen to be current can add work
   the confirmation never counted, including another team's cards, or make a filter change halfway
   through alter the operation's meaning.
-- RULE: snapshot only rendered, assigned, non-Done Primary-work card IDs when the dialog opens. Fresh
-  reads may validate those IDs but never add IDs. Atomically test State, Area Path, and Assigned To
-  with the iteration write; a 409/412 gets a full fresh pass, never the primary-field-only rebase.
-- Unassigned, missing, Done, reassigned, or re-laned cards are skipped and reported. The dialog's
-  Lane/assignee counts remain the operation contract from confirmation through completion.
+- RULE: snapshot only rendered, assigned Primary-work card IDs in the columns and of the assignees
+  the reader left ticked when they confirm. Fresh reads may validate those IDs but never add IDs.
+  Atomically test State, Area Path, and Assigned To with the iteration write; a 409/412 gets a full
+  fresh pass, never the primary-field-only rebase.
+- Unassigned, missing, reassigned, or re-laned cards, and cards that left the ticked columns (Done
+  always counts as left), are skipped and reported. The confirmed column/assignee selection and its
+  counts remain the operation contract from confirmation through completion.
 
 ## Interrupt acceptance needs BOTH the update timeline and Discussion comments
 

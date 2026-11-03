@@ -57,9 +57,10 @@ function logger(): ILogger {
   return { info: vi.fn(), error: vi.fn() };
 }
 
-function candidate(id: number): SprintBulkMoveCandidate {
+function candidate(id: number, column = 1): SprintBulkMoveCandidate {
   return {
     id,
+    column,
     areaPath: "Project\\API",
     assigneeValue: "alice@example.com",
     assigneeLabel: "Alice",
@@ -80,6 +81,7 @@ function options(overrides: Partial<SprintBulkMoveOptions> = {}): SprintBulkMove
     destinationPath: DESTINATION,
     destinationName: "Sprint 2",
     candidates: [candidate(1)],
+    columns: new Set([0, 1, 2]),
     types: types(),
     loadRoots: async () => [],
     writes: { enqueue: vi.fn(async () => ({ ok: true, rev: 2 })) },
@@ -217,6 +219,56 @@ describe("runSprintBulkMove eligibility guards", () => {
 
     const result = await runSprintBulkMove(
       options({ loadRoots: async () => [changed], writes: { enqueue } }),
+    );
+
+    expect(enqueue).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ phase: "completed", moved: 0, skipped: 1 });
+  });
+});
+
+describe("runSprintBulkMove column guards", () => {
+  it("skips a confirmed item that moved to a column the reader did not choose", async () => {
+    const enqueue = vi.fn();
+
+    const result = await runSprintBulkMove(
+      options({
+        columns: new Set([1]),
+        loadRoots: async () => [item(1, "Waiting")],
+        writes: { enqueue },
+      }),
+    );
+
+    expect(enqueue).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ phase: "completed", moved: 0, skipped: 1 });
+  });
+
+  it("still moves a confirmed item that moved between two chosen columns", async () => {
+    const enqueue = enqueueSpy().mockResolvedValue({ ok: true, rev: 2 });
+
+    const result = await runSprintBulkMove(
+      options({
+        columns: new Set([1, 2]),
+        loadRoots: async () => [item(1, "Waiting")],
+        writes: { enqueue },
+      }),
+    );
+
+    expect(enqueue.mock.calls[0]![0].preconditions).toContainEqual({
+      field: "System.State",
+      value: "Waiting",
+    });
+    expect(result).toMatchObject({ phase: "completed", moved: 1, skipped: 0 });
+  });
+
+  it("never moves Done work even when a caller lists the Done column", async () => {
+    const enqueue = vi.fn();
+
+    const result = await runSprintBulkMove(
+      options({
+        columns: new Set([0, 1, 2, 3]),
+        loadRoots: async () => [item(1, "Done")],
+        writes: { enqueue },
+      }),
     );
 
     expect(enqueue).not.toHaveBeenCalled();

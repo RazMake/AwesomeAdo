@@ -1248,13 +1248,24 @@ Markdown` in one `/rev`-guarded JSON Patch. A 412 causes one reread and one retr
 - Decision: the Sprint title offers bulk movement only while a past sprint is selected. Choosing a
   current/future destination opens a confirmation that groups the exact currently visible eligible
   cards by Lane and assignee. Lane display uses the same shortest-unique-suffix labels as the Lane
-  dropdown, while candidates and guards retain full Area Paths. Eligibility is assigned, non-Done Primary work; unassigned visible
-  cards are reported as excluded. The operation snapshots those IDs at confirmation and never adds
-  filtered-out cards, implementation-detail descendants, new query arrivals, or cards revealed by a
-  later filter change.
+  dropdown, while candidates and guards retain full Area Paths. Eligibility is assigned Primary work
+  in a column the reader ticked and assigned to a person the reader ticked; unassigned visible
+  cards in the ticked columns are reported as excluded. The operation snapshots those IDs at
+  confirmation and never adds filtered-out cards, implementation-detail descendants, new query
+  arrivals, or cards revealed by a later filter change.
+- Decision (amended): the dialog itself narrows the snapshot. **From columns** offers the board's
+  first three columns plus a disabled Done; **Assignees** offers every eligible person. Everything
+  movable starts ticked, so one click reproduces the original "every non-Done card" move, and
+  narrowing is opt-in. Pickers live in the confirmation rather than in a submenu because the reader
+  needs the live per-column and per-person counts to choose well, and the confirmation already owns
+  the snapshot. Each picker counts against the other picker's choice. Done is still enforced at run
+  time (`isSprintBulkMovableColumn` rejects it whatever `columns` contains), not only by the
+  disabled checkbox. The confirm decision is logged by column ordinal and assignee COUNT, never by
+  column title or identity.
 - Decision: each snapshot ID is freshly read before writing and its `System.IterationPath` patch
-  atomically tests `System.State`, `System.AreaPath`, and `System.AssignedTo`. Changed, missing, Done,
-  or unassigned cards are skipped. A preconditioned write never uses the primary-field-only rebase;
+  atomically tests `System.State`, `System.AreaPath`, and `System.AssignedTo`. Changed, missing,
+  unassigned cards, and cards that left the ticked columns (Done always among them) are skipped; a
+  card that moved between two ticked columns still moves, guarded on its fresh State. A preconditioned write never uses the primary-field-only rebase;
   409/412 returns to a fresh complete pass, at most three times per card before that card is reported
   as failed, so one permanently conflicting card cannot spend the whole pass budget. The identity
   precondition carries `identityTestValue` (`Display Name <unique.name>`), not the sign-in address

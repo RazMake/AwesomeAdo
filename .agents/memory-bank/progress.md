@@ -281,8 +281,9 @@ This is a flattened snapshot of what exists now, not a build log.
   derived from the loaded work. Sprint changes replace the DOM/session, reset all filters, and
   reload team members, work, Lane choices, and Project choices. Both views keep filter pills at full opacity and distinguish non-activity from
   recent-activity pills with a larger gap between wrapping families. The title context menu copies
-  the query URL; only past sprints can bulk-move a confirmed snapshot of visible, assigned,
-  non-Done Primary-work cards to a current/future sprint, with Lane/assignee summaries, atomic
+  the query URL; only past sprints can bulk-move a confirmed snapshot of visible, assigned
+  Primary-work cards to a current/future sprint, narrowed in the dialog by board column (Done shown
+  but never selectable) and by assignee with cross-filtered live counts, with a Lane summary, atomic
   State/Lane/assignee guards, retries, cancellation, leave protection, and bounded passes. Cards and direct
   children share Project Tracking item commands plus Sprint-only Interrupt Tag/Accept/Clear actions;
   the inline checkbox previews acceptance, while accepting opens the shared titled Markdown/mention
