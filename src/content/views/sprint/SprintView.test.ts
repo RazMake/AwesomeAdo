@@ -4,6 +4,7 @@ import type { TrackedUser, TrackedWorkItem } from "../../../common/ado/TrackedWo
 import type { SprintWindow } from "../../../common/ado/sprintWindow";
 import { normalizeMarkerTags } from "../../../common/settings/ExtensionSettings";
 import type { EnhancedViewServices } from "../../../common/view-common/EnhancedView";
+import { PARENT_LOOKUP_DELAY_MS } from "../project-tracking/item-commands/UpdateParentCommand";
 
 import { sprintView } from "./SprintView";
 import { readSprintUrlPreferences } from "./sprintUrlPreferences";
@@ -1381,6 +1382,41 @@ describe("Sprint View item context menus", () => {
         (row) => row.getAttribute("aria-label") ?? row.textContent?.replace("›", "").trim(),
       ),
     ).toEqual(shared);
+  });
+});
+
+describe("Sprint View item commands — Update parent", () => {
+  it("re-parents an item through Update parent", async () => {
+    const reorderItem = vi
+      .fn<EnhancedViewServices["reorderItem"]>()
+      .mockResolvedValue({ ok: true, rev: 8, reparented: true });
+    const root = await render({
+      loadTree: async (_queryId, wiql) => ({
+        isTreeQuery: false,
+        roots: wiql?.includes("= 77") === true ? [item(77, "New parent")] : defaultTree(),
+        error: null,
+      }),
+      reorderItem,
+    });
+    vi.useFakeTimers();
+    try {
+      openContextMenu(root.querySelector('[data-item-id="2"]')!);
+      menuCommand("Update parent").click();
+      const input = document.querySelector<HTMLInputElement>(".awesomeado-parent-picker__input")!;
+      input.value = "77";
+      input.dispatchEvent(new Event("input"));
+      await vi.advanceTimersByTimeAsync(PARENT_LOOKUP_DELAY_MS);
+      const set = [...document.querySelectorAll("button")].find((b) => b.textContent === "Set")!;
+      expect(set.disabled).toBe(false);
+      set.click();
+      await vi.advanceTimersByTimeAsync(0);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(reorderItem).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 2, parentId: 77, currentParentId: 0, team: "team-id" }),
+    );
   });
 });
 

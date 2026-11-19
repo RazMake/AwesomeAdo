@@ -19,6 +19,8 @@ builds use the repository's `Major.Minor.Build` release versioning.
 
 - Projects Catalog's `+` and `−` buttons now expand or collapse one tree level per click, like
   Project Tracking, instead of opening or closing the entire tree at once.
+- **Update parent** now works in Sprint View; it previously failed with "reordering is not
+  available".
 
 ## 0.22
 

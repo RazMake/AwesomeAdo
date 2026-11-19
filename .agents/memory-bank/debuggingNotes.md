@@ -2188,3 +2188,13 @@ fetch(
 - Live check over CDP: in the ADO tab, `fetch(org + "/_apis/ConnectionData?api-version=7.1-preview.1",
 {credentials:"include", headers:{"X-TFS-FedAuthRedirect":"Suppress"}, redirect:"manual"})` — a
   401/opaque redirect or a non-JSON body means expired; `authenticatedUser.id` means signed in.
+
+## Update parent failed with "reordering is not available"
+
+- SYMPTOM: **Update parent** in Sprint View logged `Move of item N to parent M failed (base rev R)`
+  with `reordering is not available` (source `content/views`).
+- ROOT CAUSE: Update parent re-parents through `WorkItemWriteQueue.enqueueReorder`, but Sprint View
+  built its queue without the optional `reorderItem` writer, whose default refuses every move.
+- FIX / RULE: every view that offers the shared item commands builds its queue with
+  `board-lifecycle/createBoardWriteQueue(services)`, even when the view itself never ranks (Sprint
+  still offers no drag-reorder).

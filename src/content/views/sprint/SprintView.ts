@@ -74,6 +74,7 @@ import {
 } from "../../../common/view-common/control/ViewScaffold/ViewScaffold";
 import { renderWriteQueueStatus } from "../../../common/view-common/control/WriteQueueStatus/WriteQueueStatus";
 import type { WriteQueueStatusHandle } from "../../../common/view-common/control/WriteQueueStatus/WriteQueueStatus";
+import { createBoardWriteQueue } from "../board-lifecycle/boardWriteQueue";
 import { discardBoardCaches } from "../board-lifecycle/discardBoardCaches";
 import {
   loadInterruptAcceptanceState,
@@ -1460,12 +1461,6 @@ function observeWriteState(
   });
 }
 
-function createWriteQueue(context: DataDrivenViewContext): WorkItemWriteQueue {
-  // No reorder writer on purpose: a sprint is a slice of many backlogs, so nothing on this board is
-  // a level a rank could be written against.
-  return new WorkItemWriteQueue(context.services.writeField, context.services.logger);
-}
-
 function createBulkMoveController(
   context: DataDrivenViewContext,
   root: HTMLElement,
@@ -1560,7 +1555,8 @@ function startSprintView(context: DataDrivenViewContext, root: HTMLElement): voi
   let refreshing = false;
   let loadGeneration = 0;
   let refreshFailed = false;
-  const writes = createWriteQueue(context);
+  // Sprint never ranks, but Update parent re-parents through the queue's move path.
+  const writes = createBoardWriteQueue(context.services);
   const writeState: SprintWriteState = { pending: 0, failed: 0 };
   const bulkMove = createSprintRuntime(context, root, writes, writeState, () => board);
 
