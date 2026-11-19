@@ -2198,3 +2198,19 @@ fetch(
 - FIX / RULE: every view that offers the shared item commands builds its queue with
   `board-lifecycle/createBoardWriteQueue(services)`, even when the view itself never ranks (Sprint
   still offers no drag-reorder).
+
+## Edge store publish failed with HTTP 401 at the upload stage
+
+- SYMPTOM: the Release `publish_stores` job fails at **Publish Edge package** with
+  `Edge upload returned unexpected status 401 (stage: upload)`; the GitHub release itself succeeded
+  and the store report shows Edge `failed`.
+- ROOT CAUSE: Partner Center v1.1 Publish API keys expire 72 days after creation. The 401 is the
+  store rejecting `EDGE_API_KEY` (environment `browser-extension-stores`), not a code or workflow
+  regression — `scripts/publish-edge.mjs` already sends the documented `Authorization: ApiKey` and
+  `X-ClientID` headers. The Aug 3 key last worked on Oct 13 and was rejected on Nov 19.
+- FIX: Partner Center → Microsoft Edge → **Publish API** → renew the expired API key; no new key is
+  needed. Only if the renewal shows a different key value, store it with
+  `gh secret set EDGE_API_KEY --env browser-extension-stores --repo RazMake/AwesomeAdo` (repo-owner
+  account). Rerunning the failed job is refused by design; dispatch Release with
+  `mode=replay_official`, the official `vX.Y` tag, `publish_edge=true`, and
+  `confirm_edge_no_operation=true` (a 401 upload created no draft), then approve the environment.
